@@ -34,6 +34,10 @@
       ariaLabel="Close"
       (click)="context.requestClose()"
       data-testid="ui-drawer-close" />
+    <!-- A full-width row under the title, such as filters over the body's list. -->
+    <div class="order-4 mt-[4px] flex basis-full flex-wrap items-center gap-[8px] empty:hidden" data-testid="ui-drawer-toolbar">
+      <ng-content select="[drawerToolbar]" />
+    </div>
   </div>
 }
 <!-- cdkScrollable lets overlays opened from the body (Select, Menu) follow its scrolling. The scrollbar is hidden. -->

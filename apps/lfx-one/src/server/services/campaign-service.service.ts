@@ -42,6 +42,7 @@ import {
   JOB_LOST_MESSAGE,
   MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  LINKEDIN_AD_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
@@ -85,6 +86,7 @@ import type {
   CampaignServiceGoogleAdsGeoTargetSuggestions,
   CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
+  CampaignServiceLinkedInAdsCreateAccount,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignSendWorkflowRequest,
@@ -118,6 +120,7 @@ import type {
   HubSpotMarketingEmail,
   KeywordActionPlatform,
   LinkedInBriefCopy,
+  LinkedInCreateAccountRead,
   ListAudiencesResult,
   LinkedInCreativeVariant,
   MetaAdVariant,
@@ -751,6 +754,55 @@ export function canUseLinkedInCreativeAssets(): boolean {
 }
 
 /**
+ * campaign-service's `get-linkedin-ads-create-account` answer (#581), checked and camel-cased. An unreadable
+ * default fails with 502 rather than naming an account the create does not use; a grant whose id is not the
+ * bare account number `adAccountId` takes, the default repeated, or a repeat is dropped rather than offered.
+ */
+export function toLinkedInCreateAccount(payload: CampaignServiceLinkedInAdsCreateAccount, operation: string): LinkedInCreateAccountRead {
+  if (typeof payload?.account_id !== 'string' || !LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(payload.account_id) || !Array.isArray(payload.selectable_accounts)) {
+    throw new MicroserviceError('campaign-service returned an unreadable LinkedIn create account.', 502, 'BAD_GATEWAY', {
+      operation,
+      service: 'campaign_service_client',
+    });
+  }
+  const label = (value: unknown, accountId: string): string => (typeof value === 'string' && value.trim() !== '' ? value : accountId);
+  const grants = payload.selectable_accounts
+    .filter(
+      (a, i, all) =>
+        typeof a?.account_id === 'string' &&
+        LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(a.account_id) &&
+        a.account_id !== payload.account_id &&
+        all.findIndex((other) => other?.account_id === a.account_id) === i
+    )
+    .map((a) => ({ accountId: a.account_id, orgId: typeof a.org_id === 'string' ? a.org_id : '', label: label(a.label, a.account_id), isDefault: false }));
+  return {
+    defaultAccount: {
+      accountId: payload.account_id,
+      orgId: typeof payload.org_id === 'string' ? payload.org_id : '',
+      label: label(payload.label, payload.account_id),
+      isDefault: true,
+    },
+    grants,
+    selectionEnabled: payload.account_selection_enabled === true,
+    source: payload.source === 'project' ? 'project' : 'system',
+  };
+}
+
+/**
+ * Whether a LinkedIn create may name its ad account in `linkedInConfig.adAccountId` (#5809), and
+ * whether `GET /api/campaigns/linkedin/create-account` answers.
+ *
+ * Needs the campaign-service create path AND the account-selection flag. The legacy creator reads
+ * the account from the mounted `linkedin.json`, which is unrelated to the project's connection, so
+ * with the cutover dark the field keeps being dropped. Whether a choice is actually offered also
+ * depends on campaign-service (`account_selection_enabled`) and on the caller holding
+ * `global_marketing_ops`; the controller decides those per request.
+ */
+export function canChooseLinkedInAdAccount(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
+}
+
+/**
  * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
  * targeting profile with entries removed.
  *
@@ -761,6 +813,16 @@ export function canUseLinkedInCreativeAssets(): boolean {
  * success.
  */
 export function canEditLinkedInTargeting(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a LinkedIn create may carry `linkedInConfig.dailyCapUsd` (#5774), a daily cap beside a
+ * lifetime budget. `cutoverOwnsCreate()` and nothing else, like `canEditLinkedInTargeting`: only
+ * campaign-service sends the cap (linuxfoundation/lfx-v2-campaign-service#607), and the LEGACY
+ * creator would drop it and spend without the cap.
+ */
+export function canSetLinkedInDailyCap(): boolean {
   return cutoverOwnsCreate();
 }
 
@@ -988,6 +1050,8 @@ export class CampaignServiceClient {
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
         linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+        linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
+        linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1060,6 +1124,8 @@ export class CampaignServiceClient {
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
       linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+      linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
+      linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -3306,28 +3372,51 @@ export class CampaignServiceClient {
   /**
    * The Meta Ads account monitor (`monitor-meta-ads-account`).
    *
-   * ACCOUNT-scoped, unlike every other read here: `projectSlug` selects whose stored connection
-   * reads the account — the project's OWN only, never the LF system fallback, so a project without
-   * one gets a 404 — and campaign-service refuses an `accountId` that connection is not bound to.
-   * Every campaign the credential sees on the account comes back, not only this project's.
+   * PROJECT-scoped: only the campaigns campaign-service recorded for the project come back, and a
+   * project with none gets an empty monitor. `accountId` is required upstream (an omitted one is
+   * refused here, before any request). It is read with the project's own connection when that is
+   * configured for it, and otherwise with the LF system credential, which reads only the account it
+   * is configured for (linuxfoundation/lfx-v2-campaign-service#616, from 1.0.37); any other account,
+   * for a project with no usable connection of its own, is a 404.
    *
    * `days` is sent as given: upstream REJECTS a value outside 7–90 rather than clamping, so the
    * caller clamps (the controller does).
    */
-  public async getMetaAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  public async getMetaAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'meta-ads', projectSlug, accountId, days);
   }
 
   /**
-   * The LinkedIn Ads account monitor (`monitor-linkedin-ads-account`). Same scoping as
-   * `getMetaAdsAccountMonitor`. Its `pacing_pct` is deliberately unrounded upstream.
+   * The LinkedIn Ads account monitor (`monitor-linkedin-ads-account`). Its `pacing_pct` is
+   * deliberately unrounded upstream.
+   *
+   * PROJECT-scoped like Meta's. `accountId` is optional from campaign-service 1.0.37
+   * (linuxfoundation/lfx-v2-campaign-service#628, #5889): omitted, campaign-service reads the account
+   * the project's campaigns were created under, through the LF system credential when the project has
+   * no usable connection of its own, and names it as `account_id` (empty, with no campaigns, when the
+   * project has none recorded). An older campaign-service answers the omission with a 400 `missing_field`.
    */
-  public async getLinkedInAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  public async getLinkedInAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'linkedin-ads', projectSlug, accountId, days);
   }
 
-  /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping as `getMetaAdsAccountMonitor`. */
-  public async getRedditAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping and account rules as `getMetaAdsAccountMonitor`. */
+  public async getRedditAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'reddit-ads', projectSlug, accountId, days);
   }
 
@@ -3449,6 +3538,27 @@ export class CampaignServiceClient {
   }
 
   /**
+   * The LinkedIn ad account a create for this project uses, and the accounts `linkedInConfig.adAccountId`
+   * may name (`get-linkedin-ads-create-account`, linuxfoundation/lfx-v2-campaign-service#581). A database
+   * read on campaign-service: nothing is sent to LinkedIn. Answered on `campaign_manager`. Failures are left
+   * to the caller.
+   */
+  public async getLinkedInAdsCreateAccount(req: Request, projectSlug: string): Promise<CampaignServiceLinkedInAdsCreateAccount> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A LinkedIn ad account read requires the project it belongs to.', {
+        operation: 'get_linkedin_ads_create_account',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInAdsCreateAccount>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/create-account`,
+      'GET'
+    );
+  }
+
+  /**
    * The user lists on the Google Ads account a create for this project uses (`list-google-ads-user-lists`,
    * linuxfoundation/lfx-v2-campaign-service#508), for the Implement tab's audience segment picker (#5244).
    * Upstream answers it on `global_marketing_ops` of the path project, the relation the BFF checks first;
@@ -3565,8 +3675,8 @@ export class CampaignServiceClient {
     accountId: string | undefined,
     days: number
   ): Promise<CampaignServiceAccountMonitor> {
-    // Only Google Ads may omit the account (#5622); every other monitor reads a named account.
-    if (projectSlug === '' || accountId === '' || (accountId === undefined && provider !== 'google-ads')) {
+    // Only Google Ads (#5622) and LinkedIn (#5889) may omit the account; every other monitor reads a named account.
+    if (projectSlug === '' || accountId === '' || (accountId === undefined && provider !== 'google-ads' && provider !== 'linkedin-ads')) {
       throw ServiceValidationError.forField(
         projectSlug === '' ? 'project' : 'accountKey',
         'An account monitor read requires both the project and the account it reads.',

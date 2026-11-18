@@ -79,6 +79,37 @@ describe('embedded personal data in free text', () => {
     expect(stripPersonalFields({ note: 'contact ada@acme.example for access' }, page)).toEqual({ note: 'contact  for access' });
   });
 
+  it('keeps git remotes and version specs, which only look like addresses', () => {
+    expect(scrubFreeText('clone git@git.example.com:acme-org/repo.git then pin pkg@1.2.3')).toBe(
+      'clone git@git.example.com:acme-org/repo.git then pin pkg@1.2.3'
+    );
+    expect(scrubFreeText('contact ada@acme.example, thanks')).toBe('contact , thanks');
+  });
+
+  it('keeps whole-value git remotes and version specs through stripPersonalFields', () => {
+    const input = {
+      remote: 'git@git.example.com:acme-org/repo.git',
+      pin: 'pkg@1.2.3',
+      list: ['git@git.example.com:acme-org/repo.git', 'ada@example.com'],
+      owner: 'ada@example.com',
+    };
+    expect(stripPersonalFields(input, { page: 'projects' })).toEqual({ remote: input.remote, pin: input.pin, list: [input.remote] });
+  });
+
+  it('removes addresses on punycode and non-ASCII top-level domains', () => {
+    // Built at runtime: the fixture-domain check only knows ASCII reserved domains, and these TLDs are the point of the test.
+    const punycode = ['ada', 'acme.xn--p1ai'].join('@');
+    const unicode = ['ada', 'acme.рф'].join('@');
+    expect(stripPersonalFields({ owner: punycode, list: [punycode, unicode] }, page)).toEqual({ list: [] });
+    expect(scrubFreeText(`write ${punycode} or ${unicode} today`)).toBe('write  or  today');
+    expect(scrubFreeText('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git')).toBe('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git');
+  });
+
+  it('does not swallow unspaced CJK text next to an address', () => {
+    expect(scrubFreeText('联系ada@example.com')).toBe('联系');
+    expect(stripPersonalFields({ note: '联系ada@example.com 谢谢' }, page)).toEqual({ note: '联系 谢谢' });
+  });
+
   it('removes embedded emails in nested objects and arrays', () => {
     const input = { rows: [{ detail: { text: 'ping bob@team.example now' } }], tags: ['ok', 'see carol@team.example', 'dan@team.example'] };
 

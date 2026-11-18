@@ -12,9 +12,13 @@ const normalizeKey = (key: string): string => key.toLowerCase().replace(/[_-]/g,
 
 const PERSONAL_FIELD_KEYS: ReadonlySet<string> = new Set(ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS.map(normalizeKey));
 
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// A real address (ASCII local part, so unspaced CJK text before it is never swallowed; the host may be Unicode or punycode): a plain local part, a dotted host and an alphabetic or punycode TLD. It must not run on into a path or a word, so
+// technical identifiers survive: a git SSH remote (`git@github.com:org/repo.git`), a version spec (`pkg@1.2.3`).
+const EMBEDDED_EMAIL =
+  /[A-Za-z0-9._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_]|[:/][\p{L}\p{N}_~])/gu;
 
-const EMBEDDED_EMAIL = /[^\s@<>()[\]]+@[^\s@<>()[\]]+\.[^\s@<>()[\]]+/g;
+/** A whole value that is an address, by the same rule as {@link EMBEDDED_EMAIL}: `git@git.example.com:org/repo.git` and `pkg@1.2.3` are not. */
+const EMAIL_SHAPE = /^[A-Za-z0-9._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})$/u;
 
 /** A URL that names a person: a `mailto:` link, or a LinkedIn / X / Twitter profile path. */
 const PERSONAL_URL = /(?:mailto:\S+|https?:\/\/(?:[\w-]+\.)?(?:linkedin\.com\/(?:in|pub)\/|(?:x|twitter)\.com\/(?!i\/|intent\/|share)[\w]+)\S*)/gi;

@@ -3,13 +3,14 @@
 
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { skip, take, type Observable, type Subscription } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
   ACCOUNT_MONITOR_NO_CONNECTION_CODE,
+  ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE,
   CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE,
   CAMPAIGN_MONITOR_ACT_LEVER_LABELS,
   CAMPAIGN_MONITOR_ACT_PLATFORMS,
@@ -66,6 +67,7 @@ import type {
   MonitorPanelNotice,
   MonitorPanelNoticeState,
   MonitorPlatformButtonView,
+  MonitorSystemAccountRead,
   MonitorTabPlatform,
   RedditAccountOption,
   RedditAccountTotals,
@@ -146,6 +148,10 @@ export class MonitoringTabComponent implements OnInit {
   );
   /** The "did not report its currency" note: a connection's figures whose currency campaign-service did not name. */
   protected readonly linkedInCurrencyNote = computed(() => this.linkedInAmountsInAccountCurrency() && this.linkedInNamedCurrencyFormat() === null);
+  protected readonly linkedInEmptyMessage = computed(
+    () => this.linkedInData()?.systemAccountRead?.emptyMessage ?? 'No active LinkedIn campaigns found for this account.'
+  );
+  protected readonly linkedInSystemAccountNote = computed(() => this.systemAccountNote('linkedin', this.linkedInData()?.systemAccountRead));
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -159,6 +165,10 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly redditError = signal<string | null>(null);
   protected readonly redditCampaigns = computed(() => this.redditData()?.campaigns ?? []);
   protected readonly redditTotalsNote = computed(() => this.totalsCoverageNote(this.redditCampaigns()));
+  protected readonly redditEmptyMessage = computed(
+    () => this.redditData()?.systemAccountRead?.emptyMessage ?? 'No active Reddit campaigns found for this account.'
+  );
+  protected readonly redditSystemAccountNote = computed(() => this.systemAccountNote('reddit', this.redditData()?.systemAccountRead));
   protected readonly redditPulledAt = computed(() => {
     const pulledAt = this.redditData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -188,6 +198,8 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly metaCurrencyNote = computed(() => this.metaAmountsInAccountCurrency() && this.metaNamedCurrencyFormat() === null);
   /** The connection's named-currency format; never applied to legacy figures, which keep their `$`. */
   private readonly metaNamedCurrencyFormat = computed(() => (this.metaAmountsInAccountCurrency() ? this.namedCurrencyFormat(this.metaData()?.currency) : null));
+  protected readonly metaEmptyMessage = computed(() => this.metaData()?.systemAccountRead?.emptyMessage ?? 'No active Meta campaigns found for this account.');
+  protected readonly metaSystemAccountNote = computed(() => this.systemAccountNote('meta', this.metaData()?.systemAccountRead));
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -206,6 +218,14 @@ export class MonitoringTabComponent implements OnInit {
    * (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`, lfx-self-serve-ops#54). Shown as a notice on either path.
    */
   protected readonly restrictedPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
+  /** Panels read through the LF system account (#5889): no account picker, and the read names no account. */
+  protected readonly systemAccountPlatforms: Signal<ReadonlySet<MonitorConnectionPlatform>> = this.initSystemAccountPlatforms();
+  /**
+   * `system_account` panels whose read campaign-service could not serve through the LF system account
+   * (`ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE`): the panel shows the notice for the project's own
+   * state behind the fallback (`fallbackFrom`), as it did before the fallback existed.
+   */
+  protected readonly systemAccountRefusedPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
   /** The Google Ads monitor is independent of the separately authorized keyword and audience reads. */
   protected readonly googleRestricted = signal(false);
   /**
@@ -730,16 +750,19 @@ export class MonitoringTabComponent implements OnInit {
 
   protected fetchLinkedInData(): void {
     const accountKey = this.selectedLinkedInAccountKey();
-    if (!accountKey) return;
+    // A `system_account` panel has no account to pick: the read names none and the BFF chooses it (#5889).
+    const viaSystemAccount = !accountKey && this.systemAccountPlatforms().has('linkedin');
+    if (!accountKey && !viaSystemAccount) return;
     this.linkedInSub?.unsubscribe();
     this.linkedInLoading.set(true);
     this.linkedInError.set(null);
     // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
     this.setMetricsDisabled('linkedin', false);
     this.setRestricted('linkedin', false);
+    this.togglePlatform(this.systemAccountRefusedPlatforms, 'linkedin', false);
     const accountSource = this.monitorAccountSource();
     this.linkedInSub = this.campaignService
-      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), accountSource)
+      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -758,6 +781,12 @@ export class MonitoringTabComponent implements OnInit {
           if (this.isMetricsDisabledError(err)) {
             this.linkedInData.set(null);
             this.setMetricsDisabled('linkedin', true);
+            this.linkedInLoading.set(false);
+            return;
+          }
+          if (viaSystemAccount && this.upstreamCode(err) === ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE) {
+            this.linkedInData.set(null);
+            this.togglePlatform(this.systemAccountRefusedPlatforms, 'linkedin', true);
             this.linkedInLoading.set(false);
             return;
           }
@@ -780,15 +809,18 @@ export class MonitoringTabComponent implements OnInit {
 
   protected fetchRedditData(): void {
     const accountKey = this.selectedRedditAccountKey();
-    if (!accountKey) return;
+    // A `system_account` panel has no account to pick: the read names none and the BFF chooses it (#5889).
+    const viaSystemAccount = !accountKey && this.systemAccountPlatforms().has('reddit');
+    if (!accountKey && !viaSystemAccount) return;
     this.redditSub?.unsubscribe();
     this.redditLoading.set(true);
     this.redditError.set(null);
     // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
     this.setMetricsDisabled('reddit', false);
     this.setRestricted('reddit', false);
+    this.togglePlatform(this.systemAccountRefusedPlatforms, 'reddit', false);
     this.redditSub = this.campaignService
-      .getRedditMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorAccountSource())
+      .getRedditMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), this.monitorAccountSource())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -806,6 +838,12 @@ export class MonitoringTabComponent implements OnInit {
           if (this.isMetricsDisabledError(err)) {
             this.redditData.set(null);
             this.setMetricsDisabled('reddit', true);
+            this.redditLoading.set(false);
+            return;
+          }
+          if (viaSystemAccount && this.upstreamCode(err) === ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE) {
+            this.redditData.set(null);
+            this.togglePlatform(this.systemAccountRefusedPlatforms, 'reddit', true);
             this.redditLoading.set(false);
             return;
           }
@@ -828,16 +866,19 @@ export class MonitoringTabComponent implements OnInit {
 
   protected fetchMetaData(): void {
     const accountKey = this.selectedMetaAccountKey();
-    if (!accountKey) return;
+    // A `system_account` panel has no account to pick: the read names none and the BFF chooses it (#5889).
+    const viaSystemAccount = !accountKey && this.systemAccountPlatforms().has('meta');
+    if (!accountKey && !viaSystemAccount) return;
     this.metaSub?.unsubscribe();
     this.metaLoading.set(true);
     this.metaError.set(null);
     // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
     this.setMetricsDisabled('meta', false);
     this.setRestricted('meta', false);
+    this.togglePlatform(this.systemAccountRefusedPlatforms, 'meta', false);
     const accountSource = this.monitorAccountSource();
     this.metaSub = this.campaignService
-      .getMetaMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), accountSource)
+      .getMetaMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -856,6 +897,12 @@ export class MonitoringTabComponent implements OnInit {
           if (this.isMetricsDisabledError(err)) {
             this.metaData.set(null);
             this.setMetricsDisabled('meta', true);
+            this.metaLoading.set(false);
+            return;
+          }
+          if (viaSystemAccount && this.upstreamCode(err) === ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE) {
+            this.metaData.set(null);
+            this.togglePlatform(this.systemAccountRefusedPlatforms, 'meta', true);
             this.metaLoading.set(false);
             return;
           }
@@ -899,7 +946,7 @@ export class MonitoringTabComponent implements OnInit {
           error: this.linkedInError(),
           loaded: this.linkedInData() !== null,
           campaigns: this.linkedInCampaigns().length,
-          emptyMessage: 'No active LinkedIn campaigns found for this account.',
+          emptyMessage: this.linkedInEmptyMessage(),
           note: this.linkedInTotalsNote(),
         };
       case 'reddit':
@@ -909,7 +956,7 @@ export class MonitoringTabComponent implements OnInit {
           error: this.redditError(),
           loaded: this.redditData() !== null,
           campaigns: this.redditCampaigns().length,
-          emptyMessage: 'No active Reddit campaigns found for this account.',
+          emptyMessage: this.redditEmptyMessage(),
           note: this.redditTotalsNote(),
         };
       case 'meta':
@@ -919,7 +966,7 @@ export class MonitoringTabComponent implements OnInit {
           error: this.metaError(),
           loaded: this.metaData() !== null,
           campaigns: this.metaCampaigns().length,
-          emptyMessage: 'No active Meta campaigns found for this account.',
+          emptyMessage: this.metaEmptyMessage(),
           note: this.metaTotalsNote(),
         };
       default:
@@ -949,7 +996,14 @@ export class MonitoringTabComponent implements OnInit {
         if (notices[platform]) continue;
         const state = connections[platform]?.state;
         // No state yet means the connections are still loading: no notice, the panel just waits.
-        if (state && state !== 'connected') {
+        if (state === 'system_account') {
+          // Read through the LF system account (#5889): a notice only when that read was refused, or is switched off.
+          if (this.systemAccountRefusedPlatforms().has(platform)) {
+            notices[platform] = this.noticeFor(platform, connections[platform]?.fallbackFrom ?? 'no_connection');
+          } else if (disabled.has(platform)) {
+            notices[platform] = this.noticeFor(platform, 'metrics_disabled');
+          }
+        } else if (state && state !== 'connected') {
           notices[platform] = this.noticeFor(platform, state);
         } else if (state === 'connected' && disabled.has(platform)) {
           notices[platform] = this.noticeFor(platform, 'metrics_disabled');
@@ -1308,6 +1362,13 @@ export class MonitoringTabComponent implements OnInit {
     this.hubSpotLoading.set(false);
   }
 
+  private initSystemAccountPlatforms(): Signal<ReadonlySet<MonitorConnectionPlatform>> {
+    return computed(() => {
+      const connections = this.monitorConnections();
+      return new Set((Object.keys(MONITOR_CONNECTION_PROVIDERS) as MonitorConnectionPlatform[]).filter((p) => connections[p]?.state === 'system_account'));
+    });
+  }
+
   private initReportBackedAccount(): Signal<MonitorConnectionAccount | null> {
     return computed(() => {
       const platform = this.selectedPlatform();
@@ -1399,28 +1460,36 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   private setMetricsDisabled(platform: MonitorConnectionPlatform, disabled: boolean): void {
-    const current = this.metricsDisabledPlatforms();
     // Only a real change writes, so the legacy path (which never disables anything) never touches it.
-    if (current.has(platform) === disabled) return;
-    const next = new Set(current);
-    if (disabled) {
-      next.add(platform);
-    } else {
-      next.delete(platform);
-    }
-    this.metricsDisabledPlatforms.set(next);
+    this.togglePlatform(this.metricsDisabledPlatforms, platform, disabled);
   }
 
   private setRestricted(platform: MonitorConnectionPlatform, restricted: boolean): void {
-    const current = this.restrictedPlatforms();
-    if (current.has(platform) === restricted) return;
+    this.togglePlatform(this.restrictedPlatforms, platform, restricted);
+  }
+
+  /** Adds `platform` to, or removes it from, one of the per-panel sets; writes only on a real change. */
+  private togglePlatform(target: WritableSignal<ReadonlySet<MonitorConnectionPlatform>>, platform: MonitorConnectionPlatform, on: boolean): void {
+    const current = target();
+    if (current.has(platform) === on) return;
     const next = new Set(current);
-    if (restricted) {
+    if (on) {
       next.add(platform);
     } else {
       next.delete(platform);
     }
-    this.restrictedPlatforms.set(next);
+    target.set(next);
+  }
+
+  /**
+   * The note under a panel read through the LF system account (#5889): which ad account campaign-service
+   * read, and why only this project's campaigns are shown. NULL on a read through the project's own
+   * connection, on the legacy path, and when the read named no account (nothing recorded yet).
+   */
+  private systemAccountNote(panel: MonitorConnectionPlatform, read: MonitorSystemAccountRead | undefined): string | null {
+    if (!read?.accountId) return null;
+    const label = this.paidPanelLabel(panel);
+    return `Read from ${label} account ${read.accountId} through the LF system account. This project has no ${label} account bound of its own, so only the campaigns created for it are shown.`;
   }
 
   /** Records whether a panel's failed read was a role refusal, for `refusedReads`. */
@@ -1609,6 +1678,7 @@ export class MonitoringTabComponent implements OnInit {
     this.monitorConnections.set({});
     this.metricsDisabledPlatforms.set(new Set());
     this.restrictedPlatforms.set(new Set());
+    this.systemAccountRefusedPlatforms.set(new Set());
     this.googleRestricted.set(false);
     this.googleRoleRefusal.set(null);
 
@@ -1769,6 +1839,7 @@ export class MonitoringTabComponent implements OnInit {
     this.metricsDisabledPlatforms.set(new Set());
     // Google's read is not redone here, so its restricted state stays with it.
     this.restrictedPlatforms.set(new Set());
+    this.systemAccountRefusedPlatforms.set(new Set());
   }
 
   private loadLegacyAccounts(slug: string): void {

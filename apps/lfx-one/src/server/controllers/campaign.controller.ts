@@ -9,7 +9,7 @@ import { emailLinkDestinations, hasVisibleHtmlText, sanitizeDisplayText, stripRe
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
-import { resolveLinkedInTargetingProfileId } from '@lfx-one/shared/utils/campaign-linkedin.utils';
+import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import {
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -127,6 +127,7 @@ import type {
   GoogleDisplayAudienceLists,
   GoogleDisplayCampaignAudiences,
   LinkedInTargetingProfile,
+  LinkedInCreateAccountResult,
   LinkedInTargetingProfileConfig,
   LinkedInTargetingProfileEdit,
   MicrosoftCampaignCreateRequest,
@@ -267,7 +268,11 @@ import {
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
   KEYWORD_ACTION_PLATFORMS,
+  LINKEDIN_AD_ACCOUNT_ACCESS_UNAVAILABLE_MESSAGE,
+  LINKEDIN_AD_ACCOUNT_RESTRICTED_MESSAGE,
+  LINKEDIN_AD_ACCOUNT_ID_PATTERN,
   LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+  LINKEDIN_DAILY_CAP_FIELD,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
   LINKEDIN_TARGETING_PROFILE_EDIT_FIELD,
@@ -333,16 +338,19 @@ import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMet
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
 import {
   isAccountIdRequiredByUpstream,
+  isSystemAccountRefusal,
   toAccountMonitorClientError,
-  toGoogleMonitorConnectionError,
   toGoogleMonitorResponse,
   toHubSpotEmailMonitorResponse,
   toLinkedInMonitorResponse,
   toMetaMonitorResponse,
   toMonitorConnectionAccount,
+  toMonitorConnectionError,
   toRecordedCampaignsGoogleMonitorResponse,
   toRedditMonitorResponse,
   toReportBackedMonitorResponse,
+  toSystemAccountRead,
+  toSystemAccountRefusedError,
 } from '../services/campaign-monitor-mapper';
 import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import {
@@ -355,7 +363,9 @@ import {
   canCreateWithBidding,
   canCreateWithFinerGoogleGeo,
   canCreateWithGoogleCriteria,
+  canChooseLinkedInAdAccount,
   canEditLinkedInTargeting,
+  canSetLinkedInDailyCap,
   canSearchGoogleGeoTargets,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -366,6 +376,7 @@ import {
   deriveEventSlug,
   isCampaignServiceJobId,
   isCampaignServiceNotFound,
+  toLinkedInCreateAccount,
 } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { personaDetectionService } from '../utils/persona-helper';
@@ -1246,7 +1257,11 @@ export class CampaignController {
         return;
       }
 
-      const configEnvelope = this.createConfigEnvelope(body);
+      // The LinkedIn ad account to name: only the picker's explicit choice, checked against
+      // campaign-service's own list (#5809) and refused when it cannot be honoured. See
+      // `linkedInAdAccountToForward`.
+      const linkedInAdAccountId = await this.linkedInAdAccountToForward(req, projectSlug, body);
+      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId);
 
       // The channel the Google config resolved to, read ONCE for every channel fence below rather
       // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever
@@ -1363,6 +1378,21 @@ export class CampaignController {
             return;
           }
         }
+      }
+
+      // A LinkedIn daily cap beside a lifetime budget (#5774), refused rather than dropped when the
+      // legacy creator would serve, and held to campaign-service's own rules otherwise
+      // (`linkedin.ValidateDailyCap`), so the operator gets this field's sentence instead of a
+      // generic refusal. See `linkedInDailyCapRefusal`.
+      const linkedInDailyCapRefusal = this.linkedInDailyCapRefusal(body);
+      if (linkedInDailyCapRefusal !== null) {
+        next(
+          ServiceValidationError.forField(LINKEDIN_DAILY_CAP_FIELD, linkedInDailyCapRefusal, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
       }
 
       // Google Ads resolves every country code against a CURATED map before its first mutate and
@@ -3084,8 +3114,8 @@ export class CampaignController {
    * floor beneath which CTR is judged at all, and whether a paused campaign raises anything. This
    * route exposes the single-source version; nothing is cut over to it yet.
    *
-   * The two are NOT interchangeable. The monitor routes are ACCOUNT-scoped — every campaign in
-   * the ad account — while this is BRIEF-scoped. A consumer swapping one for the other narrows
+   * The two are NOT interchangeable. The monitor routes are account- or project-scoped — every
+   * campaign in the ad account, or every campaign recorded for the project — while this is BRIEF-scoped. A consumer swapping one for the other narrows
    * what an operator sees, which is why `brief` is required rather than defaulted. Because the
    * Google Ads, Meta, Reddit and X accounts (and LinkedIn's legacy allowlist account) are shared by
    * every foundation, those account monitors are root-only — see `requireSharedAccountMonitorAccess`
@@ -3462,7 +3492,7 @@ export class CampaignController {
    * relation, so this arm is open to whoever the route's guard admits, as LinkedIn's campaign-service
    * arm is (#4837). A caller campaign-service refuses — a ROOT writer or ROOT `global_marketing_ops`
    * holder without the project role, which `requireGoogleMonitorAccess` admits for the legacy arm —
-   * gets a non-retryable 403 naming that role (`toGoogleMonitorConnectionError`,
+   * gets a non-retryable 403 naming that role (`toMonitorConnectionError`,
    * `toAccountMonitorClientError`), never a 503.
    *
    * Off, it is the legacy account-wide read through the BFF's own `GADS_*` credentials, which fails
@@ -3906,6 +3936,52 @@ export class CampaignController {
     }
   }
 
+  /**
+   * The LinkedIn ad account a create for the project uses, and whether this caller may choose another
+   * (#5809), camel-cased from campaign-service's `get-linkedin-ads-create-account`
+   * (linuxfoundation/lfx-v2-campaign-service#581). That read resolves the account exactly as a create
+   * does and lists exactly the accounts `linkedInConfig.adAccountId` may name, so the Implement tab never
+   * offers a choice the create would refuse or ignore.
+   *
+   * `canChoose` needs campaign-service's account selection on, more than the default to choose from, and
+   * `global_marketing_ops` on the project: campaign-service refuses ANY `adAccountId` from anyone else
+   * while its selection is on. A failed relation check answers `false` (the read-only default), never
+   * `true`. 404, as if not mounted, unless the create cutover and the account-selection flag are both on.
+   */
+  public async getLinkedInCreateAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_create_account';
+    if (!canChooseLinkedInAdAccount()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { projectSlug });
+
+    try {
+      const read = toLinkedInCreateAccount(await this.campaignServiceClient.getLinkedInAdsCreateAccount(req, projectSlug), operation);
+      const canChoose =
+        read.selectionEnabled &&
+        read.grants.length > 0 &&
+        (await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the LinkedIn ad account choice')) === 'granted';
+      const result: LinkedInCreateAccountResult = {
+        accountId: read.defaultAccount.accountId,
+        orgId: read.defaultAccount.orgId,
+        label: read.defaultAccount.label,
+        source: read.source,
+        canChoose,
+        // Someone who cannot choose is shown only the default, so the grants are not listed to them.
+        accounts: canChoose ? [read.defaultAccount, ...read.grants] : [read.defaultAccount],
+      };
+      logger.success(req, operation, startTime, { source: result.source, canChoose, count: result.accounts.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const rawDays = String(req.query['days'] ?? '30');
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
@@ -3920,6 +3996,24 @@ export class CampaignController {
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
       // A read whose account came from a legacy picker was picked on a pod with the flag OFF; see `refuseLegacyReadOnCutover`.
       if (this.refuseLegacyReadOnCutover(req, next, 'linkedin_monitor')) {
+        return;
+      }
+      // No account: the panel reads through the LF system account (#5889), and campaign-service
+      // picks the account this project's campaigns were created under.
+      if (this.isMonitorAccountOmitted(req)) {
+        await this.serveSystemAccountMonitor(req, res, next, {
+          operation: 'linkedin_monitor',
+          platformLabel: 'LinkedIn Ads',
+          provider: 'linkedin-ads',
+          days,
+          read: (projectSlug, accountId) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+          toResponse: (payload) =>
+            toLinkedInMonitorResponse(
+              payload,
+              config.accounts.find((a) => a.accountId === payload.account_id)?.label || payload.account_id || 'LinkedIn Ads',
+              new Date().toISOString()
+            ),
+        });
         return;
       }
       const accountId = this.requireMonitorAccountId(req, next, 'linkedin_monitor', 'LinkedIn Ads', LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN);
@@ -4174,6 +4268,23 @@ export class CampaignController {
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
       // A legacy picker's account, picked on a pod with the flag OFF, is refused — see the LinkedIn route.
       if (this.refuseLegacyReadOnCutover(req, next, 'reddit_monitor')) {
+        return;
+      }
+      // No account: the panel reads through the LF system account (#5889), on LF's own Reddit account.
+      if (this.isMonitorAccountOmitted(req)) {
+        await this.serveSystemAccountMonitor(req, res, next, {
+          operation: 'reddit_monitor',
+          platformLabel: 'Reddit Ads',
+          provider: 'reddit-ads',
+          days,
+          read: (projectSlug, accountId) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
+          toResponse: (payload) =>
+            toRedditMonitorResponse(
+              payload,
+              REDDIT_ACCOUNTS.find((a) => a.accountId === payload.account_id)?.label || payload.account_id,
+              new Date().toISOString()
+            ),
+        });
         return;
       }
       const accountId = this.requireMonitorAccountId(req, next, 'reddit_monitor', 'Reddit Ads', REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN);
@@ -4785,6 +4896,23 @@ export class CampaignController {
       if (this.refuseLegacyReadOnCutover(req, next, 'meta_monitor')) {
         return;
       }
+      // No account: the panel reads through the LF system account (#5889), on LF's own Meta account.
+      if (this.isMonitorAccountOmitted(req)) {
+        await this.serveSystemAccountMonitor(req, res, next, {
+          operation: 'meta_monitor',
+          platformLabel: 'Meta Ads',
+          provider: 'meta-ads',
+          days,
+          read: (projectSlug, accountId) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
+          toResponse: (payload) =>
+            toMetaMonitorResponse(
+              payload,
+              META_ACCOUNTS.find((a) => a.accountId === payload.account_id)?.label || payload.account_id,
+              new Date().toISOString()
+            ),
+        });
+        return;
+      }
       const accountId = this.requireMonitorAccountId(req, next, 'meta_monitor', 'Meta Ads', META_ADS_MONITOR_ACCOUNT_ID_PATTERN);
       if (accountId === null) {
         return;
@@ -4841,6 +4969,7 @@ export class CampaignController {
    * campaign-service-only routes answer, because the tab must be able to tell "off" from "no
    * connection". On, it reads the five providers' connections in parallel. One provider's failure
    * is that provider's `unavailable` state, never the whole answer: the other panels still work.
+   * LinkedIn, Reddit and Meta without an account bound of their own are `system_account` (#5889).
    */
   public async getMonitorConnections(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'monitor_connections';
@@ -4858,7 +4987,8 @@ export class CampaignController {
     try {
       const entries = await Promise.all(
         (Object.entries(MONITOR_CONNECTION_PROVIDERS) as [MonitorConnectionPlatform, CampaignServiceMonitorProvider][]).map(
-          async ([platform, provider]) => [platform, await this.readMonitorConnection(req, projectSlug, provider)] as const
+          async ([platform, provider]) =>
+            [platform, this.withSystemAccountFallback(provider, await this.readMonitorConnection(req, projectSlug, provider))] as const
         )
       );
       const body: CampaignMonitorConnections = { viaCampaignService: true, platforms: Object.fromEntries(entries) };
@@ -5707,7 +5837,7 @@ export class CampaignController {
     const operation = 'campaign_monitor';
     const connection = await this.readMonitorConnection(req, projectSlug, 'google-ads', operation);
     if (connection.state === 'forbidden' || connection.state === 'unavailable') {
-      next(toGoogleMonitorConnectionError(connection.state, operation));
+      next(toMonitorConnectionError(connection.state, 'Google Ads', operation));
       return;
     }
     const days = this.parseMonitorDays(req);
@@ -5735,7 +5865,113 @@ export class CampaignController {
       accountId: null,
       read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, undefined, days),
       toResponse: (payload) => toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString()),
-      mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toGoogleMonitorConnectionError(priorState, operation) : undefined),
+      mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toMonitorConnectionError(priorState, 'Google Ads', operation) : undefined),
+    });
+  }
+
+  /**
+   * The account LinkedIn, Reddit or Meta monitors read through the LF system account when a project
+   * has no connection with an account bound of its own (#5889), or `null` for a platform with no such
+   * read. campaign-service 1.0.37 falls back to the system account on these three only
+   * (linuxfoundation/lfx-v2-campaign-service#616, #628); Microsoft and X still read the project's own
+   * connection only, so their panels keep the "no connection" notice.
+   *
+   * - LinkedIn: `account_id` is optional, so none is named (`accountId` undefined) and campaign-service
+   *   reads the account the project's campaigns were created under.
+   * - Reddit and Meta: `account_id` is required, so it is LF's own shared account, the one this app
+   *   already lists for those platforms. campaign-service reads it with the system credential only when
+   *   the system row is configured for it; any other account is a typed 404, shown as "no connection".
+   */
+  private systemAccountFallback(provider: CampaignServiceMonitorProvider): { accountId: string | undefined } | null {
+    switch (provider) {
+      case 'linkedin-ads':
+        return { accountId: undefined };
+      case 'reddit-ads':
+        return REDDIT_ACCOUNTS[0] ? { accountId: REDDIT_ACCOUNTS[0].accountId } : null;
+      case 'meta-ads':
+        return META_ACCOUNTS[0] ? { accountId: META_ACCOUNTS[0].accountId } : null;
+      default:
+        return null;
+    }
+  }
+
+  /** A connection with no account bound of its own, as `system_account` where the platform has that read (#5889). */
+  private withSystemAccountFallback(provider: CampaignServiceMonitorProvider, account: MonitorConnectionAccount): MonitorConnectionAccount {
+    if ((account.state === 'no_connection' || account.state === 'no_account') && this.systemAccountFallback(provider) !== null) {
+      return { state: 'system_account', accountId: null, label: null, fallbackFrom: account.state };
+    }
+    return account;
+  }
+
+  /** Whether a LinkedIn/Reddit/Meta monitor read named no account: absent or blank, never a malformed one. */
+  private isMonitorAccountOmitted(req: Request): boolean {
+    const raw = req.query['accountKey'];
+    return raw === undefined || (typeof raw === 'string' && raw.trim() === '');
+  }
+
+  /**
+   * The campaign-service arm of the LinkedIn, Reddit and Meta monitors when the read named no account
+   * (#5889): the Monitor tab was told the panel reads through the LF system account (`system_account`).
+   *
+   * The connection is read again here, as the Google Ads route does, so the account is never the
+   * client's choice. A project whose own connection has an account bound reads that account, as a
+   * read naming it would. One with no connection, or no account bound, reads `systemAccountFallback`'s
+   * account, and the response names the account campaign-service read (`systemAccountRead`).
+   * campaign-service scopes that read to the campaigns it recorded for the project. A connection read
+   * that was refused or failed is the panel's error, never a fallback.
+   *
+   * A typed 404 (no LF system account configured for it), or a 400 `missing_field` from a
+   * campaign-service that still requires LinkedIn's account, is `toSystemAccountRefusedError`: the tab
+   * then shows the notice for the project's own state behind the fallback, as it did before.
+   */
+  private async serveSystemAccountMonitor<T>(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    opts: {
+      operation: string;
+      platformLabel: string;
+      provider: CampaignServiceMonitorProvider;
+      days: number;
+      read: (projectSlug: string, accountId: string | undefined) => Promise<CampaignServiceAccountMonitor>;
+      toResponse: (payload: CampaignServiceAccountMonitor) => T;
+    }
+  ): Promise<void> {
+    const projectSlug = this.requireMonitorProject(req, next, opts.operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const connection = await this.readMonitorConnection(req, projectSlug, opts.provider, opts.operation);
+    if (connection.state === 'forbidden' || connection.state === 'unavailable') {
+      next(toMonitorConnectionError(connection.state, opts.platformLabel, opts.operation));
+      return;
+    }
+    const ownAccountId = connection.state === 'connected' ? connection.accountId : null;
+    if (ownAccountId !== null) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: opts.operation,
+        platformLabel: opts.platformLabel,
+        days: opts.days,
+        accountId: ownAccountId,
+        read: (slug) => opts.read(slug, ownAccountId),
+        toResponse: opts.toResponse,
+      });
+      return;
+    }
+    const priorState = connection.state === 'no_account' ? 'no_account' : 'no_connection';
+    const fallback = this.systemAccountFallback(opts.provider);
+    if (fallback === null) {
+      next(toMonitorConnectionError(priorState, opts.platformLabel, opts.operation));
+      return;
+    }
+    await this.serveLegacyShapedMonitor(req, res, next, {
+      operation: opts.operation,
+      platformLabel: opts.platformLabel,
+      days: opts.days,
+      accountId: fallback.accountId ?? null,
+      read: (slug) => opts.read(slug, fallback.accountId),
+      toResponse: (payload) => ({ ...opts.toResponse(payload), systemAccountRead: toSystemAccountRead(payload, opts.platformLabel) }),
+      mapError: (error) => (isSystemAccountRefusal(error) ? toSystemAccountRefusedError(error, opts.platformLabel, opts.operation) : undefined),
     });
   }
 
@@ -6264,6 +6500,43 @@ export class CampaignController {
   }
 
   /**
+   * Why `linkedInConfig.dailyCapUsd` (#5774) cannot be forwarded, or `null` when it is absent or
+   * acceptable.
+   *
+   * - Only campaign-service creates a capped campaign (linuxfoundation/lfx-v2-campaign-service#607);
+   *   the legacy creator would drop the field and spend without the cap (`canSetLinkedInDailyCap`).
+   *   The Implement tab hides the field on such a deployment, so this is the backstop.
+   * - The rest mirrors `linkedin.ValidateDailyCap`: a JSON number, beside `lifetimeBudget: true`, at
+   *   least LinkedIn's $10 daily minimum, and no more than `budgetUsd`, each at two-decimal wire
+   *   precision. campaign-service repeats every check.
+   *
+   * Messages never echo a caller value.
+   */
+  private linkedInDailyCapRefusal(body: CampaignCreateRequest): string | null {
+    const config: unknown = body?.linkedInConfig;
+    if (config === null || typeof config !== 'object' || !('dailyCapUsd' in config)) return null;
+    if (!canSetLinkedInDailyCap()) {
+      return 'LinkedIn daily caps are not enabled on this deployment; remove the daily cap to create the campaign';
+    }
+    const { dailyCapUsd, lifetimeBudget, budgetUsd } = config as Record<string, unknown>;
+    if (typeof dailyCapUsd !== 'number' || !Number.isFinite(dailyCapUsd)) {
+      return 'the daily cap must be a number of US dollars';
+    }
+    if (lifetimeBudget !== true) {
+      return 'a daily cap applies only to a lifetime budget; with a daily budget, the budget is already the daily amount';
+    }
+    // Both amounts rounded exactly as campaign-service rounds them (`roundUsdToCentsLikeGo`).
+    const cap = roundUsdToCentsLikeGo(dailyCapUsd);
+    if (cap < LINKEDIN_MIN_DAILY_BUDGET_USD) {
+      return `the daily cap must be at least $${LINKEDIN_MIN_DAILY_BUDGET_USD}, LinkedIn's daily minimum`;
+    }
+    if (typeof budgetUsd === 'number' && Number.isFinite(budgetUsd) && budgetUsd > 0 && cap > roundUsdToCentsLikeGo(budgetUsd)) {
+      return "the daily cap can't be more than the lifetime budget";
+    }
+    return null;
+  }
+
+  /**
    * Why `linkedInConfig.targetingProfileEdit` (#5546) cannot be forwarded, or `null` when it is
    * absent or acceptable.
    *
@@ -6570,14 +6843,14 @@ export class CampaignController {
    * builder). Keys with no config are omitted rather than sent as null: the dispatcher treats an
    * absent config as "not selected", and a null one as a malformed selection.
    */
-  private createConfigEnvelope(body: CampaignCreateRequest): Record<string, unknown> {
+  private createConfigEnvelope(body: CampaignCreateRequest, linkedInAdAccountId: string | null = null): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
 
     const googleAdsConfig = this.buildGoogleAdsConfig(body);
     if (googleAdsConfig) envelope['googleAdsConfig'] = googleAdsConfig;
 
-    const linkedInConfig = this.buildLinkedInConfig(body);
+    const linkedInConfig = this.buildLinkedInConfig(body, linkedInAdAccountId);
     if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
 
@@ -8975,7 +9248,11 @@ export class CampaignController {
    * adapter exists at all:
    *
    * 1. `adAccountId` is DELETED, because forwarding it can only ever cost a create and can never
-   *    win one.
+   *    win one. The one exception is the picker's explicit `selectedAdAccountId` (#5809), forwarded
+   *    as `adAccountId` once `linkedInAdAccountToForward` has confirmed it is a listed grant for a
+   *    caller holding `global_marketing_ops`; campaign-service#581 makes the field a real selector
+   *    among the LF system account's grants. The legacy `linkedin.json` id is never forwarded. The
+   *    rest of this note describes why.
    *
    *    The field is an assertion, never a selector. `internal/dispatch/linkedin.go:304-309` builds
    *    the runtime allowlist from the connection's own account alone and says so: "Do NOT append a
@@ -9017,14 +9294,18 @@ export class CampaignController {
    *    profile in the catalogue and is then dropped. Absent, the catalogue goes out exactly as
    *    configured, as before.
    */
-  private buildLinkedInConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+  private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
 
     const rest: Record<string, unknown> = { ...body.linkedInConfig };
     const runtime = getLinkedInConfig();
     const edit = body.linkedInConfig.targetingProfileEdit;
 
+    // The request's own values are never forwarded: only the pick `linkedInAdAccountToForward`
+    // confirmed against campaign-service's list (#5809), and otherwise nothing, as the note above explains.
     delete rest['adAccountId'];
+    delete rest['selectedAdAccountId'];
+    if (adAccountId !== null) rest['adAccountId'] = adAccountId;
     delete rest['targetingProfileEdit'];
 
     return {
@@ -9032,6 +9313,59 @@ export class CampaignController {
       targetingProfiles: edit ? this.linkedInProfilesWithEdit(runtime.targetingProfiles, edit) : runtime.targetingProfiles,
       employerExclusions: runtime.employerExclusions,
     };
+  }
+
+  /**
+   * The LinkedIn ad account a campaign-service create names (#5809), or `null` to name none and create in
+   * the connection's default account.
+   *
+   * Only the picker's explicit `linkedInConfig.selectedAdAccountId` can name one. The legacy `adAccountId`
+   * (a `linkedin.json` id an open tab may still send) is never forwarded on this road, so an account is
+   * changed only by someone choosing it. A pick is checked against campaign-service's own `create-account`
+   * list and refused, never quietly replaced by the default, when it cannot be honoured:
+   *
+   * - no pick, or a pick of the default account: `null` (the default is sent as nothing, because while
+   *   campaign-service's selection is on ANY `adAccountId` needs `global_marketing_ops`);
+   * - account selection off on this deployment, or a malformed id: 400;
+   * - not one of the listed grants, or campaign-service's own selection is off: 400, reload and choose again;
+   * - a caller without `global_marketing_ops` on the project: 403; a check that cannot be made: 503;
+   * - a failed `create-account` read fails the create with that error.
+   */
+  private async linkedInAdAccountToForward(req: Request, projectSlug: string, body: CampaignCreateRequest): Promise<string | null> {
+    const operation = 'campaign_create';
+    const field = 'linkedInConfig.selectedAdAccountId';
+    const raw: unknown = body?.linkedInConfig?.selectedAdAccountId;
+    if (raw === undefined || raw === null || raw === '') return null;
+    if (!canChooseLinkedInAdAccount()) {
+      throw ServiceValidationError.forField(field, 'choosing a LinkedIn ad account is not enabled on this deployment; reload the page', {
+        operation,
+        service: 'campaign_controller',
+      });
+    }
+    const adAccountId = typeof raw === 'string' ? raw.trim() : '';
+    if (!LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(adAccountId) || projectSlug === '') {
+      throw ServiceValidationError.forField(field, 'the LinkedIn ad account must be a LinkedIn account number', { operation, service: 'campaign_controller' });
+    }
+    const read = toLinkedInCreateAccount(await this.campaignServiceClient.getLinkedInAdsCreateAccount(req, projectSlug), operation);
+    if (adAccountId === read.defaultAccount.accountId) return null;
+    if (!read.selectionEnabled || !read.grants.some((g) => g.accountId === adAccountId)) {
+      throw ServiceValidationError.forField(field, 'that LinkedIn ad account is no longer available for this project; reload the page and choose again', {
+        operation,
+        service: 'campaign_controller',
+      });
+    }
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the LinkedIn ad account choice');
+    if (access === 'denied') {
+      throw new AuthorizationError(LINKEDIN_AD_ACCOUNT_RESTRICTED_MESSAGE, { operation, service: 'campaign_controller', path: req.path });
+    }
+    if (access === 'unverified') {
+      throw new MicroserviceError(LINKEDIN_AD_ACCOUNT_ACCESS_UNAVAILABLE_MESSAGE, 503, 'SERVICE_UNAVAILABLE', {
+        operation,
+        service: 'campaign_controller',
+        clientMessage: LINKEDIN_AD_ACCOUNT_ACCESS_UNAVAILABLE_MESSAGE,
+      });
+    }
+    return adAccountId;
   }
 
   /**
