@@ -8,6 +8,7 @@ import type { BadgeSeverity, TagSeverity } from './components.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
 import type { MeetingAttachment } from './meeting-attachment.interface';
 import type { UserSearchResult } from './search.interface';
+import type { UiTone } from './uikit.interface';
 
 /** Outcome of checking committee-scoped write access in candidate order. */
 export interface CommitteeWriterProbeResult {
@@ -106,7 +107,22 @@ export interface GroupsHomeMetric {
   subLine?: string;
 }
 
-/** A group's mailing list or chat channel, shown as an icon button on its card. */
+/** One row of the redesigned Groups page table: the group plus what its cells show. */
+export interface GroupsTableRow extends Record<string, unknown> {
+  uid: string;
+  group: MyCommittee;
+  /** The group's own type, such as "Technical Advisory Committee"; the class label when it has none. */
+  typeLabel: string;
+  typeIcon: string;
+  typeTone: UiTone;
+  /** The viewer's role, `Member` when they have none. */
+  role: string;
+  members: string;
+  commands: string[];
+  queryParams: Record<string, string> | null;
+}
+
+/** A group's mailing list or chat channel, shown as an icon button on its card or table row. */
 export interface GroupChannel {
   kind: 'mailing-list' | 'slack' | 'discord' | 'chat';
   /** Font Awesome class string. */

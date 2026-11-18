@@ -3,6 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { GROUPS_VIEW_MODE_STORAGE_KEY } from '@lfx-one/shared/constants';
 import { GroupsEngagementStats, MyCommittee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -161,6 +162,50 @@ describe('GroupsHomeStore', () => {
     store.loadMore();
     store.loadMore();
     expect(store.visibleGroups()).toHaveLength(45);
+  });
+
+  it('starts on cards, keeps the chosen view for the next visit, and starts paging over', () => {
+    localStorage.removeItem(GROUPS_VIEW_MODE_STORAGE_KEY);
+    groups$ = of(Array.from({ length: 25 }, (_, i) => group(`w${String(i).padStart(2, '0')}`, 'Working Group')));
+    const store = create();
+    expect(store.view()).toBe('card');
+    store.loadMore();
+
+    store.setView('list');
+    expect(store.view()).toBe('list');
+    expect(store.visibleGroups()).toHaveLength(20);
+    expect(localStorage.getItem(GROUPS_VIEW_MODE_STORAGE_KEY)).toBe('list');
+    localStorage.removeItem(GROUPS_VIEW_MODE_STORAGE_KEY);
+  });
+
+  it('restores the saved view after the first render', () => {
+    localStorage.setItem(GROUPS_VIEW_MODE_STORAGE_KEY, 'list');
+    const store = create();
+
+    expect(store.view()).toBe('list');
+    localStorage.removeItem(GROUPS_VIEW_MODE_STORAGE_KEY);
+  });
+
+  it('drops a group the viewer left from the list, tab counts and metrics', () => {
+    groups$ = of([group('a', 'Board'), group('b', 'Working Group')]);
+    const store = create();
+
+    store.removeGroup('a');
+    expect(store.groups().map((g) => g.uid)).toEqual(['b']);
+    expect(store.classCounts()['governing-board']).toBe(0);
+    expect(store.metrics()[0].value).toBe('1');
+  });
+
+  it('falls back to every group when a leave empties the selected tab or scope', () => {
+    groups$ = of([group('a', 'Board', { project_uid: 'fdn', is_foundation: true }), group('b', 'Working Group', { project_uid: 'prj' })]);
+    const store = create();
+    store.setTab('governing-board');
+    store.setFilters({ scope: 'fdn', voting: null });
+
+    store.removeGroup('a');
+    expect(store.tab()).toBe('all');
+    expect(store.filters().scope).toBeNull();
+    expect(store.filteredGroups().map((g) => g.uid)).toEqual(['b']);
   });
 
   describe('search and filters', () => {

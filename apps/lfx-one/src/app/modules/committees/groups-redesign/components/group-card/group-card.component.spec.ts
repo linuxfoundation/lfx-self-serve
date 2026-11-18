@@ -72,13 +72,13 @@ describe('GroupCardComponent', () => {
 
     expect(text(one(fixture, 'groups-home-card-members'))).toBe('12 members');
     expect(text(one(fixture, 'groups-home-card-voting'))).toBe('No voting');
-    expect(one(fixture, 'groups-home-card-visibility')?.getAttribute('aria-label')).toBe('Private');
-    expect(one(fixture, 'groups-home-card-visibility')?.getAttribute('tabindex')).toBe('0');
+    expect(one(fixture, 'group-visibility')?.getAttribute('aria-label')).toBe('Private');
+    expect(one(fixture, 'group-visibility')?.getAttribute('tabindex')).toBe('0');
   });
 
   it('opens the project in the app, but leaves a modified click to the browser', async () => {
     const fixture = await render(group());
-    const project = one(fixture, 'groups-home-card-project') as HTMLAnchorElement;
+    const project = one(fixture, 'group-scope-link') as HTMLAnchorElement;
 
     project.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
     expect(navigateByUrl).not.toHaveBeenCalled();
@@ -97,7 +97,7 @@ describe('GroupCardComponent', () => {
       })
     );
 
-    const list = one(fixture, 'groups-home-card-channel-mailing-list')?.querySelector('a');
+    const list = one(fixture, 'group-channel-mailing-list')?.querySelector('a');
     expect(list?.getAttribute('href')).toBe('/project/groups/g1?project=synthetic-proj');
     expect(list?.getAttribute('target')).toBe('_self');
     list?.click();
@@ -109,8 +109,8 @@ describe('GroupCardComponent', () => {
 
   it('mails the address in the same tab and opens chat in a new tab', async () => {
     const fixture = await render(group({ mailing_list: 'dev@lists.example.org', chat_channel: 'https://acme.slack.com/archives/C1' }));
-    const mail = one(fixture, 'groups-home-card-channel-mailing-list')?.querySelector('a');
-    const slack = one(fixture, 'groups-home-card-channel-slack')?.querySelector('a');
+    const mail = one(fixture, 'group-channel-mailing-list')?.querySelector('a');
+    const slack = one(fixture, 'group-channel-slack')?.querySelector('a');
 
     expect([mail?.getAttribute('href'), mail?.getAttribute('target')]).toEqual(['mailto:dev@lists.example.org', '_self']);
     expect([slack?.getAttribute('href'), slack?.getAttribute('target')]).toEqual(['https://acme.slack.com/archives/C1', '_blank']);
@@ -119,6 +119,6 @@ describe('GroupCardComponent', () => {
   it('shows no channel buttons for a group without channels', async () => {
     const fixture = await render(group());
 
-    expect(fixture.nativeElement.querySelector('[data-testid^="groups-home-card-channel-"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid^="group-channel-"]')).toBeNull();
   });
 });

@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { GROUPS_VIEW_MODE_STORAGE_KEY } from '@lfx-one/shared/constants';
 import { MyCommittee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
@@ -134,6 +135,19 @@ describe('GroupsRedesignComponent', () => {
     await fixture.whenStable();
 
     expect(all(fixture, 'groups-home-card-name').map(text)).toEqual(['Group b']);
+  });
+
+  it('shows a menu on each card, and switches to the table', async () => {
+    localStorage.removeItem(GROUPS_VIEW_MODE_STORAGE_KEY);
+    const fixture = await render([group('a', 'Board'), group('b', 'Working Group')]);
+    expect(all(fixture, 'group-actions-trigger')).toHaveLength(2);
+
+    one(fixture, 'groups-redesign-view-list')?.querySelector('input')?.click();
+    await fixture.whenStable();
+
+    expect(all(fixture, 'groups-home-card')).toHaveLength(0);
+    expect(all(fixture, 'groups-table-name').map(text)).toEqual(['Group a', 'Group b']);
+    localStorage.removeItem(GROUPS_VIEW_MODE_STORAGE_KEY);
   });
 
   it('shows 20 cards, then the next 20 when the skeletons scroll into view, then the end label', async () => {

@@ -729,6 +729,9 @@ export const GROUPS_HOME_DEFAULT_FILTERS: GroupsHomeFilters = { scope: null, vot
 /** Width of the redesigned Groups page Filters popover above phone width, in px. */
 export const GROUPS_HOME_FILTERS_PANEL_WIDTH = 344;
 
+/** Navigation state for links from the redesigned Groups page, so the group page shows "Groups" as its back link. */
+export const GROUPS_HOME_LINK_STATE = { backLabel: 'Groups', fromMeLens: true } as const;
+
 /** Max concurrent create-invite requests when fanning out a bulk committee invite. */
 export const COMMITTEE_INVITE_CONCURRENCY = 5;
 

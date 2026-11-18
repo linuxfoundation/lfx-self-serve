@@ -1,10 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, inject, Injectable, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
+import { afterNextRender, computed, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { BEHAVIORAL_CLASS_CONFIG, GROUPS_HOME_DEFAULT_FILTERS, GROUPS_HOME_PAGE_SIZE, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
+import {
+  BEHAVIORAL_CLASS_CONFIG,
+  GROUPS_HOME_DEFAULT_FILTERS,
+  GROUPS_HOME_PAGE_SIZE,
+  GROUPS_VIEW_MODE_STORAGE_KEY,
+  WG_ENGAGEMENT_METRICS_FLAG,
+} from '@lfx-one/shared/constants';
 import {
   FilterOption,
   GroupBehavioralClass,
@@ -13,6 +20,7 @@ import {
   GroupsHomeMetric,
   GroupsHomeTab,
   GroupsHomeVotingCounts,
+  GroupsViewMode,
   MyCommittee,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
@@ -25,12 +33,13 @@ import { catchError, filter, finalize, map, of, switchMap, take } from 'rxjs';
  * State of the Me lens groups page, provided by the page component.
  * @description Loads the viewer's groups once, sorted A–Z with their type resolved, then narrows them by foundation or
  * project, search, type tab and voting, in that order, and shows {@link GROUPS_HOME_PAGE_SIZE} groups at a time.
- * Metrics and tab counts cover every group.
+ * Metrics and tab counts cover every group. The card or list view is kept in local storage, like the existing groups page.
  */
 @Injectable()
 export class GroupsHomeStore {
   private readonly committeeService = inject(CommitteeService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   private readonly loadingState: WritableSignal<boolean> = signal(true);
   private readonly failedState: WritableSignal<boolean> = signal(false);
@@ -38,8 +47,11 @@ export class GroupsHomeStore {
   private readonly tabState: WritableSignal<GroupsHomeTab> = signal<GroupsHomeTab>('all');
   private readonly searchState: WritableSignal<string> = signal('');
   private readonly filtersState: WritableSignal<GroupsHomeFilters> = signal(GROUPS_HOME_DEFAULT_FILTERS);
+  private readonly viewState: WritableSignal<GroupsViewMode> = signal('card');
+  /** Groups the viewer has left here; they stay hidden while the membership index catches up. */
+  private readonly leftUidsState: WritableSignal<ReadonlySet<string>> = signal(new Set());
   private readonly visibleCountState: WritableSignal<number> = linkedSignal({
-    source: () => ({ tab: this.tabState(), search: this.searchState(), filters: this.filtersState() }),
+    source: () => ({ tab: this.tabState(), search: this.searchState(), filters: this.filtersState(), view: this.viewState() }),
     computation: () => GROUPS_HOME_PAGE_SIZE,
   });
 
@@ -49,8 +61,13 @@ export class GroupsHomeStore {
   public readonly tab: Signal<GroupsHomeTab> = this.tabState.asReadonly();
   public readonly search: Signal<string> = this.searchState.asReadonly();
   public readonly filters: Signal<GroupsHomeFilters> = this.filtersState.asReadonly();
+  public readonly view: Signal<GroupsViewMode> = this.viewState.asReadonly();
+  private readonly loadedGroups: Signal<MyCommittee[]> = this.initGroups();
   /** Every group the viewer belongs to, A–Z, with `behavioralClass` and `classDisplay` set. */
-  public readonly groups: Signal<MyCommittee[]> = this.initGroups();
+  public readonly groups: Signal<MyCommittee[]> = computed(() => {
+    const left = this.leftUidsState();
+    return left.size ? this.loadedGroups().filter((group) => !left.has(group.uid)) : this.loadedGroups();
+  });
   /** Groups per behavioral class, over every group. */
   public readonly classCounts: Signal<Record<GroupBehavioralClass, number>> = this.initClassCounts();
   private readonly engagementEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_ENGAGEMENT_METRICS_FLAG, false);
@@ -72,6 +89,11 @@ export class GroupsHomeStore {
   public readonly hasMore: Signal<boolean> = computed(() => this.visibleCountState() < this.filteredGroups().length);
   public readonly filterChips: Signal<GroupsHomeFilterChip[]> = this.initFilterChips();
 
+  public constructor() {
+    // Restored after the first render so the server's card view hydrates unchanged.
+    afterNextRender(() => this.viewState.set(this.readStoredView()));
+  }
+
   public setTab(tab: GroupsHomeTab): void {
     this.tabState.set(tab);
   }
@@ -82,6 +104,26 @@ export class GroupsHomeStore {
 
   public setFilters(filters: GroupsHomeFilters): void {
     this.filtersState.set(filters);
+  }
+
+  public setView(view: GroupsViewMode): void {
+    this.viewState.set(view);
+    if (!isPlatformBrowser(this.platformId)) return;
+    try {
+      localStorage.setItem(GROUPS_VIEW_MODE_STORAGE_KEY, view);
+    } catch {
+      // Storage may be full or disabled; the view still changes for this visit.
+    }
+  }
+
+  /** Drops a group the viewer has just left from the list, tabs and metrics. */
+  public removeGroup(uid: string): void {
+    this.leftUidsState.update((left) => new Set(left).add(uid));
+    // A tab or scope with no groups left disappears, so the list falls back to every group.
+    const tab = this.tabState();
+    if (tab !== 'all' && this.classCounts()[tab] === 0) this.tabState.set('all');
+    const scope = this.filtersState().scope;
+    if (scope && !this.groups().some((group) => group.project_uid === scope)) this.clearFilter('scope');
   }
 
   public clearFilter(key: keyof GroupsHomeFilters): void {
@@ -102,6 +144,15 @@ export class GroupsHomeStore {
 
   public loadMore(): void {
     if (this.hasMore()) this.visibleCountState.update((count) => count + GROUPS_HOME_PAGE_SIZE);
+  }
+
+  /** The view chosen on an earlier visit; cards by default. */
+  private readStoredView(): GroupsViewMode {
+    try {
+      return localStorage.getItem(GROUPS_VIEW_MODE_STORAGE_KEY) === 'list' ? 'list' : 'card';
+    } catch {
+      return 'card';
+    }
   }
 
   private initGroups(): Signal<MyCommittee[]> {
