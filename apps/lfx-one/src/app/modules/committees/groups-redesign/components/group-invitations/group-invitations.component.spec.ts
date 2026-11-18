@@ -4,7 +4,7 @@
 import { ApplicationRef, signal, TemplateRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { GROUPS_HOME_UNDO_MS } from '@lfx-one/shared/constants';
-import { MyCommittee, PendingInvitation, UiToastConfig } from '@lfx-one/shared/interfaces';
+import { PendingInvitation, UiToastConfig } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
@@ -127,7 +127,7 @@ describe('GroupInvitationsComponent', () => {
           },
         },
         { provide: InvitationAcceptFlowService, useValue: { accept } },
-        { provide: CommitteeService, useValue: { getMyCommittees: () => of([{ uid: 'committee-a' } as MyCommittee]) } },
+        { provide: CommitteeService, useValue: { getMyCommitteeUids: () => of(['committee-a']) } },
         { provide: GroupsHomeStore, useValue: { refresh } },
         { provide: UiDrawerService, useValue: { open: openDrawer } },
         { provide: UiToastService, useValue: { show } },
