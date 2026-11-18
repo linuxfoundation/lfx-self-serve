@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { CombinedProfile, MeetingInviteEmail, User } from '../interfaces';
-import { buildMeetingSelfGuest, isMeetingSelfGuestListed } from './meeting-self-guest.utils';
+import type { CombinedProfile, MeetingInviteEmail, MeetingRegistrant, User } from '../interfaces';
+import { buildMeetingSelfGuest, filterUnindexedMeetingRegistrants, isMeetingSelfGuestListed } from './meeting-self-guest.utils';
 
 const session = (overrides: Partial<User> = {}): User => ({
   sid: 'synthetic-session',
@@ -142,5 +142,61 @@ describe('isMeetingSelfGuestListed', () => {
   it('never matches on a missing email or LFID', () => {
     expect(isMeetingSelfGuestListed({ matchEmails: ['primary@example.com'], username: null }, [{ email: null, username: null }])).toBe(false);
     expect(isMeetingSelfGuestListed({ matchEmails: ['primary@example.com'], username: null }, [{ email: '', username: 'pdoe' }])).toBe(false);
+  });
+});
+
+describe('filterUnindexedMeetingRegistrants', () => {
+  const registrant = (overrides: Partial<MeetingRegistrant> = {}): MeetingRegistrant => ({
+    uid: '',
+    meeting_id: 'synthetic-meeting',
+    email: 'guest@example.com',
+    first_name: 'Synthetic',
+    last_name: 'Guest',
+    host: false,
+    job_title: null,
+    org_name: null,
+    occurrence_id: null,
+    org_is_member: false,
+    org_is_project_member: false,
+    avatar_url: null,
+    username: null,
+    linkedin_profile: null,
+    created_at: '',
+    updated_at: '',
+    type: 'direct',
+    invite_accepted: null,
+    attended: null,
+    ...overrides,
+  });
+
+  it.each(['', 'optimistic-self'])('matches a UID-less hint on normalized indexed email and scope: %s', (uid) => {
+    const pending = registrant({ uid, occurrence_id: '1893492000' });
+    const indexed = { ...registrant({ uid: 'indexed-self', email: ' GUEST@EXAMPLE.COM ' }), occurrence: '1893492000000' };
+    expect(filterUnindexedMeetingRegistrants([pending], [indexed])).toEqual([]);
+  });
+
+  it('matches either scope field on pending and indexed rows', () => {
+    const pending = { ...registrant(), occurrence: '1893492000000' };
+    expect(filterUnindexedMeetingRegistrants([pending], [registrant({ uid: 'indexed-self', occurrence_id: '1893492000' })])).toEqual([]);
+  });
+
+  it('preserves real UIDs until that exact registration is acknowledged', () => {
+    const pending = registrant({ uid: 'saved-self' });
+    expect(filterUnindexedMeetingRegistrants([pending], [registrant({ uid: 'another-self' })])).toEqual([pending]);
+    expect(filterUnindexedMeetingRegistrants([pending], [pending])).toEqual([]);
+  });
+
+  it.each([null, '1894096800'])('preserves hints for a different invitation scope: %s', (scope) => {
+    const pending = registrant({ occurrence_id: '1893492000' });
+    const indexed = { ...registrant({ uid: 'indexed-self' }), occurrence: scope };
+    expect(filterUnindexedMeetingRegistrants([pending], [indexed])).toEqual([pending]);
+  });
+
+  it('matches all-dates scope but never uses an empty email as an identity', () => {
+    const pending = registrant();
+    const indexed = { ...registrant({ uid: 'indexed-self' }), occurrence: '' };
+    expect(filterUnindexedMeetingRegistrants([pending], [indexed])).toEqual([]);
+    const unidentified = registrant({ email: '' });
+    expect(filterUnindexedMeetingRegistrants([unidentified], [registrant({ uid: 'indexed-self', email: '' })])).toEqual([unidentified]);
   });
 });

@@ -254,6 +254,7 @@ describe('MeetingJoinComponent', () => {
     expect(component.canResendInvite()).toBe(true);
     expect(removedIds().has(MEETING_ID)).toBe(false);
     expect(TestBed.inject(MeetingService).clearRemovedRegistration).toHaveBeenCalledWith(MEETING_ID);
+    expect(TestBed.inject(UserService).refreshUserMeetings).toHaveBeenCalledExactlyOnceWith(false);
     expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(fetchesBefore);
     expect(component.additionalRegistrantsCount()).toBe(0);
   });
@@ -265,6 +266,7 @@ describe('MeetingJoinComponent', () => {
     await TestBed.inject(ApplicationRef).whenStable();
     expect(component.effectivelyInvited()).toBe(false);
     expect(TestBed.inject(MeetingService).clearRemovedRegistration).not.toHaveBeenCalled();
+    expect(TestBed.inject(UserService).refreshUserMeetings).not.toHaveBeenCalled();
     expect(getPublicMeeting).toHaveBeenCalledTimes(fetchesBefore);
   });
 

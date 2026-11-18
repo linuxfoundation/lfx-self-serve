@@ -977,6 +977,80 @@ describe('MeetingDetailsGuestsComponent', () => {
       expect(meetingService['addMeetingRegistrants']).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['self-1', null],
+      ['self-1', OCCURRENCE.occurrence_id],
+      ['', null],
+      ['', OCCURRENCE.occurrence_id],
+    ] as const)('retires an acknowledged self-add after external deletion, returned UID: %s, scope: %s', async (uid, occurrenceId) => {
+      recurring();
+      modalOpen.mockReturnValueOnce({ closed: of(occurrenceId ? 'occurrence' : 'all'), close: vi.fn() });
+      meetingService['addMeetingRegistrants'].mockReturnValue(of({ ...success, successes: [{ ...added, uid, occurrence_id: occurrenceId }] }));
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+
+      // An otherwise successful but still stale roster must preserve the unacknowledged addition.
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+
+      const indexed = {
+        ...added,
+        email: ` ${SELF.email.toUpperCase()} `,
+        occurrence_id: null,
+        occurrence: occurrenceId ? String(Number(occurrenceId) * 1000) : '',
+      };
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([...registrants, indexed]));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+      expect(listedSelfRegistrantUids()).toEqual(['self-1']);
+
+      // A deletion elsewhere sets no local tombstone. The next complete roster is authoritative.
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of(registrants));
+      occurrence.set({ ...OCCURRENCE, occurrence_id: '2525850000', start_time: '2050-01-15T09:00:00.000Z' });
+      await fixture.whenStable();
+      expect(guestCount()).toBe(3);
+      expect(names()).not.toContain('Pat Doe (You)');
+      expect(listedSelfRegistrantUids()).toEqual([]);
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+    });
+
+    it.each([null, '2525850000'])('keeps a UID-less hint when the indexed invite targets another scope: %s', async (otherScope) => {
+      recurring();
+      modalOpen.mockReturnValueOnce({ closed: of('occurrence'), close: vi.fn() });
+      meetingService['addMeetingRegistrants'].mockReturnValue(of({ ...success, successes: [] }));
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([...registrants, { ...added, occurrence_id: null, occurrence: otherScope }]));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(5);
+
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of(registrants));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
+    it('keeps an unacknowledged self-add through a failed roster reload', async () => {
+      await render();
+      clickSelf();
+      await fixture.whenStable();
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of(registrants));
+      participantsVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(guestCount()).toBe(4);
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
     it.each([false, true])('does not resurrect a removed self-add after re-inviting, indexed before removal: %s', async (indexed) => {
       await render();
       clickSelf();

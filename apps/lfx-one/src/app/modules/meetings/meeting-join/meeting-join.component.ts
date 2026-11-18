@@ -853,6 +853,7 @@ export class MeetingJoinComponent implements OnInit {
     if (this.meeting()?.id !== meetingId) return;
     this.optimisticInvited.set(true);
     this.meetingService.clearRemovedRegistration(meetingId);
+    this.userService.refreshUserMeetings(false);
     this.pageData.refresh();
   }
 

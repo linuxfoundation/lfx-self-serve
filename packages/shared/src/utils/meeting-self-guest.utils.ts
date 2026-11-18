@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CombinedProfile, MeetingHostCandidate, MeetingInviteEmail, MeetingSelfGuest, User } from '../interfaces';
+import type { CombinedProfile, MeetingHostCandidate, MeetingInviteEmail, MeetingRegistrant, MeetingSelfGuest, User } from '../interfaces';
+import { occurrenceIdToSeconds } from './rsvp-calculator.util';
 
 /**
  * Builds the signed-in user as a meeting guest for the "Add myself" action.
@@ -56,6 +57,22 @@ export function isMeetingSelfGuestListed(
   const emails = new Set(self.matchEmails);
   const username = self.username?.trim().toLowerCase();
   return people.some((person) => emails.has(person.email?.trim().toLowerCase() ?? '') || (!!username && person.username?.trim().toLowerCase() === username));
+}
+
+/** Keep successful additions only until an indexed row acknowledges their UID or UID-less email/scope. */
+export function filterUnindexedMeetingRegistrants(pending: MeetingRegistrant[], indexed: MeetingRegistrant[]): MeetingRegistrant[] {
+  const uids = new Set(indexed.map((row) => row.uid));
+  const emailScopes = new Set(indexed.map(registrantEmailScope));
+  return pending.filter((row) => {
+    if (row.uid && !row.uid.startsWith('optimistic-')) return !uids.has(row.uid);
+    return !row.email?.trim() || !emailScopes.has(registrantEmailScope(row));
+  });
+}
+
+function registrantEmailScope(row: MeetingRegistrant): string {
+  // Query-index reads use `occurrence`; submitted/create rows use `occurrence_id`.
+  const indexedOccurrence = 'occurrence' in row && typeof row.occurrence === 'string' ? row.occurrence : null;
+  return JSON.stringify([row.email?.trim().toLowerCase(), occurrenceIdToSeconds(row.occurrence_id || indexedOccurrence)]);
 }
 
 function firstNonEmpty(...values: (string | null | undefined)[]): string | null {

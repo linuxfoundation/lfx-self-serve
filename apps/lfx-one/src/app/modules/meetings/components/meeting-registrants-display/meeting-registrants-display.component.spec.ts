@@ -1088,7 +1088,12 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     expect(selfAdded).not.toHaveBeenCalled();
   });
 
-  it.each([null, '1893492000'])('retires a UID-less hint after indexing and deletion, invitation scope: %s', async (occurrenceId) => {
+  it.each([
+    [null, 'occurrence_id'],
+    [null, 'occurrence'],
+    ['1893492000', 'occurrence_id'],
+    ['1893492000', 'occurrence'],
+  ] as const)('retires a UID-less hint after indexing and deletion, invitation scope: %s in %s', async (occurrenceId, scopeField) => {
     const { fixture, button } = await mount({ meeting: RECURRING_MEETING, occurrence: OCCURRENCE });
     fixture.componentInstance.inviteScopeForm.setValue({ scope: occurrenceId ? 'occurrence' : 'all' });
     fixture.componentInstance.onAddSelf();
@@ -1098,7 +1103,8 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
       ...hint,
       uid: 'indexed-self',
       email: SELF_GUEST.email.toUpperCase(),
-      occurrence_id: occurrenceId ? String(Number(occurrenceId) * 1000) : null,
+      occurrence_id: null,
+      [scopeField]: occurrenceId ? String(Number(occurrenceId) * 1000) : null,
     };
     fixture.componentRef.setInput('initialRegistrants', [indexed]);
     fixture.detectChanges();
@@ -1132,14 +1138,14 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     fixture.componentInstance.inviteScopeForm.setValue({ scope: 'occurrence' });
     fixture.componentInstance.onAddSelf();
     const hint = fixture.componentInstance.registrants()[0];
-    const anotherScope = { ...hint, uid: 'other-scope', occurrence_id: '1894096800' };
+    const anotherScope = { ...hint, uid: 'other-scope', occurrence_id: null, occurrence: '1894096800' };
     fixture.componentRef.setInput('initialRegistrants', [anotherScope]);
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance.registrants()).toHaveLength(2);
     expect(fixture.componentInstance.registrants().some((row) => row.uid === hint.uid)).toBe(true);
 
-    const matchingScope = { ...hint, uid: 'matching-scope' };
+    const matchingScope = { ...hint, uid: 'matching-scope', occurrence_id: null, occurrence: hint.occurrence_id };
     fixture.componentRef.setInput('initialRegistrants', [anotherScope, matchingScope]);
     fixture.detectChanges();
     await fixture.whenStable();

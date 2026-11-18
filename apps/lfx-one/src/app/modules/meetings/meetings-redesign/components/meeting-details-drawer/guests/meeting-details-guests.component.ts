@@ -45,6 +45,7 @@ import {
   buildParticipantGuestRows,
   buildRegistrantGuestRows,
   filterMeetingGuestRows,
+  filterUnindexedMeetingRegistrants,
   getMeetingGuestFilterChips,
   getMeetingGuestFilterFields,
   getMeetingGuestRowActions,
@@ -411,6 +412,13 @@ export class MeetingDetailsGuestsComponent {
             const registrants$ = this.meetingService.getMyMeetingRegistrants(meeting.id, rsvpEnabled, occurrenceId, false, allDatesOnly);
             rows$ = combineLatest([registrants$, this.confirmedRsvps$, this.removedSelf$]).pipe(
               map(([registrants, confirmed, removedSelf]) => {
+                // Acknowledged additions must not return if a later authoritative roster omits them.
+                this.addedRegistrants.update((pending) =>
+                  filterUnindexedMeetingRegistrants(
+                    pending,
+                    registrants.filter((registrant) => !this.context.removedRegistrantUids().has(registrant.uid))
+                  )
+                );
                 const rows = buildRegistrantGuestRows(
                   this.withConfirmedRsvps(registrants, confirmed, occurrenceId, allDatesOnly),
                   meeting,
@@ -590,13 +598,10 @@ export class MeetingDetailsGuestsComponent {
   private withAddedRegistrants(rows: MeetingGuestRow[]): MeetingGuestRow[] {
     if (this.ended() || this.meetingService.removedRegistrationMeetingIds().has(this.context.meeting().id)) return rows;
     const occurrenceId = this.context.shownRow().occurrenceId;
-    const missing = this.addedRegistrants().filter((added) => {
-      return !rows.some((row) =>
-        added.uid
-          ? row.uid === added.uid
-          : !this.context.removedRegistrantUids().has(row.uid) && row.registrant?.email?.trim().toLowerCase() === added.email.toLowerCase()
-      );
-    });
+    const missing = filterUnindexedMeetingRegistrants(
+      this.addedRegistrants(),
+      rows.flatMap((row) => (row.registrant && !this.context.removedRegistrantUids().has(row.uid) ? [row.registrant] : []))
+    );
     if (!missing.length) return rows;
     const viewer = { username: this.userService.viewerUsername(), email: this.userService.user()?.email ?? null };
     const meeting = this.context.meeting();

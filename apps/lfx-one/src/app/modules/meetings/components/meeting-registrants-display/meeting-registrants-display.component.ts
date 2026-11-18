@@ -49,6 +49,7 @@ import {
   buildMeetingOrganizerKeys,
   compareMeetingPeopleByHostThenName,
   filterPastMeetingParticipants,
+  filterUnindexedMeetingRegistrants,
   getRegistrantAttendanceStatus,
   getRegistrantStatusLabel,
   registrantDisplayName,
@@ -352,7 +353,7 @@ export class MeetingRegistrantsDisplayComponent {
           }
           const retained = rows.filter((row) => !(selfRemoved && self && isMeetingSelfGuestListed(self, [row])));
           const indexed = fetched.filter((row) => !this.deletedRegistrantUids().has(row.uid));
-          return this.filterUnindexedRegistrants(retained, indexed);
+          return filterUnindexedMeetingRegistrants(retained, indexed);
         });
       });
 
@@ -951,7 +952,7 @@ export class MeetingRegistrantsDisplayComponent {
         list = list.filter((row) => !isMeetingSelfGuestListed(self, [row]));
       }
       // Real UIDs match exactly; UID-less hints reconcile only to the same email and invitation scope.
-      const pending = this.filterUnindexedRegistrants(
+      const pending = filterUnindexedMeetingRegistrants(
         this.optimisticRegistrants().filter((row) => !deletedUids.has(row.uid)),
         list
       );
@@ -1108,16 +1109,6 @@ export class MeetingRegistrantsDisplayComponent {
       const people: (MeetingHostCandidate & { uid: string })[] = this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants();
 
       return new Map(people.map((person) => [person.uid, resolveMeetingGuestRole(person, organizerKeys)] as const));
-    });
-  }
-
-  private filterUnindexedRegistrants(pending: MeetingRegistrant[], indexed: MeetingRegistrant[]): MeetingRegistrant[] {
-    const uids = new Set(indexed.map((row) => row.uid));
-    const emailScopes = new Set(indexed.map((row) => JSON.stringify([row.email?.trim().toLowerCase(), occurrenceIdToSeconds(row.occurrence_id)])));
-    return pending.filter((row) => {
-      if (row.uid && !row.uid.startsWith('optimistic-')) return !uids.has(row.uid);
-      const email = row.email?.trim().toLowerCase();
-      return !email || !emailScopes.has(JSON.stringify([email, occurrenceIdToSeconds(row.occurrence_id)]));
     });
   }
 }

@@ -666,6 +666,12 @@ describe('MeetingCardComponent — remove myself', () => {
     const meetings = TestBed.inject(MeetingService);
     expect(component.effectivelyInvited()).toBe(false);
     vi.mocked(meetings.getMeeting).mockClear();
+    const users = TestBed.inject(UserService);
+    const refresh = vi.spyOn(users, 'refreshUserMeetings');
+    const cachedFeed = users.getUserMeetings();
+    cachedFeed.subscribe();
+    const http = vi.mocked(TestBed.inject(HttpClient).get);
+    http.mockClear();
 
     component.onSelfAdded('meeting-1');
     await TestBed.inject(ApplicationRef).whenStable();
@@ -675,6 +681,12 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.canResendInvite()).toBe(true);
     expect(removedIds().has('meeting-1')).toBe(false);
     expect(meetings.getMeeting).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
+    expect(http).not.toHaveBeenCalled();
+    const freshFeed = users.getUserMeetings();
+    expect(freshFeed).not.toBe(cachedFeed);
+    freshFeed.subscribe();
+    expect(http).toHaveBeenCalledExactlyOnceWith('/api/user/meetings', { params: undefined });
     expect(component.additionalRegistrantsCount()).toBe(0);
   });
 
@@ -682,9 +694,11 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount({ ...INVITEE, invited: false, organizer: true, my_registrant_ids: [] });
     const meetings = TestBed.inject(MeetingService);
     vi.mocked(meetings.getMeeting).mockClear();
+    const refresh = vi.spyOn(TestBed.inject(UserService), 'refreshUserMeetings');
     component.onSelfAdded('another-meeting');
     expect(component.effectivelyInvited()).toBe(false);
     expect(meetings.getMeeting).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it.each([false, true])('reconciles drawer self-row deletion, another registration remains: %s', async (remaining) => {
