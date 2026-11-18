@@ -135,6 +135,8 @@ export class EventsSpeakersComponent {
       toObservable(this.query).pipe(
         distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
         tap((query) => {
+          // An open drawer lists the old foundation's proposals.
+          this.closeAllProposals();
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);

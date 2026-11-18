@@ -199,6 +199,16 @@ describe('EventsSpeakersComponent', () => {
     expect(closeDrawer).toHaveBeenCalledTimes(1);
   });
 
+  it('closes the drawer when the foundation changes, as it lists the old one', async () => {
+    await render();
+    query('events-speakers-view-all')?.click();
+
+    selectedFoundation.set({ slug: 'beta' });
+    await settle();
+
+    expect(closeDrawer).toHaveBeenCalledTimes(1);
+  });
+
   it('closes the drawer when the section leaves', async () => {
     await render();
     query('events-speakers-view-all')?.click();
