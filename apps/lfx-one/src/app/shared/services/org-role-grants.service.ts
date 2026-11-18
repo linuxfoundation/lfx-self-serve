@@ -184,6 +184,11 @@ export class OrgRoleGrantsService {
         // Absent on an older server, a flag-off server or an unproven lookup ⇒ null: never inferred from absence.
         this.employeeViewOrgUidInternal.set(response.employeeView?.orgUid ?? null);
         this.fullAccessOrgUidInternal.set(response.fullAccessOrgUid ?? null);
+        // A positive employee-only verdict supersedes an earlier addressed full-access note for that company; absence of the optional field never clears it.
+        const employeeOnlyUid = response.employeeView?.orgUid;
+        if (employeeOnlyUid && employeeOnlyUid !== response.fullAccessOrgUid) {
+          this.noteFullAccessAddressed(employeeOnlyUid, false);
+        }
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         this.loadedAtMsInternal.set(Date.now());

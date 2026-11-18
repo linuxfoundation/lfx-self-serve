@@ -1,0 +1,49 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-button
+  variant="tertiary"
+  icon="fa-light fa-ellipsis"
+  iconOnly
+  [size]="size()"
+  [ariaLabel]="'More actions for ' + group().name"
+  [menu]="actionsMenu"
+  menuAlign="end"
+  [loading]="leaving()"
+  data-testid="group-actions-trigger" />
+
+<ng-template #actionsMenu>
+  <lfx-ui-menu ariaLabel="Group actions" data-testid="group-actions-menu">
+    @if (group().public) {
+      <lfx-ui-menu-item icon="fa-light fa-link" (triggered)="copyLink()" data-testid="group-actions-copy-link">Copy group link</lfx-ui-menu-item>
+    }
+    <lfx-ui-menu-item icon="fa-light fa-arrow-right-from-bracket" (triggered)="confirmLeave()" data-testid="group-actions-leave">Leave group</lfx-ui-menu-item>
+  </lfx-ui-menu>
+</ng-template>
+
+<ng-template #leaveDialog let-ref="dialogRef">
+  <lfx-ui-modal heading="Leave Group" closable data-testid="group-leave-dialog">
+    <!-- Exact [Npx] design values: rem undershoots at the 14px root. -24px meets the modal's side padding. -->
+    <div class="-mx-[24px] flex flex-col gap-[4px] border-y border-gray-200 px-[24px] py-[16px]" data-testid="group-leave-group">
+      @if (project(); as project) {
+        <span class="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[12px] text-gray-900">
+          <lfx-meeting-project-logo [src]="project.logo" />
+          <span class="min-w-0 truncate" [attr.title]="project.name">{{ project.name }}</span>
+        </span>
+      }
+      <span class="text-[14px] font-medium leading-[20px] text-gray-900">{{ group().name }}</span>
+      <span class="text-[12px] leading-[16px] text-gray-500" data-testid="group-leave-meta">{{ meta() }}</span>
+    </div>
+    <!-- The subtitle id makes the message the alertdialog's description. -->
+    <p [id]="ref.id + '-subtitle'" class="text-[14px] leading-[1.6] text-gray-700" data-testid="group-leave-message">
+      You'll stop receiving this group's meetings, votes, surveys and mailing list messages. To rejoin later, you may need a new invitation or an approved
+      application.
+    </p>
+    <ng-container modalActions>
+      <lfx-ui-button data-autofocus variant="secondary" [disabled]="leaving()" (click)="ref.close()" data-testid="group-leave-cancel">Cancel</lfx-ui-button>
+      <lfx-ui-button variant="danger" icon="fa-light fa-arrow-right-from-bracket" [loading]="leaving()" (click)="leave()" data-testid="group-leave-confirm"
+        >Leave Group</lfx-ui-button
+      >
+    </ng-container>
+  </lfx-ui-modal>
+</ng-template>

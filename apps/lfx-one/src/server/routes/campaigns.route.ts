@@ -153,6 +153,9 @@ router.post('/send-workflow', (req, res, next) => campaignController.createSendW
 // connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
 router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));
 router.get('/linkedin/accounts', (req, res) => campaignController.getLinkedInAccounts(req, res));
+// The LinkedIn ad account a create uses and, for global_marketing_ops, the accounts it may choose (#5809).
+// 404 unless the create cutover and LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION are on.
+router.get('/linkedin/create-account', (req, res, next) => campaignController.getLinkedInCreateAccount(req, res, next));
 // The configured targeting profiles, so the Implement tab can show what each one targets (#5546).
 router.get('/linkedin/targeting-profiles', (req, res, next) => campaignController.getLinkedInTargetingProfiles(req, res, next));
 router.get('/linkedin/monitor', (req, res, next) => campaignController.getLinkedInMonitor(req, res, next));

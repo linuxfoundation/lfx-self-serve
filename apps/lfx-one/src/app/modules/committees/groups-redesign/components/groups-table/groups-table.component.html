@@ -1,0 +1,60 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. Narrow screens scroll the table sideways from 700px. -->
+<lfx-ui-table
+  class="[&_table]:min-w-[700px]"
+  label="Groups"
+  rowKey="uid"
+  interactive
+  [columns]="columns"
+  [rows]="rows()"
+  (rowActivate)="openGroup($event)"
+  data-testid="groups-table">
+  <ng-template lfxUiTableCell="name" let-row>
+    @let item = row | groupsTableRow;
+    <span class="flex min-w-[200px] max-w-[360px] items-center gap-[10px] py-[8px]">
+      <lfx-group-visibility [isPublic]="!!item.group.public" />
+      <span class="flex min-w-0 flex-col">
+        <a
+          class="truncate font-medium text-gray-900 no-underline hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+          [routerLink]="item.commands"
+          [queryParams]="item.queryParams"
+          [state]="linkState"
+          [attr.title]="item.group.name"
+          data-testid="groups-table-name"
+          >{{ item.group.name }}</a
+        >
+        <lfx-group-scope-link [group]="item.group" />
+      </span>
+    </span>
+  </ng-template>
+  <ng-template lfxUiTableCell="type" let-row>
+    @let item = row | groupsTableRow;
+    <lfx-ui-badge class="max-w-[220px]" [tone]="item.typeTone" [attr.title]="item.typeLabel" data-testid="groups-table-type">
+      <i slot="icon" [class]="item.typeIcon" aria-hidden="true"></i>
+      <span class="truncate">{{ item.typeLabel }}</span>
+    </lfx-ui-badge>
+  </ng-template>
+  <ng-template lfxUiTableCell="channels" let-row>
+    <span class="flex items-center gap-[6px]" data-testid="groups-table-channels">
+      <lfx-group-channels [group]="(row | groupsTableRow).group" />
+    </span>
+  </ng-template>
+  <ng-template lfxUiTableCell="voting" let-row>
+    @if ((row | groupsTableRow).group.enable_voting) {
+      <span class="flex items-center gap-[6px] whitespace-nowrap" data-testid="groups-table-voting">
+        <i class="fa-light fa-check-to-slot text-[14px] text-emerald-600" aria-hidden="true"></i>
+        Enabled
+      </span>
+    } @else {
+      <span class="flex items-center gap-[6px] whitespace-nowrap text-gray-500" data-testid="groups-table-voting">
+        <i class="fa-light fa-xmark-to-slot text-[14px]" aria-hidden="true"></i>
+        Disabled
+      </span>
+    }
+  </ng-template>
+  <ng-template lfxUiTableCell="actions" let-row>
+    <lfx-group-actions [group]="(row | groupsTableRow).group" />
+  </ng-template>
+</lfx-ui-table>

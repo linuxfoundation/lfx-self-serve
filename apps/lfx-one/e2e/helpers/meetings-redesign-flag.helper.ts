@@ -22,7 +22,7 @@ import { Page } from '@playwright/test';
  * `stubFormationFlag` in `formation-checklist.helper.ts`. Merging keeps pins for different flags
  * from overwriting each other.
  */
-async function pinFlag(page: Page, flag: string, enabled: boolean): Promise<void> {
+export async function pinFlag(page: Page, flag: string, enabled: boolean): Promise<void> {
   await page.addInitScript(
     ([storageKey, flagKey, value]) => {
       const current = JSON.parse(window.localStorage.getItem(storageKey as string) ?? '{}');
