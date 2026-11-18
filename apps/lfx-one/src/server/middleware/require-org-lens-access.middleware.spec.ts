@@ -656,6 +656,26 @@ describe('requireOrgLensAccess — family roll-up key', () => {
         await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toMatchObject({ members: [org(ROOT, 'Parent Co')], complete: false });
       });
 
+      it('serves the grant family, marked incomplete, when the company is not in the index', async () => {
+        getStaffFamily.mockResolvedValue(null);
+        const req = buildRollUpReq();
+
+        const { next } = await runRollUp(req);
+
+        expect(statusOf(next)).toBe('allow');
+        await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toMatchObject({ members: [org(ROOT, 'Parent Co')], complete: false });
+      });
+
+      it('serves the grant family, marked incomplete, when the lookup finds a different top account', async () => {
+        getStaffFamily.mockResolvedValue(staffFamily(OTHER_ROOT));
+        const req = buildRollUpReq();
+
+        const { next } = await runRollUp(req);
+
+        expect(statusOf(next)).toBe('allow');
+        await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toMatchObject({ members: [org(ROOT, 'Parent Co')], complete: false });
+      });
+
       it('serves the grant family alone while the roll-up flag is off', async () => {
         isFlagEnabled.mockResolvedValue(false);
         const req = buildRollUpReq();

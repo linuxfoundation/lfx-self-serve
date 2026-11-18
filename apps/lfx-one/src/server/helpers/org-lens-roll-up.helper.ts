@@ -113,7 +113,7 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
       );
     } else if (!grantFamily) {
       throw lookupError === undefined ? forbidden() : unavailable(lookupError, '/query/resources');
-    } else if (lookupError !== undefined) {
+    } else {
       familyComplete = false;
     }
   }
