@@ -325,6 +325,13 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('aria-disabled')).toBe('true');
   });
 
+  it('opens an href in the same tab when target is _self', async () => {
+    await set('href', 'mailto:dev@lists.example.org');
+    await set('target', '_self');
+    expect(el().getAttribute('target')).toBe('_self');
+    expect(el().hasAttribute('rel')).toBe(false);
+  });
+
   it('pins a link label colour in every state and never underlines it', async () => {
     await set('variant', 'tertiary-accent');
     await set('link', '/meetings');

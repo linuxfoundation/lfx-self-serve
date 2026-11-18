@@ -58,7 +58,7 @@ vi.mock('../helpers/org-lens-edit-access.helper', () => ({ resolveOrgLensEdit })
 // omitted it would make the middleware call `undefined(req)` and 500 every test in this file.
 // Toggled via `impersonatingStub` so the impersonation-blocked scenario can flip it per test.
 let impersonatingStub = false;
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra', isImpersonating: () => impersonatingStub }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'jdoe', isImpersonating: () => impersonatingStub }));
 // The ROI LF-staff gate (in every environment) asks `lf-staff#member`; each case sets the answer it needs.
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkLFStaff: () => checkLFStaff() } }));
 vi.mock('../services/logger.service', () => ({
@@ -201,7 +201,7 @@ describe('orgs router — GET /me/roll-up-set (#4126)', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(rollUpSet);
-    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'lguerra', true);
+    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'jdoe', true, null);
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 });
