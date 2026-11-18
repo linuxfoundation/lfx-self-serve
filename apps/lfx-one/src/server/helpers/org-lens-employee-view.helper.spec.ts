@@ -80,7 +80,9 @@ describe('embedded personal data in free text', () => {
   });
 
   it('keeps git remotes and version specs, which only look like addresses', () => {
-    expect(scrubFreeText('clone git@github.com:acme-org/repo.git then pin pkg@1.2.3')).toBe('clone git@github.com:acme-org/repo.git then pin pkg@1.2.3');
+    expect(scrubFreeText('clone git@git.example.com:acme-org/repo.git then pin pkg@1.2.3')).toBe(
+      'clone git@git.example.com:acme-org/repo.git then pin pkg@1.2.3'
+    );
     expect(scrubFreeText('contact ada@acme.example, thanks')).toBe('contact , thanks');
   });
 

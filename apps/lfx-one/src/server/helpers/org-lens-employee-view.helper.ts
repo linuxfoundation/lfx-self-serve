@@ -16,7 +16,7 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // A real address: a plain local part, a dotted host and an alphabetic TLD. It must not run on into a path or a word, so
 // technical identifiers survive: a git SSH remote (`git@github.com:org/repo.git`), a version spec (`pkg@1.2.3`).
-const EMBEDDED_EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w-]|[:/][\w~])/g;
+const EMBEDDED_EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w-]|\.\w|[:/][\w~])/g;
 
 /** A URL that names a person: a `mailto:` link, or a LinkedIn / X / Twitter profile path. */
 const PERSONAL_URL = /(?:mailto:\S+|https?:\/\/(?:[\w-]+\.)?(?:linkedin\.com\/(?:in|pub)\/|(?:x|twitter)\.com\/(?!i\/|intent\/|share)[\w]+)\S*)/gi;
