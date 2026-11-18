@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildHealthMetricsLineChart, healthMetricsLineChartCountCeiling } from './health-metrics-line-chart.utils';
+import { buildHealthMetricsLineChart, healthMetricsLineChartCountCeiling, placeHealthMetricsChartTip } from './health-metrics-line-chart.utils';
 
 import type { HealthMetricsLineChartInput } from '../interfaces/health-metrics-line-chart.interface';
 
@@ -116,5 +116,13 @@ describe('healthMetricsLineChartCountCeiling', () => {
     [Number.NaN, 4],
   ])('rounds a peak of %s up to %s, so each quarter is a round step', (peak, ceiling) => {
     expect(healthMetricsLineChartCountCeiling(peak)).toBe(ceiling);
+  });
+});
+
+describe('placeHealthMetricsChartTip', () => {
+  it('opens 12px right of the point, left of it when only the left has room, and shifts inside a screen with room on neither side', () => {
+    expect(placeHealthMetricsChartTip(50, 200, 1200)).toEqual({ left: 'calc(50% + 12px)', right: null });
+    expect(placeHealthMetricsChartTip(50, 1000, 1200)).toEqual({ left: null, right: 'calc(50% + 12px)' });
+    expect(placeHealthMetricsChartTip(50, 200, 375)).toEqual({ left: 'calc(50% + -113px)', right: null });
   });
 });

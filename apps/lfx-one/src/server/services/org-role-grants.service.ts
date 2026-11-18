@@ -12,7 +12,9 @@ import {
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
   ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP,
+  ORG_LENS_ROLLUP_ENABLED_FLAG,
   ORG_ROLE_GRANTS_HARD_CAP,
+  ORG_STAFF_FAMILY_CLIMB_HARD_CAP,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
@@ -29,6 +31,7 @@ import {
   OrgRolePersona,
   OrgRollUpSetFamily,
   OrgRollUpSetResponse,
+  OrgStaffRollUpFamily,
   QueryServiceResponse,
   ResolvedOrgRole,
   RoleGrantsResponse,
@@ -38,6 +41,7 @@ import { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 
 import { AccessCheckService } from './access-check.service';
+import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { cacheKeyNamespace, valkeyService } from './valkey.service';
@@ -57,6 +61,7 @@ export class OrgRoleGrantsService {
   // burst of cache misses for the same caller computes the fan-out once instead of thundering-herding
   // the upstream. The authoritative cross-instance cache remains the shared Valkey store.
   private static readonly accessInFlight = new Map<string, Promise<AccessAwareOrgsResult>>();
+  private static readonly staffFamilyInFlight = new Map<string, Promise<OrgStaffRollUpFamily | null>>();
 
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly accessCheck: AccessCheckService;
@@ -152,8 +157,78 @@ export class OrgRoleGrantsService {
     return response;
   }
 
-  public async getRollUpSet(req: Request, username: string, bypassCache = false): Promise<OrgRollUpSetResponse> {
-    return this.toRollUpSet(await this.getAccessAwareOrgs(req, username, bypassCache));
+  public async getRollUpSet(req: Request, username: string, bypassCache = false, anchorUid: string | null = null): Promise<OrgRollUpSetResponse> {
+    const roster = await this.getAccessAwareOrgs(req, username, bypassCache);
+    const rollUpSet = this.toRollUpSet(roster);
+    if (!anchorUid || rollUpSet.lookupOutcome === 'failed') {
+      return rollUpSet;
+    }
+    if (!roster.isStaff) {
+      return roster.staffCheck === 'failed' ? { ...rollUpSet, degraded: true, lookupOutcome: 'partial' } : rollUpSet;
+    }
+    if (!(await LaunchDarklyServerService.getInstance().isFlagEnabled(req, ORG_LENS_ROLLUP_ENABLED_FLAG, false))) {
+      return rollUpSet;
+    }
+
+    let staffFamily: OrgStaffRollUpFamily | null;
+    try {
+      staffFamily = await this.getStaffFamily(req, anchorUid);
+    } catch (error) {
+      logger.warning(req, 'get_org_roll_up_set', 'Staff family lookup failed; answering the grant families only', {
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return { ...rollUpSet, degraded: true, lookupOutcome: 'partial' };
+    }
+    return staffFamily ? OrgRoleGrantsService.mergeStaffFamily(rollUpSet, staffFamily) : rollUpSet;
+  }
+
+  public async getStaffFamily(req: Request, anchorUid: string): Promise<OrgStaffRollUpFamily | null> {
+    if (!isFilterSafeIdentifier(anchorUid)) {
+      return null;
+    }
+
+    const anchorKey = OrgRoleGrantsService.buildFamilyCacheKey('anchor', anchorUid);
+    const cachedRootUid = await valkeyService.getJson<string>(anchorKey, (value) => typeof value === 'string' && isFilterSafeIdentifier(value));
+    if (cachedRootUid) {
+      const cached = await valkeyService.getJson<OrgRollUpSetFamily>(
+        OrgRoleGrantsService.buildFamilyCacheKey('root', cachedRootUid),
+        OrgRoleGrantsService.isValidStaffFamily
+      );
+      if (cached && cached.rootUid === cachedRootUid) {
+        return { family: cached, complete: true };
+      }
+    }
+
+    const inFlight = OrgRoleGrantsService.staffFamilyInFlight.get(anchorUid);
+    if (inFlight) {
+      return inFlight;
+    }
+    const promise = (async () => {
+      const result = await this.computeStaffFamily(req, anchorUid);
+      if (result?.staff.complete) {
+        const ttl = OrgRoleGrantsService.cacheTtlSeconds();
+        const rootUid = result.staff.family.rootUid;
+        await Promise.all([
+          ...(result.rootCached ? [] : [valkeyService.setJson(OrgRoleGrantsService.buildFamilyCacheKey('root', rootUid), result.staff.family, ttl)]),
+          valkeyService.setJson(anchorKey, rootUid, ttl),
+        ]);
+      }
+      return result?.staff ?? null;
+    })();
+    OrgRoleGrantsService.staffFamilyInFlight.set(anchorUid, promise);
+    try {
+      return await promise;
+    } finally {
+      OrgRoleGrantsService.staffFamilyInFlight.delete(anchorUid);
+    }
+  }
+
+  /** `b2b_org:<uid>#auditor` for each organization, asked in the same bounded waves as candidate classification; throws when a wave cannot be answered. */
+  public checkAuditorAccess(req: Request, orgUids: string[]): Promise<Map<string, boolean>> {
+    return this.runClassificationWaves(
+      req,
+      orgUids.map((uid) => ({ resource: 'b2b_org', id: uid, access: 'auditor' }))
+    );
   }
 
   /** Builds the roll-up set from a roster already loaded, for a caller that also needs the roster itself. */
@@ -200,22 +275,102 @@ export class OrgRoleGrantsService {
       family.orgs.push({ uid, accountId: uid, name: doc.name ?? '', logoUrl: doc.logo_url ?? null });
     }
 
-    const byNameThenUid = (aName: string | null, aUid: string, bName: string | null, bUid: string): number => {
-      if (aName !== bName) {
-        if (aName === null) return 1;
-        if (bName === null) return -1;
-        const byName = aName.localeCompare(bName);
-        if (byName !== 0) return byName;
-      }
-      if (aUid === bUid) return 0;
-      return aUid < bUid ? -1 : 1;
-    };
-
-    const sorted = [...families.values()].sort((a, b) => byNameThenUid(a.rootName, a.rootUid, b.rootName, b.rootUid));
+    const sorted = OrgRoleGrantsService.sortFamilies([...families.values()]);
     for (const family of sorted) {
-      family.orgs.sort((a, b) => byNameThenUid(a.name, a.uid, b.name, b.uid));
+      OrgRoleGrantsService.sortFamilyOrgs(family);
     }
     return sorted;
+  }
+
+  private static byNameThenUid(aName: string | null, aUid: string, bName: string | null, bUid: string): number {
+    if (aName !== bName) {
+      if (aName === null) return 1;
+      if (bName === null) return -1;
+      const byName = aName.localeCompare(bName);
+      if (byName !== 0) return byName;
+    }
+    if (aUid === bUid) return 0;
+    return aUid < bUid ? -1 : 1;
+  }
+
+  private static sortFamilies(families: OrgRollUpSetFamily[]): OrgRollUpSetFamily[] {
+    return families.sort((a, b) => OrgRoleGrantsService.byNameThenUid(a.rootName, a.rootUid, b.rootName, b.rootUid));
+  }
+
+  private static sortFamilyOrgs(family: OrgRollUpSetFamily): void {
+    family.orgs.sort((a, b) => OrgRoleGrantsService.byNameThenUid(a.name, a.uid, b.name, b.uid));
+  }
+
+  private static mergeStaffFamily(rollUpSet: OrgRollUpSetResponse, staff: OrgStaffRollUpFamily): OrgRollUpSetResponse {
+    const granted = rollUpSet.families.find((family) => family.rootUid === staff.family.rootUid);
+    const orgsByUid = new Map(staff.family.orgs.map((org) => [org.uid, org]));
+    for (const org of granted?.orgs ?? []) {
+      if (!orgsByUid.has(org.uid)) orgsByUid.set(org.uid, org);
+    }
+    const merged: OrgRollUpSetFamily = { ...staff.family, orgs: [...orgsByUid.values()] };
+    OrgRoleGrantsService.sortFamilyOrgs(merged);
+
+    const families = OrgRoleGrantsService.sortFamilies([...rollUpSet.families.filter((family) => family.rootUid !== merged.rootUid), merged]);
+    if (staff.complete) {
+      return { ...rollUpSet, families };
+    }
+    return { families, degraded: true, lookupOutcome: 'partial' };
+  }
+
+  private async computeStaffFamily(req: Request, anchorUid: string): Promise<{ staff: OrgStaffRollUpFamily; rootCached: boolean } | null> {
+    const docByUid = await this.fetchOrgDetailsByUids(req, [anchorUid]);
+    if (!docByUid.has(anchorUid)) {
+      return null;
+    }
+
+    const chain = [anchorUid];
+    let rootUid = anchorUid;
+    for (;;) {
+      const parentUid = docByUid.get(rootUid)?.parent_uid;
+      if (!parentUid) break;
+      const cycleStart = chain.indexOf(parentUid);
+      if (cycleStart !== -1) {
+        rootUid = chain.slice(cycleStart).reduce((min, member) => (member < min ? member : min));
+        break;
+      }
+      if (chain.length >= ORG_STAFF_FAMILY_CLIMB_HARD_CAP) {
+        throw new Error(`computeStaffFamily: parent chain exceeds ${ORG_STAFF_FAMILY_CLIMB_HARD_CAP} companies`);
+      }
+      const parentDocs = await this.fetchOrgDetailsByUids(req, [parentUid]);
+      const parentDoc = parentDocs.get(parentUid);
+      if (!parentDoc) {
+        throw new Error('computeStaffFamily: a parent company in the chain is missing from the index');
+      }
+      docByUid.set(parentUid, parentDoc);
+      chain.push(parentUid);
+      rootUid = parentUid;
+    }
+
+    const cachedFamily = await valkeyService.getJson<OrgRollUpSetFamily>(
+      OrgRoleGrantsService.buildFamilyCacheKey('root', rootUid),
+      OrgRoleGrantsService.isValidStaffFamily
+    );
+    if (cachedFamily && cachedFamily.rootUid === rootUid) {
+      return { staff: { family: cachedFamily, complete: true }, rootCached: true };
+    }
+
+    const rootDoc = docByUid.get(rootUid);
+    if (!rootDoc) {
+      return null;
+    }
+    const walk = await this.expandConnectedComponents(req, new Set([rootUid]), new Map([[rootUid, rootDoc]]));
+    const family: OrgRollUpSetFamily = {
+      rootUid,
+      rootName: rootDoc.name || null,
+      rootLogoUrl: rootDoc.logo_url || null,
+      orgs: [],
+    };
+    for (const uid of [rootUid, ...walk.candidates.keys()]) {
+      const doc = walk.docByUid.get(uid) ?? docByUid.get(uid);
+      if (doc) family.orgs.push({ uid, accountId: uid, name: doc.name ?? '', logoUrl: doc.logo_url ?? null });
+    }
+    OrgRoleGrantsService.sortFamilyOrgs(family);
+    return { staff: { family, complete: !walk.truncated }, rootCached: false };
   }
 
   private static resolveFamilyRoots(grantedUids: Iterable<string>, docByUid: Map<string, B2bOrgIndexedDoc>): Map<string, OrgFamilyRoot> {
@@ -265,6 +420,33 @@ export class OrgRoleGrantsService {
     const ns = cacheKeyNamespace();
     const prefix = ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
     return `${prefix}:${VALKEY_CACHE.ORG_ACCESS_NAMESPACE}:${username}`;
+  }
+
+  private static buildFamilyCacheKey(kind: 'anchor' | 'root', uid: string): string {
+    const ns = cacheKeyNamespace();
+    const prefix = ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
+    return `${prefix}:${VALKEY_CACHE.ORG_FAMILY_NAMESPACE}:${kind}:${uid}`;
+  }
+
+  private static isValidStaffFamily(value: unknown): boolean {
+    const family = value as Partial<OrgRollUpSetFamily> | null;
+    return (
+      !!family &&
+      typeof family.rootUid === 'string' &&
+      family.rootUid.length > 0 &&
+      (family.rootName === null || typeof family.rootName === 'string') &&
+      (family.rootLogoUrl === null || typeof family.rootLogoUrl === 'string') &&
+      Array.isArray(family.orgs) &&
+      family.orgs.every(
+        (org) =>
+          !!org &&
+          typeof org.uid === 'string' &&
+          org.uid.length > 0 &&
+          typeof org.accountId === 'string' &&
+          typeof org.name === 'string' &&
+          (org.logoUrl === null || typeof org.logoUrl === 'string')
+      )
+    );
   }
 
   /** Shared-constant TTL converted from ms to whole seconds for the cache write. */

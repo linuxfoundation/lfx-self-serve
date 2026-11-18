@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="events-sponsorship">
+<div class="flex flex-col gap-[16px]" data-testid="events-sponsorship">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -13,91 +13,16 @@
   } @else if (loading()) {
     <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="events-sponsorship-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    @if (view().packagesLabel) {
-      <span class="self-end rounded-full bg-gray-100 px-2.5 py-0.5 text-[12px] text-gray-600" data-testid="events-sponsorship-packages">{{
-        view().packagesLabel
-      }}</span>
+    <lfx-health-metrics-metrics-row [items]="view().metrics" testId="events-sponsorship-metrics" />
+
+    <h3 class="m-0 mt-[4px] text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500" data-testid="events-sponsorship-tiers-heading">
+      Tier packages
+    </h3>
+    @if (view().tiers.length === 0) {
+      <p class="m-0 text-[13px] text-gray-500" data-testid="events-sponsorship-tiers-empty">No tier package was sold in the selected period.</p>
+    } @else {
+      <!-- Exact px: the design's minmax(110px,150px) 1fr 40px grid. -->
+      <lfx-health-metrics-bar-list [rows]="view().tiers" gridClass="grid-cols-[minmax(110px,150px)_1fr_40px]" testId="events-sponsorship-tiers" />
     }
-
-    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-sponsorship-hero">
-      <div class="flex flex-col gap-2" data-testid="events-sponsorship-headline">
-        <div class="flex items-baseline gap-2">
-          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-sponsorship-headline-value">{{
-            view().headline.value
-          }}</span>
-          @if (view().headline.delta !== null) {
-            <span
-              class="text-[13px] font-medium tabular-nums"
-              [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
-              [class.text-red-600]="view().headline.deltaDirection === 'down'"
-              [class.text-gray-400]="view().headline.deltaDirection === 'neutral'"
-              data-testid="events-sponsorship-headline-delta">
-              {{ view().headline.delta }}
-            </span>
-          }
-        </div>
-        <span class="text-[12px] text-gray-500">{{ view().headline.label }}</span>
-      </div>
-
-      <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-sponsorship-side">
-        @for (stat of view().side; track stat.key) {
-          <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-sponsorship-side-' + stat.key">
-            <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
-            <dd
-              class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900"
-              [attr.data-testid]="'events-sponsorship-side-' + stat.key + '-value'">
-              {{ stat.value }}
-            </dd>
-          </div>
-        }
-      </dl>
-    </div>
-
-    @if (view().progress; as progress) {
-      <!-- The design's progress row: a short fixed bar with the bold percent to its right. -->
-      <div class="flex flex-col gap-3" data-testid="events-sponsorship-progress">
-        <h4 class="text-[10px] font-semibold uppercase tracking-[0.02em] text-gray-600" id="events-sponsorship-progress-label">Progress to goal</h4>
-        <div class="flex max-w-[420px] items-center gap-[9px]">
-          <div
-            class="h-[6px] w-[62px] shrink-0 overflow-hidden rounded-full bg-gray-100"
-            role="progressbar"
-            aria-labelledby="events-sponsorship-progress-label"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            [attr.aria-valuenow]="progress.widthPct"
-            [attr.aria-valuetext]="progress.pctLabel">
-            <div class="h-full rounded-full" [class]="barClass" [style.width.%]="progress.widthPct"></div>
-          </div>
-          <b class="min-w-[34px] font-semibold tabular-nums text-gray-900" data-testid="events-sponsorship-progress-value">{{ progress.pctLabel }}</b>
-        </div>
-      </div>
-    } @else if (!view().goalSet) {
-      <!-- The design's low-confidence banner. -->
-      <p
-        class="inline-flex items-center gap-[6px] self-start rounded-[6px] bg-amber-50 px-[10px] py-[6px] text-[12px] text-amber-700"
-        data-testid="events-sponsorship-no-goal">
-        <span aria-hidden="true">◐</span>
-        No sponsorship goal is set for this period, so no progress bar is shown.
-      </p>
-    }
-
-    <div class="flex flex-col gap-3" data-testid="events-sponsorship-tiers">
-      <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Tier packages</h4>
-        <span class="text-[12px] text-gray-400">count sold</span>
-      </div>
-      @if (view().tiers.length === 0) {
-        <p class="text-[13px] text-gray-500" data-testid="events-sponsorship-tiers-empty">No tier package was sold in the selected period.</p>
-      } @else {
-        <ul class="flex flex-col gap-[8px]">
-          @for (row of view().tiers; track row.key; let index = $index) {
-            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'events-sponsorship-tier-' + index">
-              <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
-              <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-sponsorship-tier-' + index + '-value'">{{ row.valueLabel }}</span>
-            </li>
-          }
-        </ul>
-      }
-    </div>
   }
 </div>

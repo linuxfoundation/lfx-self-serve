@@ -1,0 +1,263 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root; host rem margins cancel main-layout padding. -->
+<div class="mx-auto flex w-full max-w-[1440px] flex-col gap-[20px] bg-white px-[20px] pb-[56px] pt-[28px] min-[641px]:px-[40px]" data-testid="groups-redesign">
+  <!-- Sticky page header; its negative margins cancel the padding above so it spans the page -->
+  <div
+    #header
+    class="sticky z-[8] -mx-[20px] -mb-[8px] -mt-[28px] flex items-center justify-between gap-[20px] bg-white px-[20px] pb-[12px] pt-[28px] max-[640px]:flex-wrap max-[640px]:gap-y-[8px] min-[641px]:-mx-[40px] min-[641px]:items-start min-[641px]:px-[40px]"
+    [style.top.px]="stickyTop()"
+    data-testid="groups-redesign-header">
+    <span
+      class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-white via-white/85 to-white/0 transition-opacity duration-200 motion-reduce:transition-none"
+      [class.opacity-0]="!scrolled() || toolbarStuck()"
+      aria-hidden="true"
+      data-testid="groups-redesign-header-fade"></span>
+    <div class="flex min-w-0 flex-col gap-[4px]">
+      <h1 #heading tabindex="-1" class="font-display text-[24px] font-light leading-[1.2] text-gray-900 outline-none" data-testid="groups-redesign-title">
+        Groups
+      </h1>
+      <!-- Hidden at 640px and below, per the design. -->
+      <p class="hidden max-w-[820px] text-[12px] leading-[1.5] text-gray-500 min-[641px]:block" data-testid="groups-redesign-description">
+        Groups you are a member of across all foundations and projects.
+      </p>
+    </div>
+    <!-- At 640px and below the actions join the header's wrapping row: Create Group stays by the title, the drawer button stacks under it. -->
+    <div class="flex flex-none items-center gap-[12px] max-[640px]:contents" data-testid="groups-redesign-header-actions">
+      <lfx-group-applications [fallbackFocus]="heading" />
+      @if (hasGroups()) {
+        <lfx-ui-button variant="tertiary-accent" icon="fa-light fa-plus" (click)="createGroup()" data-testid="groups-redesign-create">
+          Create Group
+        </lfx-ui-button>
+      }
+    </div>
+  </div>
+
+  @if (store.loading()) {
+    <div
+      [class]="store.view() === 'list' ? 'flex flex-col' : skeletonGridClass"
+      role="status"
+      aria-label="Loading groups"
+      data-testid="groups-redesign-loading">
+      <ng-container [ngTemplateOutlet]="store.view() === 'list' ? tableSkeletons : skeletons" />
+    </div>
+  } @else if (store.failed()) {
+    <lfx-ui-empty-state
+      class="mt-[16px]"
+      icon="fa-light fa-triangle-exclamation"
+      heading="Couldn't load your groups"
+      description="Something went wrong. Try again."
+      data-testid="groups-redesign-error">
+      <lfx-ui-button
+        empty-state-action
+        variant="secondary"
+        size="large"
+        icon="fa-light fa-arrow-rotate-right"
+        (click)="store.reload()"
+        data-testid="groups-redesign-error-retry">
+        Retry
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  } @else if (!hasGroups()) {
+    <lfx-ui-empty-state
+      class="mt-[16px]"
+      icon="fa-light fa-users-between-lines"
+      heading="No groups yet"
+      description="Groups you're a member of will appear here."
+      data-testid="groups-redesign-empty">
+      <lfx-ui-button
+        empty-state-action
+        variant="secondary-accent"
+        size="large"
+        icon="fa-light fa-plus"
+        (click)="createGroup()"
+        data-testid="groups-redesign-empty-create">
+        Create Group
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  } @else {
+    <!-- Metrics: 4 columns, 2 below 680px, stacked below 340px; the 1px gaps draw the rules between cells -->
+    <div class="@container/metrics border-y border-gray-200">
+      <dl class="grid grid-cols-1 gap-px bg-gray-200 @[340px]/metrics:grid-cols-2 @[680px]/metrics:grid-cols-4" data-testid="groups-redesign-metrics">
+        @for (metric of store.metrics(); track metric.label) {
+          <div
+            class="flex flex-col gap-[6px] bg-white py-[18px] pl-0 pr-[16px] @[340px]/metrics:even:pl-[20px] @[680px]/metrics:pl-[16px] @[680px]/metrics:even:pl-[16px] @[680px]/metrics:first:pl-0"
+            data-testid="groups-redesign-metric">
+            <dt class="flex items-center gap-[6px] text-[12px] font-medium leading-[16px] text-gray-500">
+              <i class="text-[12px]" [class]="metric.icon" aria-hidden="true"></i>
+              {{ metric.label }}
+            </dt>
+            <dd class="text-[28px] font-light leading-[1.1] tracking-[-.01em] text-gray-900 min-[641px]:text-[34px]" data-testid="groups-redesign-metric-value">
+              {{ metric.value }}
+            </dd>
+            @if (metric.subLine) {
+              <dd class="text-[12px] leading-[16px] text-gray-500" data-testid="groups-redesign-metric-note">{{ metric.subLine }}</dd>
+            }
+          </div>
+        }
+      </dl>
+    </div>
+
+    <!-- Sticky toolbar; the fade moves here from the header once it is stuck -->
+    <div #toolbar class="sticky z-[7] -mb-[8px] bg-white pb-[12px]" [style.top.px]="stickyTop() + headerHeight()" data-testid="groups-redesign-toolbar">
+      <span
+        class="pointer-events-none absolute inset-x-0 top-full h-[40px] bg-gradient-to-b from-white via-white/80 to-white/0 transition-opacity duration-200 motion-reduce:transition-none"
+        [class.opacity-0]="!toolbarStuck()"
+        aria-hidden="true"
+        data-testid="groups-redesign-toolbar-fade"></span>
+      <lfx-ui-tabs
+        collapseToSelect
+        ariaLabel="Filter groups by type"
+        [idPrefix]="idPrefix"
+        [tabs]="tabs()"
+        [value]="store.tab()"
+        (valueChange)="onTabChange($event)"
+        data-testid="groups-redesign-tabs">
+        <!-- 8px keeps the switch off the tabs' rule, like the tabs' own select. -->
+        <lfx-ui-switch
+          class="pb-[8px]"
+          size="small"
+          ariaLabel="Groups view"
+          [value]="store.view()"
+          (valueChange)="onViewChange($event)"
+          data-testid="groups-redesign-view">
+          <lfx-ui-switch-option value="card" label="Card view" icon="fa-light fa-grid-2" iconOnly data-testid="groups-redesign-view-card" />
+          <lfx-ui-switch-option value="list" label="List view" icon="fa-light fa-list-ul" iconOnly data-testid="groups-redesign-view-list" />
+        </lfx-ui-switch>
+      </lfx-ui-tabs>
+      <div class="mt-[20px] flex flex-wrap items-center gap-[8px]">
+        <lfx-ui-search-input
+          class="w-full min-[641px]:w-auto min-[641px]:flex-[1_1_240px]"
+          placeholder="Search groups"
+          ariaLabel="Search groups"
+          [value]="store.search()"
+          (valueChange)="store.setSearch($event)"
+          data-testid="groups-redesign-search" />
+        <lfx-groups-filters
+          class="w-full min-[641px]:w-auto"
+          [scopeOptions]="store.scopeOptions()"
+          [votingCounts]="store.votingCounts()"
+          [filters]="store.filters()"
+          (filtersChange)="store.setFilters($event)" />
+      </div>
+    </div>
+
+    @if (store.filterChips().length) {
+      <!-- -6px pulls the chips toward the toolbar, per the design -->
+      <lfx-ui-chip-group class="-mt-[6px]" ariaLabel="Active filters" [fallbackFocus]="filtersControl() ?? null" data-testid="groups-redesign-chips">
+        @for (chip of store.filterChips(); track chip.key) {
+          <lfx-ui-chip size="md" [prefix]="chip.prefix" [label]="chip.label" (dismissed)="store.clearFilter(chip.key)" data-testid="groups-redesign-chip" />
+        }
+      </lfx-ui-chip-group>
+    }
+
+    <!-- One tabpanel per tab, so every aria-controls resolves; only the active one renders the grid -->
+    <div #panels class="flex flex-col">
+      @for (tab of tabs(); track tab.value) {
+        <div
+          role="tabpanel"
+          class="flex-col gap-[16px]"
+          [class.flex]="store.tab() === tab.value"
+          [attr.id]="idPrefix + '-panel-' + tab.value"
+          [attr.aria-labelledby]="idPrefix + '-tab-' + tab.value"
+          [hidden]="store.tab() !== tab.value"
+          [attr.data-testid]="'groups-redesign-panel-' + tab.value">
+          @if (store.tab() === tab.value) {
+            <ng-container [ngTemplateOutlet]="grid" />
+          }
+        </div>
+      }
+    </div>
+  }
+</div>
+
+<ng-template #grid>
+  @if (!store.filteredGroups().length) {
+    <lfx-ui-empty-state
+      class="mt-[16px]"
+      icon="fa-light fa-eyes"
+      heading="No results found"
+      [description]="noResultsDescription()"
+      data-testid="groups-redesign-no-results">
+      <lfx-ui-button
+        empty-state-action
+        variant="tertiary-accent"
+        size="large"
+        icon="fa-light fa-arrow-rotate-left"
+        (click)="store.resetFilters()"
+        data-testid="groups-redesign-no-results-reset">
+        Reset filters
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  } @else {
+    <p class="sr-only" role="status" data-testid="groups-redesign-grid-status">
+      Showing {{ store.visibleGroups().length }} of {{ store.filteredGroups().length }} groups
+    </p>
+    @if (store.view() === 'list') {
+      <lfx-groups-table [groups]="store.visibleGroups()" />
+    } @else {
+      <!-- At most 3 columns, then 2 and 1 as the width falls below 3 and 2 times 220px -->
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]" data-testid="groups-redesign-grid">
+        @for (group of store.visibleGroups(); track group.uid) {
+          <lfx-group-card [group]="group">
+            <lfx-group-actions group-card-menu size="small" [group]="group" />
+          </lfx-group-card>
+        }
+      </div>
+    }
+    @if (store.hasMore()) {
+      <!-- Re-created per batch so skeletons still in view after a batch loads fire again. -->
+      @for (count of [store.visibleGroups().length]; track count) {
+        <div
+          #loadMoreTrigger
+          [class]="store.view() === 'list' ? 'flex flex-col' : skeletonGridClass"
+          aria-hidden="true"
+          data-testid="groups-redesign-load-more">
+          <ng-container [ngTemplateOutlet]="store.view() === 'list' ? tableSkeletons : skeletons" />
+        </div>
+      }
+    } @else if (store.filteredGroups().length > pageSize) {
+      <p class="py-[4px] text-center text-[12px] text-gray-500" data-testid="groups-redesign-all-loaded">
+        All {{ store.filteredGroups().length }} groups loaded
+      </p>
+    }
+  }
+</ng-template>
+
+<ng-template #tableSkeletons>
+  <!-- Mirrors a table row: name and project, type pill, role, members, channels, voting and the menu. -->
+  @for (row of skeletonCards; track row) {
+    <div class="flex min-h-[62px] items-center gap-[24px] border-b border-gray-100 px-[16px]" aria-hidden="true">
+      <span class="flex min-w-0 flex-[2.6] flex-col gap-[6px]">
+        <lfx-ui-skeleton width="46%" height="12px" />
+        <lfx-ui-skeleton width="30%" height="10px" />
+      </span>
+      <lfx-ui-skeleton shape="pill" width="110px" height="24px" />
+      <lfx-ui-skeleton width="64px" height="12px" />
+      <lfx-ui-skeleton width="24px" height="12px" />
+      <lfx-ui-skeleton width="44px" height="12px" />
+      <lfx-ui-skeleton width="52px" height="12px" />
+      <lfx-ui-skeleton shape="circle" width="32px" height="32px" />
+    </div>
+  }
+</ng-template>
+
+<ng-template #skeletons>
+  <!-- Mirrors a card: name and project lines, two pills, a description line and the footer. -->
+  @for (card of skeletonCards; track card) {
+    <div class="flex flex-col gap-[12px] rounded-[16px] bg-white p-[16px] shadow-small" aria-hidden="true">
+      <lfx-ui-skeleton width="60%" height="14px" />
+      <lfx-ui-skeleton width="36%" height="10px" />
+      <span class="flex gap-[8px]">
+        <lfx-ui-skeleton shape="pill" width="96px" height="20px" />
+        <lfx-ui-skeleton shape="pill" width="56px" height="20px" />
+      </span>
+      <lfx-ui-skeleton width="40%" height="10px" />
+      <span class="flex justify-between border-t border-gray-100 pt-[12px]">
+        <lfx-ui-skeleton width="80px" height="10px" />
+        <lfx-ui-skeleton width="72px" height="10px" />
+      </span>
+    </div>
+  }
+</ng-template>
