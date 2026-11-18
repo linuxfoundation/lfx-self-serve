@@ -18,6 +18,7 @@ import {
   WHOLE_NUMBER_PATTERN,
 } from '@lfx-one/shared/constants';
 import {
+  EventRegistrantIdentity,
   EventRequestSourceTable,
   EventRow,
   EventSortOrder,
@@ -49,6 +50,7 @@ import { formatDateToUTC, isBackfillEventSource, normalizeToUrl } from '@lfx-one
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { registrantFilterSql } from '../helpers/event-registrant.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { UserService } from './user.service';
@@ -62,7 +64,7 @@ export class EventsService {
     this.userService = new UserService();
   }
 
-  public async getMyEvents(req: Request, userEmail: string, options: GetMyEventsOptions): Promise<MyEventsResponse> {
+  public async getMyEvents(req: Request, registrant: EventRegistrantIdentity, options: GetMyEventsOptions): Promise<MyEventsResponse> {
     const {
       isPast,
       eventId,
@@ -85,9 +87,11 @@ export class EventsService {
     const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
     const normalizedPageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 10;
     const normalizedOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
+    const registrantFilter = registrantFilterSql(registrant);
 
     logger.debug(req, 'get_my_events', 'Building events query', {
       is_past: isPast,
+      has_user_id: !!registrant.userId,
       has_event_id: !!eventId,
       has_project_name: !!projectName,
       has_search_query: !!searchQuery,
@@ -164,7 +168,7 @@ export class EventsService {
             EVENT_URL,
             EVENT_REGISTRATION_URL
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE LOWER(USER_EMAIL) = ?
+          WHERE ${registrantFilter.sql}
             AND NOT (${this.isPastEventSql()})
             AND REGISTRATION_STATUS = 'Accepted'
             ${eventIdFilter}
@@ -184,11 +188,11 @@ export class EventsService {
             IS_VISA_REQUEST_ACCEPTED,
             TRAVEL_FUND_END_TS
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE LOWER(USER_EMAIL) = ?
+          WHERE ${registrantFilter.sql}
             AND NOT (${this.isPastEventSql()})
             AND REGISTRATION_STATUS = 'Accepted'
-          -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep one, preferring Accepted.
-          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1
+          -- Matching on ID or case-folded email can return several rows per event; keep one, preferring Accepted then attended.
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1), USER_ATTENDED DESC NULLS LAST) = 1
         ),
         combined AS (
           -- The subquery is load-bearing: QUALIFY written directly after UNION ALL binds to
@@ -248,8 +252,8 @@ export class EventsService {
       `;
 
       const affiliatedUpcomingBinds: string[] = [...(eventId ? [eventId] : []), ...slugs];
-      const registeredEventsBinds: string[] = [userEmail, ...(eventId ? [eventId] : [])];
-      const userRegBinds: string[] = [userEmail];
+      const registeredEventsBinds: string[] = [...registrantFilter.binds, ...(eventId ? [eventId] : [])];
+      const userRegBinds: string[] = [...registrantFilter.binds];
       const whereBinds: string[] = [
         ...(projectName ? [projectName] : []),
         ...(searchQuery ? [`%${searchQuery}%`] : []),
@@ -264,7 +268,7 @@ export class EventsService {
       logger.debug(req, 'get_my_events', 'Upcoming events query binds', {
         affiliated_project_slugs: slugs,
         affiliated_filter_active: hasAffiliatedSlugs,
-        user_email: '***',
+        has_user_id: !!registrant.userId,
         bind_count: binds.length,
       });
     } else {
@@ -306,11 +310,11 @@ export class EventsService {
           TRAVEL_FUND_END_TS,
           COUNT(*) OVER() AS TOTAL_RECORDS
         FROM (
-          -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep one, preferring Accepted.
+          -- Matching on ID or case-folded email can return several rows per event; keep one, preferring Accepted then attended.
           SELECT *
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE LOWER(USER_EMAIL) = ?
-          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1
+          WHERE ${registrantFilter.sql}
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1), USER_ATTENDED DESC NULLS LAST) = 1
         )
         WHERE TRUE
           ${isPastFilter}
@@ -323,7 +327,7 @@ export class EventsService {
         LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
       `;
 
-      binds = [userEmail];
+      binds = [...registrantFilter.binds];
       if (eventId) binds.push(eventId);
       if (projectName) binds.push(projectName);
       if (searchQuery) binds.push(`%${searchQuery}%`);
@@ -570,7 +574,11 @@ export class EventsService {
     return { data, total, pageSize: normalizedPageSize, offset: normalizedOffset };
   }
 
-  public async getEventOrganizations(req: Request, userEmail: string, options: GetEventOrganizationsOptions): Promise<MyEventOrganizationsResponse> {
+  public async getEventOrganizations(
+    req: Request,
+    registrant: EventRegistrantIdentity,
+    options: GetEventOrganizationsOptions
+  ): Promise<MyEventOrganizationsResponse> {
     const { projectName, isPast, affiliatedProjectSlugs, registeredOnly } = options;
 
     logger.debug(req, 'get_event_organizations', 'Building organizations query', {
@@ -581,6 +589,7 @@ export class EventsService {
 
     let sql: string;
     const binds: string[] = [];
+    const registrantFilter = registrantFilterSql(registrant);
 
     if (isPast === true) {
       // Past tab: return only foundations from the authenticated user's registered past events.
@@ -588,12 +597,12 @@ export class EventsService {
       sql = `
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-        WHERE LOWER(USER_EMAIL) = ?
+        WHERE ${registrantFilter.sql}
           AND (${this.isPastEventSql()})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
       `;
-      binds.push(userEmail);
+      binds.push(...registrantFilter.binds);
       if (projectName) binds.push(projectName);
     } else {
       // Registered co-located events remain eligible; only affiliated discovery excludes them.
@@ -608,11 +617,11 @@ export class EventsService {
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE NOT (${this.isPastEventSql()})
-          AND ((LOWER(USER_EMAIL) = ? AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
+          AND ((${registrantFilter.sql} AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
       `;
-      binds.push(userEmail);
+      binds.push(...registrantFilter.binds);
       if (hasAffiliatedSlugs) binds.push(...slugs);
       if (projectName) binds.push(projectName);
     }
@@ -664,10 +673,10 @@ export class EventsService {
     return { data };
   }
 
-  public async getVisaRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<VisaRequestsResponse> {
+  public async getVisaRequests(req: Request, registrant: EventRegistrantIdentity, options: GetEventRequestsOptions): Promise<VisaRequestsResponse> {
     return this.executeEventRequestsQuery(
       req,
-      userEmail,
+      registrant,
       options,
       EVENT_REQUEST_SOURCE_TABLES.VISA_LETTERS,
       'VL_REQUEST_STATUS',
@@ -676,11 +685,11 @@ export class EventsService {
     );
   }
 
-  public async getTravelFundRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<TravelFundRequestsResponse> {
+  public async getTravelFundRequests(req: Request, registrant: EventRegistrantIdentity, options: GetEventRequestsOptions): Promise<TravelFundRequestsResponse> {
     // Travel funding does not require a registration, so requests are read from their own table rather than EVENT_REGISTRATIONS.
     return this.executeEventRequestsQuery(
       req,
-      userEmail,
+      registrant,
       options,
       EVENT_REQUEST_SOURCE_TABLES.TRAVEL_FUNDING,
       'TF_REQUEST_STATUS',
@@ -694,8 +703,9 @@ export class EventsService {
    * Travel funding is event-level (no registration needed); visa letters need the user's accepted registration.
    * Unlike the list queries, a Snowflake failure throws so a submit is never accepted or rejected on missing data.
    */
-  public async isEligibleForEventRequest(req: Request, userEmail: string, eventId: string, requestType: RequestType): Promise<boolean> {
+  public async isEligibleForEventRequest(req: Request, registrant: EventRegistrantIdentity, eventId: string, requestType: RequestType): Promise<boolean> {
     const isTravelFund = requestType === 'travel-fund';
+    const registrantFilter = registrantFilterSql(registrant);
 
     const sql = isTravelFund
       ? `
@@ -710,14 +720,14 @@ export class EventsService {
       : `
       SELECT 1 AS ELIGIBLE
       FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-      WHERE LOWER(USER_EMAIL) = ?
+      WHERE ${registrantFilter.sql}
         AND EVENT_ID = ?
         AND NOT (${this.isPastEventSql()})
         AND REGISTRATION_STATUS = 'Accepted' AND IS_VISA_REQUEST_ACCEPTED = TRUE
       LIMIT 1
     `;
 
-    const result = await this.snowflakeService.execute<{ ELIGIBLE: number }>(sql, isTravelFund ? [eventId] : [userEmail, eventId]);
+    const result = await this.snowflakeService.execute<{ ELIGIBLE: number }>(sql, isTravelFund ? [eventId] : [...registrantFilter.binds, eventId]);
     const eligible = result.rows.length > 0;
 
     logger.debug(req, 'check_event_request_eligibility', 'Checked event request eligibility', { event_id: eventId, request_type: requestType, eligible });
@@ -1048,7 +1058,7 @@ export class EventsService {
 
   private async executeEventRequestsQuery(
     req: Request,
-    userEmail: string,
+    registrant: EventRegistrantIdentity,
     options: GetEventRequestsOptions,
     sourceTable: EventRequestSourceTable,
     statusColumn: string,
@@ -1075,6 +1085,7 @@ export class EventsService {
     const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
     const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
     const statusFilter = status ? `AND ${statusColumn} = ?` : '';
+    const registrantFilter = registrantFilterSql(registrant);
 
     const sql = `
       SELECT
@@ -1090,11 +1101,11 @@ export class EventsService {
         COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE() AS EVENT_ENDED,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM (
-        -- Both source tables are keyed by case-sensitive email upstream, so LOWER() can match several rows per event; keep the latest request.
+        -- Matching on ID or case-folded email can return several rows per event; keep the latest request.
         SELECT *
         FROM ${sourceTable}
         WHERE ${statusColumn} IS NOT NULL
-          AND LOWER(USER_EMAIL) = ?
+          AND ${registrantFilter.sql}
         QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY ${applicationDateColumn} DESC NULLS LAST) = 1
       )
       WHERE TRUE
@@ -1107,7 +1118,7 @@ export class EventsService {
       LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
     `;
 
-    const binds: string[] = [userEmail];
+    const binds: string[] = [...registrantFilter.binds];
     if (eventId) binds.push(eventId);
     if (projectName) binds.push(projectName);
     if (searchQuery) binds.push(`%${searchQuery}%`);

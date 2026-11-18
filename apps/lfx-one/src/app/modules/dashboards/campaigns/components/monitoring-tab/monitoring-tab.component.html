@@ -332,8 +332,11 @@
     <div class="flex flex-col gap-4" data-testid="linkedin-monitor-panel">
       <!-- Account selector + controls -->
       <div class="flex items-center justify-between">
-        <!-- With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why. -->
-        @if (!panelNotices().linkedin || linkedInAccountOptions().length > 0) {
+        <!--
+          With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why.
+          A panel read through the LF system account has no account to pick, so it shows no picker.
+        -->
+        @if ((!panelNotices().linkedin && !systemAccountPlatforms().has('linkedin')) || linkedInAccountOptions().length > 0) {
           <select
             [value]="selectedLinkedInAccountKey()"
             (change)="onLinkedInAccountChange($event)"
@@ -391,9 +394,12 @@
       } @else if (linkedInData() && linkedInCampaigns().length === 0) {
         <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="linkedin-empty">
           <i class="fa-brands fa-linkedin text-3xl text-gray-400" aria-hidden="true"></i>
-          <p class="text-sm text-gray-500">No active LinkedIn campaigns found for this account.</p>
+          <p class="text-sm text-gray-500">{{ linkedInEmptyMessage() }}</p>
         </div>
       } @else if (linkedInView(); as view) {
+        @if (linkedInSystemAccountNote(); as accountNote) {
+          <p class="text-xs text-gray-500" data-testid="linkedin-system-account-note">{{ accountNote }}</p>
+        }
         @if (linkedInCurrencyNote()) {
           <!--
             campaign-service named no currency for a connection's LinkedIn amounts. A pod predating its local-currency
@@ -413,8 +419,11 @@
     <div class="flex flex-col gap-4" data-testid="reddit-monitor-panel">
       <!-- Account selector + controls -->
       <div class="flex items-center justify-between">
-        <!-- With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why. -->
-        @if (!panelNotices().reddit || redditAccountOptions().length > 0) {
+        <!--
+          With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why.
+          A panel read through the LF system account has no account to pick, so it shows no picker.
+        -->
+        @if ((!panelNotices().reddit && !systemAccountPlatforms().has('reddit')) || redditAccountOptions().length > 0) {
           <select
             [value]="selectedRedditAccountKey()"
             (change)="onRedditAccountChange($event)"
@@ -472,9 +481,12 @@
       } @else if (redditData() && redditCampaigns().length === 0) {
         <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="reddit-empty">
           <i class="fa-brands fa-reddit text-3xl text-gray-400" aria-hidden="true"></i>
-          <p class="text-sm text-gray-500">No active Reddit campaigns found for this account.</p>
+          <p class="text-sm text-gray-500">{{ redditEmptyMessage() }}</p>
         </div>
       } @else if (redditView(); as view) {
+        @if (redditSystemAccountNote(); as accountNote) {
+          <p class="text-xs text-gray-500" data-testid="reddit-system-account-note">{{ accountNote }}</p>
+        }
         <ng-container
           [ngTemplateOutlet]="accountPanel"
           [ngTemplateOutletContext]="{ $implicit: view, panel: 'reddit', actPlatform: 'reddit-ads', note: redditTotalsNote() }" />
@@ -485,8 +497,11 @@
     <div class="flex flex-col gap-4" data-testid="meta-monitor-panel">
       <!-- Account selector + controls -->
       <div class="flex items-center justify-between">
-        <!-- With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why. -->
-        @if (!panelNotices().meta || metaAccountOptions().length > 0) {
+        <!--
+          With the monitor cutover on, the picker offers the project's connection's account; with none, the notice below says why.
+          A panel read through the LF system account has no account to pick, so it shows no picker.
+        -->
+        @if ((!panelNotices().meta && !systemAccountPlatforms().has('meta')) || metaAccountOptions().length > 0) {
           <select
             [value]="selectedMetaAccountKey()"
             (change)="onMetaAccountChange($event)"
@@ -544,9 +559,12 @@
       } @else if (metaData() && metaCampaigns().length === 0) {
         <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="meta-empty">
           <i class="fa-brands fa-meta text-3xl text-gray-400" aria-hidden="true"></i>
-          <p class="text-sm text-gray-500">No active Meta campaigns found for this account.</p>
+          <p class="text-sm text-gray-500">{{ metaEmptyMessage() }}</p>
         </div>
       } @else if (metaView(); as view) {
+        @if (metaSystemAccountNote(); as accountNote) {
+          <p class="text-xs text-gray-500" data-testid="meta-system-account-note">{{ accountNote }}</p>
+        }
         @if (metaCurrencyNote()) {
           <!-- campaign-service reported a connection's Meta amounts unconverted and did not say in which currency. -->
           <p class="text-xs text-gray-500" data-testid="meta-currency-note">Spend and budgets are in the ad account's own currency.</p>

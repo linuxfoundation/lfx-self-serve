@@ -15,7 +15,10 @@ import type {
   HealthMetricsNoteTone,
 } from './health-metrics-l2.interface';
 import type { HealthMetricsMembersQueryParams } from './health-metrics-members.interface';
+import type { HealthMetricsColumnChartView } from './health-metrics-column-chart.interface';
+import type { HealthMetricsBarListRow, HealthMetricsCellCompanyLead } from './health-metrics-table.interface';
 import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-members.interface';
+import type { UiBadgeTone } from './uikit.interface';
 
 /** Section key from the design's `E2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEventsSectionKey = (typeof HEALTH_METRICS_EVENTS_SECTIONS)[number]['key'];
@@ -164,6 +167,9 @@ export interface HealthMetricsEventsPastEvent {
   paceStatus: string | null;
   /** The periods this event closed in. */
   ranges: HealthMetricsL2Range[];
+  /** `null` when unknown, or when the city only says the event is online. */
+  city: string | null;
+  isVirtual: boolean;
 }
 
 /** One period's header figures, as the view totals them — never re-summed from the table. */
@@ -181,30 +187,24 @@ export interface HealthMetricsEventsPast {
   events: HealthMetricsEventsPastEvent[];
 }
 
-/** A past-events table row with its labels and chip resolved once per period. */
+/** A past-events table row with its labels and status pill resolved once per period. */
 export interface HealthMetricsEventsPastRowView {
-  event: HealthMetricsEventsPastEvent;
+  eventId: string;
+  eventName: string;
+  /** "{City} · {Mon D, YYYY}", see `formatHealthMetricsEventsPlaceLabel`. */
+  placeLabel: string;
+  registrationsLabel: string;
+  /** " / {goal} (goal)", or " / no goal set". */
+  goalSuffix: string;
+  revenueLabel: string;
   status: HealthMetricsEventsPastStatus;
   statusLabel: string;
-  statusClass: string;
-  dateLabel: string;
-  registrationsLabel: string;
-  goalLabel: string;
-  /** False reads "no goal set" in place of "/ goal". */
-  hasGoal: boolean;
-  revenueLabel: string;
+  statusTone: UiBadgeTone;
 }
 
-/** The section for one period: the view's header figures and the events that closed in it. */
+/** The section for one period: its metrics row and the events that closed in it, most recent first. */
 export interface HealthMetricsEventsPastView {
-  eventCount: number | null;
-  registrations: number | null;
-  /** Listed events whose chip reads "Hit goal" — the X in "Hit goal: X of Y". */
-  goalMetCount: number;
-  /** Listed events with a goal set and a measured outcome — the Y, so X and Y share the chips' rule. */
-  goalSetCount: number;
-  /** Whether any listed event has a goal, so goals with no measured outcome never read as unset. */
-  hasGoals: boolean;
+  metrics: HealthMetricsMetricItem[];
   rows: HealthMetricsEventsPastRowView[];
 }
 
@@ -267,15 +267,22 @@ export interface HealthMetricsEventsAtAGlanceStatView extends HealthMetricsEvent
   value: string;
 }
 
-/** The section for one period, with every label ready to render. */
+/** One comparison-table row: the period's value, the comparison period's, and the change as a badge (`null` reads "—"). */
+export interface HealthMetricsEventsAtAGlanceRowView {
+  key: string;
+  label: string;
+  value: string;
+  comparison: string;
+  change: string | null;
+  changeTone: UiBadgeTone;
+}
+
+/** The section for one period: its metrics row and the comparison table with its two period headings. */
 export interface HealthMetricsEventsAtAGlanceView {
-  /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
-  measured: boolean;
-  controlLabel: string;
-  baselineLabel: string;
-  headline: HealthMetricsEventsAtAGlanceStatView;
-  side: HealthMetricsEventsAtAGlanceStatView[];
-  tiles: HealthMetricsEventsAtAGlanceStatView[];
+  metrics: HealthMetricsMetricItem[];
+  periodHeading: string;
+  comparisonHeading: string;
+  rows: HealthMetricsEventsAtAGlanceRowView[];
 }
 
 /** Foundation scope for registrations & growth; the section is not period-scoped, so every year ships. */
@@ -301,36 +308,12 @@ export interface HealthMetricsEventsRegistrationsGrowth {
   years: HealthMetricsEventsRegistrationsGrowthYear[];
 }
 
-/** Which count the section's toggle shows; it switches the chart and the table together. */
+/** What Registrations & growth charts, as its header switch picks. */
 export type HealthMetricsEventsRegistrationsGrowthMetric = 'registrations' | 'attendees';
 
-/** A toggle pill whose id is the metric it selects. */
+/** A header switch option whose id is the metric it picks. */
 export interface HealthMetricsEventsRegistrationsGrowthMetricOption extends FilterPillOption {
   id: HealthMetricsEventsRegistrationsGrowthMetric;
-}
-
-/** One year of the chart and table; a gap year between the first and last is dashed, never zeroed. */
-export interface HealthMetricsEventsRegistrationsGrowthRowView {
-  year: number;
-  /** `false` for a gap year, which the table dashes and the chart leaves empty rather than zeroed. */
-  recorded: boolean;
-  isPartialYear: boolean;
-  total: number | null;
-  inPerson: number | null;
-  virtual: number | null;
-  totalLabel: string;
-  inPersonLabel: string;
-  /** A dash when no virtual count was recorded, per the design. */
-  virtualLabel: string;
-}
-
-/** The section for one metric, with every year from the first to the last. */
-export interface HealthMetricsEventsRegistrationsGrowthView {
-  rows: HealthMetricsEventsRegistrationsGrowthRowView[];
-  /** Years spanned, gap years included, so the count matches the table. */
-  yearCount: number;
-  /** The pandemic callout, set only when a pandemic year was mostly virtual for the metric. */
-  pandemicNote: string | null;
 }
 
 /** Foundation scope for event revenue; every period ships in one read, so the range stays client-side. */
@@ -382,6 +365,9 @@ export interface HealthMetricsEventsRevenueEvent {
   goalMet: boolean | null;
   /** The periods a past event falls in; empty for an upcoming one. */
   ranges: HealthMetricsL2Range[];
+  /** `null` when unknown, or when the city only says the event is online. */
+  city: string | null;
+  isVirtual: boolean;
 }
 
 /** `GET /api/analytics/events-revenue` — each period's headline, every past event in the four periods and every upcoming event. */
@@ -395,16 +381,18 @@ export interface HealthMetricsEventsRevenue {
 
 /** A revenue-by-event row with its labels resolved once per period. */
 export interface HealthMetricsEventsRevenueRowView {
-  event: HealthMetricsEventsRevenueEvent;
-  dateLabel: string;
+  eventId: string;
+  eventName: string;
+  /** "{City} · {Mon D, YYYY}", see `formatHealthMetricsEventsPlaceLabel`. */
+  placeLabel: string;
   registrationLabel: string;
-  /** Empty when no goal is set; says so when the goal is withheld for its currency. */
-  registrationGoalLabel: string;
+  /** " / {goal} (goal)", " / no goal set", or the withheld goal's note. */
+  registrationGoalSuffix: string;
   sponsorshipLabel: string;
-  sponsorshipGoalLabel: string;
+  sponsorshipGoalSuffix: string;
 }
 
-/** The section for one period, with every label ready to render. */
+/** The section for one period: its metrics row and its events, with whether there is anything to show. */
 export interface HealthMetricsEventsRevenueView {
   /** `false` when the read carried no period at all, so the section says so rather than pointing at another period. */
   foundationMeasured: boolean;
@@ -412,16 +400,11 @@ export interface HealthMetricsEventsRevenueView {
   measured: boolean;
   /** `false` when the period lists no event, has no non-zero figure and no unconverted revenue, so it reads as empty. */
   hasRevenue: boolean;
-  headline: HealthMetricsEventsAtAGlanceStatView;
-  side: HealthMetricsEventsAtAGlanceStatView[];
+  metrics: HealthMetricsMetricItem[];
   /** Upcoming events soonest first (current-year view only, as they fall in no period), then the period's past events latest first. */
   rows: HealthMetricsEventsRevenueRowView[];
   /** `false` when the foundation has totals but no per-event figures, so an empty list is not read as no events. */
   eventsMeasured: boolean;
-  /** Whether the headline or any listed event is short for unconverted revenue, so the footer note shows. */
-  hasUnconverted: boolean;
-  /** Whether the period's totals leave out unconverted revenue, so the headline and registration stat are marked. */
-  headlineUnconverted: boolean;
 }
 
 /** Foundation scope for speakers and proposals; every period ships in one read, so the range stays client-side. */
@@ -432,12 +415,13 @@ export interface HealthMetricsEventsSpeakersQuery {
 /** A proposal's review outcome, grouped as the view groups the original CFP statuses. */
 export type HealthMetricsEventsSpeakersStatusGroup = keyof typeof HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS;
 
-/** The tabs over the section; each but `all` keeps the proposals in one status group. */
-export type HealthMetricsEventsSpeakersTab = 'all' | 'accepted' | 'in-review';
+/** What the switch under the proposals chart lists: the latest proposals, or the companies that submitted the most. */
+export type HealthMetricsEventsSpeakersList = 'proposals' | 'companies';
 
-/** A tab pill whose id is the status it keeps. */
-export interface HealthMetricsEventsSpeakersTabOption extends FilterPillOption {
-  id: HealthMetricsEventsSpeakersTab;
+/** A switch option whose id is the list it shows. */
+export interface HealthMetricsEventsSpeakersListOption {
+  id: HealthMetricsEventsSpeakersList;
+  label: string;
 }
 
 /** Year-over-year changes as fractions. Every `null` is not available, never zero. */
@@ -474,6 +458,8 @@ export interface HealthMetricsEventsSpeakersOrganizationPeriod extends HealthMet
 export interface HealthMetricsEventsSpeakersOrganization {
   accountId: string;
   accountName: string;
+  /** Empty falls back to the first letter. */
+  logoUrl: string;
   /** Only the periods it ranks in the top few for. */
   periods: HealthMetricsEventsSpeakersOrganizationPeriod[];
 }
@@ -486,6 +472,8 @@ export interface HealthMetricsEventsSpeakersProposal {
   jobTitle: string | null;
   /** `null` when the proposal carries no organization. */
   organizationName: string | null;
+  /** The company's logo; empty falls back to the first letter. */
+  logoUrl: string;
   /** The speaker proposed as an individual, not for an organization. */
   unaffiliated: boolean;
   eventName: string;
@@ -501,9 +489,7 @@ export interface HealthMetricsEventsSpeakersProposal {
 export interface HealthMetricsEventsSpeakers {
   periods: HealthMetricsEventsSpeakersPeriod[];
   organizations: HealthMetricsEventsSpeakersOrganization[];
-  /** Proposals from speakers with no organization, kept out of the organization ranking. */
-  unaffiliated: HealthMetricsEventsSpeakersPeriodCount[];
-  /** The latest few per period and tab, most recent first. */
+  /** The latest few per period, most recent first. */
   proposals: HealthMetricsEventsSpeakersProposal[];
 }
 
@@ -521,41 +507,79 @@ export interface HealthMetricsEventsRankedRowView {
   valueLabel: string;
 }
 
-/** One column of the proposals-per-year chart. */
-export interface HealthMetricsEventsSpeakersYearView {
-  year: number;
-  submitted: number | null;
-  /** The year is still open, so it will read short against the complete years. */
-  isPartialYear: boolean;
-  /** For the chart's text equivalent, e.g. `2026 (partial year)`. */
-  yearLabel: string;
-  /** e.g. `6,283`, or `not available`. */
-  submittedLabel: string;
-}
-
-/** A recent-proposals row with its labels resolved. */
+/** A recent-proposals row with its labels resolved. The speaker is shown by job title, never by name. */
 export interface HealthMetricsEventsSpeakersProposalRowView {
-  proposal: HealthMetricsEventsSpeakersProposal;
-  organizationLabel: string;
+  key: string;
+  /** The job title, or the session title when the proposal lists none. */
+  title: string;
+  /** The session title under a job title; empty when the session title leads. */
+  description: string;
+  /** "Individual" for a speaker proposing for no company. */
+  company: HealthMetricsCellCompanyLead;
+  eventName: string;
   dateLabel: string;
-  statusClass: string;
+  /** "{Event} · {date}", as the drawer's rows read; either part drops when missing. */
+  eventLine: string;
+  statusLabel: string;
+  statusTone: UiBadgeTone;
 }
 
-/** The section for one period and tab, with every label ready to render. */
+/** The section for one period, with every label ready to render. */
 export interface HealthMetricsEventsSpeakersView {
   /** `false` when the read carried no period at all, so the section says so rather than pointing at another period. */
   foundationMeasured: boolean;
   /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
   measured: boolean;
-  /** The tab's proposal count, e.g. `6,283 proposals`. */
-  countLabel: string;
-  headline: HealthMetricsEventsAtAGlanceStatView;
-  side: HealthMetricsEventsAtAGlanceStatView[];
-  statusRows: HealthMetricsEventsRankedRowView[];
-  organizations: HealthMetricsEventsRankedRowView[];
-  /** Individual speakers' proposals, e.g. `1,351 proposals submitted`; `null` when there are none. */
-  individualLabel: string | null;
+  metrics: HealthMetricsMetricItem[];
+  /** Every year the view holds, whatever the period. */
+  chart: HealthMetricsColumnChartView;
+  /** The period's latest proposals, most recent first. */
   proposals: HealthMetricsEventsSpeakersProposalRowView[];
+  /** The companies that submitted the most in the period, without the individual speakers. */
+  companies: HealthMetricsBarListRow[];
+  /** "View all {N} proposals" under the recent proposals; empty when the period lists none. */
+  viewAllLabel: string;
+}
+
+/** One page of a period's proposals, cut by event and status group, for the All speaker proposals drawer. */
+export interface HealthMetricsEventsSpeakerProposalsQuery {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
+  /** Empty lists every event. */
+  eventId: string;
+  /** `null` lists every status. */
+  status: HealthMetricsEventsSpeakersStatusGroup | null;
+  offset: number;
+  pageSize: number;
+  /** Also list the period's events; the drawer asks once, as the list ignores the filters. */
+  includeEvents: boolean;
+}
+
+/** An event with proposals in the period, as the drawer's event filter lists it. */
+export interface HealthMetricsEventsSpeakerProposalsEvent {
+  id: string;
+  name: string;
+}
+
+/** `GET /api/analytics/events-speaker-proposals` — one page, most recent first. */
+export interface HealthMetricsEventsSpeakerProposals {
+  rows: HealthMetricsEventsSpeakersProposal[];
+  /** Proposals matching the event and status. */
+  totalRecords: number;
+  /** The period's events, latest start first; `null` unless the request asked for them. */
+  events: HealthMetricsEventsSpeakerProposalsEvent[] | null;
+}
+
+/** A drawer filter option; an empty id lists everything. */
+export interface HealthMetricsEventsSpeakerProposalsFilterOption {
+  id: string;
+  label: string;
+}
+
+/** What the speakers section hands the All speaker proposals drawer as it opens. */
+export interface HealthMetricsEventsSpeakerProposalsDrawerData {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
 }
 
 /** The membership cut over the organizations table. */
@@ -589,11 +613,12 @@ export interface HealthMetricsEventsOrganizationsQuery {
 export interface HealthMetricsEventsOrganization {
   accountId: string;
   accountName: string;
+  /** The mapped company logo, else the view's own; `null` falls back to the first letter. */
   logoUrl: string | null;
   isMember: boolean;
+  /** The company's current tier, not the period's; `null` when the view has none. */
+  membershipTier: string | null;
   registrations: number | null;
-  /** 0–1, registrations over the foundation's top organization for the period. */
-  registrationsShare: number | null;
   sponsorshipUsd: number | null;
   proposals: number | null;
   speakers: number | null;
@@ -613,13 +638,12 @@ export interface HealthMetricsEventsOrganizations {
 export interface HealthMetricsEventsOrganizationRowView {
   accountId: string;
   accountName: string;
-  memberLabel: string;
-  /** `●` for a member, `○` otherwise; decorative, since the label says it. */
-  memberGlyph: string;
-  memberClass: string;
+  /** The logo box beside the name; an empty logo shows the first letter. */
+  company: HealthMetricsCellCompanyLead;
+  isMember: boolean;
+  /** The tier for a member ("Member" with none known), "Non-member" otherwise. */
+  membershipLabel: string;
   registrationsLabel: string;
-  /** 0–100. */
-  barWidthPct: number;
   /** `—` when the period shows no sponsorship, which the view cannot tell from not tracked. */
   sponsorshipLabel: string;
   /** `—` when the period shows no proposals, for the same reason. */
@@ -672,29 +696,15 @@ export interface HealthMetricsEventsSponsorship {
   periods: HealthMetricsEventsSponsorshipPeriod[];
 }
 
-/** Progress to a goal that is set; the bar stops at full while the label keeps the real figure. */
-export interface HealthMetricsEventsSponsorshipProgressView {
-  /** e.g. `62%`. */
-  pctLabel: string;
-  /** 0–100. */
-  widthPct: number;
-}
-
-/** The section for one period, with every label ready to render. */
+/** The section for one period: its metrics row and each tier's packages as bars. */
 export interface HealthMetricsEventsSponsorshipView {
   /** `false` when the read carried no period at all. */
   foundationMeasured: boolean;
   /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
   measured: boolean;
-  /** Tier packages only, e.g. `30 packages sold`; add-ons are counted separately. Empty when unmeasured. */
-  packagesLabel: string;
-  headline: HealthMetricsEventsAtAGlanceStatView;
-  side: HealthMetricsEventsAtAGlanceStatView[];
-  /** `false` when no goal is set, so the section says so instead of drawing a bar. */
-  goalSet: boolean;
-  /** `null` without a goal or a modelled progress, so a missing goal never renders as a full bar. */
-  progress: HealthMetricsEventsSponsorshipProgressView | null;
-  tiers: HealthMetricsEventsRankedRowView[];
+  metrics: HealthMetricsMetricItem[];
+  /** Most sold first, as the view ranks them. */
+  tiers: HealthMetricsBarListRow[];
 }
 
 /** Foundation scope for geography; every period ships in one read, so the range stays client-side. */
