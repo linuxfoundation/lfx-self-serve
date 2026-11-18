@@ -2,17 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { HEALTH_METRICS_EVENTS_PAST_UNMEASURED } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEventsPastView, formatHealthMetricsEventsCount, formatHealthMetricsEventsPastClosedLabel } from '@lfx-one/shared/utils';
+import { HEALTH_METRICS_EVENTS_PAST_UNMEASURED, HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { buildHealthMetricsEventsPastView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { HealthMetricsEventsPast, HealthMetricsEventsPastQuery, HealthMetricsEventsPastView } from '@lfx-one/shared/interfaces';
@@ -23,7 +27,15 @@ import type { HealthMetricsEventsPast, HealthMetricsEventsPastQuery, HealthMetri
  */
 @Component({
   selector: 'lfx-events-past-events',
-  imports: [EmptyStateComponent, Skeleton, TableComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsMetricsRowComponent,
+    Skeleton,
+    TableComponent,
+    UiBadgeComponent,
+    UiPaginationComponent,
+  ],
   templateUrl: './events-past-events.component.html',
 })
 export class EventsPastEventsComponent {
@@ -37,6 +49,7 @@ export class EventsPastEventsComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  protected readonly pageSize = HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE;
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
 
@@ -48,10 +61,9 @@ export class EventsPastEventsComponent {
   /** No event closed in the period, or it was never measured; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.view().rows.length === 0);
 
-  protected readonly closedLabel = computed(() => formatHealthMetricsEventsPastClosedLabel(this.view().eventCount));
-  protected readonly registrationsLabel = computed(() => formatHealthMetricsEventsCount(this.view().registrations));
-  protected readonly goalMetLabel = computed(() => formatHealthMetricsEventsCount(this.view().goalMetCount));
-  protected readonly goalSetLabel = computed(() => formatHealthMetricsEventsCount(this.view().goalSetCount));
+  /** A new read or period starts the table on its first page. */
+  protected readonly page = linkedSignal<HealthMetricsEventsPastView, number>({ source: this.view, computation: () => 0 });
+  protected readonly pageRows = computed(() => this.view().rows.slice(this.page() * this.pageSize, (this.page() + 1) * this.pageSize));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {

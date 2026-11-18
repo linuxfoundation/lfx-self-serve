@@ -1275,6 +1275,8 @@ export interface CampaignImplementationDraft {
    */
   linkedInBudgetUsd?: number;
   linkedInLifetimeBudget?: boolean;
+  /** The optional daily cap beside a LinkedIn lifetime budget (#5774); null or absent is no cap. */
+  linkedInDailyCapUsd?: number | null;
   /**
    * The Reddit budget (LFXV2-3315, which named exactly this field).
    *
@@ -2072,6 +2074,51 @@ export interface LinkedInRuntimeConfig {
 // Campaign Creation (Implementation Phase)
 // ---------------------------------------------------------------------------
 
+/** One LinkedIn ad account the create may use (#5809), camel-cased from campaign-service's `selectable_accounts`. */
+export interface LinkedInCreateAccountOption {
+  accountId: string;
+  /** The LinkedIn page the campaign's posts are authored by. Empty when the connection stores none. */
+  orgId: string;
+  label: string;
+  /** The account a create uses when `linkedInConfig.adAccountId` is omitted. */
+  isDefault: boolean;
+}
+
+/**
+ * `GET /api/campaigns/linkedin/create-account` (#5809): where a LinkedIn create for the project goes, and
+ * whether this caller may choose another account. `accounts` lists the default first and always holds it.
+ */
+export interface LinkedInCreateAccountResult {
+  /** The default account: where a create goes when it sends no `adAccountId`. */
+  accountId: string;
+  orgId: string;
+  label: string;
+  /** `project` (the project's own LinkedIn connection) or `system` (LF's shared connection). */
+  source: 'project' | 'system';
+  /**
+   * Whether this caller may name an account: campaign-service's account selection is on, there is more
+   * than the default to choose from, and the caller holds `global_marketing_ops` on the project.
+   */
+  canChoose: boolean;
+  accounts: LinkedInCreateAccountOption[];
+}
+
+/** campaign-service's LinkedIn create-account read (#5809), checked and camel-cased; see the server's `toLinkedInCreateAccount`. */
+export interface LinkedInCreateAccountRead {
+  defaultAccount: LinkedInCreateAccountOption;
+  /** The non-default accounts `adAccountId` may name, each once, as bare account numbers. */
+  grants: LinkedInCreateAccountOption[];
+  /** campaign-service's own `account_selection_enabled`. */
+  selectionEnabled: boolean;
+  source: 'project' | 'system';
+}
+
+/** Where the Implement tab's LinkedIn ad account read stands (#5809). `idle` while the read does not apply. */
+export interface LinkedInCreateAccountState {
+  status: 'idle' | 'loading' | 'ready' | 'failed';
+  account: LinkedInCreateAccountResult | null;
+}
+
 export interface LinkedInCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -2080,6 +2127,13 @@ export interface LinkedInCampaignCreateRequest {
   hsToken?: string;
   budgetUsd: number;
   lifetimeBudget: boolean;
+  /**
+   * Optional daily spending cap, in USD, beside a LIFETIME budget (#5774): campaign-service sends it
+   * as the campaign's dailyBudget next to its totalBudget (linuxfoundation/lfx-v2-campaign-service#607).
+   * Omitted means no cap. Only with `lifetimeBudget: true`; at least LinkedIn's $10 daily minimum and
+   * no more than `budgetUsd`.
+   */
+  dailyCapUsd?: number;
   startDate: string;
   endDate: string;
   geoTargets: LinkedInGeoTarget[];
@@ -2087,7 +2141,14 @@ export interface LinkedInCampaignCreateRequest {
   variants: LinkedInCreativeVariant[];
   project?: string;
   driveFolderUrl?: string;
+  /** The legacy creator's ad account, from `linkedin.json`. Never forwarded on the campaign-service road. */
   adAccountId?: string;
+  /**
+   * The ad account picked in the Implement tab's account picker (#5809), sent only for a non-default pick.
+   * The server forwards it to campaign-service as `adAccountId` when it is a listed grant and the caller holds
+   * `global_marketing_ops`, and refuses the create otherwise, rather than creating in another account.
+   */
+  selectedAdAccountId?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
   /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
@@ -2755,6 +2816,8 @@ export interface MetaMonitorResponse {
    * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
    */
   currency?: string;
+  /** Campaign-service path only: see `MonitorSystemAccountRead`. */
+  systemAccountRead?: MonitorSystemAccountRead;
 }
 
 export interface CampaignBriefRefineRequest {
@@ -5231,6 +5294,29 @@ export interface CampaignServiceGoogleAdsConversionActions {
   conversion_action_count: number;
 }
 
+/** One account `linkedInConfig.adAccountId` may name (`LinkedinAdsSelectableAccount`, linuxfoundation/lfx-v2-campaign-service#581). */
+export interface CampaignServiceLinkedInAdsSelectableAccount {
+  account_id: string;
+  org_id: string;
+  label: string;
+  default: boolean;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/linkedin-ads/create-account` (`campaign_manager`;
+ * linuxfoundation/lfx-v2-campaign-service#581): the account and organization page a LinkedIn create for the
+ * project uses when `linkedInConfig.adAccountId` is omitted, and the accounts it may name, the default first.
+ */
+export interface CampaignServiceLinkedInAdsCreateAccount {
+  account_id: string;
+  org_id: string;
+  label: string;
+  source: 'project' | 'system';
+  status: string;
+  account_selection_enabled: boolean;
+  selectable_accounts: CampaignServiceLinkedInAdsSelectableAccount[];
+}
+
 /** One element of campaign-service's user list read (`google-ads-user-list`, linuxfoundation/lfx-v2-campaign-service#508). */
 export interface CampaignServiceGoogleAdsUserList {
   resource_name: string;
@@ -5317,9 +5403,13 @@ export type MonitorConnectionPlatform = 'linkedin' | 'meta' | 'reddit' | 'micros
  * - `unavailable`: the connection could not be read, so neither of the above is known;
  * - `forbidden`: campaign-service refused the read (403). It authorizes every connection and monitor
  *   read with the project's `campaign_manager` relation, which a ROOT writer this app admits need not
- *   hold (#4837) — a standing refusal, so never reported as the retryable `unavailable`.
+ *   hold (#4837) — a standing refusal, so never reported as the retryable `unavailable`;
+ * - `system_account`: the project has no connection with an account bound of its own (`no_connection`
+ *   or `no_account` above), and campaign-service reads this platform's monitor through the LF system
+ *   account instead, scoped to the campaigns it recorded for the project (#5889). The tab reads the
+ *   monitor WITHOUT an account and the BFF picks it, so `accountId` and `label` are null.
  */
-export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable' | 'forbidden';
+export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable' | 'forbidden' | 'system_account';
 
 /** One platform's connection, as the Monitor tab's account picker consumes it. */
 export interface MonitorConnectionAccount {
@@ -5328,6 +5418,25 @@ export interface MonitorConnectionAccount {
   accountId: string | null;
   /** The connection's own label, else the account id. Set only when `state` is `connected`. */
   label: string | null;
+  /**
+   * Set only when `state` is `system_account`: the project's own state behind the fallback, so a
+   * refused system-account read shows the notice that state calls for ("connect" or "choose the
+   * ad account").
+   */
+  fallbackFrom?: 'no_connection' | 'no_account';
+}
+
+/**
+ * A LinkedIn, Reddit or Meta monitor read through the LF system account (#5889): the project has no
+ * connection with an account bound of its own, so campaign-service read the LF account its campaigns
+ * were created in, scoped to the campaigns it recorded for the project. ABSENT on a read through the
+ * project's own connection, and on the legacy path.
+ */
+export interface MonitorSystemAccountRead {
+  /** The ad account campaign-service read; NULL when it read none (no campaigns recorded for the project). */
+  accountId: string | null;
+  /** The panel's empty state when no campaign came back: no campaigns are recorded for the project yet. */
+  emptyMessage: string;
 }
 
 /**
@@ -5361,7 +5470,7 @@ export type MonitorDateRangeOption = (typeof MONITOR_DATE_RANGE_OPTIONS)[number]
  * switched off upstream, or `restricted` — the read was refused because its ad account is shared by
  * every foundation (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`).
  */
-export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled' | 'restricted';
+export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected' | 'system_account'> | 'metrics_disabled' | 'restricted';
 
 /** The empty state a Monitor panel renders in place of its data, with the action that resolves it. */
 export interface MonitorPanelNotice {
@@ -5851,6 +5960,8 @@ export interface LinkedInMonitorResponse {
    * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
    */
   currency?: string;
+  /** Campaign-service path only: see `MonitorSystemAccountRead`. */
+  systemAccountRead?: MonitorSystemAccountRead;
 }
 
 // ---------------------------------------------------------------------------
@@ -5926,6 +6037,8 @@ export interface RedditMonitorResponse {
    * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
    */
   currency?: string;
+  /** Campaign-service path only: see `MonitorSystemAccountRead`. */
+  systemAccountRead?: MonitorSystemAccountRead;
 }
 
 // ---------------------------------------------------------------------------
@@ -6830,6 +6943,22 @@ export interface CampaignListResult {
    * shows the profile read-only.
    */
   linkedInTargetingEditEnabled: boolean;
+  /**
+   * Whether the LinkedIn section reads the create's ad account from campaign-service and, for a
+   * caller holding `global_marketing_ops`, offers choosing another (#5809), sent as
+   * `linkedInConfig.adAccountId`. `cutoverOwnsCreate()` AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION`. Whether this caller may choose is answered
+   * by `GET /api/campaigns/linkedin/create-account`, not here. Modelled on the client like the
+   * capabilities above.
+   */
+  linkedInAccountSelectionEnabled: boolean;
+  /**
+   * Whether the LinkedIn section may offer a daily cap beside a lifetime budget, sent as
+   * `linkedInConfig.dailyCapUsd` (#5774). `cutoverOwnsCreate()` and nothing else, like
+   * `linkedInTargetingEditEnabled`: only campaign-service sends the cap, and the legacy creator would
+   * drop it and spend uncapped.
+   */
+  linkedInDailyCapEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

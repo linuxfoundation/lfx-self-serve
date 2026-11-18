@@ -50,6 +50,7 @@ import {
 } from './meeting.utils';
 import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
 import { getRsvpTimestampMs, isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
+import { toAppUrl } from './url.utils';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -546,15 +547,4 @@ function getWeekdayIndex(start: string, timeZone: string | null | undefined): nu
   } catch {
     return date.getDay();
   }
-}
-
-/** Joins router-style segments (with or without slashes) into one app URL. */
-function toAppUrl(segments: readonly string[], queryParams?: Record<string, string>): string {
-  const path = segments
-    .flatMap((segment) => segment.split('/'))
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join('/');
-  const query = new URLSearchParams(queryParams).toString();
-  return `/${path}${query ? `?${query}` : ''}`;
 }

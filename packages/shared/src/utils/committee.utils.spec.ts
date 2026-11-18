@@ -25,6 +25,7 @@ import {
   canViewCommitteeRoster,
   committeeRouteIdMatches,
   getCommitteeMailingListLink,
+  getGroupChannels,
   countVotingReps,
   getEditableCommitteeCategories,
   getGroupCommands,
@@ -735,5 +736,43 @@ describe('getGroupEditLink', () => {
 
   it('falls back to the flat edit path with no query params for an unenriched payload', () => {
     expect(getGroupEditLink({ uid: 'g-1' })).toEqual({ commands: ['/groups', 'g-1', 'edit'], queryParams: {} });
+  });
+});
+
+describe('getGroupChannels', () => {
+  const base = { uid: 'c1', is_foundation: false };
+
+  it('is empty without a mailing list or chat channel', () => {
+    expect(getGroupChannels(base)).toEqual([]);
+  });
+
+  it('mails the address when the group has one, named by the address', () => {
+    expect(getGroupChannels({ ...base, mailing_list: 'dev@lists.example.org' })).toEqual([
+      expect.objectContaining({ kind: 'mailing-list', tooltip: 'dev@lists.example.org', href: 'mailto:dev@lists.example.org', newTab: false, link: null }),
+    ]);
+  });
+
+  it('links the list in the app instead of mailing an address that is unsafe in a mailto link', () => {
+    const [channel] = getGroupChannels({ ...base, mailing_list: 'dev?cc=x@lists.example.org', mailing_lists: [{ uid: 'ml-1', group_name: 'dev' }] });
+    expect(channel).toEqual(expect.objectContaining({ href: '/project/mailing-lists/ml-1', tooltip: 'dev' }));
+  });
+
+  it('links an associated list in the app, named by the list', () => {
+    const [channel] = getGroupChannels({ ...base, mailing_lists: [{ uid: 'ml-1', group_name: 'dev' }] });
+    expect(channel).toEqual(
+      expect.objectContaining({ kind: 'mailing-list', tooltip: 'dev', ariaLabel: 'Mailing list: dev', href: '/project/mailing-lists/ml-1' })
+    );
+    expect(channel.link?.commands).toEqual(['/', 'project', 'mailing-lists', 'ml-1']);
+  });
+
+  it('tells Slack, Discord and other chat apart by host, after the mailing list', () => {
+    const kinds = (chat: string) => getGroupChannels({ ...base, mailing_list: 'a@lists.example.org', chat_channel: chat }).map((c) => c.kind);
+    expect(kinds('https://acme.slack.com/archives/C1')).toEqual(['mailing-list', 'slack']);
+    expect(kinds('https://discord.gg/abc')).toEqual(['mailing-list', 'discord']);
+    expect(kinds('https://chat.example.org/room')).toEqual(['mailing-list', 'chat']);
+  });
+
+  it('shows no chat button for an invalid chat URL', () => {
+    expect(getGroupChannels({ ...base, chat_channel: 'javascript:alert(1)' })).toEqual([]);
   });
 });

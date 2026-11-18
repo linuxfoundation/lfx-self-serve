@@ -143,6 +143,13 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25 }),
     },
     {
+      name: 'getEventsSpeakerProposals',
+      url: '/api/analytics/events-speaker-proposals',
+      // A swallowed failure would read as no proposal matching the drawer's filters.
+      call: () =>
+        service.getEventsSpeakerProposals({ foundationSlug: 'aaif', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25, includeEvents: true }),
+    },
+    {
       name: 'getEventsSponsorship',
       url: '/api/analytics/events-sponsorship',
       // A swallowed failure would read as a foundation with no sponsorship.
@@ -338,6 +345,35 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     const req = http.expectOne((request) => request.url === '/api/analytics/events-organizations');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
     req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
+  it('getEventsSpeakerProposals sends the filters it has and leaves the empty ones out', () => {
+    service
+      .getEventsSpeakerProposals({
+        foundationSlug: 'aaif',
+        range: 'COMPLETED_YEAR',
+        eventId: 'evt-1',
+        status: 'in-review',
+        offset: 25,
+        pageSize: 25,
+        includeEvents: true,
+      })
+      .subscribe();
+    service
+      .getEventsSpeakerProposals({ foundationSlug: 'aaif', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25, includeEvents: false })
+      .subscribe();
+
+    const [filtered, unfiltered] = http.match((request) => request.url === '/api/analytics/events-speaker-proposals');
+    expect(filtered.request.urlWithParams).toContain('range=COMPLETED_YEAR');
+    expect(filtered.request.urlWithParams).toContain('eventId=evt-1');
+    expect(filtered.request.urlWithParams).toContain('status=in-review');
+    expect(filtered.request.urlWithParams).toContain('offset=25');
+    expect(filtered.request.urlWithParams).toContain('includeEvents=true');
+    expect(unfiltered.request.params.has('eventId')).toBe(false);
+    expect(unfiltered.request.params.has('status')).toBe(false);
+    expect(unfiltered.request.params.has('includeEvents')).toBe(false);
+    filtered.flush({ rows: [], totalRecords: 0, events: null });
+    unfiltered.flush({ rows: [], totalRecords: 0, events: [] });
   });
 
   it('getTrainingCourses sends a typed plus sign encoded and leaves an empty search out', () => {

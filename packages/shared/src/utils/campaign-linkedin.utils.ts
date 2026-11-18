@@ -95,3 +95,30 @@ export function linkedInTargetingAfterRemovals(profile: LinkedInTargetingProfile
     groups: profile.groups.filter((urn) => !removals.groups.includes(urn)),
   };
 }
+
+/**
+ * A US-dollar amount rounded to whole cents exactly as campaign-service puts it on the wire:
+ * `strconv.FormatFloat(x, 'f', 2, 64)`, which rounds the double's EXACT decimal value and breaks an
+ * exact tie to the even cent. `Math.round(x * 100) / 100` disagrees on such ties — 100.125 (exact in
+ * binary) is 100.12 in Go but 100.13 that way — so a limit judged with it can pass here and be refused
+ * upstream (#5774).
+ *
+ * `toFixed(60)` spells out the exact binary value of any amount from $1 up to 2^53 (such a double
+ * carries at most 52 fractional bits, so at most 52 decimal places), and the tie is then decided on
+ * that exact expansion. Below $1 the expansion can be cut short, which only matters for amounts every
+ * caller already refuses (LinkedIn's minimums are $10 and up). Non-finite input is returned unchanged for the caller to refuse.
+ */
+export function roundUsdToCentsLikeGo(amount: number): number {
+  if (!Number.isFinite(amount)) return amount;
+  if (Math.abs(amount) >= 1e15) return Math.round(amount * 100) / 100;
+  const sign = amount < 0 ? -1 : 1;
+  const [whole, fraction] = Math.abs(amount).toFixed(60).split('.');
+  let cents = BigInt(whole + fraction.slice(0, 2));
+  const rest = fraction.slice(2);
+  const firstDropped = rest.charCodeAt(0) - 48;
+  const restAfterFirstIsZero = /^0*$/.test(rest.slice(1));
+  if (firstDropped > 5 || (firstDropped === 5 && !restAfterFirstIsZero) || (firstDropped === 5 && restAfterFirstIsZero && cents % 2n === 1n)) {
+    cents += 1n;
+  }
+  return (sign * Number(cents)) / 100;
+}

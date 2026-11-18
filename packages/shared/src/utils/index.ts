@@ -136,6 +136,7 @@ export * from './project-application.utils';
 export * from './health-metrics-engagement.utils';
 export * from './health-metrics-events.utils';
 export * from './health-metrics-l2.utils';
+export * from './health-metrics-column-chart.utils';
 export * from './health-metrics-line-chart.utils';
 export * from './health-metrics-members.utils';
 export * from './health-metrics-non-members.utils';

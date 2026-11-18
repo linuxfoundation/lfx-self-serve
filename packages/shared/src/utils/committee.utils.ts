@@ -9,6 +9,7 @@ import type {
   CommitteeMailingListLink,
   CommitteeMemberPermissionInfo,
   GroupBehavioralClass,
+  GroupChannel,
   GroupEditLink,
   JoinMode,
   ParentCommitteeOption,
@@ -30,6 +31,8 @@ import { formatRelativeTime } from './date-time.utils';
 import { getMailingListCommands } from './mailing-list.utils';
 import { getEntityCommands } from './entity-route.utils';
 import { slugify } from './string.utils';
+import { isMailtoSafeEmail } from './email.utils';
+import { normalizeToUrl, toAppUrl } from './url.utils';
 
 /**
  * Determine the behavioral class for a given committee category.
@@ -127,6 +130,65 @@ export function getCommitteeMailingListLink(
   }
 
   return { commands: getGroupCommands(committee) ?? ['/groups', committee.uid], queryParams, target: 'group', label: `${lists.length} mailing lists` };
+}
+
+/**
+ * A group's channels for its card: the mailing list, then the chat channel, each only when it exists.
+ * Slack and Discord are told apart by the chat URL's host; an invalid chat URL shows no button.
+ */
+export function getGroupChannels(
+  committee: Pick<Committee, 'uid' | 'is_foundation' | 'project_slug' | 'mailing_lists' | 'mailing_list' | 'chat_channel'>
+): GroupChannel[] {
+  const channels: GroupChannel[] = [];
+  const trimmed = committee.mailing_list?.trim();
+  const address = isMailtoSafeEmail(trimmed) ? trimmed : null;
+  const link = address ? null : getCommitteeMailingListLink(committee);
+  if (address) {
+    channels.push(mailingListChannel(address, `mailto:${address}`, null));
+  } else if (link) {
+    channels.push(mailingListChannel(link.label || 'Mailing list', toAppUrl(link.commands, link.queryParams ?? undefined), link));
+  }
+
+  const chatUrl = committee.chat_channel ? normalizeToUrl(committee.chat_channel) : null;
+  if (chatUrl) {
+    const host = new URL(chatUrl).hostname;
+    if (host === 'slack.com' || host.endsWith('.slack.com')) {
+      channels.push({
+        kind: 'slack',
+        icon: 'fa-brands fa-slack',
+        tooltip: 'Slack',
+        ariaLabel: 'Slack (opens in new tab)',
+        href: chatUrl,
+        newTab: true,
+        link: null,
+      });
+    } else if (/(^|\.)discord(app)?\.(com|gg)$/.test(host)) {
+      channels.push({
+        kind: 'discord',
+        icon: 'fa-brands fa-discord',
+        tooltip: 'Discord',
+        ariaLabel: 'Discord (opens in new tab)',
+        href: chatUrl,
+        newTab: true,
+        link: null,
+      });
+    } else {
+      channels.push({
+        kind: 'chat',
+        icon: 'fa-light fa-comments',
+        tooltip: 'Chat',
+        ariaLabel: 'Chat (opens in new tab)',
+        href: chatUrl,
+        newTab: true,
+        link: null,
+      });
+    }
+  }
+  return channels;
+}
+
+function mailingListChannel(name: string, href: string, link: CommitteeMailingListLink | null): GroupChannel {
+  return { kind: 'mailing-list', icon: 'fa-light fa-envelope', tooltip: name, ariaLabel: `Mailing list: ${name}`, href, newTab: false, link };
 }
 
 /**

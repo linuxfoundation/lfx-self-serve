@@ -12,15 +12,18 @@ import { describe, expect, it } from 'vitest';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import {
+  isSystemAccountRefusal,
   toAccountMonitorClientError,
-  toGoogleMonitorConnectionError,
   toGoogleMonitorResponse,
   toHubSpotEmailMonitorResponse,
   toLinkedInMonitorResponse,
   toMetaMonitorResponse,
   toMonitorConnectionAccount,
+  toMonitorConnectionError,
   toRedditMonitorResponse,
   toReportBackedMonitorResponse,
+  toSystemAccountRead,
+  toSystemAccountRefusedError,
 } from './campaign-monitor-mapper';
 
 const PULLED_AT = '2026-10-13T00:00:00.000Z';
@@ -489,23 +492,23 @@ describe('toGoogleMonitorResponse', () => {
   });
 });
 
-describe('toGoogleMonitorConnectionError', () => {
+describe('toMonitorConnectionError', () => {
   it('answers a project with no Google Ads connection as the typed 404 a missing connection gets upstream', () => {
-    const error = toGoogleMonitorConnectionError('no_connection', 'campaign_monitor');
+    const error = toMonitorConnectionError('no_connection', 'Google Ads', 'campaign_monitor');
     expect(error.statusCode).toBe(404);
     expect(error.toResponse()['error']).toBe('This project has no Google Ads connection of its own to read the account with.');
     expect(error.toResponse()['upstreamCode']).toBe('connection_not_found');
   });
 
   it('answers a connection with no bound account as a 409 naming the remedy', () => {
-    const error = toGoogleMonitorConnectionError('no_account', 'campaign_monitor');
+    const error = toMonitorConnectionError('no_account', 'Google Ads', 'campaign_monitor');
     expect(error.statusCode).toBe(409);
     expect(error.toResponse()['error']).toContain('no ad account bound to it');
     expect(error.toResponse()['upstreamCode']).toBeUndefined();
   });
 
   it('answers a refused connection read as a 403 naming the missing role, without inviting a retry', () => {
-    const error = toGoogleMonitorConnectionError('forbidden', 'campaign_monitor');
+    const error = toMonitorConnectionError('forbidden', 'Google Ads', 'campaign_monitor');
     expect(error.statusCode).toBe(403);
     expect(error.toResponse()['error']).toBe(
       "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project."
@@ -513,10 +516,67 @@ describe('toGoogleMonitorConnectionError', () => {
   });
 
   it('answers an unreadable connection as a 503 advisory, so the panel shows its text', () => {
-    const error = toGoogleMonitorConnectionError('unavailable', 'campaign_monitor');
+    const error = toMonitorConnectionError('unavailable', 'Google Ads', 'campaign_monitor');
     expect(error.statusCode).toBe(503);
     expect(error.code).toBe(ERROR_CODES.SERVICE_ADVISORY);
     expect(error.toResponse()['error']).toBe("This project's Google Ads connection could not be read just now. Please try again shortly.");
+  });
+});
+
+describe('toMonitorConnectionError for the system-account reads (#5889)', () => {
+  it.each(['LinkedIn Ads', 'Reddit Ads', 'Meta Ads'])('names %s in every state', (platform) => {
+    expect(toMonitorConnectionError('no_connection', platform, 'op').toResponse()['error']).toBe(
+      `This project has no ${platform} connection of its own to read the account with.`
+    );
+    expect(toMonitorConnectionError('no_account', platform, 'op').toResponse()['error']).toContain(`This project's ${platform} connection has no ad account`);
+    expect(toMonitorConnectionError('forbidden', platform, 'op').toResponse()['error']).toContain(`this project's ${platform} connection`);
+    expect(toMonitorConnectionError('unavailable', platform, 'op').toResponse()['error']).toContain(`This project's ${platform} connection could not be read`);
+  });
+});
+
+describe('toSystemAccountRead (#5889)', () => {
+  it('names the account campaign-service read, trimmed, with an empty state that claims nothing about what is recorded', () => {
+    expect(toSystemAccountRead(payload({ account_id: ' t2_lfsystem ' }), 'Reddit Ads')).toEqual({
+      accountId: 't2_lfsystem',
+      emptyMessage: 'No active or paused Reddit Ads campaigns for this project were found in the LF system account for this period.',
+    });
+  });
+
+  it('says nothing is recorded only when campaign-service named no account', () => {
+    expect(toSystemAccountRead(payload({ account_id: '' }), 'LinkedIn Ads').emptyMessage).toBe(
+      'No LinkedIn Ads campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.'
+    );
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+    ['absent', undefined],
+  ])('reads an %s account_id as no account, never an empty string', (_label, accountId) => {
+    expect(toSystemAccountRead(payload({ account_id: accountId as string }), 'LinkedIn Ads').accountId).toBeNull();
+  });
+});
+
+describe('isSystemAccountRefusal / toSystemAccountRefusedError (#5889)', () => {
+  const upstream = (status: number, body: unknown): MicroserviceError =>
+    MicroserviceError.fromMicroserviceResponse(status, 'x', body, 'LFX_V2_CAMPAIGN_SERVICE', '/p');
+
+  it.each([
+    ['a typed 404', upstream(404, { code: '404', message: 'not found' }), true],
+    ['a 400 missing_field', upstream(400, { name: 'missing_field', message: 'x' }), true],
+    ['a bare gateway 404', upstream(404, 'Not Found'), false],
+    ['another 400', upstream(400, { name: 'invalid_pattern', message: 'x' }), false],
+    ['a 409', upstream(409, { reason: 'campaign_account_mismatch' }), false],
+    ['a non-microservice error', new Error('boom'), false],
+  ])('treats %s as a refusal: %s', (_label, error, expected) => {
+    expect(isSystemAccountRefusal(error)).toBe(expected);
+  });
+
+  it('answers a 404 with the refusal code and no upstream text', () => {
+    const error = toSystemAccountRefusedError(upstream(404, { code: '404', message: 'row 7f3e' }), 'Meta Ads', 'meta_monitor');
+    expect(error.statusCode).toBe(404);
+    expect(error.toResponse()['upstreamCode']).toBe('system_account_refused');
+    expect(JSON.stringify(error.toResponse())).not.toContain('7f3e');
   });
 });
 
