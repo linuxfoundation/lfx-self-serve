@@ -9,13 +9,13 @@ import type {
   OrgLensEmployeeViewReviewedShape,
 } from '../interfaces/org-lens-employee-view-register.interface';
 
-/** Fields every Technical Influence row shares: allowed, public code contribution data, pending the product owner's name decision. */
+/** Fields every Technical Influence row shares: allowed, public code contribution data, product owner approved the CDP name and avatar (2026-11-18). */
 const TECHNICAL_ROW = {
   page: 'project-detail',
   source: 'insights',
   verdict: 'allowed',
   enforcement: 'not-in-field-list',
-  status: 'decision',
+  status: 'enforced',
 } as const;
 
 /** Technical Influence card keys, the only project detail panels that may open (mirrors `PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS` from #5849). */
@@ -241,8 +241,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     field: 'rows[].cells[].person.name / avatarUrl / initials, role start and end dates',
     example: "name: 'Ada Example'",
     publicBasis: 'Maintainer role on a public LF project, shown on LFX Insights without login.',
-    note: 'The name is the CDP maintainer name and the avatar comes from the project people table, not necessarily the public GitHub profile.',
-    followUp: 'Product owner: confirm the CDP-derived name and avatar may stand in for the public profile, or limit the panel to GitHub usernames.',
+    note: 'The name is the CDP maintainer name and the avatar comes from the project people table, not necessarily the public GitHub profile. Approved by the product owner (2026-11-18): the CDP profile may be shown here.',
   },
   {
     ...TECHNICAL_ROW,
@@ -252,8 +251,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     field: 'rows[].cells[].person.name / avatarUrl / initials, username, first and last activity, contributions',
     example: "username: 'example-handle'",
     publicBasis: 'Public GitHub username and contribution counts, on LFX Insights without login.',
-    note: 'The GitHub username is public; the display name and avatar come from the CDP identity.',
-    followUp: 'Same CDP-name question as the maintainers panel.',
+    note: 'The GitHub username is public; the display name and avatar come from the CDP identity, which the product owner approved showing (2026-11-18).',
   },
   {
     ...TECHNICAL_ROW,
@@ -264,7 +262,6 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     example: "name: 'Ada Example'",
     publicBasis: 'Commit author on a public repository.',
     note: 'Commit author names are public in git history.',
-    followUp: 'Same CDP-name question as the maintainers panel.',
   },
   {
     ...TECHNICAL_ROW,
@@ -275,7 +272,6 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     example: "name: 'Ada Example'",
     publicBasis: 'Pull request author on a public repository.',
     note: 'Pull request authors are public on the repository.',
-    followUp: 'Same CDP-name question as the maintainers panel.',
   },
   {
     ...TECHNICAL_ROW,
@@ -286,7 +282,6 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     example: "name: 'Ada Example'",
     publicBasis: 'Pull request author and merge time on a public repository.',
     note: 'Public pull request data.',
-    followUp: 'Same CDP-name question as the maintainers panel.',
   },
   {
     id: 'project-detail.technical.free-text',
