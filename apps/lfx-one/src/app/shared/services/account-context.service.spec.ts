@@ -65,7 +65,7 @@ describe('AccountContextService — address-adopted selection', () => {
         { provide: OrgRoleGrantsService, useValue: grants },
         {
           provide: OrgRollUpFamiliesService,
-          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false), setStaffAnchor: vi.fn() },
+          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false), staffAnchor: signal(null), setStaffAnchor: vi.fn() },
         },
         { provide: OrgRollUpFlagService, useValue: { enabled: signal(true), unsettled: signal(false) } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
@@ -415,7 +415,7 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
         },
         {
           provide: OrgRollUpFamiliesService,
-          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false), setStaffAnchor: vi.fn() },
+          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false), staffAnchor: signal(null), setStaffAnchor: vi.fn() },
         },
         { provide: OrgRollUpFlagService, useValue: { enabled: signal(true), unsettled: signal(false) } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
@@ -566,6 +566,7 @@ describe('AccountContextService — family roll-up', () => {
     answered: WritableSignal<boolean>;
     incomplete: WritableSignal<boolean>;
     loading: WritableSignal<boolean>;
+    staffAnchor: WritableSignal<string | null>;
     setStaffAnchor: ReturnType<typeof vi.fn>;
   };
   /** The `org-lens-rollup-enabled` gate — on and settled unless a test says otherwise. */
@@ -621,7 +622,8 @@ describe('AccountContextService — family roll-up', () => {
       answered: signal(true),
       incomplete: signal(false),
       loading: signal(false),
-      setStaffAnchor: vi.fn(),
+      staffAnchor: signal<string | null>(null),
+      setStaffAnchor: vi.fn((uid: string | null) => serverFamilies.staffAnchor.set(uid)),
     };
     rollUpFlag = { enabled: signal(true), unsettled: signal(false) };
     TestBed.configureTestingModule({
@@ -756,6 +758,79 @@ describe('AccountContextService — family roll-up', () => {
       serverAnswer.set([{ rootUid: OTHER, name: 'Other', orgUids: [OTHER] }]);
 
       expect(service.eligibleRollUpFamilies()).toEqual([]);
+    });
+
+    describe('when the anchor moves, the families stay unsettled until its answer lands', () => {
+      const OTHER = '0014100000MgoOOOOO';
+      const otherCo: Account = { accountId: OTHER, accountName: 'Other', membershipTier: '', uid: OTHER };
+      const alpha: OrgRollUpFamily = { rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] };
+      const refetchOnAnchor = (): void => {
+        serverFamilies.setStaffAnchor.mockImplementation((uid: string | null) => {
+          serverFamilies.staffAnchor.set(uid);
+          serverFamilies.unsettled.set(true);
+        });
+      };
+
+      it('admits an addressed roll-up of another family (Back, a link) while that family is fetched, then confirms it', () => {
+        serverAnswer.set([alpha]);
+        service.setAccount(seedB);
+        TestBed.tick();
+        expect(service.selectRollUp(ROOT)).toBe(true);
+        TestBed.tick();
+        service.setAccount(otherCo);
+        TestBed.tick();
+        serverAnswer.set([{ rootUid: OTHER, name: 'Other', orgUids: [OTHER] }]);
+        refetchOnAnchor();
+
+        expect(service.selectRollUp(ROOT)).toBe(false);
+        expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+        expect(service.grantsUnsettled()).toBe(true);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(lastAnchor()).toBe(ROOT);
+
+        serverAnswer.set([alpha]);
+        serverFamilies.unsettled.set(false);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+      });
+
+      it('still refuses an addressed roll-up once the anchored family has answered without it', () => {
+        serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A] }]);
+        service.setAccount(seedA);
+        TestBed.tick();
+
+        expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(false);
+      });
+
+      it('holds a restored staff roll-up when the flag turns on after an unanchored answer', () => {
+        rollUpFlag.enabled.set(false);
+        rollUpFlag.unsettled.set(true);
+        cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+        serverAnswer.set([]);
+        service.initializeUserOrganizations([]);
+        TestBed.tick();
+        expect(service.isRollUp()).toBe(true);
+        refetchOnAnchor();
+
+        rollUpFlag.enabled.set(true);
+        rollUpFlag.unsettled.set(false);
+        expect(service.grantsUnsettled()).toBe(true);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(lastAnchor()).toBe(ROOT);
+
+        serverAnswer.set([alpha]);
+        serverFamilies.unsettled.set(false);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
+      });
     });
   });
 

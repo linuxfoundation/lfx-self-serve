@@ -6,7 +6,7 @@ import { computed, DestroyRef, inject, Injectable, Signal, signal, WritableSigna
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ORG_ROLL_UP_SET_ANCHOR_PARAM, ORG_ROLL_UP_SET_PATH } from '@lfx-one/shared/constants';
 import { OrgLensLookupOutcome, OrgRollUpFamiliesSource, OrgRollUpFamily, OrgRollUpSetOrg, OrgRollUpSetResponse } from '@lfx-one/shared/interfaces';
-import { catchError, distinctUntilChanged, filter, map, Observable, of, switchMap, tap } from 'rxjs';
+import { catchError, filter, map, Observable, of, switchMap, tap } from 'rxjs';
 
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
@@ -36,13 +36,11 @@ export class OrgRollUpFamiliesService {
   private readonly lookupOutcomeInternal: WritableSignal<OrgLensLookupOutcome> = signal<OrgLensLookupOutcome>('ok');
   private readonly loadingInternal: WritableSignal<boolean> = signal<boolean>(false);
   private readonly staffAnchorInternal: WritableSignal<string | null> = signal<string | null>(null);
-  private readonly requestKey: Signal<string | null> = computed(() => {
-    const loadedAt = this.roleGrants.loadedAtMs();
-    return loadedAt === null ? null : `${loadedAt}|${this.staffAnchorInternal() ?? ''}`;
-  });
   private readonly answeredForInternal: WritableSignal<string | null> = signal<string | null>(null);
+  private readonly requestKey: Signal<string | null> = computed(() => this.initRequestKey());
 
   public readonly source: Signal<OrgRollUpFamiliesSource> = this.sourceInternal.asReadonly();
+  public readonly staffAnchor: Signal<string | null> = this.staffAnchorInternal.asReadonly();
   /** The server's families, in its order (alphabetical by family name). Empty unless `source` is `'server'`. */
   public readonly families: Signal<OrgRollUpFamily[]> = this.familiesInternal.asReadonly();
   /** Display fields for every organization the server placed in a family, keyed by uid — for grouping the switcher's rows under their family. */
@@ -64,8 +62,8 @@ export class OrgRollUpFamiliesService {
   );
 
   /**
-   * True once the server has answered for the current grants load — completely, partly or with a
-   * failure. Unlike `!unsettled`, a bad answer counts: this says only that no answer is still owed.
+   * True once the server has answered — completely, partly or with a failure. Unlike `!unsettled`,
+   * a bad answer counts: this says only that no answer is still owed.
    */
   public readonly answered: Signal<boolean> = computed(() => this.sourceInternal() !== 'pending' && this.answeredForInternal() === this.requestKey());
 
@@ -76,7 +74,6 @@ export class OrgRollUpFamiliesService {
     toObservable(this.requestKey)
       .pipe(
         filter((key): key is string => key !== null),
-        distinctUntilChanged(),
         switchMap((key) => this.fetch(key, this.staffAnchorInternal())),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -136,6 +133,11 @@ export class OrgRollUpFamiliesService {
     this.lookupOutcomeInternal.set(response.lookupOutcome ?? (response.degraded === true ? 'partial' : 'ok'));
     this.sourceInternal.set('server');
     this.loadingInternal.set(false);
+  }
+
+  private initRequestKey(): string | null {
+    const loadedAt = this.roleGrants.loadedAtMs();
+    return loadedAt === null ? null : `${loadedAt}|${this.staffAnchorInternal() ?? ''}`;
   }
 }
 
