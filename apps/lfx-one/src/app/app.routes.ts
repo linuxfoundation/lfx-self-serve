@@ -150,11 +150,13 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'memberships',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: { lens: 'org', title: 'Memberships', description: 'Active memberships and tier history.', icon: 'fa-light fa-display' },
       loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
     },
     {
       path: 'memberships/:foundationSlug',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: {
         lens: 'org',
         title: 'Membership Detail',

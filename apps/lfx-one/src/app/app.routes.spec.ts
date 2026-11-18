@@ -385,6 +385,36 @@ describe('Org Lens roll-up routes', () => {
   });
 });
 
+// #5855 — the Memberships page and its detail page are closed to the all employee view (epic #5845). The guard's own
+// behaviour is covered by its spec; this runs each route's real guard to pin that both routes carry it.
+describe('Company Lens Memberships routes (#5855)', () => {
+  const verdictFor = async (path: string, url: string, employeeView: boolean): Promise<string | true> => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(employeeView) } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+      ],
+    });
+    // A page that cannot render a family roll-up is preceded by its roll-up stand-in (same path, no guard); the page itself is the one that has `canActivate`.
+    const pages = (tree: Route[]): Route[] =>
+      tree.flatMap((route) => [...(route.path === path ? [route] : []), ...(route.children ? pages(route.children) : [])]);
+    const guard = pages(routes).find((route) => route.canActivate)!.canActivate![0] as CanActivateFn;
+    const result = await TestBed.runInInjectionContext(() => guard({} as ActivatedRouteSnapshot, { url } as RouterStateSnapshot));
+    return result === true ? true : TestBed.inject(Router).serializeUrl(result as UrlTree);
+  };
+
+  it.each([
+    ['memberships', '/company/acme-inc/memberships'],
+    ['memberships/:foundationSlug', '/company/acme-inc/memberships/linux-foundation'],
+  ])('redirects %s to Overview in the employee view and opens it in the full view', async (path, url) => {
+    expect(await verdictFor(path, url, true)).toBe('/company/acme-inc/overview');
+
+    TestBed.resetTestingModule();
+    expect(await verdictFor(path, url, false)).toBe(true);
+  });
+});
+
 // #5856 — the People page is hidden in the all employee view (epic #5845): its route redirects to Overview there.
 describe('Company Lens People route (all employee view)', () => {
   it('is guarded so the employee view redirects to Overview, and the full view opens it', async () => {

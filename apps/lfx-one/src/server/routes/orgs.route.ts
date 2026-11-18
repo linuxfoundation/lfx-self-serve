@@ -122,36 +122,50 @@ function buildOrgsRouter(): Router {
   router.get('/:accountId/lens/events/:eventId/attendees', (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
   router.get('/:accountId/lens/events/:eventId/speakers', (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
   router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
-  router.get('/:orgUid/lens/memberships/active', (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
-  router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
-  router.get('/:orgUid/lens/memberships/discover', (req, res, next) => orgLensMembershipsController.getDiscoverOpportunities(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationSlug', (req, res, next) => orgLensMembershipsController.getMembershipDetail(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/projects', (req, res, next) => orgLensMembershipsController.getFoundationProjects(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/seats', (req, res, next) => orgLensBoardCommitteeController.getSeats(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/voting-history', (req, res, next) => orgLensBoardCommitteeController.getVotingHistory(req, res, next));
-  router.patch('/:orgUid/lens/memberships/:foundationId/committee-seats/:seatId/reassign', (req, res, next) =>
+  router.get('/:orgUid/lens/memberships/active', blockEmployeeView, (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
+  router.get('/:orgUid/lens/memberships/expired', blockEmployeeView, (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
+  router.get('/:orgUid/lens/memberships/discover', blockEmployeeView, (req, res, next) =>
+    orgLensMembershipsController.getDiscoverOpportunities(req, res, next)
+  );
+  router.get('/:orgUid/lens/memberships/:foundationSlug', blockEmployeeView, (req, res, next) =>
+    orgLensMembershipsController.getMembershipDetail(req, res, next)
+  );
+  router.get('/:orgUid/lens/memberships/:foundationId/projects', blockEmployeeView, (req, res, next) =>
+    orgLensMembershipsController.getFoundationProjects(req, res, next)
+  );
+  router.get('/:orgUid/lens/memberships/:foundationId/seats', blockEmployeeView, (req, res, next) => orgLensBoardCommitteeController.getSeats(req, res, next));
+  router.get('/:orgUid/lens/memberships/:foundationId/voting-history', blockEmployeeView, (req, res, next) =>
+    orgLensBoardCommitteeController.getVotingHistory(req, res, next)
+  );
+  router.patch('/:orgUid/lens/memberships/:foundationId/committee-seats/:seatId/reassign', blockEmployeeView, (req, res, next) =>
     orgLensBoardCommitteeController.reassignSeat(req, res, next)
   );
   // Spec 026 — org-wide people picker (key contacts + committee members) for the Reassign modal.
-  router.get('/:orgUid/lens/employees', (req, res, next) => orgLensBoardCommitteeController.getEmployees(req, res, next));
-  router.get('/:orgUid/lens/memberships/:foundationId/documents', (req, res, next) => orgLensDocumentsController.getMembershipDocuments(req, res, next));
-  router.get('/:orgUid/lens/key-contacts/employees', (req, res, next) => orgLensKeyContactsController.getEmployees(req, res, next));
-  router.post('/:orgUid/lens/memberships/:foundationId/key-contacts', (req, res, next) => orgLensKeyContactsController.addKeyContact(req, res, next));
-  router.put('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', (req, res, next) =>
+  router.get('/:orgUid/lens/employees', blockEmployeeView, (req, res, next) => orgLensBoardCommitteeController.getEmployees(req, res, next));
+  router.get('/:orgUid/lens/memberships/:foundationId/documents', blockEmployeeView, (req, res, next) =>
+    orgLensDocumentsController.getMembershipDocuments(req, res, next)
+  );
+  router.get('/:orgUid/lens/key-contacts/employees', blockEmployeeView, (req, res, next) => orgLensKeyContactsController.getEmployees(req, res, next));
+  router.post('/:orgUid/lens/memberships/:foundationId/key-contacts', blockEmployeeView, (req, res, next) =>
+    orgLensKeyContactsController.addKeyContact(req, res, next)
+  );
+  router.put('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.replaceKeyContact(req, res, next)
   );
-  router.delete('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', (req, res, next) =>
+  router.delete('/:orgUid/lens/memberships/:foundationId/key-contacts/:contactUid', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.removeKeyContact(req, res, next)
   );
   // LFXV2-2067 — slug-keyed proxies for the People → Key Contacts tab; skip the sfid→foundation_id bridge.
-  router.get('/:orgUid/lens/key-contacts/membership/:foundationSlug', (req, res, next) =>
+  router.get('/:orgUid/lens/key-contacts/membership/:foundationSlug', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.getKeyContactCatalogBySlug(req, res, next)
   );
-  router.post('/:orgUid/lens/key-contacts/membership/:foundationSlug', (req, res, next) => orgLensKeyContactsController.addKeyContactBySlug(req, res, next));
-  router.put('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', (req, res, next) =>
+  router.post('/:orgUid/lens/key-contacts/membership/:foundationSlug', blockEmployeeView, (req, res, next) =>
+    orgLensKeyContactsController.addKeyContactBySlug(req, res, next)
+  );
+  router.put('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.replaceKeyContactBySlug(req, res, next)
   );
-  router.delete('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', (req, res, next) =>
+  router.delete('/:orgUid/lens/key-contacts/membership/:foundationSlug/:contactUid', blockEmployeeView, (req, res, next) =>
     orgLensKeyContactsController.removeKeyContactBySlug(req, res, next)
   );
   router.get('/:orgUid/lens/people/all', (req, res, next) => orgLensPeopleController.getAllEmployees(req, res, next));
