@@ -108,23 +108,23 @@ environment:
 
 ### Application Parameters
 
-| Parameter                        | Description                                                                                                    | Default                                                                       |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `replicaCount`                   | Number of replicas                                                                                             | `3`                                                                           |
-| `strategy`                       | Kubernetes rolling update strategy. Default spins up a full new replica set before terminating any old pods.   | `{type: RollingUpdate, rollingUpdate: {maxSurge: "100%", maxUnavailable: 0}}` |
-| `minReadySeconds`                | Seconds a new pod must stay Ready before the rollout counts it as available. Set to `null` to omit.            | `40`                                                                          |
-| `terminationGracePeriodSeconds`  | Seconds Kubernetes waits before SIGKILL after SIGTERM. Must exceed `preStop.sleep` + PM2 `kill_timeout` (70s). | `75`                                                                          |
-| `lifecycle.preStop.exec.command` | Command run inside the container before SIGTERM. Allows kube-proxy/Traefik to deregister the endpoint.         | `["/bin/sh", "-c", "sleep 10"]`                                               |
-| `image.registry`                 | Image registry                                                                                                 | `""`                                                                          |
-| `image.repository`               | Image repository                                                                                               | `ghcr.io/linuxfoundation/lfx-self-serve`                                      |
-| `image.tag`                      | Image tag                                                                                                      | `"latest"`                                                                    |
-| `image.pullPolicy`               | Image pull policy                                                                                              | `IfNotPresent`                                                                |
-| `imagePullSecrets`               | Image pull secrets                                                                                             | `[]`                                                                          |
-| `nodeSelector`                   | Node labels required for scheduling                                                                            | `{}`                                                                          |
-| `tolerations`                    | Taints the pod tolerates. Pair with `nodeSelector` to target a tainted node pool.                              | `[]`                                                                          |
-| `affinity`                       | Node/pod affinity rules. Prefer `topologySpreadConstraints` for simple spreading.                              | `{}`                                                                          |
-| `priorityClassName`              | PriorityClass for preemption ordering. A nonexistent class blocks scheduling.                                  | `""`                                                                          |
-| `topologySpreadConstraints`      | Spread replicas across failure domains                                                                         | `[]`                                                                          |
+| Parameter                        | Description                                                                                                                           | Default                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `replicaCount`                   | Number of replicas                                                                                                                    | `3`                                                                           |
+| `strategy`                       | Kubernetes rolling update strategy. Chart default surges a full new replica set; the deployed value is `maxSurge: 1` (lfx-v2-argocd). | `{type: RollingUpdate, rollingUpdate: {maxSurge: "100%", maxUnavailable: 0}}` |
+| `minReadySeconds`                | Seconds a new pod must stay Ready before the rollout counts it as available. Set to `null` to omit.                                   | `40`                                                                          |
+| `terminationGracePeriodSeconds`  | Seconds Kubernetes waits before SIGKILL after SIGTERM. Must exceed `preStop.sleep` + PM2 `kill_timeout` (70s).                        | `75`                                                                          |
+| `lifecycle.preStop.exec.command` | Command run inside the container before SIGTERM. Allows kube-proxy/Traefik to deregister the endpoint.                                | `["/bin/sh", "-c", "sleep 10"]`                                               |
+| `image.registry`                 | Image registry                                                                                                                        | `""`                                                                          |
+| `image.repository`               | Image repository                                                                                                                      | `ghcr.io/linuxfoundation/lfx-self-serve`                                      |
+| `image.tag`                      | Image tag                                                                                                                             | `"latest"`                                                                    |
+| `image.pullPolicy`               | Image pull policy                                                                                                                     | `IfNotPresent`                                                                |
+| `imagePullSecrets`               | Image pull secrets                                                                                                                    | `[]`                                                                          |
+| `nodeSelector`                   | Node labels required for scheduling                                                                                                   | `{}`                                                                          |
+| `tolerations`                    | Taints the pod tolerates. Pair with `nodeSelector` to target a tainted node pool.                                                     | `[]`                                                                          |
+| `affinity`                       | Node/pod affinity rules. Prefer `topologySpreadConstraints` for simple spreading.                                                     | `{}`                                                                          |
+| `priorityClassName`              | PriorityClass for preemption ordering. A nonexistent class blocks scheduling.                                                         | `""`                                                                          |
+| `topologySpreadConstraints`      | Spread replicas across failure domains                                                                                                | `[]`                                                                          |
 
 `tolerations` only lets a pod land on a tainted node pool; it does not require it. Set `nodeSelector` too if the pod must land there.
 
@@ -496,7 +496,7 @@ campaign is not much comforted that the error named the right field.
 campaign only has a UUID if campaign-service created it — so shipping it first changes nothing
 observable, which is precisely what makes it the safe half to ship alone. The reverse order is
 the one that costs: with CREATE on first, a new pod can mint a UUID campaign while an old pod
-still refuses its pause, and with `replicaCount: 3`, `maxSurge: "100%"` and non-sticky requests
+still refuses its pause, and with `replicaCount: 3`, an effective `maxSurge: 1` and non-sticky requests
 that window lasts as long as the rollout.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM` moves the HubSpot campaign UTM lookup and create

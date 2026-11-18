@@ -249,6 +249,58 @@ pull requests that are still open with the `deploy-preview` label. Manual runs
 default to a dry-run that deletes nothing and accept a custom cut-off; scheduled
 runs always delete.
 
+## Rollouts and Graceful Shutdown
+
+A rollout must not drop requests: a new pod only joins the Service once it can
+serve HTML and its hashed assets, and an old pod leaves the Service endpoints
+before it stops serving. The values below are what runs in dev, staging and
+production. Chart defaults live in `charts/lfx-self-serve/values.yaml`; the
+effective overrides are in `lfx-v2-argocd` `values/global/lfx-self-serve.yaml`,
+which applies to all three environments (PR previews do not inherit it).
+
+| Setting                         | Effective value                                    | Where set | Why                                                                                                                                                                                                 |
+| ------------------------------- | -------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `replicaCount`                  | `3`                                                | both      | One pod per host and zone (see topology spread below), so losing a node or AZ leaves two serving pods.                                                                                              |
+| `strategy.rollingUpdate`        | `maxSurge: 1`, `maxUnavailable: 0`                 | argocd    | Ready count never drops below 3, and one extra pod at a time. The chart default `maxSurge: "100%"` adds 3 pods / 1500m CPU at once and forces Karpenter to add nodes ([#1375][1375]).               |
+| `minReadySeconds`               | `40`                                               | chart     | A new pod stays Ready 40s before it counts as available, above the readiness failure window (3 × 10s) plus one period.                                                                              |
+| `startupProbe` (`/livez`)       | 10s delay, every 10s, 30 failures (310s budget)    | chart     | Cold starts take about 4 minutes ([`ssr-startup.md`](backend/ssr-startup.md)). Liveness and readiness stay off until it passes.                                                                     |
+| `livenessProbe` (`/livez`)      | every 15s, 3 failures                              | chart     | Restarts a hung process. `/livez` is registered before logging, auth and rate limiting so it only depends on the process being alive.                                                               |
+| `readinessProbe` (`/readyz`)    | every 10s, 3 failures, 1 success                   | chart     | Ready means Express is listening, the SSR engine loaded and the browser dist has the HTML shell, main script and stylesheet. It does not check NATS or Snowflake (lazy, not needed for most pages). |
+| `lifecycle.preStop`             | `sleep 10`                                         | chart     | Gives kube-proxy and Traefik time to drop the pod from endpoints before SIGTERM arrives.                                                                                                            |
+| `terminationGracePeriodSeconds` | `75`                                               | chart     | Must exceed `preStop` (10s, counted inside the grace period) plus PM2 `kill_timeout` (60s) = 70s, leaving a 5s margin.                                                                              |
+| `podDisruptionBudget`           | `minAvailable: 2`                                  | argocd    | Protects against node drains and Karpenter consolidation taking out two pods at once. Rollouts are governed by `strategy`, not the PDB. The chart default is disabled.                              |
+| `topologySpreadConstraints`     | `maxSkew: 1` on hostname and zone, `minDomains: 3` | argocd    | One pod on each of 3 nodes and 3 AZs. Hard `podAntiAffinity` backs it up because Karpenter was seen placing a 2/1 split anyway ([#1878][1878]).                                                     |
+| `resources`                     | requests 500m / 2Gi, limits 2000m / 4Gi            | argocd    | Sized for the dedicated `self-serve` NodePool so a `maxSurge: 1` rollout needs no new nodes (`lfx-v2-opentofu` `docs/node-pools.md`).                                                               |
+
+[1375]: https://github.com/linuxfoundation/lfx-self-serve/issues/1375
+[1878]: https://github.com/linuxfoundation/lfx-self-serve/issues/1878
+
+### Shutdown sequence
+
+When a pod enters Terminating, the grace-period clock starts and these run in
+order (`apps/lfx-one/src/server/server.ts`, `ecosystem.config.js`):
+
+| Time  | Step                                                                                                 |
+| ----- | ---------------------------------------------------------------------------------------------------- |
+| 0–10s | `preStop` sleep while endpoint removal propagates.                                                   |
+| 10s   | SIGTERM. `/readyz` flips to 503 (`shutting_down`) before anything async runs.                        |
+| +15s  | Fixed load balancer drain wait, 1.5× the readiness period, so the LB sees the 503 and stops routing. |
+| +25s  | `httpServer.close()` lets in-flight requests finish.                                                 |
+| +15s  | NATS and Snowflake pools drain in parallel, each capped at a 15s budget.                             |
+| 70s   | PM2 `kill_timeout` (60s after SIGTERM) is the hard stop. SIGKILL follows at 75s.                     |
+
+If you change `preStop`, the readiness period or any drain window, keep
+`terminationGracePeriodSeconds` above `preStop` + `kill_timeout`, and update
+the comments in `values.yaml` and `ecosystem.config.js` with it.
+
+### Not yet verified
+
+A dev rollout under continuous page and asset load, recording failed requests,
+has not been run for these values ([lfx-self-serve-ops#1477][ops1477]). Treat
+the table as the intended configuration, not a measured zero-error result.
+
+[ops1477]: https://github.com/linuxfoundation/lfx-self-serve-ops/issues/1477
+
 ## Helm Chart
 
 The chart source lives at `charts/lfx-self-serve/` in this repo. See

@@ -4,7 +4,9 @@
 replicaCount: 3
 
 # strategy controls the Kubernetes rolling update behavior.
-# maxSurge: "100%" spins up a full new replica set before terminating any old pods (zero disruption).
+# The effective deployed value is maxSurge: 1, set in lfx-v2-argocd values/global/lfx-self-serve.yaml
+# (lfx-self-serve#1375), so at most one extra pod runs during a rollout and old pods are replaced one at a time.
+# The "100%" below is only the chart default and is overridden there.
 # maxUnavailable: 0 ensures the ready count never drops below the desired replica count.
 strategy:
   type: RollingUpdate
@@ -505,7 +507,7 @@ environment:
   # STATUS_TOGGLE below must be on and CONVERGED before this goes on. Otherwise a new pod mints a
   # UUID campaign while an old pod, still without the toggle flag, refuses that campaign's
   # pause/resume at campaign.controller.ts. Requests are not sticky and this chart runs
-  # replicaCount: 3 with maxSurge: "100%", so during such an overlap pause — the primary
+  # replicaCount: 3 with an effective maxSurge: 1 (set in lfx-v2-argocd), so during such an overlap pause — the primary
   # cost-control lever — can intermittently 400 on a campaign created moments earlier.
   #
   # To deploy safely from this chart, roll it out with this value overridden OFF, let
