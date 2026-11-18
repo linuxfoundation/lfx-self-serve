@@ -5,9 +5,12 @@ replicaCount: 3
 
 # strategy controls the Kubernetes rolling update behavior.
 # The effective deployed value is maxSurge: 1, set in lfx-v2-argocd values/global/lfx-self-serve.yaml
-# (lfx-self-serve#1375), so at most one extra pod runs during a rollout and old pods are replaced one at a time.
+# (lfx-self-serve#1375), so the rollout adds at most one extra non-terminating pod at a time.
+# Pods still draining in their terminationGracePeriodSeconds are not counted, so the total running
+# pods can briefly exceed replicaCount + 1; do not treat that as a hard resource ceiling.
 # The "100%" below is only the chart default and is overridden there.
-# maxUnavailable: 0 ensures the ready count never drops below the desired replica count.
+# maxUnavailable: 0 stops the rollout from voluntarily scaling below the desired ready count; it does
+# not guarantee that count through node or pod failures.
 strategy:
   type: RollingUpdate
   rollingUpdate:
