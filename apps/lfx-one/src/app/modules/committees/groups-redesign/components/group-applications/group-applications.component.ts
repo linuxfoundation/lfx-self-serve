@@ -24,7 +24,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { GROUPS_HOME_UNDO_MS } from '@lfx-one/shared/constants';
+import { GROUPS_HOME_LINK_STATE, GROUPS_HOME_UNDO_MS } from '@lfx-one/shared/constants';
 import { GroupsHomeUndo, MyPendingApplication, PendingApplicationRowVm, UiFocusable, UiToastRef } from '@lfx-one/shared/interfaces';
 import { getEntityCommands } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -76,7 +76,7 @@ export class GroupApplicationsComponent {
   protected readonly truncated = signal<ReadonlySet<HTMLElement>>(new Set());
   /** Undo of the last withdraw, also shown in the drawer while its toast is up. */
   protected readonly undo = signal<GroupsHomeUndo | null>(null);
-  protected readonly linkState = { backLabel: 'Groups', fromMeLens: true };
+  protected readonly linkState = GROUPS_HOME_LINK_STATE;
   private readonly loaded: Signal<MyPendingApplication[]> = this.initLoaded();
   /** Pending applications, without withdrawn ones and groups the viewer already belongs to. */
   protected readonly rows: Signal<PendingApplicationRowVm[]> = this.initRows();
