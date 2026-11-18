@@ -3088,6 +3088,12 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     const el = (f: ComponentFixture<ImplementationTabComponent>, testId: string): HTMLElement | null =>
       (f.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
 
+    /** Neither the picker's field nor the legacy `adAccountId` goes out: the create uses the default. */
+    function expectNoAccountSent(sent: Record<string, unknown>): void {
+      expect(sent).not.toHaveProperty('selectedAdAccountId');
+      expect(sent).not.toHaveProperty('adAccountId');
+    }
+
     /** What the operator picks in the `lfx-select`: it writes the form control, so the test does too. */
     function pick(f: ComponentFixture<ImplementationTabComponent>, accountId: string): void {
       (
@@ -3106,7 +3112,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
 
       expect(createAccountCalls).toEqual([]);
       expect(el(f, 'implementation-linkedin-account-from-connection')).not.toBeNull();
-      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+      expectNoAccountSent(submitAndRead(f));
     });
 
     it('holds Create while the account is loading, then offers global_marketing_ops a picker', async () => {
@@ -3128,14 +3134,17 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       expect(c.canSubmit()).toBe(true);
     });
 
-    it('sends a chosen grant as adAccountId', async () => {
+    it('sends a chosen grant as selectedAdAccountId', async () => {
       const f = await mountWithSelection(true);
       await answer(f, chooser);
 
       pick(f, GRANT.accountId);
 
       expect(el(f, 'implementation-linkedin-create-account-page')?.textContent).toContain(GRANT.orgId);
-      expect(submitAndRead(f)['adAccountId']).toBe(GRANT.accountId);
+      const sent = submitAndRead(f);
+      expect(sent['selectedAdAccountId']).toBe(GRANT.accountId);
+      // The legacy linkedin.json id the form still carries is not sent on this road.
+      expect(sent).not.toHaveProperty('adAccountId');
     });
 
     // The ED 403: while campaign-service's selection is on, naming the default needs global_marketing_ops too.
@@ -3146,7 +3155,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       pick(f, GRANT.accountId);
       pick(f, DEFAULT_ACCOUNT.accountId);
 
-      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+      expectNoAccountSent(submitAndRead(f));
     });
 
     it('starts the picker on the default and sends nothing for an account the answer does not list', async () => {
@@ -3156,7 +3165,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       expect((f.componentInstance as unknown as { linkedInChosenAccountId(): string }).linkedInChosenAccountId()).toBe(DEFAULT_ACCOUNT.accountId);
       pick(f, '999999999');
 
-      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+      expectNoAccountSent(submitAndRead(f));
     });
 
     it('shows anyone who cannot choose the default read-only and sends no account', async () => {
@@ -3166,7 +3175,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       expect(el(f, 'implementation-linkedin-create-account-select')).toBeNull();
       expect(el(f, 'implementation-linkedin-create-account-default')?.textContent).toContain('Shared system account (100000001)');
       // Not the legacy linkedin.json id the form still carries either.
-      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+      expectNoAccountSent(submitAndRead(f));
     });
 
     it('lets a create through to the default when the account read fails', async () => {
@@ -3177,7 +3186,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
 
       expect(el(f, 'implementation-linkedin-create-account-failed')).not.toBeNull();
       expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(true);
-      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+      expectNoAccountSent(submitAndRead(f));
     });
   });
 

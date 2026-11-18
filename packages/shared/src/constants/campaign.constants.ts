@@ -1447,6 +1447,9 @@ export const LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[0-9]{1,64}$/;
  */
 export const LINKEDIN_AD_ACCOUNT_ID_PATTERN = LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN;
 
+/** A LinkedIn create naming a granted ad account from a caller without `global_marketing_ops` on the project (#5809). */
+export const LINKEDIN_AD_ACCOUNT_RESTRICTED_MESSAGE = 'Only the LF marketing team can create a LinkedIn campaign in another ad account.';
+
 /** A LinkedIn create naming a granted ad account, refused because the caller's `global_marketing_ops` could not be checked (#5809). */
 export const LINKEDIN_AD_ACCOUNT_ACCESS_UNAVAILABLE_MESSAGE = "The LinkedIn ad account choice couldn't be checked right now. Try again in a moment.";
 export const META_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^act_[0-9]{1,60}$/;

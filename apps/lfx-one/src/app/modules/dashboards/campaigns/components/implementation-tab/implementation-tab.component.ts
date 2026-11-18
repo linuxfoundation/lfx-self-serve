@@ -709,8 +709,8 @@ export class ImplementationTabComponent implements OnInit {
    * picker named another. So on an explicit yes the selector is replaced, and the account gate below
    * does not block on it. With account selection on (`linkedInAccountSelectionAvailable`) the
    * replacement reads the account from campaign-service and, for `global_marketing_ops`, offers a
-   * choice, sent only for a non-default pick (`linkedInAdAccountField`); the server forwards only a
-   * pick that campaign-service lists as a grant. Otherwise it is a read-only line. `false` or unknown
+   * choice, sent as `selectedAdAccountId` only for a non-default pick (`linkedInAdAccountField`); the
+   * server forwards it only when campaign-service lists it as a grant, and refuses it otherwise. Otherwise it is a read-only line. `false` or unknown
    * keeps the selector: the legacy creator still reads the chosen account.
    */
   protected readonly linkedInAccountSetByConnection = computed<boolean>(() => this.googleCreativeEnabled() === true);
@@ -2265,7 +2265,6 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInEffectiveAccount: Signal<LinkedInCreateAccountOption | null> = this.initLinkedInEffectiveAccount();
   /** Whether this caller may choose the LinkedIn ad account (#5809): the read answered `canChoose`. */
   protected readonly linkedInCanChooseAccount = computed<boolean>(() => this.linkedInCreateAccount().account?.canChoose === true);
-  /** The accounts the LinkedIn ad account picker offers (#5809), the default first. */
   /** The LinkedIn ad account picker's rows (#5809), the default first and marked as such. */
   protected readonly linkedInCreateAccountOptions = computed(() =>
     (this.linkedInCreateAccount().account?.accounts ?? []).map((a) => ({
@@ -6479,7 +6478,7 @@ export class ImplementationTabComponent implements OnInit {
               ...this.linkedInTargetingEditField(),
               variants: this.linkedInVariantsForCreate(),
               // The legacy creator reads the form's account. When the connection decides it, only a
-              // chosen non-default account is sent (#5809); the legacy id would be forwarded and refused.
+              // chosen non-default account is sent, as `selectedAdAccountId` (#5809).
               ...(this.linkedInAccountSetByConnection() ? this.linkedInAdAccountField() : { adAccountId: this.linkedInAccountId() }),
               ...this.biddingField('linkedin-ads'),
             },
@@ -8297,14 +8296,15 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * `{ adAccountId }` only for a chosen account that is NOT the default (#5809). While campaign-service's
-   * account selection is on it refuses ANY `adAccountId`, the default included, from a caller without
-   * `global_marketing_ops`, so the default is always sent as no account at all.
+   * `{ selectedAdAccountId }` only for a chosen account that is NOT the default (#5809). A field of its
+   * own, so the server can tell a pick from the legacy `adAccountId` this form still carries, which it
+   * ignores on this road. While campaign-service's account selection is on it refuses ANY `adAccountId`,
+   * the default included, from a caller without `global_marketing_ops`, so the default is sent as nothing.
    */
-  private linkedInAdAccountField(): { adAccountId?: string } {
+  private linkedInAdAccountField(): { selectedAdAccountId?: string } {
     const account = this.linkedInEffectiveAccount();
     if (!this.linkedInAccountSelectionAvailable() || !this.linkedInCanChooseAccount() || !account || account.isDefault) return {};
-    return { adAccountId: account.accountId };
+    return { selectedAdAccountId: account.accountId };
   }
 
   private loadLinkedInAccounts(): void {

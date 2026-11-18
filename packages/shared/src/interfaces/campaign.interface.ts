@@ -2132,12 +2132,14 @@ export interface LinkedInCampaignCreateRequest {
   variants: LinkedInCreativeVariant[];
   project?: string;
   driveFolderUrl?: string;
-  /**
-   * The ad account. The legacy creator reads it; on the campaign-service road it is forwarded only while
-   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION` is on (#5809), and the tab omits it for the
-   * default account.
-   */
+  /** The legacy creator's ad account, from `linkedin.json`. Never forwarded on the campaign-service road. */
   adAccountId?: string;
+  /**
+   * The ad account picked in the Implement tab's account picker (#5809), sent only for a non-default pick.
+   * The server forwards it to campaign-service as `adAccountId` when it is a listed grant and the caller holds
+   * `global_marketing_ops`, and refuses the create otherwise, rather than creating in another account.
+   */
+  selectedAdAccountId?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
   /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
