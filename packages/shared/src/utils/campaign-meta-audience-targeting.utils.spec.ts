@@ -9,10 +9,14 @@ import { compactMetaAudienceTargeting, metaAudienceTargetingRefusal, metaTargeti
 const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => String(1000 + i));
 
 describe('metaAudienceTargetingRefusal', () => {
-  it.each([[undefined], [null], [{}], [DEFAULT_META_AUDIENCE_TARGETING], [{ ageMin: 25, ageMax: 65, advantageAudience: true, genders: ['Male'] }]])(
-    'accepts %j',
-    (raw) => expect(metaAudienceTargetingRefusal(raw)).toBeNull()
-  );
+  it.each([
+    [undefined],
+    [null],
+    [{}],
+    [DEFAULT_META_AUDIENCE_TARGETING],
+    [{ ageMin: 25, ageMax: 65, advantageAudience: true, genders: ['Male'] }],
+    [{ ageMin: 40, ageMax: 50, advantageAudience: false }],
+  ])('accepts %j', (raw) => expect(metaAudienceTargetingRefusal(raw)).toBeNull());
 
   it.each([
     ['a non-object', 'x', 'metaConfig.targeting'],
@@ -40,7 +44,15 @@ describe('metaAudienceTargetingRefusal', () => {
 describe('compactMetaAudienceTargeting', () => {
   it('sends nothing for the defaults', () => {
     expect(compactMetaAudienceTargeting(DEFAULT_META_AUDIENCE_TARGETING)).toBeNull();
-    expect(compactMetaAudienceTargeting({ genders: ['male', 'female'], advantageAudience: false })).toBeNull();
+    expect(compactMetaAudienceTargeting({ genders: ['male', 'female'], advantageAudience: undefined })).toBeNull();
+  });
+
+  it('keeps an explicit Advantage+ choice, false included, which alone is something to send', () => {
+    expect(compactMetaAudienceTargeting({ advantageAudience: false })).toEqual({ advantageAudience: false });
+    expect(compactMetaAudienceTargeting({ excludedCustomAudiences: ['1001'], advantageAudience: false })).toEqual({
+      excludedCustomAudiences: ['1001'],
+      advantageAudience: false,
+    });
   });
 
   it('keeps only what differs from Meta defaults, trimmed and de-duplicated', () => {

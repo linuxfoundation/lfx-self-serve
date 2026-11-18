@@ -965,14 +965,13 @@ export const META_CUSTOM_AUDIENCE_LISTS: readonly MetaCustomAudienceListView[] =
   { key: 'customAudiences', label: 'Include custom audiences' },
   { key: 'excludedCustomAudiences', label: 'Exclude custom audiences' },
 ];
-/** The Meta audience targeting a fresh form starts from, which sends nothing. */
+/** The Meta audience targeting a fresh form starts from, which sends nothing: Advantage+ audience is left unsaid. */
 export const DEFAULT_META_AUDIENCE_TARGETING: Readonly<MetaAudienceTargetingDraft> = {
   ageMin: META_AUDIENCE_MIN_AGE,
   ageMax: META_AUDIENCE_MAX_AGE,
   genders: [],
   customAudiences: [],
   excludedCustomAudiences: [],
-  advantageAudience: false,
 };
 
 /**

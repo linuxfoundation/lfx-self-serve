@@ -71,6 +71,7 @@ import type {
   CampaignBriefPersistenceState,
   CampaignCreateResult,
   CampaignDeviceBidModifier,
+  CampaignCapabilityReadState,
   CampaignImplementationDraft,
   MetaAudienceTargetingDraft,
   CampaignPlatformResult,
@@ -23343,12 +23344,23 @@ describe('ImplementationTabComponent meta audience targeting', () => {
   const query = (f: ComponentFixture<ImplementationTabComponent>, testId: string): HTMLElement | null =>
     f.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
+  const setFoundation = (slug: string): void =>
+    TestBed.inject(ProjectContextService).setFoundation({ uid: `uid-${slug}`, slug, name: slug } as ProjectContext, false);
+  /** A draft holding `targeting`, saved under foundation `tlf`. */
+  const held = (targeting: Partial<MetaAudienceTargetingDraft>): Record<string, unknown> => ({
+    metaAudienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ...targeting },
+    metaAudienceTargetingProject: 'tlf',
+  });
+
   async function mount(
     enabled: boolean | null,
     customAudiences: boolean | null,
-    draft?: Record<string, unknown>
+    draft?: Record<string, unknown>,
+    read: CampaignCapabilityReadState = 'ready'
   ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
     const f = TestBed.createComponent(ImplementationTabComponent);
+    f.componentRef.setInput('createCapabilityRead', read);
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     f.componentRef.setInput('metaAudienceTargetingEnabled', enabled);
@@ -23397,10 +23409,14 @@ describe('ImplementationTabComponent meta audience targeting', () => {
             getLinkedInAccounts: () => of([]),
             getLinkedInTargetingProfiles: () => of([]),
             getMetaCustomAudiences: () => of({ accountId: 'act_1', audiences: [], truncated: false }),
+            // The slot grid reads the plan once the brief is saved, as in the suites above.
+            getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
       ],
     }).compileComponents();
+    TestBed.inject(ProjectContextService).setRouteLensKind('foundation');
+    setFoundation('tlf');
   });
 
   it('sends the compacted targeting only on an explicit yes', async () => {
@@ -23423,27 +23439,55 @@ describe('ImplementationTabComponent meta audience targeting', () => {
   });
 
   it.each([
-    [false, 'LF marketing team'],
-    [null, 'Could not confirm'],
-  ])('holds Create, keeping each audience removable, when custom audiences are held and the caller answer is %s', async (answer, message) => {
-    const { f } = await mount(true, answer, { metaAudienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, excludedCustomAudiences: ['1001'] } });
+    [false, 'restricted'],
+    [null, 'failed'],
+  ])('holds Create, keeping each audience removable, when custom audiences are held and the caller answer is %s', async (answer, kind) => {
+    const { f } = await mount(true, answer, held({ excludedCustomAudiences: ['1001'] }));
 
-    expect(c(f)['createBlockedReason']()).toContain(message);
-    expect(query(f, 'implementation-meta-audience-targeting-held')?.textContent).toContain(message);
+    expect(c(f)['createBlockedReason']()).toContain('custom audiences');
+    expect(query(f, `implementation-meta-audience-targeting-block-${kind}`)).not.toBeNull();
+    expect(query(f, 'implementation-meta-audience-targeting-clear')).toBeNull();
     query(f, 'meta-audience-targeting-excludedCustomAudiences-remove-1001')?.click();
     f.detectChanges();
 
     expect(c(f)['createBlockedReason']()).toBeNull();
   });
 
-  it('holds Create for targeting the deployment cannot send, until it is cleared', async () => {
-    const { f } = await mount(false, false, { metaAudienceTargeting: { ...DEFAULT_META_AUDIENCE_TARGETING, ageMax: 44 } });
+  it('holds Create for targeting this deployment answered no to, offering Clear', async () => {
+    const { f } = await mount(false, false, held({ ageMax: 44 }));
 
-    expect(c(f)['createBlockedReason']()).toContain('not available');
-    query(f, 'implementation-meta-audience-targeting-clear')?.click();
+    expect(query(f, 'implementation-meta-audience-targeting-block-unsupported')).not.toBeNull();
+    query(f, 'implementation-meta-audience-targeting-clear')?.querySelector('button')?.click();
     f.detectChanges();
 
     expect('targeting' in (await submittedMeta(f))).toBe(false);
+  });
+
+  // An unanswered capability (the list loading or failed) is not a no: Create waits, and nothing destructive is offered.
+  it.each([
+    ['pending', 'pending'],
+    ['failed', 'failed'],
+  ] as const)('holds Create without offering Clear while the capability read is %s', async (read, kind) => {
+    const { f } = await mount(null, null, held({ advantageAudience: false }), read);
+
+    expect(c(f)['createBlockedReason']()).toContain('Meta audience targeting');
+    expect(query(f, `implementation-meta-audience-targeting-block-${kind}`)).not.toBeNull();
+    expect(query(f, 'implementation-meta-audience-targeting-clear')).toBeNull();
+  });
+
+  it("drops the previous foundation's targeting on a foundation switch, live and from the saved draft", async () => {
+    const { f, latest } = await mount(true, true);
+    await edit(f, { ageMin: 30, customAudiences: ['1001'] });
+    const savedUnderA = latest();
+
+    setFoundation('cncf');
+    f.detectChanges();
+    await f.whenStable();
+    expect(c(f)['metaAudienceTargeting']()).toEqual(DEFAULT_META_AUDIENCE_TARGETING);
+    expect(latest()?.metaAudienceTargeting).toEqual(DEFAULT_META_AUDIENCE_TARGETING);
+
+    const remounted = await mount(true, true, { ...savedUnderA });
+    expect(c(remounted.f)['metaAudienceTargeting']()).toEqual(DEFAULT_META_AUDIENCE_TARGETING);
   });
 
   it('saves the targeting to the draft, restores it, and clears it on a brief switch', async () => {
@@ -23451,7 +23495,7 @@ describe('ImplementationTabComponent meta audience targeting', () => {
     await edit(f, { genders: ['male'], customAudiences: ['1001'] });
     expect(latest()?.metaAudienceTargeting).toMatchObject({ genders: ['male'], customAudiences: ['1001'] });
 
-    const restored = await mount(true, true, { metaAudienceTargeting: latest()?.metaAudienceTargeting });
+    const restored = await mount(true, true, { ...latest() });
     expect(c(restored.f)['metaAudienceTargeting']()).toMatchObject({ genders: ['male'], customAudiences: ['1001'] });
 
     f.componentRef.setInput('draft', null);

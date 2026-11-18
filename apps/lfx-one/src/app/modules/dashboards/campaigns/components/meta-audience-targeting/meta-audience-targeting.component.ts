@@ -69,6 +69,8 @@ export class MetaAudienceTargetingComponent {
   protected readonly refusal: Signal<MetaAudienceTargetingRefusal | null> = computed(() => metaAudienceTargetingRefusal(this.targeting()));
   protected readonly maleSelected = computed<boolean>(() => this.targeting().genders.includes('male'));
   protected readonly femaleSelected = computed<boolean>(() => this.targeting().genders.includes('female'));
+  /** Ticked only for an explicit yes; unticked both for an explicit no and for unsaid, which only a click turns into a choice. */
+  protected readonly advantageSelected = computed<boolean>(() => this.targeting().advantageAudience === true);
   /** Whether either list holds a pick, which keeps the lists (and their Remove) on screen without the relation. */
   protected readonly hasCustomAudiences = computed<boolean>(
     () => this.targeting().customAudiences.length + this.targeting().excludedCustomAudiences.length > 0
@@ -110,6 +112,7 @@ export class MetaAudienceTargetingComponent {
     });
   }
 
+  /** The operator's own choice, so it is written as given: an untick after a tick sends `false`, not nothing. */
   protected onAdvantage(checked: boolean): void {
     this.targeting.update((t) => ({ ...t, advantageAudience: checked }));
   }

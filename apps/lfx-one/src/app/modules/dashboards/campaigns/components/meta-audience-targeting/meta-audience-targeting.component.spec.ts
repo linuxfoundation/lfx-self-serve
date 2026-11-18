@@ -86,6 +86,22 @@ describe('MetaAudienceTargetingComponent', () => {
     expect(targeting()).toMatchObject({ ageMin: 25, ageMax: 44, genders: ['female'] });
   });
 
+  it('leaves Advantage+ unsaid until the box is touched, then records an untick as an explicit no', () => {
+    render(false);
+    const box = (): HTMLInputElement => query('meta-audience-targeting-advantage')?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+
+    expect('advantageAudience' in targeting()).toBe(false);
+    expect(box().checked).toBe(false);
+
+    box().click();
+    fixture.detectChanges();
+    expect(targeting().advantageAudience).toBe(true);
+
+    box().click();
+    fixture.detectChanges();
+    expect(targeting().advantageAudience).toBe(false);
+  });
+
   it('shows the refusal the create route would give', () => {
     render(false, { ageMin: 30, advantageAudience: true });
 

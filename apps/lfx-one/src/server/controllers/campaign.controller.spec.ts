@@ -2483,11 +2483,20 @@ describe('CampaignController.createCampaign cutover', () => {
     });
 
     it('sends no targeting at all when every field is its default, and asks nothing about the caller', async () => {
-      const sent = await sendWith({ ageMin: 18, ageMax: 65, genders: [], customAudiences: [], excludedCustomAudiences: [], advantageAudience: false });
+      const sent = await sendWith({ ageMin: 18, ageMax: 65, genders: [], customAudiences: [], excludedCustomAudiences: [], advantageAudience: null });
 
       expect(sent).not.toHaveProperty('targeting');
       expect(marketingOps).not.toHaveBeenCalled();
     });
+
+    // campaign-service reads advantageAudience as a tri-state: an explicit false sends 0, which is an
+    // instruction, so it is forwarded on its own and is allowed with any age range.
+    it.each([[{ advantageAudience: false }], [{ advantageAudience: false, ageMin: 40, ageMax: 50 }]])(
+      'forwards an explicit Advantage+ off: %j',
+      async (targeting) => {
+        expect((await sendWith(targeting))?.['targeting']).toEqual(targeting);
+      }
+    );
 
     it('forwards age and gender from a caller without global_marketing_ops', async () => {
       marketingOps.mockResolvedValue(false);

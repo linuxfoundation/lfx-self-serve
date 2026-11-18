@@ -1257,6 +1257,11 @@ export interface CampaignImplementationDraft {
   /** The Meta audience targeting as edited (#5905). Absent means the draft predates it. */
   metaAudienceTargeting?: MetaAudienceTargetingDraft;
   /**
+   * The foundation slug {@link metaAudienceTargeting} was edited under: restored only under the same one,
+   * because custom audience ids belong to the ad account that foundation's connection resolves to.
+   */
+  metaAudienceTargetingProject?: string;
+  /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
    * Here for the same reason as the four above — signal-backed, so `campaignForm.valueChanges`
@@ -2399,11 +2404,19 @@ export interface MetaAudienceTargeting {
   /** Numeric Meta custom-audience ids (lookalikes included); needs `global_marketing_ops`. */
   customAudiences?: string[];
   excludedCustomAudiences?: string[];
+  /**
+   * Advantage+ audience (`targeting_automation.advantage_audience`), a tri-state as campaign-service reads
+   * it: absent is "not said" (campaign-service sends 0 only when an inclusion is set, else nothing), `false`
+   * always sends 0 and `true` sends 1. So an explicit `false` is an instruction, never a default.
+   */
   advantageAudience?: boolean;
 }
 
-/** The Implement tab's Meta audience targeting as edited: every key present, defaults included. */
-export type MetaAudienceTargetingDraft = Required<MetaAudienceTargeting>;
+/**
+ * The Implement tab's Meta audience targeting as edited: every key present, defaults included, except
+ * `advantageAudience`, which stays absent until the operator ticks or unticks the box.
+ */
+export type MetaAudienceTargetingDraft = Required<Omit<MetaAudienceTargeting, 'advantageAudience'>> & Pick<MetaAudienceTargeting, 'advantageAudience'>;
 
 /** The two custom-audience lists of {@link MetaAudienceTargeting}. */
 export type MetaCustomAudienceListKey = 'customAudiences' | 'excludedCustomAudiences';
@@ -7434,6 +7447,17 @@ export type GoogleCampaignAudienceSegmentsRefusal =
  * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
  */
 export interface CampaignGoogleAudienceSegmentsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Meta audience targeting (#5905) the draft holds but the request cannot carry,
+ * on {@link CampaignGoogleAudienceSegmentsBlock}'s kinds: `unsupported` when this deployment answered no
+ * (`metaAudienceTargetingEnabled === false`), `restricted` when the caller answered no for custom audiences
+ * (`metaCustomAudiencesEnabled === false`), and the read's own states while either is unanswered.
+ */
+export interface CampaignMetaAudienceTargetingBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
   message: string;
 }

@@ -274,6 +274,7 @@ import type {
   CampaignGoogleExtensionsCapabilityBlock,
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
+  CampaignMetaAudienceTargetingBlock,
   CampaignJobOutcome,
   CampaignCreateAnother,
   CampaignCreateAnotherDialogData,
@@ -3361,28 +3362,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The targeting the create would carry, before defaults are dropped: the draft exactly as the child
    * shows and validates it, or none while the capability is off. Nothing chosen is stripped here: what
-   * cannot be sent holds Create instead ({@link metaAudienceTargetingHeld}).
+   * cannot be sent holds Create instead ({@link metaAudienceTargetingBlock}).
    */
   private readonly metaAudienceTargetingRequested = computed<MetaAudienceTargetingDraft | null>(() =>
     this.metaAudienceTargetingAvailable() ? this.metaAudienceTargeting() : null
   );
-  /**
-   * Why Create is held for Meta targeting the draft holds but the request cannot carry, or `null` — the
-   * `initGoogleAudienceSegmentsBlock` pattern: held rather than dropped, because targeting changes who the
-   * campaign reaches, with a way to clear it in every state (Clear, or each audience's Remove).
-   */
-  protected readonly metaAudienceTargetingHeld = computed<string | null>(() => {
-    const chosen = compactMetaAudienceTargeting(this.metaAudienceTargeting());
-    if (chosen === null) return null;
-    if (!this.metaAudienceTargetingAvailable()) {
-      return 'Meta audience targeting is not available here, so the targeting on this brief cannot be sent. Clear it to create the campaign.';
-    }
-    if (!metaTargetingNamesCustomAudiences(chosen) || this.metaCustomAudiencesAvailable()) return null;
-    if (this.metaCustomAudiencesEnabled() === false) {
-      return 'Only the LF marketing team can use Meta custom audiences, because every foundation shares one Meta ad account. Remove them to create the campaign.';
-    }
-    return 'Could not confirm that you can use Meta custom audiences, so Create waits rather than dropping them. Reload to check again, or remove them.';
-  });
+  protected readonly metaAudienceTargetingBlock: Signal<CampaignMetaAudienceTargetingBlock | null> = this.initMetaAudienceTargetingBlock();
   /** Why the Meta audience targeting cannot be sent, or `null`: the create route's own rules. */
   protected readonly metaAudienceTargetingError = computed<string | null>(
     () => metaAudienceTargetingRefusal(this.metaAudienceTargetingRequested())?.message ?? null
@@ -3946,7 +3931,7 @@ export class ImplementationTabComponent implements OnInit {
     // `null` while it is off). campaign-service refuses the same EU and one-sided states with a 400.
     if (metaSelected && (this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError()))
       return 'Meta Ads: fix the Instagram account or the EU disclosure fields.';
-    if (metaSelected && this.metaAudienceTargetingHeld() !== null) return `Meta Ads: ${this.metaAudienceTargetingHeld()}`;
+    if (metaSelected && this.metaAudienceTargetingBlock() !== null) return `Meta Ads: ${this.metaAudienceTargetingBlock()?.message}`;
     if (metaSelected && this.metaAudienceTargetingError() !== null) return `Meta Ads: ${this.metaAudienceTargetingError()}`;
 
     // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
@@ -4911,6 +4896,10 @@ export class ImplementationTabComponent implements OnInit {
       .subscribe(() => {
         this.loadLinkedInAccounts();
         this.loadLinkedInTargetingProfiles();
+        // The brief survives a foundation switch, but its Meta audience targeting does not: custom audience
+        // ids belong to the previous foundation's ad account, and the capabilities are re-read for this one.
+        this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
+        this.emitDraft();
       });
   }
 
@@ -5606,7 +5595,7 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  /** Back to Meta's defaults: the way past {@link metaAudienceTargetingHeld} while the section is hidden. */
+  /** Back to Meta's defaults: the way past an `unsupported` {@link metaAudienceTargetingBlock}, whose section is hidden. */
   protected clearMetaAudienceTargeting(): void {
     this.onMetaAudienceTargetingChange(this.defaultMetaAudienceTargeting());
   }
@@ -8796,7 +8785,9 @@ export class ImplementationTabComponent implements OnInit {
       this.metaPixelId.set(draft.metaPixelId);
     }
     this.restoreMetaInstagramDsa(draft);
-    if (draft.metaAudienceTargeting !== undefined) {
+    // Only under the foundation it was edited under: a foundation switch keeps the brief and its draft
+    // (`CampaignsComponent` leaves both alone), and another foundation's audiences must not ride along.
+    if (draft.metaAudienceTargeting !== undefined && draft.metaAudienceTargetingProject === this.activeFoundationSlug()) {
       this.metaAudienceTargeting.set(this.copyMetaAudienceTargeting({ ...DEFAULT_META_AUDIENCE_TARGETING, ...draft.metaAudienceTargeting }));
     }
     if (draft.metaGeoTargets !== undefined) {
@@ -9346,6 +9337,7 @@ export class ImplementationTabComponent implements OnInit {
       metaDsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
       metaDsaPayor: this.metaInstagramDsaDraft().dsaPayor,
       metaAudienceTargeting: this.copyMetaAudienceTargeting(this.metaAudienceTargeting()),
+      metaAudienceTargetingProject: this.activeFoundationSlug(),
       metaBudgetUsd: this.metaBudgetUsd(),
       metaLifetimeBudget: this.metaLifetimeBudget(),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
@@ -11287,6 +11279,52 @@ export class ImplementationTabComponent implements OnInit {
       return {
         kind: 'failed',
         message: `Could not confirm that you can send Google audience segments, so Create waits rather than dropping the ${held} on this brief. Retry the check, or remove them.`,
+      };
+    });
+  }
+
+  /**
+   * Why Create is held for Meta audience targeting the draft holds but the request cannot carry, or `null` —
+   * {@link initGoogleAudienceSegmentsBlock}'s states, on the same capability read: held rather than dropped,
+   * because targeting changes who the campaign reaches. `unsupported` (the deployment answered no) offers
+   * Clear, since its section is hidden; `restricted` and every unanswered state for custom audiences leave
+   * the audiences listed with Remove. While the deployment's answer is still out or failed, nothing is
+   * offered but waiting or Retry: the targeting may well be sendable once it answers.
+   */
+  private initMetaAudienceTargetingBlock(): Signal<CampaignMetaAudienceTargetingBlock | null> {
+    return computed(() => {
+      const chosen = compactMetaAudienceTargeting(this.metaAudienceTargeting());
+      if (chosen === null) return null;
+      const deploymentUnanswered = !this.metaAudienceTargetingAvailable();
+      if (!deploymentUnanswered && (!metaTargetingNamesCustomAudiences(chosen) || this.metaCustomAudiencesAvailable())) return null;
+      if (deploymentUnanswered && this.metaAudienceTargetingEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message:
+            'Meta audience targeting is not available on this deployment, so the targeting on this brief cannot be sent. Clear it to create the campaign.',
+        };
+      }
+      if (!deploymentUnanswered && this.metaCustomAudiencesEnabled() === false) {
+        return {
+          kind: 'restricted',
+          message:
+            'Only the LF marketing team can use Meta custom audiences, because every foundation shares one Meta ad account. Remove them to create the campaign.',
+        };
+      }
+      const subject = deploymentUnanswered ? 'Meta audience targeting' : 'Meta custom audiences';
+      const orRemove = deploymentUnanswered ? '' : ', or remove them';
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether you can send ${subject}. Create waits for the answer so the targeting on this brief is not dropped.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: `${subject} can't be checked until this brief is saved. Save the brief${orRemove}.` };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that you can send ${subject}, so Create waits rather than dropping the targeting on this brief. Retry the check${orRemove}.`,
       };
     });
   }

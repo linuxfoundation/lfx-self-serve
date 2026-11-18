@@ -4543,20 +4543,38 @@
                 (targetingChange)="onMetaAudienceTargetingChange($event)" />
             </div>
           }
-          @if (metaAudienceTargetingHeld(); as held) {
+          <!-- Targeting the request cannot carry holds Create, on the Google audience segments block's kinds. -->
+          @if (metaAudienceTargetingBlock(); as block) {
             <div
               role="alert"
-              class="mb-4 flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
-              data-testid="implementation-meta-audience-targeting-held">
-              <span><i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ held }}</span>
-              @if (!metaAudienceTargetingAvailable()) {
-                <button
-                  type="button"
-                  class="font-medium text-amber-900 underline"
-                  (click)="clearMetaAudienceTargeting()"
-                  data-testid="implementation-meta-audience-targeting-clear">
-                  Clear audience targeting
-                </button>
+              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-meta-audience-targeting-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryCreateCapabilities.emit()"
+                  data-testid="implementation-meta-audience-targeting-block-retry" />
+              } @else if (block.kind === 'unsupported') {
+                <lfx-button
+                  label="Clear audience targeting"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="clearMetaAudienceTargeting()"
+                  data-testid="implementation-meta-audience-targeting-clear" />
               }
             </div>
           }

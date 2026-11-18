@@ -89,7 +89,9 @@ export function metaAudienceTargetingRefusal(raw: unknown): MetaAudienceTargetin
 /**
  * The targeting a create sends for an ACCEPTED block ({@link metaAudienceTargetingRefusal} is `null`),
  * or `null` when it asks for nothing. Every default is dropped rather than sent: ages 18 and 65, both or
- * no genders, empty lists, Advantage+ audience off. Ids are trimmed and de-duplicated, genders lower-cased.
+ * no genders, empty lists, and an unsaid (absent or null) Advantage+ audience. An explicit `true` or
+ * `false` is kept, since campaign-service sends each as given. Ids are trimmed and de-duplicated, genders
+ * lower-cased.
  */
 export function compactMetaAudienceTargeting(t: MetaAudienceTargeting | null | undefined): MetaAudienceTargeting | null {
   if (!t) return null;
@@ -102,7 +104,7 @@ export function compactMetaAudienceTargeting(t: MetaAudienceTargeting | null | u
     const ids = distinctIds(t[key] ?? []);
     if (ids.length > 0) out[key] = ids;
   }
-  if (t.advantageAudience === true) out.advantageAudience = true;
+  if (typeof t.advantageAudience === 'boolean') out.advantageAudience = t.advantageAudience;
   return Object.keys(out).length > 0 ? out : null;
 }
 
