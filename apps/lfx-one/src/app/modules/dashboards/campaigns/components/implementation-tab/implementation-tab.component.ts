@@ -238,6 +238,7 @@ import {
   googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
   isGoogleAdsServableUrl,
+  DEFAULT_META_AUDIENCE_TARGETING,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
@@ -273,6 +274,7 @@ import type {
   CampaignGoogleExtensionsCapabilityBlock,
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
+  CampaignMetaAudienceTargetingBlock,
   CampaignJobOutcome,
   CampaignCreateAnother,
   CampaignCreateAnotherDialogData,
@@ -385,6 +387,7 @@ import type {
   RedditObjective,
   RedditVideoGoal,
   StoredCreativeAsset,
+  MetaAudienceTargetingDraft,
 } from '@lfx-one/shared/interfaces';
 import {
   campaignBiddingError,
@@ -465,11 +468,15 @@ import {
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
   twitterTweetTextError,
+  compactMetaAudienceTargeting,
+  metaAudienceTargetingRefusal,
+  metaTargetingNamesCustomAudiences,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
+import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
 import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
@@ -551,6 +558,7 @@ let linkedInVariantKeySequence = 0;
     SlicePipe,
     CampaignBiddingControlComponent,
     CampaignGoogleDemographicTargetingComponent,
+    MetaAudienceTargetingComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
     CampaignGoogleSearchAdsPanelComponent,
@@ -940,6 +948,18 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see metaInstagramDsaEnabled — an explicit yes, never a `null`. */
   protected readonly metaInstagramDsaAvailable = computed<boolean>(() => this.metaInstagramDsaEnabled() === true);
+
+  /**
+   * Whether this deployment sends Meta audience targeting (#5905) — `CampaignListResult.metaAudienceTargetingEnabled`,
+   * behind `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING`. `null` and `false` hide the section and send no `targeting`.
+   */
+  public readonly metaAudienceTargetingEnabled = input<boolean | null>(null);
+  /** Whether THIS caller may pick custom audiences — `CampaignListResult.metaCustomAudiencesEnabled` (`global_marketing_ops`). */
+  public readonly metaCustomAudiencesEnabled = input<boolean | null>(null);
+  protected readonly metaAudienceTargetingAvailable = computed<boolean>(() => this.metaAudienceTargetingEnabled() === true);
+  protected readonly metaCustomAudiencesAvailable = computed<boolean>(
+    () => this.metaAudienceTargetingAvailable() && this.metaCustomAudiencesEnabled() === true
+  );
 
   /**
    * Whether this deployment can SEARCH Google's geo target table for postal-code targets —
@@ -1527,6 +1547,8 @@ export class ImplementationTabComponent implements OnInit {
 
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
+  /** The Meta audience targeting as edited in `lfx-meta-audience-targeting` (#5905); kept whatever the capability says, like the DSA fields. */
+  protected readonly metaAudienceTargeting = signal<MetaAudienceTargetingDraft>(this.defaultMetaAudienceTargeting());
   protected readonly creationProgress = signal<string[]>([]);
   protected readonly results = signal<CampaignCreateResult[]>([]);
   /**
@@ -3337,6 +3359,20 @@ export class ImplementationTabComponent implements OnInit {
     return null;
   });
 
+  /**
+   * The targeting the create would carry, before defaults are dropped: the draft exactly as the child
+   * shows and validates it, or none while the capability is off. Nothing chosen is stripped here: what
+   * cannot be sent holds Create instead ({@link metaAudienceTargetingBlock}).
+   */
+  private readonly metaAudienceTargetingRequested = computed<MetaAudienceTargetingDraft | null>(() =>
+    this.metaAudienceTargetingAvailable() ? this.metaAudienceTargeting() : null
+  );
+  protected readonly metaAudienceTargetingBlock: Signal<CampaignMetaAudienceTargetingBlock | null> = this.initMetaAudienceTargetingBlock();
+  /** Why the Meta audience targeting cannot be sent, or `null`: the create route's own rules. */
+  protected readonly metaAudienceTargetingError = computed<string | null>(
+    () => metaAudienceTargetingRefusal(this.metaAudienceTargetingRequested())?.message ?? null
+  );
+
   /** Why the DSA beneficiary cannot be sent, or `null` — see `metaDsaFieldError`. */
   protected readonly metaDsaBeneficiaryError = computed<string | null>(() => this.metaDsaFieldError('dsaBeneficiary'));
   /** Why the DSA payor cannot be sent, or `null` — see `metaDsaFieldError`. */
@@ -3895,6 +3931,8 @@ export class ImplementationTabComponent implements OnInit {
     // `null` while it is off). campaign-service refuses the same EU and one-sided states with a 400.
     if (metaSelected && (this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError()))
       return 'Meta Ads: fix the Instagram account or the EU disclosure fields.';
+    if (metaSelected && this.metaAudienceTargetingBlock() !== null) return `Meta Ads: ${this.metaAudienceTargetingBlock()?.message}`;
+    if (metaSelected && this.metaAudienceTargetingError() !== null) return `Meta Ads: ${this.metaAudienceTargetingError()}`;
 
     // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
     // than a refusal, which is why they are caught here — the operator would otherwise learn at
@@ -4858,6 +4896,10 @@ export class ImplementationTabComponent implements OnInit {
       .subscribe(() => {
         this.loadLinkedInAccounts();
         this.loadLinkedInTargetingProfiles();
+        // The brief survives a foundation switch, but its Meta audience targeting does not: custom audience
+        // ids belong to the previous foundation's ad account, and the capabilities are re-read for this one.
+        this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
+        this.emitDraft();
       });
   }
 
@@ -5546,6 +5588,16 @@ export class ImplementationTabComponent implements OnInit {
     const enabled = (event.target as HTMLInputElement).checked;
     this.metaPlacements.update((placements) => ({ ...placements, [key]: enabled }));
     this.emitDraft();
+  }
+
+  protected onMetaAudienceTargetingChange(targeting: MetaAudienceTargetingDraft): void {
+    this.metaAudienceTargeting.set(targeting);
+    this.emitDraft();
+  }
+
+  /** Back to Meta's defaults: the way past an `unsupported` {@link metaAudienceTargetingBlock}, whose section is hidden. */
+  protected clearMetaAudienceTargeting(): void {
+    this.onMetaAudienceTargetingChange(this.defaultMetaAudienceTargeting());
   }
 
   protected onMetaPixelIdInput(event: Event): void {
@@ -6618,6 +6670,8 @@ export class ImplementationTabComponent implements OnInit {
               // reasonably take as meaningful. Trimmed to match the upstream trim.
               ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
               ...this.metaInstagramDsaFields(),
+              // Defaults dropped; nothing at all when the targeting asks for nothing (#5905).
+              ...this.metaTargetingField(),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('meta-ads'),
             },
@@ -8731,6 +8785,11 @@ export class ImplementationTabComponent implements OnInit {
       this.metaPixelId.set(draft.metaPixelId);
     }
     this.restoreMetaInstagramDsa(draft);
+    // Only under the foundation it was edited under: a foundation switch keeps the brief and its draft
+    // (`CampaignsComponent` leaves both alone), and another foundation's audiences must not ride along.
+    if (draft.metaAudienceTargeting !== undefined && draft.metaAudienceTargetingProject === this.activeFoundationSlug()) {
+      this.metaAudienceTargeting.set(this.copyMetaAudienceTargeting({ ...DEFAULT_META_AUDIENCE_TARGETING, ...draft.metaAudienceTargeting }));
+    }
     if (draft.metaGeoTargets !== undefined) {
       this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));
     }
@@ -9277,6 +9336,8 @@ export class ImplementationTabComponent implements OnInit {
       metaInstagramUserId: this.metaInstagramDsaDraft().instagramUserId,
       metaDsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
       metaDsaPayor: this.metaInstagramDsaDraft().dsaPayor,
+      metaAudienceTargeting: this.copyMetaAudienceTargeting(this.metaAudienceTargeting()),
+      metaAudienceTargetingProject: this.activeFoundationSlug(),
       metaBudgetUsd: this.metaBudgetUsd(),
       metaLifetimeBudget: this.metaLifetimeBudget(),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
@@ -9663,6 +9724,8 @@ export class ImplementationTabComponent implements OnInit {
     this.metaPixelId.set('');
     // Another brief's payor and beneficiary must never reach a live create.
     this.metaInstagramDsaForm.reset();
+    // Another brief's audiences must never reach a live create either.
+    this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
     this.metaBudgetUsd.set(DEFAULT_META_BUDGET_USD);
     this.metaLifetimeBudget.set(false);
     this.metaImageUrl.set('');
@@ -11216,6 +11279,52 @@ export class ImplementationTabComponent implements OnInit {
       return {
         kind: 'failed',
         message: `Could not confirm that you can send Google audience segments, so Create waits rather than dropping the ${held} on this brief. Retry the check, or remove them.`,
+      };
+    });
+  }
+
+  /**
+   * Why Create is held for Meta audience targeting the draft holds but the request cannot carry, or `null` —
+   * {@link initGoogleAudienceSegmentsBlock}'s states, on the same capability read: held rather than dropped,
+   * because targeting changes who the campaign reaches. `unsupported` (the deployment answered no) offers
+   * Clear, since its section is hidden; `restricted` and every unanswered state for custom audiences leave
+   * the audiences listed with Remove. While the deployment's answer is still out or failed, nothing is
+   * offered but waiting or Retry: the targeting may well be sendable once it answers.
+   */
+  private initMetaAudienceTargetingBlock(): Signal<CampaignMetaAudienceTargetingBlock | null> {
+    return computed(() => {
+      const chosen = compactMetaAudienceTargeting(this.metaAudienceTargeting());
+      if (chosen === null) return null;
+      const deploymentUnanswered = !this.metaAudienceTargetingAvailable();
+      if (!deploymentUnanswered && (!metaTargetingNamesCustomAudiences(chosen) || this.metaCustomAudiencesAvailable())) return null;
+      if (deploymentUnanswered && this.metaAudienceTargetingEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message:
+            'Meta audience targeting is not available on this deployment, so the targeting on this brief cannot be sent. Clear it to create the campaign.',
+        };
+      }
+      if (!deploymentUnanswered && this.metaCustomAudiencesEnabled() === false) {
+        return {
+          kind: 'restricted',
+          message:
+            'Only the LF marketing team can use Meta custom audiences, because every foundation shares one Meta ad account. Remove them to create the campaign.',
+        };
+      }
+      const subject = deploymentUnanswered ? 'Meta audience targeting' : 'Meta custom audiences';
+      const orRemove = deploymentUnanswered ? '' : ', or remove them';
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether you can send ${subject}. Create waits for the answer so the targeting on this brief is not dropped.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: `${subject} can't be checked until this brief is saved. Save the brief${orRemove}.` };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that you can send ${subject}, so Create waits rather than dropping the targeting on this brief. Retry the check${orRemove}.`,
       };
     });
   }
@@ -14018,6 +14127,21 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.biddingAvailable()) return {};
     const bidding = this.biddingPayloads()[platform];
     return bidding === null ? {} : { bidding };
+  }
+
+  /** `metaConfig.targeting` for the request, or nothing when it asks for nothing. `canSubmit` has already refused a bad one. */
+  private metaTargetingField(): Pick<MetaCampaignCreateRequest, 'targeting'> {
+    const targeting = compactMetaAudienceTargeting(this.metaAudienceTargetingRequested());
+    return targeting ? { targeting } : {};
+  }
+
+  private defaultMetaAudienceTargeting(): MetaAudienceTargetingDraft {
+    return this.copyMetaAudienceTargeting(DEFAULT_META_AUDIENCE_TARGETING);
+  }
+
+  /** A copy whose arrays are its own, so the parent's draft never holds a live view of this component's state. */
+  private copyMetaAudienceTargeting(t: MetaAudienceTargetingDraft): MetaAudienceTargetingDraft {
+    return { ...t, genders: [...t.genders], customAudiences: [...t.customAudiences], excludedCustomAudiences: [...t.excludedCustomAudiences] };
   }
 
   /**

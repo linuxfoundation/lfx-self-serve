@@ -4814,6 +4814,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // OFF with every flag off: X create needs the create cutover AND its own flag.
       twitterCreateEnabled: false,
       metaInstagramDsaEnabled: false,
+      metaAudienceTargetingEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -5000,6 +5001,29 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       expect(result.metaInstagramDsaEnabled).toBe(expected);
       // Its own key, not the Microsoft schedule one: that flag is off in every row.
       expect(result.microsoftScheduleEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  // Meta audience targeting (#5905) needs the create cutover AND its own flag, as the Instagram/DSA one does.
+  it.each([
+    [{ cutover: true, targeting: true }, true],
+    [{ cutover: true, targeting: false }, false],
+    [{ cutover: false, targeting: true }, false],
+  ])('reports the meta audience targeting capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceMetaAudienceTargeting
+        ? flags.targeting
+        : flags.cutover && flag !== ServerFeatureFlag.CampaignServiceMetaInstagramDsa
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.metaAudienceTargetingEnabled).toBe(expected);
+      expect(result.metaInstagramDsaEnabled).toBe(false);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -5418,6 +5442,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // OFF with every flag off: X create needs the create cutover AND its own flag.
       twitterCreateEnabled: false,
       metaInstagramDsaEnabled: false,
+      metaAudienceTargetingEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -6301,6 +6326,37 @@ describe('CampaignServiceClient.listGoogleAdsUserLists', () => {
     proxyRequest.mockRejectedValueOnce(upstream);
 
     await expect(new CampaignServiceClient().listGoogleAdsUserLists(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.listMetaCustomAudiences', () => {
+  const audiences = { account_id: 'act_100000001', audiences: [], audience_count: 0, truncated: false };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's custom-audience read, the project encoded, with no query", async () => {
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    expect(await new CampaignServiceClient().listMetaCustomAudiences(req, 'lf/ai')).toBe(audiences);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/meta-ads/custom-audiences', 'GET', undefined);
+  });
+
+  it('passes a search as q', async () => {
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    await new CampaignServiceClient().listMetaCustomAudiences(req, 'cncf', 'KubeCon');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/meta-ads/custom-audiences', 'GET', { q: 'KubeCon' });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listMetaCustomAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 });
 
