@@ -236,7 +236,7 @@ export class GroupApplicationsComponent {
 
   /** The focused button leaves with its row, or the drawer's Undo with the restore, so focus moves to the row now at `index`. */
   private focusRow(index: number): void {
-    if (!this.drawerRef || index < 0) return;
+    if (this.destroyRef.destroyed || !this.drawerRef || index < 0) return;
     afterNextRender(
       () => {
         const rows = this.rowElements();

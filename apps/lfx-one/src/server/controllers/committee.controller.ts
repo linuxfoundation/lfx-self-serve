@@ -17,7 +17,7 @@ import {
   RejectCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { canViewCommitteeRoster, isFileTypeAllowed, isSafeUploadFileName } from '@lfx-one/shared/utils';
+import { canViewCommitteeRoster, isFileTypeAllowed, isSafeUploadFileName, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -1638,9 +1638,10 @@ export class CommitteeController {
     });
 
     try {
-      if (!id || !applicationId) {
+      // Both go into the upstream path, which only takes UUIDs.
+      if (!isUuid(id ?? '') || !isUuid(applicationId ?? '')) {
         next(
-          ServiceValidationError.forField('id', 'Committee ID and application ID are required', {
+          ServiceValidationError.forField('id', 'Committee ID and application ID must be UUIDs', {
             operation: 'withdraw_committee_application',
             service: 'committee_controller',
             path: req.path,
