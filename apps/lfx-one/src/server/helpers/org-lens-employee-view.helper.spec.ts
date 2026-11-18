@@ -79,6 +79,11 @@ describe('embedded personal data in free text', () => {
     expect(stripPersonalFields({ note: 'contact ada@acme.example for access' }, page)).toEqual({ note: 'contact  for access' });
   });
 
+  it('keeps git remotes and version specs, which only look like addresses', () => {
+    expect(scrubFreeText('clone git@github.com:acme-org/repo.git then pin pkg@1.2.3')).toBe('clone git@github.com:acme-org/repo.git then pin pkg@1.2.3');
+    expect(scrubFreeText('contact ada@acme.example, thanks')).toBe('contact , thanks');
+  });
+
   it('removes embedded emails in nested objects and arrays', () => {
     const input = { rows: [{ detail: { text: 'ping bob@team.example now' } }], tags: ['ok', 'see carol@team.example', 'dan@team.example'] };
 
