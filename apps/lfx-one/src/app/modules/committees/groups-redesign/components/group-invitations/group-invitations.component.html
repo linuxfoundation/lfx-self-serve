@@ -1,0 +1,86 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (invitations().length) {
+  <!-- At 640px and below the header stacks this button full width under the title, first of the two. -->
+  <lfx-ui-button
+    class="max-[640px]:order-1 max-[640px]:!block max-[640px]:basis-full max-[640px]:[&>button]:w-full"
+    variant="secondary"
+    icon="fa-light fa-envelope"
+    [ariaLabel]="'Invitations (' + invitations().length + ')'"
+    [ariaExpanded]="drawerOpen()"
+    (click)="openDrawer()"
+    data-testid="groups-redesign-invitations-button">
+    Invitations
+    <lfx-ui-badge tone="warning" size="sm" data-testid="groups-redesign-invitations-count">{{ invitations().length }}</lfx-ui-badge>
+  </lfx-ui-button>
+}
+
+<ng-template #drawer>
+  <lfx-ui-drawer heading="Invitations" [subtitle]="subtitle()">
+    <!-- Rows split by a 1px inset line, not a border; the buttons move under the text below a 480px row. -->
+    <div
+      class="@container -my-[20px] flex flex-col pb-[8px] pt-[4px] [&>*+*]:shadow-[inset_0_1px_0_0] [&>*+*]:shadow-gray-100"
+      data-testid="groups-redesign-invitations-panel">
+      @for (item of items(); track item.invitation.uid) {
+        <div
+          #rowElement
+          class="flex flex-wrap items-start gap-x-[24px] gap-y-[12px] py-[16px] @[480px]:flex-nowrap"
+          data-testid="groups-redesign-invitations-row">
+          <!-- Cut-off names get a tooltip with the full text, measured as the pointer arrives. -->
+          <div class="flex min-w-0 flex-1 flex-col gap-[4px]" (mouseenter)="checkTruncated(groupName)">
+            @if (item.invitation.project_name; as scope) {
+              <span
+                class="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[12px] text-gray-900"
+                (mouseenter)="checkTruncated(scopeName)"
+                data-testid="groups-redesign-invitations-row-scope">
+                <lfx-meeting-project-logo [src]="item.invitation.project_logo_url ?? ''" />
+                <span #scopeName class="min-w-0 truncate" [lfxUiTooltip]="scope" [lfxUiTooltipDisabled]="!truncated().has(scopeName)">{{ scope }}</span>
+              </span>
+            }
+            <span
+              #groupName
+              class="min-w-0 truncate text-[14px] font-medium text-gray-900"
+              [lfxUiTooltip]="item.invitation.committee_name"
+              [lfxUiTooltipDisabled]="!truncated().has(groupName)"
+              data-testid="groups-redesign-invitations-row-name"
+              >{{ item.invitation.committee_name }}</span
+            >
+            <span
+              class="flex min-w-0 flex-wrap items-center gap-x-[6px] gap-y-[2px] text-[12px] text-gray-500"
+              data-testid="groups-redesign-invitations-row-meta">
+              <span class="inline-flex flex-none items-center gap-[5px]"
+                ><i class="text-[11px]" [class]="item.typeIcon" aria-hidden="true"></i>{{ item.typeLabel }}</span
+              >
+              <span aria-hidden="true">·</span>
+              <span>{{ item.detail }}</span>
+            </span>
+          </div>
+          <div class="flex basis-full justify-end gap-[8px] @[480px]:basis-auto">
+            <lfx-ui-button
+              variant="secondary"
+              size="small"
+              icon="fa-light fa-check text-emerald-600"
+              [ariaLabel]="'Accept invite to ' + item.invitation.committee_name"
+              [loading]="accepting().has(item.invitation.uid)"
+              (click)="accept(item.invitation)"
+              data-testid="groups-redesign-invitations-accept">
+              Accept
+            </lfx-ui-button>
+            <lfx-ui-button
+              variant="secondary"
+              size="small"
+              icon="fa-light fa-xmark text-red-600"
+              [ariaLabel]="'Decline invite to ' + item.invitation.committee_name"
+              [disabled]="accepting().has(item.invitation.uid)"
+              (click)="decline(item.invitation)"
+              data-testid="groups-redesign-invitations-decline">
+              Decline
+            </lfx-ui-button>
+          </div>
+        </div>
+      }
+    </div>
+  </lfx-ui-drawer>
+</ng-template>
