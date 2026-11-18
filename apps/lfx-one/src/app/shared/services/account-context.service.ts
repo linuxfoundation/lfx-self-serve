@@ -228,7 +228,7 @@ export class AccountContextService {
     () =>
       this.rollUpFlag.unsettled() ||
       (this.rollUpFlag.enabled()
-        ? this.grantsUnsettled()
+        ? this.grantsUnsettled() || this.orgRoleGrantsService.staffCheck() === 'failed'
         : !this.orgRoleGrantsService.loaded() || (this.orgRoleGrantsService.lookupOutcome() !== 'failed' && !this.rollUpFamiliesService.answered()))
   );
 
@@ -466,9 +466,12 @@ export class AccountContextService {
     // not-found. Admitting is self-correcting instead — `rollUpShouldDemote` is the exact
     // complement of this condition, so the moment the grants land either they confirm the roll-up
     // or reconciliation demotes and re-points (#4415 reviews 10 and 12).
-    const awaitsStaffFamily = this.staffRollUpAnchor() !== null && this.rollUpFamiliesService.staffAnchor() !== rootUid;
-    const admissible =
-      this.canSelectRollUpFor(rootUid) || (options?.admitWhilePending === true && (this.rollUpEligibilityUnsettled() || awaitsStaffFamily));
+    const awaitsStaffFamily =
+      this.rollUpFlag.enabled() &&
+      this.orgRoleGrantsService.isStaff() &&
+      this.rollUpFamiliesService.staffAnchor() !== rootUid &&
+      !this.rollUpFamilies().some((family) => family.rootUid === rootUid);
+    const admissible = this.canSelectRollUpFor(rootUid) || (options?.admitWhilePending === true && (this.rollUpEligibilityUnsettled() || awaitsStaffFamily));
     if (!admissible) {
       return false;
     }

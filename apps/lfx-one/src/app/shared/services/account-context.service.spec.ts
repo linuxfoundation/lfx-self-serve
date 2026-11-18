@@ -6,7 +6,14 @@ import { computed, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router, UrlSerializer } from '@angular/router';
 import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
-import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import {
+  Account,
+  OrgCanonicalRecord,
+  OrgLensAccountContextResponse,
+  OrgLensLookupOutcome,
+  OrgLensStaffCheck,
+  OrgRollUpFamily,
+} from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -552,6 +559,7 @@ describe('AccountContextService — family roll-up', () => {
     claManagerOrgSet: WritableSignal<Set<string>>;
     loaded: WritableSignal<boolean>;
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
+    staffCheck: WritableSignal<OrgLensStaffCheck>;
   };
   /** Each organization's Salesforce parent, as the server's family walk resolves it. */
   let familyParents: WritableSignal<Map<string, string>>;
@@ -611,6 +619,7 @@ describe('AccountContextService — family roll-up', () => {
       claManagerOrgSet: signal(new Set<string>()),
       loaded: signal(true),
       lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
+      staffCheck: signal<OrgLensStaffCheck>('ok'),
     };
     familyParents = signal(new Map([[UID_B, UID_A]]));
     familyNames = signal(new Map([[UID_A, 'Alpha']]));
@@ -683,6 +692,8 @@ describe('AccountContextService — family roll-up', () => {
 
   describe('LF staff anchor', () => {
     const lastAnchor = (): unknown => serverFamilies.setStaffAnchor.mock.calls.at(-1)?.[0];
+    const OTHER = '0014100000MgoOOOOO';
+    const otherCo: Account = { accountId: OTHER, accountName: 'Other', membershipTier: '', uid: OTHER };
 
     beforeEach(() => {
       grants.isStaff.set(true);
@@ -744,9 +755,62 @@ describe('AccountContextService — family roll-up', () => {
       expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
     });
 
+    it('admits a roll-up address for staff with no company selected, so its family becomes the anchor', () => {
+      serverAnswer.set([]);
+      TestBed.tick();
+      serverFamilies.setStaffAnchor.mockImplementation((uid: string | null) => {
+        serverFamilies.staffAnchor.set(uid);
+        serverFamilies.unsettled.set(true);
+      });
+
+      expect(service.selectRollUp(ROOT)).toBe(false);
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(lastAnchor()).toBe(ROOT);
+
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] }]);
+      serverFamilies.unsettled.set(false);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+    });
+
+    it('refuses a roll-up address whose family the current answer already shows too small', () => {
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_B] }]);
+      service.setAccount(seedB);
+      TestBed.tick();
+
+      expect(lastAnchor()).toBe(UID_B);
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(false);
+    });
+
+    it('holds a restored staff roll-up while the staff check cannot be made, then confirms it on retry', () => {
+      grants.isStaff.set(false);
+      grants.staffCheck.set('failed');
+      cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      serverAnswer.set([]);
+      service.initializeUserOrganizations([]);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(lastAnchor()).toBeNull();
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
+
+      grants.staffCheck.set('ok');
+      grants.isStaff.set(true);
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] }]);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(lastAnchor()).toBe(ROOT);
+      expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
+    });
+
     it('swaps the offered roll-up for the family of a company in another family, and drops it for a standalone one', () => {
-      const OTHER = '0014100000MgoOOOOO';
-      const otherCo: Account = { accountId: OTHER, accountName: 'Other', membershipTier: '', uid: OTHER };
       serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] }]);
       service.setAccount(seedB);
       TestBed.tick();
@@ -761,8 +825,6 @@ describe('AccountContextService — family roll-up', () => {
     });
 
     describe('when the anchor moves, the families stay unsettled until its answer lands', () => {
-      const OTHER = '0014100000MgoOOOOO';
-      const otherCo: Account = { accountId: OTHER, accountName: 'Other', membershipTier: '', uid: OTHER };
       const alpha: OrgRollUpFamily = { rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] };
       const refetchOnAnchor = (): void => {
         serverFamilies.setStaffAnchor.mockImplementation((uid: string | null) => {
