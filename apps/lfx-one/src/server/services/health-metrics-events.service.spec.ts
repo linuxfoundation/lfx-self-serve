@@ -1638,8 +1638,9 @@ describe('HealthMetricsEventsService.getGeography', () => {
         countryRow('Germany', 50, 0, 'DE'),
         countryRow('Brazil', 20, 0, 'BR'),
         countryRow('Kenya', 10, 0, 'KE'),
-        // The view could not resolve this one, and a malformed code keys nothing.
+        // A malformed or unassigned code keys nothing.
         countryRow('Norway', 5, 0, 'NOR'),
+        countryRow('Britain', 2, 0, 'UK'),
         countryRow('Atlantis', 1),
         countryRow('Chile', 0),
         countryRow('Peru', null),
@@ -1659,18 +1660,19 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(scopeSql).toContain('countries_change_pct_last_completed_year');
     expect(scopeSql).not.toContain('countries_change_pct_prev_completed_year');
     expect(countryBinds).toEqual(['fdn-acme']);
-    expect(countrySql).toContain("MAX(NULLIF(UPPER(TRIM(country_code)), '')) AS country_code");
-    expect(countrySql).toContain("MAX(NULLIF(TRIM(country), '')) AS country");
     expect(countrySql).toContain("AND NULLIF(TRIM(country), '') IS NOT NULL");
-    // By the resolved code, or by name where the view has none.
-    expect(countrySql).toContain("GROUP BY COALESCE(NULLIF(UPPER(TRIM(country_code)), ''), NULLIF(TRIM(country), ''))");
+    // Rows fold by name first, keeping any valid two-letter code, then names sharing a code fold into one.
+    expect(countrySql).toContain("MAX(CASE WHEN REGEXP_LIKE(UPPER(TRIM(country_code)), '^[A-Z]{2}$') THEN UPPER(TRIM(country_code)) END) AS country_code");
+    expect(countrySql).toContain("GROUP BY NULLIF(TRIM(country), '')");
+    expect(countrySql).toContain('GROUP BY COALESCE(country_code, country)');
     for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
       expect(scopeSql).toContain(`countries_count_${suffix}`);
       expect(countrySql).toContain(`SUM(registration_count_${suffix}) AS registration_count_${suffix}`);
+      expect(countrySql).toContain(`SUM(by_name.registration_count_${suffix}) AS registration_count_${suffix}`);
     }
   });
 
-  it('ranks every country in each period by registrations, then name, keeping only two-letter codes', async () => {
+  it('ranks every country in each period by registrations, then name, keeping only assigned codes', async () => {
     const { periods } = await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
 
     const byRange = (range: string) => periods.find((period) => period.range === range);
@@ -1686,6 +1688,7 @@ describe('HealthMetricsEventsService.getGeography', () => {
         { code: 'BR', country: 'Brazil', registrations: 20 },
         { code: 'KE', country: 'Kenya', registrations: 10 },
         { code: null, country: 'Norway', registrations: 5 },
+        { code: null, country: 'Britain', registrations: 2 },
         { code: null, country: 'Atlantis', registrations: 1 },
       ],
     });

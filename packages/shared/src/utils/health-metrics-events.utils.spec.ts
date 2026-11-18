@@ -1185,14 +1185,42 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     expect(noCode.topCountries[0]).toMatchObject({ key: 'Atlantis', flag: '' });
   });
 
-  it('hands every country to the map, a share under one percent as <1%', () => {
+  it('hands every country to the map, a share under one percent to one decimal', () => {
     const { countries } = buildHealthMetricsEventsGeographyView(geography(), 'YTD');
 
     expect(countries).toHaveLength(7);
     expect(countries[0]).toEqual({ code: 'US', name: 'United States', value: 520, valueLabel: '520 · 52%' });
-    expect(countries.find((country) => country.code === 'FJ')?.valueLabel).toBe('1 · <1%');
+    expect(countries.find((country) => country.code === 'FJ')?.valueLabel).toBe('1 · 0.1%');
     // A country with no code still counts; the map just cannot draw it.
-    expect(countries.find((country) => country.name === 'Atlantis')).toMatchObject({ code: null, valueLabel: '4 · <1%' });
+    expect(countries.find((country) => country.name === 'Atlantis')).toMatchObject({ code: null, valueLabel: '4 · 0.4%' });
+  });
+
+  it('never reads a small share as 0%: under 1% it keeps one decimal, at least 0.1%, and the list matches the popup', () => {
+    const view = buildHealthMetricsEventsGeographyView(
+      geography(
+        geographyPeriod({
+          registrationsByCountry: [
+            { code: 'US', country: 'United States', registrations: 99_000 },
+            { code: 'CA', country: 'Canada', registrations: 950 },
+            { code: 'MX', country: 'Mexico', registrations: 48 },
+            { code: 'FJ', country: 'Fiji', registrations: 2 },
+          ],
+        })
+      ),
+      'YTD'
+    );
+
+    expect(view.topCountries.map((row) => row.pctLabel)).toEqual(['99%', '1%', '0.1%', '0.1%']);
+    expect(view.countries.map((country) => country.valueLabel)).toEqual(['99,000 · 99%', '950 · 1%', '48 · 0.1%', '2 · 0.1%']);
+  });
+
+  it('reads one registration in the singular', () => {
+    const view = buildHealthMetricsEventsGeographyView(
+      geography(geographyPeriod({ registrationsByCountry: [{ code: 'FJ', country: 'Fiji', registrations: 1 }] })),
+      'YTD'
+    );
+
+    expect(view.metrics[1].description).toBe('1 registration · 100%');
   });
 
   it('carries no change for a period that is not compared, and "not available" for one with no prior value', () => {

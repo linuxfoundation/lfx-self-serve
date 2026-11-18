@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ASSIGNED_COUNTRY_CODES,
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
@@ -98,6 +99,8 @@ const WEEK_OVER_WEEK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS_WEEK
 const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER';
 const EVENT_REGISTRATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS';
 const ACCOUNT_LOGO_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING';
+/** Codes that can key a country: every assigned ISO 3166-1 alpha-2 code, and XK for Kosovo, which the outlines draw. */
+const HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES: ReadonlySet<string> = new Set([...ASSIGNED_COUNTRY_CODES, 'XK']);
 /** Each company's current membership tier; the events views carry membership but no tier. */
 const MEMBERSHIP_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 
@@ -1117,27 +1120,31 @@ export class HealthMetricsEventsService {
   }
 
   /**
-   * One row per country: by its resolved ISO code, or by its name where the view could not resolve one. The view is already
-   * foundation-level, so rows are only summed where one country repeats.
+   * One row per country. Rows first fold by name, taking any valid two-letter code the name carries; names that share a code
+   * then fold into one, so neither a country under several codes nor a code under several names splits.
    */
   private async getGeographyCountries(req: Request, foundationId: string): Promise<GeographyCountryRow[]> {
     // Suffixes come from constants, never from the request, so interpolating them is safe.
-    const sums = HEALTH_METRICS_L2_RANGES.map((range) => {
-      const column = `registration_count_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`;
-      return `SUM(${column}) AS ${column}`;
-    }).join(',\n        ');
+    const columns = HEALTH_METRICS_L2_RANGES.map((range) => `registration_count_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`);
+    const sums = (source: string) => columns.map((column) => `SUM(${source}${column}) AS ${column}`).join(',\n          ');
 
-    // Trimmed and upper-cased so a padded or lower-case code cannot split one country.
-    const code = "NULLIF(UPPER(TRIM(country_code)), '')";
     const sql = `
+      WITH by_name AS (
+        SELECT
+          NULLIF(TRIM(country), '') AS country,
+          MAX(CASE WHEN REGEXP_LIKE(UPPER(TRIM(country_code)), '^[A-Z]{2}$') THEN UPPER(TRIM(country_code)) END) AS country_code,
+          ${sums('')}
+        FROM ${REGISTRATION_COUNTRY_VIEW}
+        WHERE project_id = ?
+          AND NULLIF(TRIM(country), '') IS NOT NULL
+        GROUP BY NULLIF(TRIM(country), '')
+      )
       SELECT
-        MAX(${code}) AS country_code,
-        MAX(NULLIF(TRIM(country), '')) AS country,
-        ${sums}
-      FROM ${REGISTRATION_COUNTRY_VIEW}
-      WHERE project_id = ?
-        AND NULLIF(TRIM(country), '') IS NOT NULL
-      GROUP BY COALESCE(${code}, NULLIF(TRIM(country), ''))
+        MAX(country_code) AS country_code,
+        MAX(country) AS country,
+        ${sums('by_name.')}
+      FROM by_name
+      GROUP BY COALESCE(country_code, country)
     `;
 
     const result = await executeSnowflakeViewRead<GeographyCountryRow>(this.snowflakeService, req, sql, [foundationId], {
@@ -1516,8 +1523,8 @@ function mapGeographyPeriod(scope: GeographyScopeRow, rows: GeographyCountryRow[
   const ranked = rows
     .map(
       (row): HealthMetricsEventsGeographyCountry => ({
-        // Only a two-letter code can key the map and the flag.
-        code: row.COUNTRY_CODE && /^[A-Z]{2}$/.test(row.COUNTRY_CODE) ? row.COUNTRY_CODE : null,
+        // Only an assigned ISO code (or Kosovo's XK) keys the map and the flag.
+        code: row.COUNTRY_CODE && HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES.has(row.COUNTRY_CODE) ? row.COUNTRY_CODE : null,
         country: row.COUNTRY ?? '',
         registrations: toNullableNumber(row[periodColumn('registration_count', range)]) ?? 0,
       })

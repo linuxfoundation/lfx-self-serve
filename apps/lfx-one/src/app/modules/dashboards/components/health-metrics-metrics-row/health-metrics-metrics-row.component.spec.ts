@@ -84,6 +84,13 @@ describe('HealthMetricsMetricsRowComponent', () => {
     expect(classes('row-a-value')).toContain('max-[640px]:text-[28px]');
   });
 
+  it('ends a long text value in an ellipsis inside its column rather than running into the next item', async () => {
+    await render([metric('a', { value: 'Bosnia & Herzegovina' }), metric('b')]);
+
+    expect(classes('row-a-value')).toContain('truncate');
+    expect(classes('row-a-value')).toContain('max-w-full');
+  });
+
   it('colours the trend by tone, defaulting to plain context, and leaves no trend line without one', async () => {
     await render([
       metric('up', { trend: '+12%', trendTone: 'up' }),

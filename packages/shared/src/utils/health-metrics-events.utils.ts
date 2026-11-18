@@ -638,7 +638,11 @@ export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEv
         key: 'top',
         label: 'Top country',
         value: top?.country ?? HEALTH_METRICS_TABLE_DASH,
-        ...(top ? { description: `${formatHealthMetricsEventsCount(top.registrations)} registrations · ${Math.round(share(top.registrations))}%` } : {}),
+        ...(top
+          ? {
+              description: `${formatHealthMetricsEventsCount(top.registrations)} ${top.registrations === 1 ? 'registration' : 'registrations'} · ${formatGeographyShare(share(top.registrations))}`,
+            }
+          : {}),
       },
       {
         key: 'outside-us',
@@ -658,14 +662,17 @@ export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEv
       flag: formatHealthMetricsCountryFlag(country.code),
       name: country.country,
       registrationsLabel: formatHealthMetricsEventsCount(country.registrations),
-      pctLabel: `${Math.round(share(country.registrations))}%`,
+      pctLabel: formatGeographyShare(share(country.registrations)),
     })),
   };
 }
 
-/** The popup's share: "<1%" under one percent, whole percent otherwise. */
+/** A share as a whole percent, or one decimal under 1% that never rounds to zero ("0.1%" to "0.9%"), so a small country never reads 0%. */
 function formatGeographyShare(pct: number): string {
-  return pct > 0 && pct < 1 ? '<1%' : `${Math.round(pct)}%`;
+  if (pct <= 0 || pct >= 1) return `${Math.round(pct)}%`;
+
+  const tenths = Math.max(0.1, Math.round(pct * 10) / 10);
+  return tenths >= 1 ? '1%' : `${tenths.toFixed(1)}%`;
 }
 
 function formatShowUpRate(period: HealthMetricsEventsAtAGlancePeriod | null): string {
