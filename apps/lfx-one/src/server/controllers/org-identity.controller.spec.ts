@@ -25,6 +25,7 @@ vi.mock('../services/org-role-grants.service', () => ({
     public getRollUpSet = getRollUpSet;
   },
 }));
+vi.mock('@lfx-one/shared/utils', () => ({}));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'jdoe' }));
 vi.mock('../services/org-lens-addresses.service', () => ({ OrgLensAddressesService: class {} }));
 vi.mock('../services/org-slug-resolver.service', () => ({
@@ -342,6 +343,15 @@ describe('OrgIdentityController.getRollUpSet', () => {
       expect(res.json).not.toHaveBeenCalled();
     }
   );
+
+  it('rejects a repeated ?anchor= with a 400 before reaching the service', async () => {
+    const next = vi.fn();
+
+    await new OrgIdentityController().getRollUpSet(request({ anchor: ['0014100000MgbAAAAA', '0014100000MgcAAAAA'] } as any), buildRes(), next);
+
+    expect(getRollUpSet).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+  });
 
   it('passes partial and failed outcomes through unchanged, so an outage never reads as no organizations', async () => {
     const partial = { ...rollUpSet, degraded: true, lookupOutcome: 'partial' };

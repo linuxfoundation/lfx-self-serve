@@ -19,13 +19,12 @@ const scopeByRequest = new WeakMap<Request, Map<string, Promise<OrgLensRollUpSco
 /**
  * Read gate and scope for an Org Lens family roll-up key (`family-<top account id>`).
  *
- * The candidate organizations come from the caller's own roll-up set, never from the request, and
- * each one must pass `assertOrgLensRead`. `members` is the only set of organizations a roll-up read
- * may serve; one the caller is refused on is left out. `complete: false` means the caller's
- * roll-up set was partial, so the family may be missing organizations the page should say it
- * cannot show.
+ * Each candidate organization must pass `assertOrgLensRead`. `members` is the only set of
+ * organizations a roll-up read may serve; one the caller is refused on is left out.
+ * `complete: false` means the family may be missing organizations the page should say it cannot
+ * show.
  *
- * Throws 400 for a malformed key, 403 when the caller can read no organization in the family, and
+ * Throws 400 for a malformed key, 403 when the caller may not read the family, and
  * a retriable 503 when access cannot be verified (lookup failed, a member's check could not be
  * answered, or the family is absent from a partial set).
  *

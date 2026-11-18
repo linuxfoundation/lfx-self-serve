@@ -21,6 +21,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { OrgAffiliationService } from '../services/org-affiliation.service';
@@ -112,10 +113,10 @@ export class OrgIdentityController {
       }
 
       const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
-      const rawAnchor = req.query[ORG_ROLL_UP_SET_ANCHOR_PARAM];
-      const anchorUid = typeof rawAnchor === 'string' && ORG_ACCOUNT_ID_PATTERN.test(rawAnchor) ? rawAnchor : null;
-      if (rawAnchor !== undefined && anchorUid === null) {
-        throw ServiceValidationError.forField(ORG_ROLL_UP_SET_ANCHOR_PARAM, 'Invalid organization id format', {
+      const anchor = getStringQueryParam(req, ORG_ROLL_UP_SET_ANCHOR_PARAM);
+      const anchorUid = anchor !== undefined && ORG_ACCOUNT_ID_PATTERN.test(anchor) ? anchor : null;
+      if (req.query[ORG_ROLL_UP_SET_ANCHOR_PARAM] !== undefined && anchorUid === null) {
+        throw ServiceValidationError.forField(ORG_ROLL_UP_SET_ANCHOR_PARAM, 'Invalid company id format', {
           operation: 'get_org_roll_up_set',
           service: 'org_identity_controller',
           path: req.path,
