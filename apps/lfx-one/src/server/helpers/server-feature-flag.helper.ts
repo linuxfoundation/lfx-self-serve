@@ -386,6 +386,27 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS',
 
   /**
+   * Lets the LinkedIn section of the create flow choose the ad account a campaign is created in
+   * (#5809), sent as `linkedInConfig.adAccountId`. The account list comes from campaign-service's
+   * `GET /projects/{projectId}/linkedin-ads/create-account` (`selectable_accounts`, the default
+   * first), not from the mounted `linkedin.json`, so it lists exactly what the create accepts.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES lfx-v2-campaign-service#581 (v1.0.37) DEPLOYED,
+   * and only offers a choice where that deployment's own `LINKEDIN_ADS_ACCOUNT_SELECTION_ENABLED` is
+   * on and the create resolves to the LF system connection. Only a caller holding
+   * `global_marketing_ops` on the project is offered the picker; everyone else sees the default
+   * account read-only and sends no `adAccountId`. The default account itself is never sent either,
+   * because campaign-service requires `global_marketing_ops` for ANY `adAccountId` while its
+   * selection flag is on, so an executive director naming the default would get a 403.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default),
+   * `buildLinkedInConfig` drops `adAccountId` as before and the tab shows the read-only "set by the
+   * connection" line. Reads and one request field only, so flipping it back strands nothing. Same
+   * accepted values as the flags above.
+   */
+  CampaignServiceLinkedInAccountSelection = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *

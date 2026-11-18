@@ -1439,6 +1439,13 @@ export const MONITOR_CONNECTION_PROVIDERS: Readonly<Record<MonitorConnectionPlat
  * shape instead — the same patterns, and the same 64-character cap the connections store.
  */
 export const LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[0-9]{1,64}$/;
+
+/**
+ * A LinkedIn ad account as `linkedInConfig.adAccountId` and the `account_id` of campaign-service's
+ * LinkedIn reads take it: the bare account number, no `urn:li:sponsoredAccount:` prefix (#5809,
+ * linuxfoundation/lfx-v2-campaign-service#581).
+ */
+export const LINKEDIN_AD_ACCOUNT_ID_PATTERN = /^[0-9]{1,64}$/;
 export const META_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^act_[0-9]{1,60}$/;
 export const REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 

@@ -1083,6 +1083,8 @@ describe('CampaignController.createCampaign cutover', () => {
    *     ordinary profile selection fails with "not found in runtime config".
    */
   it('strips the legacy ad account and adds the runtime targeting catalogue for LinkedIn', async () => {
+    // Account selection (#5809) is the one flag that would forward the id; off here.
+    isServerFeatureEnabled.mockImplementation((flag: string) => flag !== ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
@@ -1100,6 +1102,31 @@ describe('CampaignController.createCampaign cutover', () => {
     // duplicate of it.
     expect(sent['targetingProfile']).toEqual({ id: 'cloud-native' });
     expect(sent['budgetUsd']).toBe(100);
+  });
+
+  /**
+   * #5809: with account selection on, the tab takes the account from campaign-service's own
+   * `create-account` list and sends it only for a chosen grant, so a bare account number is forwarded
+   * (campaign-service#581 makes it a selector). Anything else is still dropped, never sent as typed.
+   */
+  it.each([
+    ['507654321', '507654321'],
+    [' 507654321 ', '507654321'],
+    ['urn:li:sponsoredAccount:507654321', undefined],
+    ['', undefined],
+  ])('with account selection on, forwards LinkedIn adAccountId %j as %j', async (given, expected) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const linkedInBody = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, adAccountId: given, targetingProfile: { id: 'cloud-native' } } };
+    await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['linkedInConfig'] as Record<string, unknown>;
+    if (expected === undefined) {
+      expect(sent).not.toHaveProperty('adAccountId');
+    } else {
+      expect(sent['adAccountId']).toBe(expected);
+    }
   });
 
   /**

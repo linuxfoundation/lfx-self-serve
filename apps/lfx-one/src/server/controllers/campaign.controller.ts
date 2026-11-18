@@ -127,6 +127,8 @@ import type {
   GoogleDisplayAudienceLists,
   GoogleDisplayCampaignAudiences,
   LinkedInTargetingProfile,
+  LinkedInCreateAccountOption,
+  LinkedInCreateAccountResult,
   LinkedInTargetingProfileConfig,
   LinkedInTargetingProfileEdit,
   MicrosoftCampaignCreateRequest,
@@ -267,6 +269,7 @@ import {
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
   KEYWORD_ACTION_PLATFORMS,
+  LINKEDIN_AD_ACCOUNT_ID_PATTERN,
   LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
@@ -355,6 +358,7 @@ import {
   canCreateWithBidding,
   canCreateWithFinerGoogleGeo,
   canCreateWithGoogleCriteria,
+  canChooseLinkedInAdAccount,
   canEditLinkedInTargeting,
   canSearchGoogleGeoTargets,
   canSetRedditConversionPixel,
@@ -3901,6 +3905,80 @@ export class CampaignController {
       const profiles = getLinkedInConfig().targetingProfiles;
       logger.success(req, operation, startTime, { count: profiles.length });
       res.json(profiles);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The LinkedIn ad account a create for the project uses, and whether this caller may choose another
+   * (#5809), camel-cased from campaign-service's `get-linkedin-ads-create-account`
+   * (linuxfoundation/lfx-v2-campaign-service#581). That read resolves the account exactly as a create
+   * does and lists exactly the accounts `linkedInConfig.adAccountId` may name, so the Implement tab never
+   * offers a choice the create would refuse or ignore.
+   *
+   * `canChoose` needs campaign-service's account selection on, more than the default to choose from, and
+   * `global_marketing_ops` on the project: campaign-service refuses ANY `adAccountId` from anyone else
+   * while its selection is on. A failed relation check answers `false` (the read-only default), never
+   * `true`. 404, as if not mounted, unless the create cutover and the account-selection flag are both on.
+   */
+  public async getLinkedInCreateAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_create_account';
+    if (!canChooseLinkedInAdAccount()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { projectSlug });
+
+    try {
+      const payload = await this.campaignServiceClient.getLinkedInAdsCreateAccount(req, projectSlug);
+      // Both are required upstream. An unreadable default would leave the tab naming an account the
+      // create does not use, so the read fails instead and the tab falls back to its generic line.
+      if (typeof payload?.account_id !== 'string' || !LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(payload.account_id) || !Array.isArray(payload.selectable_accounts)) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn create account.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const defaultAccount: LinkedInCreateAccountOption = {
+        accountId: payload.account_id,
+        orgId: typeof payload.org_id === 'string' ? payload.org_id : '',
+        label: typeof payload.label === 'string' && payload.label.trim() !== '' ? payload.label : payload.account_id,
+        isDefault: true,
+      };
+      // The default first, then each grant once. A row whose id is not the bare account number
+      // `adAccountId` takes cannot be sent, so it is dropped rather than offered.
+      const grants: LinkedInCreateAccountOption[] = payload.selectable_accounts
+        .filter(
+          (a, i, all) =>
+            typeof a?.account_id === 'string' &&
+            LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(a.account_id) &&
+            a.account_id !== payload.account_id &&
+            all.findIndex((other) => other?.account_id === a.account_id) === i
+        )
+        .map((a) => ({
+          accountId: a.account_id,
+          orgId: typeof a.org_id === 'string' ? a.org_id : '',
+          label: typeof a.label === 'string' && a.label.trim() !== '' ? a.label : a.account_id,
+          isDefault: false,
+        }));
+      const selectable = payload.account_selection_enabled === true && grants.length > 0;
+      const canChoose = selectable && (await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the LinkedIn ad account choice')) === 'granted';
+      const result: LinkedInCreateAccountResult = {
+        accountId: defaultAccount.accountId,
+        orgId: defaultAccount.orgId,
+        label: defaultAccount.label,
+        source: payload.source === 'project' ? 'project' : 'system',
+        canChoose,
+        // Someone who cannot choose is shown only the default, so the grants are not listed to them.
+        accounts: canChoose ? [defaultAccount, ...grants] : [defaultAccount],
+      };
+      logger.success(req, operation, startTime, { source: result.source, canChoose, count: result.accounts.length });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -8975,7 +9053,10 @@ export class CampaignController {
    * adapter exists at all:
    *
    * 1. `adAccountId` is DELETED, because forwarding it can only ever cost a create and can never
-   *    win one.
+   *    win one — UNLESS `canChooseLinkedInAdAccount()` (#5809). With account selection on, the tab
+   *    takes the id from campaign-service's own `create-account` list instead of `linkedin.json`,
+   *    and campaign-service#581 makes it a real selector among the LF system account's grants, so
+   *    a bare account number is forwarded. The rest of this note describes the flag-off case.
    *
    *    The field is an assertion, never a selector. `internal/dispatch/linkedin.go:304-309` builds
    *    the runtime allowlist from the connection's own account alone and says so: "Do NOT append a
@@ -9024,7 +9105,14 @@ export class CampaignController {
     const runtime = getLinkedInConfig();
     const edit = body.linkedInConfig.targetingProfileEdit;
 
-    delete rest['adAccountId'];
+    // Forwarded only while account selection is on (#5809), and only as a bare account number;
+    // otherwise dropped, as the note above explains.
+    const adAccountId = typeof rest['adAccountId'] === 'string' ? rest['adAccountId'].trim() : '';
+    if (canChooseLinkedInAdAccount() && LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(adAccountId)) {
+      rest['adAccountId'] = adAccountId;
+    } else {
+      delete rest['adAccountId'];
+    }
     delete rest['targetingProfileEdit'];
 
     return {

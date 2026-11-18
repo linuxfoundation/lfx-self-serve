@@ -4804,6 +4804,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
       linkedInTargetingEditEnabled: false,
+      linkedInAccountSelectionEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5286,6 +5287,33 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** The LinkedIn account-selection capability (#5809): the cutover AND its own flag, and not any sibling's. */
+  it.each([
+    [{ cutover: true, selection: true, others: false }, true],
+    [{ cutover: true, selection: false, others: true }, false],
+    [{ cutover: false, selection: true, others: true }, false],
+  ])('reports the LinkedIn account-selection capability from the cutover and its own flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (
+        flag === ServerFeatureFlag.CampaignServiceCreate ||
+        flag === ServerFeatureFlag.CampaignServiceBriefs ||
+        flag === ServerFeatureFlag.CampaignServiceJobs
+      )
+        return flags.cutover;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAccountSelection) return flags.selection;
+      return flags.others;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInAccountSelectionEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The Microsoft upload capability: the cutover AND its own flag, and not any sibling's. */
   it.each([
     [{ create: true, briefs: true, jobs: true, microsoft: true, others: false }, true],
@@ -5357,6 +5385,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
       linkedInTargetingEditEnabled: false,
+      linkedInAccountSelectionEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,

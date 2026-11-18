@@ -739,6 +739,25 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS:
     value: "true"
 
+  # Lets the LinkedIn section of the create flow choose the ad account a campaign is created in
+  # (#5809), sent as `linkedInConfig.adAccountId`. The accounts come from campaign-service's
+  # `GET /projects/{projectId}/linkedin-ads/create-account`, not from the mounted linkedin.json.
+  # Only a caller with `global_marketing_ops` on the project is offered a choice; everyone else sees
+  # the default account read-only. The default is never sent as an id, because campaign-service
+  # requires `global_marketing_ops` for any `adAccountId` while its selection is on.
+  #
+  # A CAPABILITY flag of the Bidding kind. REQUIRES linuxfoundation/lfx-v2-campaign-service#581
+  # (v1.0.37) DEPLOYED, and offers a real choice only where that deployment also has
+  # LINKEDIN_ADS_ACCOUNT_SELECTION_ENABLED=true and the operator has installed account grants. It also
+  # needs the create pipeline (CREATE, BRIEFS, JOBS) on.
+  #
+  # Off (the default), `adAccountId` is dropped as before and the Implement tab shows a read-only
+  # line saying the project's LinkedIn connection sets the account. Turning it back off strands
+  # nothing. Order: deploy campaign-service v1.0.37, set its LINKEDIN_ADS_ACCOUNT_SELECTION_ENABLED,
+  # THEN set this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION:
+    value:
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the

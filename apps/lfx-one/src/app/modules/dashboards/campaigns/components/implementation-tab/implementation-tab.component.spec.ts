@@ -3008,6 +3008,166 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
   });
 
   /**
+   * #5809 with account selection on: the account comes from campaign-service's `create-account` read.
+   * A caller who may choose gets a picker; anyone else sees the default read-only. Only a chosen
+   * NON-default account is sent as `adAccountId`, because campaign-service refuses any `adAccountId`
+   * (the default included) from a caller without `global_marketing_ops` while its selection is on.
+   */
+  describe('account selection (#5809)', () => {
+    const DEFAULT_ACCOUNT = { accountId: '100000001', orgId: '200000001', label: 'Shared system account', isDefault: true };
+    const GRANT = { accountId: '100000002', orgId: '200000002', label: 'Grant One', isDefault: false };
+    const chooser = {
+      accountId: '100000001',
+      orgId: '200000001',
+      label: 'Shared system account',
+      source: 'system',
+      canChoose: true,
+      accounts: [DEFAULT_ACCOUNT, GRANT],
+    };
+    const viewer = { ...chooser, canChoose: false, accounts: [DEFAULT_ACCOUNT] };
+
+    let createAccountSubject: Subject<typeof chooser>;
+    let createAccountCalls: string[];
+    let posted: Record<string, unknown> | null;
+
+    beforeEach(async () => {
+      TestBed.resetTestingModule();
+      accountsSubject = new Subject<typeof ACCOUNTS>();
+      createAccountSubject = new Subject<typeof chooser>();
+      createAccountCalls = [];
+      posted = null;
+      await TestBed.configureTestingModule({
+        imports: [ImplementationTabComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([]),
+          { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          {
+            provide: CampaignService,
+            useValue: {
+              getLinkedInAccounts: () => accountsSubject.asObservable(),
+              getLinkedInTargetingProfiles: () => of([]),
+              getLinkedInCreateAccount: (slug: string) => {
+                createAccountCalls.push(slug);
+                return createAccountSubject.asObservable();
+              },
+              createCampaign: (request: Record<string, unknown>) => {
+                posted = request;
+                return of({ jobId: '' });
+              },
+            },
+          },
+        ],
+      }).compileComponents();
+    });
+
+    async function mountWithSelection(selection: boolean | null): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const f = TestBed.createComponent(ImplementationTabComponent);
+      f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
+      f.componentRef.setInput('briefData', brief());
+      f.componentRef.setInput('googleCreativeEnabled', true);
+      f.componentRef.setInput('linkedInAccountSelectionEnabled', selection);
+      f.detectChanges();
+      await f.whenStable();
+      accountsSubject.next(ACCOUNTS);
+      accountsSubject.complete();
+      makeLinkedInOtherwiseValid(f);
+      f.detectChanges();
+      await f.whenStable();
+      return f;
+    }
+
+    async function answer(f: ComponentFixture<ImplementationTabComponent>, payload: typeof chooser): Promise<void> {
+      createAccountSubject.next(payload);
+      f.detectChanges();
+      await f.whenStable();
+    }
+
+    const el = (f: ComponentFixture<ImplementationTabComponent>, testId: string): HTMLElement | null =>
+      (f.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+    function submitAndRead(f: ComponentFixture<ImplementationTabComponent>): Record<string, unknown> {
+      (f.componentInstance as unknown as { submit(): void }).submit();
+      return (posted?.['linkedInConfig'] ?? {}) as Record<string, unknown>;
+    }
+
+    it.each([null, false])('reads nothing and keeps the generic line while account selection is %s', async (selection) => {
+      const f = await mountWithSelection(selection);
+
+      expect(createAccountCalls).toEqual([]);
+      expect(el(f, 'implementation-linkedin-account-from-connection')).not.toBeNull();
+      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+    });
+
+    it('holds Create while the account is loading, then offers global_marketing_ops a picker', async () => {
+      const f = await mountWithSelection(true);
+      const c = f.componentInstance as unknown as { canSubmit(): boolean };
+
+      expect(createAccountCalls).toEqual(['tlf']);
+      expect(el(f, 'implementation-linkedin-create-account-loading')).not.toBeNull();
+      expect(c.canSubmit()).toBe(false);
+
+      await answer(f, chooser);
+
+      const select = el(f, 'implementation-linkedin-create-account-select') as HTMLSelectElement | null;
+      expect(select).not.toBeNull();
+      expect(Array.from(select?.options ?? []).map((o) => o.value)).toEqual(['100000001', '100000002']);
+      expect(c.canSubmit()).toBe(true);
+    });
+
+    it('sends a chosen grant as adAccountId', async () => {
+      const f = await mountWithSelection(true);
+      await answer(f, chooser);
+
+      const select = el(f, 'implementation-linkedin-create-account-select') as HTMLSelectElement;
+      select.value = GRANT.accountId;
+      select.dispatchEvent(new Event('change'));
+      f.detectChanges();
+
+      expect(el(f, 'implementation-linkedin-create-account-page')?.textContent).toContain(GRANT.orgId);
+      expect(submitAndRead(f)['adAccountId']).toBe(GRANT.accountId);
+    });
+
+    // The ED 403: while campaign-service's selection is on, naming the default needs global_marketing_ops too.
+    it('omits adAccountId when the default account is chosen', async () => {
+      const f = await mountWithSelection(true);
+      await answer(f, chooser);
+
+      const select = el(f, 'implementation-linkedin-create-account-select') as HTMLSelectElement;
+      select.value = GRANT.accountId;
+      select.dispatchEvent(new Event('change'));
+      select.value = DEFAULT_ACCOUNT.accountId;
+      select.dispatchEvent(new Event('change'));
+      f.detectChanges();
+
+      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+    });
+
+    it('shows anyone who cannot choose the default read-only and sends no account', async () => {
+      const f = await mountWithSelection(true);
+      await answer(f, viewer);
+
+      expect(el(f, 'implementation-linkedin-create-account-select')).toBeNull();
+      expect(el(f, 'implementation-linkedin-create-account-default')?.textContent).toContain('Shared system account (100000001)');
+      // Not the legacy linkedin.json id the form still carries either.
+      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+    });
+
+    it('lets a create through to the default when the account read fails', async () => {
+      const f = await mountWithSelection(true);
+      createAccountSubject.error(new Error('create-account unavailable'));
+      f.detectChanges();
+      await f.whenStable();
+
+      expect(el(f, 'implementation-linkedin-create-account-failed')).not.toBeNull();
+      expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(true);
+      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+    });
+  });
+
+  /**
    * The geo gate, isolated — the only place in the suite where it can be.
    *
    * `canSubmit` blocks a LinkedIn create with no geo targets, but that gate was covered NOWHERE:

@@ -85,6 +85,7 @@ import type {
   CampaignServiceGoogleAdsGeoTargetSuggestions,
   CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
+  CampaignServiceLinkedInAdsCreateAccount,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignSendWorkflowRequest,
@@ -751,6 +752,20 @@ export function canUseLinkedInCreativeAssets(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may name its ad account in `linkedInConfig.adAccountId` (#5809), and
+ * whether `GET /api/campaigns/linkedin/create-account` answers.
+ *
+ * Needs the campaign-service create path AND the account-selection flag. The legacy creator reads
+ * the account from the mounted `linkedin.json`, which is unrelated to the project's connection, so
+ * with the cutover dark the field keeps being dropped. Whether a choice is actually offered also
+ * depends on campaign-service (`account_selection_enabled`) and on the caller holding
+ * `global_marketing_ops`; the controller decides those per request.
+ */
+export function canChooseLinkedInAdAccount(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
+}
+
+/**
  * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
  * targeting profile with entries removed.
  *
@@ -988,6 +1003,7 @@ export class CampaignServiceClient {
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
         linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+        linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1060,6 +1076,7 @@ export class CampaignServiceClient {
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
       linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+      linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -3444,6 +3461,27 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/google-ads/conversion-actions`,
+      'GET'
+    );
+  }
+
+  /**
+   * The LinkedIn ad account a create for this project uses, and the accounts `linkedInConfig.adAccountId`
+   * may name (`get-linkedin-ads-create-account`, linuxfoundation/lfx-v2-campaign-service#581). A database
+   * read on campaign-service: nothing is sent to LinkedIn. Answered on `campaign_manager`. Failures are left
+   * to the caller.
+   */
+  public async getLinkedInAdsCreateAccount(req: Request, projectSlug: string): Promise<CampaignServiceLinkedInAdsCreateAccount> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A LinkedIn ad account read requires the project it belongs to.', {
+        operation: 'get_linkedin_ads_create_account',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInAdsCreateAccount>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/create-account`,
       'GET'
     );
   }
