@@ -23,7 +23,7 @@ const scopeByRequest = new WeakMap<Request, Map<string, Promise<OrgLensRollUpSco
  * Each candidate organization must pass `assertOrgLensRead`. `members` is the only set of
  * organizations a roll-up read may serve; one the caller is refused on is left out.
  * `complete: false` means the family may be missing organizations the page should say it cannot
- * show. `excludedCount` is how many of the checked organizations were left out.
+ * show.
  *
  * Throws 400 for a malformed key, 403 when the caller may not read the family, and
  * a retriable 503 when access cannot be verified (lookup failed, a member's check could not be

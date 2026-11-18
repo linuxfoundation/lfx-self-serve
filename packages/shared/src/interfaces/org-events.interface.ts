@@ -46,11 +46,8 @@ export interface OrgEvent {
   readonly eventRegistrationsGoal?: number | null;
   readonly orgSpeakerAcceptedCount: number;
   readonly orgSpeakerSubmittedCount: number;
-  /** In a family roll-up, `true` when any organization shown sponsors the event. */
   readonly isOrgSponsor: boolean;
-  /** Family roll-up only: the organizations shown that took part in the event, by name. Empty for an event listed only through its foundation. */
   readonly organizations?: readonly OrgLensRowOrganization[];
-  /** Family roll-up only: the organizations shown that sponsor the event, by name. */
   readonly sponsors?: readonly OrgLensRowOrganization[];
 }
 
@@ -86,9 +83,7 @@ export interface OrgEventsSummary {
   readonly totalEvents: number;
   readonly pastEvents: number;
   readonly upcomingEvents: number;
-  /** Family roll-up only: every organization in the roll-up, by name, whatever the Company filter; the Company filter's options. */
   readonly organizations?: readonly OrgLensRowOrganization[];
-  /** Family roll-up only: whether the roll-up covers the whole family. */
   readonly rollUp?: OrgLensRollUpCoverage;
 }
 
@@ -107,10 +102,6 @@ export interface GetOrgEventsOptions {
   readonly range: OrgLensTimeRange;
 }
 
-/**
- * The organizations a family roll-up read serves: the roll-up gate's readable members, narrowed to one by the Company
- * filter. `organizations` is every member, for the response's Company options and names.
- */
 export interface OrgEventsFamilyScope {
   readonly rollUpKey: string;
   readonly members: readonly OrgRollUpSetOrg[];
@@ -123,7 +114,6 @@ export interface OrgEventAttendee {
   readonly contactId: string;
   readonly name: string;
   readonly jobTitle: string | null;
-  /** Family roll-up only: every organization shown the person is credited through, by name. */
   readonly organizations?: readonly OrgLensRowOrganization[];
 }
 
@@ -159,7 +149,6 @@ export interface OrgEventSpeaker {
   readonly name: string;
   readonly jobTitle: string | null;
   readonly status: 'ACCEPTED' | 'SUBMITTED';
-  /** Family roll-up only: every organization shown the speaker is credited through, by name. */
   readonly organizations?: readonly OrgLensRowOrganization[];
 }
 

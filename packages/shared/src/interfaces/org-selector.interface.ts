@@ -140,15 +140,11 @@ export interface OrgLensRollUpScope {
   rootUid: string;
   members: OrgRollUpSetOrg[];
   complete: boolean;
-  /** Organizations of the family the gate checked and left out because the caller cannot read them. */
   excludedCount: number;
 }
 
-/** How much of a family a roll-up response covers, so a page can say when organizations are missing from it. */
 export interface OrgLensRollUpCoverage {
-  /** `false` when the family set itself may be missing organizations. */
   complete: boolean;
-  /** The caller's organizations in the family that were left out because the caller cannot read them. */
   excludedCount: number;
 }
 

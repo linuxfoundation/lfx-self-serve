@@ -193,7 +193,6 @@ interface ParticipantFixture {
   /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the drawer must ignore it. */
   listable?: boolean;
   account?: string;
-  /** The participant number one person carries across every organization of a family; `null` when the warehouse has none. */
   crossRef?: number | null;
 }
 
@@ -735,7 +734,6 @@ describe('OrgLensEventsService family roll-up', () => {
   const SUBSIDIARY_CO = { accountId: OTHER_ACCOUNT, name: 'Subsidiary Co' };
   const FILTERS = { participation: 'all', scope: 'activity', foundation: '', range: '730d' } as const;
 
-  /** The gate's answer, members deliberately not in name order. */
   function rollUp(overrides: Partial<OrgLensRollUpScope> = {}): OrgLensRollUpScope {
     return {
       rollUpKey: 'family-acct-a',

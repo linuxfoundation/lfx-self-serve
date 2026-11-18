@@ -340,10 +340,6 @@ export class OrgLensEventsService {
     return { eventId, eventName, acceptedCount, submittedCount, data };
   }
 
-  /**
-   * The organizations a family roll-up read serves: the gate's readable members, alphabetical, narrowed to `company` when
-   * the Company filter names one. The controller has already refused a `company` outside the roll-up.
-   */
   public familyScope(rollUp: OrgLensRollUpScope, company?: string): OrgEventsFamilyScope {
     const organizations = [...rollUp.members].sort((a, b) => a.name.localeCompare(b.name) || a.accountId.localeCompare(b.accountId));
     return {
@@ -354,10 +350,6 @@ export class OrgLensEventsService {
     };
   }
 
-  /**
-   * Family roll-up Upcoming / Past / Total tiles: each event once across the organizations served, under the same range,
-   * foundation and scope rules as `getOrgEventsSummary`. Carries every organization of the roll-up and its coverage.
-   */
   public async getFamilyOrgEventsSummary(req: Request, scope: OrgEventsFamilyScope, filters: OrgEventsFilters): Promise<OrgEventsSummary> {
     logger.debug(req, 'get_org_lens_events_summary', 'Building family events summary query', { roll_up_key: scope.rollUpKey, members: scope.members.length });
 
@@ -401,7 +393,6 @@ export class OrgLensEventsService {
     };
   }
 
-  /** Family roll-up foundation options: every foundation any organization of the roll-up has events in under the picked scope, whatever the Company filter. */
   public async getFamilyOrgEventFoundations(
     req: Request,
     scope: OrgEventsFamilyScope,
@@ -433,11 +424,6 @@ export class OrgLensEventsService {
     }
   }
 
-  /**
-   * Family roll-up event list: one row per event across the organizations served, with the people and speakers counted once
-   * (the family person key, the speaker id) and the organizations that took part in or sponsor it. A status matches when any
-   * organization served matches it.
-   */
   public async getFamilyOrgEvents(req: Request, scope: OrgEventsFamilyScope, options: GetOrgEventsOptions): Promise<OrgEventsResponse> {
     const { isPast, searchQuery, status, pageSize, offset, sortField, sortOrder, participation, eventScope, foundation, range } = options;
     const sortColumn = VALID_SORT_COLUMNS.has(sortField) || sortField === ORG_EVENTS_ORGANIZATIONS_SORT_FIELD ? sortField : 'EVENT_START_DATE';
@@ -488,10 +474,6 @@ export class OrgLensEventsService {
     return { data, total, pageSize, offset };
   }
 
-  /**
-   * Family roll-up attendees drawer: everyone the picked option counts across the organizations served, once each by the
-   * family person key, with every organization they are credited through. The count is the list length, as on one organization.
-   */
   public async getFamilyEventAttendees(
     req: Request,
     scope: OrgEventsFamilyScope,
@@ -541,7 +523,6 @@ export class OrgLensEventsService {
     }
   }
 
-  /** Family roll-up speakers drawer: each speaker id once across the organizations served, accepted when any of their proposals was. */
   public async getFamilyEventSpeakers(req: Request, scope: OrgEventsFamilyScope, eventId: string, searchQuery?: string): Promise<OrgEventSpeakersResponse> {
     logger.debug(req, 'get_event_speakers', 'Fetching family event speakers', { roll_up_key: scope.rollUpKey, event_id: eventId });
     const accounts = accountIds(scope.members);
@@ -713,11 +694,6 @@ export class OrgLensEventsService {
     return { sql, binds };
   }
 
-  /**
-   * The family list: event rows of the organizations served, one per event, paged before the people and speakers are counted
-   * so only the page's events are counted. Each organization carries its alphabetical rank, so sorting by organizations
-   * compares the rows' alphabetically ordered names, first name first.
-   */
   private buildFamilyListQuery(params: {
     members: readonly OrgRollUpSetOrg[];
     isPast: boolean;
@@ -835,14 +811,12 @@ export class OrgLensEventsService {
       ORDER BY ${orderBy('pg.')}
     `;
 
-    // Positional binds, in statement order: the members' (account id, rank) pairs, then the WHERE filters.
     const binds: string[] = members.flatMap((member, index) => [member.accountId, String(index).padStart(4, '0')]);
     if (foundation) binds.push(foundation);
     if (searchQuery) binds.push(`%${searchQuery}%`);
     return { sql, binds };
   }
 
-  /** The event's name and whether it has ended, from any organization served that lists it. */
   private async readFamilyDrawerHeader(scope: OrgEventsFamilyScope, accounts: string[], eventId: string): Promise<OrgEventDrawerHeaderRow | undefined> {
     const sql = `
       SELECT oe.EVENT_NAME, oe.IS_PAST_EVENT
@@ -926,22 +900,18 @@ function isSpeakerRowArray(value: unknown): boolean {
   return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['SPEAKER_ID'] === 'string');
 }
 
-/** Family speaker rows are grouped by `SPEAKER_ID` and named through `ACCOUNT_ID`: validate both. */
 function isFamilySpeakerRowArray(value: unknown): boolean {
   return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['SPEAKER_ID'] === 'string' && typeof el['ACCOUNT_ID'] === 'string');
 }
 
-/** Family attendee rows are grouped by `PERSON_KEY` and named through `ACCOUNT_ID`: validate both. */
 function isFamilyAttendeeRowArray(value: unknown): boolean {
   return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['PERSON_KEY'] === 'string' && typeof el['ACCOUNT_ID'] === 'string');
 }
 
-/** The organizations' account ids, in their (alphabetical) order: the binds of an `IN` list, and part of every family cache key. */
 function accountIds(organizations: readonly OrgRollUpSetOrg[]): string[] {
   return organizations.map((organization) => organization.accountId);
 }
 
-/** One `?` per bind of an `IN` list. */
 function placeholders(binds: readonly string[]): string {
   return binds.map(() => '?').join(', ');
 }
@@ -950,16 +920,10 @@ function rowOrganization(organization: OrgRollUpSetOrg): OrgLensRowOrganization 
   return { accountId: organization.accountId, name: organization.name };
 }
 
-/**
- * The family person key of an `ORG_EVENT_PARTICIPATION` row: the participant number every organization of a family shares.
- * A row without one falls back to its own organization's participant, so a family of one counts exactly what that
- * organization counts.
- */
 function familyPersonKey(alias: string): string {
   return `COALESCE(CAST(${alias}.CROSS_ACCOUNT_PARTICIPANT_REF AS VARCHAR), ${alias}.ACCOUNT_ID || ':' || CAST(${alias}.PARTICIPANT_REF AS VARCHAR))`;
 }
 
-/** The organizations named by a comma-separated account id list from the warehouse, keeping its order and only organizations served. */
 function organizationsOf(ids: string | null, byAccount: ReadonlyMap<string, OrgRollUpSetOrg>): OrgLensRowOrganization[] {
   const organizations: OrgLensRowOrganization[] = [];
   for (const id of new Set((ids ?? '').split(',').filter(Boolean))) {
@@ -969,11 +933,6 @@ function organizationsOf(ids: string | null, byAccount: ReadonlyMap<string, OrgR
   return organizations;
 }
 
-/**
- * One entry per person or speaker `key`, with every organization served they are credited through in the organizations'
- * alphabetical order; the name and title come from the first of those organizations that has one. Listed by name, unnamed
- * last, then by key — the single-organization drawer order.
- */
 function groupByPerson(rows: readonly OrgFamilyEventCreditRow[], members: readonly OrgRollUpSetOrg[]): OrgFamilyEventPerson[] {
   const rank = new Map(members.map((member, index) => [member.accountId, index]));
   const sorted = rows.filter((row) => rank.has(row.accountId)).sort((a, b) => (rank.get(a.accountId) ?? 0) - (rank.get(b.accountId) ?? 0));

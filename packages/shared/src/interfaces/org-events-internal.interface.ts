@@ -29,15 +29,11 @@ export interface OrgEventRow {
   TOTAL_RECORDS: number;
 }
 
-/** One event of a family roll-up list: the event's own columns, and the organizations shown that took part in or sponsor it. */
 export interface OrgFamilyEventRow extends OrgEventRow {
-  /** Comma-separated account ids of the organizations shown that took part in the event; `null` or empty when none did. */
   ACTIVE_ACCOUNT_IDS: string | null;
-  /** Comma-separated account ids of the organizations shown that sponsor the event; `null` or empty when none does. */
   SPONSOR_ACCOUNT_IDS: string | null;
 }
 
-/** One (person, organization) row of a family roll-up attendees drawer; `PERSON_KEY` is the same for one person across the family. */
 export interface OrgFamilyEventAttendeeRow {
   PERSON_KEY: string;
   ACCOUNT_ID: string;
@@ -45,12 +41,10 @@ export interface OrgFamilyEventAttendeeRow {
   JOB_TITLE: string | null;
 }
 
-/** One (speaker, organization) row of a family roll-up speakers drawer. */
 export interface OrgFamilyEventSpeakerRow extends OrgEventSpeakersDrawerRow {
   ACCOUNT_ID: string;
 }
 
-/** A family drawer row as the service reads it: one person or speaker `key` credited through one organization, name and title already made displayable. */
 export interface OrgFamilyEventCreditRow {
   key: string;
   accountId: string;
@@ -58,7 +52,6 @@ export interface OrgFamilyEventCreditRow {
   jobTitle: string | null;
 }
 
-/** One person or speaker of a family drawer, once, with every organization served they are credited through (alphabetical). */
 export interface OrgFamilyEventPerson {
   key: string;
   name: string | null;

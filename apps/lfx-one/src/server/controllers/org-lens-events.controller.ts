@@ -20,7 +20,7 @@ import { logger } from '../services/logger.service';
 import { OrgLensEventsService } from '../services/org-lens-events.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
 
-/** HTTP boundary for GET /api/orgs/:accountId/lens/events. `accountId` is one organization's account id or a family roll-up key. */
+/** HTTP boundary for GET /api/orgs/:accountId/lens/events. */
 export class OrgLensEventsController {
   private readonly service: OrgLensEventsService;
 
@@ -212,10 +212,6 @@ export class OrgLensEventsController {
     }
   }
 
-  /**
-   * The organizations a family roll-up read serves: the roll-up gate's readable members, narrowed by the Company filter.
-   * A `company` outside the roll-up is refused rather than ignored.
-   */
   private async familyScope(req: Request, rollUpKey: string, operation: string): Promise<OrgEventsFamilyScope> {
     const rollUp = await resolveOrgLensRollUp(req, rollUpKey, operation);
     const company = getStringQueryParam(req, ORG_EVENTS_COMPANY_QUERY_PARAM) || undefined;
@@ -225,7 +221,6 @@ export class OrgLensEventsController {
     return this.service.familyScope(rollUp, company);
   }
 
-  /** One organization's Salesforce account id, or a family roll-up key; anything else is a 400 before any read. */
   private assertEventsTarget(accountId: string | undefined, operation: string): asserts accountId is string {
     if (!accountId || typeof accountId !== 'string') {
       throw ServiceValidationError.forField('accountId', 'accountId path parameter is required', { operation });
