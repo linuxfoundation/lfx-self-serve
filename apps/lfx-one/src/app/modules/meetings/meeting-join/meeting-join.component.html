@@ -510,7 +510,7 @@
                       size="small"
                       severity="secondary"
                       [loading]="resendingInvite()"
-                      (onClick)="resendInvite()"
+                      (onClick)="confirmResendInvite()"
                       data-testid="resend-invite-organizer-button">
                     </lfx-button>
                   }
@@ -548,7 +548,7 @@
                           size="small"
                           severity="secondary"
                           [loading]="resendingInvite()"
-                          (onClick)="resendInvite()"
+                          (onClick)="confirmResendInvite()"
                           data-testid="resend-invite-button">
                         </lfx-button>
                       }
@@ -1009,7 +1009,7 @@
           [primaryAction]="stickyBarAction()"
           [resending]="resendingInvite()"
           [suppressed]="stickyBarSuppressed()"
-          (resendInvite)="resendInvite()"
+          (resendInvite)="confirmResendInvite()"
           (subscribeCalendar)="onSubscribeCalendar()" />
       }
     </div>

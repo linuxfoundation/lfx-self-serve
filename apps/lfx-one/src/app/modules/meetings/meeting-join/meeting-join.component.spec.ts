@@ -1416,6 +1416,16 @@ describe('MeetingJoinComponent', () => {
       expect(confirm.mock.calls[0][0].message).toContain("it won't invite you to this meeting again");
     });
 
+    it('escapes the title, since PrimeNG renders the message as HTML', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true, title: 'TSC <EU/APAC> & sync' }));
+      const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+      const confirm = vi.spyOn(confirmation, 'confirm').mockReturnValue(confirmation);
+
+      fixture.componentInstance.confirmLeaveMeeting();
+
+      expect(confirm.mock.calls[0][0].message).toContain('"TSC &lt;EU/APAC&gt; &amp; sync"');
+    });
+
     it('offers it to an organizer who is also registered, and says they stay an organizer', async () => {
       const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
       const confirmation = fixture.debugElement.injector.get(ConfirmationService);
@@ -1493,15 +1503,39 @@ describe('MeetingJoinComponent', () => {
       const RESEND_BUTTON = '[data-testid="resend-invite-button"]';
       const RESEND_ORGANIZER_BUTTON = '[data-testid="resend-invite-organizer-button"]';
 
-      it('offers the action to a signed-in invitee and resends to their own registration when clicked', async () => {
+      /** Takes over the dialog the component's own `ConfirmationService` would open; accepts it only when asked to. */
+      const answerResendConfirmation = (fixture: Awaited<ReturnType<typeof createFixture>>, accept: boolean) => {
+        const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+        return vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+          if (accept) options.accept?.();
+          return confirmation;
+        });
+      };
+
+      it('offers the action to a signed-in invitee and resends to their own registration once confirmed', async () => {
         const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
         const button = fixture.nativeElement.querySelector(RESEND_BUTTON);
+        const confirm = answerResendConfirmation(fixture, true);
 
         expect(button).not.toBeNull();
-        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.confirmResendInvite();
 
+        expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Resend Your Invitation', acceptLabel: 'Resend', rejectLabel: 'Cancel' }));
+        expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
         expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
         expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('sends nothing when the viewer cancels the confirmation from the page button', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        const confirm = answerResendConfirmation(fixture, false);
+
+        fixture.debugElement.query(By.css(RESEND_BUTTON)).triggerEventHandler('onClick', new MouseEvent('click'));
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+        expect(toastAdd).not.toHaveBeenCalled();
       });
 
       it('resends for the occurrence the page is showing, so the matching registration is chosen', async () => {
@@ -1515,7 +1549,8 @@ describe('MeetingJoinComponent', () => {
         );
 
         expect(fixture.componentInstance.currentOccurrence()?.occurrence_id).toBe('occ-next');
-        fixture.componentInstance.resendInvite();
+        answerResendConfirmation(fixture, true);
+        fixture.componentInstance.confirmResendInvite();
 
         expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, 'occ-next');
       });
@@ -1546,10 +1581,13 @@ describe('MeetingJoinComponent', () => {
         const pending$ = new Subject<{ message: string }>();
         resendMyMeetingInvitation.mockReturnValue(pending$);
         const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        const confirm = answerResendConfirmation(fixture, true);
 
-        fixture.componentInstance.resendInvite();
-        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.confirmResendInvite();
+        fixture.componentInstance.confirmResendInvite();
 
+        // The second click opens no second dialog while the first send is in flight.
+        expect(confirm).toHaveBeenCalledTimes(1);
         expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
         expect(fixture.componentInstance.resendingInvite()).toBe(true);
         pending$.next({ message: 'ok' });
@@ -1564,9 +1602,10 @@ describe('MeetingJoinComponent', () => {
           )
           .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN', error: 'upstream detail' } })));
         const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        answerResendConfirmation(fixture, true);
 
-        fixture.componentInstance.resendInvite();
-        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.confirmResendInvite();
+        fixture.componentInstance.confirmResendInvite();
 
         expect(toastAdd).toHaveBeenNthCalledWith(
           1,
@@ -2235,15 +2274,38 @@ describe('MeetingJoinComponent', () => {
     });
 
     describe('primary action', () => {
-      it("reuses the page's own self-resend (same handler, same toast), for the occurrence shown", async () => {
+      /** Takes over the dialog the page's own `ConfirmationService` would open; accepts it only when asked to. */
+      const answerResendConfirmation = (fixture: ComponentFixture<MeetingJoinComponent>, accept: boolean) => {
+        const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+        return vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+          if (accept) options.accept?.();
+          return confirmation;
+        });
+      };
+
+      it("reuses the page's own confirmed self-resend (same dialog, same toast), for the occurrence shown", async () => {
         const fixture = await render();
+        const confirm = answerResendConfirmation(fixture, true);
 
         fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
         await settle();
 
+        expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Resend Your Invitation' }));
         expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
         expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
         expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('sends nothing when the viewer cancels the confirmation from the bar', async () => {
+        const fixture = await render();
+        const confirm = answerResendConfirmation(fixture, false);
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+        await settle();
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+        expect(toastAdd).not.toHaveBeenCalled();
       });
 
       it.each([
@@ -2269,6 +2331,7 @@ describe('MeetingJoinComponent', () => {
       it('shows the same in-flight state as the page button while the resend is pending', async () => {
         resendMyMeetingInvitation.mockReturnValue(new Subject());
         const fixture = await render();
+        answerResendConfirmation(fixture, true);
 
         fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
         await settle();
