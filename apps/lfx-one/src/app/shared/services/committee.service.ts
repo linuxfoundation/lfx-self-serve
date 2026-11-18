@@ -342,6 +342,13 @@ export class CommitteeService {
     );
   }
 
+  /** Withdraws the caller's own pending application; {@link submitApplication} reopens the same record. */
+  public withdrawApplication(committeeId: string, applicationId: string): Observable<CommitteeJoinApplication> {
+    return this.http
+      .post<CommitteeJoinApplication>(`/api/committees/${encodeURIComponent(committeeId)}/applications/${encodeURIComponent(applicationId)}/withdraw`, null)
+      .pipe(take(1));
+  }
+
   /** Lists join applications for a committee (from query index). */
   public getCommitteeApplications(committeeId: string): Observable<CommitteeJoinApplication[]> {
     return this.http.get<CommitteeJoinApplication[]>(`/api/committees/${committeeId}/applications`).pipe(take(1));

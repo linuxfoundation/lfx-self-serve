@@ -172,6 +172,18 @@ describe('CommitteeService.getMyCommitteeUids', () => {
   });
 });
 
+describe('CommitteeService.withdrawApplication', () => {
+  beforeEach(() => proxyRequest.mockReset());
+
+  it('posts to the upstream withdraw route with the user token and no body', async () => {
+    const withdrawn = { uid: 'application-a', committee_uid: 'committee-a', status: 'withdrawn' } as CommitteeJoinApplication;
+    proxyRequest.mockResolvedValueOnce(withdrawn);
+
+    expect(await new CommitteeService().withdrawApplication(req, 'committee-a', 'application-a')).toBe(withdrawn);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-a/applications/application-a/withdraw', 'POST');
+  });
+});
+
 function pageOf(committees: Partial<Committee>[], pageToken?: string): QueryServiceResponse<Committee> {
   return { resources: committees.map((c) => ({ id: `committee:${c.uid}`, data: c as Committee })), page_token: pageToken } as QueryServiceResponse<Committee>;
 }

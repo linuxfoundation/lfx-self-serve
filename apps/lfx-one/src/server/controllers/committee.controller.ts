@@ -1627,6 +1627,41 @@ export class CommitteeController {
   }
 
   /**
+   * POST /committees/:id/applications/:applicationId/withdraw
+   * Withdraws the caller's own pending application; upstream answers 403 for anyone but the applicant.
+   */
+  public async withdrawApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, applicationId } = req.params;
+    const startTime = logger.startOperation(req, 'withdraw_committee_application', {
+      committee_id: id,
+      application_id: applicationId,
+    });
+
+    try {
+      if (!id || !applicationId) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID and application ID are required', {
+            operation: 'withdraw_committee_application',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const application = await this.committeeService.withdrawApplication(req, id, applicationId);
+
+      logger.success(req, 'withdraw_committee_application', startTime, {
+        committee_id: id,
+        application_id: applicationId,
+      });
+      res.json(application);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * DELETE /committees/:id/leave
    */
   public async leaveCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
