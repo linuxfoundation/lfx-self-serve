@@ -42,6 +42,7 @@ import {
   JOB_LOST_MESSAGE,
   MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  LINKEDIN_AD_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
@@ -85,6 +86,7 @@ import type {
   CampaignServiceGoogleAdsGeoTargetSuggestions,
   CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
+  CampaignServiceLinkedInAdsCreateAccount,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignSendWorkflowRequest,
@@ -118,6 +120,7 @@ import type {
   HubSpotMarketingEmail,
   KeywordActionPlatform,
   LinkedInBriefCopy,
+  LinkedInCreateAccountRead,
   ListAudiencesResult,
   LinkedInCreativeVariant,
   MetaAdVariant,
@@ -751,6 +754,55 @@ export function canUseLinkedInCreativeAssets(): boolean {
 }
 
 /**
+ * campaign-service's `get-linkedin-ads-create-account` answer (#581), checked and camel-cased. An unreadable
+ * default fails with 502 rather than naming an account the create does not use; a grant whose id is not the
+ * bare account number `adAccountId` takes, the default repeated, or a repeat is dropped rather than offered.
+ */
+export function toLinkedInCreateAccount(payload: CampaignServiceLinkedInAdsCreateAccount, operation: string): LinkedInCreateAccountRead {
+  if (typeof payload?.account_id !== 'string' || !LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(payload.account_id) || !Array.isArray(payload.selectable_accounts)) {
+    throw new MicroserviceError('campaign-service returned an unreadable LinkedIn create account.', 502, 'BAD_GATEWAY', {
+      operation,
+      service: 'campaign_service_client',
+    });
+  }
+  const label = (value: unknown, accountId: string): string => (typeof value === 'string' && value.trim() !== '' ? value : accountId);
+  const grants = payload.selectable_accounts
+    .filter(
+      (a, i, all) =>
+        typeof a?.account_id === 'string' &&
+        LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(a.account_id) &&
+        a.account_id !== payload.account_id &&
+        all.findIndex((other) => other?.account_id === a.account_id) === i
+    )
+    .map((a) => ({ accountId: a.account_id, orgId: typeof a.org_id === 'string' ? a.org_id : '', label: label(a.label, a.account_id), isDefault: false }));
+  return {
+    defaultAccount: {
+      accountId: payload.account_id,
+      orgId: typeof payload.org_id === 'string' ? payload.org_id : '',
+      label: label(payload.label, payload.account_id),
+      isDefault: true,
+    },
+    grants,
+    selectionEnabled: payload.account_selection_enabled === true,
+    source: payload.source === 'project' ? 'project' : 'system',
+  };
+}
+
+/**
+ * Whether a LinkedIn create may name its ad account in `linkedInConfig.adAccountId` (#5809), and
+ * whether `GET /api/campaigns/linkedin/create-account` answers.
+ *
+ * Needs the campaign-service create path AND the account-selection flag. The legacy creator reads
+ * the account from the mounted `linkedin.json`, which is unrelated to the project's connection, so
+ * with the cutover dark the field keeps being dropped. Whether a choice is actually offered also
+ * depends on campaign-service (`account_selection_enabled`) and on the caller holding
+ * `global_marketing_ops`; the controller decides those per request.
+ */
+export function canChooseLinkedInAdAccount(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
+}
+
+/**
  * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
  * targeting profile with entries removed.
  *
@@ -998,6 +1050,7 @@ export class CampaignServiceClient {
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
         linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+        linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
         linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
@@ -1071,6 +1124,7 @@ export class CampaignServiceClient {
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
       linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+      linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
       linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
@@ -3479,6 +3533,27 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/google-ads/conversion-actions`,
+      'GET'
+    );
+  }
+
+  /**
+   * The LinkedIn ad account a create for this project uses, and the accounts `linkedInConfig.adAccountId`
+   * may name (`get-linkedin-ads-create-account`, linuxfoundation/lfx-v2-campaign-service#581). A database
+   * read on campaign-service: nothing is sent to LinkedIn. Answered on `campaign_manager`. Failures are left
+   * to the caller.
+   */
+  public async getLinkedInAdsCreateAccount(req: Request, projectSlug: string): Promise<CampaignServiceLinkedInAdsCreateAccount> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A LinkedIn ad account read requires the project it belongs to.', {
+        operation: 'get_linkedin_ads_create_account',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInAdsCreateAccount>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/create-account`,
       'GET'
     );
   }

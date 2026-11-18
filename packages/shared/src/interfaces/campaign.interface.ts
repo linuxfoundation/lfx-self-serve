@@ -2074,6 +2074,51 @@ export interface LinkedInRuntimeConfig {
 // Campaign Creation (Implementation Phase)
 // ---------------------------------------------------------------------------
 
+/** One LinkedIn ad account the create may use (#5809), camel-cased from campaign-service's `selectable_accounts`. */
+export interface LinkedInCreateAccountOption {
+  accountId: string;
+  /** The LinkedIn page the campaign's posts are authored by. Empty when the connection stores none. */
+  orgId: string;
+  label: string;
+  /** The account a create uses when `linkedInConfig.adAccountId` is omitted. */
+  isDefault: boolean;
+}
+
+/**
+ * `GET /api/campaigns/linkedin/create-account` (#5809): where a LinkedIn create for the project goes, and
+ * whether this caller may choose another account. `accounts` lists the default first and always holds it.
+ */
+export interface LinkedInCreateAccountResult {
+  /** The default account: where a create goes when it sends no `adAccountId`. */
+  accountId: string;
+  orgId: string;
+  label: string;
+  /** `project` (the project's own LinkedIn connection) or `system` (LF's shared connection). */
+  source: 'project' | 'system';
+  /**
+   * Whether this caller may name an account: campaign-service's account selection is on, there is more
+   * than the default to choose from, and the caller holds `global_marketing_ops` on the project.
+   */
+  canChoose: boolean;
+  accounts: LinkedInCreateAccountOption[];
+}
+
+/** campaign-service's LinkedIn create-account read (#5809), checked and camel-cased; see the server's `toLinkedInCreateAccount`. */
+export interface LinkedInCreateAccountRead {
+  defaultAccount: LinkedInCreateAccountOption;
+  /** The non-default accounts `adAccountId` may name, each once, as bare account numbers. */
+  grants: LinkedInCreateAccountOption[];
+  /** campaign-service's own `account_selection_enabled`. */
+  selectionEnabled: boolean;
+  source: 'project' | 'system';
+}
+
+/** Where the Implement tab's LinkedIn ad account read stands (#5809). `idle` while the read does not apply. */
+export interface LinkedInCreateAccountState {
+  status: 'idle' | 'loading' | 'ready' | 'failed';
+  account: LinkedInCreateAccountResult | null;
+}
+
 export interface LinkedInCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -2096,7 +2141,14 @@ export interface LinkedInCampaignCreateRequest {
   variants: LinkedInCreativeVariant[];
   project?: string;
   driveFolderUrl?: string;
+  /** The legacy creator's ad account, from `linkedin.json`. Never forwarded on the campaign-service road. */
   adAccountId?: string;
+  /**
+   * The ad account picked in the Implement tab's account picker (#5809), sent only for a non-default pick.
+   * The server forwards it to campaign-service as `adAccountId` when it is a listed grant and the caller holds
+   * `global_marketing_ops`, and refuses the create otherwise, rather than creating in another account.
+   */
+  selectedAdAccountId?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
   /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
@@ -5242,6 +5294,29 @@ export interface CampaignServiceGoogleAdsConversionActions {
   conversion_action_count: number;
 }
 
+/** One account `linkedInConfig.adAccountId` may name (`LinkedinAdsSelectableAccount`, linuxfoundation/lfx-v2-campaign-service#581). */
+export interface CampaignServiceLinkedInAdsSelectableAccount {
+  account_id: string;
+  org_id: string;
+  label: string;
+  default: boolean;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/linkedin-ads/create-account` (`campaign_manager`;
+ * linuxfoundation/lfx-v2-campaign-service#581): the account and organization page a LinkedIn create for the
+ * project uses when `linkedInConfig.adAccountId` is omitted, and the accounts it may name, the default first.
+ */
+export interface CampaignServiceLinkedInAdsCreateAccount {
+  account_id: string;
+  org_id: string;
+  label: string;
+  source: 'project' | 'system';
+  status: string;
+  account_selection_enabled: boolean;
+  selectable_accounts: CampaignServiceLinkedInAdsSelectableAccount[];
+}
+
 /** One element of campaign-service's user list read (`google-ads-user-list`, linuxfoundation/lfx-v2-campaign-service#508). */
 export interface CampaignServiceGoogleAdsUserList {
   resource_name: string;
@@ -6868,6 +6943,15 @@ export interface CampaignListResult {
    * shows the profile read-only.
    */
   linkedInTargetingEditEnabled: boolean;
+  /**
+   * Whether the LinkedIn section reads the create's ad account from campaign-service and, for a
+   * caller holding `global_marketing_ops`, offers choosing another (#5809), sent as
+   * `linkedInConfig.adAccountId`. `cutoverOwnsCreate()` AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION`. Whether this caller may choose is answered
+   * by `GET /api/campaigns/linkedin/create-account`, not here. Modelled on the client like the
+   * capabilities above.
+   */
+  linkedInAccountSelectionEnabled: boolean;
   /**
    * Whether the LinkedIn section may offer a daily cap beside a lifetime budget, sent as
    * `linkedInConfig.dailyCapUsd` (#5774). `cutoverOwnsCreate()` and nothing else, like
