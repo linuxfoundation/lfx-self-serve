@@ -227,6 +227,17 @@ describe('GroupInvitationsComponent', () => {
     expect(document.activeElement).toBe(fallback);
   });
 
+  it('ignores the second click of a double-click, which would land on the next row', async () => {
+    await render([invitation('a'), invitation('b')]);
+    await open();
+    const button = all('groups-redesign-invitations-row')[0].querySelector('[data-testid="groups-redesign-invitations-accept"] button') as HTMLButtonElement;
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+    await settle();
+
+    expect(accept).not.toHaveBeenCalled();
+    expect(all('groups-redesign-invitations-row')).toHaveLength(2);
+  });
+
   it('puts the invitation back when accepting fails', async () => {
     accept.mockReturnValue(throwError(() => new Error('upstream')));
     await render([invitation('a')]);

@@ -75,7 +75,7 @@
               icon="fa-light fa-check text-emerald-600"
               [ariaLabel]="'Accept invite to ' + item.invitation.committee_name"
               [loading]="accepting().has(item.invitation.uid)"
-              (click)="accept(item.invitation)"
+              (click)="accept(item.invitation, $event)"
               data-testid="groups-redesign-invitations-accept">
               Accept
             </lfx-ui-button>
@@ -85,7 +85,7 @@
               icon="fa-light fa-xmark text-red-600"
               [ariaLabel]="'Decline invite to ' + item.invitation.committee_name"
               [disabled]="accepting().has(item.invitation.uid)"
-              (click)="decline(item.invitation)"
+              (click)="decline(item.invitation, $event)"
               data-testid="groups-redesign-invitations-decline">
               Decline
             </lfx-ui-button>

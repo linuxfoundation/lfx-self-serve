@@ -112,7 +112,9 @@ export class GroupInvitationsComponent {
     });
   }
 
-  protected accept(invitation: PendingInvitation): void {
+  protected accept(invitation: PendingInvitation, event?: MouseEvent): void {
+    // The second click of a double-click would land on the next row, which moves up into place.
+    if ((event?.detail ?? 0) > 1) return;
     if (!invitationRequiresOrganization(invitation)) {
       this.removeRow(invitation.uid);
       this.runAccept(invitation, false);
@@ -129,7 +131,8 @@ export class GroupInvitationsComponent {
     ref.close();
   }
 
-  protected decline(invitation: PendingInvitation): void {
+  protected decline(invitation: PendingInvitation, event?: MouseEvent): void {
+    if ((event?.detail ?? 0) > 1) return;
     this.removeRow(invitation.uid);
     const toast = this.toast.show({
       message: 'Invite declined',
@@ -180,7 +183,7 @@ export class GroupInvitationsComponent {
         afterNextRender(
           () => {
             const active = this.document.activeElement;
-            if (!active || active === this.document.body) this.fallbackFocus()?.focus();
+            if (!active || active === this.document.body || !active.isConnected) this.fallbackFocus()?.focus();
           },
           { injector: this.injector }
         );
