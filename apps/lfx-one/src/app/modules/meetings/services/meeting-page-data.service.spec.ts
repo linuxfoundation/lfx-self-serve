@@ -11,7 +11,7 @@ import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, defer, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingPageDataService } from './meeting-page-data.service';
 
@@ -142,13 +142,28 @@ describe('MeetingPageDataService', () => {
     const live = { meeting: { id: '123', title: 'Live' }, project, full_access: true, can_join: false };
     const past = { meeting: { id: '123-1700000000000', title: 'Past' }, project, full_access: true };
     const unavailable = (): HttpErrorResponse => new HttpErrorResponse({ status: 503 });
-    const waitForRetry = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS + 100));
+    // `debounceTime(0)` and the retry `timer` run on RxJS's interval scheduler, so only intervals are faked: `create()`'s
+    // real `setTimeout` flush still settles Angular, then virtual time starts the load and later the retry.
+    const start = async (): Promise<TestHostComponent> => {
+      const host = await create();
+      await vi.advanceTimersByTimeAsync(0);
+      return host;
+    };
+    const waitForRetry = (): Promise<unknown> => vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }));
+
+    afterEach(() => {
+      TestBed.resetTestingModule();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    });
 
     it('keeps the skeleton over a server failure seed while the browser fetch is pending, then shows the meeting', async () => {
       const response$ = new Subject<typeof live>();
       getPublicMeeting.mockReturnValue(response$.asObservable());
       TestBed.inject(TransferState).set(stateKey, failureSeed);
-      const host = await create();
+      const host = await start();
 
       expect(host.meeting()).toBeUndefined();
       expect(host.data.meetingLoadFailed()).toBe(false);
@@ -163,7 +178,7 @@ describe('MeetingPageDataService', () => {
     it('shows the error when the browser fetch after a server failure seed also fails', async () => {
       getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
       TestBed.inject(TransferState).set(stateKey, failureSeed);
-      const host = await create();
+      const host = await start();
 
       expect(host.data.meetingLoadFailed()).toBe(true);
     });
@@ -171,7 +186,7 @@ describe('MeetingPageDataService', () => {
     it('retries a transient failure once in the browser and shows the meeting', async () => {
       const { request, subscriptions } = failingThen([unavailable()], live);
       getPublicMeeting.mockReturnValue(request);
-      const host = await create();
+      const host = await start();
 
       expect(subscriptions()).toBe(1);
       expect(host.data.meetingLoadFailed()).toBe(false);
@@ -186,7 +201,7 @@ describe('MeetingPageDataService', () => {
     it('shows the error once the retry fails too', async () => {
       const { request, subscriptions } = failingThen([unavailable(), unavailable()], live);
       getPublicMeeting.mockReturnValue(request);
-      const host = await create();
+      const host = await start();
       await waitForRetry();
 
       expect(subscriptions()).toBe(2);
@@ -196,7 +211,7 @@ describe('MeetingPageDataService', () => {
     it('sends a forbidden meeting to not-found without retrying', async () => {
       const { request, subscriptions } = failingThen([new HttpErrorResponse({ status: 403 })], live);
       getPublicMeeting.mockReturnValue(request);
-      await create();
+      await start();
 
       expect(subscriptions()).toBe(1);
       expect(navigate).toHaveBeenCalledWith(['/meetings/not-found']);
@@ -206,7 +221,7 @@ describe('MeetingPageDataService', () => {
       getPublicMeeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
       const { request, subscriptions } = failingThen([unavailable()], past);
       getPublicPastMeeting.mockReturnValue(request);
-      const host = await create();
+      const host = await start();
       await waitForRetry();
 
       expect(getPublicPastMeeting).toHaveBeenCalledTimes(1);
@@ -215,11 +230,48 @@ describe('MeetingPageDataService', () => {
       expect(host.meeting()?.title).toBe('Past');
     });
 
+    it('retries a transient failure on a {id}-{ms} past meeting', async () => {
+      paramMap$.next(convertToParamMap({ id: '123-1700000000000' }));
+      const { request, subscriptions } = failingThen([unavailable()], past);
+      getPublicPastMeeting.mockReturnValue(request);
+      const host = await start();
+
+      expect(subscriptions()).toBe(1);
+      expect(host.data.meetingLoadFailed()).toBe(false);
+
+      await waitForRetry();
+
+      expect(subscriptions()).toBe(2);
+      expect(getPublicMeeting).not.toHaveBeenCalled();
+      expect(host.meeting()?.title).toBe('Past');
+      expect(host.data.meetingLoadFailed()).toBe(false);
+    });
+
+    it('shows loading, not the error, while a refresh from the error and its retry run', async () => {
+      const { request, subscriptions } = failingThen([unavailable(), unavailable(), unavailable()], live);
+      getPublicMeeting.mockReturnValue(request);
+      const host = await start();
+      await waitForRetry();
+      expect(host.data.meetingLoadFailed()).toBe(true);
+
+      host.data.refresh();
+      expect(host.data.meetingLoadFailed()).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(subscriptions()).toBe(3);
+      expect(host.data.meetingLoadFailed()).toBe(false);
+
+      await waitForRetry();
+      expect(subscriptions()).toBe(4);
+      expect(host.meeting()?.title).toBe('Live');
+      expect(host.data.meetingLoadFailed()).toBe(false);
+    });
+
     it('renders the skeleton on the server and hands the failure to the browser without retrying', async () => {
       TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
       const { request, subscriptions } = failingThen([unavailable()], live);
       getPublicMeeting.mockReturnValue(request);
-      const host = await create();
+      const host = await start();
 
       expect(subscriptions()).toBe(1);
       expect(host.data.meetingLoadFailed()).toBe(false);

@@ -99,7 +99,8 @@ export class MeetingPageDataService {
   public readonly liveMeetingFullAccess: Signal<boolean> = this.liveMeetingFullAccessState.asReadonly();
   // The server's join-window result, for viewers whose response has no start time to check against.
   public readonly liveMeetingCanJoin: Signal<boolean> = this.liveMeetingCanJoinState.asReadonly();
-  // A fetch settled with an error that doesn't navigate away (5xx, network); 404/403/400 go to not-found.
+  // The browser's fetch settled with an error that doesn't navigate away (5xx, network); 404/403/400 go to not-found.
+  // Never set on the server, which only records the failure in TransferState (#5907).
   public readonly meetingLoadFailed: Signal<boolean> = this.meetingLoadFailedState.asReadonly();
   public readonly routeId: Signal<string | null> = this.meetingRouteId.asReadonly();
   // False right after navigating to a different `/meetings/:id` until that route's fetch settles.
@@ -169,8 +170,13 @@ export class MeetingPageDataService {
     return this.initMeeting(seed, onRouteChange);
   }
 
-  /** Refetches the meeting for the current route. */
+  /**
+   * Refetches the meeting for the current route.
+   * @description Clears a shown load error first, so the page shows loading rather than "refresh" copy while the refetch
+   * and its retry run; only a failure of that refetch shows the error again (#5907).
+   */
   public refresh(): void {
+    this.meetingLoadFailedState.set(false);
     this.reloadOnNextLoad();
     this.refreshTrigger$.next();
   }
@@ -286,7 +292,8 @@ export class MeetingPageDataService {
       map((res) => ({ ...res.meeting, project: res.project })),
       tap((res) => {
         this.projectState.set(res.project);
-        // Only a settled success clears a prior failure; clearing eagerly would flash an error view back to the skeleton.
+        // Besides an explicit `refresh()`, only a settled success clears a prior failure; clearing on a re-emission would
+        // flash an error view back to the skeleton.
         this.meetingLoadFailedState.set(false);
         this.meetingResolvedRouteId.set(this.meetingRouteId());
         this.reloadsDoneState.set(this.reloadsRequested);
