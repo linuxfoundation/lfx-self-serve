@@ -20,7 +20,11 @@ type AffiliationAnswer = { status: 'answered'; affiliation: OrgLensEmployerAffil
  * asked again — the shared Retry, or a work-history edit — leaves the state it produced on screen
  * instead of pulling the page back to a skeleton; `inFlight` says a request is out for `key`.
  */
-interface AffiliationProbe { key: string | null; answer: AffiliationAnswer | null; inFlight: boolean }
+interface AffiliationProbe {
+  key: string | null;
+  answer: AffiliationAnswer | null;
+  inFlight: boolean;
+}
 
 /**
  * #4314 — the caller's own employer and whether it is an LF member, for the Org Lens empty states.
