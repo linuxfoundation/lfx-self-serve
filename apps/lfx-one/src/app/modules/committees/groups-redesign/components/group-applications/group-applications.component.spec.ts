@@ -210,6 +210,20 @@ describe('GroupApplicationsComponent', () => {
     expect(document.activeElement?.closest('[data-testid="groups-redesign-applications-row"]')).not.toBeNull();
   });
 
+  it('still sends a withdraw when the page goes away first, without offering Undo', async () => {
+    const response = new Subject<CommitteeJoinApplication>();
+    withdraw.mockReturnValue(response);
+    await render();
+    await open();
+    await withdrawRow(0);
+    fixture.destroy();
+
+    expect(response.observed).toBe(true);
+    response.next({ ...application('a'), status: 'withdrawn' } as CommitteeJoinApplication);
+    response.complete();
+    expect(show).not.toHaveBeenCalled();
+  });
+
   it('closes its Undo toast when the page goes away', async () => {
     const dismiss = vi.fn<() => void>();
     show.mockReturnValue({ id: 'toast', dismiss });

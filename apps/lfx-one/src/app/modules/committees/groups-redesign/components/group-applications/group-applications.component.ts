@@ -121,9 +121,11 @@ export class GroupApplicationsComponent {
     this.focusRow(index);
     this.committeeService
       .withdrawApplication(application.committee_uid, application.uid)
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      // The write finishes even if the page goes away; only its Undo goes with the page.
       .subscribe({
-        next: () => this.offerUndo(application),
+        next: () => {
+          if (!this.destroyRef.destroyed) this.offerUndo(application);
+        },
         error: (error: HttpErrorResponse) => {
           // 404 and 409: the application is gone or already reviewed, so it stays off the list.
           if (error.status === 404 || error.status === 409) {
