@@ -81,9 +81,9 @@ export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
  * answers for an anonymous context before the signed-in one, and a roll-up restored from the
  * cookie or an address must ride that window out rather than be demoted by it.
  *
- * **UI-only** — evaluated through the OpenFeature Web SDK, which never runs server-side, so it
- * cannot gate an Express handler: `/api/orgs/me/roll-up-set` and every other BFF route answer the same
- * with the flag off. This flag only controls whether Self Serve offers and renders the roll-up.
+ * The server also evaluates it for one path (`LaunchDarklyServerService`): the LF staff family
+ * (#5901), added to `/api/orgs/me/roll-up-set` for an `anchor` and admitted by the roll-up read gate,
+ * only while it is on for the caller. Every other BFF route answers the same with the flag off.
  */
 export const ORG_LENS_ROLLUP_ENABLED_FLAG = 'org-lens-rollup-enabled';
 
