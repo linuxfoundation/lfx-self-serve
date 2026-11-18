@@ -1489,7 +1489,7 @@ export class MonitoringTabComponent implements OnInit {
   private systemAccountNote(panel: MonitorConnectionPlatform, read: MonitorSystemAccountRead | undefined): string | null {
     if (!read?.accountId) return null;
     const label = this.paidPanelLabel(panel);
-    return `Read from ${label} account ${read.accountId} through the LF system account. This project has no ${label} connection of its own, so only the campaigns created for it are shown.`;
+    return `Read from ${label} account ${read.accountId} through the LF system account. This project has no ${label} account bound of its own, so only the campaigns created for it are shown.`;
   }
 
   /** Records whether a panel's failed read was a role refusal, for `refusedReads`. */

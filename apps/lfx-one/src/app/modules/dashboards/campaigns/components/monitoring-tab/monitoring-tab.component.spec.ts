@@ -1963,7 +1963,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(el(`${platform}-connection-notice`)).toBeNull();
       expect(el(`${platform}-account-select`)).toBeNull();
       expect(text(`${platform}-system-account-note`)).toBe(
-        `Read from ${label} account ${accountId} through the LF system account. This project has no ${label} connection of its own, so only the campaigns created for it are shown.`
+        `Read from ${label} account ${accountId} through the LF system account. This project has no ${label} account bound of its own, so only the campaigns created for it are shown.`
       );
     });
 
