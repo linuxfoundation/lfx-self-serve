@@ -1,18 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_EVENTS_PAGE_SIZE, MAX_EVENTS_PAGE_SIZE, SALESFORCE_ACCOUNT_ID_PATTERN, VALID_ORG_EVENT_STATUS_VALUES } from '@lfx-one/shared/constants';
-import type { GetOrgEventsOptions } from '@lfx-one/shared/interfaces';
+import {
+  DEFAULT_EVENTS_PAGE_SIZE,
+  MAX_EVENTS_PAGE_SIZE,
+  ORG_EVENTS_COMPANY_QUERY_PARAM,
+  SALESFORCE_ACCOUNT_ID_PATTERN,
+  VALID_ORG_EVENT_STATUS_VALUES,
+} from '@lfx-one/shared/constants';
+import type { GetOrgEventsOptions, OrgEventsFamilyScope } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import type { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { parseOrgEventsFilters } from '../helpers/org-events-filters.helper';
+import { resolveOrgLensRollUp } from '../helpers/org-lens-roll-up.helper';
 import { getStringQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensEventsService } from '../services/org-lens-events.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
 
-/** HTTP boundary for GET /api/orgs/:accountId/lens/events. */
+/** HTTP boundary for GET /api/orgs/:accountId/lens/events. `accountId` is one organization's account id or a family roll-up key. */
 export class OrgLensEventsController {
   private readonly service: OrgLensEventsService;
 
@@ -26,7 +34,7 @@ export class OrgLensEventsController {
     const startTime = logger.startOperation(req, 'get_org_lens_events_summary', { account_id: accountId });
 
     try {
-      this.assertAccountId(accountId, 'get_org_lens_events_summary');
+      this.assertEventsTarget(accountId, 'get_org_lens_events_summary');
 
       const userEmail = getEffectiveEmail(req);
       if (!userEmail) {
@@ -34,7 +42,9 @@ export class OrgLensEventsController {
       }
 
       const filters = parseOrgEventsFilters(req, 'get_org_lens_events_summary');
-      const summary = await this.service.getOrgEventsSummary(req, accountId, filters);
+      const summary = isOrgRollUpSegment(accountId)
+        ? await this.service.getFamilyOrgEventsSummary(req, await this.familyScope(req, accountId, 'get_org_lens_events_summary'), filters)
+        : await this.service.getOrgEventsSummary(req, accountId, filters);
 
       logger.success(req, 'get_org_lens_events_summary', startTime, { account_id: accountId });
 
@@ -51,7 +61,7 @@ export class OrgLensEventsController {
     const startTime = logger.startOperation(req, 'get_org_lens_events', { account_id: accountId });
 
     try {
-      this.assertAccountId(accountId, 'get_org_lens_events');
+      this.assertEventsTarget(accountId, 'get_org_lens_events');
 
       const userEmail = getEffectiveEmail(req);
       if (!userEmail) {
@@ -85,7 +95,9 @@ export class OrgLensEventsController {
         range: filters.range,
       };
 
-      const response = await this.service.getOrgEvents(req, accountId, options);
+      const response = isOrgRollUpSegment(accountId)
+        ? await this.service.getFamilyOrgEvents(req, await this.familyScope(req, accountId, 'get_org_lens_events'), options)
+        : await this.service.getOrgEvents(req, accountId, options);
 
       logger.success(req, 'get_org_lens_events', startTime, {
         account_id: accountId,
@@ -106,7 +118,7 @@ export class OrgLensEventsController {
     const startTime = logger.startOperation(req, 'get_org_lens_event_foundations', { account_id: accountId });
 
     try {
-      this.assertAccountId(accountId, 'get_org_lens_event_foundations');
+      this.assertEventsTarget(accountId, 'get_org_lens_event_foundations');
 
       const userEmail = getEffectiveEmail(req);
       if (!userEmail) {
@@ -114,7 +126,9 @@ export class OrgLensEventsController {
       }
 
       const { scope } = parseOrgEventsFilters(req, 'get_org_lens_event_foundations');
-      const response = await this.service.getOrgEventFoundations(req, accountId, { scope });
+      const response = isOrgRollUpSegment(accountId)
+        ? await this.service.getFamilyOrgEventFoundations(req, await this.familyScope(req, accountId, 'get_org_lens_event_foundations'), { scope })
+        : await this.service.getOrgEventFoundations(req, accountId, { scope });
 
       logger.success(req, 'get_org_lens_event_foundations', startTime, { account_id: accountId, result_count: response.data.length });
 
@@ -132,7 +146,7 @@ export class OrgLensEventsController {
     const startTime = logger.startOperation(req, 'get_event_attendees', { account_id: accountId, event_id: eventId });
 
     try {
-      this.assertAccountId(accountId, 'get_event_attendees');
+      this.assertEventsTarget(accountId, 'get_event_attendees');
 
       const userEmail = getEffectiveEmail(req);
       if (!userEmail) {
@@ -145,7 +159,12 @@ export class OrgLensEventsController {
 
       const { participation } = parseOrgEventsFilters(req, 'get_event_attendees');
       const searchQuery = getStringQueryParam(req, 'searchQuery');
-      const response = await this.service.getEventAttendees(req, accountId, eventId, { participation, searchQuery });
+      const response = isOrgRollUpSegment(accountId)
+        ? await this.service.getFamilyEventAttendees(req, await this.familyScope(req, accountId, 'get_event_attendees'), eventId, {
+            participation,
+            searchQuery,
+          })
+        : await this.service.getEventAttendees(req, accountId, eventId, { participation, searchQuery });
 
       logger.success(req, 'get_event_attendees', startTime, { account_id: accountId, event_id: eventId, count: response.total });
 
@@ -163,7 +182,7 @@ export class OrgLensEventsController {
     const startTime = logger.startOperation(req, 'get_event_speakers', { account_id: accountId, event_id: eventId });
 
     try {
-      this.assertAccountId(accountId, 'get_event_speakers');
+      this.assertEventsTarget(accountId, 'get_event_speakers');
 
       const userEmail = getEffectiveEmail(req);
       if (!userEmail) {
@@ -175,7 +194,9 @@ export class OrgLensEventsController {
       }
 
       const searchQuery = getStringQueryParam(req, 'searchQuery');
-      const response = await this.service.getEventSpeakers(req, accountId, eventId, searchQuery ?? undefined);
+      const response = isOrgRollUpSegment(accountId)
+        ? await this.service.getFamilyEventSpeakers(req, await this.familyScope(req, accountId, 'get_event_speakers'), eventId, searchQuery ?? undefined)
+        : await this.service.getEventSpeakers(req, accountId, eventId, searchQuery ?? undefined);
 
       logger.success(req, 'get_event_speakers', startTime, {
         account_id: accountId,
@@ -191,11 +212,25 @@ export class OrgLensEventsController {
     }
   }
 
-  private assertAccountId(accountId: string | undefined, operation: string): asserts accountId is string {
+  /**
+   * The organizations a family roll-up read serves: the roll-up gate's readable members, narrowed by the Company filter.
+   * A `company` outside the roll-up is refused rather than ignored.
+   */
+  private async familyScope(req: Request, rollUpKey: string, operation: string): Promise<OrgEventsFamilyScope> {
+    const rollUp = await resolveOrgLensRollUp(req, rollUpKey, operation);
+    const company = getStringQueryParam(req, ORG_EVENTS_COMPANY_QUERY_PARAM) || undefined;
+    if (company && !rollUp.members.some((member) => member.accountId === company)) {
+      throw ServiceValidationError.forField(ORG_EVENTS_COMPANY_QUERY_PARAM, 'company must be an organization in this roll-up', { operation });
+    }
+    return this.service.familyScope(rollUp, company);
+  }
+
+  /** One organization's Salesforce account id, or a family roll-up key; anything else is a 400 before any read. */
+  private assertEventsTarget(accountId: string | undefined, operation: string): asserts accountId is string {
     if (!accountId || typeof accountId !== 'string') {
       throw ServiceValidationError.forField('accountId', 'accountId path parameter is required', { operation });
     }
-    if (!SALESFORCE_ACCOUNT_ID_PATTERN.test(accountId)) {
+    if (!isOrgRollUpSegment(accountId) && !SALESFORCE_ACCOUNT_ID_PATTERN.test(accountId)) {
       throw ServiceValidationError.forField('accountId', 'Invalid Salesforce accountId format', { operation });
     }
   }
