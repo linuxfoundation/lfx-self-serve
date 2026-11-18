@@ -22,6 +22,7 @@
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  */
 
+import { VOTE_LAST_VOTER_CONFIRMATION } from '@lfx-one/shared/constants';
 import { expect, Page, Route, test } from '@playwright/test';
 
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -120,6 +121,35 @@ test.describe('Vote link ballot (anonymous)', () => {
 
     await expect(page.getByTestId('vote-link-updated')).toBeVisible({ timeout: RENDER_TIMEOUT });
     expect(requests.find((r) => r.url.endsWith('/link-responses'))?.method).toBe('PUT');
+  });
+
+  test('asks the last voter before a first submission: Go back sends nothing, accepting submits and offers no change (#4726)', async ({ page }) => {
+    const requests = await stubVoteLinks(page, { ...BALLOT, ballot: { ...BALLOT.ballot, would_end_vote: true } });
+
+    await page.goto(`/votes/${VOTE_UID}#vote_token=${TOKEN}`);
+
+    await expect(page.getByTestId('vote-link-title')).toBeVisible({ timeout: RENDER_TIMEOUT });
+    await page.getByTestId('vote-link-choice-c-yes').click();
+    await page.getByTestId('vote-link-submit-button').click();
+
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toContainText(VOTE_LAST_VOTER_CONFIRMATION.header, { timeout: RENDER_TIMEOUT });
+    await dialog.getByRole('button', { name: VOTE_LAST_VOTER_CONFIRMATION.rejectLabel }).click();
+    await expect(dialog).toBeHidden({ timeout: RENDER_TIMEOUT });
+    await expect(page.getByTestId('vote-link-ballot-form')).toBeVisible();
+    expect(requests.filter((r) => r.url.endsWith('/link-responses'))).toHaveLength(0);
+
+    await page.getByTestId('vote-link-submit-button').click();
+    await dialog.getByRole('button', { name: VOTE_LAST_VOTER_CONFIRMATION.acceptLabel }).click();
+
+    await expect(page.getByTestId('vote-link-submitted')).toBeVisible({ timeout: RENDER_TIMEOUT });
+    const submits = requests.filter((r) => r.url.endsWith('/link-responses'));
+    expect(submits).toHaveLength(1);
+    expect(submits[0].method).toBe('POST');
+    await expect(page.getByTestId('vote-link-thank-you-deadline')).not.toContainText('You can change your vote');
+    for (const request of requests) {
+      expect(request.url).not.toContain(TOKEN);
+    }
   });
 
   test('shows the invalid-link state for a tampered token', async ({ page }) => {
