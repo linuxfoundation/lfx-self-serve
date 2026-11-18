@@ -171,29 +171,38 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
     this.lastSubmission.set(submission);
     this.endsVote.set(false);
 
-    // Changing a ballot never ends a vote; only a first submission re-reads the ballot to check (#4726). Fails open.
-    if (this.updateMode() || this.ballot()?.ballot.already_voted) {
-      this.send(body, this.updateMode(), true);
+    if (this.updateMode()) {
+      this.send(body, true, true);
       return;
     }
+    this.confirmFirstSubmission(body, true);
+  }
+
+  /** Every first-ballot POST, including a PUT-to-POST recovery, re-checks the advisory signal (#4726). */
+  private confirmFirstSubmission(body: VoteLinkResponseRequest, mayRetry: boolean): void {
+    const token = body.vote_token;
 
     this.voteService
       .getLinkWouldEndVote(token)
       .pipe(takeUntil(this.cancel$), takeUntilDestroyed(this.destroyRef))
       .subscribe((wouldEndVote) => {
+        if (this.destroyRef.destroyed || this.token() !== token) return;
         if (!wouldEndVote) {
-          this.send(body, false, true);
+          this.send(body, false, mayRetry);
           return;
         }
         this.confirmationService.confirm({
           ...VOTE_LAST_VOTER_CONFIRMATION,
           // A dialog left open across a token switch must never submit the previous link's ballot.
           accept: () => {
-            if (this.token() !== token) return;
+            if (this.destroyRef.destroyed || this.token() !== token) return;
             this.endsVote.set(true);
-            this.send(body, false, true);
+            this.send(body, false, mayRetry);
           },
-          reject: () => this.submitting.set(false),
+          reject: () => {
+            if (this.destroyRef.destroyed || this.token() !== token) return;
+            this.submitting.set(false);
+          },
         });
       });
   }
@@ -228,7 +237,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
             }
             if (update && message.includes(VOTE_LINK_NOT_RESPONDED)) {
               this.updateMode.set(false);
-              this.send(body, false, false);
+              this.confirmFirstSubmission(body, false);
               return;
             }
           }

@@ -857,6 +857,67 @@ describe('VoteLinkBallotComponent last-voter confirmation (#4726)', () => {
     expect(submitLinkResponse).not.toHaveBeenCalled();
   });
 
+  it('checks before a PUT-to-POST retry and submits only after confirmation, without allowing another retry', async () => {
+    submitLinkResponse
+      .mockReturnValueOnce(throwError(() => httpError(400, 'vote is not responded')))
+      .mockReturnValueOnce(throwError(() => httpError(400, 'vote is not awaiting response')));
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, of(true));
+    submit();
+
+    expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ vote_token: TOKEN }), true);
+    expect(getLinkWouldEndVote).toHaveBeenCalledExactlyOnceWith(TOKEN);
+    expect(lastConfirmation()).toMatchObject(VOTE_LAST_VOTER_CONFIRMATION);
+    lastConfirmation().accept?.();
+
+    expect(submitLinkResponse).toHaveBeenCalledTimes(2);
+    expect(submitLinkResponse).toHaveBeenLastCalledWith(expect.objectContaining({ vote_token: TOKEN }), false);
+    expect(submitting()).toBe(false);
+  });
+
+  it('can reject a PUT-to-POST retry without submitting a first ballot', async () => {
+    submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not responded')));
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, of(true));
+    submit();
+    lastConfirmation().reject?.();
+
+    expect(submitLinkResponse).toHaveBeenCalledOnce();
+    expect(submitting()).toBe(false);
+    expect(state()).toBe('ready');
+  });
+
+  it('does not send a retry when its confirmation belongs to a previous token', async () => {
+    submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not responded')));
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, of(true));
+    submit();
+    const staleConfirmation = lastConfirmation();
+
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}-second`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    fixture.detectChanges();
+    staleConfirmation.accept?.();
+
+    expect(submitLinkResponse).toHaveBeenCalledOnce();
+    expect(submitting()).toBe(false);
+  });
+
+  it('cancels the retry advisory read when the link token changes', async () => {
+    const pending = new Subject<boolean>();
+    submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not responded')));
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, pending);
+    submit();
+
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}-second`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    fixture.detectChanges();
+    pending.next(true);
+    pending.complete();
+
+    expect(getLinkWouldEndVote).toHaveBeenCalledExactlyOnceWith(TOKEN);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(submitLinkResponse).toHaveBeenCalledOnce();
+    expect(submitting()).toBe(false);
+  });
+
   it('never checks when changing an already-submitted ballot', async () => {
     await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, of(true));
     (fixture.componentInstance as unknown as { onStartUpdate: () => void }).onStartUpdate();

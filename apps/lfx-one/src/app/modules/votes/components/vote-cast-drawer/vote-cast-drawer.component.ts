@@ -151,6 +151,8 @@ export class VoteCastDrawerComponent {
   private lastBuiltPollType: PollType | null = null;
   // Key of the recorded ballot last displayed; cleared on close so a reopen reloads it.
   private appliedPrefillKey: string | null = null;
+  // Invalidates captured first-ballot callbacks when the drawer session changes or the dialog settles.
+  private submissionGeneration = 0;
 
   // === Shared Observables ===
   // Emits on drawer dismissal (close button OR ESC OR overlay click — all flip visible to false).
@@ -262,15 +264,15 @@ export class VoteCastDrawerComponent {
       this.bumpFormVersion();
     });
 
-    // Drawer dismissal (close button / ESC / overlay click) — cancel any in-flight submit and reset transient state.
-    toObservable(this.visible)
-      .pipe(
-        filter((v) => !v),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(() => {
-        if (this.submitting()) this.cancelSubmit$.next();
+    // A persistent drawer's selection/mode changes end the previous submit session, including its body-appended dialog.
+    toObservable(computed(() => [this.visible(), this.voteId(), this.readOnly(), this.changeMode()] as const))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(([visible]) => {
+        this.submissionGeneration++;
+        this.confirmationService.close();
+        this.cancelSubmit$.next();
         this.submitting.set(false);
+        if (visible) return;
         this.appliedPrefillKey = null;
         // Reset abstain so reopening starts fresh — letting valueChanges fire keeps form.enable + abstain signal in sync.
         if (this.abstainControl.value) this.abstainControl.setValue(false);
@@ -279,6 +281,10 @@ export class VoteCastDrawerComponent {
           control.reset('');
         }
       });
+    this.destroyRef.onDestroy(() => {
+      this.submissionGeneration++;
+      this.confirmationService.close();
+    });
   }
 
   // === Protected Methods ===
@@ -355,11 +361,22 @@ export class VoteCastDrawerComponent {
       return;
     }
 
+    const generation = ++this.submissionGeneration;
+    const isCurrentSubmission = () =>
+      !this.destroyRef.destroyed &&
+      generation === this.submissionGeneration &&
+      this.visible() &&
+      this.voteId() === vote.uid &&
+      !this.changeMode() &&
+      !this.ballotReadOnly() &&
+      !this.impersonating();
+
     // A first ballot re-checks at submit time whether it would end the vote (#4726); the read fails open to false.
     this.voteService
       .getMyWouldEndVote(vote.uid)
       .pipe(takeUntil(this.cancelSubmit$), takeUntilDestroyed(this.destroyRef))
       .subscribe((wouldEndVote) => {
+        if (!isCurrentSubmission()) return;
         if (!wouldEndVote) {
           this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses);
           return;
@@ -367,6 +384,10 @@ export class VoteCastDrawerComponent {
         // The drawer's own document Escape listener would close the drawer too, clearing the ballot: while the dialog is
         // open, take Escape in the capture phase, before both listeners, and treat it as Go back.
         const settled$ = new Subject<void>();
+        const settle = () => {
+          this.submissionGeneration++;
+          settled$.next();
+        };
         fromEvent<KeyboardEvent>(this.document, 'keydown', { capture: true })
           .pipe(
             filter((event) => event.key === 'Escape'),
@@ -375,6 +396,8 @@ export class VoteCastDrawerComponent {
             takeUntilDestroyed(this.destroyRef)
           )
           .subscribe((event) => {
+            if (!isCurrentSubmission()) return;
+            settle();
             event.stopPropagation();
             this.confirmationService.close();
             this.submitting.set(false);
@@ -382,11 +405,13 @@ export class VoteCastDrawerComponent {
         this.confirmationService.confirm({
           ...VOTE_LAST_VOTER_CONFIRMATION,
           accept: () => {
-            settled$.next();
+            if (!isCurrentSubmission()) return;
+            settle();
             this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses);
           },
           reject: () => {
-            settled$.next();
+            if (!isCurrentSubmission()) return;
+            settle();
             this.submitting.set(false);
           },
         });
