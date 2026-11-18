@@ -8,6 +8,7 @@ import type { BadgeSeverity, TagSeverity } from './components.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
 import type { MeetingAttachment } from './meeting-attachment.interface';
 import type { UserSearchResult } from './search.interface';
+import type { UiTone } from './uikit.interface';
 
 /** Outcome of checking committee-scoped write access in candidate order. */
 export interface CommitteeWriterProbeResult {
@@ -70,6 +71,72 @@ export type OversightSubType = 'governance' | 'advisory';
  * - other:                  Catch-all for uncategorized groups; minimal generic dashboard
  */
 export type GroupBehavioralClass = 'governing-board' | 'oversight-committee' | 'working-group' | 'special-interest-group' | 'ambassador-program' | 'other';
+
+/** Type tab on the redesigned Groups page: every group, or one behavioral class. */
+export type GroupsHomeTab = GroupBehavioralClass | 'all';
+
+/** Applied filters on the redesigned Groups page. */
+export interface GroupsHomeFilters {
+  /** A foundation's or project's uid; a foundation also matches its projects' groups. */
+  scope: string | null;
+  voting: 'enabled' | 'disabled' | null;
+}
+
+/** Groups with voting enabled and disabled, for the Voting capability filter options. */
+export interface GroupsHomeVotingCounts {
+  enabled: number;
+  disabled: number;
+}
+
+/** An applied filter shown as a removable chip on the redesigned Groups page. */
+export interface GroupsHomeFilterChip {
+  key: keyof GroupsHomeFilters;
+  /** Filter name with its colon, e.g. "Project:". */
+  prefix: string;
+  label: string;
+}
+
+/** One figure in the redesigned Groups page metrics row. */
+export interface GroupsHomeMetric {
+  label: string;
+  /** Font Awesome class string. */
+  icon: string;
+  /** Formatted value, or `—` when unknown. */
+  value: string;
+  /** Note under the value, such as how fresh it is, "Sample data", or that it covers only some groups. */
+  subLine?: string;
+}
+
+/** One row of the redesigned Groups page table: the group plus what its cells show. */
+export interface GroupsTableRow extends Record<string, unknown> {
+  uid: string;
+  group: MyCommittee;
+  /** The group's own type, such as "Technical Advisory Committee"; the class label when it has none. */
+  typeLabel: string;
+  typeIcon: string;
+  typeTone: UiTone;
+  /** The viewer's role, `Member` when they have none. */
+  role: string;
+  members: string;
+  commands: string[];
+  queryParams: Record<string, string> | null;
+}
+
+/** A group's mailing list or chat channel, shown as an icon button on its card or table row. */
+export interface GroupChannel {
+  kind: 'mailing-list' | 'slack' | 'discord' | 'chat';
+  /** Font Awesome class string. */
+  icon: string;
+  /** Tooltip: `Slack`, `Discord`, `Chat`, or the mailing list's name or address. */
+  tooltip: string;
+  ariaLabel: string;
+  /** Chat URL, `mailto:` address, or the in-app mailing list page. */
+  href: string;
+  /** Chat links open in a new tab; mail and in-app links don't. */
+  newTab: boolean;
+  /** Router target of an in-app mailing list page, so a plain click navigates in the app; `null` otherwise. */
+  link: CommitteeMailingListLink | null;
+}
 
 /** Display metadata for a behavioral class — used by filter chips and badges. */
 export interface BehavioralClassDisplayConfig {
@@ -671,6 +738,13 @@ export interface PendingInvitationRowVm extends PendingInvitation {
   viewCommands: string[];
   /** `?project=` for the view link — present only when the invitation carries a `project_slug`. */
   viewQueryParams: { project: string } | null;
+}
+
+/** The Undo a Groups page drawer repeats from its toast, which the drawer's focus trap keeps out of keyboard reach. */
+export interface GroupsHomeUndo {
+  /** Accessible name of the drawer's Undo button, naming what it restores. */
+  ariaLabel: string;
+  run: () => void;
 }
 
 /**

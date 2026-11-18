@@ -6,7 +6,7 @@ import type { CommitteeOrganizationReference } from './committee.interface';
 /**
  * Status of a committee join application
  */
-export type CommitteeJoinApplicationStatus = 'pending' | 'approved' | 'rejected';
+export type CommitteeJoinApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
 
 /**
  * Represents a join application for a committee

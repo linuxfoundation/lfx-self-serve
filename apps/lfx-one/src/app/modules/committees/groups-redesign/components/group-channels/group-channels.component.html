@@ -1,0 +1,17 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@for (channel of channels(); track channel.kind) {
+  <lfx-ui-button
+    class="relative z-[1]"
+    variant="secondary"
+    size="small"
+    iconOnly
+    [icon]="channel.icon"
+    [href]="channel.href"
+    [target]="channel.newTab ? '_blank' : '_self'"
+    [ariaLabel]="channel.ariaLabel"
+    [lfxUiTooltip]="channel.tooltip"
+    (click)="onChannelClick($event, channel)"
+    [attr.data-testid]="'group-channel-' + channel.kind" />
+}
