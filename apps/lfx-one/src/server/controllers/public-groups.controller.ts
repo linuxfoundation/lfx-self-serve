@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAIR_ROLES, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP, UUID_REGEX } from '@lfx-one/shared/constants';
+import {
+  CHAIR_ROLES,
+  PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
+  UUID_REGEX,
+} from '@lfx-one/shared/constants';
 import { CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   Committee,
@@ -20,11 +26,13 @@ import {
 // Deep-import (not the `utils` barrel): this controller runs under plain Node in server-side
 // vitest specs, and the barrel re-exports form.utils.ts, which statically imports
 // @angular/forms and crashes JIT compilation outside Angular's own runtime (GH-2381).
-import { buildCommitteeCadenceSummary } from '@lfx-one/shared/utils/meeting.utils';
 import { getGroupBehavioralClass } from '@lfx-one/shared/utils/committee.utils';
+import { buildCommitteeCadenceSummary } from '@lfx-one/shared/utils/meeting.utils';
+import { isPubliclyDiscoverableProject } from '@lfx-one/shared/utils/project-stage.utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, isBaseApiError, ResourceNotFoundError } from '../errors';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
@@ -256,15 +264,13 @@ export class PublicGroupsController {
       }
       const childUids = await this.projectService.getFoundationProjectUids(req, foundationUid);
 
-      // KNOWN LIMITATION: getFoundationProjectUids now resolves the full nested sub-foundation tree
-      // (GH-2382), so childUids can legitimately number in the hundreds for a large umbrella
-      // foundation. fetchPublicCommitteesForProjects below issues one getCommittees call per UID
-      // (in batches of 10) rather than a single batched query — this is an unbounded fan-out on this
-      // public/unauthenticated endpoint. Batching (e.g. via committee-service's `tags` OR semantics,
-      // if supported) is deferred as a follow-up, out of scope for this fix per repo PR-size
-      // discipline. PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP below is an interim per-request guard
-      // on this specific public path, independent of getFoundationProjectUids's own traversal caps
-      // (PR #2436 review).
+      // getFoundationProjectUids resolves the full nested sub-foundation tree (GH-2382), so
+      // childUids can legitimately number in the hundreds for a large umbrella foundation.
+      // fetchPublicCommitteesForProjects and resolveContextProjects batch upstream queries at
+      // QUERY_SERVICE_FILTERS_OR_BATCH_SIZE (100 UIDs per filters_or request), and
+      // PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP bounds the per-request project scope on this
+      // public/unauthenticated endpoint independently of getFoundationProjectUids's own traversal
+      // caps (PR #2436 review).
       //
       // childUids is a Set-insertion-ordered array from getFoundationProjectUids: container UIDs
       // land first, but leaf children are appended as concurrent workers finish, so raw insertion
@@ -407,73 +413,76 @@ export class PublicGroupsController {
   }
 
   private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[]): Promise<Committee[]> {
-    const BATCH_SIZE = 10;
+    const uniqueUids = Array.from(new Set(projectUids)).filter(Boolean);
+    if (uniqueUids.length === 0) {
+      return [];
+    }
+
+    const batches: string[][] = [];
+    for (let i = 0; i < uniqueUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(uniqueUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const batchResults = await Promise.all(
+      batches.map(async (batch) => {
+        try {
+          return await fetchAllQueryResources<Committee>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'committee',
+                filters_or: batch.map((uid) => `project_uid:${uid}`),
+                page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          );
+        } catch (error) {
+          logger.warning(req, 'fetch_public_committees_for_projects', 'Batched committee fetch failed', {
+            batch_size: batch.length,
+            err: error,
+          });
+          throw error;
+        }
+      })
+    );
+
     const seen = new Set<string>();
     const result: Committee[] = [];
-    let successCount = 0;
-    let lastError: unknown;
-    for (let i = 0; i < projectUids.length; i += BATCH_SIZE) {
-      const batch = projectUids.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.all(
-        batch.map((uid) =>
-          this.committeeService
-            .getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true })
-            .then((committees) => {
-              successCount++;
-              return committees;
-            })
-            .catch((error) => {
-              lastError = error;
-              logger.warning(req, 'fetch_public_committees_for_projects', 'getCommittees failed for project, skipping', {
-                project_uid: uid,
-                error: error instanceof Error ? error.message : String(error),
-              });
-              return [] as Committee[];
-            })
-        )
-      );
-      for (const committees of batchResults) {
-        for (const c of committees) {
-          if (c.public && !seen.has(c.uid)) {
-            seen.add(c.uid);
-            result.push(c);
-          }
-        }
+    for (const committee of batchResults.flat()) {
+      if (committee?.uid && committee.public === true && !seen.has(committee.uid)) {
+        seen.add(committee.uid);
+        result.push(committee);
       }
     }
-    // If every call failed, the upstream is down — propagate rather than returning an empty directory
-    if (successCount === 0 && projectUids.length > 0) {
-      throw lastError;
-    }
+
     return result.sort((a, b) => a.name.localeCompare(b.name, 'en'));
   }
 
-  private async resolveContextProjects(req: Request, committees: Committee[]): Promise<Map<string, any>> {
+  private async resolveContextProjects(req: Request, committees: Committee[]): Promise<Map<string, Project>> {
     const uids = [...new Set(committees.map((c) => c.project_uid).filter(Boolean))];
-    const BATCH_SIZE = 10;
-    const map = new Map<string, any>();
-    for (let i = 0; i < uids.length; i += BATCH_SIZE) {
-      const batch = uids.slice(i, i + BATCH_SIZE);
-      const projects = await Promise.all(
-        // null for a hidden project or a failed lookup; the caller drops committees whose project is null.
-        batch.map((uid) =>
-          this.projectService.getPubliclyDiscoverableProject(req, uid).catch((error) => {
-            logger.warning(req, 'resolve_context_projects', 'Project lookup failed, dropping its committees from the directory', {
-              project_uid: uid,
-              err: error,
-            });
-            return null;
-          })
-        )
-      );
-      for (let j = 0; j < batch.length; j++) {
-        map.set(batch[j], projects[j]);
+    if (uids.length === 0) {
+      return new Map();
+    }
+
+    const byUid = await this.projectService.getProjectsByIds(req, uids).catch((error: unknown) => {
+      logger.warning(req, 'resolve_context_projects', 'Batched project lookup failed, dropping child committees from the directory', {
+        uid_count: uids.length,
+        err: error,
+      });
+      return new Map<string, Project>();
+    });
+
+    const discoverable = new Map<string, Project>();
+    for (const [uid, project] of byUid) {
+      if (isPubliclyDiscoverableProject(project)) {
+        discoverable.set(uid, project);
       }
     }
-    return map;
+    return discoverable;
   }
 
-  private buildGroupSummary(committee: Committee, projectMap: Map<string, any>, foundation: any, project: any): PublicGroupSummary {
+  private buildGroupSummary(committee: Committee, projectMap: Map<string, Project>, foundation: Project | null, project: Project | null): PublicGroupSummary {
     const proj = project ?? projectMap.get(committee.project_uid) ?? null;
     const isFoundationScope = !proj || proj.uid === foundation?.uid;
 

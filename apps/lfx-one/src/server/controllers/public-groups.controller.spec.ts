@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Committee } from '@lfx-one/shared/interfaces';
+import { ProjectStage } from '@lfx-one/shared/enums';
+import type { Committee, Project } from '@lfx-one/shared/interfaces';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
@@ -10,6 +11,7 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 // objects every time (same pattern as public-profile.controller.spec.ts).
 const {
   getFoundationProjectUidsMock,
+  getProjectsByIdsMock,
   getPubliclyDiscoverableProjectMock,
   getProjectIdBySlugMock,
   getCommitteesMock,
@@ -20,6 +22,7 @@ const {
   proxyRequestMock,
 } = vi.hoisted(() => ({
   getFoundationProjectUidsMock: vi.fn(),
+  getProjectsByIdsMock: vi.fn(),
   getPubliclyDiscoverableProjectMock: vi.fn(),
   getProjectIdBySlugMock: vi.fn(),
   getCommitteesMock: vi.fn(),
@@ -34,6 +37,7 @@ vi.mock('../services/project.service', () => ({
   ProjectService: vi.fn(function () {
     return {
       getFoundationProjectUids: getFoundationProjectUidsMock,
+      getProjectsByIds: getProjectsByIdsMock,
       getPubliclyDiscoverableProject: getPubliclyDiscoverableProjectMock,
       getProjectIdBySlug: getProjectIdBySlugMock,
     };
@@ -124,18 +128,28 @@ function buildReqRes(identifier: string): { req: Request; res: Response & { json
   return { req, res, next };
 }
 
-function committee(uid: string, projectUid: string): Committee {
-  return { uid, name: `Committee ${uid}`, public: true, project_uid: projectUid } as Committee;
+function committee(uid: string, projectUid: string, overrides: Partial<Committee> = {}): Committee {
+  return { uid, name: `Committee ${uid}`, public: true, project_uid: projectUid, ...overrides } as Committee;
 }
 
-describe('PublicGroupsController.getPublicGroupsByFoundation — fan-out cap', () => {
+function queryPage<T>(items: T[], pageToken?: string): { resources: { type: string; id: string; data: T }[]; page_token?: string } {
+  return {
+    resources: items.map((data, index) => ({ type: 'committee', id: String(index), data })),
+    ...(pageToken ? { page_token: pageToken } : {}),
+  };
+}
+
+describe('PublicGroupsController.getPublicGroupsByFoundation — fan-out cap and batching', () => {
   let controller: PublicGroupsController;
 
   beforeEach(() => {
     vi.clearAllMocks();
     controller = new PublicGroupsController();
     getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => discoverable(uid));
-    getCommitteesMock.mockResolvedValue([]);
+    getProjectsByIdsMock.mockImplementation(
+      async (_req: Request, uids: Iterable<string>) => new Map(Array.from(uids, (uid) => [uid, discoverable(uid) as unknown as Project]))
+    );
+    proxyRequestMock.mockResolvedValue(queryPage([]));
   });
 
   it('does not truncate and omits `truncated` from the response when childUids is under the cap', async () => {
@@ -148,11 +162,18 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — fan-out cap', (
     expect(next).not.toHaveBeenCalled();
     const response = res.json.mock.calls[0][0];
     expect(response.truncated).toBeUndefined();
-    // Every discovered UID (foundation excluded — it's not in childUids) is queried, none dropped.
-    expect(getCommitteesMock).toHaveBeenCalledTimes(2);
+    // Single batched disjunction query covering every discovered UID, with no per-UID getCommittees calls.
+    expect(getCommitteesMock).not.toHaveBeenCalled();
+    expect(proxyRequestMock).toHaveBeenCalledTimes(1);
+    expect(proxyRequestMock.mock.calls[0][4]).toEqual({
+      type: 'committee',
+      filters_or: ['project_uid:project-1', 'project_uid:project-2'],
+      page_size: 1000,
+    });
+    expect(getProjectsByIdsMock).not.toHaveBeenCalled();
   });
 
-  it('truncates, sets `truncated: true`, and pins the foundationUid so it always survives the cap', async () => {
+  it('truncates, sets `truncated: true`, batches at 100 UIDs, and pins the foundationUid so it always survives the cap', async () => {
     // foundationUid must be a valid UUID (so resolveProjectIdentifier takes the direct-UID branch),
     // which means it can never sort after a hex-free string like 'zzz-project-*' — a prior version
     // of this test used that pairing and Cursor Bugbot correctly flagged that the foundation would
@@ -170,30 +191,114 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — fan-out cap', (
     const response = res.json.mock.calls[0][0];
     expect(response.truncated).toBe(true);
 
-    // Exactly 150 UIDs were queried (the cap), and the foundation's own UID is one of them.
-    expect(getCommitteesMock).toHaveBeenCalledTimes(150);
-    const queriedUids = getCommitteesMock.mock.calls.map((call) => (call[1].tags as string).replace('project_uid:', ''));
+    // 150 capped UIDs partition into two filters_or batches (100 + 50), with foundationUid pinned first.
+    expect(getCommitteesMock).not.toHaveBeenCalled();
+    expect(proxyRequestMock).toHaveBeenCalledTimes(2);
+    const batchSizes = proxyRequestMock.mock.calls.map((call) => (call[4].filters_or as string[]).length);
+    expect(batchSizes).toEqual([100, 50]);
+    const queriedUids = proxyRequestMock.mock.calls.flatMap((call) => (call[4].filters_or as string[]).map((clause) => clause.replace('project_uid:', '')));
+    expect(queriedUids[0]).toBe(foundationUid);
     expect(queriedUids).toContain(foundationUid);
     expect(new Set(queriedUids).size).toBe(150);
   });
 
-  it('deduplicates public committees returned for multiple projects and excludes non-public ones', async () => {
+  it('resolves committees and context projects for a 150-project umbrella foundation via batched calls under the latency budget', async () => {
+    const foundationUid = '11111111-1111-4111-8111-111111111111';
+    const projectUids = [foundationUid, ...Array.from({ length: 149 }, (_, i) => `child-project-${i}`)];
+    getFoundationProjectUidsMock.mockResolvedValue(projectUids);
+
+    // Simulate 50ms upstream round-trip latency per HTTP request: sequential waves of 10 across 150
+    // projects + 150 context lookups previously cost 30 waves (~1,500ms+ at 50ms, 3–10s in prod);
+    // parallel 100-UID disjunction batches complete in 2 waves (~100ms).
+    proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, _path: string, _method: string, params: { filters_or: string[] }) => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return queryPage(
+        params.filters_or.map((clause) => {
+          const uid = clause.replace('project_uid:', '');
+          return committee(`committee-${uid}`, uid);
+        })
+      );
+    });
+    getProjectsByIdsMock.mockImplementation(async (_req: Request, uids: Iterable<string>) => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return new Map(Array.from(uids, (uid) => [uid, discoverable(uid) as unknown as Project]));
+    });
+
+    const { req, res, next } = buildReqRes(foundationUid);
+    const startedAt = performance.now();
+    await controller.getPublicGroupsByFoundation(req, res, next);
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(next).not.toHaveBeenCalled();
+    // 2 batched committee queries (100 + 50) + 1 bulk getProjectsByIds call (which issues 2 batched
+    // project queries of 100 + 50, verified in project.service.spec.ts) = 4 upstream query-service calls.
+    expect(getCommitteesMock).not.toHaveBeenCalled();
+    expect(proxyRequestMock).toHaveBeenCalledTimes(2);
+    expect(getProjectsByIdsMock).toHaveBeenCalledTimes(1);
+    expect((getProjectsByIdsMock.mock.calls[0][1] as string[]).length).toBe(150);
+    expect(elapsedMs).toBeLessThan(1500);
+
+    const response = res.json.mock.calls[0][0];
+    expect(response.total).toBe(150);
+    expect(response.groups).toHaveLength(150);
+    expect(response.truncated).toBeUndefined();
+  });
+
+  it('deduplicates public committees across pages and batches, excludes non-public ones, and sorts alphabetically', async () => {
     const foundationUid = '11111111-1111-4111-8111-111111111111';
     getFoundationProjectUidsMock.mockResolvedValue(['project-1', 'project-2']);
-    getCommitteesMock.mockImplementation(async (_req: Request, params: { tags: string }) => {
-      if (params.tags === 'project_uid:project-1') {
-        return [committee('shared-committee', 'project-1'), { ...committee('private-committee', 'project-1'), public: false }];
-      }
-      return [committee('shared-committee', 'project-2')];
-    });
+    proxyRequestMock
+      .mockResolvedValueOnce(
+        queryPage(
+          [
+            committee('z-group', 'project-1', { name: 'Zeta Working Group' }),
+            committee('shared-committee', 'project-1', { name: 'Alpha Oversight' }),
+            committee('private-committee', 'project-1', { public: false }),
+            committee('unset-public-committee', 'project-1', { public: undefined as unknown as boolean }),
+          ],
+          'page-2'
+        )
+      )
+      .mockResolvedValueOnce(
+        queryPage([committee('shared-committee', 'project-2', { name: 'Alpha Oversight' }), committee('b-group', 'project-2', { name: 'Beta TSC' })])
+      );
     const { req, res, next } = buildReqRes(foundationUid);
 
     await controller.getPublicGroupsByFoundation(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
+    expect(proxyRequestMock).toHaveBeenCalledTimes(2);
+    expect(proxyRequestMock.mock.calls[1][4]).toMatchObject({ page_token: 'page-2' });
     const response = res.json.mock.calls[0][0];
-    expect(response.groups).toHaveLength(1);
-    expect(response.total).toBe(1);
+    expect(response.groups.map((g: { name: string }) => g.name)).toEqual(['Alpha Oversight', 'Beta TSC', 'Zeta Working Group']);
+    expect(response.total).toBe(3);
+  });
+
+  it('returns an empty directory without querying committees or context projects when childUids is empty', async () => {
+    const foundationUid = '11111111-1111-4111-8111-111111111111';
+    getFoundationProjectUidsMock.mockResolvedValue([]);
+    const { req, res, next } = buildReqRes(foundationUid);
+
+    await controller.getPublicGroupsByFoundation(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(proxyRequestMock).not.toHaveBeenCalled();
+    expect(getProjectsByIdsMock).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ groups: [], total: 0 });
+  });
+
+  it('propagates a batched committee query failure to next() rather than returning an incomplete directory', async () => {
+    const foundationUid = '11111111-1111-4111-8111-111111111111';
+    const childUids = [foundationUid, ...Array.from({ length: 105 }, (_, i) => `project-${i}`)];
+    getFoundationProjectUidsMock.mockResolvedValue(childUids);
+    const boom = new MicroserviceError('query service unavailable', 503, 'SERVICE_UNAVAILABLE');
+    proxyRequestMock.mockResolvedValueOnce(queryPage([committee('c-1', foundationUid)])).mockRejectedValue(boom);
+    const { req, res, next } = buildReqRes(foundationUid);
+
+    await controller.getPublicGroupsByFoundation(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
 
@@ -205,10 +310,17 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability
     controller = new PublicGroupsController();
     getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => discoverable(uid));
     getFoundationProjectUidsMock.mockResolvedValue([FOUNDATION_UID, 'child-visible', 'child-hidden']);
-    getCommitteesMock.mockImplementation(async (_req: Request, params: { tags: string }) => {
-      const uid = params.tags.replace('project_uid:', '');
-      return [committee(`committee-of-${uid}`, uid)];
-    });
+    proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, _path: string, _method: string, params: { filters_or: string[] }) =>
+      queryPage(
+        params.filters_or.map((clause) => {
+          const uid = clause.replace('project_uid:', '');
+          return committee(`committee-of-${uid}`, uid);
+        })
+      )
+    );
+    getProjectsByIdsMock.mockImplementation(
+      async (_req: Request, uids: Iterable<string>) => new Map(Array.from(uids, (uid) => [uid, discoverable(uid) as unknown as Project]))
+    );
   });
 
   it('answers a hidden foundation slug exactly like an unknown slug, before any fan-out', async () => {
@@ -223,7 +335,7 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability
 
     expectSameNotFound(hidden, unknown);
     expect(getFoundationProjectUidsMock).not.toHaveBeenCalled();
-    expect(getCommitteesMock).not.toHaveBeenCalled();
+    expect(proxyRequestMock).not.toHaveBeenCalled();
   });
 
   it('returns a 404 not-found error for a hidden foundation UID', async () => {
@@ -237,8 +349,16 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability
     expect(next.mock.calls[0][0].statusCode).toBe(404);
   });
 
-  it("excludes a hidden child project's committees and counts only what remains", async () => {
-    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => (uid === 'child-hidden' ? null : discoverable(uid)));
+  it("excludes hidden and confidential-formation child projects' committees and counts only what remains", async () => {
+    getFoundationProjectUidsMock.mockResolvedValue([FOUNDATION_UID, 'child-visible', 'child-hidden', 'child-confidential', 'child-omitted']);
+    getProjectsByIdsMock.mockResolvedValue(
+      new Map([
+        [FOUNDATION_UID, discoverable(FOUNDATION_UID) as unknown as Project],
+        ['child-visible', discoverable('child-visible') as unknown as Project],
+        ['child-hidden', discoverable('child-hidden', { public: false }) as unknown as Project],
+        ['child-confidential', discoverable('child-confidential', { stage: ProjectStage.FormationConfidential }) as unknown as Project],
+      ])
+    );
     const { req, res, next } = buildReqRes(FOUNDATION_UID);
 
     await controller.getPublicGroupsByFoundation(req, res, next);
@@ -249,23 +369,20 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability
     expect(response.total).toBe(2);
     const serialized = JSON.stringify(response);
     expect(serialized).not.toContain('child-hidden');
+    expect(serialized).not.toContain('child-confidential');
+    expect(serialized).not.toContain('child-omitted');
   });
 
-  it("drops a child project's committees when its context lookup fails transiently", async () => {
-    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => {
-      if (uid === 'child-hidden') {
-        throw new Error('upstream 503');
-      }
-      return discoverable(uid);
-    });
+  it("drops child projects' committees while keeping the foundation's own when batched context lookup fails transiently", async () => {
+    getProjectsByIdsMock.mockRejectedValueOnce(new Error('upstream 503'));
     const { req, res, next } = buildReqRes(FOUNDATION_UID);
 
     await controller.getPublicGroupsByFoundation(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     const response = res.json.mock.calls[0][0];
-    expect(response.groups.map((g: { uid: string }) => g.uid).sort()).toEqual([`committee-of-${FOUNDATION_UID}`, 'committee-of-child-visible'].sort());
-    expect(response.total).toBe(2);
+    expect(response.groups.map((g: { uid: string }) => g.uid)).toEqual([`committee-of-${FOUNDATION_UID}`]);
+    expect(response.total).toBe(1);
   });
 
   it('passes a transient foundation lookup failure to next() before any fan-out', async () => {
@@ -292,10 +409,8 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability
     expectSameNotFound(unavailable, unknown);
   });
 
-  it("keeps the foundation's own committees even when its context lookup is unconfirmed", async () => {
-    // First call is the gate on the foundation itself; later calls are resolveContextProjects.
-    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => (uid === 'child-visible' ? discoverable(uid) : null));
-    getPubliclyDiscoverableProjectMock.mockResolvedValueOnce(discoverable(FOUNDATION_UID));
+  it("keeps the foundation's own committees even when its context lookup omits the foundation UID", async () => {
+    getProjectsByIdsMock.mockResolvedValueOnce(new Map([['child-visible', discoverable('child-visible') as unknown as Project]]));
     const { req, res, next } = buildReqRes(FOUNDATION_UID);
 
     await controller.getPublicGroupsByFoundation(req, res, next);

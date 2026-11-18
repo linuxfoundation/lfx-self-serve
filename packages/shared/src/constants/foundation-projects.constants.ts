@@ -58,13 +58,13 @@ export const FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY = 8;
 export const FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY = 8;
 
 /**
- * Interim per-request cap on the number of project UIDs the public, unauthenticated
- * `getPublicGroupsByFoundation` endpoint will fan out to `getCommittees` for (one call per UID).
- * `getFoundationProjectUids` already bounds the UID set indirectly via
- * {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES}, but that cap is sized for the Foundation
- * Projects page's own fan-out concurrency, not for an unauthenticated endpoint's request-level
- * blast radius. This gives the public path its own explicit guard independent of that page's
- * tuning (PR #2436 review).
+ * Per-request cap on the number of project UIDs the public, unauthenticated
+ * `getPublicGroupsByFoundation` endpoint resolves committees across (chunked into `filters_or`
+ * batches of `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE`). `getFoundationProjectUids` already bounds
+ * the UID set indirectly via {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES}, but that cap is
+ * sized for the Foundation Projects page's own fan-out concurrency, not for an unauthenticated
+ * endpoint's request-level blast radius. This gives the public path its own explicit guard
+ * independent of that page's tuning (PR #2436 review).
  */
 export const PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP = 150;
 
