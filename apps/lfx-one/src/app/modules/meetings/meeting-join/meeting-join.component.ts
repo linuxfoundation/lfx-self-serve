@@ -858,6 +858,11 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
+  /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
+  public confirmResendInvite(): void {
+    this.inviteResend.confirmAndResendOwn(this.confirmationService, this.meeting().id, this.currentOccurrence()?.occurrence_id, this.meetingTitle());
+  }
+
   public resendInvite(): void {
     this.inviteResend.resendOwn(this.meeting().id, this.currentOccurrence()?.occurrence_id);
   }

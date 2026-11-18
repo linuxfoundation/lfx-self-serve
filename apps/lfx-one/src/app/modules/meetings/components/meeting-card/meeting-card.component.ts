@@ -578,6 +578,18 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
+  /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
+  public confirmResendInvite(): void {
+    // The occurrence being shown, not the series' current one: an explicit `occurrenceInput` (the meeting modal pins one) wins
+    // over the next occurrence, and the registration to resend has to fit what the card displays.
+    this.inviteResend.confirmAndResendOwn(
+      this.confirmationService,
+      this.meeting().id,
+      (this.occurrence() ?? this.currentOccurrence())?.occurrence_id,
+      this.meetingTitle()
+    );
+  }
+
   public resendInvite(): void {
     // The occurrence being shown, not the series' current one: an explicit `occurrenceInput` (the meeting modal pins one) wins
     // over the next occurrence, and the registration to resend has to fit what the card displays.

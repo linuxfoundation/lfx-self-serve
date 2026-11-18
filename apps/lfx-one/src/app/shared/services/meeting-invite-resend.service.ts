@@ -3,6 +3,7 @@
 
 import { inject, Injectable, signal } from '@angular/core';
 import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
+import { getMeetingOwnResendQuestion } from '@lfx-one/shared/utils';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -14,7 +15,7 @@ import { take } from 'rxjs';
  * (`confirmAndResend`); each surface owns its own `ConfirmationService` (bound to its `p-confirmDialog`),
  * so the host passes it in. Upstream enforces the organizer relation; hosts gate the button on the
  * meeting's `organizer` flag. Registrants resend to themselves from a meeting card or the join page
- * (`resendOwn`): the server resolves which registrant that is, and upstream verifies it is theirs.
+ * (`confirmAndResendOwn`, then `resendOwn`): the server resolves which registrant that is, and upstream verifies it is theirs.
  * In-flight tracking and success/error toasts live here so the surfaces stay consistent. The own-resend logic lives
  * in {@link MeetingOwnInviteResendService}, which surfaces without PrimeNG or with their own feedback use directly.
  */
@@ -43,8 +44,8 @@ export class MeetingInviteResendService {
 
   /**
    * Resends the meeting invitation to the signed-in user's own registration, for the occurrence being viewed when the
-   * surface has one (registrations can be scoped to a single occurrence). No confirmation: it only emails the
-   * caller, and a second click while one is in flight is ignored. Toasts the result.
+   * surface has one (registrations can be scoped to a single occurrence). Surfaces confirm first through
+   * `confirmAndResendOwn`; a second call while one is in flight is ignored. Toasts the result.
    */
   public resendOwn(meetingUid: string, occurrenceId?: string | null): void {
     this.ownResend.resendOwn$(meetingUid, occurrenceId).subscribe({
@@ -60,6 +61,25 @@ export class MeetingInviteResendService {
           summary: 'Error',
           detail: this.ownResend.describeOwnResendFailure(error),
         }),
+    });
+  }
+
+  /** Asks the signed-in user to confirm before resending their own invitation; nothing is sent unless they accept. */
+  public confirmAndResendOwn(confirmationService: ConfirmationService, meetingUid: string, occurrenceId: string | null | undefined, title: string): void {
+    if (this.isResendingOwn(meetingUid)) {
+      return;
+    }
+
+    confirmationService.confirm({
+      header: 'Resend Your Invitation',
+      message: getMeetingOwnResendQuestion(title),
+      // PrimeNG sizes the confirm icon at 2rem (font-size, width and height), which dwarfs this short prompt; scale it down for this dialog only.
+      icon: 'fa-light fa-paper-plane !text-xl !w-auto !h-auto',
+      acceptLabel: 'Resend',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.resendOwn(meetingUid, occurrenceId),
     });
   }
 

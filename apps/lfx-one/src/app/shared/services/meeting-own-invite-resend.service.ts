@@ -26,7 +26,7 @@ export class MeetingOwnInviteResendService {
 
   /**
    * Resends for the occurrence being viewed when the surface has one (registrations can be scoped to a single
-   * occurrence). No confirmation: it only emails the caller. Tracks the in-flight send from subscribe until it settles
+   * occurrence). Callers ask the user to confirm before calling it. Tracks the in-flight send from subscribe until it settles
    * and completes without a value when the meeting id is empty or a send for it is already in flight.
    */
   public resendOwn$(meetingUid: string, occurrenceId?: string | null): Observable<{ message: string }> {
