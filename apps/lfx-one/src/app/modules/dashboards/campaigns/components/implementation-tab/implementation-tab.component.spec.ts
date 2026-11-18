@@ -3088,6 +3088,14 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     const el = (f: ComponentFixture<ImplementationTabComponent>, testId: string): HTMLElement | null =>
       (f.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
 
+    /** What the operator picks in the `lfx-select`: it writes the form control, so the test does too. */
+    function pick(f: ComponentFixture<ImplementationTabComponent>, accountId: string): void {
+      (
+        f.componentInstance as unknown as { linkedInCreateAccountForm: { controls: { accountId: { setValue(v: string): void } } } }
+      ).linkedInCreateAccountForm.controls.accountId.setValue(accountId);
+      f.detectChanges();
+    }
+
     function submitAndRead(f: ComponentFixture<ImplementationTabComponent>): Record<string, unknown> {
       (f.componentInstance as unknown as { submit(): void }).submit();
       return (posted?.['linkedInConfig'] ?? {}) as Record<string, unknown>;
@@ -3111,9 +3119,12 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
 
       await answer(f, chooser);
 
-      const select = el(f, 'implementation-linkedin-create-account-select') as HTMLSelectElement | null;
-      expect(select).not.toBeNull();
-      expect(Array.from(select?.options ?? []).map((o) => o.value)).toEqual(['100000001', '100000002']);
+      expect(el(f, 'implementation-linkedin-create-account-select')).not.toBeNull();
+      const options = (f.componentInstance as unknown as { linkedInCreateAccountOptions(): { label: string; value: string }[] }).linkedInCreateAccountOptions();
+      expect(options).toEqual([
+        { label: 'Shared system account (100000001) · default', value: '100000001' },
+        { label: 'Grant One (100000002)', value: '100000002' },
+      ]);
       expect(c.canSubmit()).toBe(true);
     });
 
@@ -3121,10 +3132,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       const f = await mountWithSelection(true);
       await answer(f, chooser);
 
-      const select = el(f, 'implementation-linkedin-create-account-select') as HTMLSelectElement;
-      select.value = GRANT.accountId;
-      select.dispatchEvent(new Event('change'));
-      f.detectChanges();
+      pick(f, GRANT.accountId);
 
       expect(el(f, 'implementation-linkedin-create-account-page')?.textContent).toContain(GRANT.orgId);
       expect(submitAndRead(f)['adAccountId']).toBe(GRANT.accountId);
@@ -3135,12 +3143,18 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       const f = await mountWithSelection(true);
       await answer(f, chooser);
 
-      const select = el(f, 'implementation-linkedin-create-account-select') as HTMLSelectElement;
-      select.value = GRANT.accountId;
-      select.dispatchEvent(new Event('change'));
-      select.value = DEFAULT_ACCOUNT.accountId;
-      select.dispatchEvent(new Event('change'));
-      f.detectChanges();
+      pick(f, GRANT.accountId);
+      pick(f, DEFAULT_ACCOUNT.accountId);
+
+      expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
+    });
+
+    it('starts the picker on the default and sends nothing for an account the answer does not list', async () => {
+      const f = await mountWithSelection(true);
+      await answer(f, chooser);
+
+      expect((f.componentInstance as unknown as { linkedInChosenAccountId(): string }).linkedInChosenAccountId()).toBe(DEFAULT_ACCOUNT.accountId);
+      pick(f, '999999999');
 
       expect(submitAndRead(f)).not.toHaveProperty('adAccountId');
     });

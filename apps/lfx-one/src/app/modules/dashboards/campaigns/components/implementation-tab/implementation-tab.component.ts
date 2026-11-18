@@ -700,16 +700,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCreativeAvailable = computed<boolean>(() => this.googleCreativeEnabled() === true);
 
   /**
-   * The LinkedIn ad account is decided by the connection, not by this form (#5809).
+   * The LinkedIn ad account is decided by the connection, not by the legacy selector (#5809).
    *
    * When campaign-service owns the create (`googleCreativeEnabled` is `cutoverOwnsCreate()`
-   * server-side), `buildLinkedInConfig` drops `linkedInConfig.adAccountId`, so the campaign is
+   * server-side), the legacy `linkedin.json` id this form carries is never forwarded: the campaign is
    * created in the account stored on the project's LinkedIn connection, else the LF system row's.
-   * A dropdown there offers a choice the create ignores. On 17 Nov it sent two prod test creates
-   * to an account on billing hold while the picker named another. So on an explicit yes the
-   * selector is replaced with a read-only line, and the account gate below does not block on it.
-   * `false` or unknown keeps the selector: the legacy creator still reads the chosen account.
-   * Choosing the account for real arrives with lfx-v2-campaign-service#581's account grants.
+   * On 17 Nov a dropdown there sent two prod test creates to an account on billing hold while the
+   * picker named another. So on an explicit yes the selector is replaced, and the account gate below
+   * does not block on it. With account selection on (`linkedInAccountSelectionAvailable`) the
+   * replacement reads the account from campaign-service and, for `global_marketing_ops`, offers a
+   * choice, sent only for a non-default pick (`linkedInAdAccountField`); the server forwards only a
+   * pick that campaign-service lists as a grant. Otherwise it is a read-only line. `false` or unknown
+   * keeps the selector: the legacy creator still reads the chosen account.
    */
   protected readonly linkedInAccountSetByConnection = computed<boolean>(() => this.googleCreativeEnabled() === true);
 
@@ -1486,6 +1488,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleGeoSearchForm = this.fb.group({ location: this.fb.control<GoogleAdsGeoTargetOption | string | null>(null) });
   protected readonly googleProximityForm = this.fb.nonNullable.group<CampaignProximityTargetDraft>({ latitude: '', longitude: '', radius: '', radiusUnit: '' });
   /**
+   * The LinkedIn ad account picker (#5809), on the wrappers' form-control API. Its own group, so
+   * `campaignForm` never reads it, and not saved on the draft: a remount reads the accounts again and
+   * starts from the default. Set to the default whenever a new answer arrives.
+   */
+  protected readonly linkedInCreateAccountForm = this.fb.nonNullable.group({ accountId: '' });
+  /**
    * The Meta Instagram account id and EU DSA beneficiary/payor, on the wrappers' form-control API.
    * Its own group rather than `campaignForm`, so `campaignForm.invalid` (Google's gate) never reads
    * it. NOT transient: every edit reaches the draft (`emitDraft` names all three), and raw text is
@@ -2246,8 +2254,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInAccountSelectionAvailable = computed<boolean>(
     () => this.linkedInAccountSetByConnection() && this.linkedInAccountSelectionEnabled() === true
   );
-  /** The account picked in the LinkedIn ad account picker (#5809); `''` until someone picks one. Reset on every new read. */
-  protected readonly linkedInChosenAccountId = signal('');
+  /** The account picked in the LinkedIn ad account picker (#5809); the default once the accounts load. */
+  protected readonly linkedInChosenAccountId: Signal<string> = this.initLinkedInChosenAccountId();
   /** Where a LinkedIn create goes and who may change it, read from campaign-service while the LinkedIn section is shown (#5809). */
   protected readonly linkedInCreateAccount: Signal<LinkedInCreateAccountState> = this.initLinkedInCreateAccount();
   /**
@@ -2258,7 +2266,13 @@ export class ImplementationTabComponent implements OnInit {
   /** Whether this caller may choose the LinkedIn ad account (#5809): the read answered `canChoose`. */
   protected readonly linkedInCanChooseAccount = computed<boolean>(() => this.linkedInCreateAccount().account?.canChoose === true);
   /** The accounts the LinkedIn ad account picker offers (#5809), the default first. */
-  protected readonly linkedInCreateAccountOptions = computed<LinkedInCreateAccountOption[]>(() => this.linkedInCreateAccount().account?.accounts ?? []);
+  /** The LinkedIn ad account picker's rows (#5809), the default first and marked as such. */
+  protected readonly linkedInCreateAccountOptions = computed(() =>
+    (this.linkedInCreateAccount().account?.accounts ?? []).map((a) => ({
+      label: a.isDefault ? `${a.label} (${a.accountId}) · default` : `${a.label} (${a.accountId})`,
+      value: a.accountId,
+    }))
+  );
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
   /**
    * The keywords a Reddit dispatch will actually carry.
@@ -4932,11 +4946,6 @@ export class ImplementationTabComponent implements OnInit {
   // The identically-named methods on monitoring-tab and optimization-tab are live and untouched.
   protected onLinkedInAccountChange(event: Event): void {
     this.campaignForm.controls.linkedInAccountId.setValue((event.target as HTMLSelectElement).value);
-  }
-
-  /** The LinkedIn ad account picker (#5809). Not saved on the draft: a remount reads the accounts again and starts from the default. */
-  protected onLinkedInCreateAccountChange(event: Event): void {
-    this.linkedInChosenAccountId.set((event.target as HTMLSelectElement).value);
   }
 
   protected onGeoTargetChange(event: Event): void {
@@ -8255,10 +8264,11 @@ export class ImplementationTabComponent implements OnInit {
     return toSignal(
       toObservable(trigger).pipe(
         // A pick belongs to the answer it was made from: a new read starts again from the default.
-        tap(() => this.linkedInChosenAccountId.set('')),
+        tap(() => this.linkedInCreateAccountForm.controls.accountId.setValue('')),
         switchMap(({ projectSlug, wanted }) => {
           if (!wanted || projectSlug === '') return of(idle);
           return this.campaignService.getLinkedInCreateAccount(projectSlug).pipe(
+            tap((account) => this.linkedInCreateAccountForm.controls.accountId.setValue(account.accountId)),
             map((account): LinkedInCreateAccountState => ({ status: 'ready', account })),
             // A failed read sends no account, so the create goes to the default, as it does today.
             catchError(() => of<LinkedInCreateAccountState>({ status: 'failed', account: null })),
@@ -8268,6 +8278,11 @@ export class ImplementationTabComponent implements OnInit {
       ),
       { initialValue: idle }
     );
+  }
+
+  private initLinkedInChosenAccountId(): Signal<string> {
+    const control = this.linkedInCreateAccountForm.controls.accountId;
+    return toSignal(control.valueChanges.pipe(startWith(control.value)), { initialValue: control.value });
   }
 
   private initLinkedInEffectiveAccount(): Signal<LinkedInCreateAccountOption | null> {

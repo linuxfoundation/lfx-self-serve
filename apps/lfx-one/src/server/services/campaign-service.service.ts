@@ -42,6 +42,7 @@ import {
   JOB_LOST_MESSAGE,
   MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  LINKEDIN_AD_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
@@ -119,6 +120,7 @@ import type {
   HubSpotMarketingEmail,
   KeywordActionPlatform,
   LinkedInBriefCopy,
+  LinkedInCreateAccountRead,
   ListAudiencesResult,
   LinkedInCreativeVariant,
   MetaAdVariant,
@@ -749,6 +751,41 @@ export function canUseMetaCreativeAssets(): boolean {
  */
 export function canUseLinkedInCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAssets);
+}
+
+/**
+ * campaign-service's `get-linkedin-ads-create-account` answer (#581), checked and camel-cased. An unreadable
+ * default fails with 502 rather than naming an account the create does not use; a grant whose id is not the
+ * bare account number `adAccountId` takes, the default repeated, or a repeat is dropped rather than offered.
+ */
+export function toLinkedInCreateAccount(payload: CampaignServiceLinkedInAdsCreateAccount, operation: string): LinkedInCreateAccountRead {
+  if (typeof payload?.account_id !== 'string' || !LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(payload.account_id) || !Array.isArray(payload.selectable_accounts)) {
+    throw new MicroserviceError('campaign-service returned an unreadable LinkedIn create account.', 502, 'BAD_GATEWAY', {
+      operation,
+      service: 'campaign_service_client',
+    });
+  }
+  const label = (value: unknown, accountId: string): string => (typeof value === 'string' && value.trim() !== '' ? value : accountId);
+  const grants = payload.selectable_accounts
+    .filter(
+      (a, i, all) =>
+        typeof a?.account_id === 'string' &&
+        LINKEDIN_AD_ACCOUNT_ID_PATTERN.test(a.account_id) &&
+        a.account_id !== payload.account_id &&
+        all.findIndex((other) => other?.account_id === a.account_id) === i
+    )
+    .map((a) => ({ accountId: a.account_id, orgId: typeof a.org_id === 'string' ? a.org_id : '', label: label(a.label, a.account_id), isDefault: false }));
+  return {
+    defaultAccount: {
+      accountId: payload.account_id,
+      orgId: typeof payload.org_id === 'string' ? payload.org_id : '',
+      label: label(payload.label, payload.account_id),
+      isDefault: true,
+    },
+    grants,
+    selectionEnabled: payload.account_selection_enabled === true,
+    source: payload.source === 'project' ? 'project' : 'system',
+  };
 }
 
 /**

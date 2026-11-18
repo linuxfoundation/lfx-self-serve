@@ -2101,6 +2101,16 @@ export interface LinkedInCreateAccountResult {
   accounts: LinkedInCreateAccountOption[];
 }
 
+/** campaign-service's LinkedIn create-account read (#5809), checked and camel-cased; see the server's `toLinkedInCreateAccount`. */
+export interface LinkedInCreateAccountRead {
+  defaultAccount: LinkedInCreateAccountOption;
+  /** The non-default accounts `adAccountId` may name, each once, as bare account numbers. */
+  grants: LinkedInCreateAccountOption[];
+  /** campaign-service's own `account_selection_enabled`. */
+  selectionEnabled: boolean;
+  source: 'project' | 'system';
+}
+
 /** Where the Implement tab's LinkedIn ad account read stands (#5809). `idle` while the read does not apply. */
 export interface LinkedInCreateAccountState {
   status: 'idle' | 'loading' | 'ready' | 'failed';

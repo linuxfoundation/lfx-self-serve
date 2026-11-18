@@ -3843,18 +3843,16 @@
                 <p class="text-xs text-gray-500" data-testid="implementation-linkedin-create-account-loading">Loading the ad account…</p>
               } @else if (linkedInCanChooseAccount() && effectiveAccount) {
                 <label for="implementation-linkedin-create-account-select" class="text-xs font-medium text-gray-700">Ad Account</label>
-                <select
-                  id="implementation-linkedin-create-account-select"
-                  [value]="effectiveAccount.accountId"
-                  (change)="onLinkedInCreateAccountChange($event)"
-                  class="w-fit rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  data-testid="implementation-linkedin-create-account-select">
-                  @for (option of linkedInCreateAccountOptions(); track option.accountId) {
-                    <option [value]="option.accountId" [selected]="option.accountId === effectiveAccount.accountId">
-                      {{ option.label }} ({{ option.accountId }}){{ option.isDefault ? ' · default' : '' }}
-                    </option>
-                  }
-                </select>
+                <lfx-select
+                  [form]="linkedInCreateAccountForm"
+                  control="accountId"
+                  [options]="linkedInCreateAccountOptions()"
+                  optionLabel="label"
+                  optionValue="value"
+                  inputId="implementation-linkedin-create-account-select"
+                  styleClass="w-fit"
+                  dataTest="implementation-linkedin-create-account-select"
+                  data-testid="implementation-linkedin-create-account-select" />
                 @if (effectiveAccount.orgId) {
                   <p class="text-xs text-gray-500" data-testid="implementation-linkedin-create-account-page">
                     Posts as LinkedIn page {{ effectiveAccount.orgId }}.
@@ -3884,7 +3882,7 @@
               <p class="mb-1 text-xs font-medium text-gray-700">Ad Account</p>
               <p class="text-xs text-gray-600">
                 Set by this project's LinkedIn connection: the campaign is created in that connection's ad account, or in LF's shared LinkedIn account if the
-                project has no connection of its own. It can't be chosen here.
+                project has no connection of its own. It can't be chosen here yet.
               </p>
             </div>
           } @else {
