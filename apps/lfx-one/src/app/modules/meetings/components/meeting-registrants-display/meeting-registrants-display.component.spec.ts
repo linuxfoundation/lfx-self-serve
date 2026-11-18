@@ -652,6 +652,7 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
           provide: MeetingService,
           useValue: {
             removedRegistrationMeetingIds: removedMeetingIds,
+            clearRemovedRegistration: vi.fn((id: string) => removedMeetingIds.update((ids) => new Set([...ids].filter((saved) => saved !== id)))),
             createRegistrantFormGroup: () => new FormGroup({}),
             // The real builder, so these tests see the body that is actually sent.
             stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => MeetingService.prototype.stripMetadata.call({}, meetingUid, guest),
@@ -1040,6 +1041,116 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     }
   });
 
+  it.each([false, true])('restores a normal-form self-reinvite without changing its payload, self-fetched: %s', async (selfFetched) => {
+    removedMeetingIds.set(new Set(['meeting-1']));
+    const old = { ...listed(SELF_GUEST.email), uid: 'old-self', meeting_id: 'meeting-1' };
+    addMeetingRegistrants.mockReturnValue(of({ ...SUCCESS, successes: [{ uid: 'new-self' }] }));
+    const { fixture, button } = await mount(selfFetched ? { fetched: of([old]) } : { registrants: [old] });
+    const selfAdded = vi.fn();
+    fixture.componentInstance.selfAdded.subscribe(selfAdded);
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(SELF_GUEST.email));
+    form.addControl('first_name', new FormControl('Manual'));
+    form.addControl('last_name', new FormControl('Self'));
+    form.addControl('host', new FormControl(true));
+    fixture.componentInstance.onAddRegistrant();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(removedMeetingIds().has('meeting-1')).toBe(false);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).toHaveBeenCalledWith('meeting-1');
+    expect(selfAdded).toHaveBeenCalledTimes(1);
+    expect(selfAdded).toHaveBeenCalledWith(expect.objectContaining({ uid: 'new-self', email: SELF_GUEST.email }));
+    expect(fixture.componentInstance.registrants().map((row) => row.uid)).toEqual(['new-self']);
+    expect(button()).toBeNull();
+    const submitted = addMeetingRegistrants.mock.calls[0][1][0];
+    expect(submitted).toMatchObject({ email: SELF_GUEST.email, first_name: 'Manual', last_name: 'Self', host: true });
+    expect(submitted).not.toHaveProperty('username');
+    expect(submitted).not.toHaveProperty('avatar_url');
+  });
+
+  it('does not clear self-removal state or emit a self-add for another guest added normally', async () => {
+    removedMeetingIds.set(new Set(['meeting-1']));
+    const { fixture } = await mount();
+    const selfAdded = vi.fn();
+    fixture.componentInstance.selfAdded.subscribe(selfAdded);
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl('another-guest@vendor-corp.example'));
+    form.addControl('first_name', new FormControl('Another'));
+    form.addControl('last_name', new FormControl('Guest'));
+    fixture.componentInstance.onAddRegistrant();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(removedMeetingIds().has('meeting-1')).toBe(true);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).not.toHaveBeenCalled();
+    expect(selfAdded).not.toHaveBeenCalled();
+  });
+
+  it.each([null, '1893492000'])('retires a UID-less hint after indexing and deletion, invitation scope: %s', async (occurrenceId) => {
+    const { fixture, button } = await mount({ meeting: RECURRING_MEETING, occurrence: OCCURRENCE });
+    fixture.componentInstance.inviteScopeForm.setValue({ scope: occurrenceId ? 'occurrence' : 'all' });
+    fixture.componentInstance.onAddSelf();
+    const hint = fixture.componentInstance.registrants()[0];
+    expect(hint.uid).toMatch(/^optimistic-/);
+    const indexed = {
+      ...hint,
+      uid: 'indexed-self',
+      email: SELF_GUEST.email.toUpperCase(),
+      occurrence_id: occurrenceId ? String(Number(occurrenceId) * 1000) : null,
+    };
+    fixture.componentRef.setInput('initialRegistrants', [indexed]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants().map((row) => row.uid)).toEqual(['indexed-self']);
+
+    const selfRemoved = vi.fn();
+    fixture.componentInstance.selfRemoved.subscribe(selfRemoved);
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    fixture.componentInstance.onRequestRemoveGuest(indexed);
+    confirm.mock.calls[0][0].accept?.();
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(selfRemoved).toHaveBeenCalledWith({ meeting_id: RECURRING_MEETING.id, removed_registrant_ids: ['indexed-self'], remaining_registrant_ids: [] });
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+    expect(button()).not.toBeNull();
+    expect(TestBed.inject(MeetingService).deleteMeetingRegistrants).toHaveBeenCalledWith(RECURRING_MEETING.id, ['indexed-self']);
+  });
+
+  it('keeps an unindexed hint when only a different invitation scope is indexed', async () => {
+    const { fixture } = await mount({ meeting: RECURRING_MEETING, occurrence: OCCURRENCE });
+    fixture.componentInstance.inviteScopeForm.setValue({ scope: 'occurrence' });
+    fixture.componentInstance.onAddSelf();
+    const hint = fixture.componentInstance.registrants()[0];
+    const anotherScope = { ...hint, uid: 'other-scope', occurrence_id: '1894096800' };
+    fixture.componentRef.setInput('initialRegistrants', [anotherScope]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(2);
+    expect(fixture.componentInstance.registrants().some((row) => row.uid === hint.uid)).toBe(true);
+
+    const matchingScope = { ...hint, uid: 'matching-scope' };
+    fixture.componentRef.setInput('initialRegistrants', [anotherScope, matchingScope]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(
+      fixture.componentInstance
+        .registrants()
+        .map((row) => row.uid)
+        .sort()
+    ).toEqual(['matching-scope', 'other-scope']);
+  });
+
   it('keeps submitted identity when a successful response contains only a UID and emits self-add success', async () => {
     addMeetingRegistrants.mockReturnValue(of({ ...SUCCESS, successes: [{ uid: 'saved-self' }] }));
     const { fixture, button } = await mount();
@@ -1057,6 +1168,7 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
       host: false,
     });
     expect(selfAdded).toHaveBeenCalledWith(expect.objectContaining({ uid: 'saved-self', meeting_id: 'meeting-1', email: SELF_GUEST.email }));
+    expect(selfAdded).toHaveBeenCalledTimes(1);
     expect(button()).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="registrant-display-remove-saved-self"]')).not.toBeNull();
   });

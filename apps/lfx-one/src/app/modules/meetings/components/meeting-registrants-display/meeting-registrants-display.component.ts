@@ -333,23 +333,28 @@ export class MeetingRegistrantsDisplayComponent {
         this.deletedRegistrantUids.set(new Set());
       });
 
-    effect(() => {
-      const fetched = this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.internalRegistrants();
-      const indexedUids = new Set(fetched.map((row) => row.uid));
-      const self = this.selfGuest();
-      const selfRemoved = !!self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id);
-      this.optimisticRegistrants.update((rows) => {
-        if (selfRemoved) {
-          const removedUids = [...fetched, ...rows].filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
-          this.deletedRegistrantUids.update((known) => new Set([...known, ...removedUids]));
-        }
-        // Retire confirmed UIDs once indexed. UID-less additions remain hints until a confirmed removal.
-        return rows.filter((row) => {
-          if (selfRemoved && isMeetingSelfGuestListed(self, [row])) return false;
-          return !row.uid || row.uid.startsWith('optimistic-') || !indexedUids.has(row.uid);
+    toObservable(
+      computed(() => {
+        const self = this.selfGuest();
+        return {
+          fetched: this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.internalRegistrants(),
+          self,
+          selfRemoved: !!self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id),
+        };
+      })
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ fetched, self, selfRemoved }) => {
+        this.optimisticRegistrants.update((rows) => {
+          if (selfRemoved && self) {
+            const removedUids = [...fetched, ...rows].filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
+            this.deletedRegistrantUids.update((known) => new Set([...known, ...removedUids]));
+          }
+          const retained = rows.filter((row) => !(selfRemoved && self && isMeetingSelfGuestListed(self, [row])));
+          const indexed = fetched.filter((row) => !this.deletedRegistrantUids().has(row.uid));
+          return this.filterUnindexedRegistrants(retained, indexed);
         });
       });
-    });
 
     effect(() => {
       if (!this.visible()) return;
@@ -475,11 +480,7 @@ export class MeetingRegistrantsDisplayComponent {
       selfAdded: true,
     } satisfies Partial<MeetingRegistrantWithState>;
 
-    this.submitGuest(guest, occurrenceId, this.selfSubmitId, (added) => {
-      if (this.externallyManaged()) {
-        this.optimisticRegistrants.update((list) => [...list, added]);
-      }
-      this.selfAdded.emit(added);
+    this.submitGuest(guest, occurrenceId, this.selfSubmitId, () => {
       if (!this.destroyRef.destroyed) this.pendingSelfFocusContext.set(focusContext);
     });
   }
@@ -702,7 +703,12 @@ export class MeetingRegistrantsDisplayComponent {
               ...returned,
               uid: returned.uid?.trim() || `optimistic-${crypto.randomUUID()}`,
             };
+            const self = this.selfGuest();
+            const addsSelf = !!self && isMeetingSelfGuestListed(self, [optimistic]);
+            // A confirmed self-invite supersedes a prior removal, including normal Add Guest submissions.
+            if (addsSelf) this.meetingService.clearRemovedRegistration(meetingId);
             if (this.externallyManaged()) {
+              if (addsSelf) this.optimisticRegistrants.update((list) => [...list, optimistic]);
               this.refreshRequested.emit(response.summary.successful);
             } else {
               const meeting = this.meeting();
@@ -714,6 +720,7 @@ export class MeetingRegistrantsDisplayComponent {
               this.totalCountChange.emit(baseCount + nextAdditionalCount);
               this.refresh$.next(true);
             }
+            if (addsSelf) this.selfAdded.emit(optimistic);
             onAdded?.(optimistic);
           } else {
             this.messageService.add({
@@ -943,18 +950,11 @@ export class MeetingRegistrantsDisplayComponent {
       if (self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id)) {
         list = list.filter((row) => !isMeetingSelfGuestListed(self, [row]));
       }
-      // Deduplicate optimistic rows against the fetched list. Use UID for real registrants (exact
-      // match regardless of email normalisation) and email as a fallback for optimistic-* rows
-      // where the API UID isn't known yet.
-      const fetchedUids = new Set<string>(list.map((r) => r.uid).filter((uid): uid is string => !!uid));
-      const fetchedEmails = new Set<string>(list.map((r) => r.email?.trim().toLowerCase()).filter((e): e is string => !!e));
-      const pending = this.optimisticRegistrants().filter((r) => {
-        if (r.uid && !r.uid.startsWith('optimistic-')) {
-          return !fetchedUids.has(r.uid);
-        }
-        const email = r.email?.trim().toLowerCase();
-        return !email || !fetchedEmails.has(email);
-      });
+      // Real UIDs match exactly; UID-less hints reconcile only to the same email and invitation scope.
+      const pending = this.filterUnindexedRegistrants(
+        this.optimisticRegistrants().filter((row) => !deletedUids.has(row.uid)),
+        list
+      );
       const merged = pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
 
       const overrides = this.hostOverrides();
@@ -1108,6 +1108,16 @@ export class MeetingRegistrantsDisplayComponent {
       const people: (MeetingHostCandidate & { uid: string })[] = this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants();
 
       return new Map(people.map((person) => [person.uid, resolveMeetingGuestRole(person, organizerKeys)] as const));
+    });
+  }
+
+  private filterUnindexedRegistrants(pending: MeetingRegistrant[], indexed: MeetingRegistrant[]): MeetingRegistrant[] {
+    const uids = new Set(indexed.map((row) => row.uid));
+    const emailScopes = new Set(indexed.map((row) => JSON.stringify([row.email?.trim().toLowerCase(), occurrenceIdToSeconds(row.occurrence_id)])));
+    return pending.filter((row) => {
+      if (row.uid && !row.uid.startsWith('optimistic-')) return !uids.has(row.uid);
+      const email = row.email?.trim().toLowerCase();
+      return !email || !emailScopes.has(JSON.stringify([email, occurrenceIdToSeconds(row.occurrence_id)]));
     });
   }
 }
