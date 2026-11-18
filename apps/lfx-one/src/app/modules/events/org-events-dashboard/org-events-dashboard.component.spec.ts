@@ -29,7 +29,6 @@ const ROLL_UP_ORGANIZATIONS = [
   { accountId: 'acc-b', name: 'Acme Robotics' },
 ];
 
-/** The `company` each call to a read mock carried, in order. */
 function companiesSent(mock: { mock: { calls: unknown[][] } }): unknown[] {
   return mock.mock.calls.map((call) => (call[1] as Record<string, unknown>)['company']);
 }

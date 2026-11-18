@@ -56,7 +56,6 @@ export type OrgEventsResponse = OffsetPaginatedResponse<OrgEvent>;
 /** Org event row with presentation fields pre-baked for template rendering (avoids method calls in template). */
 export interface OrgEventRowVm extends OrgEvent {
   readonly dateRange: string;
-  /** Roll-up only: the sponsoring organizations' names, for the Event Sponsor tooltip; null when none or not a roll-up. */
   readonly sponsorNames: string | null;
 }
 
@@ -77,16 +76,13 @@ export interface GetOrgEventsParams {
   readonly foundation?: string;
   /** Applies to the Past tab only; omitted means the default. */
   readonly range?: OrgLensTimeRange;
-  /** Roll-up only: the account id of one organization in the roll-up; omitted or `''` is every organization. */
   readonly company?: string;
 }
 
-/** Events page copy that names whose events these are: one organization, or a family roll-up. */
 export interface OrgEventsPageCopy {
   readonly description: string;
   readonly upcomingEmpty: string;
   readonly pastEmpty: string;
-  /** Who the Event Attendees column counts, under its heading. */
   readonly attendeesOwner: string;
   readonly loadError: string;
 }
@@ -133,7 +129,6 @@ export interface OrgEventAttendee {
 export interface OrgEventAttendeeVm extends OrgEventAttendee {
   readonly initials: string;
   readonly avatarColorClass: string;
-  /** Roll-up only: the person's organizations, comma-separated; null outside a roll-up. */
   readonly organizationNames: string | null;
 }
 
@@ -169,7 +164,6 @@ export interface OrgEventSpeaker {
 export interface OrgEventSpeakerVm extends OrgEventSpeaker {
   readonly initials: string;
   readonly avatarColorClass: string;
-  /** Roll-up only: the person's organizations, comma-separated; null outside a roll-up. */
   readonly organizationNames: string | null;
 }
 

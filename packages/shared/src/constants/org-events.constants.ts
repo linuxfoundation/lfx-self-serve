@@ -37,7 +37,6 @@ export const ORG_EVENTS_STATUS_OPTIONS: FilterOption[] = [
 /** Valid org event status values for server-side validation. */
 export const VALID_ORG_EVENT_STATUS_VALUES: ReadonlySet<string> = new Set(['registered', 'speaker-submitted', 'speaker-accepted', 'event-sponsor']);
 
-/** Events page copy for one organization. */
 export const ORG_EVENTS_PAGE_COPY: OrgEventsPageCopy = {
   description: "Your company's event footprint across LF events.",
   upcomingEmpty: 'No upcoming events were found for your company.',
@@ -46,7 +45,6 @@ export const ORG_EVENTS_PAGE_COPY: OrgEventsPageCopy = {
   loadError: "Something went wrong reading your company's events.",
 };
 
-/** Events page copy for a family roll-up. */
 export const ORG_EVENTS_ROLL_UP_PAGE_COPY: OrgEventsPageCopy = {
   description: "Your organizations' event footprint across LF events.",
   upcomingEmpty: 'No upcoming events were found for your organizations.',
@@ -55,11 +53,8 @@ export const ORG_EVENTS_ROLL_UP_PAGE_COPY: OrgEventsPageCopy = {
   loadError: "Something went wrong reading your organizations' events.",
 };
 
-/** Label of the roll-up Company filter's "all" option. */
 export const ORG_EVENTS_ALL_COMPANIES_LABEL = 'All Companies';
 
-/** Roll-up notice when the family holds organizations the caller cannot read; never says how many. */
 export const ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE = 'Some organizations in this family are not included because you do not have access to them.';
 
-/** Roll-up notice when the family's organizations could not all be resolved. */
 export const ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE = "This family's organizations could not all be loaded, so these figures may be incomplete.";

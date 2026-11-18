@@ -51,12 +51,12 @@ import type {
   OrgDropdownOption,
   OrgEvent,
   OrgEventFoundationsResponse,
+  OrgEventsPageCopy,
   OrgEventsParticipation,
   OrgEventsResponse,
   OrgEventsScope,
   OrgEventsSummary,
   OrgEventStatFilterId,
-  OrgEventsPageCopy,
   OrgEventsTabId,
   OrgLensRowOrganization,
   OrgLensTimeRange,
@@ -132,7 +132,6 @@ export class OrgEventsDashboardComponent {
     foundation: new FormControl<string>(readOrgEventsFoundation(this.route), { nonNullable: true }),
     participation: new FormControl<OrgEventsParticipation>(readOrgEventsParticipation(this.route), { nonNullable: true }),
     scope: new FormControl<OrgEventsScope>(readOrgEventsScope(this.route), { nonNullable: true }),
-    // Roll-up only: one organization's account id (`?company=`), `''` for every organization.
     company: new FormControl<string>(readOrgEventsCompany(this.route), { nonNullable: true }),
   });
 
@@ -154,7 +153,6 @@ export class OrgEventsDashboardComponent {
   public readonly upcomingLoadFailed = signal(false);
   public readonly pastLoadFailed = signal(false);
   private readonly retryCount = signal(0);
-  // The organizations the roll-up serves, from the last summary read for that account; the Company options and the only valid picks.
   private readonly servedOrganizations = signal<{ accountId: string; organizations: readonly OrgLensRowOrganization[] } | null>(null);
 
   // === Computed / toSignal ===
@@ -187,12 +185,10 @@ export class OrgEventsDashboardComponent {
   private readonly company: Signal<string> = toSignal(this.filterForm.controls.company.valueChanges, {
     initialValue: this.filterForm.controls.company.value,
   });
-  // The roll-up's organizations once known for the selected account, else null.
   private readonly currentServedOrganizations = computed<readonly OrgLensRowOrganization[] | null>(() => {
     const served = this.servedOrganizations();
     return this.isRollUp() && served?.accountId === this.accountContext.selectedAccount().accountId ? served.organizations : null;
   });
-  // The Company the reads carry: only a pick the roll-up serves, so a stale `?company=` never reaches the server.
   public readonly effectiveCompany = computed(() => {
     const company = this.company();
     const served = this.currentServedOrganizations();
@@ -308,7 +304,6 @@ export class OrgEventsDashboardComponent {
           this.filterForm.controls.foundation.setValue('');
       });
 
-    // A Company the page does not serve is cleared: any `?company=` outside a roll-up, or one the roll-up's organizations do not include.
     toObservable(
       computed(() => ({
         visible: this.contentVisible(),

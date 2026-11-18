@@ -83,7 +83,6 @@
         }
       </td>
 
-      <!-- Company: every organization in the roll-up that took part -->
       @if (rollUp()) {
         <td [attr.data-testid]="'org-event-company-' + event.eventId">
           @for (organization of event.organizations ?? []; track organization.accountId) {

@@ -31,7 +31,6 @@ export function readOrgEventsFoundation(route: ActivatedRoute): string {
   return route.snapshot.queryParamMap.get(ORG_EVENTS_FOUNDATION_QUERY_PARAM) ?? '';
 }
 
-/** The organization account id a roll-up route's `?company=` selects (`''`, All Companies, when absent). */
 export function readOrgEventsCompany(route: ActivatedRoute): string {
   return route.snapshot.queryParamMap.get(ORG_EVENTS_COMPANY_QUERY_PARAM) ?? '';
 }
@@ -63,7 +62,6 @@ export function syncOrgEventsFoundationWithUrl(control: FormControl<string>, rou
   });
 }
 
-/** Keeps a roll-up's Company picker and `?company=` in step (see {@link syncOrgEventsParamWithUrl}). Call from an injection context. */
 export function syncOrgEventsCompanyWithUrl(control: FormControl<string>, route: ActivatedRoute, router: Router): void {
   syncOrgEventsParamWithUrl(control, route, router, {
     param: ORG_EVENTS_COMPANY_QUERY_PARAM,

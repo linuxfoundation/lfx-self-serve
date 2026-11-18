@@ -32,7 +32,6 @@ export class EventAttendeesDrawerComponent {
   public readonly eventName = input<string>('');
   public readonly attendeeCount = input<number>(0);
   public readonly participation = input<OrgEventsParticipation>(DEFAULT_ORG_EVENTS_PARTICIPATION);
-  // Roll-up only: the Company filter's pick, so the drawer lists the people its row counted.
   public readonly company = input<string>('');
 
   protected readonly searchTerm = signal('');

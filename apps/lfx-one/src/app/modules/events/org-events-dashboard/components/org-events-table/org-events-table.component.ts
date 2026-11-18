@@ -26,7 +26,6 @@ export class OrgEventsTableComponent {
   public readonly sortOrder = input<'ASC' | 'DESC'>('ASC');
   // Past tab (LFXV2-1900) drops the Action column; upcoming keeps it.
   public readonly showAction = input<boolean>(true);
-  // A family roll-up adds the Company column and names the sponsoring organizations; the single-organization table is unchanged.
   public readonly rollUp = input<boolean>(false);
   // What the Event Attendees number counts and who it is credited to (the shared caption phrases), as the column's tooltip.
   public readonly attendeesCaption = input<string>('');
@@ -44,7 +43,6 @@ export class OrgEventsTableComponent {
 
   protected readonly copy = computed(() => (this.rollUp() ? ORG_EVENTS_ROLL_UP_PAGE_COPY : ORG_EVENTS_PAGE_COPY));
 
-  // Single source of truth for the empty-row colspan: 7 columns, plus Action and the roll-up's Company column.
   protected readonly columnCount = computed<number>(() => 7 + (this.showAction() ? 1 : 0) + (this.rollUp() ? 1 : 0));
 
   /**
@@ -57,7 +55,7 @@ export class OrgEventsTableComponent {
     this.rows().some((row) => row.eventRegistrationsGoal !== null && row.eventRegistrationsGoal !== undefined)
   );
 
-  // Pre-bake the formatted date range and sponsor names per row so the template reads properties instead of calling methods each CD cycle.
+  // Pre-bake the formatted date range per row so the template reads a property instead of calling a method each CD cycle.
   protected readonly rows = computed<OrgEventRowVm[]>(() =>
     this.eventsResponse().data.map((event) => ({
       ...event,

@@ -31,7 +31,6 @@ export class EventSpeakersDrawerComponent {
   public readonly eventName = input<string>('');
   public readonly acceptedCount = input<number>(0);
   public readonly submittedCount = input<number>(0);
-  // Roll-up only: the Company filter's pick, so the drawer lists the people its row counted.
   public readonly company = input<string>('');
 
   protected readonly searchTerm = signal('');
