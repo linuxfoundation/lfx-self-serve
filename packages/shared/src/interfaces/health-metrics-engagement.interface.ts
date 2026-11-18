@@ -11,7 +11,8 @@ import type {
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
-import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
+import type { HealthMetricsLineChartView } from './health-metrics-line-chart.interface';
 import type { HealthMetricsMembersReservedTier } from './health-metrics-members.interface';
 import type { HealthMetricsBarFillRule } from './health-metrics-table.interface';
 
@@ -206,7 +207,7 @@ export interface HealthMetricsEngagementParticipationQuery {
   range: HealthMetricsRange;
 }
 
-/** One month of the trailing twelve-month attendance trend, as the view reports it. */
+/** One month of all-meeting attendance, as the view reports it. */
 export interface HealthMetricsEngagementAttendanceMonth {
   /** ISO date of the month's first day. */
   monthStartDate: string;
@@ -219,13 +220,13 @@ export interface HealthMetricsEngagementAttendanceMonth {
   attendanceChangePp: number | null;
 }
 
-/** `GET /api/analytics/engagement-attendance-trend` — the trailing twelve months, oldest first. */
+/** `GET /api/analytics/engagement-attendance-trend` — every month the view holds, oldest first. */
 export interface HealthMetricsEngagementAttendanceTrend {
   months: HealthMetricsEngagementAttendanceMonth[];
 }
 
-/** Wire query for `GET /api/analytics/engagement-attendance-trend`. The trend always covers the last
- * twelve months, so the period selector never reaches the wire. */
+/** Wire query for `GET /api/analytics/engagement-attendance-trend`. The client cuts the selected year out of
+ * every month the view holds, so the period selector never reaches the wire. */
 export interface HealthMetricsEngagementAttendanceTrendQuery {
   foundationSlug: string;
   /** Absent or `null` reads the view's all-projects roll-up rows. The client no longer sends it;
@@ -236,7 +237,7 @@ export interface HealthMetricsEngagementAttendanceTrendQuery {
 /** One chart point. `rate` is a percent (0-100), `null` for a gap in the line. */
 export interface HealthMetricsEngagementAttendanceTrendPointView {
   monthStartDate: string;
-  /** Axis label, e.g. `Oct 25`. */
+  /** Axis label, e.g. `Oct`. */
   label: string;
   /** Long label for the tooltip and the screen-reader table, e.g. `October 2025 (to date)`. */
   monthLabel: string;
@@ -247,22 +248,22 @@ export interface HealthMetricsEngagementAttendanceTrendPointView {
   isInProgress: boolean;
 }
 
-/** Which body the Attendance trend renders: nothing rated, a single rated month, or a line. */
-export type HealthMetricsEngagementAttendanceTrendState = 'empty' | 'insufficient' | 'trend';
+/**
+ * Which body the Attendance trend renders: `january` before January closes in year to date, `unavailable` when the view
+ * lacks part of a completed year, `insufficient` with fewer than two full months with a rate, else the trend.
+ */
+export type HealthMetricsEngagementAttendanceTrendState = 'empty' | 'january' | 'unavailable' | 'insufficient' | 'trend';
 
-/** The Attendance trend headline, side stats and low-confidence note. */
-export interface HealthMetricsEngagementAttendanceTrendSummaryView {
+/** The Attendance trend for the selected year: metrics row, line chart, low-confidence note and screen-reader rows. */
+export interface HealthMetricsEngagementAttendanceTrendView {
   state: HealthMetricsEngagementAttendanceTrendState;
-  /** Months with a reportable rate, the month in progress included. */
-  ratedMonths: number;
-  latestLabel: string;
-  /** The month the headline describes, e.g. `September 2026`. */
-  latestCaption: string;
-  deltaLabel: string;
-  deltaDirection: 'up' | 'down' | 'neutral';
-  rangeChangeLabel: string;
-  rangeHighLabel: string;
-  rangeLowLabel: string;
+  year: number;
+  /** The "Not enough data to chart a trend" subtitle; empty in the `trend` and `empty` states. */
+  notice: string;
+  metrics: HealthMetricsMetricItem[];
+  /** January to the current month in year to date, else January to December. */
+  points: HealthMetricsEngagementAttendanceTrendPointView[];
+  chart: HealthMetricsLineChartView | null;
   isLowConfidence: boolean;
   lowConfidenceNote: string;
 }
@@ -550,15 +551,6 @@ export interface HealthMetricsEngagementNewsletterPerformance {
   newsletters: HealthMetricsEngagementNewsletter[];
 }
 
-/** One of the section's KPIs: a label over its value, with a delta only on Subscribers. */
-export interface HealthMetricsEngagementNewsletterKpiView {
-  key: string;
-  label: string;
-  value: string;
-  delta: string | null;
-  deltaDirection: 'up' | 'down' | 'neutral';
-}
-
 /** One table row, with every cell already labelled; "—" stands in where the newsletter has no engagement data. */
 export interface HealthMetricsEngagementNewsletterRowView {
   key: string;
@@ -569,8 +561,8 @@ export interface HealthMetricsEngagementNewsletterRowView {
   uniqueOpensLabel: string;
   totalOpensLabel: string;
   openRateLabel: string;
-  /** The open-rate bar's fill, 0–100. */
-  openRateWidthPct: number;
+  /** The open-rate bar's fill, 0–100; `null` draws no bar. */
+  openRatePct: number | null;
   uniqueClicksLabel: string;
   totalClicksLabel: string;
   clickRateLabel: string;
@@ -594,13 +586,26 @@ export interface HealthMetricsEngagementNewsletterPointView {
 /** Newsletter performance for the selected period. */
 export interface HealthMetricsEngagementNewsletterView {
   isEmpty: boolean;
-  headline: HealthMetricsEngagementNewsletterKpiView;
-  side: HealthMetricsEngagementNewsletterKpiView[];
+  /** Subscribers, newsletters sent, and the average open and click rates, with their context underneath. */
+  metrics: HealthMetricsMetricItem[];
   /** Latest first, as the view ranks them. */
   rows: HealthMetricsEngagementNewsletterRowView[];
   /** Oldest first: every newsletter for the audience chart, only those with engagement data for the rates chart. */
   audiencePoints: HealthMetricsEngagementNewsletterPointView[];
   ratePoints: HealthMetricsEngagementNewsletterPointView[];
+}
+
+/** One entry of the newsletter chart's legend: a line swatch in the series colour. */
+export interface HealthMetricsEngagementNewsletterLegendItem {
+  key: string;
+  label: string;
+  color: string;
+}
+
+/** The newsletter chart for the selected mode, and its legend. */
+export interface HealthMetricsEngagementNewsletterChartView {
+  chart: HealthMetricsLineChartView;
+  legend: HealthMetricsEngagementNewsletterLegendItem[];
 }
 
 /** The recipient table's cut: everyone, or one engagement segment. */
@@ -617,7 +622,7 @@ export interface HealthMetricsEngagementRecipient {
   rank: number;
   name: string | null;
   organization: string | null;
-  /** `Delivered` or `Failed`, as the view reports it. */
+  /** `Delivered`, `Failed` or `Pending`, as the view reports it; a pending one counts as not opened. */
   deliveryStatus: string | null;
   /** `opened`, `not-opened` or `failed`. A recipient who clicked without a recorded open is `not-opened`. */
   segment: string | null;
@@ -648,14 +653,21 @@ export interface HealthMetricsEngagementNewsletterRecipients {
 export interface HealthMetricsEngagementRecipientRowView {
   rank: number;
   nameLabel: string;
-  organizationLabel: string;
+  /** The avatar's name, empty without one so the avatar shows its glyph rather than the "—" the text shows. */
+  avatarName: string;
+  /** The recipient's company, under the name; empty without one. */
+  description: string;
   deliveryLabel: string;
-  deliveryClass: string;
-  /** Empty for a failed delivery, which shows "—" instead of a tag. */
+  deliveryTone: HealthMetricsEngagementRecipientTone;
+  /** Empty for a failed delivery, which shows "—" instead of a badge. */
   engagementLabel: string;
-  engagementClass: string;
+  engagementTone: HealthMetricsEngagementRecipientTone;
   opensLabel: string;
-  lastOpenedLabel: string;
+  /** "Last opened 3d", or empty without a time or for a failed delivery. */
+  opensDescription: string;
   clicksLabel: string;
-  lastClickedLabel: string;
+  clicksDescription: string;
 }
+
+/** A recipient badge's colour role. */
+export type HealthMetricsEngagementRecipientTone = 'success' | 'danger' | 'neutral' | 'accent';

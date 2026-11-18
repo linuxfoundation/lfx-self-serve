@@ -58,6 +58,26 @@ describe('ProgramDetailHeaderComponent — tabs', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-program-detail-season"]')?.textContent?.trim()).toBe('CNCF');
   });
 
+  it('shows the created date and the program admin who submitted the program', () => {
+    render('accepting');
+    fixture.componentRef.setInput('submitter', { name: 'Jane Doe', email: 'jane.doe@example.org', avatarUrl: null });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="mentorship-program-meta-date"]')?.textContent).toContain('Created');
+    expect(el.querySelector('[data-testid="mentorship-program-meta-date"]')?.textContent).toContain('Mar 1, 2026');
+    expect(el.querySelector('[data-testid="mentorship-program-meta-admin-name"]')?.textContent?.trim()).toBe('Jane Doe');
+    expect(el.querySelector('[data-testid="mentorship-program-meta-admin-email"]')?.getAttribute('href')).toBe('mailto:jane.doe@example.org');
+  });
+
+  it('leaves the program admin out when the submitter is unknown', () => {
+    render('accepting');
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="mentorship-program-meta-date"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="mentorship-program-meta-admin"]')).toBeNull();
+  });
+
   it('renders the four tabs in order, each with its own count', () => {
     render('accepting');
 

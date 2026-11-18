@@ -2971,6 +2971,226 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
   });
 
   /**
+   * #5809: when campaign-service owns the create, the connection decides the LinkedIn account and
+   * `adAccountId` is dropped server-side, so the selector is replaced with a read-only line and an
+   * unavailable account catalog no longer blocks a create it has no part in. Unknown or `false`
+   * keeps the selector and the gate, because the legacy creator still reads the chosen account.
+   */
+  it('lets a linkedin create through without the account catalog when campaign-service owns the create', async () => {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
+    f.componentRef.setInput('briefData', brief());
+    f.componentRef.setInput('googleCreativeEnabled', true);
+    f.detectChanges();
+    await f.whenStable();
+    accountsSubject.error(new Error('ad-account endpoint unavailable'));
+    f.detectChanges();
+    await f.whenStable();
+
+    makeLinkedInOtherwiseValid(f);
+
+    expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(true);
+  });
+
+  it.each([
+    [true, true, false],
+    [false, false, true],
+    [null, false, true],
+  ])('with googleCreativeEnabled %s shows the read-only account line: %s, the selector: %s', async (capability, readOnly, selector) => {
+    const f = await mount(draftWith(ACCOUNTS[1].accountId));
+    f.componentRef.setInput('googleCreativeEnabled', capability);
+    makeLinkedInOtherwiseValid(f);
+    f.detectChanges();
+    await f.whenStable();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="implementation-linkedin-account-from-connection"]') !== null).toBe(readOnly);
+    expect(el.querySelector('[data-testid="implementation-linkedin-account"]') !== null).toBe(selector);
+  });
+
+  /**
+   * #5809 with account selection on: the account comes from campaign-service's `create-account` read.
+   * A caller who may choose gets a picker; anyone else sees the default read-only. Only a chosen
+   * NON-default account is sent as `adAccountId`, because campaign-service refuses any `adAccountId`
+   * (the default included) from a caller without `global_marketing_ops` while its selection is on.
+   */
+  describe('account selection (#5809)', () => {
+    const DEFAULT_ACCOUNT = { accountId: '100000001', orgId: '200000001', label: 'Shared system account', isDefault: true };
+    const GRANT = { accountId: '100000002', orgId: '200000002', label: 'Grant One', isDefault: false };
+    const chooser = {
+      accountId: '100000001',
+      orgId: '200000001',
+      label: 'Shared system account',
+      source: 'system',
+      canChoose: true,
+      accounts: [DEFAULT_ACCOUNT, GRANT],
+    };
+    const viewer = { ...chooser, canChoose: false, accounts: [DEFAULT_ACCOUNT] };
+
+    let createAccountSubject: Subject<typeof chooser>;
+    let createAccountCalls: string[];
+    let posted: Record<string, unknown> | null;
+
+    beforeEach(async () => {
+      TestBed.resetTestingModule();
+      accountsSubject = new Subject<typeof ACCOUNTS>();
+      createAccountSubject = new Subject<typeof chooser>();
+      createAccountCalls = [];
+      posted = null;
+      await TestBed.configureTestingModule({
+        imports: [ImplementationTabComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([]),
+          { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          {
+            provide: CampaignService,
+            useValue: {
+              getLinkedInAccounts: () => accountsSubject.asObservable(),
+              getLinkedInTargetingProfiles: () => of([]),
+              getLinkedInCreateAccount: (slug: string) => {
+                createAccountCalls.push(slug);
+                return createAccountSubject.asObservable();
+              },
+              createCampaign: (request: Record<string, unknown>) => {
+                posted = request;
+                return of({ jobId: '' });
+              },
+            },
+          },
+        ],
+      }).compileComponents();
+    });
+
+    async function mountWithSelection(selection: boolean | null): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const f = TestBed.createComponent(ImplementationTabComponent);
+      f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
+      f.componentRef.setInput('briefData', brief());
+      f.componentRef.setInput('googleCreativeEnabled', true);
+      f.componentRef.setInput('linkedInAccountSelectionEnabled', selection);
+      f.detectChanges();
+      await f.whenStable();
+      accountsSubject.next(ACCOUNTS);
+      accountsSubject.complete();
+      makeLinkedInOtherwiseValid(f);
+      f.detectChanges();
+      await f.whenStable();
+      return f;
+    }
+
+    async function answer(f: ComponentFixture<ImplementationTabComponent>, payload: typeof chooser): Promise<void> {
+      createAccountSubject.next(payload);
+      f.detectChanges();
+      await f.whenStable();
+    }
+
+    const el = (f: ComponentFixture<ImplementationTabComponent>, testId: string): HTMLElement | null =>
+      (f.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+    /** Neither the picker's field nor the legacy `adAccountId` goes out: the create uses the default. */
+    function expectNoAccountSent(sent: Record<string, unknown>): void {
+      expect(sent).not.toHaveProperty('selectedAdAccountId');
+      expect(sent).not.toHaveProperty('adAccountId');
+    }
+
+    /** What the operator picks in the `lfx-select`: it writes the form control, so the test does too. */
+    function pick(f: ComponentFixture<ImplementationTabComponent>, accountId: string): void {
+      (
+        f.componentInstance as unknown as { linkedInCreateAccountForm: { controls: { accountId: { setValue(v: string): void } } } }
+      ).linkedInCreateAccountForm.controls.accountId.setValue(accountId);
+      f.detectChanges();
+    }
+
+    function submitAndRead(f: ComponentFixture<ImplementationTabComponent>): Record<string, unknown> {
+      (f.componentInstance as unknown as { submit(): void }).submit();
+      return (posted?.['linkedInConfig'] ?? {}) as Record<string, unknown>;
+    }
+
+    it.each([null, false])('reads nothing and keeps the generic line while account selection is %s', async (selection) => {
+      const f = await mountWithSelection(selection);
+
+      expect(createAccountCalls).toEqual([]);
+      expect(el(f, 'implementation-linkedin-account-from-connection')).not.toBeNull();
+      expectNoAccountSent(submitAndRead(f));
+    });
+
+    it('holds Create while the account is loading, then offers global_marketing_ops a picker', async () => {
+      const f = await mountWithSelection(true);
+      const c = f.componentInstance as unknown as { canSubmit(): boolean };
+
+      expect(createAccountCalls).toEqual(['tlf']);
+      expect(el(f, 'implementation-linkedin-create-account-loading')).not.toBeNull();
+      expect(c.canSubmit()).toBe(false);
+
+      await answer(f, chooser);
+
+      expect(el(f, 'implementation-linkedin-create-account-select')).not.toBeNull();
+      const options = (f.componentInstance as unknown as { linkedInCreateAccountOptions(): { label: string; value: string }[] }).linkedInCreateAccountOptions();
+      expect(options).toEqual([
+        { label: 'Shared system account (100000001) · default', value: '100000001' },
+        { label: 'Grant One (100000002)', value: '100000002' },
+      ]);
+      expect(c.canSubmit()).toBe(true);
+    });
+
+    it('sends a chosen grant as selectedAdAccountId', async () => {
+      const f = await mountWithSelection(true);
+      await answer(f, chooser);
+
+      pick(f, GRANT.accountId);
+
+      expect(el(f, 'implementation-linkedin-create-account-page')?.textContent).toContain(GRANT.orgId);
+      const sent = submitAndRead(f);
+      expect(sent['selectedAdAccountId']).toBe(GRANT.accountId);
+      // The legacy linkedin.json id the form still carries is not sent on this road.
+      expect(sent).not.toHaveProperty('adAccountId');
+    });
+
+    // The ED 403: while campaign-service's selection is on, naming the default needs global_marketing_ops too.
+    it('omits adAccountId when the default account is chosen', async () => {
+      const f = await mountWithSelection(true);
+      await answer(f, chooser);
+
+      pick(f, GRANT.accountId);
+      pick(f, DEFAULT_ACCOUNT.accountId);
+
+      expectNoAccountSent(submitAndRead(f));
+    });
+
+    it('starts the picker on the default and sends nothing for an account the answer does not list', async () => {
+      const f = await mountWithSelection(true);
+      await answer(f, chooser);
+
+      expect((f.componentInstance as unknown as { linkedInChosenAccountId(): string }).linkedInChosenAccountId()).toBe(DEFAULT_ACCOUNT.accountId);
+      pick(f, '999999999');
+
+      expectNoAccountSent(submitAndRead(f));
+    });
+
+    it('shows anyone who cannot choose the default read-only and sends no account', async () => {
+      const f = await mountWithSelection(true);
+      await answer(f, viewer);
+
+      expect(el(f, 'implementation-linkedin-create-account-select')).toBeNull();
+      expect(el(f, 'implementation-linkedin-create-account-default')?.textContent).toContain('Shared system account (100000001)');
+      // Not the legacy linkedin.json id the form still carries either.
+      expectNoAccountSent(submitAndRead(f));
+    });
+
+    it('lets a create through to the default when the account read fails', async () => {
+      const f = await mountWithSelection(true);
+      createAccountSubject.error(new Error('create-account unavailable'));
+      f.detectChanges();
+      await f.whenStable();
+
+      expect(el(f, 'implementation-linkedin-create-account-failed')).not.toBeNull();
+      expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(true);
+      expectNoAccountSent(submitAndRead(f));
+    });
+  });
+
+  /**
    * The geo gate, isolated — the only place in the suite where it can be.
    *
    * `canSubmit` blocks a LinkedIn create with no geo targets, but that gate was covered NOWHERE:
@@ -3225,6 +3445,8 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     linkedInVariants: () => unknown[];
     linkedInBudgetUsd: () => number;
     linkedInLifetimeBudget: () => boolean;
+    linkedInDailyCapUsd: { (): number | null; set(v: number | null): void };
+    createBlockedReason: () => string | null;
     redditSubreddits: () => string[];
     redditInterests: () => string[];
     redditKeywords: () => string[];
@@ -3351,6 +3573,24 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const box = budget.closest('.grid')?.querySelector('input[type="checkbox"]') as HTMLInputElement;
     box.checked = checked;
     box.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
+  /** The daily cap field (#5774); null while the lifetime budget is off, which several tests assert on. */
+  function linkedInDailyCapInput(f: ComponentFixture<ImplementationTabComponent>): HTMLInputElement | null {
+    return f.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap"]') as HTMLInputElement | null;
+  }
+
+  /** The deployment offers the daily cap (`linkedInDailyCapEnabled`); left unset, the field is withheld. */
+  function enableDailyCap(f: ComponentFixture<ImplementationTabComponent>): void {
+    f.componentRef.setInput('linkedInDailyCapEnabled', true);
+    f.detectChanges();
+  }
+
+  function typeLinkedInDailyCap(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const input = linkedInDailyCapInput(f) as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
     f.detectChanges();
   }
 
@@ -4248,6 +4488,195 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const config = sentConfig('linkedInConfig');
     expect(config['budgetUsd']).toBe(2500);
     expect(config['lifetimeBudget']).toBe(false);
+  });
+
+  // === LinkedIn: the daily cap beside a lifetime budget (#5774) ===
+
+  /** Driven through the template's own bindings, like the budget pair above. */
+  it('carries the linkedin daily cap through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    enableDailyCap(first.fixture);
+    typeLinkedInBudget(first.fixture, 1000);
+    toggleLinkedInLifetimeBudget(first.fixture, true);
+    typeLinkedInDailyCap(first.fixture, '20');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.linkedInDailyCapUsd).toBe(20);
+
+    const second = await mount(draft);
+    enableDailyCap(second.fixture);
+    const c = at(second.fixture);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(second.fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    second.fixture.detectChanges();
+    c.submit();
+
+    expect(linkedInDailyCapInput(second.fixture)?.value).toBe('20');
+    const config = sentConfig('linkedInConfig');
+    expect(config['lifetimeBudget']).toBe(true);
+    expect(config['budgetUsd']).toBe(1000);
+    expect(config['dailyCapUsd']).toBe(20);
+  });
+
+  it('shows the daily cap only beside a lifetime budget, and drops it when the lifetime budget is turned off', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    toggleLinkedInLifetimeBudget(fixture, false);
+    expect(linkedInDailyCapInput(fixture)).toBeNull();
+
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '20');
+    toggleLinkedInLifetimeBudget(fixture, false);
+
+    expect(linkedInDailyCapInput(fixture)).toBeNull();
+    const c = at(fixture);
+    expect(c.linkedInDailyCapUsd()).toBeNull();
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    fixture.detectChanges();
+    c.submit();
+    expect('dailyCapUsd' in sentConfig('linkedInConfig')).toBe(false);
+  });
+
+  it('refuses an entry the browser cannot parse instead of reading it as no cap', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    // A number input holding `1e` reports value '' with validity.badInput; jsdom does not model it.
+    const input = linkedInDailyCapInput(fixture) as HTMLInputElement;
+    Object.defineProperty(input, 'validity', { configurable: true, value: { badInput: true } });
+    typeLinkedInDailyCap(fixture, '');
+
+    expect(at(fixture).linkedInDailyCapUsd()).toBeNaN();
+    const error = fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]') as HTMLElement | null;
+    expect(error?.textContent).toContain('Enter the daily cap in US dollars');
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it('restores an unparsable daily cap as no cap after a remount, as its empty box shows', async () => {
+    const first = await mount(null);
+    enableDailyCap(first.fixture);
+    typeLinkedInBudget(first.fixture, 1000);
+    toggleLinkedInLifetimeBudget(first.fixture, true);
+    const input = linkedInDailyCapInput(first.fixture) as HTMLInputElement;
+    Object.defineProperty(input, 'validity', { configurable: true, value: { badInput: true } });
+    typeLinkedInDailyCap(first.fixture, '');
+    expect(at(first.fixture).linkedInDailyCapUsd()).toBeNaN();
+    const draft = first.latest();
+    first.fixture.destroy();
+    expect(draft?.linkedInDailyCapUsd).toBeNaN();
+
+    const second = await mount(draft);
+    enableDailyCap(second.fixture);
+    const c = at(second.fixture);
+    expect(c.linkedInDailyCapUsd()).toBeNull();
+    expect(linkedInDailyCapInput(second.fixture)?.value).toBe('');
+    expect(second.fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]')).toBeNull();
+    c.selectedPlatforms.set(['linkedin-ads']);
+    expect(c.createBlockedReason()).not.toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it('leaves an entry the browser cannot parse in the box instead of writing over it', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '20');
+    const input = linkedInDailyCapInput(fixture) as HTMLInputElement;
+    // Record what the binding writes into the box from here on.
+    const writes: string[] = [];
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get: () => '',
+      set: (v: string) => writes.push(String(v)),
+    });
+    Object.defineProperty(input, 'validity', { configurable: true, value: { badInput: true } });
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(at(fixture).linkedInDailyCapUsd()).toBeNaN();
+    expect(writes).toEqual([]);
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it('judges a half-cent lifetime budget as campaign-service rounds it', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 100.125);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '100.13');
+
+    const error = fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]') as HTMLElement | null;
+    expect(error?.textContent).toContain("can't be more than the lifetime budget");
+  });
+
+  it('treats an emptied daily cap as no cap', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '20');
+    typeLinkedInDailyCap(fixture, '');
+    expect(at(fixture).linkedInDailyCapUsd()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]')).toBeNull();
+  });
+
+  it.each([
+    ["under LinkedIn's $10 daily minimum", '9.99', 'at least $10'],
+    ['above the lifetime budget', '1500', "can't be more than the lifetime budget"],
+  ])('blocks Create, with the reason under the field, for a daily cap %s', async (_name, value, message) => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    const c = at(fixture);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, value);
+
+    const error = fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]') as HTMLElement | null;
+    expect(error?.textContent).toContain(message);
+    expect(c.createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
+
+    expect(linkedInDailyCapInput(fixture)?.getAttribute('aria-describedby')).toBe(
+      'implementation-linkedin-daily-cap-hint implementation-linkedin-daily-cap-error'
+    );
+
+    typeLinkedInDailyCap(fixture, '20');
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]')).toBeNull();
+    expect(linkedInDailyCapInput(fixture)?.getAttribute('aria-describedby')).toBe('implementation-linkedin-daily-cap-hint');
+    expect(c.createBlockedReason()).not.toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it.each([
+    ['unknown (null)', null],
+    ['off', false],
+  ])('withholds the daily cap, and sends none, while the deployment capability is %s', async (_name, enabled) => {
+    const { fixture } = await mount(null);
+    if (enabled !== null) {
+      fixture.componentRef.setInput('linkedInDailyCapEnabled', enabled);
+      fixture.detectChanges();
+    }
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    expect(linkedInDailyCapInput(fixture)).toBeNull();
+
+    // A cap restored from a draft written while the capability was on is not sent either.
+    const c = at(fixture);
+    c.linkedInDailyCapUsd.set(20);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    fixture.detectChanges();
+    expect(c.createBlockedReason()).not.toBe('LinkedIn Ads: fix the daily cap.');
+    c.submit();
+    expect('dailyCapUsd' in sentConfig('linkedInConfig')).toBe(false);
   });
 
   // === Handler emission, which naming the field in `emitDraft` does not give you ===
@@ -6618,7 +7047,7 @@ describe('ImplementationTabComponent demand gen video ad', () => {
         .options()
         .slice(1)
         .map((o) => o.value)
-    ).toEqual(['SIGN_UP', 'LEARN_MORE', 'BOOK_NOW', 'VISIT_SITE', 'WATCH_NOW']);
+    ).toEqual(['SIGN_UP', 'LEARN_MORE', 'BOOK_NOW', 'VISIT_SITE', 'WATCH_NOW', 'APPLY_NOW', 'CONTACT_US', 'DOWNLOAD', 'GET_QUOTE', 'SUBSCRIBE', 'SHOP_NOW']);
     expect(select.control()).toBe('callToAction');
     expect(select.form()).toBe(c['campaignForm'].controls.demandGenVideoCreative);
   });

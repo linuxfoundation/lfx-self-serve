@@ -386,7 +386,7 @@ export class ParticipatingOrgsComponent {
       {
         // Companies with activity in the range: contributing members + non-members.
         value: (summary?.orgsCount ?? 0).toLocaleString('en-US'),
-        label: 'Contributing Orgs',
+        label: 'Contributing Companies',
         icon: 'fa-solid fa-building',
         iconContainerClass: 'bg-blue-100 text-blue-600',
       },

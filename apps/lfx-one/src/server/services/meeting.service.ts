@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  COMPOSER_ATTENDEE_LOCK,
   IMPORT_REGISTRANTS_MAX,
+  MEETING_ROLLUP_QUERY_MAX_PROJECTS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   QUERY_SERVICE_MAX_PAGE_SIZE,
   QUERY_SERVICE_MAX_PAGES,
@@ -624,8 +626,8 @@ export class MeetingService {
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
     // to opt a board meeting into sharing its guest list. A restricted meeting
-    // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting v2
-    // composer sends one, since the pre-v2 wizard locks the control off — and is forced off otherwise.
+    // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting
+    // composer sends one — and is forced off otherwise.
     if (
       isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted, {
         allowRestricted: createPayload.show_meeting_attendees === true,
@@ -704,13 +706,16 @@ export class MeetingService {
     const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board meeting into sharing its guest list. A restricted meeting
-    // keeps any explicit `true` from a caller allowed to edit it (in practice only the meeting v2
-    // composer sends one; the pre-v2 wizard locks the control off) and is forced off otherwise.
-    if (isShowMeetingAttendeesLocked(meetingType, restricted, { allowRestricted: meetingData.show_meeting_attendees === true })) {
+    // to opt a board meeting into sharing its guest list. A restricted (invite-only) meeting is
+    // read and written under the same composer rule (#5438): an explicit choice is forwarded, and a
+    // body that omits the flag leaves the organizer's stored choice alone.
+    if (isShowMeetingAttendeesLocked(meetingType, restricted, COMPOSER_ATTENDEE_LOCK)) {
       updatePayload.show_meeting_attendees = false;
-    } else if (meetingData.show_meeting_attendees == null && isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted)) {
-      // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body
+    } else if (
+      meetingData.show_meeting_attendees == null &&
+      isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted, COMPOSER_ATTENDEE_LOCK)
+    ) {
+      // Unlocking a board meeting with no choice of its own. Upstream keeps whatever the body
       // omits, and a row written before the lock existed can still hold `true`, so the stale value
       // would survive the unlock and start sharing the guest list. A locked meeting never carried
       // an organizer decision to inherit — the same reading `getSavedAttendeeVisibility` gives the form.
@@ -2615,14 +2620,14 @@ export class MeetingService {
     if (scopeUids.length === 0) {
       return null;
     }
-    // One query takes at most one OR batch of projects; past it query-service fails the request. A larger
-    // scope (a foundation such as TLF or CNCF with hundreds of projects) falls back to the root's own
-    // meetings, as before the roll-up, until the scope is paged across batches.
-    if (scopeUids.length > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
-      logger.warning(req, operation, 'Roll-up scope exceeds the OR batch size; showing the root project only', {
+    // One query takes at most MEETING_ROLLUP_QUERY_MAX_PROJECTS projects; past it query-service fails the request.
+    // A larger scope (a foundation such as TLF or CNCF with hundreds of projects) falls back to the root's
+    // own meetings, as before the roll-up, until the scope is paged across batches.
+    if (scopeUids.length > MEETING_ROLLUP_QUERY_MAX_PROJECTS) {
+      logger.warning(req, operation, 'Roll-up scope exceeds the roll-up project limit; showing the root project only', {
         root_project_uid: rootUid,
         project_count: scopeUids.length,
-        batch_size: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+        max_projects: MEETING_ROLLUP_QUERY_MAX_PROJECTS,
       });
       scopeUids = [rootUid];
     }

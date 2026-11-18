@@ -160,7 +160,7 @@ const createNavbarFixture = async (
       { provide: LensService, useValue: createLensServiceFake(lens, lenses) },
       {
         provide: OrgLensNavigationService,
-        useValue: { orgLensLink: vi.fn((page: string) => ['/org', 'acme', page]), orgLensHomePage: vi.fn(() => 'overview') },
+        useValue: { orgLensLink: vi.fn((page: string) => ['/company', 'acme', page]), orgLensHomePage: vi.fn(() => 'overview') },
       },
       {
         provide: UserService,
@@ -415,7 +415,7 @@ describe('NavbarComponent', () => {
     // Off the foundation / project lenses the failed lookups don't shape the menu: no row on Home or Org.
     expect((await createNavbar([{ label: 'Dashboard', routerLink: '/' }], [], {}, { lens: 'me', lookupFailed: true })).showPartialLookupFailed()).toBe(false);
     expect(
-      (await createNavbar([{ label: 'Overview', routerLink: '/org/overview' }], [], {}, { lens: 'org', lookupFailed: true })).showPartialLookupFailed()
+      (await createNavbar([{ label: 'Overview', routerLink: '/company/overview' }], [], {}, { lens: 'org', lookupFailed: true })).showPartialLookupFailed()
     ).toBe(false);
 
     // Not announced before the visible panel shows the row.
@@ -535,7 +535,7 @@ describe('NavbarComponent', () => {
       navbar.onOrgSelected();
 
       expect(lensService.activeLens()).toBe('org');
-      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/org', 'acme', 'overview']);
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/company', 'acme', 'overview']);
     });
 
     // #4133: a roll-up picked in a previewed Org Lens keeps the selector's landing, its Memberships page.
@@ -546,7 +546,7 @@ describe('NavbarComponent', () => {
 
       navbar.onOrgSelected();
 
-      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/org', 'acme', 'memberships']);
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/company', 'acme', 'memberships']);
     });
 
     it('only closes the drawer on an organization pick without a preview, leaving the address to the selector', async () => {
@@ -897,7 +897,7 @@ describe('NavbarComponent', () => {
         collapse.openPeek();
 
         move(100);
-        events.next(new NavigationEnd(1, '/org/acme/overview', '/org/acme/overview'));
+        events.next(new NavigationEnd(1, '/company/acme/overview', '/company/acme/overview'));
         vi.advanceTimersByTime(1000);
         expect(collapse.peek()).toBe(true);
 
@@ -1123,7 +1123,7 @@ describe('NavbarComponent', () => {
       collapse.setCollapsed(true);
       collapse.openPeek(true);
 
-      events.next(new NavigationEnd(1, '/org/overview', '/org/overview?org=acme'));
+      events.next(new NavigationEnd(1, '/company/overview', '/company/overview?org=acme'));
       expect(collapse.peek()).toBe(true);
 
       navigation.trigger = 'popstate';

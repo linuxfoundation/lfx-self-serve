@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { HealthMetricsMembersReservedTier } from './health-metrics-members.interface';
+
 /** A sortable Health Metrics column's state: unsorted, ascending or descending. */
 export type HealthMetricsColumnSort = 'none' | 'asc' | 'desc';
 
@@ -42,4 +44,20 @@ export interface HealthMetricsBarFillRule {
   zeroClass: string;
   thresholds: readonly HealthMetricsBarThreshold[];
   defaultClass: string;
+}
+
+/** One row of the design's horizontal bars (`hbars`): a label led by a tier icon, a plain icon or a company logo, a bar, and its value. */
+export interface HealthMetricsBarListRow {
+  key: string;
+  label: string;
+  /** Right-aligned, e.g. `65` or `39 proposals`. */
+  value: string;
+  /** The bar's 0–100 share of the longest row. */
+  pct: number;
+  /** A Diamond, Platinum, Gold or Silver tier draws its icon. */
+  tier: HealthMetricsMembersReservedTier | null;
+  /** Font Awesome classes for any other plain icon, e.g. `fa-light fa-ticket`. */
+  icon: string;
+  /** A company's 24px logo box; `null` for none. */
+  company: HealthMetricsCellCompanyLead | null;
 }

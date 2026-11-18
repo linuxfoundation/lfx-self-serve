@@ -37,7 +37,8 @@
             >
           }
         </div>
-        @if (item.description) {
+        <!-- A lead can stand alone, such as a growth with no baseline month to name. -->
+        @if (item.description || item.descriptionLead) {
           <span class="-mt-[4px] text-[12px] leading-[16px] text-gray-400" [attr.data-testid]="testId() + '-' + item.key + '-description'">
             @if (item.descriptionLead) {
               <span [class]="leadClasses[item.descriptionLeadTone ?? 'up']">{{ item.descriptionLead }}</span>

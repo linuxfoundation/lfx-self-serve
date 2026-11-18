@@ -201,7 +201,7 @@ export class CommitteeService {
   /**
    * Fetches a committee by ID without updating shared service state. Shares the short-TTL
    * detail cache via {@link getCommitteeDetail} so tap-free probes (writerGuard, committee
-   * sub-pages, meeting-manage's committee check) don't duplicate an in-flight detail fetch.
+   * sub-pages) don't duplicate an in-flight detail fetch.
    */
   public fetchCommittee(id: string): Observable<Committee> {
     return this.getCommitteeDetail(id);
@@ -342,6 +342,13 @@ export class CommitteeService {
     );
   }
 
+  /** Withdraws the caller's own pending application; {@link submitApplication} reopens the same record. */
+  public withdrawApplication(committeeId: string, applicationId: string): Observable<CommitteeJoinApplication> {
+    return this.http
+      .post<CommitteeJoinApplication>(`/api/committees/${encodeURIComponent(committeeId)}/applications/${encodeURIComponent(applicationId)}/withdraw`, null)
+      .pipe(take(1));
+  }
+
   /** Lists join applications for a committee (from query index). */
   public getCommitteeApplications(committeeId: string): Observable<CommitteeJoinApplication[]> {
     return this.http.get<CommitteeJoinApplication[]>(`/api/committees/${committeeId}/applications`).pipe(take(1));
@@ -459,6 +466,11 @@ export class CommitteeService {
         return of([]);
       })
     );
+  }
+
+  /** The caller's groups across every project, like {@link getMyCommittees}, but a failed request errors so the caller can show a failure state. */
+  public getMyCommitteesOrError(): Observable<MyCommittee[]> {
+    return this.http.get<MyCommittee[]>('/api/committees/my-committees');
   }
 
   /** Lightweight alternative to {@link getMyCommittees} — returns only UIDs. Use when only set-membership checks (e.g. member badges) are needed. */

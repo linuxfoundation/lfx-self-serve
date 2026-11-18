@@ -172,6 +172,18 @@ describe('CommitteeService.getMyCommitteeUids', () => {
   });
 });
 
+describe('CommitteeService.withdrawApplication', () => {
+  beforeEach(() => proxyRequest.mockReset());
+
+  it('posts to the upstream withdraw route with the user token and no body', async () => {
+    const withdrawn = { uid: 'application-a', committee_uid: 'committee-a', status: 'withdrawn' } as CommitteeJoinApplication;
+    proxyRequest.mockResolvedValueOnce(withdrawn);
+
+    expect(await new CommitteeService().withdrawApplication(req, 'committee-a', 'application-a')).toBe(withdrawn);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-a/applications/application-a/withdraw', 'POST');
+  });
+});
+
 function pageOf(committees: Partial<Committee>[], pageToken?: string): QueryServiceResponse<Committee> {
   return { resources: committees.map((c) => ({ id: `committee:${c.uid}`, data: c as Committee })), page_token: pageToken } as QueryServiceResponse<Committee>;
 }
@@ -1375,6 +1387,33 @@ describe('CommitteeService.getMyPendingInvitations — inviter/expiry mapping', 
 
     expect(rows.map((r) => r.uid).sort()).toEqual(['legacy-no-expiry', 'unparseable-expiry']);
   });
+
+  it('maps project_name and project_logo_url from the batched project enrichment', async () => {
+    mockInvites([baseInvite({})]);
+    (service as unknown as { getCommitteesByIds: unknown }).getCommitteesByIds = vi
+      .fn()
+      .mockResolvedValue(new Map([['committee-1', { uid: 'committee-1', name: 'TSC', project_uid: 'project-1' }]]));
+    enrichWithProjectData.mockResolvedValueOnce([
+      { uid: 'committee-1', project_uid: 'project-1', project_name: 'Example Project', project_logo_url: 'https://cdn.example.com/logo.svg' },
+    ]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.project_name).toBe('Example Project');
+    expect(row.project_logo_url).toBe('https://cdn.example.com/logo.svg');
+  });
+
+  it('maps project_logo_url to null when the project lookup returned no logo', async () => {
+    mockInvites([baseInvite({})]);
+    (service as unknown as { getCommitteesByIds: unknown }).getCommitteesByIds = vi
+      .fn()
+      .mockResolvedValue(new Map([['committee-1', { uid: 'committee-1', name: 'TSC', project_uid: 'project-1' }]]));
+    enrichWithProjectData.mockResolvedValueOnce([{ uid: 'committee-1', project_uid: 'project-1', project_name: '', project_logo_url: '' }]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.project_logo_url).toBeNull();
+  });
 });
 
 describe.each(['getCommitteeMembers', 'getCommitteeInvites'] as const)('CommitteeService.%s — complete import snapshots', (method) => {
@@ -1572,6 +1611,61 @@ describe('CommitteeService.getMyApplication', () => {
       .mockRejectedValueOnce(new Error('upstream failure'));
 
     await expect(service.getMyApplication(req, COMMITTEE_UID)).rejects.toThrow('upstream failure');
+  });
+});
+
+describe('CommitteeService.getMyApplications — project enrichment', () => {
+  let service: CommitteeService;
+  let getCommitteeById: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
+    vi.mocked(getEffectiveEmail).mockReturnValue('user@example.com');
+    service = new CommitteeService();
+    getCommitteeById = vi.fn();
+    (service as unknown as { getCommitteeById: unknown }).getCommitteeById = getCommitteeById;
+  });
+
+  const mockApplications = (applications: Partial<CommitteeJoinApplication>[]): void => {
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce(applications as CommitteeJoinApplication[]);
+  };
+
+  it('carries project_name and project_logo_url from the enriched committee', async () => {
+    mockApplications([{ uid: 'app-1', committee_uid: 'committee-1', status: 'pending', created_at: '2025-01-01T00:00:00Z' }]);
+    getCommitteeById.mockResolvedValueOnce({
+      name: 'TSC',
+      is_foundation: true,
+      project_slug: 'example',
+      project_name: 'Example Foundation',
+      project_logo_url: 'https://cdn.example.com/logo.svg',
+    });
+
+    const [row] = await service.getMyApplications(req);
+
+    expect(getCommitteeById).toHaveBeenCalledWith(req, 'committee-1', { includeProjectMetadata: true });
+    expect(row).toMatchObject({ committee_name: 'TSC', project_name: 'Example Foundation', project_logo_url: 'https://cdn.example.com/logo.svg' });
+  });
+
+  it('leaves project fields absent when enrichment returned empty strings or the lookup failed', async () => {
+    mockApplications([
+      { uid: 'app-1', committee_uid: 'committee-1', status: 'pending', created_at: '2025-01-01T00:00:00Z' },
+      { uid: 'app-2', committee_uid: 'committee-2', status: 'pending', created_at: '2025-01-01T00:00:00Z' },
+    ]);
+    getCommitteeById.mockImplementation(async (_req: Request, uid: string) => {
+      if (uid === 'committee-2') {
+        throw new Error('forbidden');
+      }
+      return { name: 'TSC', project_name: '', project_logo_url: '' };
+    });
+
+    const rows = await service.getMyApplications(req);
+
+    for (const row of rows) {
+      expect(row.project_name).toBeUndefined();
+      expect(row.project_logo_url).toBeUndefined();
+    }
+    expect(rows.find((r) => r.uid === 'app-2')?.committee_name).toBe('committee-2');
   });
 });
 

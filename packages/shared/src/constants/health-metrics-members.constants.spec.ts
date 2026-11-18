@@ -20,7 +20,7 @@ describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
     const noted = HEALTH_METRICS_MEMBERS_SECTIONS.filter((section) => 'note' in section);
 
     expect(noted.map((section) => [section.key, section.note.tone])).toEqual([['renewals', 'caution']]);
-    expect(noted[0].note.parts[0]).toEqual({ text: 'Organization, tier, dues and renewal date', bold: true });
+    expect(noted[0].note.parts[0]).toEqual({ text: 'Company, tier, dues and renewal date', bold: true });
   });
 });
 

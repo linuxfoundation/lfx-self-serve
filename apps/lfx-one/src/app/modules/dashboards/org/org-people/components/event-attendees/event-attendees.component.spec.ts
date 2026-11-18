@@ -344,7 +344,7 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
 
       for (const term of ['', '\u200B', ' \u200B ', '\u0085']) {
         expect(await search(term)).toEqual([]);
-        expect(testId('org-people-event-attendees-empty')?.textContent).toContain('No event attendees found for this organization');
+        expect(testId('org-people-event-attendees-empty')?.textContent).toContain('No event attendees found for this company');
       }
     });
 

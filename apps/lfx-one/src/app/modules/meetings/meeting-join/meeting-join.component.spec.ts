@@ -32,9 +32,8 @@ import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
+import { MAX_MEETING_DURATION, MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
 import { getTimezoneAbbreviation, getUserTimezone } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -55,7 +54,6 @@ describe('MeetingJoinComponent', () => {
   const MEETING_JOIN_STATE_KEY = makeStateKey<MeetingJoinPageState>('meetingJoinState');
 
   let getPublicMeeting: ReturnType<typeof vi.fn>;
-  let meetingsV2Enabled: ReturnType<typeof signal<boolean>>;
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let getMyMeetingRegistrants: ReturnType<typeof vi.fn>;
   let getPastMeetingSummary: ReturnType<typeof vi.fn>;
@@ -148,14 +146,12 @@ describe('MeetingJoinComponent', () => {
     getMeetingRsvpForCurrentUser = vi.fn().mockReturnValue(of(null));
     removedIds = signal<ReadonlySet<string>>(new Set());
     toastAdd = vi.fn();
-    meetingsV2Enabled = signal(false);
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         {
           provide: ActivatedRoute,
           useValue: {
@@ -725,17 +721,13 @@ describe('MeetingJoinComponent', () => {
       expect(component.canManageOccurrence()).toBe(false);
     });
 
-    it.each([
-      [false, MAX_CUSTOM_DURATION],
-      [true, MAX_MEETING_DURATION],
-    ])('caps the occurrence dialog by the meeting v2 flag (on: %s)', async (enabled, cap) => {
-      meetingsV2Enabled.set(enabled);
+    it('caps the occurrence dialog at the composer maximum duration', async () => {
       useRecurring();
       const { component, open } = await mountWithDialog();
 
       component.rescheduleCurrentOccurrence();
 
-      expect(open.mock.calls[0][1]?.data).toEqual(expect.objectContaining({ maxDuration: cap }));
+      expect(open.mock.calls[0][1]?.data).toEqual(expect.objectContaining({ maxDuration: MAX_MEETING_DURATION }));
     });
 
     it('moves the page to the new start and re-reads the series after a reschedule', async () => {

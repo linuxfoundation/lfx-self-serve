@@ -1,0 +1,117 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem: the design's 11px labels, 8px gutter, 6px label gap and 8px dots. -->
+<div class="flex flex-row gap-[8px]" [attr.data-testid]="testId()">
+  <!-- Each label centres on its rule: the column runs 6px past the plot at either end. -->
+  <div
+    class="-my-[6px] flex flex-none flex-col justify-between text-right text-[11px] leading-[12px] text-gray-400"
+    [style.height.px]="chart().heightPx + 12"
+    aria-hidden="true"
+    [attr.data-testid]="testId() + '-y'">
+    @for (tick of chart().yTicks; track $index) {
+      <span>{{ tick }}</span>
+    }
+  </div>
+  <div class="flex min-w-0 flex-1 flex-col gap-[6px]">
+    <div #plot class="relative" [style.height.px]="chart().heightPx">
+      <svg width="100%" height="100%" preserveAspectRatio="none" class="block overflow-visible" aria-hidden="true" [attr.viewBox]="chart().viewBox">
+        @for (gridY of chart().gridYs; track $index) {
+          <line
+            x1="0"
+            stroke-width="1"
+            vector-effect="non-scaling-stroke"
+            class="stroke-gray-100"
+            [attr.x2]="viewWidth"
+            [attr.y1]="gridY"
+            [attr.y2]="gridY"></line>
+        }
+        <line
+          x1="0"
+          stroke-width="1"
+          vector-effect="non-scaling-stroke"
+          class="stroke-gray-200"
+          [attr.x2]="viewWidth"
+          [attr.y1]="chart().baseY"
+          [attr.y2]="chart().baseY"></line>
+        @if (chart().area; as area) {
+          <defs>
+            <linearGradient [attr.id]="gradientId" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-opacity="0.1" [attr.stop-color]="area.color"></stop>
+              <stop offset="1" stop-opacity="0" [attr.stop-color]="area.color"></stop>
+            </linearGradient>
+          </defs>
+          <path stroke="none" [attr.fill]="gradientFill" [attr.d]="area.d" [attr.data-testid]="testId() + '-area'"></path>
+        }
+        @for (path of chart().paths; track path.key) {
+          <!-- The design's 5px dash and 4px gap for a derived series. -->
+          <path
+            fill="none"
+            stroke-width="2"
+            stroke-linejoin="round"
+            stroke-linecap="round"
+            vector-effect="non-scaling-stroke"
+            [attr.stroke]="path.color"
+            [attr.stroke-dasharray]="path.dashed ? '5 4' : null"
+            [attr.d]="path.d"
+            [attr.data-testid]="testId() + '-line-' + path.key"></path>
+        }
+      </svg>
+      @for (dot of chart().dots; track dot.key) {
+        <span
+          class="pointer-events-none absolute -ml-[4px] -mt-[4px] box-border h-[8px] w-[8px] rounded-full border-2 bg-white"
+          aria-hidden="true"
+          [style.left.%]="dot.leftPct"
+          [style.top.%]="dot.topPct"
+          [style.border-color]="dot.color"></span>
+      }
+      <!-- The points carry the chart's name for screen readers, one item per x position, so the drawing is hidden. -->
+      <div class="absolute inset-0" role="list" [attr.aria-label]="chart().ariaLabel" [attr.data-testid]="testId() + '-points'">
+        @for (column of chart().columns; track column.key; let index = $index) {
+          <!-- 1/N of the plot, centred on its point and cut off at the plot's edges; hover or focus draws a guide through the point. -->
+          <div
+            class="group absolute inset-y-0 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            role="listitem"
+            tabindex="0"
+            [class.z-20]="activeIndex() === index"
+            [style.left.%]="column.leftPct"
+            [style.width.%]="column.widthPct"
+            [attr.aria-label]="column.ariaLabel"
+            [attr.data-testid]="testId() + '-column-' + index"
+            (mouseenter)="onEnter(index, $event)"
+            (focus)="onEnter(index, $event)"
+            (mouseleave)="onLeave(index)"
+            (blur)="onLeave(index)">
+            <span
+              class="pointer-events-none absolute inset-y-0 hidden w-px -translate-x-1/2 bg-[var(--ui-neutral-alpha-300)] group-hover:block group-focus-visible:block"
+              aria-hidden="true"
+              [style.left.%]="column.pointOffsetPct"
+              [attr.data-testid]="testId() + '-guide-' + index"></span>
+            @if (activeIndex() === index) {
+              <!-- Exact px: the popup sits 12px off the guide. -->
+              <lfx-health-metrics-chart-tip
+                class="pointer-events-none absolute top-1/2 z-10 -translate-y-1/2"
+                [style.left]="tipPlacement()?.left ?? null"
+                [style.right]="tipPlacement()?.right ?? null"
+                aria-hidden="true"
+                [tip]="column.tip"
+                [attr.data-testid]="testId() + '-tip'" />
+            }
+          </div>
+        }
+      </div>
+    </div>
+    <!-- Exact px: the design's 16px label row. The end labels sit flush with the plot's edges, the rest centre on their point. -->
+    <div class="relative h-[16px] text-[11px] leading-[16px] text-gray-500" aria-hidden="true" [attr.data-testid]="testId() + '-x'">
+      @for (tick of ticks(); track tick.key) {
+        <span
+          class="absolute whitespace-nowrap"
+          [class.-translate-x-1/2]="tick.align === 'center'"
+          [class.-translate-x-full]="tick.align === 'end'"
+          [style.left.%]="tick.leftPct"
+          >{{ tick.label }}</span
+        >
+      }
+    </div>
+  </div>
+</div>

@@ -9,6 +9,7 @@ import {
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
   ORG_LENS_ROLL_UP_HOME_PAGE,
   ORG_LENS_ROLL_UP_PAGES,
+  ORG_LENS_URL_ROOT,
   ORG_SEGMENT_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
@@ -23,6 +24,7 @@ import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-ano
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
+import { foundationParticipatingOrgsEnabledGuard } from './shared/guards/foundation-participating-orgs-enabled.guard';
 import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
 import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
 import { formationOverviewReleaseGuard } from './shared/guards/formation-overview-release.guard';
@@ -35,6 +37,7 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { legacyOrgLensMatcher, legacyOrgLensRedirect } from './shared/utils/legacy-org-lens-redirect.utils';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
@@ -61,10 +64,10 @@ const loadOrgRollUpUnavailablePage = () =>
 
 /**
  * Org Lens page routes, EasyCLA included (its DR-004 exemption ended with lfx-self-serve#2743: the
- * legacy `/org/easycla*` mount stays one release for in-flight signing returns). Built by a
+ * legacy `/company/easycla*` mount stays one release for in-flight signing returns). Built by a
  * function so the same definitions can be mounted twice without sharing route objects: once under
- * `/org/{page}` (legacy form; Phase 5 adds the redirect guard) and once under
- * `/org/:orgSegment/{page}` (spec 050 address scheme).
+ * `/company/{page}` (legacy form; Phase 5 adds the redirect guard) and once under
+ * `/company/:orgSegment/{page}` (spec 050 address scheme).
  */
 function orgLensPageRoutes(): Routes {
   return withRollUpUnavailablePages([
@@ -75,7 +78,7 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'EasyCLA',
-        description: 'Corporate CLAs your organization has signed.',
+        description: 'Corporate CLAs your company has signed.',
         icon: 'fa-light fa-file-signature',
       },
       children: [
@@ -94,7 +97,7 @@ function orgLensPageRoutes(): Routes {
           // a reserved word segment, because it is the same screen: a reserved segment would
           // have to be declared ahead of this one and is a second address for one page.
           path: ':claGroupId',
-          data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
+          data: { title: 'CLA Group', description: "Corporate CLA for one of your company's CLA Groups." },
           loadComponent: () =>
             import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
         },
@@ -104,7 +107,7 @@ function orgLensPageRoutes(): Routes {
       // Initiatives attributed to the organization (#348): the My Initiatives page and detail scoped by `data.lens`.
       // Componentless parent so both children share its data.
       path: 'initiatives',
-      data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your organization.', icon: 'fa-light fa-box-dollar' },
+      data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your company.', icon: 'fa-light fa-box-dollar' },
       // The crowdfunding list and stats take one `orgUid`, so the roll-up redirects (#4415).
       canActivate: [orgRollUpSingleOrgPageGuard],
       children: [
@@ -128,7 +131,7 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Donations',
-        description: 'Crowdfunding donations made on behalf of your organization.',
+        description: 'Crowdfunding donations made on behalf of your company.',
         icon: 'fa-light fa-hand-holding-heart',
       },
       loadComponent: () => import('./modules/crowdfunding/org-donations/org-donations.component').then((m) => m.OrgDonationsComponent),
@@ -137,8 +140,8 @@ function orgLensPageRoutes(): Routes {
       path: 'overview',
       data: {
         lens: 'org',
-        title: 'Org Overview',
-        description: 'A summary of your organization across the Linux Foundation.',
+        title: 'Company Overview',
+        description: 'A summary of your company across the Linux Foundation.',
         icon: 'fa-light fa-grid-2',
         showDevelopmentNotice: true,
       },
@@ -161,7 +164,7 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'projects',
-      data: { lens: 'org', title: 'Projects', description: 'Projects your organization participates in.', icon: 'fa-light fa-folder' },
+      data: { lens: 'org', title: 'Projects', description: 'Projects your company participates in.', icon: 'fa-light fa-folder' },
       loadComponent: () => import('./modules/dashboards/org/org-projects/org-projects.component').then((m) => m.OrgProjectsComponent),
     },
     {
@@ -169,7 +172,7 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Project Detail',
-        description: "Your organization's involvement and competitive standing on a project.",
+        description: "Your company's involvement and competitive standing on a project.",
         icon: 'fa-light fa-folder',
       },
       loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
@@ -182,7 +185,7 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'ROI Metrics',
-        description: "Modelled return on your organization's open source investment.",
+        description: "Modelled return on your company's open source investment.",
         icon: 'fa-light fa-chart-mixed-up-circle-dollar',
       },
       children: [
@@ -192,7 +195,7 @@ function orgLensPageRoutes(): Routes {
         },
         {
           path: 'projects/:projectSlug',
-          data: { title: 'Project ROI Detail', description: "Modelled return on your organization's investment in one project." },
+          data: { title: 'Project ROI Detail', description: "Modelled return on your company's investment in one project." },
           loadComponent: () =>
             import('./modules/dashboards/org/org-roi/org-roi-project-detail/org-roi-project-detail.component').then((m) => m.OrgRoiProjectDetailComponent),
         },
@@ -207,7 +210,7 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'people',
-      data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your organization.', icon: 'fa-light fa-users' },
+      data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your company.', icon: 'fa-light fa-users' },
       loadComponent: () => import('./modules/dashboards/org/org-people/org-people.component').then((m) => m.OrgPeopleComponent),
     },
     {
@@ -215,14 +218,14 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Code Contributions',
-        description: "Open-source contributions from your organization's contributors.",
+        description: "Open-source contributions from your company's contributors.",
         icon: 'fa-light fa-code',
       },
       loadComponent: () => import('./modules/dashboards/org/org-contributions/org-contributions.component').then((m) => m.OrgContributionsComponent),
     },
     {
       path: 'events',
-      data: { lens: 'org', title: 'Events', description: 'Events your organization is sponsoring or attending.', icon: 'fa-light fa-calendar' },
+      data: { lens: 'org', title: 'Events', description: 'Events your company is sponsoring or attending.', icon: 'fa-light fa-calendar' },
       loadComponent: () => import('./modules/events/org-events-dashboard/org-events-dashboard.component').then((m) => m.OrgEventsDashboardComponent),
     },
     {
@@ -230,7 +233,7 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Training & Certification',
-        description: 'Training enrollments and certifications across your organization.',
+        description: 'Training enrollments and certifications across your company.',
         icon: 'fa-light fa-graduation-cap',
       },
       loadComponent: () => import('./modules/dashboards/org/org-training/org-training.component').then((m) => m.OrgTrainingComponent),
@@ -240,7 +243,7 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Meetings',
-        description: "How your organization's employees engage across Linux Foundation projects.",
+        description: "How your company's employees engage across Linux Foundation projects.",
         icon: 'fa-light fa-video',
       },
       loadComponent: () => import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
@@ -250,14 +253,14 @@ function orgLensPageRoutes(): Routes {
       data: {
         lens: 'org',
         title: 'Groups',
-        description: "Working groups and committees your organization's employees participate in.",
+        description: "Working groups and committees your company's employees participate in.",
         icon: 'fa-light fa-users-rectangle',
       },
       loadComponent: () => import('./modules/dashboards/org/org-groups/org-groups.component').then((m) => m.OrgGroupsComponent),
     },
     {
       path: 'profile',
-      data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your organization.', icon: 'fa-light fa-file' },
+      data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your company.', icon: 'fa-light fa-file' },
       // Single-organization by definition, so the roll-up redirects to its own home page (#4415, #4133).
       canActivate: [orgRollUpSingleOrgPageGuard],
       loadComponent: loadOrgProfilePage,
@@ -421,6 +424,18 @@ export const routes: Routes = [
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
       },
+      // Foundation Lens — Participating Companies page (ED + LF Staff, same policy as Health Metrics; #5697)
+      {
+        path: 'foundation/participating-orgs',
+        title: 'Participating Companies',
+        data: { lens: 'foundation' },
+        canMatch: [foundationParticipatingOrgsEnabledGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        loadComponent: () =>
+          import('./modules/dashboards/foundation-participating-orgs/foundation-participating-orgs.component').then(
+            (m) => m.FoundationParticipatingOrgsComponent
+          ),
+      },
       // Foundation Lens — Projects page
       {
         path: 'foundation/projects',
@@ -473,19 +488,27 @@ export const routes: Routes = [
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/participating-orgs/participating-orgs.component').then((m) => m.ParticipatingOrgsComponent),
       },
-      // Org Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `org` node, as a sibling
-      // outside the `org/:orgSegment` subtree: `orgPathParamGuard` (CanActivate on that subtree)
+      // Pre-rename addresses (#5064): every `/org/…` form — `/org`, `/org/not-found`, `/org/{slug|SFID}/{page}`,
+      // the legacy `/org/{page}` — redirects to the same address under `/company`, query and fragment kept.
+      // The Express layer answers full page loads with a 301 before this runs; this covers in-app and
+      // client-side navigations. Declared before the `company` nodes so nothing there can claim `org`.
+      {
+        matcher: legacyOrgLensMatcher,
+        redirectTo: legacyOrgLensRedirect,
+      },
+      // Company Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `company` node, as a sibling
+      // outside the `company/:orgSegment` subtree: `orgPathParamGuard` (CanActivate on that subtree)
       // redirects here, so the address must resolve without re-entering the guard that sent the
       // viewer to it (no loop).
       {
-        path: 'org/not-found',
-        title: 'Organization Not Found',
+        path: `${ORG_LENS_URL_ROOT}/not-found`,
+        title: 'Company Not Found',
         data: { lens: 'org' },
         loadComponent: () => import('./modules/dashboards/org/org-not-found/org-not-found.component').then((m) => m.OrgNotFoundComponent),
       },
-      // Org Lens (GA) — unresolvable /org/* addresses land on the dead end above via `orgPathParamGuard`.
+      // Org Lens (GA), addressed `/company/…` — unresolvable addresses land on the dead end above via `orgPathParamGuard`.
       {
-        path: 'org',
+        path: ORG_LENS_URL_ROOT,
         data: { lens: 'org' },
         children: [
           {
@@ -496,10 +519,10 @@ export const routes: Routes = [
             pathMatch: 'full',
             redirectTo: () => (inject(AccountContextService).isRollUp() ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview'),
           },
-          // Legacy `/org/{page}` addresses (spec 050 Phase 5 adds the default-organization redirect guard).
+          // Legacy `/company/{page}` addresses (no organization named) (spec 050 Phase 5 adds the default-organization redirect guard).
           ...orgLensPageRoutes(),
           {
-            // Spec 050 — `/org/{orgSegment}/{page}`: the organization is named in the address (slug, or
+            // Spec 050 — `/company/{orgSegment}/{page}`: the organization is named in the address (slug, or
             // 18-char SFID when it has none). Declared after every static page so a page name can never
             // be taken for an organization; the matcher rejects those values as belt-and-braces and the
             // guard resolves the segment through the access-filtered BFF before any child renders.

@@ -16,17 +16,19 @@ import {
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_BAR_FILLS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_DESCRIPTION,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ICONS,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
-  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL,
 } from '../constants/health-metrics-engagement.constants';
 import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_LINE_CHART_COLORS } from '../constants/health-metrics-line-chart.constants';
 import { HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS, HEALTH_METRICS_MEMBERS_RESERVED_TIERS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_TABLE_DASH, HEALTH_METRICS_VALUE_BAR_FILL } from '../constants/health-metrics-table.constants';
 import { formatIsoDateLabel } from './date-time.utils';
+import { buildHealthMetricsLineChart, healthMetricsLineChartCountCeiling } from './health-metrics-line-chart.utils';
 import { formatHealthMetricsNewsletterGrowthSince } from './health-metrics-overview.utils';
 import { healthMetricsBarFillClass } from './health-metrics-table.utils';
 
@@ -36,14 +38,15 @@ import type {
   HealthMetricsEngagementAttendanceRule,
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementAttendanceTrendPointView,
-  HealthMetricsEngagementAttendanceTrendSummaryView,
+  HealthMetricsEngagementAttendanceTrendView,
   HealthMetricsEngagementGroupKind,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementGroupRowView,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementNewsletter,
-  HealthMetricsEngagementNewsletterKpiView,
+  HealthMetricsEngagementNewsletterChartView,
+  HealthMetricsEngagementNewsletterMode,
   HealthMetricsEngagementNewsletterPerformance,
   HealthMetricsEngagementNewsletterPointView,
   HealthMetricsEngagementNewsletterRowView,
@@ -56,6 +59,7 @@ import type {
   HealthMetricsEngagementRecipient,
   HealthMetricsEngagementRecipientFilter,
   HealthMetricsEngagementRecipientRowView,
+  HealthMetricsEngagementRecipientTone,
   HealthMetricsEngagementRepFilter,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementRepRow,
@@ -69,6 +73,7 @@ import type {
 } from '../interfaces/health-metrics-engagement.interface';
 import type { HealthMetricsMembersReservedTier } from '../interfaces/health-metrics-members.interface';
 import type { HealthMetricsL2Range, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsLineChartSeries, HealthMetricsLineChartView } from '../interfaces/health-metrics-line-chart.interface';
 
 /**
  * Attendance display rule. `null` means no invited population at all (em dash, never `0%`), and a
@@ -268,66 +273,43 @@ export function formatHealthMetricsEngagementPpDelta(pointChange: number | null)
 }
 
 /**
- * The trend's chart points, oldest first. A month reports a rate only on the hero's own rule — an
- * invited population and enough meetings — so the line gaps exactly where the hero reads "No data".
+ * The Attendance trend for one year: January to the current month in year to date, the month in progress plotted
+ * dashed, else January to December. The metrics row describes full months only; a thin month plots no rate.
  */
-export function buildHealthMetricsEngagementAttendanceTrendPoints(
+export function buildHealthMetricsEngagementAttendanceTrendView(
   months: readonly HealthMetricsEngagementAttendanceMonth[],
+  range: HealthMetricsRange,
+  year: number,
   today: Date
-): HealthMetricsEngagementAttendanceTrendPointView[] {
-  return months.map((month) => {
-    const isInProgress = isCurrentAttendanceMonth(month, today);
-    const name = attendanceMonthName(month);
+): HealthMetricsEngagementAttendanceTrendView {
+  const inProgress = range === 'YTD' && today.getUTCFullYear() === year;
+  const count = inProgress ? today.getUTCMonth() + 1 : 12;
+  const byMonth = new Map(months.map((month) => [month.monthStartDate.slice(0, 7), month]));
+  const found = Array.from({ length: count }, (_, index) => byMonth.get(`${year}-${String(index + 1).padStart(2, '0')}`) ?? null);
+  const window = found.map((month, index) => month ?? blankAttendanceMonth(year, index));
+  const lastFull = inProgress ? count - 2 : count - 1;
+  const fullRated = window.flatMap((month, index) => (index <= lastFull && isRatedAttendanceMonth(month) ? [index] : []));
+  const ratedMonths = window.filter(isRatedAttendanceMonth).length;
+  const points = window.map((month, index) => buildAttendanceTrendPoint(month, year, inProgress && index === count - 1));
 
-    return {
-      monthStartDate: month.monthStartDate,
-      label: `${name.slice(0, 3)} ${month.monthStartDate.slice(2, 4)}`,
-      monthLabel: `${name} ${month.monthStartDate.slice(0, 4)}${isInProgress ? ' (to date)' : ''}`,
-      rate: isRatedAttendanceMonth(month) ? (month.attendancePct as number) * 100 : null,
-      rateLabel: formatHealthMetricsEngagementAttendance(month.attendancePct, month.meetingsHeld),
-      meetingsLabel:
-        month.meetingsHeld === null ? '—' : `${formatHealthMetricsEngagementCount(month.meetingsHeld)} ${month.meetingsHeld === 1 ? 'meeting' : 'meetings'}`,
-      isInProgress,
-    };
-  });
-}
+  let state: HealthMetricsEngagementAttendanceTrendView['state'] = 'trend';
+  // A foundation with no rated month anywhere reads as empty on every pill, never as a year still to arrive.
+  if (!months.some(isRatedAttendanceMonth)) state = 'empty';
+  else if (inProgress && count === 1) state = 'january';
+  else if (range !== 'YTD' && found.includes(null)) state = 'unavailable';
+  else if (ratedMonths === 0) state = 'empty';
+  else if (fullRated.length < HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS) state = 'insufficient';
 
-/**
- * The trend's headline and side stats. They describe full months only: the month in progress is
- * plotted but still collecting meetings, so the headline is the latest full month with a rate.
- */
-export function buildHealthMetricsEngagementAttendanceTrendSummary(
-  months: readonly HealthMetricsEngagementAttendanceMonth[],
-  today: Date
-): HealthMetricsEngagementAttendanceTrendSummaryView {
-  const ratedMonths = months.filter(isRatedAttendanceMonth).length;
-  const full = months.map((month) => ({ month, rated: isRatedAttendanceMonth(month) && !isCurrentAttendanceMonth(month, today) }));
-  let latestIndex = full.length - 1;
-  while (latestIndex >= 0 && !full[latestIndex].rated) latestIndex--;
-  const latest = latestIndex >= 0 ? full[latestIndex].month : null;
-  // The view compares against the previous month even when that month's rate is one the hero hides.
-  const delta = latest && full[latestIndex - 1]?.rated ? latest.attendanceChangePp : null;
-  const rated = full.filter((entry) => entry.rated).map((entry) => entry.month);
-  const byRate = [...rated].sort((a, b) => (a.attendancePct as number) - (b.attendancePct as number));
-  const first = rated[0];
-  const last = rated[rated.length - 1];
-
-  let state: HealthMetricsEngagementAttendanceTrendSummaryView['state'] = 'trend';
-  if (ratedMonths === 0) state = 'empty';
-  else if (ratedMonths < HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS) state = 'insufficient';
-
+  const trend = state === 'trend';
   return {
     state,
-    ratedMonths,
-    latestLabel: latest ? formatHealthMetricsEngagementAttendance(latest.attendancePct, latest.meetingsHeld) : '—',
-    latestCaption: latest ? `${attendanceMonthName(latest)} ${latest.monthStartDate.slice(0, 4)}` : 'No full month with attendance yet',
-    deltaLabel: formatHealthMetricsEngagementPpDelta(delta),
-    deltaDirection: resolveHealthMetricsEngagementDeltaDirection(delta),
-    rangeChangeLabel: rated.length >= 2 ? formatHealthMetricsEngagementPpDelta((last.attendancePct as number) - (first.attendancePct as number)) : '—',
-    rangeHighLabel: formatRatedMonth(byRate[byRate.length - 1]),
-    rangeLowLabel: formatRatedMonth(byRate[0]),
-    isLowConfidence: state === 'trend' && ratedMonths < HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS,
-    lowConfidenceNote: `Only ${ratedMonths} of the last ${months.length} months have attendance from ${HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE} or more meetings, so the trend is indicative, not reliable.`,
+    year,
+    notice: attendanceTrendNotice(state, year, fullRated.length),
+    metrics: trend ? buildAttendanceTrendMetrics(window, fullRated, lastFull, year, inProgress) : [],
+    points,
+    chart: trend ? buildAttendanceTrendChart(points, lastFull, year, inProgress) : null,
+    isLowConfidence: trend && ratedMonths < HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS,
+    lowConfidenceNote: `Only ${ratedMonths} months in ${year} have attendance from ${HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE} or more meetings, so the trend is indicative, not reliable.`,
   };
 }
 
@@ -540,27 +522,92 @@ export function buildHealthMetricsEngagementNewsletterView(
   const chronological = [...newsletters].sort((a, b) => (a.sentDate ?? '').localeCompare(b.sentDate ?? '') || a.key.localeCompare(b.key));
   const growth = period?.subscribersGrowth ?? null;
   const growthPct = growth === null ? 0 : Math.round(growth * 100);
+  const subscribers: HealthMetricsMetricItem = {
+    key: 'subscribers',
+    label: 'Subscribers',
+    value: formatHealthMetricsEngagementCount(period?.subscribers ?? null),
+  };
+  // No line when growth rounds to 0%; the baseline month names when the growth counts from.
+  if (growthPct !== 0) {
+    subscribers.descriptionLead = `${growthPct > 0 ? '+' : '−'}${Math.abs(growthPct)}%`;
+    subscribers.descriptionLeadTone = growthPct > 0 ? 'up' : 'down';
+    subscribers.description = formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, year).trim();
+  }
+  const delivered = formatNewsletterRate(period?.avgDeliveryRate ?? null);
+  const clickToOpen = formatNewsletterRate(period?.avgClickToOpenRate ?? null);
 
   return {
     isEmpty: !performance.measured || !period?.newslettersSent,
-    headline: {
-      ...newsletterKpi('subscribers', 'Subscribers', formatHealthMetricsEngagementCount(period?.subscribers ?? null)),
-      delta:
-        growthPct === 0
-          ? null
-          : `${growthPct > 0 ? '+' : '−'}${Math.abs(growthPct)}%${formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, year)}`,
-      deltaDirection: newsletterDirection(growthPct),
-    },
-    side: [
-      newsletterKpi('sent', 'Newsletters sent', formatHealthMetricsEngagementCount(period?.newslettersSent ?? null)),
-      newsletterKpi('open', 'Avg. open rate', formatNewsletterRate(period?.avgOpenRate ?? null)),
-      newsletterKpi('click', 'Avg. click rate', formatNewsletterRate(period?.avgClickRate ?? null, 1)),
-      newsletterKpi('cto', 'Click-to-open rate', formatNewsletterRate(period?.avgClickToOpenRate ?? null)),
-      newsletterKpi('delivery', 'Delivery rate', formatNewsletterRate(period?.avgDeliveryRate ?? null)),
+    metrics: [
+      subscribers,
+      {
+        key: 'sent',
+        label: 'Newsletters sent',
+        value: formatHealthMetricsEngagementCount(period?.newslettersSent ?? null),
+        ...(delivered === HEALTH_METRICS_TABLE_DASH ? {} : { description: `${delivered} delivered` }),
+      },
+      { key: 'open', label: 'Avg. open rate', value: formatNewsletterRate(period?.avgOpenRate ?? null) },
+      {
+        key: 'click',
+        label: 'Avg. click rate',
+        value: formatNewsletterRate(period?.avgClickRate ?? null, 1),
+        ...(clickToOpen === HEALTH_METRICS_TABLE_DASH ? {} : { description: `${clickToOpen} of opens` }),
+      },
     ],
     rows: newsletters.map(buildNewsletterRow),
     audiencePoints: chronological.map(buildNewsletterPoint),
     ratePoints: chronological.filter((newsletter) => newsletter.hasEngagementData).map(buildNewsletterPoint),
+  };
+}
+
+/**
+ * The newsletter chart, one point per newsletter in send order. Rates run to the highest plotted rate rounded up to the
+ * next 10%, between 10% and 100%, with click-to-open dashed; the audience runs to a round ceiling over its peak.
+ */
+export function buildHealthMetricsEngagementNewsletterChart(
+  points: readonly HealthMetricsEngagementNewsletterPointView[],
+  mode: HealthMetricsEngagementNewsletterMode
+): HealthMetricsEngagementNewsletterChartView {
+  const colors = HEALTH_METRICS_LINE_CHART_COLORS;
+  const audience = mode === 'audience';
+  const series: HealthMetricsLineChartSeries[] = audience
+    ? [
+        { key: 'recipients', label: 'Recipients', color: colors.accent, values: points.map((point) => point.recipients), fill: true },
+        { key: 'opens', label: 'Unique opens', color: colors.feature, values: points.map((point) => point.uniqueOpens) },
+      ]
+    : [
+        { key: 'open', label: 'Open rate', color: colors.accent, values: points.map((point) => point.openPct), fill: true },
+        { key: 'click', label: 'Click rate', color: colors.feature, values: points.map((point) => point.clickPct) },
+        { key: 'cto', label: 'Click-to-open rate', color: colors.success, values: points.map((point) => point.clickToOpenPct), dashed: true },
+      ];
+  const format = (value: number | null): string =>
+    audience ? formatHealthMetricsEngagementCount(value === null ? null : Math.round(value)) : formatNewsletterPct(value);
+  const max = audience
+    ? healthMetricsLineChartCountCeiling(Math.max(0, ...points.flatMap((point) => [point.recipients ?? 0, point.uniqueOpens ?? 0])))
+    : // Peak over every plotted rate, so no line sits above the axis; rounded first so float noise never adds a band.
+      Math.min(
+        100,
+        Math.max(
+          10,
+          Math.ceil(
+            Math.round(Math.max(0, ...points.flatMap((point) => [point.openPct ?? 0, point.clickPct ?? 0, point.clickToOpenPct ?? 0])) * 1000) / 10_000
+          ) * 10
+        )
+      );
+
+  return {
+    chart: buildHealthMetricsLineChart({
+      xLabels: points.map((point) => point.tick),
+      series,
+      max,
+      formatTick: format,
+      tips: points.map((point, index) => ({
+        title: point.title,
+        rows: series.map((line) => ({ label: line.label, value: format(line.values[index] ?? null), color: line.color, separated: false, inline: true })),
+      })),
+      ariaLabel: audience ? 'Recipients and unique opens by newsletter' : 'Open, click and click-to-open rate by newsletter',
+    }),
+    legend: series.map((line) => ({ key: line.key, label: line.label, color: line.color })),
   };
 }
 
@@ -590,40 +637,60 @@ export function countHealthMetricsEngagementRecipients(
   return counts;
 }
 
-/** One recipient's cells. A failed delivery reads "—" for every engagement cell, even where the view still carries a stray open time. */
+/** The recipient status counts as a metrics row: opened, clicked, not opened and failed, over the loaded recipients. */
+export function buildHealthMetricsEngagementRecipientMetrics(recipients: readonly HealthMetricsEngagementRecipient[]): HealthMetricsMetricItem[] {
+  const counts = countHealthMetricsEngagementRecipients(recipients);
+  return HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS.map((metric) => ({
+    key: metric.key,
+    label: metric.label,
+    value: formatHealthMetricsEngagementCount(counts[metric.key]),
+    dotClass: metric.dotClass,
+    tip: metric.tip,
+  }));
+}
+
+/**
+ * One recipient's cells. A failed delivery reads "—" for every engagement cell, even where the view still carries a
+ * stray open time; a pending one is not yet delivered and has no open, so it reads as not opened.
+ */
 export function buildHealthMetricsEngagementRecipientRow(recipient: HealthMetricsEngagementRecipient, now: Date): HealthMetricsEngagementRecipientRowView {
   const failed = isFailedRecipient(recipient);
-  const opened = recipient.segment === 'opened';
-  const tags = HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS;
+  const pending = isPendingRecipient(recipient);
+  const opened = !pending && recipient.segment === 'opened';
+  const age = (prefix: string, iso: string | null): string => {
+    const short = failed || pending ? '' : formatHealthMetricsShortAge(iso, now);
+    return short ? `${prefix} ${short}` : '';
+  };
 
   return {
     rank: recipient.rank,
-    nameLabel: recipient.name?.trim() || '—',
-    organizationLabel: recipient.organization?.trim() || '—',
-    deliveryLabel: failed ? 'Failed' : 'Delivered',
-    deliveryClass: failed ? tags.failed : tags.delivered,
+    nameLabel: recipient.name?.trim() || HEALTH_METRICS_TABLE_DASH,
+    avatarName: recipient.name?.trim() ?? '',
+    description: recipient.organization?.trim() ?? '',
+    deliveryLabel: recipientDeliveryLabel(failed, pending),
+    deliveryTone: recipientDeliveryTone(failed, pending),
     engagementLabel: recipientEngagementLabel(failed, opened),
-    engagementClass: opened ? tags.opened : tags.notOpened,
-    opensLabel: failed ? '—' : formatHealthMetricsEngagementCount(recipient.opens),
-    lastOpenedLabel: failed ? '—' : formatHealthMetricsRelativeTime(recipient.lastOpenedAt, now),
-    clicksLabel: failed ? '—' : formatHealthMetricsEngagementCount(recipient.clicks),
-    lastClickedLabel: failed ? '—' : formatHealthMetricsRelativeTime(recipient.lastClickedAt, now),
+    engagementTone: opened ? 'accent' : 'neutral',
+    opensLabel: failed ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsEngagementCount(recipient.opens),
+    opensDescription: age('Last opened', recipient.lastOpenedAt),
+    clicksLabel: failed ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsEngagementCount(recipient.clicks),
+    clicksDescription: age('Last clicked', recipient.lastClickedAt),
   };
 }
 
-/** "12 hr ago" for a recent ISO time, as the design words it; the date itself past 30 days, and "—" for none. */
-export function formatHealthMetricsRelativeTime(iso: string | null, now: Date): string {
+/** How long ago an ISO time was, in the design's short units: "5m", "3h", "2d", "3w" or "4mo"; empty without a time. */
+export function formatHealthMetricsShortAge(iso: string | null, now: Date): string {
   const time = iso ? Date.parse(iso) : NaN;
-  if (Number.isNaN(time)) return '—';
+  if (Number.isNaN(time)) return '';
 
-  const minutes = Math.max(0, Math.floor((now.getTime() - time) / 60_000));
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes} min ago`;
+  const minutes = Math.max(1, Math.floor((now.getTime() - time) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hr ago`;
+  if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  if (days <= 30) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-  return formatIsoDateLabel(new Date(time).toISOString().slice(0, 10));
+  if (days < 7) return `${days}d`;
+  if (days < 30) return `${Math.floor(days / 7)}w`;
+  return `${Math.floor(days / 30)}mo`;
 }
 
 /** Both views carry the same four periods, so the same fallback serves either row shape. */
@@ -647,27 +714,160 @@ function isRatedAttendanceMonth(month: HealthMetricsEngagementAttendanceMonth): 
   return month.attendancePct !== null && month.meetingsHeld !== null && month.meetingsHeld >= HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE;
 }
 
-/** The view's window ends with the current UTC month, which is still collecting meetings. */
-function isCurrentAttendanceMonth(month: HealthMetricsEngagementAttendanceMonth, today: Date): boolean {
-  return month.monthStartDate.slice(0, 7) === today.toISOString().slice(0, 7);
+/** A month the view has no row for, read as one without meetings. */
+function blankAttendanceMonth(year: number, index: number): HealthMetricsEngagementAttendanceMonth {
+  return {
+    monthStartDate: `${year}-${String(index + 1).padStart(2, '0')}-01`,
+    meetingsHeld: null,
+    invited: null,
+    attended: null,
+    attendancePct: null,
+    attendanceChangePp: null,
+  };
 }
 
 function attendanceMonthName(month: HealthMetricsEngagementAttendanceMonth): string {
   return MONTH_NAMES[Number(month.monthStartDate.slice(5, 7)) - 1] ?? month.monthStartDate.slice(0, 7);
 }
 
-/** A rated month's rate on the section's one display rule; "—" when the range holds none. */
-function formatRatedMonth(month: HealthMetricsEngagementAttendanceMonth | undefined): string {
-  return month ? formatHealthMetricsEngagementAttendance(month.attendancePct, month.meetingsHeld) : '—';
+/** A rated month's rate as a whole percent, the number every label shows. */
+function attendanceWholePct(month: HealthMetricsEngagementAttendanceMonth): number {
+  return Math.round((month.attendancePct as number) * 100);
 }
 
-function newsletterKpi(key: string, label: string, value: string): HealthMetricsEngagementNewsletterKpiView {
-  return { key, label, value, delta: null, deltaDirection: 'neutral' };
+/** A change between two whole percents, as the design writes it: `+3pp`, `−12pp`, `0pp`. */
+function formatAttendanceTrendPp(points: number): string {
+  if (points > 0) return `+${points}pp`;
+  return points < 0 ? `−${Math.abs(points)}pp` : '0pp';
 }
 
-function newsletterDirection(value: number): HealthMetricsEngagementNewsletterKpiView['deltaDirection'] {
-  if (value === 0) return 'neutral';
-  return value > 0 ? 'up' : 'down';
+function buildAttendanceTrendPoint(
+  month: HealthMetricsEngagementAttendanceMonth,
+  year: number,
+  isInProgress: boolean
+): HealthMetricsEngagementAttendanceTrendPointView {
+  const name = attendanceMonthName(month);
+  return {
+    monthStartDate: month.monthStartDate,
+    label: name.slice(0, 3),
+    monthLabel: `${name} ${year}${isInProgress ? ' (to date)' : ''}`,
+    rate: isRatedAttendanceMonth(month) ? (month.attendancePct as number) * 100 : null,
+    rateLabel: formatHealthMetricsEngagementAttendance(month.attendancePct, month.meetingsHeld),
+    meetingsLabel: formatAttendanceTrendMeetings(month.meetingsHeld),
+    isInProgress,
+  };
+}
+
+function formatAttendanceTrendMeetings(meetingsHeld: number | null): string {
+  if (meetingsHeld === null) return '—';
+  return `${formatHealthMetricsEngagementCount(meetingsHeld)} ${meetingsHeld === 1 ? 'meeting' : 'meetings'}`;
+}
+
+function attendanceTrendNotice(state: HealthMetricsEngagementAttendanceTrendView['state'], year: number, fullRated: number): string {
+  const rule = `${HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE} or more meetings`;
+  switch (state) {
+    case 'january':
+      return 'The trend starts once January closes.';
+    case 'unavailable':
+      return `Attendance history for ${year} is not available yet.`;
+    case 'insufficient':
+      return fullRated === 1 ? `Only one month in ${year} has attendance from ${rule}.` : `No full month in ${year} has attendance from ${rule} yet.`;
+    default:
+      return '';
+  }
+}
+
+/**
+ * Last full month (the previous month, or December), the change across the year's rated full months, and the highest
+ * and lowest of them by exact rate; a tie goes to the earlier month.
+ */
+function buildAttendanceTrendMetrics(
+  window: readonly HealthMetricsEngagementAttendanceMonth[],
+  fullRated: readonly number[],
+  lastFull: number,
+  year: number,
+  inProgress: boolean
+): HealthMetricsMetricItem[] {
+  const head = window[lastFull];
+  const headName = attendanceMonthName(head);
+  const headRated = isRatedAttendanceMonth(head);
+  const latest: HealthMetricsMetricItem = {
+    key: 'latest',
+    label: inProgress ? `Previous month (${headName.slice(0, 3)} ${year})` : `${headName} ${year}`,
+    value: headRated ? `${attendanceWholePct(head)}%` : 'No data',
+  };
+  const previous = window[lastFull - 1];
+  if (headRated && previous && isRatedAttendanceMonth(previous)) {
+    const change = attendanceWholePct(head) - attendanceWholePct(previous);
+    latest.descriptionLead = formatAttendanceTrendPp(change);
+    latest.description = `vs ${attendanceMonthName(previous)}`;
+    if (change > 0) latest.descriptionLeadTone = 'up';
+    else latest.descriptionLeadTone = change < 0 ? 'down' : 'flat';
+  }
+
+  const start = window[fullRated[0]];
+  const end = window[fullRated[fullRated.length - 1]];
+  const startName = attendanceMonthName(start);
+  const endName = attendanceMonthName(end);
+  const rated = fullRated.map((index) => window[index]);
+  // Picked on the exact rate, so the plotted peak is named; strict comparisons give a true tie to the earlier month.
+  const high = rated.reduce((best, month) => ((month.attendancePct as number) > (best.attendancePct as number) ? month : best));
+  const low = rated.reduce((best, month) => ((month.attendancePct as number) < (best.attendancePct as number) ? month : best));
+
+  return [
+    latest,
+    {
+      key: 'change',
+      label: `Change since ${startName}`,
+      value: formatAttendanceTrendPp(attendanceWholePct(end) - attendanceWholePct(start)),
+      description: `${attendanceWholePct(start)}% in ${startName.slice(0, 3)} → ${attendanceWholePct(end)}% in ${endName.slice(0, 3)}`,
+      tip: `Difference in attendance rate between ${startName} and ${end === head ? 'the last full month' : endName} of the selected year, in percentage points.`,
+    },
+    { key: 'high', label: 'Highest rate', value: `${attendanceWholePct(high)}%`, description: `${attendanceMonthName(high)} ${year}` },
+    { key: 'low', label: 'Lowest rate', value: `${attendanceWholePct(low)}%`, description: `${attendanceMonthName(low)} ${year}` },
+  ];
+}
+
+/** One filled line over the full months; in year to date a dashed run into the month in progress ends on a hollow dot. */
+function buildAttendanceTrendChart(
+  points: readonly HealthMetricsEngagementAttendanceTrendPointView[],
+  lastFull: number,
+  year: number,
+  inProgress: boolean
+): HealthMetricsLineChartView {
+  const color = HEALTH_METRICS_LINE_CHART_COLORS.accent;
+  const rates = points.map((point) => point.rate);
+  const series: HealthMetricsLineChartSeries[] = [
+    { key: 'attendance', label: 'Attendance', color, values: rates.map((rate, index) => (index <= lastFull ? rate : null)), fill: true },
+  ];
+  // A month in progress below the rate rule has no point to dash into.
+  if (inProgress && rates[rates.length - 1] !== null) {
+    series.push({
+      key: 'in-progress',
+      label: 'Attendance (month in progress)',
+      color,
+      values: rates.map((rate, index) => (index >= lastFull ? rate : null)),
+      dashed: true,
+      dotLast: true,
+    });
+  }
+
+  return buildHealthMetricsLineChart({
+    xLabels: points.map((point) => point.label),
+    series,
+    max: 100,
+    formatTick: (value) => `${Math.round(value)}%`,
+    tips: points.map((point) => ({
+      title: point.monthLabel,
+      rows: [{ label: 'Attendance', value: `${point.rateLabel} · ${point.meetingsLabel}`, color, separated: false, inline: true }],
+    })),
+    ariaLabel: `All-meeting attendance by month, ${year}`,
+  });
+}
+
+/** A 0–100 percentage, whole; "—" when there is none. */
+function formatNewsletterPct(value: number | null): string {
+  return value === null ? HEALTH_METRICS_TABLE_DASH : `${Math.round(value)}%`;
 }
 
 /** A 0–1 rate as a percentage, whole unless `digits` asks for more. */
@@ -689,7 +889,7 @@ function buildNewsletterRow(newsletter: HealthMetricsEngagementNewsletter): Heal
     uniqueOpensLabel: formatHealthMetricsEngagementCount(engaged ? newsletter.uniqueOpens : null),
     totalOpensLabel: total(newsletter.totalOpens),
     openRateLabel: formatNewsletterRate(engaged ? newsletter.openRate : null),
-    openRateWidthPct: engaged && newsletter.openRate !== null ? Math.min(100, Math.max(0, newsletter.openRate * 100)) : 0,
+    openRatePct: engaged && newsletter.openRate !== null ? Math.min(100, Math.max(0, newsletter.openRate * 100)) : null,
     uniqueClicksLabel: formatHealthMetricsEngagementCount(engaged ? newsletter.uniqueClicks : null),
     totalClicksLabel: total(newsletter.totalClicks),
     clickRateLabel: formatNewsletterRate(engaged ? newsletter.clickRate : null),
@@ -718,6 +918,8 @@ function matchesRecipientFilter(recipient: HealthMetricsEngagementRecipient, fil
   // The row and the cuts share one failure rule, so a row reading "Failed" is never counted under an engagement cut.
   if (filter === 'failed') return isFailedRecipient(recipient);
   if (isFailedRecipient(recipient)) return false;
+  // A pending delivery has not landed yet, so it counts as not opened whatever the view segments it as.
+  if (isPendingRecipient(recipient)) return filter === 'not-opened';
   return filter === 'clicked' ? recipient.clicked : recipient.segment === filter;
 }
 
@@ -726,8 +928,23 @@ function isFailedRecipient(recipient: HealthMetricsEngagementRecipient): boolean
   return recipient.segment === 'failed' || recipient.deliveryStatus === 'Failed';
 }
 
+/** Sent but not yet delivered; never also failed. */
+function isPendingRecipient(recipient: HealthMetricsEngagementRecipient): boolean {
+  return !isFailedRecipient(recipient) && recipient.deliveryStatus?.trim().toLowerCase() === 'pending';
+}
+
 /** No tag for a failed delivery, which the row shows as "—". */
 function recipientEngagementLabel(failed: boolean, opened: boolean): string {
   if (failed) return '';
   return opened ? 'Opened' : 'Not opened';
+}
+
+function recipientDeliveryLabel(failed: boolean, pending: boolean): string {
+  if (failed) return 'Failed';
+  return pending ? 'Pending' : 'Delivered';
+}
+
+function recipientDeliveryTone(failed: boolean, pending: boolean): HealthMetricsEngagementRecipientTone {
+  if (failed) return 'danger';
+  return pending ? 'neutral' : 'success';
 }

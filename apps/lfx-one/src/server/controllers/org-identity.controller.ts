@@ -7,6 +7,7 @@ import {
   ORG_ACCOUNT_ID_PATTERN,
   ORG_ROLE_GRANTS_CORRELATION_HEADER,
   ORG_ROLE_GRANTS_REFRESH_PARAM,
+  ORG_ROLL_UP_SET_ANCHOR_PARAM,
 } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
@@ -20,6 +21,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { OrgAffiliationService } from '../services/org-affiliation.service';
@@ -111,12 +113,22 @@ export class OrgIdentityController {
       }
 
       const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
-      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache);
+      const anchor = getStringQueryParam(req, ORG_ROLL_UP_SET_ANCHOR_PARAM);
+      const anchorUid = anchor !== undefined && ORG_ACCOUNT_ID_PATTERN.test(anchor) ? anchor : null;
+      if (req.query[ORG_ROLL_UP_SET_ANCHOR_PARAM] !== undefined && anchorUid === null) {
+        throw ServiceValidationError.forField(ORG_ROLL_UP_SET_ANCHOR_PARAM, 'Invalid company id format', {
+          operation: 'get_org_roll_up_set',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache, anchorUid);
 
       logger.success(req, 'get_org_roll_up_set', startTime, {
         family_count: result.families.length,
         org_count: result.families.reduce((total, family) => total + family.orgs.length, 0),
         lookup_outcome: result.lookupOutcome,
+        anchored: anchorUid !== null,
       });
 
       res.setHeader('Cache-Control', 'no-store');
@@ -168,11 +180,11 @@ export class OrgIdentityController {
           has_prefer: !!prefer,
           status_code: 409,
         });
-        res.status(409).json({ error: 'Organization address is ambiguous' });
+        res.status(409).json({ error: 'Company address is ambiguous' });
         return;
       }
       logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'miss', cache, status_code: 404 });
-      res.status(404).json({ error: 'Organization not found' });
+      res.status(404).json({ error: 'Company not found' });
     } catch (error) {
       // Any query-service failure ⇒ 502 (FR-020: the client lets an SFID through and treats a slug
       // as not found). Query-service answers "no rows" with an empty 200, so an upstream 4xx — a
@@ -196,7 +208,7 @@ export class OrgIdentityController {
 
       const record = await this.fetchCanonicalRecord(req, uid);
       if (!record) {
-        res.status(404).json({ error: 'Organization not found' });
+        res.status(404).json({ error: 'Company not found' });
         logger.success(req, 'get_org_canonical_record', startTime, { uid, status_code: 404 });
         return;
       }
@@ -219,7 +231,7 @@ export class OrgIdentityController {
       }
       // 404 → 404 with deliberate no-information-leak envelope.
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        res.status(404).json({ error: 'Organization not found' });
+        res.status(404).json({ error: 'Company not found' });
         return;
       }
       next(error);
@@ -234,7 +246,7 @@ export class OrgIdentityController {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'update_org_canonical_record', req.path);
       if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
-        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+        throw ServiceValidationError.forField('uid', 'Invalid company identifier', {
           operation: 'update_org_canonical_record',
           service: 'org_identity_controller',
           path: req.path,
@@ -260,11 +272,11 @@ export class OrgIdentityController {
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 403) {
         logger.warning(req, 'update_org_canonical_record', 'Upstream rejected with 403', { err: error });
-        res.status(403).json({ error: 'You no longer have permission to edit this organization.' });
+        res.status(403).json({ error: 'You no longer have permission to edit this company.' });
         return;
       }
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        res.status(404).json({ error: 'Organization not found' });
+        res.status(404).json({ error: 'Company not found' });
         return;
       }
       if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
@@ -303,7 +315,7 @@ export class OrgIdentityController {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'upload_org_logo', req.path);
       if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
-        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+        throw ServiceValidationError.forField('uid', 'Invalid company identifier', {
           operation: 'upload_org_logo',
           service: 'org_identity_controller',
           path: req.path,
@@ -373,16 +385,16 @@ export class OrgIdentityController {
       }
       if (error instanceof MicroserviceError && error.statusCode === 403) {
         logger.warning(req, 'upload_org_logo', 'Upstream rejected with 403', { err: error });
-        res.status(403).json({ error: 'You no longer have permission to edit this organization.' });
+        res.status(403).json({ error: 'You no longer have permission to edit this company.' });
         return;
       }
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        res.status(404).json({ error: 'Organization not found' });
+        res.status(404).json({ error: 'Company not found' });
         return;
       }
       if (error instanceof MicroserviceError && error.statusCode === 412) {
         logger.warning(req, 'upload_org_logo', 'Upstream rejected with 412 (org changed since the pre-upload fetch)', { err: error });
-        res.status(409).json({ error: 'This organization was updated elsewhere. Refresh the page and try again.' });
+        res.status(409).json({ error: 'This company was updated elsewhere. Refresh the page and try again.' });
         return;
       }
       if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
@@ -407,7 +419,7 @@ export class OrgIdentityController {
       const uid = req.params['uid'];
       this.assertNonEmpty(uid, 'uid', 'get_org_addresses', req.path);
       if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
-        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+        throw ServiceValidationError.forField('uid', 'Invalid company identifier', {
           operation: 'get_org_addresses',
           service: 'org_identity_controller',
           path: req.path,
@@ -450,7 +462,7 @@ export class OrgIdentityController {
     const uid = req.params['uid'] ?? req.params['id'];
     this.assertNonEmpty(uid, 'uid', 'get_org_canonical_record', req.path);
     if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
-      throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+      throw ServiceValidationError.forField('uid', 'Invalid company identifier', {
         operation: 'get_org_canonical_record',
         service: 'org_identity_controller',
         path: req.path,

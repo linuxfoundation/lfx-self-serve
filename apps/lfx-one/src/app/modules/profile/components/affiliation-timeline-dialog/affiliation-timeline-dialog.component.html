@@ -5,25 +5,25 @@
   <!-- Description -->
   @if (hasUnverifiedWorkExperienceOnly()) {
     <p class="text-sm text-slate-500" data-testid="unverified-work-experience-message">
-      Your work history is pending verification. Once your work experience has been verified, your organizations will appear here for affiliation.
+      Your work history is pending verification. Once your work experience has been verified, your companies will appear here for affiliation.
     </p>
   } @else if (hasNoWorkExperience()) {
     <p class="text-sm text-slate-500" data-testid="no-work-experience-message">
-      To affiliate your contributions with an organization, first add your work history in the Work Experience section. Organizations from your verified work
-      history will appear here for affiliation.
+      To affiliate your contributions with a company, first add your work history in the Work Experience section. Companies from your verified work history will
+      appear here for affiliation.
     </p>
   } @else {
     <!-- Sticky top section -->
     <div class="flex shrink-0 flex-col gap-5">
       <p class="text-sm text-slate-500">
-        Your contributions may only be affiliated with one organization at a time. Toggle organizations on or off and set affiliation period dates below.
+        Your contributions may only be affiliated with one company at a time. Toggle companies on or off and set affiliation period dates below.
       </p>
 
       <!-- Overlap Warning -->
       @if (hasOverlap()) {
         <div class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5" data-testid="overlap-warning">
           <i class="fa-light fa-triangle-exclamation text-sm text-amber-600"></i>
-          <span class="text-xs text-amber-700">Affiliation periods overlap. Contributions can only be affiliated with one organization at a time.</span>
+          <span class="text-xs text-amber-700">Affiliation periods overlap. Contributions can only be affiliated with one company at a time.</span>
         </div>
       }
     </div>
@@ -210,7 +210,7 @@
 
     <!-- Sticky bottom section -->
     <div class="flex shrink-0 flex-col gap-5">
-      <p class="text-[11px] text-slate-400">Time periods without an organization are treated as independent contributions.</p>
+      <p class="text-[11px] text-slate-400">Time periods without a company are treated as independent contributions.</p>
 
       <!-- Footer -->
       <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">

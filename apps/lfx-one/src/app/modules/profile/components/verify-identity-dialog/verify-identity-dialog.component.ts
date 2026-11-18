@@ -14,7 +14,7 @@ import {
   EMAIL_RESEND_SUPPORT_MESSAGE,
   EMAIL_RESEND_SUPPORT_THRESHOLD,
   EMAIL_RESEND_SUPPORT_TITLE,
-  EMAIL_VERIFICATION_SENT_MESSAGE,
+  EMAIL_VERIFICATION_CODE_INSTRUCTIONS,
   IDENTITY_PROVIDER_LABELS,
 } from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, VerifyIdentityDialogData } from '@lfx-one/shared/interfaces';
@@ -64,7 +64,7 @@ export class VerifyIdentityDialogComponent {
   public readonly codeNotReceivedHint = EMAIL_CODE_NOT_RECEIVED_HINT;
   public readonly codeNotReceivedTitle = EMAIL_CODE_NOT_RECEIVED_TITLE;
   public readonly resendSupportTitle = EMAIL_RESEND_SUPPORT_TITLE;
-  public readonly verificationSentMessage = EMAIL_VERIFICATION_SENT_MESSAGE;
+  public readonly verificationInstructions = EMAIL_VERIFICATION_CODE_INSTRUCTIONS;
   public readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
 
   public onSendCode(): void {

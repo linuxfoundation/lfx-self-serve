@@ -663,6 +663,9 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
       sticky: true,
       data: { supportMessage: buildLinkedEmailSupportMessage() },
     });
+    expect(EMAIL_ALREADY_LINKED_MESSAGE).toBe(
+      'You’ve verified this email address, but it’s already linked to an LFX account. Contact support for help with next steps.'
+    );
     expect(EMAIL_ALREADY_LINKED_MESSAGE).not.toMatch(/new (verification )?code/i);
     expect(refreshUserIdentities).not.toHaveBeenCalled();
     expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith(cleanUrl, { replaceUrl: true });

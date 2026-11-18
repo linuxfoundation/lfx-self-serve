@@ -9,6 +9,7 @@ import {
   DOCUMENT_LABEL,
   FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
+  FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
@@ -86,6 +87,7 @@ export class SidebarNavService {
    * is the checklist plus Meetings, Mailing Lists and Groups (#2754, #3059).
    */
   private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
+  private readonly isFoundationParticipatingOrgsEnabled = this.featureFlagService.getBooleanFlag(FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG, false);
 
   /**
    * True when the user has non-marketing foundation access (board role, root-writer, LF-staff, or
@@ -689,6 +691,16 @@ export class SidebarNavService {
           },
         ];
 
+        // Dark-launched (#5697): the page reads live PROJECT_PARTICIPATING_ORGS figures from the warehouse, so the flag is the only gate before it is generally available.
+        if (this.isFoundationParticipatingOrgsEnabled()) {
+          metricsItems.push({
+            label: 'Participating companies',
+            icon: 'fa-light fa-building',
+            routerLink: '/foundation/participating-orgs',
+            testId: 'sidebar-metrics-participating-companies',
+          });
+        }
+
         items.push({
           label: 'Metrics',
           isSection: true,
@@ -1001,7 +1013,7 @@ export class SidebarNavService {
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
       {
-        label: 'Organization Engagement',
+        label: 'Company Engagement',
         isSection: true,
         expanded: true,
         items: [
@@ -1039,14 +1051,14 @@ export class SidebarNavService {
       //
       // Profile is dropped in roll-up mode. It is single-org by definition (#4125) and will never
       // gain a combined rendering, and `orgLensPath` prefixes every item with the selected segment
-      // — so the link read `/org/family-{id}/profile`, where the page asks for
+      // — so the link read `/company/family-{id}/profile`, where the page asks for
       // `/api/orgs/uid/family-{id}`, the SFID validator refuses the roll-up key and the caller lands on an error page (#4415, Copilot).
       // `withEasyclaNavItem` already handles Profile being absent.
       ...(this.accountContext.isRollUp()
         ? []
         : [
             {
-              label: 'Organization Profile',
+              label: 'Company Profile',
               icon: 'fa-light fa-memo',
               routerLink: org('profile'),
               dividerBefore: true,

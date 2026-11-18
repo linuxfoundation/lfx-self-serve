@@ -285,7 +285,7 @@ export const SURVEY_EMAIL_TEMPLATE_VARIABLES = {
     variables: ['{{FirstName}}', '{{LastName}}', '{{EmailAddress}}'],
   },
   organization: {
-    label: 'Organization',
+    label: 'Company',
     variables: ['{{OrganizationName}}', '{{ProjectName}}', '{{CommitteeName}}', '{{CommitteeType}}', '{{MembershipTier}}'],
   },
   survey: {

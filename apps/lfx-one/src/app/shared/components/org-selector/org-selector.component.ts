@@ -112,7 +112,7 @@ export class OrgSelectorComponent {
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
 
-  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Organization');
+  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Company');
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
 
   /**
@@ -129,7 +129,7 @@ export class OrgSelectorComponent {
     const rows = this.accountContextService.eligibleRollUpFamilies().map((family: OrgRollUpFamily) => ({
       rootUid: family.rootUid,
       name: orgRollUpAccount(family.rootUid, family.name).accountName,
-      subtitle: `Combined view of related organizations · ${organizationCountLabel(family.orgUids.length)}`,
+      subtitle: `Combined view of related companies · ${organizationCountLabel(family.orgUids.length)}`,
       organizationCount: family.orgUids.length,
       isSelected: family.rootUid === selectedRootUid,
     }));
@@ -144,7 +144,7 @@ export class OrgSelectorComponent {
       rows.unshift({
         rootUid: selectedRootUid,
         name: orgRollUpAccount(selectedRootUid, family?.name ?? null).accountName,
-        subtitle: count > 0 ? `Combined view of related organizations · ${organizationCountLabel(count)}` : 'Combined view of related organizations',
+        subtitle: count > 0 ? `Combined view of related companies · ${organizationCountLabel(count)}` : 'Combined view of related companies',
         organizationCount: count,
         isSelected: true,
       });
@@ -356,11 +356,11 @@ export class OrgSelectorComponent {
     let discoveredSeen = false;
     return rows.map((display) => {
       if (display.item.isAssigned === false) {
-        const heading = discoveredSeen ? null : 'All organizations';
+        const heading = discoveredSeen ? null : 'All companies';
         discoveredSeen = true;
         return this.toRow(display, heading, searchActive);
       }
-      const heading = assignedSeen ? null : 'Your organizations';
+      const heading = assignedSeen ? null : 'Your companies';
       assignedSeen = true;
       return this.toRow(display, heading, searchActive);
     });
@@ -809,13 +809,13 @@ export class OrgSelectorComponent {
   private personaToLabel(persona: OrgRolePersona | null, showOriginalSuffix: boolean): string {
     switch (persona) {
       case 'direct-writer':
-        return showOriginalSuffix ? 'Org Admin Editor (Original)' : 'Org Admin Editor';
+        return showOriginalSuffix ? 'Company Admin Editor (Original)' : 'Company Admin Editor';
       case 'direct-auditor':
-        return showOriginalSuffix ? 'Org Admin Viewer (Original)' : 'Org Admin Viewer';
+        return showOriginalSuffix ? 'Company Admin Viewer (Original)' : 'Company Admin Viewer';
       case 'inherited-writer':
-        return 'Org Admin Editor (Inherited)';
+        return 'Company Admin Editor (Inherited)';
       case 'inherited-auditor':
-        return 'Org Admin Viewer (Inherited)';
+        return 'Company Admin Viewer (Inherited)';
       default:
         return '';
     }
@@ -845,5 +845,5 @@ export class OrgSelectorComponent {
 }
 
 function organizationCountLabel(count: number): string {
-  return `${count} ${count === 1 ? 'organization' : 'organizations'}`;
+  return `${count} ${count === 1 ? 'company' : 'companies'}`;
 }

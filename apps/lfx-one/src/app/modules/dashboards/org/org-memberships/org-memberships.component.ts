@@ -290,7 +290,7 @@ export class OrgMembershipsComponent {
 
   private membershipLink(membership: OrgActiveMembership): string[] | null {
     if (!membership.foundationSlug) return null;
-    if (membership.organization) return ['/org', membership.organization.accountId, 'memberships', membership.foundationSlug];
+    if (membership.organization) return ['/company', membership.organization.accountId, 'memberships', membership.foundationSlug];
     return this.orgLens.orgLensLink('memberships', membership.foundationSlug);
   }
 

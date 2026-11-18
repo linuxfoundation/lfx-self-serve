@@ -57,7 +57,7 @@ export class MeetingRecurrencePatternComponent implements OnInit {
    * @description Typed nullable deliberately. The composer seeds no start date on a new meeting
    * (see `MeetingComposerFormService.createMeetingFormGroup`), so every pattern default derived from
    * the weekday or week-of-month has to wait for one — `updateForNewStartDate` seeds them the moment
-   * it arrives. The pre-v2 wizard always seeds a date, so none of those guards change its behaviour.
+   * it arrives. A form that already holds a date skips those guards, so its behaviour is unchanged.
    */
   public readonly startDate: Signal<Date | null> = computed(() => (this.form().get('startDate')?.value as Date | null) ?? null);
   public readonly minEndDate = computed(() => {

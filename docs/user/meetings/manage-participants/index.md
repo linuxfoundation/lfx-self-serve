@@ -4,7 +4,7 @@ description: How to invite guests, add a group, resend invitations, remove peopl
 audience: [all]
 product_area: Meetings
 tags: [meetings, participants, guests, invite, registrants, groups, resend invite, add myself]
-last_updated: 2026-11-17
+last_updated: 2026-11-18
 intercom_collection: Meetings
 ---
 
@@ -28,15 +28,15 @@ You can invite people one at a time, or invite a whole group.
 1. In **Search and add guests**, start typing a name or email address.
 2. Select the person from the results to add them to the **Invited** list.
 
-If you can't find the person, select **Add manually** and fill in the guest's details: name and email, and optionally a job title and organization. Select **Add guest** to add them.
+If you can't find the person, select **Add manually** and fill in the guest's details: name and email, and optionally a job title and company. Select **Add guest** to add them.
 
 If the person is already on the list, you'll see an **Already invited** message instead of a duplicate.
 
 ### Add yourself
 
-Creating a meeting doesn't invite you to it. To get the invitation yourself, select **Add myself**. It's next to the **Invited** count in the meeting editor, beside **Add People** in the classic editor, and next to **Add Guest** in the guest list of a meeting card or the join page. In the editors you're invited when you save the meeting; in a meeting card's or the join page's guest list you're invited straight away.
+Creating a meeting doesn't invite you to it. To get the invitation yourself, select **Add myself**. It's next to the **Invited** count in the meeting editor, and next to **Add Guest** in the guest list of a meeting card or the join page. In the editor you're invited when you save the meeting; in a meeting card's or the join page's guest list you're invited straight away.
 
-You're added as a regular guest with your profile details: your name, job title and organization. The invitation goes to your meeting-invitation email if you set one, otherwise to your primary email. If your meeting-invitation email setting can't be loaded, **Add myself** isn't offered, so the invitation never goes to the wrong address. If your profile is missing your first or last name, the editors open the guest form with your details filled in so you can complete it. Guest lists outside the editors don't offer **Add myself** in that case, so use **Add Guest** instead.
+You're added as a regular guest with your profile details: your name, job title and company. The invitation goes to your meeting-invitation email if you set one, otherwise to your primary email. If your meeting-invitation email setting can't be loaded, **Add myself** isn't offered, so the invitation never goes to the wrong address. If your profile is missing your first or last name, the editor opens the guest form with your details filled in so you can complete it. Guest lists outside the editor don't offer **Add myself** in that case, so use **Add Guest** instead.
 
 - You're added as a guest, not a Meeting Host. To run the meeting, select **Make host** on your row.
 - When you're editing a single occurrence of a recurring meeting, you're added to that occurrence only.
@@ -107,7 +107,7 @@ For a recurring meeting, guests are invited to **All occurrences** by default.
 
 ## Let guests see who else is invited
 
-**Show attendees to guests** lets guests see who else is invited, and who has accepted, on the meeting in LFX. Guests who can't see the list still see how many people are invited. Calendar invites never list other guests, whatever this setting says. Board and Restricted meetings never share their guest list with guests, and the switch is locked for the Board type.
+**Show attendees to guests** lets guests see who else is invited, and who has accepted, on the meeting in LFX. Guests who can't see the list still see how many people are invited. Calendar invites never list other guests, whatever this setting says. **Board** meetings never share their guest list with guests, and the switch is locked for that type. On a **Restricted** (invited guests only) meeting you can turn the switch on in the **Invite guests** section like on any other meeting, and it stays on when you edit the meeting again.
 
 ## Related
 

@@ -30,6 +30,7 @@ import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
 import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middleware';
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
+import { redirectLegacyUrls } from './middleware/redirect-legacy-urls.middleware';
 import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { openprofileRedirect } from './middleware/openprofile-redirect.middleware';
@@ -75,6 +76,7 @@ import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
 import sitemapRouter from './routes/sitemap.route';
 import socialListeningRouter from './routes/social-listening.route';
+import foundationParticipatingOrgsRouter from './routes/foundation-participating-orgs.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
@@ -258,6 +260,12 @@ app.use(sitemapRouter);
 
 // Bundle misses terminate here, before OIDC can redirect an unavailable asset to SSO.
 app.use(createBrowserAssetsMiddleware(browserDistFolder));
+
+// Company Lens moved from `/org/…` to `/company/…` (#5064). Old bookmarks and already-sent emails hit this as a
+// full page load, so answer with a permanent redirect here, ahead of auth and SSR (the address carries nothing
+// to protect, and a viewer who is not signed in should land on the new address, then sign in to it). The
+// docs portal has no redirect mechanism, so the moved `/docs/organization/…` pages are redirected here too.
+app.use(redirectLegacyUrls);
 
 const httpLogger = pinoHttp({
   logger: serverLogger,
@@ -446,6 +454,8 @@ app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
 // Executive-dashboard Foundation Lens surface (ED + LF Staff) — the router applies requireDashboardAccess to every endpoint.
 app.use('/api/social-listening', socialListeningRouter);
+// Foundation Lens → Participating Companies (#5697): executive director or LF staff, like Health Metrics.
+app.use('/api/foundation-participating-orgs', foundationParticipatingOrgsRouter);
 app.use('/api/user', userRouter);
 app.use('/api/user', personaRouter);
 app.use('/api/nav', navigationRouter);

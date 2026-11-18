@@ -7,7 +7,7 @@
  */
 import { expect, test } from '@playwright/test';
 
-import { stubMeetingPageRedesign } from './helpers/meetings-v2-flag.helper';
+import { stubMeetingPageRedesign } from './helpers/meetings-redesign-flag.helper';
 
 const PAGE_LOAD_TIMEOUT = 30_000;
 const UNKNOWN_MEETING_ID = '90000000000';

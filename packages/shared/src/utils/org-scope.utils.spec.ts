@@ -51,22 +51,22 @@ describe('servedOrgScopeForCaption', () => {
 
 describe('orgScopeOptions', () => {
   it('counts the related organizations on the All option', () => {
-    expect(orgScopeOptions({ relatedOrgCount: 4 }).map((option) => option.label)).toEqual(['Insights organization', 'All related organizations (4)']);
+    expect(orgScopeOptions({ relatedOrgCount: 4 }).map((option) => option.label)).toEqual(['Insights company', 'All related companies (4)']);
   });
 
   it('keeps the plain labels while the count is unknown', () => {
-    expect(orgScopeOptions(null).map((option) => option.label)).toEqual(['Insights organization', 'All related organizations']);
+    expect(orgScopeOptions(null).map((option) => option.label)).toEqual(['Insights company', 'All related companies']);
   });
 });
 
 describe('orgScopeTooltip', () => {
   it('names the Insights organization under insights', () => {
     expect(orgScopeTooltip('insights', { insightsOrgName: 'Acme' })).toBe(
-      'Counts only Acme, the organization on its LFX Insights page, and only repositories LFX Insights counts. Maintainer roles are not affected.'
+      'Counts only Acme, the company on its LFX Insights page, and only repositories LFX Insights counts. Maintainer roles are not affected.'
     );
   });
 
   it('describes every related organization under all', () => {
-    expect(orgScopeTooltip('all', { insightsOrgName: 'Acme' })).toContain('Counts every organization linked to this company account');
+    expect(orgScopeTooltip('all', { insightsOrgName: 'Acme' })).toContain('Counts every company linked to this company account');
   });
 });

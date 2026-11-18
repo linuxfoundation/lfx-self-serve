@@ -12,9 +12,6 @@ import { MeetingComposerService } from './meeting-composer.service';
  * @description Renders nothing: it opens the composer, then replaces the URL with the meetings
  * list so the composer sits over a real page. Composer state lives in a root service, so it
  * survives this component being destroyed by the redirect.
- *
- * Reached only while `MEETING_V2_ENABLED_FLAG` is on: `meetings.routes.ts` pairs each URL with the
- * pre-v2 wizard and `meetingsV2Guard` picks between them.
  */
 @Component({
   selector: 'lfx-meeting-composer-route',
@@ -26,12 +23,10 @@ export class MeetingComposerRouteComponent {
   private readonly composer = inject(MeetingComposerService);
 
   public constructor() {
-    // Browser only. `meetingsV2Guard` always matches this route during SSR (LaunchDarkly is
-    // browser-only), and the server must neither open the composer (it would mount the whole drawer
+    // Browser only. The server must neither open the composer (it would mount the whole drawer
     // there) nor redirect: `@angular/ssr` answers a navigation that ends on another URL with an HTTP
     // redirect, which would drop this deep link before the browser ever saw it. So the server paints
-    // an empty outlet, and the browser's initial navigation re-runs the guard with the real flag value
-    // and lands either here (composer) or on the wizard.
+    // an empty outlet and the browser's initial navigation lands here and opens the composer.
     if (!isPlatformBrowser(inject(PLATFORM_ID))) {
       return;
     }

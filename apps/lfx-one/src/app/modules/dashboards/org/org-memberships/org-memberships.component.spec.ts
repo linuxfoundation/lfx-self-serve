@@ -100,12 +100,12 @@ async function render(memberships: OrgActiveMembership[] = [], projects: OrgMemb
     imports: [OrgMembershipsComponent],
     providers: [
       provideRouter([]),
-      // The Org Projects side panel is a p-drawer, which binds synthetic animation listeners.
+      // The Company Projects side panel is a p-drawer, which binds synthetic animation listeners.
       provideNoopAnimations(),
       // The empty state no longer carries a support link (#5447); MessageService stays provided for the page's other controls.
       MessageService,
       { provide: AccountContextService, useValue: { selectedAccount, isRollUp } },
-      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
+      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/company', ...segments] } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       {
         provide: OrgLensEmptyStateService,
@@ -190,7 +190,7 @@ describe('OrgMembershipsComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Acme Motors');
   });
 
-  it('renders a non-zero Org Projects count as a control that opens the projects side panel', async () => {
+  it('renders a non-zero Company Projects count as a control that opens the projects side panel', async () => {
     const { fixture } = await render([membershipRow(3)]);
     await settleActiveFetch(fixture);
 
@@ -243,7 +243,7 @@ describe('OrgMembershipsComponent', () => {
     expect(hasInDocument('membership-projects-drawer-title')).toBe(false);
   });
 
-  it('leaves a zero Org Projects count non-interactive', async () => {
+  it('leaves a zero Company Projects count non-interactive', async () => {
     const { fixture } = await render([membershipRow(0)]);
     await settleActiveFetch(fixture);
 
@@ -467,7 +467,7 @@ describe('OrgMembershipsComponent', () => {
       const hrefs = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="memberships-active-row-link-cncf"]') as NodeListOf<HTMLAnchorElement>).map(
         (a) => (a as HTMLAnchorElement).getAttribute('href')
       );
-      expect(hrefs).toEqual([`/org/${PARENT_ORG.accountId}/memberships/cncf`, `/org/${SUBSIDIARY_ORG.accountId}/memberships/cncf`]);
+      expect(hrefs).toEqual([`/company/${PARENT_ORG.accountId}/memberships/cncf`, `/company/${SUBSIDIARY_ORG.accountId}/memberships/cncf`]);
     });
 
     it('opens the Org Projects panel for the row’s own organization', async () => {
@@ -493,7 +493,9 @@ describe('OrgMembershipsComponent', () => {
       await fixture.whenStable();
       fixture.detectChanges();
 
-      expect(document.querySelector('[data-testid="membership-project-k8s"] a')?.getAttribute('href')).toBe(`/org/${SUBSIDIARY_ORG.accountId}/projects/k8s`);
+      expect(document.querySelector('[data-testid="membership-project-k8s"] a')?.getAttribute('href')).toBe(
+        `/company/${SUBSIDIARY_ORG.accountId}/projects/k8s`
+      );
     });
 
     it('keeps the loaded expired table when an older request for the same company fails after company A → B → A', async () => {

@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, output, signal } from '@angular/core';
+import { Component, input, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED, HEALTH_METRICS_EVENTS_SECTIONS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -24,7 +24,7 @@ import { EventsSpeakersComponent } from './components/events-speakers/events-spe
 import { EventsSponsorshipComponent } from './components/events-sponsorship/events-sponsorship.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
 
-import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsForecastPicker } from '@lfx-one/shared/interfaces';
 
 const GLANCE: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: 4, hasEvents: true };
 
@@ -40,7 +40,9 @@ class AtAGlanceStubComponent {
 /** Stands in for the forecast section, whose reads its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-registration-forecast', template: '<div data-testid="events-forecast-stub"></div>' })
 class ForecastStubComponent {
+  public readonly pickedEventId = input<string | null>(null);
   public readonly countsChange = output<string>();
+  public readonly pickerChange = output<HealthMetricsEventsForecastPicker>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -55,6 +57,7 @@ class PastStubComponent {
 /** Stands in for Registrations & growth, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-registrations-growth', template: '<div data-testid="events-reg-stub"></div>' })
 class RegistrationsGrowthStubComponent {
+  public readonly metric = input<string>('registrations');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -76,14 +79,14 @@ class SponsorshipStubComponent {
 /** Stands in for Speakers & proposals, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-speakers', template: '<div data-testid="events-spk-stub"></div>' })
 class SpeakersStubComponent {
-  public readonly noteChange = output<string>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
-/** Stands in for Organizations at events, whose read its own spec covers; the test drives its outputs. */
+/** Stands in for Companies at events, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-organizations', template: '<div data-testid="events-orgs-stub"></div>' })
 class OrganizationsStubComponent {
+  public readonly segment = model<string>('all');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -106,7 +109,8 @@ describe('HealthMetricsEventsComponent', () => {
   async function setup(
     initialFragment: string | null = null,
     glance: HealthMetricsEventsAtAGlance | Error | Observable<never> = GLANCE,
-    initialSlug: string | null = 'acme'
+    initialSlug: string | null = 'acme',
+    queryParams: Record<string, string> = {}
   ): Promise<void> {
     getEventsAtAGlance = vi.fn().mockReturnValue(read(glance));
     selectedFoundation = signal<{ slug: string } | null>(initialSlug === null ? null : { slug: initialSlug });
@@ -117,7 +121,13 @@ describe('HealthMetricsEventsComponent', () => {
         { provide: AnalyticsService, useValue: { getEventsAtAGlance } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            fragment: new BehaviorSubject<string | null>(initialFragment).asObservable(),
+            snapshot: { queryParamMap: convertToParamMap(queryParams) },
+          },
+        },
       ],
     })
       .overrideComponent(HealthMetricsEventsComponent, {
@@ -156,7 +166,7 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.detectChanges();
   }
 
-  async function sectionsReport(note: string, speakersNote = ''): Promise<void> {
+  async function sectionsReport(note: string): Promise<void> {
     const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
     const pastStub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
     atAGlanceStub().settled.emit(false);
@@ -167,7 +177,6 @@ describe('HealthMetricsEventsComponent', () => {
     (fixture.debugElement.query(By.directive(RevenueStubComponent)).componentInstance as RevenueStubComponent).settled.emit(false);
     (fixture.debugElement.query(By.directive(SponsorshipStubComponent)).componentInstance as SponsorshipStubComponent).settled.emit(false);
     const speakersStub = fixture.debugElement.query(By.directive(SpeakersStubComponent)).componentInstance as SpeakersStubComponent;
-    speakersStub.noteChange.emit(speakersNote);
     speakersStub.settled.emit(false);
     const orgsStub = fixture.debugElement.query(By.directive(OrganizationsStubComponent)).componentInstance as OrganizationsStubComponent;
     orgsStub.settled.emit(false);
@@ -252,11 +261,75 @@ describe('HealthMetricsEventsComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-forecast"]').textContent).toContain('2 will miss goal');
   });
 
-  it('shows the note Speakers & proposals reports on its sub-nav item', async () => {
+  it("puts the forecast's event select in its header once it reports events, and hands a pick back to it", async () => {
     await setup();
-    await sectionsReport('', 'down 30% YoY');
+    const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
+    expect(fixture.nativeElement.querySelector('[data-testid="events-registration-forecast-event"]')).toBeNull();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-spk"]').textContent).toContain('down 30% YoY');
+    forecast.pickerChange.emit({
+      options: [
+        { eventId: 'evt-1', label: 'Open Source Summit' },
+        { eventId: 'evt-2', label: 'Member Summit' },
+      ],
+      eventId: 'evt-1',
+    });
+    await sectionsReport('');
+    const select = fixture.nativeElement.querySelector('[data-testid="events-controls-forecast"] [data-testid="events-registration-forecast-event"]');
+    expect(select).not.toBeNull();
+
+    fixture.componentInstance['forecastEventId'].set('evt-2');
+    fixture.detectChanges();
+    expect(forecast.pickedEventId()).toBe('evt-2');
+  });
+
+  it('puts the Registrations / Attendees switch in the growth header and hands the pick to the section', async () => {
+    await setup();
+    await sectionsReport('');
+    const growth = fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent;
+    expect(fixture.nativeElement.querySelector('[data-testid="events-controls-reg"] [data-testid="events-registrations-growth-metric"]')).not.toBeNull();
+    expect(growth.metric()).toBe('registrations');
+
+    fixture.componentInstance['onGrowthMetricChange']('attendees');
+    fixture.detectChanges();
+    expect(growth.metric()).toBe('attendees');
+
+    fixture.componentInstance['onGrowthMetricChange']('bogus');
+    fixture.detectChanges();
+    expect(growth.metric()).toBe('attendees');
+  });
+
+  it("puts the All / Members / Non-members switch in the companies header, starting on the URL's segment", async () => {
+    await setup(null, GLANCE, 'acme', { orgSegment: 'non-members' });
+    await sectionsReport('');
+    const orgs = fixture.debugElement.query(By.directive(OrganizationsStubComponent)).componentInstance as OrganizationsStubComponent;
+    const options = [...fixture.nativeElement.querySelectorAll('[data-testid="events-controls-orgs"] [data-testid^="events-orgs-segment-"]')];
+    expect(options.map((option) => (option as HTMLElement).dataset['testid'])).toEqual([
+      'events-orgs-segment-all',
+      'events-orgs-segment-members',
+      'events-orgs-segment-non-members',
+    ]);
+    expect(orgs.segment()).toBe('non-members');
+
+    fixture.componentInstance['onOrgSegmentChange']('members');
+    fixture.detectChanges();
+    expect(orgs.segment()).toBe('members');
+
+    fixture.componentInstance['onOrgSegmentChange']('partners');
+    fixture.detectChanges();
+    expect(orgs.segment()).toBe('all');
+
+    // The section's reset writes back through the two-way binding.
+    orgs.segment.set('members');
+    fixture.detectChanges();
+    expect(fixture.componentInstance['orgSegment']()).toBe('members');
+  });
+
+  it("shows only the forecast's note in the sub-nav, as the design does", async () => {
+    await setup();
+    await sectionsReport('2 will miss goal');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-spk-note"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid$="-note"][data-testid^="events-sub-nav-"]').length).toBe(1);
   });
 
   it('scrolls to the section a deep link names', async () => {

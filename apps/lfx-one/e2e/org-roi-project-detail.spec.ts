@@ -132,7 +132,7 @@ test.describe('Org Lens ROI project detail — figures', () => {
     // Each clause asserted separately, so shortening the copy to fit a layout fails a test rather
     // than quietly weakening the disclosure.
     const investment = page.getByTestId('org-roi-project-detail-explanation-total-expenditure');
-    await expect(investment).toContainText('standard rates that are the same for every organization');
+    await expect(investment).toContainText('standard rates that are the same for every company');
     await expect(investment).toContainText('No salary, payroll, or invoice data is used.');
   });
 });
@@ -232,7 +232,7 @@ test.describe('Org Lens ROI project detail — refusals and absence', () => {
     const state = page.getByTestId('org-roi-project-detail-empty-state');
     await expect(state).toBeVisible();
     await expect(state).toHaveAttribute('data-state', 'section-no-access');
-    await expect(state).toContainText('You do not have access to this organization');
+    await expect(state).toContainText('You do not have access to this company');
     await expect(page.getByTestId('org-roi-project-detail-not-found')).toHaveCount(0);
   });
 

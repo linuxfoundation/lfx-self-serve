@@ -81,9 +81,9 @@ export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
  * answers for an anonymous context before the signed-in one, and a roll-up restored from the
  * cookie or an address must ride that window out rather than be demoted by it.
  *
- * **UI-only** — evaluated through the OpenFeature Web SDK, which never runs server-side, so it
- * cannot gate an Express handler: `/api/orgs/me/roll-up-set` and every other BFF route answer the same
- * with the flag off. This flag only controls whether Self Serve offers and renders the roll-up.
+ * The server also evaluates it for one path (`LaunchDarklyServerService`): the LF staff family
+ * (#5901), added to `/api/orgs/me/roll-up-set` for an `anchor` and admitted by the roll-up read gate,
+ * only while it is on for the caller. Every other BFF route answers the same with the flag off.
  */
 export const ORG_LENS_ROLLUP_ENABLED_FLAG = 'org-lens-rollup-enabled';
 
@@ -189,34 +189,6 @@ export const FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS = 3_000;
 export const FORMATION_ENABLED_FLAG = 'formation-enabled';
 
 /**
- * Gates the Meetings v2 surfaces (epic #1451) — the in-context meeting composer that replaces the
- * pre-v2 create/edit wizard at every entry point it is wired into. Both implementations ship
- * together and live side by side: this flag decides which one a given user renders, so the pre-v2
- * wizard stays fully functional and is what everyone sees until the flag is turned on for them.
- *
- * Scoped to meetings v2 rather than to the composer specifically — later meetings-v2 work is
- * expected to sit behind the same gate.
- *
- * Default false so an unevaluated flag renders the pre-v2 wizard. This is the deliberate exception
- * to "default to current behavior": the DEFAULT here *is* current behavior, because v2 is the new
- * surface and false is what keeps it dark. LaunchDarkly targeting is the rollout switch, never the
- * code default; the fallback lives in {@link MEETING_V2_ENABLED_DEFAULT}. The deep links
- * (`/meetings/create`, `/meetings/:id/edit`) follow the flag too, through `meetingsV2Guard`.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
- * endpoint: both paths write the same already-authorized `/api/meetings` surface behind the same
- * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
- *
- * {@link MEETINGS_REDESIGN_FLAG} also enables v2: the UI reads both through `meetingsV2EnabledSignal`.
- */
-export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
-/**
- * What {@link MEETING_V2_ENABLED_FLAG} reads as in the browser when LaunchDarkly has not answered (unready
- * or unreachable). Every read of the flag — components and `meetingsV2Guard` — uses this one value, so
- * moving the fallback from the pre-v2 wizard to v2 is a single-line change here.
- */
-export const MEETING_V2_ENABLED_DEFAULT = false;
-/**
  * Lets a user start new newsletters in the block composer, on top of the project gate in
  * `NEWSLETTER_BLOCKS_PROJECT_SLUGS`. Off keeps the basic editor. A draft that already has a layout
  * stays in the composer either way, because the basic editor can't edit it safely.
@@ -230,8 +202,7 @@ export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
  * Dark-launch gate for the redesigned Home / Me lens Meetings page (epic #4468, #4470). Default false: a
  * missing LaunchDarkly flag keeps everyone on the existing meetings dashboard. It only affects the flat
  * `/meetings` route in the Me lens; `/foundation/meetings`, `/project/meetings` and the org lens stay on
- * the existing page whatever this reads. It also turns on the v2 composer at every entry point (see
- * {@link MEETING_V2_ENABLED_FLAG}).
+ * the existing page whatever this reads.
  *
  * **UI-only** — evaluated through `FeatureFlagService` in the browser, so the server renders a loading
  * state and the browser picks the page. A provider that is not ready within `FEATURE_FLAG_READY_TIMEOUT_MS` means
@@ -241,6 +212,15 @@ export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
  * (`resolveSsrFlags`, with the browser's user context), so SSR and hydration render the same page.
  */
 export const MEETINGS_REDESIGN_FLAG = 'meetings-redesign';
+/**
+ * Dark-launch gate for the redesigned Home / Me lens Groups page (#5823). Default false: a missing
+ * LaunchDarkly flag keeps everyone on the existing groups dashboard. It only affects the flat `/groups`
+ * route in the Me lens; `/foundation/groups`, `/project/groups` and the org lens stay on the existing page.
+ *
+ * **UI-only** — evaluated in the browser like {@link MEETINGS_REDESIGN_FLAG}: the server renders a loading
+ * state and the browser picks the page. It gates no endpoint.
+ */
+export const GROUPS_REDESIGN_FLAG = 'groups-redesign';
 /**
  * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
  * false: the group stays hidden until LaunchDarkly targeting turns it on.
@@ -265,3 +245,12 @@ export const INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG = 'insights-public-api-token-
  * (fail closed) and the SDK keeps connecting in the background.
  */
 export const LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS = 3;
+
+/**
+ * Dark-launch gate for the Foundation Lens Participating Companies page (#5697): the route
+ * (`foundation/participating-orgs`) and its nav item. The page reads the lf-dbt participating-orgs
+ * table (#5707); the flag stays off until it is rolled out.
+ * Paired with the server flag `LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED`, which is the real kill
+ * switch for the BFF; the Web SDK never runs server-side.
+ */
+export const FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG = 'foundation-participating-orgs-enabled';

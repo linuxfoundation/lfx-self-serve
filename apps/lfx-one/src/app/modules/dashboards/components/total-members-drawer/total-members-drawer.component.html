@@ -14,7 +14,7 @@
       <!-- Title + Subtitle -->
       <div class="flex flex-col gap-1 flex-1">
         <h2 class="text-lg font-semibold text-gray-900" data-testid="total-members-drawer-title">Active Members</h2>
-        <p class="text-sm text-gray-500">Board Member · Organization view</p>
+        <p class="text-sm text-gray-500">Board Member · Company view</p>
       </div>
 
       <!-- Time Range Filter (disabled for board member organization view) -->
@@ -48,14 +48,14 @@
       <!-- Section Header -->
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <h3 class="text-sm font-medium text-gray-900">Member Organizations</h3>
+          <h3 class="text-sm font-medium text-gray-900">Member Companies</h3>
           <button
             type="button"
             class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
-            pTooltip="Member organizations with an active membership in SFDC"
+            pTooltip="Member companies with an active membership in SFDC"
             tooltipPosition="top"
             tooltipEvent="both"
-            aria-label="Member organizations with an active membership in SFDC">
+            aria-label="Member companies with an active membership in SFDC">
             <i class="fa-light fa-circle-info"></i>
           </button>
         </div>
@@ -74,7 +74,7 @@
           class="flex items-center justify-center py-12"
           role="status"
           aria-live="polite"
-          aria-label="Loading member organizations chart"
+          aria-label="Loading member companies chart"
           data-testid="total-members-drawer-chart-loading">
           <i aria-hidden="true" class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
         </div>

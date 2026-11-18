@@ -48,7 +48,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   // the `undefined` the missing-data test means to pass, and that test would silently assert
   // nothing.
   async function renderWith(dialogData: OrgClaSignHandoffDialogData | undefined): Promise<ComponentFixture<OrgEasyclaSignHandoffComponent>> {
-    let href = 'https://example.test/org/easycla';
+    let href = 'https://example.test/company/easycla';
     location = {
       get href() {
         return href;
@@ -188,7 +188,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     const fixture = await render();
 
     expect(testid(fixture, 'org-easycla-sign-failed')).not.toBeNull();
-    expect(location.href).toBe('https://example.test/org/easycla');
+    expect(location.href).toBe('https://example.test/company/easycla');
   });
 
   /**

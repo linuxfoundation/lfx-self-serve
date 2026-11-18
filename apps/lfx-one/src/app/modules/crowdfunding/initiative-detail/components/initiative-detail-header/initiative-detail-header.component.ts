@@ -80,7 +80,7 @@ export class InitiativeDetailHeaderComponent {
     return type ? CROWDFUNDING_ATTRIBUTION_TYPE_ICONS[type] : '';
   });
   protected readonly attributionTooltip = computed(() => {
-    const entity = this.initiative().attribution?.type === 'project' ? 'project' : 'organization';
+    const entity = this.initiative().attribution?.type === 'project' ? 'project' : 'company';
     return `This initiative is run on behalf of this ${entity}. Donors see it on the public initiative page.`;
   });
   protected readonly publicPageUrl = computed(() => `${environment.urls.crowdfunding.replace(/\/+$/, '')}/initiatives/${this.initiative().slug}`);
