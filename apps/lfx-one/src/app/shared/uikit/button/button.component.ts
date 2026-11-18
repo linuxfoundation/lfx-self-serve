@@ -105,6 +105,8 @@ export class UiButtonComponent {
   public readonly link = input<string | unknown[] | null>(null);
   /** External URL, such as a Zoom link: renders an `<a>` that opens it in a new tab. Wins over `link`. */
   public readonly href = input<string | null>(null);
+  /** Where an `href` opens: a new tab by default, or `_self` for a `mailto:` or app URL. */
+  public readonly target = input<'_blank' | '_self'>('_blank');
   /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
   /** Tooltip text, forwarded to the inner button. An empty value shows nothing. See `lfxUiTooltip` for the full contract. */
   public readonly tooltip = input<string>('', { alias: 'lfxUiTooltip' });

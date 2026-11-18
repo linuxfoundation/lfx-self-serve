@@ -1928,6 +1928,16 @@ export class CommitteeService {
     );
   }
 
+  /** Withdraws the caller's own pending application with their token; resubmitting reopens the same record. */
+  public async withdrawApplication(req: Request, committeeId: string, applicationId: string): Promise<CommitteeJoinApplication> {
+    return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/withdraw`,
+      'POST'
+    );
+  }
+
   // ── Committee Documents ────────────────────────────────────────────────────
 
   public async getCommitteeDocuments(req: Request, committeeId: string): Promise<CommitteeDocument[]> {

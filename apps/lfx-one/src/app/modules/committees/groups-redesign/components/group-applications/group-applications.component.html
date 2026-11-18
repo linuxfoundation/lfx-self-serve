@@ -1,0 +1,85 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (rows().length) {
+  <!-- At 640px and below the header stacks this button full width under the title, after Invitations. -->
+  <lfx-ui-button
+    class="max-[640px]:order-2 max-[640px]:!block max-[640px]:basis-full max-[640px]:[&>button]:w-full"
+    variant="tertiary"
+    icon="fa-light fa-clock"
+    [ariaLabel]="'Pending applications (' + rows().length + ')'"
+    [ariaExpanded]="drawerOpen()"
+    (click)="openDrawer()"
+    data-testid="groups-redesign-applications-button">
+    Pending applications
+    <lfx-ui-badge tone="neutral" size="sm" data-testid="groups-redesign-applications-count">{{ rows().length }}</lfx-ui-badge>
+  </lfx-ui-button>
+}
+
+<ng-template #drawer>
+  <lfx-ui-drawer heading="Pending applications" [subtitle]="subtitle()">
+    <!-- Repeats the toast's Undo: the drawer's focus trap keeps the toast out of keyboard reach. -->
+    @if (undo(); as pending) {
+      <lfx-ui-button
+        #undoButton
+        drawerActions
+        variant="secondary"
+        size="small"
+        icon="fa-light fa-arrow-rotate-left"
+        [ariaLabel]="pending.ariaLabel"
+        (click)="pending.run()"
+        data-testid="groups-redesign-applications-undo">
+        Undo
+      </lfx-ui-button>
+    }
+    <!-- Rows split by a 1px inset line, not a border; the button moves under the text below a 480px row. -->
+    <div
+      class="@container -my-[20px] flex flex-col pb-[8px] pt-[4px] [&>*+*]:shadow-[inset_0_1px_0_0] [&>*+*]:shadow-gray-100"
+      data-testid="groups-redesign-applications-panel">
+      @for (row of rows(); track row.uid) {
+        <div
+          #rowElement
+          class="flex flex-wrap items-start gap-x-[24px] gap-y-[12px] py-[16px] @[480px]:flex-nowrap"
+          data-testid="groups-redesign-applications-row">
+          <div class="flex min-w-0 flex-1 flex-col gap-[4px]">
+            @if (row.project_name; as scope) {
+              <span
+                class="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[12px] text-gray-900"
+                data-testid="groups-redesign-applications-row-scope">
+                <lfx-meeting-project-logo [src]="row.project_logo_url ?? ''" />
+                <span #name class="min-w-0 truncate" [lfxUiTooltip]="scope" [lfxUiTooltipDisabled]="!truncated().has(name)">{{ scope }}</span>
+              </span>
+            }
+            <a
+              #name
+              [lfxUiTooltip]="row.committee_name"
+              [lfxUiTooltipDisabled]="!truncated().has(name)"
+              class="min-w-0 max-w-full self-start truncate text-[14px] font-medium text-gray-900 hover:text-blue-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              [routerLink]="row.viewCommands"
+              [queryParams]="row.viewQueryParams"
+              [state]="linkState"
+              (click)="closeDrawer()"
+              data-testid="groups-redesign-applications-row-name"
+              >{{ row.committee_name }}</a
+            >
+            <span class="text-[12px] leading-[16px] text-gray-500" data-testid="groups-redesign-applications-row-applied"
+              >Applied {{ row.created_at | date: 'MMM d, y' }}</span
+            >
+          </div>
+          <div class="flex basis-full justify-end @[480px]:basis-auto">
+            <lfx-ui-button
+              variant="secondary"
+              size="small"
+              icon="fa-light fa-arrow-rotate-left"
+              [ariaLabel]="'Withdraw application to ' + row.committee_name"
+              (click)="withdraw(row)"
+              data-testid="groups-redesign-applications-withdraw">
+              Withdraw
+            </lfx-ui-button>
+          </div>
+        </div>
+      }
+    </div>
+  </lfx-ui-drawer>
+</ng-template>

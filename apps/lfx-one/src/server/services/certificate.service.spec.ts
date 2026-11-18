@@ -173,7 +173,7 @@ describe('CertificateService', () => {
     it('applies the LF Open Source logo for a backfill event in China', async () => {
       mockRow();
 
-      await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      await service.generateCertificate(req, { eventId: '-1', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' });
 
       expect(drawnLogo().path).toContain(LF_OPEN_SOURCE_LOGO);
     });
@@ -181,7 +181,7 @@ describe('CertificateService', () => {
     it('draws the override logo wider than the default so the wordmark stays legible', async () => {
       mockRow();
 
-      await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      await service.generateCertificate(req, { eventId: '-1', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' });
 
       // The wordmark is ~13.6:1; at the default 145pt width it renders about 10pt tall.
       expect(drawnLogo().options?.['width']).toBe(240);
@@ -190,7 +190,7 @@ describe('CertificateService', () => {
     it('replaces the link, name, description and on-behalf line', async () => {
       mockRow();
 
-      await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      await service.generateCertificate(req, { eventId: '-1', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' });
 
       const texts = drawnTexts();
       expect(texts).toContain('https://lfopensource.cn/');
@@ -205,7 +205,7 @@ describe('CertificateService', () => {
       // Real data: event -6, KubeCon + CloudNativeCon China 2026, owned by CNCF.
       mockRow({ PROJECT_ID: CNCF_PROJECT_ID });
 
-      await service.generateCertificate(req, { eventId: '-6', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      await service.generateCertificate(req, { eventId: '-6', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' });
 
       expect(drawnLogo().path).toContain(LF_OPEN_SOURCE_LOGO);
       expect(drawnSignature().path).toContain('cncf-signature.png');
@@ -228,7 +228,7 @@ describe('CertificateService', () => {
     ])('applies the override despite %s', async (_label, overrides) => {
       mockRow(overrides);
 
-      await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      await service.generateCertificate(req, { eventId: '-1', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' });
 
       expect(drawnLogo().path).toContain(LF_OPEN_SOURCE_LOGO);
     });
@@ -248,7 +248,7 @@ describe('CertificateService', () => {
     ])('keeps the default logo and link for %s', async (_label, overrides) => {
       mockRow(overrides);
 
-      await service.generateCertificate(req, { eventId: 'evt-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      await service.generateCertificate(req, { eventId: 'evt-1', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' });
 
       expect(drawnLogo().path).toContain(TLF_LOGO);
       expect(drawnLogo().options?.['width']).toBe(145);
@@ -259,7 +259,7 @@ describe('CertificateService', () => {
     it('keeps the CNCF logo, link and name for a non-matching CNCF event', async () => {
       mockRow({ PROJECT_ID: CNCF_PROJECT_ID, EVENT_SOURCE: 'cvent', EVENT_COUNTRY: 'United States' });
 
-      await service.generateCertificate(req, { eventId: 'evt-2', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      await service.generateCertificate(req, { eventId: 'evt-2', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' });
 
       expect(drawnLogo().path).toContain(CNCF_LOGO);
       expect(drawnTexts()).toContain('https://www.cncf.io/');
@@ -279,7 +279,7 @@ describe('CertificateService', () => {
       vi.stubEnv('TZ', 'UTC');
       mockRow({ EVENT_START_DATE: start, EVENT_END_DATE: end });
 
-      await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      await service.generateCertificate(req, { eventId: '-1', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' });
 
       expect(drawnTexts().some((t) => t.includes(expected))).toBe(true);
     });
@@ -289,7 +289,7 @@ describe('CertificateService', () => {
     it('starts the signatory text below the signature image', async () => {
       mockRow({ EVENT_SOURCE: 'cvent', EVENT_COUNTRY: 'United States' });
 
-      await service.generateCertificate(req, { eventId: 'evt-1', userEmail: 'user@example.com', userName: 'Jane Doe' });
+      await service.generateCertificate(req, { eventId: 'evt-1', registrant: { email: 'user@example.com', userId: null }, userName: 'Jane Doe' });
 
       const signature = drawnSignature();
       const signatory = pdfMocks.texts.find((t) => t.text === 'Jim Zemlin\nExecutive Director');
@@ -307,7 +307,11 @@ describe('CertificateService', () => {
       vi.stubEnv('TZ', 'UTC');
       mockRow();
 
-      const result = await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      const result = await service.generateCertificate(req, {
+        eventId: '-1',
+        registrant: { email: 'attendee@example.com', userId: null },
+        userName: 'Test Attendee',
+      });
 
       expect(result.fileName).toBe('certificate-of-attendance-test-event-2026-03-10.pdf');
       expect(result.pdf).toBeInstanceOf(Buffer);
@@ -318,28 +322,40 @@ describe('CertificateService', () => {
     it('throws AuthorizationError when the user did not attend', async () => {
       mockRow({ USER_ATTENDED: false });
 
-      await expect(service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' })).rejects.toThrow(
-        AuthorizationError
-      );
+      await expect(
+        service.generateCertificate(req, { eventId: '-1', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' })
+      ).rejects.toThrow(AuthorizationError);
     });
 
     it('throws ResourceNotFoundError when no registration row matches', async () => {
       snowflakeMocks.execute.mockResolvedValue({ rows: [] });
 
-      await expect(service.generateCertificate(req, { eventId: 'missing', userEmail: 'attendee@example.com', userName: 'Test Attendee' })).rejects.toThrow(
-        ResourceNotFoundError
-      );
+      await expect(
+        service.generateCertificate(req, { eventId: 'missing', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' })
+      ).rejects.toThrow(ResourceNotFoundError);
     });
 
     it('selects EVENT_SOURCE and binds the event id and email in order', async () => {
       mockRow();
 
-      await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+      await service.generateCertificate(req, { eventId: '-1', registrant: { email: 'attendee@example.com', userId: null }, userName: 'Test Attendee' });
 
       const [sql, binds] = snowflakeMocks.execute.mock.calls[0];
       expect(sql).toContain('EVENT_SOURCE');
       expect((sql.match(/\?/g) ?? []).length).toBe(binds.length);
       expect(binds).toEqual(['-1', 'attendee@example.com']);
+    });
+
+    it('matches on Salesforce ID or email and prefers the attended row when the ID is known', async () => {
+      mockRow();
+
+      await service.generateCertificate(req, { eventId: '-1', registrant: { email: 'attendee@example.com', userId: 'sfid-1' }, userName: 'Test Attendee' });
+
+      const [sql, binds] = snowflakeMocks.execute.mock.calls[0];
+      expect(sql).toContain('(USER_ID = ? OR LOWER(USER_EMAIL) = ?)');
+      expect(sql).toContain('ORDER BY USER_ATTENDED DESC NULLS LAST');
+      expect((sql.match(/\?/g) ?? []).length).toBe(binds.length);
+      expect(binds).toEqual(['-1', 'sfid-1', 'attendee@example.com']);
     });
   });
 });

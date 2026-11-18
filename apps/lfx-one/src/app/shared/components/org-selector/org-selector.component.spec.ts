@@ -10,6 +10,7 @@ import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -43,6 +44,8 @@ describe('OrgSelectorComponent.selectItem', () => {
   let refreshList: ReturnType<typeof vi.fn>;
   let previewingMenuLens: WritableSignal<boolean>;
   let noteAddressed: ReturnType<typeof vi.fn>;
+  let noteViewModeAddressed: ReturnType<typeof vi.fn>;
+  let noteFullAccessAddressed: ReturnType<typeof vi.fn>;
 
   const pick = (item: OrgItem): void => (fixture.componentInstance as unknown as { selectItem(item: OrgItem): void }).selectItem(item);
 
@@ -59,6 +62,8 @@ describe('OrgSelectorComponent.selectItem', () => {
     refreshList = vi.fn();
     previewingMenuLens = signal(false);
     noteAddressed = vi.fn();
+    noteViewModeAddressed = vi.fn();
+    noteFullAccessAddressed = vi.fn();
     const empty = signal(new Set<string>());
 
     await TestBed.configureTestingModule({
@@ -66,6 +71,10 @@ describe('OrgSelectorComponent.selectItem', () => {
       providers: [
         provideNoopAnimations(),
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed, isClaOnly: () => false } },
+        {
+          provide: OrgLensViewModeService,
+          useValue: { noteAddressed: noteViewModeAddressed, noteFullAccessAddressed, isEmployeeView: signal(false), isFullAccessReader: signal(false) },
+        },
         {
           provide: AccountContextService,
           useValue: {
@@ -161,6 +170,23 @@ describe('OrgSelectorComponent.selectItem', () => {
 
     expect(noteAddressed).toHaveBeenCalledWith(UID_B, true);
     expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  // #5845 — the path guard skips the resolver for a known slug, so the pick must carry the row's mode answers.
+  it('records an employee-view row, and clears the full-access note, before the switch navigates', () => {
+    pick({ ...rowB, slug: null, employeeView: true });
+
+    expect(noteViewModeAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, false);
+    expect(noteViewModeAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  it('records a full-access row before the switch navigates, and not as employee-view', () => {
+    pick({ ...rowB, slug: null, fullAccess: true });
+
+    expect(noteFullAccessAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteViewModeAddressed).toHaveBeenCalledWith(UID_B, false);
+    expect(noteFullAccessAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
   it('clears any CLA-only note when the picked row is not CLA-only', () => {

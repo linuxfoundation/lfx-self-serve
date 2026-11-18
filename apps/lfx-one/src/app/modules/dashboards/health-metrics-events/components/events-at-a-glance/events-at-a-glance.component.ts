@@ -5,10 +5,14 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { TableComponent } from '@components/table/table.component';
 import { buildHealthMetricsEventsAtAGlanceView } from '@lfx-one/shared/utils';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { Skeleton } from 'primeng/skeleton';
 import { combineLatest } from 'rxjs';
 
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
@@ -19,12 +23,12 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#kpi` — reach across every event in the period. The Events tab owns the read, since the same
- * response decides whether the tab shows at all; this section projects it for the selected period.
+ * `#kpi` — how this period's events compare with the year before: the metrics row, then each figure against it. The
+ * Events tab owns the read, since the same response decides whether the tab shows at all; this section projects it.
  */
 @Component({
   selector: 'lfx-events-at-a-glance',
-  imports: [EmptyStateComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsMetricsRowComponent, Skeleton, TableComponent, UiBadgeComponent],
   templateUrl: './events-at-a-glance.component.html',
 })
 export class EventsAtAGlanceComponent {
