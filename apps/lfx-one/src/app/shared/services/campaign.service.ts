@@ -658,14 +658,18 @@ export class CampaignService {
     );
   }
 
+  /**
+   * `accountKey` null reads the panel through the LF system account (#5889): the BFF picks the
+   * account, so none is sent. The same holds for the Reddit and Meta reads below.
+   */
   public getLinkedInMonitorData(
     projectSlug: string,
-    accountKey: string,
+    accountKey: string | null,
     days: number = 30,
     accountSource: MonitorAccountSource | null = null
   ): Observable<LinkedInMonitorResponse> {
     return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
-      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
     });
   }
 
@@ -675,12 +679,12 @@ export class CampaignService {
 
   public getRedditMonitorData(
     projectSlug: string,
-    accountKey: string,
+    accountKey: string | null,
     days: number = 30,
     accountSource: MonitorAccountSource | null = null
   ): Observable<RedditMonitorResponse> {
     return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
-      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
     });
   }
 
@@ -774,12 +778,12 @@ export class CampaignService {
 
   public getMetaMonitorData(
     projectSlug: string,
-    accountKey: string,
+    accountKey: string | null,
     days: number = 30,
     accountSource: MonitorAccountSource | null = null
   ): Observable<MetaMonitorResponse> {
     return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
-      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
     });
   }
 
