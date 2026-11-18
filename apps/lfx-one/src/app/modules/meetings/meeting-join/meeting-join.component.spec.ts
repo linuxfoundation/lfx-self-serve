@@ -183,6 +183,7 @@ describe('MeetingJoinComponent', () => {
             attachmentChanges: signal(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
             clearRemovedRegistration: vi.fn((id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id)))),
+            rememberRemovedRegistrants: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser,
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
@@ -265,6 +266,48 @@ describe('MeetingJoinComponent', () => {
     expect(component.effectivelyInvited()).toBe(false);
     expect(TestBed.inject(MeetingService).clearRemovedRegistration).not.toHaveBeenCalled();
     expect(getPublicMeeting).toHaveBeenCalledTimes(fetchesBefore);
+  });
+
+  it.each([false, true])('reconciles drawer self-row deletion, another registration remains: %s', async (remaining) => {
+    const component = await createComponent();
+    component.onSelfAdded(MEETING_ID);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+    const result = { meeting_id: MEETING_ID, removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: remaining ? ['self-survivor'] : [] };
+    component.onSelfRemoved(result);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(remaining);
+    expect(component.canLeaveMeeting()).toBe(remaining);
+    expect(component.canResendInvite()).toBe(remaining);
+    expect(removedIds().has(MEETING_ID)).toBe(!remaining);
+    expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).toHaveBeenCalledWith(MEETING_ID, expect.any(String), result);
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+  });
+
+  it('ignores a self-row deletion belonging to another meeting', async () => {
+    const component = await createComponent();
+    component.onSelfRemoved({ meeting_id: 'another-meeting', removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: [] });
+    expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).not.toHaveBeenCalled();
+  });
+
+  it('does not restore a surviving date-scoped RSVP when a recurring date is unresolved after drawer deletion', async () => {
+    getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting({ recurrence: { type: 2, repeat_interval: 1 } }), project: buildProject() }));
+    const component = await createComponent();
+    const scoped = {
+      id: 'synthetic-survivor-rsvp',
+      meeting_id: MEETING_ID,
+      registrant_id: 'self-survivor',
+      response_type: 'accepted',
+      scope: 'single',
+      occurrence_id: '2525245200',
+      created_at: '2026-01-01T00:00:00Z',
+    } as MeetingRsvp;
+    vi.mocked(TestBed.inject(UserService).confirmedMeetingRsvps).mockReturnValue([scoped]);
+    component.onSelfRemoved({ meeting_id: MEETING_ID, removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: ['self-survivor'] });
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.currentUserRsvp()).toBeNull();
+    expect(component.effectivelyInvited()).toBe(true);
   });
 
   it.each([

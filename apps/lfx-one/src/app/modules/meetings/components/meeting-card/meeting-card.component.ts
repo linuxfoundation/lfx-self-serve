@@ -60,6 +60,7 @@ import {
   MeetingGroupLink,
   MeetingOccurrence,
   MeetingRsvp,
+  MeetingSelfRegistrationRemovalEvent,
   MeetingRecurrence,
   RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
@@ -573,6 +574,20 @@ export class MeetingCardComponent implements OnInit {
     if (this.meeting().id !== meetingId) return;
     this.optimisticInvited.set(true);
     this.meetingService.clearRemovedRegistration(meetingId);
+    this.refreshMeeting();
+  }
+
+  public onSelfRemoved(result: MeetingSelfRegistrationRemovalEvent): void {
+    const meetingId = result.meeting_id;
+    if (this.meeting().id !== meetingId) return;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+    this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
+    const stillInvited = result.remaining_registrant_ids.length > 0;
+    this.optimisticInvited.set(stillInvited);
+    if (stillInvited) this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
+    else this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
+    this.userService.refreshUserMeetings(false);
     this.refreshMeeting();
   }
 

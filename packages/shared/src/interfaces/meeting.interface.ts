@@ -716,6 +716,15 @@ export interface MeetingRegistrationRemovalResult {
   remaining_rsvps?: MeetingRsvp[];
 }
 
+/** A confirmed organizer-side self-row delete, reconciled against the drawer's complete roster. */
+export interface MeetingSelfRegistrationRemovalEvent {
+  meeting_id: string;
+  /** IDs successfully deleted through the organizer's guest drawer. */
+  removed_registrant_ids: string[];
+  /** Other matching registrations in the complete roster; these were not necessarily deletion attempts. */
+  remaining_registrant_ids: string[];
+}
+
 /**
  * Registrants matched by the signed-in user's other verified emails.
  */

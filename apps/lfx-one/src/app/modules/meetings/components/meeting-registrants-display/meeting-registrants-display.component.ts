@@ -3,14 +3,13 @@
 
 import { NgTemplateOutlet } from '@angular/common';
 import {
-  afterNextRender,
+  afterRenderEffect,
   Component,
   computed,
   DestroyRef,
   effect,
   ElementRef,
   inject,
-  Injector,
   input,
   InputSignal,
   output,
@@ -38,6 +37,7 @@ import {
   MeetingRegistrant,
   MeetingRegistrantWithState,
   MeetingSelfGuest,
+  MeetingSelfRegistrationRemovalEvent,
   PastMeeting,
   PastMeetingParticipant,
   PastParticipantAttendanceFilter,
@@ -112,7 +112,6 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
-  private readonly injector = inject(Injector);
   protected readonly inviteResend = inject(MeetingInviteResendService);
 
   public readonly meeting: InputSignal<Meeting | PastMeeting> = input.required<Meeting | PastMeeting>();
@@ -133,6 +132,7 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
   /** A successful self-invite, so parents can expose RSVP and self-registration controls immediately. */
   public readonly selfAdded: OutputEmitterRef<MeetingRegistrant> = output<MeetingRegistrant>();
+  public readonly selfRemoved: OutputEmitterRef<MeetingSelfRegistrationRemovalEvent> = output<MeetingSelfRegistrationRemovalEvent>();
   public readonly totalCountChange: OutputEmitterRef<number> = output<number>();
   // Emits the host-flagged people (the organizer set) whenever the list resolves, so a parent
   // can feed the same set to the shared "Organized by" chip — keeping chip and modal in agreement.
@@ -143,6 +143,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly internalLoadFailed: WritableSignal<boolean> = signal(false);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
+  private readonly pendingSelfFocusContext = signal<string | null>(null);
   // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
   // disappears without waiting for the async refetch to complete.
   private readonly deletedRegistrantUids = signal<Set<string>>(new Set());
@@ -153,8 +154,9 @@ export class MeetingRegistrantsDisplayComponent {
   private rowActionMenuUid: string | null = null;
   protected readonly hostUpdatingUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
-  private readonly registrantContextKey: Signal<string> = computed(() =>
-    JSON.stringify([this.meeting().id, this.pastMeeting(), occurrenceIdToSeconds(this.occurrence()?.occurrence_id)])
+  private readonly registrantContextKey: Signal<string> = computed(() => JSON.stringify([this.meeting().id, this.pastMeeting()]));
+  private readonly selfFocusContextKey: Signal<string> = computed(() =>
+    JSON.stringify([this.registrantContextKey(), occurrenceIdToSeconds(this.occurrence()?.occurrence_id)])
   );
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
@@ -323,10 +325,31 @@ export class MeetingRegistrantsDisplayComponent {
         }
       });
 
-    // Successful adds survive closing the drawer, but never leak into another meeting or date.
+    // A series-wide invite survives date switches as well as drawer closes; another meeting must not inherit it.
     toObservable(this.registrantContextKey)
       .pipe(pairwise(), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.optimisticRegistrants.set([]));
+      .subscribe(() => {
+        this.optimisticRegistrants.set([]);
+        this.deletedRegistrantUids.set(new Set());
+      });
+
+    effect(() => {
+      const fetched = this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.internalRegistrants();
+      const indexedUids = new Set(fetched.map((row) => row.uid));
+      const self = this.selfGuest();
+      const selfRemoved = !!self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id);
+      this.optimisticRegistrants.update((rows) => {
+        if (selfRemoved) {
+          const removedUids = [...fetched, ...rows].filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
+          this.deletedRegistrantUids.update((known) => new Set([...known, ...removedUids]));
+        }
+        // Retire confirmed UIDs once indexed. UID-less additions remain hints until a confirmed removal.
+        return rows.filter((row) => {
+          if (selfRemoved && isMeetingSelfGuestListed(self, [row])) return false;
+          return !row.uid || row.uid.startsWith('optimistic-') || !indexedUids.has(row.uid);
+        });
+      });
+    });
 
     effect(() => {
       if (!this.visible()) return;
@@ -358,9 +381,20 @@ export class MeetingRegistrantsDisplayComponent {
         this.addRegistrantForm.reset();
         this.inviteScopeForm.reset();
         this.stagedGuests.set([]);
-        this.deletedRegistrantUids.set(new Set());
         this.hostOverrides.set(new Map());
       });
+
+    afterRenderEffect(() => {
+      const pending = this.pendingSelfFocusContext();
+      if (!pending) return;
+      if (!this.visible() || this.selfFocusContextKey() !== pending) {
+        this.pendingSelfFocusContext.set(null);
+        return;
+      }
+      if (this.registrantsLoading()) return;
+      this.host.nativeElement.querySelector<HTMLButtonElement>('[data-testid="add-registrant-toggle"]')?.focus();
+      this.pendingSelfFocusContext.set(null);
+    });
   }
 
   // === Public Methods ===
@@ -428,6 +462,7 @@ export class MeetingRegistrantsDisplayComponent {
     if (!self || !this.canAddSelf() || this.selfSubmitting()) return;
 
     const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
+    const focusContext = this.selfFocusContextKey();
     const guest = {
       email: self.email,
       first_name: self.first_name,
@@ -445,11 +480,7 @@ export class MeetingRegistrantsDisplayComponent {
         this.optimisticRegistrants.update((list) => [...list, added]);
       }
       this.selfAdded.emit(added);
-      if (this.destroyRef.destroyed || !this.visible()) return;
-      // The button that held focus is gone with the add. Browser-only, so SSR-safe.
-      afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('[data-testid="add-registrant-toggle"]')?.focus(), {
-        injector: this.injector,
-      });
+      if (!this.destroyRef.destroyed) this.pendingSelfFocusContext.set(focusContext);
     });
   }
 
@@ -714,19 +745,29 @@ export class MeetingRegistrantsDisplayComponent {
       this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
       return;
     }
+    const meetingId = this.meeting().id;
+    const contextKey = this.registrantContextKey();
+    const self = this.selfGuest();
     this.deleting.set(true);
     this.meetingService
-      .deleteMeetingRegistrants(this.meeting().id, [uid])
+      .deleteMeetingRegistrants(meetingId, [uid])
       .pipe(take(1))
       .subscribe({
         next: (response) => {
           this.deleting.set(false);
+          if (this.destroyRef.destroyed || this.registrantContextKey() !== contextKey) return;
           if (response.summary.successful > 0) {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest removed successfully' });
             // Remove the guest from both signals immediately so the UI updates without
             // waiting for the async refetch (works for both managed and self-managed modes).
             this.deletedRegistrantUids.update((uids) => new Set([...uids, uid]));
             this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
+            if (self && isMeetingSelfGuestListed(self, [registrant])) {
+              const remaining = this.registrants()
+                .filter((row) => isMeetingSelfGuestListed(self, [row]))
+                .map((row) => row.uid);
+              this.selfRemoved.emit({ meeting_id: meetingId, removed_registrant_ids: [uid], remaining_registrant_ids: remaining });
+            }
             if (this.externallyManaged()) {
               this.refreshRequested.emit(-response.summary.successful);
             } else {
@@ -788,8 +829,6 @@ export class MeetingRegistrantsDisplayComponent {
                 }),
                 map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
                 tap((registrants) => {
-                  // The fetch returned a fresh list — any pending deletions are now reflected.
-                  this.deletedRegistrantUids.set(new Set());
                   const meeting = this.meeting();
                   const resolvedBaseCount = resolveMeetingBaseCount(meeting);
                   const hasBackendBaseCount = resolvedBaseCount !== undefined;
@@ -899,6 +938,10 @@ export class MeetingRegistrantsDisplayComponent {
         list = [...seed].filter((r) => !deletedUids.has(r.uid)).sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
       } else {
         list = this.internalRegistrants().filter((r) => !deletedUids.has(r.uid));
+      }
+      const self = this.selfGuest();
+      if (self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id)) {
+        list = list.filter((row) => !isMeetingSelfGuestListed(self, [row]));
       }
       // Deduplicate optimistic rows against the fetched list. Use UID for real registrants (exact
       // match regardless of email normalisation) and email as a fallback for optimistic-* rows

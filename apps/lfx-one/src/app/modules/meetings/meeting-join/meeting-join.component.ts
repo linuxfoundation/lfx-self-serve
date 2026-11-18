@@ -46,6 +46,7 @@ import {
   MeetingRegistrant,
   MeetingRemovalSource,
   MeetingRsvp,
+  MeetingSelfRegistrationRemovalEvent,
   OccurrenceNavItem,
   resolveOccurrenceRecurrence,
   PastMeetingAttachment,
@@ -852,6 +853,32 @@ export class MeetingJoinComponent implements OnInit {
     if (this.meeting()?.id !== meetingId) return;
     this.optimisticInvited.set(true);
     this.meetingService.clearRemovedRegistration(meetingId);
+    this.pageData.refresh();
+  }
+
+  public onSelfRemoved(result: MeetingSelfRegistrationRemovalEvent): void {
+    const meetingId = result.meeting_id;
+    if (this.meeting()?.id !== meetingId) return;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+    const stillInvited = result.remaining_registrant_ids.length > 0;
+    this.optimisticInvited.set(stillInvited);
+    if (stillInvited) {
+      this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
+      const occurrenceId = resolveRsvpOccurrenceId(this.meeting(), { occurrence: this.currentOccurrence() });
+      const current = this.currentUserRsvp();
+      const candidates = [...this.userService.confirmedMeetingRsvps(meetingId), ...(current ? [current] : [])].filter(
+        (rsvp) =>
+          !result.removed_registrant_ids.includes(rsvp.registrant_id) &&
+          this.userService.isMeetingRsvpCurrent(rsvp, this.meeting()) &&
+          (!this.meeting().recurrence || !!occurrenceId || rsvp.scope === 'all')
+      );
+      this.rsvpUpdateTrigger$.next(selectApplicableRsvp(occurrenceId, candidates));
+    } else {
+      this.rsvpUpdateTrigger$.next(null);
+      this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
+    }
+    this.userService.refreshUserMeetings(false);
     this.pageData.refresh();
   }
 
