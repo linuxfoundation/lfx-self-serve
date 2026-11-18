@@ -660,6 +660,33 @@ describe('MeetingCardComponent — remove myself', () => {
     rsvpButtons = undefined;
   });
 
+  it.each([false, true])('restores invitation controls after drawer self-add, previously removed: %s', async (previouslyRemoved) => {
+    if (previouslyRemoved) removedIds.set(new Set(['meeting-1']));
+    const component = await mount({ ...INVITEE, invited: false, organizer: true, my_registrant_ids: [] });
+    const meetings = TestBed.inject(MeetingService);
+    expect(component.effectivelyInvited()).toBe(false);
+    vi.mocked(meetings.getMeeting).mockClear();
+
+    component.onSelfAdded('meeting-1');
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.effectivelyInvited()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.canResendInvite()).toBe(true);
+    expect(removedIds().has('meeting-1')).toBe(false);
+    expect(meetings.getMeeting).toHaveBeenCalledTimes(1);
+    expect(component.additionalRegistrantsCount()).toBe(0);
+  });
+
+  it('ignores drawer self-add events belonging to another meeting', async () => {
+    const component = await mount({ ...INVITEE, invited: false, organizer: true, my_registrant_ids: [] });
+    const meetings = TestBed.inject(MeetingService);
+    vi.mocked(meetings.getMeeting).mockClear();
+    component.onSelfAdded('another-meeting');
+    expect(component.effectivelyInvited()).toBe(false);
+    expect(meetings.getMeeting).not.toHaveBeenCalled();
+  });
+
   it.each([{ sub: 'synthetic-other', username: 'synthetic-viewer' }, null])(
     "removes the previous viewer's card-local confirmations from an organizer overview after identity changes to %s",
     async (nextUser) => {

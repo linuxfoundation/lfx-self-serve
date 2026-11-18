@@ -847,6 +847,14 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
+  /** Counts/roster refresh separately through refreshRequested; self-add also restores invitation controls. */
+  public onSelfAdded(meetingId: string): void {
+    if (this.meeting()?.id !== meetingId) return;
+    this.optimisticInvited.set(true);
+    this.meetingService.clearRemovedRegistration(meetingId);
+    this.pageData.refresh();
+  }
+
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',

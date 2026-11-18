@@ -847,6 +847,47 @@ describe('MeetingDetailsGuestsComponent', () => {
       expect(query('meeting-details-guests-add-self')).toBeNull();
     });
 
+    it.each(['success', 'failure'])('keeps a confirmed write alive after destruction and skips late %s view updates', async (outcome) => {
+      const response = new Subject<BatchRegistrantOperationResponse<MeetingRegistrant>>();
+      meetingService['addMeetingRegistrants'].mockReturnValue(response);
+      await render();
+      clickSelf();
+      const refreshParticipants = TestBed.inject(MeetingDetailsContext).refreshParticipants;
+      vi.mocked(refreshParticipants).mockClear();
+      toastShow.mockClear();
+      fixture.destroy();
+
+      expect(response.observed).toBe(true);
+      if (outcome === 'success') {
+        response.next(success);
+        expect(meetingService['clearRemovedRegistration']).toHaveBeenCalledWith('synthetic-meeting');
+      } else {
+        response.error(new HttpErrorResponse({ status: 503 }));
+      }
+      expect(response.observed).toBe(false);
+      expect(refreshParticipants).not.toHaveBeenCalled();
+      expect(toastShow).not.toHaveBeenCalled();
+    });
+
+    it('does not update a replacement meeting when a self-add finishes late', async () => {
+      const response = new Subject<BatchRegistrantOperationResponse<MeetingRegistrant>>();
+      meetingService['addMeetingRegistrants'].mockReturnValue(response);
+      await render();
+      clickSelf();
+      current.set(meeting({ id: 'replacement-meeting' }));
+      await fixture.whenStable();
+      const refreshParticipants = TestBed.inject(MeetingDetailsContext).refreshParticipants;
+      vi.mocked(refreshParticipants).mockClear();
+      toastShow.mockClear();
+      response.next(success);
+      await fixture.whenStable();
+
+      expect(meetingService['clearRemovedRegistration']).toHaveBeenCalledWith('synthetic-meeting');
+      expect(refreshParticipants).not.toHaveBeenCalled();
+      expect(toastShow).not.toHaveBeenCalled();
+      expect(query('meeting-details-guests-add-self')).not.toBeNull();
+    });
+
     it.each(['network', 'batch'])('keeps the button and supports retry after a %s failure', async (failure) => {
       const failed = { ...success, summary: { successful: 0, failed: 1, total: 1 }, successes: [] };
       const response = failure === 'network' ? throwError(() => new HttpErrorResponse({ status: 503 })) : of(failed);

@@ -6,15 +6,20 @@ import { describe, expect, it } from 'vitest';
 import type { CombinedProfile, MeetingInviteEmail, User } from '../interfaces';
 import { buildMeetingSelfGuest, isMeetingSelfGuestListed } from './meeting-self-guest.utils';
 
-const session = (overrides: Partial<User> = {}): User =>
-  ({
-    email: 'session@example.com',
-    given_name: 'Session',
-    family_name: 'Claims',
-    picture: 'https://avatars.example.com/session.png',
-    'https://sso.linuxfoundation.org/claims/username': 'session-lfid',
-    ...overrides,
-  }) as User;
+const session = (overrides: Partial<User> = {}): User => ({
+  sid: 'synthetic-session',
+  sub: 'auth0|synthetic-session-user',
+  nickname: 'session-lfid',
+  name: 'Session Claims',
+  updated_at: '2026-01-01T00:00:00Z',
+  email_verified: true,
+  email: 'session@example.com',
+  given_name: 'Session',
+  family_name: 'Claims',
+  picture: 'https://avatars.example.com/session.png',
+  'https://sso.linuxfoundation.org/claims/username': 'session-lfid',
+  ...overrides,
+});
 
 const profile = (overrides: { user?: Partial<CombinedProfile['user']>; profile?: CombinedProfile['profile'] } = {}): CombinedProfile => ({
   user: {

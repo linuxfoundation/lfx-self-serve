@@ -131,6 +131,8 @@ export class MeetingRegistrantsDisplayComponent {
 
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
+  /** A successful self-invite, so parents can expose RSVP and self-registration controls immediately. */
+  public readonly selfAdded: OutputEmitterRef<MeetingRegistrant> = output<MeetingRegistrant>();
   public readonly totalCountChange: OutputEmitterRef<number> = output<number>();
   // Emits the host-flagged people (the organizer set) whenever the list resolves, so a parent
   // can feed the same set to the shared "Organized by" chip — keeping chip and modal in agreement.
@@ -151,6 +153,9 @@ export class MeetingRegistrantsDisplayComponent {
   private rowActionMenuUid: string | null = null;
   protected readonly hostUpdatingUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
+  private readonly registrantContextKey: Signal<string> = computed(() =>
+    JSON.stringify([this.meeting().id, this.pastMeeting(), occurrenceIdToSeconds(this.occurrence()?.occurrence_id)])
+  );
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
@@ -318,6 +323,11 @@ export class MeetingRegistrantsDisplayComponent {
         }
       });
 
+    // Successful adds survive closing the drawer, but never leak into another meeting or date.
+    toObservable(this.registrantContextKey)
+      .pipe(pairwise(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.optimisticRegistrants.set([]));
+
     effect(() => {
       if (!this.visible()) return;
       // Past-meeting participants always self-fetch.
@@ -348,7 +358,6 @@ export class MeetingRegistrantsDisplayComponent {
         this.addRegistrantForm.reset();
         this.inviteScopeForm.reset();
         this.stagedGuests.set([]);
-        this.optimisticRegistrants.set([]);
         this.deletedRegistrantUids.set(new Set());
         this.hostOverrides.set(new Map());
       });
@@ -435,6 +444,8 @@ export class MeetingRegistrantsDisplayComponent {
       if (this.externallyManaged()) {
         this.optimisticRegistrants.update((list) => [...list, added]);
       }
+      this.selfAdded.emit(added);
+      if (this.destroyRef.destroyed || !this.visible()) return;
       // The button that held focus is gone with the add. Browser-only, so SSR-safe.
       afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('[data-testid="add-registrant-toggle"]')?.focus(), {
         injector: this.injector,
@@ -443,6 +454,7 @@ export class MeetingRegistrantsDisplayComponent {
   }
 
   public onRequestRemoveGuest(registrant: MeetingRegistrant): void {
+    if (!this.canRemoveGuest(registrant)) return;
     const label = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'this guest';
     this.confirmationService.confirm({
       header: 'Remove guest',
@@ -522,7 +534,13 @@ export class MeetingRegistrantsDisplayComponent {
     );
   }
   protected canRemoveGuest(registrant: MeetingRegistrant): boolean {
-    return !this.pastMeeting() && this.showAddRegistrant() && registrant.type !== 'committee';
+    return (
+      !this.pastMeeting() &&
+      this.showAddRegistrant() &&
+      registrant.type !== 'committee' &&
+      !!registrant.uid?.trim() &&
+      !registrant.uid.startsWith('optimistic-')
+    );
   }
   protected hasRowActions(registrant: MeetingRegistrant): boolean {
     return this.canResendInvite(registrant) || this.canToggleHost(registrant) || this.canRemoveGuest(registrant);
@@ -598,13 +616,15 @@ export class MeetingRegistrantsDisplayComponent {
       if (this.submitting()) return;
       this.submitting.set(true);
     }
+    const meetingId = this.meeting().id;
+    const contextKey = this.registrantContextKey();
     const createData = {
-      ...this.meetingService.stripMetadata(this.meeting().id, formValue as unknown as MeetingRegistrantWithState),
+      ...this.meetingService.stripMetadata(meetingId, formValue as unknown as MeetingRegistrantWithState),
       ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
     };
 
     this.meetingService
-      .addMeetingRegistrants(this.meeting().id, [createData])
+      .addMeetingRegistrants(meetingId, [createData])
       .pipe(take(1))
       .subscribe({
         next: (response) => {
@@ -617,6 +637,8 @@ export class MeetingRegistrantsDisplayComponent {
           } else {
             this.submitting.set(false);
           }
+          // Keep the write alive, but do not update a destroyed or repurposed drawer.
+          if (this.destroyRef.destroyed || this.registrantContextKey() !== contextKey) return;
           if (response.summary.successful > 0) {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest added successfully' });
             if (stagedGuestId) {
@@ -625,10 +647,10 @@ export class MeetingRegistrantsDisplayComponent {
               this.addRegistrantForm.reset();
             }
             // Use the real UID from the API response so immediate removal calls the backend correctly.
-            // Fall back to a locally-constructed row if the response has no successes detail.
-            const optimistic: MeetingRegistrant = response.successes[0] ?? {
-              uid: `optimistic-${crypto.randomUUID()}`,
-              meeting_id: this.meeting().id,
+            // Retain submitted identity when the write response omits fields; returned fields win.
+            const returned: Partial<MeetingRegistrant> = response.successes[0] ?? {};
+            const optimistic: MeetingRegistrant = {
+              meeting_id: meetingId,
               email: (formValue['email'] as string) ?? '',
               first_name: (formValue['first_name'] as string) ?? '',
               last_name: (formValue['last_name'] as string) ?? '',
@@ -646,6 +668,8 @@ export class MeetingRegistrantsDisplayComponent {
               type: 'direct',
               invite_accepted: null,
               attended: null,
+              ...returned,
+              uid: returned.uid?.trim() || `optimistic-${crypto.randomUUID()}`,
             };
             if (this.externallyManaged()) {
               this.refreshRequested.emit(response.summary.successful);

@@ -304,6 +304,8 @@ export class MeetingCardComponent implements OnInit {
   // `invited` comes from the registrant lookup. It is read from the input, not the local snapshot, which is only
   // seeded once, so a feed refresh that adds or drops the viewer's registration is picked up.
   private readonly hasOwnRegistration: Signal<boolean> = computed(() => {
+    // An acknowledged registration is authoritative while indexed registration IDs are still stale.
+    if (this.optimisticInvited()) return true;
     const registrantIds = this.meetingInput().my_registrant_ids;
     return registrantIds ? registrantIds.length > 0 : this.effectivelyInvited();
   });
@@ -564,6 +566,14 @@ export class MeetingCardComponent implements OnInit {
         this.refreshMeeting();
       }
     });
+  }
+
+  /** The guest drawer already updates counts; synchronize only the viewer's invitation state here. */
+  public onSelfAdded(meetingId: string): void {
+    if (this.meeting().id !== meetingId) return;
+    this.optimisticInvited.set(true);
+    this.meetingService.clearRemovedRegistration(meetingId);
+    this.refreshMeeting();
   }
 
   public confirmLeaveMeeting(): void {

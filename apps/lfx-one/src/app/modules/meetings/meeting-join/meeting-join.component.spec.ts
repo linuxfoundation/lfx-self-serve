@@ -182,7 +182,7 @@ describe('MeetingJoinComponent', () => {
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             attachmentChanges: signal(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
-            clearRemovedRegistration: vi.fn(),
+            clearRemovedRegistration: vi.fn((id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id)))),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser,
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
@@ -235,6 +235,36 @@ describe('MeetingJoinComponent', () => {
         { provide: MessageService, useValue: { add: toastAdd } },
       ],
     });
+  });
+
+  it.each([false, true])('restores invitation controls after drawer self-add, previously removed: %s', async (previouslyRemoved) => {
+    if (previouslyRemoved) removedIds.set(new Set([MEETING_ID]));
+    const component = await createComponent();
+    expect(component.effectivelyInvited()).toBe(false);
+    const fetchesBefore = getPublicMeeting.mock.calls.length;
+
+    component.onSelfAdded(MEETING_ID);
+    // The page-data refresh uses the same real debounce timer as route changes.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.effectivelyInvited()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.canResendInvite()).toBe(true);
+    expect(removedIds().has(MEETING_ID)).toBe(false);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).toHaveBeenCalledWith(MEETING_ID);
+    expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(fetchesBefore);
+    expect(component.additionalRegistrantsCount()).toBe(0);
+  });
+
+  it('ignores a self-add event from a previously viewed meeting', async () => {
+    const component = await createComponent();
+    const fetchesBefore = getPublicMeeting.mock.calls.length;
+    component.onSelfAdded('another-meeting');
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(false);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).not.toHaveBeenCalled();
+    expect(getPublicMeeting).toHaveBeenCalledTimes(fetchesBefore);
   });
 
   it.each([

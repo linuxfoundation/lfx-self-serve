@@ -559,17 +559,18 @@ export class MeetingDetailsGuestsComponent {
       .addMeetingRegistrants(meetingId, [payload])
       .pipe(
         take(1),
-        takeUntilDestroyed(this.destroyRef),
         finalize(() => this.selfSubmitting.set(false))
       )
       .subscribe({
         next: (response) => {
+          if (response.summary.successful > 0) this.meetingService.clearRemovedRegistration(meetingId);
+          // A confirmed invite outlives its view, but a late reply must not touch a destroyed/new meeting view.
+          if (this.destroyRef.destroyed || this.context.meeting().id !== meetingId) return;
           if (response.summary.successful < 1) {
             this.showError(response.failures[0]?.error?.message || 'Failed to add yourself. Please try again.');
             return;
           }
           this.addedRegistrants.update((list) => [...list, { ...registrant, ...response.successes[0] }]);
-          this.meetingService.clearRemovedRegistration(meetingId);
           this.shareChanges();
           this.showSuccess('You were added to the meeting.');
           this.context.refreshParticipants();
@@ -577,7 +578,11 @@ export class MeetingDetailsGuestsComponent {
             injector: this.injector,
           });
         },
-        error: (error: unknown) => this.showError(this.failureReason(error, 'Failed to add yourself. Please try again.')),
+        error: (error: unknown) => {
+          if (!this.destroyRef.destroyed && this.context.meeting().id === meetingId) {
+            this.showError(this.failureReason(error, 'Failed to add yourself. Please try again.'));
+          }
+        },
       });
   }
 

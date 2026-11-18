@@ -16,8 +16,8 @@ import {
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
-import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingRegistrantsDisplayComponent } from './meeting-registrants-display.component';
@@ -795,6 +795,110 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
 
     expect(button()).toBeNull();
     expect(reset).not.toHaveBeenCalled();
+  });
+
+  it('retains the successful self-add across close/reopen while the parent roster is stale', async () => {
+    const { fixture, button } = await mount();
+    fixture.componentInstance.onAddSelf();
+    fixture.detectChanges();
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(button()).toBeNull();
+    fixture.componentInstance.onAddSelf();
+    expect(addMeetingRegistrants).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['meeting', 'occurrence'])('does not carry a successful add into another %s', async (context) => {
+    const { fixture, button } = await mount({ meeting: RECURRING_MEETING, occurrence: OCCURRENCE });
+    fixture.componentInstance.onAddSelf();
+    fixture.detectChanges();
+    expect(button()).toBeNull();
+
+    if (context === 'meeting') fixture.componentRef.setInput('meeting', { ...RECURRING_MEETING, id: 'meeting-2' });
+    else fixture.componentRef.setInput('occurrence', { ...OCCURRENCE, occurrence_id: '1894096800' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+    expect(button()).not.toBeNull();
+  });
+
+  it('keeps submitted identity when a successful response contains only a UID and emits self-add success', async () => {
+    addMeetingRegistrants.mockReturnValue(of({ ...SUCCESS, successes: [{ uid: 'saved-self' }] }));
+    const { fixture, button } = await mount();
+    const selfAdded = vi.fn();
+    fixture.componentInstance.selfAdded.subscribe(selfAdded);
+    fixture.componentInstance.onAddSelf();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.registrants()[0]).toMatchObject({
+      uid: 'saved-self',
+      meeting_id: 'meeting-1',
+      email: SELF_GUEST.email,
+      username: SELF_GUEST.username,
+      avatar_url: SELF_GUEST.avatar_url,
+      host: false,
+    });
+    expect(selfAdded).toHaveBeenCalledWith(expect.objectContaining({ uid: 'saved-self', meeting_id: 'meeting-1', email: SELF_GUEST.email }));
+    expect(button()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="registrant-display-remove-saved-self"]')).not.toBeNull();
+  });
+
+  it.each([undefined, '', 'optimistic-unconfirmed'])('withholds removal for a saved response with unusable UID %s', async (uid) => {
+    addMeetingRegistrants.mockReturnValue(of({ ...SUCCESS, successes: [{ uid }] }));
+    const { fixture, button } = await mount();
+    fixture.componentInstance.onAddSelf();
+    fixture.detectChanges();
+    const added = fixture.componentInstance.registrants()[0];
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+
+    expect(fixture.nativeElement.querySelector('[data-testid^="registrant-display-remove-"]')).toBeNull();
+    fixture.componentInstance.onRequestRemoveGuest(added);
+    fixture.componentInstance.onRequestRemoveGuest({ ...added, uid: '' });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.registrants()).toHaveLength(1);
+    expect(button()).toBeNull();
+  });
+
+  it('lets a pending self-add finish after destruction without emitting or scheduling focus', async () => {
+    const response = new Subject<typeof SUCCESS>();
+    addMeetingRegistrants.mockReturnValue(response);
+    const { fixture } = await mount();
+    const selfAdded = vi.fn();
+    fixture.componentInstance.selfAdded.subscribe(selfAdded);
+    fixture.componentInstance.onAddSelf();
+    fixture.destroy();
+
+    expect(response.observed).toBe(true);
+    expect(() => response.next(SUCCESS)).not.toThrow();
+    expect(response.observed).toBe(false);
+    expect(selfAdded).not.toHaveBeenCalled();
+    expect(refreshRequested).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late self-add response after switching meeting context', async () => {
+    const response = new Subject<typeof SUCCESS>();
+    addMeetingRegistrants.mockReturnValue(response);
+    const { fixture, button } = await mount();
+    const selfAdded = vi.fn();
+    fixture.componentInstance.selfAdded.subscribe(selfAdded);
+    fixture.componentInstance.onAddSelf();
+    fixture.componentRef.setInput('meeting', { id: 'meeting-2', timezone: 'UTC' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    response.next(SUCCESS);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+    expect(button()).not.toBeNull();
+    expect(selfAdded).not.toHaveBeenCalled();
   });
 
   it('stays offered when the add fails', async () => {

@@ -980,6 +980,7 @@
           [initialRegistrantsLoading]="registrantsLoading()"
           [initialRegistrantsFailed]="registrantsLoadFailed()"
           [visible]="showRegistrants()"
+          (selfAdded)="onSelfAdded($event.meeting_id)"
           (refreshRequested)="onRegistrantsRefreshRequested($event)">
         </lfx-meeting-registrants-display>
       </p-drawer>
