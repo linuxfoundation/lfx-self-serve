@@ -22,6 +22,7 @@
     <!-- Repeats the toast's Undo: the drawer's focus trap keeps the toast out of keyboard reach. -->
     @if (undo(); as pending) {
       <lfx-ui-button
+        #undoButton
         drawerActions
         variant="secondary"
         size="small"

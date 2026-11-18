@@ -113,6 +113,7 @@ describe('GroupApplicationsComponent', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     fixture.destroy();
     fallback.remove();
     vi.restoreAllMocks();
@@ -184,6 +185,29 @@ describe('GroupApplicationsComponent', () => {
     expect(dismiss).toHaveBeenCalled();
     expect(submit).toHaveBeenCalledWith('committee-a', 'Synthetic message a');
     expect(all('groups-redesign-applications-row')).toHaveLength(2);
+  });
+
+  it('keeps the latest Undo when an earlier one is used, and moves focus off an expiring Undo', async () => {
+    applications = [application('a'), application('b'), application('c')];
+    await render();
+    await open();
+    await withdrawRow(0);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const tick = (): void => TestBed.inject(ApplicationRef).tick();
+    (all('groups-redesign-applications-row')[0].querySelector('[data-testid="groups-redesign-applications-withdraw"] button') as HTMLButtonElement).click();
+    tick();
+    show.mock.calls[0][0].actions?.[0].run();
+    tick();
+
+    const undo = byTestId('groups-redesign-applications-undo')?.querySelector('button') as HTMLButtonElement;
+    expect(undo.getAttribute('aria-label')).toBe('Undo withdrawing your application to Synthetic Group b');
+    undo.focus();
+    vi.advanceTimersByTime(8000);
+    tick();
+    vi.useRealTimers();
+    await settle();
+    expect(byTestId('groups-redesign-applications-undo')).toBeNull();
+    expect(document.activeElement?.closest('[data-testid="groups-redesign-applications-row"]')).not.toBeNull();
   });
 
   it('keeps the row off and says so when Undo fails', async () => {

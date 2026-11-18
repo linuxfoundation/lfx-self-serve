@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DialogRef } from '@angular/cdk/dialog';
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   afterNextRender,
@@ -53,6 +53,7 @@ import { GroupsHomeStore } from '../../services/groups-home.store';
   host: { class: 'contents' },
 })
 export class GroupApplicationsComponent {
+  private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly drawerService = inject(UiDrawerService);
@@ -63,6 +64,7 @@ export class GroupApplicationsComponent {
   private readonly drawerTemplate = viewChild.required<TemplateRef<unknown>>('drawer');
   private readonly rowElements = viewChildren<ElementRef<HTMLElement>>('rowElement');
   private readonly names = viewChildren<ElementRef<HTMLElement>>('name');
+  private readonly undoButton = viewChild('undoButton', { read: ElementRef<HTMLElement> });
 
   /** Takes focus when the last application is withdrawn, since the button then hides. */
   public readonly fallbackFocus = input<UiFocusable | null>(null);
@@ -82,6 +84,8 @@ export class GroupApplicationsComponent {
 
   private drawerRef: DialogRef | null = null;
   private undoTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Application the drawer's Undo restores. */
+  private undoUid: string | null = null;
 
   public constructor() {
     this.initCloseWhenEmpty();
@@ -186,6 +190,7 @@ export class GroupApplicationsComponent {
 
   private offerUndo(application: MyPendingApplication): void {
     this.clearUndo();
+    this.undoUid = application.uid;
     const run = (): void => this.undoWithdraw(application);
     const toast = this.toast.show({ message: 'Application withdrawn', duration: GROUPS_HOME_UNDO_MS, actions: [{ label: 'Undo', run }] });
     this.undo.set({
@@ -195,12 +200,12 @@ export class GroupApplicationsComponent {
         run();
       },
     });
-    this.undoTimer = setTimeout(() => this.clearUndo(), GROUPS_HOME_UNDO_MS);
+    this.undoTimer = setTimeout(() => this.clearUndo(application.uid), GROUPS_HOME_UNDO_MS);
   }
 
   /** Applying again reopens the same application with its message. */
   private undoWithdraw(application: MyPendingApplication): void {
-    this.clearUndo();
+    this.clearUndo(application.uid);
     this.committeeService.submitApplication(application.committee_uid, application.message).subscribe({
       next: () => {
         this.setWithdrawn(application.uid, false);
@@ -210,9 +215,13 @@ export class GroupApplicationsComponent {
     });
   }
 
-  private clearUndo(): void {
+  /** Removes the drawer's Undo, only when it belongs to `uid` if one is given; focus on it moves to the first row. */
+  private clearUndo(uid?: string): void {
+    if (uid !== undefined && uid !== this.undoUid) return;
     if (this.undoTimer) clearTimeout(this.undoTimer);
     this.undoTimer = null;
+    this.undoUid = null;
+    if (this.undoButton()?.nativeElement.contains(this.document.activeElement)) this.focusRow(0);
     this.undo.set(null);
   }
 
