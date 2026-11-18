@@ -45,7 +45,9 @@ With **Lifetime budget** on, you can also set an optional **Daily cap (USD)**: t
 
 If the cap is under $10 or over the lifetime budget, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the daily cap." Turning **Lifetime budget** off removes the cap.
 
-After the campaign is created, you can change its lifetime budget on the **Optimize** tab and the daily cap stays as it is. A new lifetime budget below the daily cap is refused; lower the cap first. To change the daily cap itself, use LinkedIn Campaign Manager.
+A campaign with a daily cap runs without its own end date in LinkedIn Campaign Manager. The event's campaign group stops it on the campaign's end date instead. If the event already has a campaign group that ends later than this campaign, or never ends, the create is refused.
+
+After the campaign is created, you can change its lifetime budget on the **Optimize** tab and the daily cap stays as it is. Keep **Budget pacing** on **Lifetime** there: switching a capped campaign to **Daily** is refused. A new lifetime budget below the daily cap is also refused; lower the cap first. To change the daily cap itself, use LinkedIn Campaign Manager.
 
 ## Edit a variant
 
