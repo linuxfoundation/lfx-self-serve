@@ -29,9 +29,11 @@ export interface OrgEventRow {
   TOTAL_RECORDS: number;
 }
 
-export interface OrgFamilyEventRow extends OrgEventRow {
-  ACTIVE_ACCOUNT_IDS: string | null;
-  SPONSOR_ACCOUNT_IDS: string | null;
+export interface OrgFamilyEventCreditFlagsRow {
+  EVENT_ID: string;
+  ACCOUNT_ID: string;
+  HAS_FOOTPRINT: boolean;
+  IS_ORG_SPONSOR: boolean;
 }
 
 export interface OrgFamilyEventAttendeeRow {
@@ -41,8 +43,12 @@ export interface OrgFamilyEventAttendeeRow {
   JOB_TITLE: string | null;
 }
 
-export interface OrgFamilyEventSpeakerRow extends OrgEventSpeakersDrawerRow {
+export interface OrgFamilyEventSpeakerRow {
+  SPEAKER_ID: string;
   ACCOUNT_ID: string;
+  NAME: string | null;
+  JOB_TITLE: string | null;
+  IS_ACCEPTED: boolean;
 }
 
 export interface OrgFamilyEventCreditRow {

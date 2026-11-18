@@ -104,6 +104,7 @@ export interface GetOrgEventsOptions {
 
 export interface OrgEventsFamilyScope {
   readonly rollUpKey: string;
+  readonly familyAccountId: string;
   readonly members: readonly OrgRollUpSetOrg[];
   readonly organizations: readonly OrgRollUpSetOrg[];
   readonly coverage: OrgLensRollUpCoverage;

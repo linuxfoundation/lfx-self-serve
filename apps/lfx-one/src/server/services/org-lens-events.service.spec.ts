@@ -156,6 +156,7 @@ function addEvent(fixture: EventFixture = {}): string {
   const date = dayOffset(daysFromToday);
   insert('ORG_EVENTS', {
     ACCOUNT_ID: fixture.account ?? ACCOUNT,
+    FAMILY_ACCOUNT_ID: ACCOUNT,
     EVENT_ID: eventId,
     EVENT_NAME: fixture.name ?? 'Community Summit',
     FOUNDATION_ID: fixture.foundationId ?? 'foundation-one',
@@ -193,7 +194,7 @@ interface ParticipantFixture {
   /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the drawer must ignore it. */
   listable?: boolean;
   account?: string;
-  crossRef?: number | null;
+  crossRef?: number;
 }
 
 /** The three row-level conjunction flags dbt computes for Employee match: (registered | attended | registered or attended). */
@@ -214,9 +215,10 @@ function countsFlags(fixture: { companyEmail?: boolean; roster?: boolean; regist
 function addParticipant(fixture: ParticipantFixture): void {
   insert('ORG_EVENT_PARTICIPATION', {
     ACCOUNT_ID: fixture.account ?? ACCOUNT,
+    FAMILY_ACCOUNT_ID: ACCOUNT,
     EVENT_ID: fixture.eventId ?? 'event-one',
     PARTICIPANT_REF: fixture.ref,
-    CROSS_ACCOUNT_PARTICIPANT_REF: fixture.crossRef ?? null,
+    CROSS_ACCOUNT_PARTICIPANT_REF: fixture.crossRef ?? fixture.ref,
     DISPLAY_NAME: fixture.name === undefined ? `Person ${fixture.ref}` : fixture.name,
     JOB_TITLE: fixture.title === undefined ? 'Engineer' : fixture.title,
     ...countsFlags(fixture),
@@ -244,6 +246,20 @@ function addSpeaker(
     SPEAKER_STATUS: status,
     EVENT_NAME: 'Community Summit',
   });
+  // The warehouse's speaker grain: one row per organization, event and speaker; titles only for roster-linked speakers.
+  database
+    .prepare(
+      `INSERT INTO ORG_EVENT_SPEAKERS VALUES (?, ?, ?, ?, ?, ?, NULL)
+       ON CONFLICT (ACCOUNT_ID, EVENT_ID, SPEAKER_REF) DO UPDATE SET IS_SPEAKER_ACCEPTED = MAX(IS_SPEAKER_ACCEPTED, excluded.IS_SPEAKER_ACCEPTED)`
+    )
+    .run(account, ACCOUNT, eventId, speakerRef(speakerId), status === 'Accepted' ? 1 : 0, [first, last].filter(Boolean).join(' ') || null);
+}
+
+const speakerRefs = new Map<string, number>();
+
+function speakerRef(speakerId: string): number {
+  if (!speakerRefs.has(speakerId)) speakerRefs.set(speakerId, 1048576 + speakerRefs.size);
+  return speakerRefs.get(speakerId) ?? 0;
 }
 
 let database: SqlDatabase;
@@ -256,7 +272,7 @@ beforeEach(() => {
   database = new DatabaseSync(':memory:');
   database.exec(
     `CREATE TABLE ORG_EVENTS (
-      ACCOUNT_ID TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
+      ACCOUNT_ID TEXT, FAMILY_ACCOUNT_ID TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
       EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, IS_PAST_EVENT INTEGER,
       EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT, EVENT_URL TEXT, EVENT_REGISTRATION_URL TEXT,
       EVENT_REGISTRATIONS_GOAL INTEGER, ORG_SPEAKER_ACCEPTED_COUNT INTEGER, ORG_SPEAKER_SUBMITTED_COUNT INTEGER, IS_ORG_SPONSOR INTEGER,
@@ -265,7 +281,7 @@ beforeEach(() => {
   );
   database.exec(
     `CREATE TABLE ORG_EVENT_PARTICIPATION (
-      ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, CROSS_ACCOUNT_PARTICIPANT_REF INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
+      ACCOUNT_ID TEXT, FAMILY_ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, CROSS_ACCOUNT_PARTICIPANT_REF INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
       IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ALL_VERIFIED INTEGER,
       IS_LISTABLE INTEGER
     )`
@@ -276,6 +292,12 @@ beforeEach(() => {
       SPEAKER_EMAIL TEXT, JOB_TITLE TEXT, SPEAKER_STATUS TEXT, EVENT_NAME TEXT
     )`
   );
+  database.exec(
+    `CREATE TABLE ORG_EVENT_SPEAKERS (
+      ACCOUNT_ID TEXT, FAMILY_ACCOUNT_ID TEXT, EVENT_ID TEXT, SPEAKER_REF INTEGER, IS_SPEAKER_ACCEPTED INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
+      PRIMARY KEY (ACCOUNT_ID, EVENT_ID, SPEAKER_REF)
+    )`
+  );
 
   // Run the service's real SQL against SQLite rather than asserting on query strings; only the dialect is translated.
   execute.mockImplementation(async (query: string, binds: string[]) => {
@@ -284,8 +306,7 @@ beforeEach(() => {
       .replaceAll('ANALYTICS.SILVER_FACT.', '')
       .replaceAll(/DATEADD\(day, -(\d+), CURRENT_DATE\(\)\)/g, "date('now', '-$1 day')")
       .replaceAll('CURRENT_DATE()', "date('now')")
-      .replaceAll('ILIKE', 'LIKE')
-      .replaceAll(/LISTAGG\((CASE WHEN .+? END), '([^']*)'\) WITHIN GROUP \(ORDER BY ([\w.]+)\)/g, "group_concat($1, '$2' ORDER BY $3)");
+      .replaceAll('ILIKE', 'LIKE');
     // SQLite has no BOOLEAN: hand the service true/false for the flag columns, as Snowflake does.
     const rows = database
       .prepare(translated)
@@ -768,7 +789,7 @@ describe('OrgLensEventsService family roll-up', () => {
     addEvent({ eventId: 'shared', isPast: true, account: OTHER_ACCOUNT });
     addParticipant({ ref: 1, eventId: 'shared', account: ACCOUNT, crossRef: 77, name: 'Ada Parent', title: null });
     addParticipant({ ref: 9, eventId: 'shared', account: OTHER_ACCOUNT, crossRef: 77, name: 'Ada Subsidiary', title: 'Architect' });
-    addParticipant({ ref: 2, eventId: 'shared', account: OTHER_ACCOUNT, crossRef: null, name: 'Bea Subsidiary' });
+    addParticipant({ ref: 2, eventId: 'shared', account: OTHER_ACCOUNT, name: 'Bea Subsidiary' });
 
     const list = await service.getFamilyOrgEvents(REQ, family(), listOptions({ isPast: true, participation: 'registered' }));
     const drawer = await service.getFamilyEventAttendees(REQ, family(), 'shared', { participation: 'registered' });
@@ -854,21 +875,6 @@ describe('OrgLensEventsService family roll-up', () => {
     expect(activity.data.map((event) => event.eventId)).toEqual(['active']);
   });
 
-  it("sorts by the organizations' names, first name first, with events no organization took part in last", async () => {
-    addEvent({ eventId: 'subsidiary-only', account: OTHER_ACCOUNT });
-    addEvent({ eventId: 'both', account: ACCOUNT });
-    addEvent({ eventId: 'both', account: OTHER_ACCOUNT });
-    addEvent({ eventId: 'parent-only', account: ACCOUNT });
-    addEvent({ eventId: 'none', account: ACCOUNT, footprint: { verified: false } });
-    const options = { eventScope: 'all', sortField: 'ORGANIZATIONS' } as const;
-
-    const ascending = await service.getFamilyOrgEvents(REQ, family(), listOptions({ ...options, sortOrder: 'ASC' }));
-    const descending = await service.getFamilyOrgEvents(REQ, family(), listOptions({ ...options, sortOrder: 'DESC' }));
-
-    expect(ascending.data.map((event) => event.eventId)).toEqual(['parent-only', 'both', 'subsidiary-only', 'none']);
-    expect(descending.data.map((event) => event.eventId)).toEqual(['subsidiary-only', 'both', 'parent-only', 'none']);
-  });
-
   it('narrows every figure to the Company filter, keeping every organization as an option', async () => {
     addEvent({ eventId: 'shared', isPast: true, account: ACCOUNT });
     addEvent({ eventId: 'shared', isPast: true, account: OTHER_ACCOUNT });
@@ -927,8 +933,8 @@ describe('OrgLensEventsService family roll-up', () => {
   });
 
   it('keeps one bind per placeholder in every family query', async () => {
-    addEvent({ isPast: true });
-    const filtered = listOptions({ isPast: true, foundation: 'foundation-one', searchQuery: 'summit', status: 'registered', sortField: 'ORGANIZATIONS' });
+    addEvent({ isPast: true, registered: { verified: 1 } });
+    const filtered = listOptions({ isPast: true, foundation: 'foundation-one', searchQuery: 'summit', status: 'registered', sortField: 'EVENT_NAME' });
 
     await service.getFamilyOrgEvents(REQ, family(), filtered);
     await service.getFamilyOrgEventsSummary(REQ, family(), { ...FILTERS, foundation: 'foundation-one' });
@@ -936,7 +942,7 @@ describe('OrgLensEventsService family roll-up', () => {
     await service.getFamilyEventAttendees(REQ, family(), 'event-one', { participation: 'registered', searchQuery: 'ada' });
     await service.getFamilyEventSpeakers(REQ, family(), 'event-one', 'ada');
 
-    expect(execute).toHaveBeenCalledTimes(6);
+    expect(execute).toHaveBeenCalledTimes(7);
     for (const [sql, binds] of execute.mock.calls as [string, string[]][]) {
       expect(sql.match(/\?/g)?.length ?? 0).toBe(binds.length);
     }
