@@ -5,7 +5,12 @@ import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { EMPTY_ORG_EVENTS_RESPONSE, ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_ORG_EVENTS_RESPONSE,
+  ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE,
+  ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE,
+  ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE,
+} from '@lfx-one/shared/constants';
 import type { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
@@ -18,6 +23,17 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { OrgEventsDashboardComponent } from './org-events-dashboard.component';
 
+const ROLL_UP_KEY = 'family-0010000000ROOTAAA';
+const ROLL_UP_ORGANIZATIONS = [
+  { accountId: 'acc-a', name: 'Acme Motors, Inc.' },
+  { accountId: 'acc-b', name: 'Acme Robotics' },
+];
+
+/** The `company` each call to a read mock carried, in order. */
+function companiesSent(mock: { mock: { calls: unknown[][] } }): unknown[] {
+  return mock.mock.calls.map((call) => (call[1] as Record<string, unknown>)['company']);
+}
+
 async function render(
   state: OrgLensEmptyStateName | null,
   {
@@ -27,12 +43,21 @@ async function render(
     listMode = 'ok' as 'ok' | 'pending' | 'error',
     foundations = [{ id: 'foundation-a', name: 'Foundation A' }],
     foundationsFail = false,
+    rollUp = false,
+    coverage = { complete: true, excludedCount: 0 },
   } = {}
 ) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
-  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
+  const selectedAccount = signal<Account>(
+    rollUp
+      ? { accountId: ROLL_UP_KEY, accountName: 'Acme Group', membershipTier: '', uid: ROLL_UP_KEY, slug: ROLL_UP_KEY }
+      : { accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' }
+  );
+  const summary = rollUp
+    ? { totalEvents: 0, upcomingEvents: 0, pastEvents: 0, organizations: ROLL_UP_ORGANIZATIONS, rollUp: coverage }
+    : { totalEvents: 0, upcomingEvents: 0, pastEvents: 0 };
   const eventsService = {
-    getOrgEventsSummary: vi.fn(() => (summaryFails ? throwError(() => new Error('summary down')) : of({ totalEvents: 0, upcomingEvents: 0, pastEvents: 0 }))),
+    getOrgEventsSummary: vi.fn(() => (summaryFails ? throwError(() => new Error('summary down')) : of(summary))),
     getOrgEvents: vi.fn(() => {
       if (listMode === 'pending') return NEVER;
       if (listMode === 'error') return throwError(() => new Error('list down'));
@@ -47,7 +72,7 @@ async function render(
       provideNoopAnimations(),
       provideRouter([]),
       { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(query)), snapshot: { queryParamMap: convertToParamMap(query) } } },
-      { provide: AccountContextService, useValue: { selectedAccount } },
+      { provide: AccountContextService, useValue: { selectedAccount, isRollUp: signal(rollUp) } },
       { provide: EventsService, useValue: eventsService },
       MessageService,
       { provide: IntercomService, useValue: { show: vi.fn() } },
@@ -86,6 +111,7 @@ describe('OrgEventsDashboardComponent', () => {
       eventScope: 'activity',
       foundation: '',
       range: '730d',
+      company: '',
     });
   });
 
@@ -135,6 +161,7 @@ describe('OrgEventsDashboardComponent', () => {
       eventScope: 'all',
       foundation: 'foundation-a',
       range: '90d',
+      company: '',
     });
   });
 
@@ -230,5 +257,76 @@ describe('OrgEventsDashboardComponent', () => {
     expect(component.filterForm.controls.foundation.value).toBe('foundation-a');
     const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
     expect(params).toMatchObject({ foundation: 'foundation-a' });
+  });
+
+  describe('family roll-up', () => {
+    it('offers no Company filter on a single organization and drops a `?company=` without sending it', async () => {
+      const { el, component, eventsService } = await render(null, { query: { company: 'acc-b' } });
+
+      expect(el.querySelector('[data-test="org-events-company-filter"]')).toBeNull();
+      expect(component.filterForm.controls.company.value).toBe('');
+      expect(companiesSent(eventsService.getOrgEvents).every((company) => !company)).toBe(true);
+    });
+
+    it('offers All Companies and each organization the roll-up serves', async () => {
+      const { el, component } = await render(null, { rollUp: true });
+
+      expect(el.querySelector('[data-test="org-events-company-filter"]')).not.toBeNull();
+      expect(component.companyOptions()).toEqual([
+        { label: 'All Companies', value: '' },
+        { label: 'Acme Motors, Inc.', value: 'acc-a' },
+        { label: 'Acme Robotics', value: 'acc-b' },
+      ]);
+    });
+
+    it('narrows the summary and the list to a served Company from the URL, and offers Clear filters', async () => {
+      const { el, eventsService } = await render(null, { rollUp: true, query: { company: 'acc-b' } });
+
+      expect(companiesSent(eventsService.getOrgEventsSummary).at(-1)).toBe('acc-b');
+      expect(companiesSent(eventsService.getOrgEvents).at(-1)).toBe('acc-b');
+      expect(el.querySelector('[data-testid="org-events-clear-filters"]')).not.toBeNull();
+    });
+
+    it('never sends a Company the roll-up does not serve, and clears it', async () => {
+      const { component, eventsService } = await render(null, { rollUp: true, query: { company: 'acc-elsewhere' } });
+
+      expect(component.filterForm.controls.company.value).toBe('');
+      expect(companiesSent(eventsService.getOrgEventsSummary)).not.toContain('acc-elsewhere');
+      expect(companiesSent(eventsService.getOrgEvents)).not.toContain('acc-elsewhere');
+    });
+
+    it('reads every organization again when Company goes back to All Companies', async () => {
+      const { component, eventsService, fixture } = await render(null, { rollUp: true, query: { company: 'acc-b' } });
+
+      component.filterForm.controls.company.setValue('');
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve));
+
+      expect(companiesSent(eventsService.getOrgEventsSummary).at(-1)).toBe('');
+      expect(companiesSent(eventsService.getOrgEvents).at(-1)).toBe('');
+    });
+
+    it('says when organizations are left out, without saying how many', async () => {
+      const { el } = await render(null, { rollUp: true, coverage: { complete: true, excludedCount: 2 } });
+
+      const notices = el.querySelector('[data-testid="org-events-roll-up-notice"]')?.textContent ?? '';
+      expect(notices).toContain(ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE);
+      expect(notices).not.toContain(ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE);
+      expect(notices).not.toMatch(/\d/);
+    });
+
+    it('says when the family could not all be loaded', async () => {
+      const { el } = await render(null, { rollUp: true, coverage: { complete: false, excludedCount: 0 } });
+
+      const notices = el.querySelector('[data-testid="org-events-roll-up-notice"]')?.textContent ?? '';
+      expect(notices).toContain(ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE);
+      expect(notices).not.toContain(ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE);
+    });
+
+    it('shows no notice when every organization in the family is included', async () => {
+      const { el } = await render(null, { rollUp: true });
+
+      expect(el.querySelector('[data-testid="org-events-roll-up-notice"]')).toBeNull();
+    });
   });
 });

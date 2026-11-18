@@ -75,6 +75,18 @@ export interface GetOrgEventsParams {
   readonly foundation?: string;
   /** Applies to the Past tab only; omitted means the default. */
   readonly range?: OrgLensTimeRange;
+  /** Roll-up only: the account id of one organization in the roll-up; omitted or `''` is every organization. */
+  readonly company?: string;
+}
+
+/** Events page copy that names whose events these are: one organization, or a family roll-up. */
+export interface OrgEventsPageCopy {
+  readonly description: string;
+  readonly upcomingEmpty: string;
+  readonly pastEmpty: string;
+  /** Who the Event Attendees column counts, under its heading. */
+  readonly attendeesOwner: string;
+  readonly loadError: string;
 }
 
 /** Summary counts for the Org Events stat strip. */

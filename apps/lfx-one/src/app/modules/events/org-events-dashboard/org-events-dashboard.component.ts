@@ -21,15 +21,21 @@ import {
   DEFAULT_ORG_EVENTS_SCOPE,
   DEFAULT_ORG_EVENTS_TAB_ID,
   EMPTY_ORG_EVENTS_RESPONSE,
+  ORG_EVENTS_ALL_COMPANIES_LABEL,
   ORG_EVENTS_ALL_FOUNDATIONS_LABEL,
+  ORG_EVENTS_COMPANY_QUERY_PARAM,
   ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
+  ORG_EVENTS_PAGE_COPY,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_LABEL,
   ORG_EVENTS_PARTICIPATION_OPTIONS,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_TOOLTIP,
   ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE,
+  ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE,
+  ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE,
+  ORG_EVENTS_ROLL_UP_PAGE_COPY,
   ORG_EVENTS_SCOPE_LABEL,
   ORG_EVENTS_SCOPE_OPTIONS,
   ORG_EVENTS_SCOPE_QUERY_PARAM,
@@ -50,7 +56,9 @@ import type {
   OrgEventsScope,
   OrgEventsSummary,
   OrgEventStatFilterId,
+  OrgEventsPageCopy,
   OrgEventsTabId,
+  OrgLensRowOrganization,
   OrgLensTimeRange,
   PageChangeEvent,
   SortChangeEvent,
@@ -61,9 +69,11 @@ import { EventsService } from '@services/events.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import {
+  readOrgEventsCompany,
   readOrgEventsFoundation,
   readOrgEventsParticipation,
   readOrgEventsScope,
+  syncOrgEventsCompanyWithUrl,
   syncOrgEventsFoundationWithUrl,
   syncOrgEventsParticipationWithUrl,
   syncOrgEventsScopeWithUrl,
@@ -122,6 +132,8 @@ export class OrgEventsDashboardComponent {
     foundation: new FormControl<string>(readOrgEventsFoundation(this.route), { nonNullable: true }),
     participation: new FormControl<OrgEventsParticipation>(readOrgEventsParticipation(this.route), { nonNullable: true }),
     scope: new FormControl<OrgEventsScope>(readOrgEventsScope(this.route), { nonNullable: true }),
+    // Roll-up only: one organization's account id (`?company=`), `''` for every organization.
+    company: new FormControl<string>(readOrgEventsCompany(this.route), { nonNullable: true }),
   });
 
   // === WritableSignals ===
@@ -142,11 +154,15 @@ export class OrgEventsDashboardComponent {
   public readonly upcomingLoadFailed = signal(false);
   public readonly pastLoadFailed = signal(false);
   private readonly retryCount = signal(0);
+  // The organizations the roll-up serves, from the last summary read for that account; the Company options and the only valid picks.
+  private readonly servedOrganizations = signal<{ accountId: string; organizations: readonly OrgLensRowOrganization[] } | null>(null);
 
   // === Computed / toSignal ===
   // Debounced search feeds the server-side query so typing doesn't fire a request per keystroke.
   private readonly debouncedSearchTerm = toSignal(toObservable(this.searchTerm).pipe(debounceTime(300), distinctUntilChanged()), { initialValue: '' });
   public readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
+  public readonly isRollUp = this.accountContext.isRollUp;
+  public readonly pageCopy: Signal<OrgEventsPageCopy> = computed(() => (this.isRollUp() ? ORG_EVENTS_ROLL_UP_PAGE_COPY : ORG_EVENTS_PAGE_COPY));
   // Spec 053 / #2961 — the page-level state replacing the page (`could-not-load`, `staff-check-failed`,
   // `contractor-no-grant`, `no-organization`), or null when the page renders.
   public readonly pageState = this.emptyState.pageState;
@@ -168,6 +184,24 @@ export class OrgEventsDashboardComponent {
   private readonly scope: Signal<OrgEventsScope> = toSignal(this.filterForm.controls.scope.valueChanges, {
     initialValue: this.filterForm.controls.scope.value,
   });
+  private readonly company: Signal<string> = toSignal(this.filterForm.controls.company.valueChanges, {
+    initialValue: this.filterForm.controls.company.value,
+  });
+  // The roll-up's organizations once known for the selected account, else null.
+  private readonly currentServedOrganizations = computed<readonly OrgLensRowOrganization[] | null>(() => {
+    const served = this.servedOrganizations();
+    return this.isRollUp() && served?.accountId === this.accountContext.selectedAccount().accountId ? served.organizations : null;
+  });
+  // The Company the reads carry: only a pick the roll-up serves, so a stale `?company=` never reaches the server.
+  public readonly effectiveCompany = computed(() => {
+    const company = this.company();
+    const served = this.currentServedOrganizations();
+    return company && served?.some((organization) => organization.accountId === company) ? company : '';
+  });
+  public readonly companyOptions: Signal<OrgDropdownOption[]> = computed(() => [
+    { label: ORG_EVENTS_ALL_COMPANIES_LABEL, value: '' },
+    ...(this.currentServedOrganizations() ?? []).map((organization) => ({ label: organization.name, value: organization.accountId })),
+  ]);
   // Count reads registrations on the Upcoming tab, where no one has attended yet.
   private readonly effectiveParticipation = computed(() => effectiveOrgEventsParticipation(this.participation(), this.activeTab() === 'past'));
   // What the tiles and the foundation options read: not the tab, search or status.
@@ -175,6 +209,7 @@ export class OrgEventsDashboardComponent {
     eventScope: this.scope(),
     foundation: this.foundation(),
     range: this.timeRange(),
+    company: this.effectiveCompany(),
   }));
   public readonly foundationsResponse: Signal<OrgEventFoundationsResponse | null> = this.initFoundationsResponse();
   public readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => [
@@ -192,10 +227,16 @@ export class OrgEventsDashboardComponent {
       this.selectedStatus() !== null ||
       this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE ||
       this.foundation() !== '' ||
+      this.company() !== '' ||
       this.participation() !== DEFAULT_ORG_EVENTS_PARTICIPATION ||
       this.scope() !== DEFAULT_ORG_EVENTS_SCOPE
   );
   public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
+  public readonly rollUpNotices = computed<string[]>(() => {
+    const coverage = this.isRollUp() ? this.eventsSummary()?.rollUp : undefined;
+    if (!coverage) return [];
+    return [...(coverage.excludedCount > 0 ? [ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE] : []), ...(!coverage.complete ? [ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE] : [])];
+  });
   public readonly upcomingAttendeesCaption = computed(
     () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE}`
   );
@@ -244,6 +285,7 @@ export class OrgEventsDashboardComponent {
     syncOrgEventsFoundationWithUrl(this.filterForm.controls.foundation, this.route, this.router);
     syncOrgEventsParticipationWithUrl(this.filterForm.controls.participation, this.route, this.router);
     syncOrgEventsScopeWithUrl(this.filterForm.controls.scope, this.route, this.router);
+    syncOrgEventsCompanyWithUrl(this.filterForm.controls.company, this.route, this.router);
 
     // Count is disabled on the Upcoming tab (it always counts registrations); the picked value is kept for the Past tab.
     toObservable(this.isPastTab)
@@ -265,6 +307,21 @@ export class OrgEventsDashboardComponent {
         if (selected && response.data.length > 0 && !response.data.some((foundation) => foundation.id === selected))
           this.filterForm.controls.foundation.setValue('');
       });
+
+    // A Company the page does not serve is cleared: any `?company=` outside a roll-up, or one the roll-up's organizations do not include.
+    toObservable(
+      computed(() => ({
+        visible: this.contentVisible(),
+        rollUp: this.isRollUp(),
+        served: this.currentServedOrganizations(),
+        company: this.company(),
+      }))
+    )
+      .pipe(takeUntilDestroyed())
+      .subscribe(({ visible, rollUp, served, company }) => {
+        if (!visible || !company) return;
+        if (!rollUp || (served && !served.some((organization) => organization.accountId === company))) this.filterForm.controls.company.setValue('');
+      });
   }
 
   // === Public methods ===
@@ -284,6 +341,7 @@ export class OrgEventsDashboardComponent {
         [ORG_EVENTS_FOUNDATION_QUERY_PARAM]: null,
         [ORG_EVENTS_PARTICIPATION_QUERY_PARAM]: null,
         [ORG_EVENTS_SCOPE_QUERY_PARAM]: null,
+        [ORG_EVENTS_COMPANY_QUERY_PARAM]: null,
       },
       queryParamsHandling: 'merge',
       replaceUrl: true,
@@ -376,6 +434,9 @@ export class OrgEventsDashboardComponent {
         tap(() => this.summaryLoadFailed.set(false)),
         switchMap(({ accountId, ...params }) =>
           this.eventsService.getOrgEventsSummary(accountId, params).pipe(
+            tap((summary) => {
+              if (summary.organizations) this.servedOrganizations.set({ accountId, organizations: summary.organizations });
+            }),
             catchError((error: unknown) => {
               console.error('Failed to load the events summary', error);
               this.summaryLoadFailed.set(true);
@@ -436,6 +497,7 @@ export class OrgEventsDashboardComponent {
             ...page(),
             eventScope: this.scope(),
             foundation: this.foundation(),
+            company: this.effectiveCompany(),
             participation: this.effectiveParticipation(),
             // The Upcoming tab ignores the range, so a range pick does not refetch it.
             ...(isPast ? { range: this.timeRange() } : {}),
