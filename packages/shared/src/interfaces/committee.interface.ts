@@ -71,6 +71,20 @@ export type OversightSubType = 'governance' | 'advisory';
  */
 export type GroupBehavioralClass = 'governing-board' | 'oversight-committee' | 'working-group' | 'special-interest-group' | 'ambassador-program' | 'other';
 
+/** Type tab on the redesigned Groups page: every group, or one behavioral class. */
+export type GroupsHomeTab = GroupBehavioralClass | 'all';
+
+/** One figure in the redesigned Groups page metrics row. */
+export interface GroupsHomeMetric {
+  label: string;
+  /** Font Awesome class string. */
+  icon: string;
+  /** Formatted value, or `—` when unknown. */
+  value: string;
+  /** Note under the value, such as how fresh it is, "Sample data", or that it covers only some groups. */
+  subLine?: string;
+}
+
 /** Display metadata for a behavioral class — used by filter chips and badges. */
 export interface BehavioralClassDisplayConfig {
   label: string;
