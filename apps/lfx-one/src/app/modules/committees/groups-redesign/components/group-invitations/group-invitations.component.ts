@@ -273,7 +273,7 @@ export class GroupInvitationsComponent {
 
   /** Focuses the first button of the row now at `index`, once rendered, while the drawer is open. */
   private focusRow(index: number): void {
-    if (!this.drawerRef || index < 0) return;
+    if (this.destroyRef.destroyed || !this.drawerRef || index < 0) return;
     afterNextRender(
       () => {
         const rows = this.rowElements();
@@ -293,6 +293,7 @@ export class GroupInvitationsComponent {
 
   /** The membership index lags the accept, so poll until the group is listed, then refresh the page's groups in place. */
   private refreshGroupsWith(committeeUid: string): void {
+    this.store.restoreGroup(committeeUid);
     timer(400, 400)
       .pipe(
         take(6),

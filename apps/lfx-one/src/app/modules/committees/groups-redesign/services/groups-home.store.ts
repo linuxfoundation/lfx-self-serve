@@ -127,6 +127,16 @@ export class GroupsHomeStore {
     if (scope && !this.groups().some((group) => group.project_uid === scope)) this.clearFilter('scope');
   }
 
+  /** Shows a group left earlier in this visit again, once the viewer rejoins it. */
+  public restoreGroup(uid: string): void {
+    if (!this.leftUidsState().has(uid)) return;
+    this.leftUidsState.update((left) => {
+      const next = new Set(left);
+      next.delete(uid);
+      return next;
+    });
+  }
+
   public clearFilter(key: keyof GroupsHomeFilters): void {
     this.filtersState.update((filters) => ({ ...filters, [key]: null }));
   }

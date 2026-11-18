@@ -246,6 +246,15 @@ describe('GroupsHomeStore', () => {
     expect(store.metrics()[0].value).toBe('1');
   });
 
+  it('shows a left group again once the viewer rejoins it', () => {
+    groups$ = of([group('a', 'Board'), group('b', 'Working Group')]);
+    const store = create();
+
+    store.removeGroup('a');
+    store.restoreGroup('a');
+    expect(store.groups().map((g) => g.uid)).toEqual(['a', 'b']);
+  });
+
   it('falls back to every group when a leave empties the selected tab or scope', () => {
     groups$ = of([group('a', 'Board', { project_uid: 'fdn', is_foundation: true }), group('b', 'Working Group', { project_uid: 'prj' })]);
     const store = create();

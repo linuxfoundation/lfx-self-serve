@@ -44,6 +44,7 @@ describe('GroupInvitationsComponent', () => {
   let show: ReturnType<typeof vi.fn<(config: UiToastConfig) => { id: string; dismiss: () => void }>>;
   let dismiss: ReturnType<typeof vi.fn<() => void>>;
   let refresh: ReturnType<typeof vi.fn>;
+  let restoreGroup: ReturnType<typeof vi.fn>;
   let openDrawer: ReturnType<typeof vi.fn>;
   let closeDrawer: ReturnType<typeof vi.fn<() => void>>;
 
@@ -84,6 +85,7 @@ describe('GroupInvitationsComponent', () => {
     dismiss = vi.fn<() => void>();
     show = vi.fn(() => ({ id: 'toast', dismiss }));
     refresh = vi.fn();
+    restoreGroup = vi.fn();
     closeDrawer = vi.fn<() => void>();
     // Renders the drawer template straight into the page; the uikit drawer has its own spec.
     openDrawer = vi.fn((template: TemplateRef<unknown>) => {
@@ -128,7 +130,7 @@ describe('GroupInvitationsComponent', () => {
         },
         { provide: InvitationAcceptFlowService, useValue: { accept } },
         { provide: CommitteeService, useValue: { getMyCommitteeUids: () => of(['committee-a']) } },
-        { provide: GroupsHomeStore, useValue: { refresh } },
+        { provide: GroupsHomeStore, useValue: { refresh, restoreGroup } },
         { provide: UiDrawerService, useValue: { open: openDrawer } },
         { provide: UiToastService, useValue: { show } },
       ],
@@ -185,6 +187,7 @@ describe('GroupInvitationsComponent', () => {
 
     expect(accept).toHaveBeenCalledWith(expect.objectContaining({ committeeUid: 'committee-a', inviteUid: 'a', committeeName: 'Synthetic Group a' }));
     expect(show).toHaveBeenCalledWith({ message: "You've joined Synthetic Group a" });
+    expect(restoreGroup).toHaveBeenCalledWith('committee-a');
     expect(refresh).not.toHaveBeenCalled();
     vi.advanceTimersByTime(400);
     expect(refresh).toHaveBeenCalledTimes(1);
