@@ -86,6 +86,16 @@ describe('embedded personal data in free text', () => {
     expect(scrubFreeText('contact ada@acme.example, thanks')).toBe('contact , thanks');
   });
 
+  it('keeps whole-value git remotes and version specs through stripPersonalFields', () => {
+    const input = {
+      remote: 'git@git.example.com:acme-org/repo.git',
+      pin: 'pkg@1.2.3',
+      list: ['git@git.example.com:acme-org/repo.git', 'ada@example.com'],
+      owner: 'ada@example.com',
+    };
+    expect(stripPersonalFields(input, { page: 'projects' })).toEqual({ remote: input.remote, pin: input.pin, list: [input.remote] });
+  });
+
   it('removes embedded emails in nested objects and arrays', () => {
     const input = { rows: [{ detail: { text: 'ping bob@team.example now' } }], tags: ['ok', 'see carol@team.example', 'dan@team.example'] };
 
