@@ -1254,6 +1254,20 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
       expect(familyShape(response)).toEqual([{ rootUid: 'top', orgs: ['aunt', 'leaf', 'mid', 'top'] }]);
     });
 
+    it('keeps every granted company when a cut-short family walk misses it', async () => {
+      const store = useCacheStore();
+      seedFamilies([{ uid: 'leaf', role: 'auditor' }]);
+      await new OrgRoleGrantsService().getRollUpSet(req, USERNAME);
+      seedFamilies([{ uid: 'leaf', role: 'auditor' }], { failChildrenFor: 'mid' });
+      for (const key of [...store.keys()].filter((key) => key.includes(':org-family:'))) store.delete(key);
+
+      const response = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'aunt');
+
+      expect(familyShape(response)).toEqual([{ rootUid: 'top', orgs: ['aunt', 'leaf', 'mid', 'top'] }]);
+      expect(response.lookupOutcome).toBe('partial');
+      expect(response.degraded).toBe(true);
+    });
+
     it('merges the selected company’s family into its own grant family when another grant family sorts first', async () => {
       classifyEveryCandidateAsWriter();
       seedFamilies([
