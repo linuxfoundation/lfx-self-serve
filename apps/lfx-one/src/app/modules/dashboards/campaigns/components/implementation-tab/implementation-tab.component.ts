@@ -8652,7 +8652,10 @@ export class ImplementationTabComponent implements OnInit {
       this.linkedInLifetimeBudget.set(draft.linkedInLifetimeBudget);
     }
     if (draft.linkedInDailyCapUsd !== undefined) {
-      this.linkedInDailyCapUsd.set(draft.linkedInDailyCapUsd);
+      // An unparsable entry (NaN) cannot be shown again: the remounted box starts empty, so it is
+      // restored as no cap, which is what that empty box says, rather than a hidden value blocking Create.
+      const cap = draft.linkedInDailyCapUsd;
+      this.linkedInDailyCapUsd.set(cap !== null && Number.isNaN(cap) ? null : cap);
     }
     if (draft.redditBudgetUsd !== undefined) {
       this.redditBudgetUsd.set(draft.redditBudgetUsd);

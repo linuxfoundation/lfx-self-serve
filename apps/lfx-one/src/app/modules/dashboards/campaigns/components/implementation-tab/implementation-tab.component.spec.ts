@@ -4375,6 +4375,29 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
   });
 
+  it('restores an unparsable daily cap as no cap after a remount, as its empty box shows', async () => {
+    const first = await mount(null);
+    enableDailyCap(first.fixture);
+    typeLinkedInBudget(first.fixture, 1000);
+    toggleLinkedInLifetimeBudget(first.fixture, true);
+    const input = linkedInDailyCapInput(first.fixture) as HTMLInputElement;
+    Object.defineProperty(input, 'validity', { configurable: true, value: { badInput: true } });
+    typeLinkedInDailyCap(first.fixture, '');
+    expect(at(first.fixture).linkedInDailyCapUsd()).toBeNaN();
+    const draft = first.latest();
+    first.fixture.destroy();
+    expect(draft?.linkedInDailyCapUsd).toBeNaN();
+
+    const second = await mount(draft);
+    enableDailyCap(second.fixture);
+    const c = at(second.fixture);
+    expect(c.linkedInDailyCapUsd()).toBeNull();
+    expect(linkedInDailyCapInput(second.fixture)?.value).toBe('');
+    expect(second.fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]')).toBeNull();
+    c.selectedPlatforms.set(['linkedin-ads']);
+    expect(c.createBlockedReason()).not.toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
   it('leaves an entry the browser cannot parse in the box instead of writing over it', async () => {
     const { fixture } = await mount(null);
     enableDailyCap(fixture);
