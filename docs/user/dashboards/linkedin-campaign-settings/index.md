@@ -3,8 +3,23 @@ title: LinkedIn targeting and ad variants
 description: See and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
-tags: [campaigns, paid marketing, linkedin ads, sponsored content, targeting, member groups, skills, ad variants, intro text, headline, images, implement]
-last_updated: 2026-11-17
+tags:
+  [
+    campaigns,
+    paid marketing,
+    linkedin ads,
+    sponsored content,
+    ad account,
+    targeting,
+    member groups,
+    skills,
+    ad variants,
+    intro text,
+    headline,
+    images,
+    implement,
+  ]
+last_updated: 2026-11-18
 intercom_collection: Dashboards
 ---
 
@@ -18,7 +33,14 @@ When you create a LinkedIn campaign from the **Campaigns** page in the Foundatio
 
 ## Ad account
 
-The **Ad Account** line in the LinkedIn section tells you where the campaign is created. It is set by the project's LinkedIn connection: the campaign goes into that connection's ad account, or into LF's shared LinkedIn account if the project has no LinkedIn connection of its own. You can't choose a different account here yet.
+The **Ad Account** line in the LinkedIn section tells you where the campaign is created. It is set by the project's LinkedIn connection: the campaign goes into that connection's ad account, or into LF's shared LinkedIn account if the project has no LinkedIn connection of its own.
+
+When choosing the ad account is available on your deployment, the section names the account, for example **Example account (500000001)**:
+
+- If the project creates in LF's shared LinkedIn account and that account can create in other ad accounts, **Ad Account** is a list. It starts on the default account, marked **default**, which is where the campaign goes unless you choose another. Only the LF marketing team can create in a different account; anyone else's create is refused.
+- Otherwise the line shows the one account the campaign is created in.
+
+If the account can't be read, the section shows the connection line above instead, and you can still create the campaign in the default account. Where choosing isn't available, you can't choose a different account here.
 
 ## Edit a variant
 
