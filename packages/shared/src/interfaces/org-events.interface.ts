@@ -56,6 +56,8 @@ export type OrgEventsResponse = OffsetPaginatedResponse<OrgEvent>;
 /** Org event row with presentation fields pre-baked for template rendering (avoids method calls in template). */
 export interface OrgEventRowVm extends OrgEvent {
   readonly dateRange: string;
+  /** Roll-up only: the sponsoring organizations' names, for the Event Sponsor tooltip; null when none or not a roll-up. */
+  readonly sponsorNames: string | null;
 }
 
 /** Frontend query params for GET /api/orgs/:accountId/lens/events. */

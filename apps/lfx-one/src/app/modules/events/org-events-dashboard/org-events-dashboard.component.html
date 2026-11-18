@@ -5,7 +5,7 @@
   <!-- Page Header -->
   <lfx-page-header
     [title]="companyName() && contentVisible() ? 'Events — ' + companyName() : 'Events'"
-    description="Your company's event footprint across LF events."
+    [description]="pageCopy().description"
     titleTestId="org-events-title"
     descriptionTestId="org-events-subtitle"
     data-testid="org-events-header">
@@ -235,6 +235,8 @@
               [sortField]="upcomingSortField()"
               [sortOrder]="upcomingSortOrder()"
               [attendeesCaption]="upcomingAttendeesCaption()"
+              [rollUp]="isRollUp()"
+              [emptyStateSubtitle]="pageCopy().upcomingEmpty"
               (pageChange)="onUpcomingPageChange($event)"
               (sortChange)="onUpcomingSortChange($event)"
               (retry)="retryLoad()"
@@ -253,9 +255,10 @@
               [sortField]="pastSortField()"
               [sortOrder]="pastSortOrder()"
               [attendeesCaption]="pastAttendeesCaption()"
+              [rollUp]="isRollUp()"
               [showAction]="false"
               emptyStateTitle="No past events"
-              emptyStateSubtitle="No past events were found for your company."
+              [emptyStateSubtitle]="pageCopy().pastEmpty"
               emptyStateIcon="fa-light fa-calendar-check"
               (pageChange)="onPastPageChange($event)"
               (sortChange)="onPastSortChange($event)"

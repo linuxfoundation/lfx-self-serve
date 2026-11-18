@@ -323,6 +323,20 @@ describe('OrgEventsDashboardComponent', () => {
       expect(notices).not.toContain(ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE);
     });
 
+    it("describes the organizations' footprint and says no events were found for your organizations", async () => {
+      const { el } = await render(null, { rollUp: true });
+
+      expect(el.querySelector('[data-testid="org-events-subtitle"]')?.textContent?.trim()).toBe("Your organizations' event footprint across LF events.");
+      expect(el.textContent).toContain('No upcoming events were found for your organizations.');
+    });
+
+    it("keeps the company's description and empty state on a single organization", async () => {
+      const { el } = await render(null);
+
+      expect(el.querySelector('[data-testid="org-events-subtitle"]')?.textContent?.trim()).toBe("Your company's event footprint across LF events.");
+      expect(el.textContent).toContain('No upcoming events were found for your company.');
+    });
+
     it('shows no notice when every organization in the family is included', async () => {
       const { el } = await render(null, { rollUp: true });
 
