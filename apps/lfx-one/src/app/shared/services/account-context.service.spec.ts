@@ -259,6 +259,18 @@ describe('AccountContextService — address-adopted selection', () => {
       grants.claManagerOrgSet.set(new Set([UID_A]));
       expect(service.hasOrgSelectorAccess()).toBe(true);
     });
+
+    it('is true for an all employee view company alone (#5845)', () => {
+      grants.employeeViewOrgUid.set(UID_A);
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for a company read in full through the authorizer alone (#5845)', () => {
+      expect(service.hasOrgSelectorAccess()).toBe(false);
+
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
   });
 
   // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
@@ -1494,6 +1506,23 @@ describe('AccountContextService — family roll-up', () => {
       service.selectRollUp(ROOT, { admitWhilePending: true });
       service.initializeUserOrganizations([]);
       claOnlyOrgUids.set(new Set([UID_A]));
+
+      expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
+    });
+
+    // #5845 — a company read in full through the authorizer alone (never in a grant set) is still a real address.
+    it('keeps a full-access company the caller is already addressing, and counts it as addressable', () => {
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
+      service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
+      service.initializeUserOrganizations([]);
+
+      expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
+    });
+
+    it('falls back to a full-access company rather than the not-found dead end', () => {
+      service.selectRollUp(ROOT, { admitWhilePending: true });
+      service.initializeUserOrganizations([]);
+      grants.fullAccessOrgUids.set(new Set([UID_A]));
 
       expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
     });
