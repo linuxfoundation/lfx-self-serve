@@ -21,9 +21,9 @@ It describes the view **with the page pull requests (#5869 to #5880) applied** o
 
 ### Gaps: a name, email or free text can reach an employee today
 
-1. **Projects workspace names** (`GET /lens/workspaces`) are free text typed by company admins and returned unredacted. They can hold a person's name or an email address.
-2. **Crowdfunding initiative name, description and website** are free text from initiative owners and are not scrubbed.
-3. **Embedded emails in free text.** The shared strip removes a value that is wholly an email address. Only the project detail controller also scrubs an address inside a string (commit messages). Every other page's free text passes.
+1. ~~Projects workspace names~~ **Fixed.** `GET /lens/workspaces` now returns neutral `Workspace N` names for user-created workspaces in the employee view; ids, slugs and counts are unchanged.
+2. ~~Crowdfunding initiative name, description and website~~ **Fixed.** The shared strip scrubs embedded emails and personal URLs from every string, covering these fields.
+3. ~~Embedded emails in free text~~ **Fixed.** `stripPersonalFields` replaces an address inside a string, not only a value that is wholly an email.
 4. **Overview analytics routes answer 403.** The four involvement routes (`org-involvement-*-monthly`, `org-foundation-coverage`) were given `redactForEmployeeView`, but none passes `allowEmployeeView: true`, so `assertOrgAnalyticsRead` refuses the employee view first. Privacy-safe (it fails closed), but the Overview charts the epic says to show do not load for an employee.
 
 ### Allowed names, and why they are a decision
@@ -66,7 +66,7 @@ ROI routes are LF-staff only. EasyCLA is refused by the CLA read gate. Every non
 | `projects.table.person-id`     | payload only                                                           | `GET /api/orgs/:orgUid/lens/projects`                         | `projects[].maintainers / contributors / participants[].id`        | `id: 'example-project:maintainer:0'` | cdp            | No, count only | anonymised      | enforced |
 | `projects.table.person-avatar` | Projects table avatar stacks                                           | `GET /api/orgs/:orgUid/lens/projects`                         | `projects[].maintainers / contributors / participants[].avatarUrl` | `avatarUrl: ''`                      | cdp            | No, count only | anonymised      | enforced |
 | `projects.table.person-counts` | Our Contributors / Our Participants columns                            | `GET /api/orgs/:orgUid/lens/projects`                         | `projects[].contributors.length / participants.length`             | `contributors: 1`                    | cdp            | No, count only | by-construction | decision |
-| `projects.workspaces.name`     | Workspace selector                                                     | `GET /api/orgs/:orgUid/lens/workspaces`                       | `workspaces[].name`                                                | `name: 'Platform team'`              | member-service | No, count only | none            | gap      |
+| `projects.workspaces.name`     | Workspace selector                                                     | `GET /api/orgs/:orgUid/lens/workspaces`                       | `workspaces[].name`                                                | `name: 'Platform team'`              | member-service | No, count only | anonymised      | enforced |
 | `projects.csv.counts`          | Export to CSV                                                          | `client only, built from GET /api/orgs/:orgUid/lens/projects` | `Our Contributors / Our Participants columns`                      | `contributors: 3`                    | cdp            | No, count only | anonymised      | enforced |
 
 ### Project detail
@@ -131,7 +131,7 @@ ROI routes are LF-staff only. EasyCLA is refused by the CLA read gate. Every non
 | `crowdfunding.donations.row-records`            | Donations table                                 | `GET /api/crowdfunding/org-donations`                                    | `data[] initiative, date, amountCents`                                             | `amountCents: 5000`                       | crowdfunding | No, count only | none        | decision   |
 | `crowdfunding.initiatives.creator`              | Initiative cards                                | `GET /api/crowdfunding/initiatives?scope=organizations`                  | `data[].creator`                                                                   | `creator: 'Ada Example'`                  | crowdfunding | No, count only | stripped    | enforced   |
 | `crowdfunding.initiatives.personal-attribution` | Initiative cards                                | `GET /api/crowdfunding/initiatives?scope=organizations`                  | `data[].attribution.name`                                                          | `attribution: { type: 'personal' }`       | crowdfunding | No, count only | stripped    | enforced   |
-| `crowdfunding.initiatives.free-text`            | Initiative cards                                | `GET /api/crowdfunding/initiatives?scope=organizations`                  | `data[].name / description / websiteUrl`                                           | `name: 'Community lab'`                   | crowdfunding | No, count only | none        | gap        |
+| `crowdfunding.initiatives.free-text`            | Initiative cards                                | `GET /api/crowdfunding/initiatives?scope=organizations`                  | `data[].name / description / websiteUrl`                                           | `name: 'Community lab'`                   | crowdfunding | No, count only | stripped    | enforced   |
 | `crowdfunding.initiatives.detail-routes`        | Initiative detail (the client route is blocked) | `GET /api/crowdfunding/initiatives/:slug[/transactions\|/announcements]` | `sponsors[].name / avatarUrl, beneficiaries[].name / email, donorName, donorEmail` | `beneficiaries[].email: user@example.com` | crowdfunding | No, count only | none        | unverified |
 
 ### Navigation
@@ -156,7 +156,7 @@ ROI routes are LF-staff only. EasyCLA is refused by the CLA read gate. Every non
 | Id                    | Where shown                                   | Endpoint              | Field                                  | Example                            | Source    | Allowed?                     | Enforcement     | Status     |
 | --------------------- | --------------------------------------------- | --------------------- | -------------------------------------- | ---------------------------------- | --------- | ---------------------------- | --------------- | ---------- |
 | `all.small-counts`    | Every count on every shown page               | `all shown routes`    | `any count of 1 or 2`                  | `count: 1`                         | snowflake | No, count only               | none            | decision   |
-| `all.embedded-email`  | Free-text fields on every shown page          | `all shown routes`    | `any string field`                     | `text: 'Contact user@example.com'` | lfx       | No, count only               | stripped        | gap        |
+| `all.embedded-email`  | Free-text fields on every shown page          | `all shown routes`    | `any string field`                     | `text: 'Contact user@example.com'` | lfx       | No, count only               | stripped        | enforced   |
 | `all.exports`         | Exports, downloads and tooltips               | `client only`         | `Projects CSV; avatar and aria labels` | `header: Our Contributors`         | lfx       | No, count only               | anonymised      | enforced   |
 | `all.errors-and-logs` | Error responses, empty states and server logs | `all routes`          | `error message and code`               | `code: 'EMPLOYEE_VIEW_FORBIDDEN'`  | lfx       | Not personal (company level) | by-construction | enforced   |
 | `all.rollout-flag`    | LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED            | `server feature flag` | `flag state`                           | `false`                            | lfx       | No, count only               | none            | unverified |
@@ -243,7 +243,7 @@ Every route under `/api/orgs/:orgUid/lens` in `orgs.route.ts`, path parameter na
 | GET    | `/:p/lens/training/groups`                                    | training           | counts            |
 | GET    | `/:p/lens/training/groups/employees`                          | training           | blocked           |
 | GET    | `/:p/lens/training/stats`                                     | training           | counts            |
-| GET    | `/:p/lens/workspaces`                                         | projects           | free-text         |
+| GET    | `/:p/lens/workspaces`                                         | projects           | redacted          |
 | POST   | `/:p/lens/workspaces`                                         | projects           | read-only-refused |
 | DELETE | `/:p/lens/workspaces/:p`                                      | projects           | read-only-refused |
 | PUT    | `/:p/lens/workspaces/:p`                                      | projects           | read-only-refused |
