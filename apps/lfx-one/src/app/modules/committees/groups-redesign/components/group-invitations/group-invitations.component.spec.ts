@@ -204,10 +204,27 @@ describe('GroupInvitationsComponent', () => {
     expect(accept).toHaveBeenCalledWith(expect.objectContaining({ inviteUid: 'a', inviteRequiresOrganization: true }));
     expect(text(byTestId('groups-redesign-invitations-count'))).toBe('2');
     expect(trigger()?.getAttribute('aria-busy')).toBe('true');
+    await open();
+    expect(openDrawer).toHaveBeenCalledTimes(1);
     answered.next();
     answered.complete();
     await settle();
     expect(text(byTestId('groups-redesign-invitations-count'))).toBe('1');
+  });
+
+  it('moves focus to the fallback when the last invitation is accepted after the company step', async () => {
+    const answered = new Subject<void>();
+    accept.mockReturnValue(answered);
+    await render([invitation('a', { organization_required: true })]);
+    await open();
+    await press(all('groups-redesign-invitations-row')[0], 'groups-redesign-invitations-accept');
+    (document.activeElement as HTMLElement | null)?.blur();
+    answered.next();
+    answered.complete();
+    await settle();
+
+    expect(trigger()).toBeNull();
+    expect(document.activeElement).toBe(fallback);
   });
 
   it('puts the invitation back when accepting fails', async () => {

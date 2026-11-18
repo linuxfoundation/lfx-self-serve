@@ -101,7 +101,8 @@ export class GroupInvitationsComponent {
   }
 
   protected openDrawer(): void {
-    if (this.drawerRef) return;
+    // Not during a company step, whose dialog the drawer would cover.
+    if (this.drawerRef || this.accepting().size) return;
     const ref = this.drawerService.open(this.drawerTemplate(), { width: 640, describedBy: true });
     this.drawerRef = ref;
     this.drawerOpen.set(true);
