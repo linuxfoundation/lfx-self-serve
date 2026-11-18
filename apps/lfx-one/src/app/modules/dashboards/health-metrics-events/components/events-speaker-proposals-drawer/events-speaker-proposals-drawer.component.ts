@@ -45,6 +45,8 @@ export class EventsSpeakerProposalsDrawerComponent {
   private readonly sentinel = viewChild<ElementRef<HTMLElement>>('sentinel');
   /** Each offset to read; a filter change pushes 0, which `switchMap` lets cancel a page still in flight. */
   private readonly pageRequests = new Subject<number>();
+  /** The event list ignores the filters, so it is read until one page brings it back. */
+  private eventsLoaded = false;
 
   protected readonly statusOptions = HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_STATUS_OPTIONS;
   protected readonly eventId = signal<string>('');
@@ -119,6 +121,7 @@ export class EventsSpeakerProposalsDrawerComponent {
       status: status ? (status as HealthMetricsEventsSpeakersStatusGroup) : null,
       offset,
       pageSize: HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
+      includeEvents: !this.eventsLoaded,
     };
   }
 
@@ -127,6 +130,7 @@ export class EventsSpeakerProposalsDrawerComponent {
     this.rows.update((current) => (offset === 0 ? rows : [...current, ...rows]));
     this.total.set(page.totalRecords);
     if (page.events) {
+      this.eventsLoaded = true;
       this.eventOptions.set([HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_ALL_EVENTS, ...page.events.map((event) => ({ id: event.id, label: event.name }))]);
     }
     this.loading.set(false);

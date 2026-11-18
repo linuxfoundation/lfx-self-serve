@@ -551,6 +551,8 @@ export interface HealthMetricsEventsSpeakerProposalsQuery {
   status: HealthMetricsEventsSpeakersStatusGroup | null;
   offset: number;
   pageSize: number;
+  /** Also list the period's events; the drawer asks once, as the list ignores the filters. */
+  includeEvents: boolean;
 }
 
 /** An event with proposals in the period, as the drawer's event filter lists it. */
@@ -564,7 +566,7 @@ export interface HealthMetricsEventsSpeakerProposals {
   rows: HealthMetricsEventsSpeakersProposal[];
   /** Proposals matching the event and status. */
   totalRecords: number;
-  /** The period's events, latest start first; only the first page carries them, later pages `null`. */
+  /** The period's events, latest start first; `null` unless the request asked for them. */
   events: HealthMetricsEventsSpeakerProposalsEvent[] | null;
 }
 

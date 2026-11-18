@@ -124,6 +124,7 @@ describe('EventsSpeakerProposalsDrawerComponent', () => {
       status: null,
       offset: 0,
       pageSize: 25,
+      includeEvents: true,
     });
     expect(text('ui-drawer-title')).toBe('All speaker proposals');
     expect(text('ui-drawer-subtitle')).toBe(`2 proposals · ${new Date().getFullYear()} (YTD)`);
@@ -164,7 +165,9 @@ describe('EventsSpeakerProposalsDrawerComponent', () => {
     fixture.componentInstance['onStatusChange']('declined');
     await settle();
 
-    expect(getEventsSpeakerProposals).toHaveBeenLastCalledWith(expect.objectContaining({ eventId: 'evt-1', status: 'declined', offset: 0 }));
+    expect(getEventsSpeakerProposals).toHaveBeenLastCalledWith(
+      expect.objectContaining({ eventId: 'evt-1', status: 'declined', offset: 0, includeEvents: false })
+    );
     expect(rowKeys()).toEqual(['p-9']);
     expect(text('ui-drawer-subtitle')).toContain('1 proposal ·');
   });
@@ -182,7 +185,7 @@ describe('EventsSpeakerProposalsDrawerComponent', () => {
     listEnd()?.fire(true);
     await settle();
 
-    expect(getEventsSpeakerProposals).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 2 }));
+    expect(getEventsSpeakerProposals).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 2, includeEvents: false }));
     expect(rowKeys()).toEqual(['p-1', 'p-2', 'p-3']);
     // A later page carries no events, so the filter keeps the first page's.
     expect(fixture.componentInstance['eventOptions']().map((option) => option.label)).toEqual(['All events']);
@@ -220,6 +223,8 @@ describe('EventsSpeakerProposalsDrawerComponent', () => {
     getEventsSpeakerProposals.mockReturnValueOnce(of(page(['p-1'], 2, [])));
     fixture.componentInstance['onStatusChange']('accepted');
     await settle();
+    // The failed first page never brought the events, so the retry asks again.
+    expect(getEventsSpeakerProposals).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'accepted', includeEvents: true }));
     getEventsSpeakerProposals.mockReturnValueOnce(throwError(() => new Error('down')));
     listEnd()?.fire(true);
     await settle();

@@ -4169,6 +4169,7 @@ export class AnalyticsController {
         status: status ? (status as HealthMetricsEventsSpeakersStatusGroup) : null,
         offset,
         pageSize,
+        includeEvents: getStringQueryParam(req, 'includeEvents') === 'true',
       });
 
       logger.success(req, 'get_events_speaker_proposals', startTime, {

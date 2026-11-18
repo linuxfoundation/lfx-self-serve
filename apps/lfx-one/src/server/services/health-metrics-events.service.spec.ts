@@ -1371,7 +1371,15 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
 });
 
 describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
-  const baseQuery: HealthMetricsEventsSpeakerProposalsQuery = { foundationSlug: 'acme', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25 };
+  const baseQuery: HealthMetricsEventsSpeakerProposalsQuery = {
+    foundationSlug: 'acme',
+    range: 'YTD',
+    eventId: '',
+    status: null,
+    offset: 0,
+    pageSize: 25,
+    includeEvents: false,
+  };
   const PAGE_SQL = /WITH matched AS/;
 
   function proposalRow(overrides: Record<string, unknown> = {}) {
@@ -1436,7 +1444,7 @@ describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
     expect(pageCall()[0]).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE} OFFSET ${maxOffset}`);
   });
 
-  it('maps the page rows to the requested period and lists the period events on the first page', async () => {
+  it('maps the page rows to the requested period and lists the period events when asked', async () => {
     respond(
       [proposalRow(), proposalRow({ PROPOSAL_KEY: 'p-2', JOB_TITLE: null, IS_UNAFFILIATED_PROPOSAL: true, PROPOSAL_STATUS_GROUP: 'Other', LOGO_URL: null })],
       [
@@ -1446,7 +1454,7 @@ describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
       ]
     );
 
-    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, baseQuery);
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, includeEvents: true });
 
     expect(page.totalRecords).toBe(42);
     expect(page.rows.map((row) => [row.proposalKey, row.range, row.jobTitle, row.unaffiliated, row.statusGroup, row.logoUrl])).toEqual([
@@ -1459,13 +1467,13 @@ describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
     ]);
     const eventsCall = execute.mock.calls.find(([sql]) => !PAGE_SQL.test(sql as string));
     expect(eventsCall?.[0]).toContain('GROUP BY event_id');
-    expect(eventsCall?.[0]).toContain('ORDER BY event_start_date DESC NULLS LAST');
+    expect(eventsCall?.[0]).toContain('ORDER BY MAX(event_start_date) DESC NULLS LAST');
     expect(eventsCall?.[0]).toContain('AND is_ytd = TRUE');
     expect(eventsCall?.[1]).toEqual(['acme']);
   });
 
-  it('skips the events read past the first page', async () => {
-    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, offset: 25 });
+  it('skips the events read unless asked, as filter changes keep the list', async () => {
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, baseQuery);
 
     expect(page.events).toBeNull();
     expect(execute).toHaveBeenCalledTimes(1);

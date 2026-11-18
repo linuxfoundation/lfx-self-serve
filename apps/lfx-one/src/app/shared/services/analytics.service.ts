@@ -1322,7 +1322,7 @@ export class AnalyticsService {
     );
   }
 
-  /** One page of a period's proposals for the All speaker proposals drawer; the first page also lists the period's events. */
+  /** One page of a period's proposals for the All speaker proposals drawer, and the period's events when asked. */
   public getEventsSpeakerProposals(query: HealthMetricsEventsSpeakerProposalsQuery): Observable<HealthMetricsEventsSpeakerProposals> {
     let params = strictHttpParams()
       .set('foundationSlug', query.foundationSlug)
@@ -1331,6 +1331,7 @@ export class AnalyticsService {
       .set('pageSize', String(query.pageSize));
     if (query.eventId) params = params.set('eventId', query.eventId);
     if (query.status) params = params.set('status', query.status);
+    if (query.includeEvents) params = params.set('includeEvents', 'true');
 
     // Errors propagate so the drawer shows its error state, not "no proposals".
     return this.http.get<HealthMetricsEventsSpeakerProposals>('/api/analytics/events-speaker-proposals', { params }).pipe(

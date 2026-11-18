@@ -16,7 +16,7 @@ import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { Skeleton } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, of, skip, switchMap, take, tap } from 'rxjs';
 
 import { HealthMetricsBarListComponent } from '../../../components/health-metrics-bar-list/health-metrics-bar-list.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
@@ -108,7 +108,7 @@ export class EventsSpeakersComponent {
       { data }
     );
     this.drawerRef = ref;
-    ref.closed.subscribe(() => {
+    ref.closed.pipe(take(1)).subscribe(() => {
       if (this.drawerRef === ref) this.drawerRef = null;
     });
   }

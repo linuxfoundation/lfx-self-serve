@@ -533,6 +533,7 @@ describe('AnalyticsController.getEventsSpeakerProposals', () => {
       status: null,
       offset: 0,
       pageSize: 25,
+      includeEvents: false,
     });
     expect(res.json).toHaveBeenCalledWith(page);
   });
@@ -545,6 +546,7 @@ describe('AnalyticsController.getEventsSpeakerProposals', () => {
       status: 'declined',
       offset: '25',
       pageSize: '25',
+      includeEvents: 'true',
     });
     await promise;
 
@@ -555,6 +557,7 @@ describe('AnalyticsController.getEventsSpeakerProposals', () => {
       status: 'declined',
       offset: 25,
       pageSize: 25,
+      includeEvents: true,
     });
   });
 

@@ -296,6 +296,8 @@ interface SpeakerProposalRow {
 
 /** A drawer page row joined onto the filtered total; the period is the request's, so the read leaves it out. */
 interface SpeakerProposalPageRow extends Omit<SpeakerProposalRow, 'PERIOD'> {
+  /** Joins the logo; the mapper does not read it. */
+  ACCOUNT_ID: string | null;
   TOTAL_RECORDS: number | null;
   IS_PAGE_ROW: boolean | null;
 }
@@ -770,7 +772,7 @@ export class HealthMetricsEventsService {
 
   /**
    * One page of the period's proposals for the All speaker proposals drawer, most recent first, cut by event and status
-   * group. The first page also lists the period's events for the drawer's event filter.
+   * group. With `includeEvents`, it also lists the period's events for the drawer's event filter.
    */
   public async getSpeakerProposalsPage(req: Request, query: HealthMetricsEventsSpeakerProposalsQuery): Promise<HealthMetricsEventsSpeakerProposals> {
     // The flag and the page bounds come from constants or clamps, never from the request, so interpolating them is safe.
@@ -834,7 +836,7 @@ export class HealthMetricsEventsService {
         operation: 'get_events_speaker_proposals',
         clientMessage: 'Speaker proposals are unavailable right now.',
       }),
-      offset === 0 ? this.getSpeakerProposalEvents(req, query) : Promise.resolve(null),
+      query.includeEvents ? this.getSpeakerProposalEvents(req, query) : Promise.resolve(null),
     ]);
 
     return {
@@ -1196,7 +1198,7 @@ export class HealthMetricsEventsService {
   private async getSpeakerProposalEvents(req: Request, query: HealthMetricsEventsSpeakerProposalsQuery): Promise<HealthMetricsEventsSpeakerProposalsEvent[]> {
     const inPeriod = `is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range]} = TRUE`;
     const sql = `
-      SELECT event_id, MAX(event_name) AS event_name, MAX(event_start_date) AS event_start_date
+      SELECT event_id, MAX(event_name) AS event_name
       FROM ${SPEAKERS_LIST_VIEW}
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
@@ -1204,7 +1206,7 @@ export class HealthMetricsEventsService {
         AND proposal_key IS NOT NULL
         AND event_id IS NOT NULL
       GROUP BY event_id
-      ORDER BY event_start_date DESC NULLS LAST, event_name ASC, event_id ASC
+      ORDER BY MAX(event_start_date) DESC NULLS LAST, MAX(event_name) ASC, event_id ASC
     `;
 
     const result = await executeSnowflakeViewRead<SpeakerProposalEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {

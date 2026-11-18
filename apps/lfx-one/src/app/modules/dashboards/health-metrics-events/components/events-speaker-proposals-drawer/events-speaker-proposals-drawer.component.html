@@ -52,7 +52,7 @@
           <div class="flex min-w-0 flex-1 flex-col gap-[2px]">
             <span class="mb-[4px] flex min-w-0 items-center gap-[6px] text-[12px] text-gray-600">
               <lfx-ui-avatar class="flex-none" shape="logo" [size]="20" [initialsSize]="9" [name]="row.company.name" [src]="row.company.logoUrl" decorative />
-              <span class="min-w-0 truncate">{{ row.company.name }}</span>
+              <span class="min-w-0 break-words">{{ row.company.name }}</span>
             </span>
             <span class="text-[13px] font-medium text-gray-900">{{ row.title }}</span>
             @if (row.description) {
