@@ -79,7 +79,9 @@ const {
   legacyUpdateStatus,
   isServerFeatureEnabled,
   logger,
+  svcGetLinkedInCreateAccount,
 } = vi.hoisted(() => ({
+  svcGetLinkedInCreateAccount: vi.fn(),
   saveBrief: vi.fn(),
   approveStoredBrief: vi.fn(),
   loadBrief: vi.fn(),
@@ -150,6 +152,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public searchHubSpotCampaigns = svcSearchHsCampaigns;
       public createHubSpotCampaign = svcCreateHsCampaign;
       public createSendWorkflow = svcCreateSendWorkflow;
+      public getLinkedInAdsCreateAccount = svcGetLinkedInCreateAccount;
     },
   };
 });
@@ -1083,6 +1086,8 @@ describe('CampaignController.createCampaign cutover', () => {
    *     ordinary profile selection fails with "not found in runtime config".
    */
   it('strips the legacy ad account and adds the runtime targeting catalogue for LinkedIn', async () => {
+    // Account selection (#5809) is the one flag that would forward the id; off here.
+    isServerFeatureEnabled.mockImplementation((flag: string) => flag !== ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
@@ -1100,6 +1105,105 @@ describe('CampaignController.createCampaign cutover', () => {
     // duplicate of it.
     expect(sent['targetingProfile']).toEqual({ id: 'cloud-native' });
     expect(sent['budgetUsd']).toBe(100);
+  });
+
+  /**
+   * #5809: only the picker's explicit `selectedAdAccountId` can name a LinkedIn ad account, forwarded as
+   * `adAccountId` once campaign-service's own `create-account` list names it as a grant and the caller
+   * holds `global_marketing_ops`. A pick that cannot be honoured is refused, never replaced by the
+   * default; the default is sent as nothing (an executive director would get a 403 for it); and the
+   * legacy `linkedin.json` `adAccountId` is never forwarded, so an account changes only by a choice.
+   */
+  describe('LinkedIn ad account with account selection on', () => {
+    const CREATE_ACCOUNT = {
+      account_id: '100000001',
+      org_id: '200000001',
+      label: 'Shared system account',
+      source: 'system',
+      status: 'active',
+      account_selection_enabled: true,
+      selectable_accounts: [
+        { account_id: '100000001', org_id: '200000001', label: 'Shared system account', default: true },
+        { account_id: '100000002', org_id: '200000002', label: 'Grant One', default: false },
+      ],
+    };
+    const marketingOps = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+
+    async function sendWith(linkedIn: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+      const linkedInBody = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, targetingProfile: { id: 'cloud-native' }, ...linkedIn } };
+      await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['linkedInConfig'] as Record<string, unknown>) : null;
+    }
+
+    const refusal = (): { statusCode?: number; constructor: { name: string } } | undefined => vi.mocked(next).mock.calls[0]?.[0] as never;
+
+    beforeEach(() => {
+      svcGetLinkedInCreateAccount.mockResolvedValue(CREATE_ACCOUNT);
+      marketingOps.mockResolvedValue(true);
+    });
+
+    it.each([['100000002'], [' 100000002 ']])('forwards a picked grant %j for global_marketing_ops as adAccountId', async (given) => {
+      const sent = await sendWith({ selectedAdAccountId: given });
+
+      expect(svcGetLinkedInCreateAccount).toHaveBeenCalledWith(expect.anything(), 'tlf');
+      expect(sent?.['adAccountId']).toBe('100000002');
+      expect(sent).not.toHaveProperty('selectedAdAccountId');
+    });
+
+    it('sends nothing for a pick of the default account', async () => {
+      expect(await sendWith({ selectedAdAccountId: '100000001' })).not.toHaveProperty('adAccountId');
+    });
+
+    // An open tab's legacy linkedin.json id, even one that matches a grant, is not a choice.
+    it.each([['100000002'], ['507654321']])('never forwards the legacy adAccountId %j, and reads nothing for it', async (given) => {
+      const sent = await sendWith({ adAccountId: given });
+
+      expect(sent).not.toHaveProperty('adAccountId');
+      expect(svcGetLinkedInCreateAccount).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an account the list does not name', '507654321', CREATE_ACCOUNT],
+      ["a grant while campaign-service's selection is off", '100000002', { ...CREATE_ACCOUNT, account_selection_enabled: false }],
+      ['a malformed id', 'urn:li:sponsoredAccount:100000002', CREATE_ACCOUNT],
+    ])('refuses a pick of %s with a 400 rather than creating in the default', async (_label, given, answer) => {
+      svcGetLinkedInCreateAccount.mockResolvedValue(answer);
+
+      expect(await sendWith({ selectedAdAccountId: given })).toBeNull();
+      expect(refusal()).toBeInstanceOf(ServiceValidationError);
+    });
+
+    it('refuses a pick on a deployment with account selection off, reading nothing', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => flag !== ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
+
+      expect(await sendWith({ selectedAdAccountId: '100000002' })).toBeNull();
+      expect(refusal()).toBeInstanceOf(ServiceValidationError);
+      expect(svcGetLinkedInCreateAccount).not.toHaveBeenCalled();
+    });
+
+    it('refuses a picked grant from a caller without global_marketing_ops with a 403', async () => {
+      marketingOps.mockResolvedValue(false);
+
+      expect(await sendWith({ selectedAdAccountId: '100000002' })).toBeNull();
+      expect(refusal()).toBeInstanceOf(AuthorizationError);
+    });
+
+    it('refuses with a 503 when the relation check cannot be made', async () => {
+      marketingOps.mockRejectedValueOnce(new Error('access check unavailable'));
+
+      expect(await sendWith({ selectedAdAccountId: '100000002' })).toBeNull();
+      expect(refusal()?.statusCode).toBe(503);
+    });
+
+    it('fails the create when the account list cannot be read', async () => {
+      const upstream = new Error('create-account unavailable');
+      svcGetLinkedInCreateAccount.mockRejectedValueOnce(upstream);
+
+      expect(await sendWith({ selectedAdAccountId: '100000002' })).toBeNull();
+      expect(refusal()).toBe(upstream);
+    });
   });
 
   /**

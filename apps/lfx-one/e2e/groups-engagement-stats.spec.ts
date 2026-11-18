@@ -24,6 +24,7 @@
 import type { Committee, MyCommittee, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Locator, Page, test } from '@playwright/test';
+import { stubGroupsRedesignFlag } from './helpers/groups-redesign-flag.helper';
 
 test.setTimeout(60_000);
 
@@ -193,6 +194,7 @@ async function cardAppears(locator: Locator, timeout: number): Promise<boolean> 
 }
 
 async function gotoMyGroups(page: Page): Promise<void> {
+  await stubGroupsRedesignFlag(page);
   skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);

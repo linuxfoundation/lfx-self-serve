@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCESS_UNVERIFIABLE_MESSAGE } from '@lfx-one/shared/constants';
-import type { AccessAwareOrgsResult, OrgLensRollUpScope, OrgRollUpSetOrg } from '@lfx-one/shared/interfaces';
+import { ORG_ACCESS_UNVERIFIABLE_MESSAGE, ORG_LENS_ROLLUP_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import type { AccessAwareOrgsResult, OrgLensRollUpScope, OrgRollUpSetOrg, OrgStaffRollUpFamily } from '@lfx-one/shared/interfaces';
 import { orgRollUpRootUid } from '@lfx-one/shared/utils/org-lens-url.utils';
 import type { Request } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
+import { LaunchDarklyServerService } from '../services/launchdarkly-server.service';
 import { logger } from '../services/logger.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -19,13 +20,12 @@ const scopeByRequest = new WeakMap<Request, Map<string, Promise<OrgLensRollUpSco
 /**
  * Read gate and scope for an Org Lens family roll-up key (`family-<top account id>`).
  *
- * The candidate organizations come from the caller's own roll-up set, never from the request, and
- * each one must pass `assertOrgLensRead`. `members` is the only set of organizations a roll-up read
- * may serve; one the caller is refused on is left out. `complete: false` means the caller's
- * roll-up set was partial, so the family may be missing organizations the page should say it
- * cannot show.
+ * Each candidate organization must pass `assertOrgLensRead`. `members` is the only set of
+ * organizations a roll-up read may serve; one the caller is refused on is left out.
+ * `complete: false` means the family may be missing organizations the page should say it cannot
+ * show.
  *
- * Throws 400 for a malformed key, 403 when the caller can read no organization in the family, and
+ * Throws 400 for a malformed key, 403 when the caller may not read the family, and
  * a retriable 503 when access cannot be verified (lookup failed, a member's check could not be
  * answered, or the family is absent from a partial set).
  *
@@ -84,16 +84,48 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     throw unavailable(undefined, '/query/resources');
   }
 
-  const family = rollUpSet.families.find((candidate) => candidate.rootUid === rootUid);
+  const grantFamily = rollUpSet.families.find((candidate) => candidate.rootUid === rootUid);
+  let family = grantFamily;
+  let familyComplete = true;
+  let checkAuditor: ((orgUid: string) => Promise<boolean>) | undefined;
+  if (roster.isStaff && (await LaunchDarklyServerService.getInstance().isFlagEnabled(req, ORG_LENS_ROLLUP_ENABLED_FLAG, false))) {
+    let staffFamily: OrgStaffRollUpFamily | null = null;
+    let lookupError: unknown;
+    try {
+      staffFamily = await roleGrants.getStaffFamily(req, rootUid);
+    } catch (error) {
+      lookupError = error;
+      logger.warning(req, operation, 'Staff family lookup failed; cannot verify Org Lens roll-up access', {
+        roll_up_key: rollUpKey,
+        err: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (staffFamily && staffFamily.family.rootUid === rootUid) {
+      const orgs = [...staffFamily.family.orgs];
+      for (const org of grantFamily?.orgs ?? []) {
+        if (!orgs.some((member) => member.uid === org.uid)) orgs.push(org);
+      }
+      family = { ...staffFamily.family, orgs };
+      familyComplete = staffFamily.complete;
+      checkAuditor = batchAuditorChecks(
+        req,
+        orgs.map((org) => org.accountId).filter((uid) => !roster.resolved.has(uid))
+      );
+    } else if (!grantFamily) {
+      throw lookupError === undefined ? forbidden() : unavailable(lookupError, '/query/resources');
+    } else {
+      familyComplete = false;
+    }
+  }
   if (!family) {
-    if (rollUpSet.degraded) {
+    if (rollUpSet.degraded || roster.staffCheck === 'failed') {
       throw unavailable();
     }
     throw forbidden();
   }
 
   const sharedRoster = Promise.resolve(roster);
-  const checks = await Promise.allSettled(family.orgs.map((org) => assertOrgLensRead(req, org.accountId, operation, sharedRoster)));
+  const checks = await Promise.allSettled(family.orgs.map((org) => assertOrgLensRead(req, org.accountId, operation, sharedRoster, checkAuditor)));
   const members: OrgRollUpSetOrg[] = [];
   checks.forEach((check, index) => {
     if (check.status === 'fulfilled') {
@@ -119,7 +151,7 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     });
   }
 
-  const complete = rollUpSet.lookupOutcome === 'ok';
+  const complete = rollUpSet.lookupOutcome === 'ok' && familyComplete;
   if (!complete) {
     logger.warning(req, operation, 'Roll-up set is partial; serving the verified members of the family', {
       roll_up_key: rollUpKey,
@@ -127,4 +159,9 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     });
   }
   return { rollUpKey, rootUid, members, complete };
+}
+
+function batchAuditorChecks(req: Request, orgUids: string[]): (orgUid: string) => Promise<boolean> {
+  let answers: Promise<Map<string, boolean>> | undefined;
+  return (orgUid) => (answers ??= roleGrants.checkAuditorAccess(req, orgUids)).then((byKey) => byKey.get(`${orgUid}#auditor`) === true);
 }

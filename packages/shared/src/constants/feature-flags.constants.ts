@@ -81,9 +81,9 @@ export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
  * answers for an anonymous context before the signed-in one, and a roll-up restored from the
  * cookie or an address must ride that window out rather than be demoted by it.
  *
- * **UI-only** — evaluated through the OpenFeature Web SDK, which never runs server-side, so it
- * cannot gate an Express handler: `/api/orgs/me/roll-up-set` and every other BFF route answer the same
- * with the flag off. This flag only controls whether Self Serve offers and renders the roll-up.
+ * The server also evaluates it for one path (`LaunchDarklyServerService`): the LF staff family
+ * (#5901), added to `/api/orgs/me/roll-up-set` for an `anchor` and admitted by the roll-up read gate,
+ * only while it is on for the caller. Every other BFF route answers the same with the flag off.
  */
 export const ORG_LENS_ROLLUP_ENABLED_FLAG = 'org-lens-rollup-enabled';
 
@@ -213,6 +213,15 @@ export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
  */
 export const MEETINGS_REDESIGN_FLAG = 'meetings-redesign';
 /**
+ * Dark-launch gate for the redesigned Home / Me lens Groups page (#5823). Default false: a missing
+ * LaunchDarkly flag keeps everyone on the existing groups dashboard. It only affects the flat `/groups`
+ * route in the Me lens; `/foundation/groups`, `/project/groups` and the org lens stay on the existing page.
+ *
+ * **UI-only** — evaluated in the browser like {@link MEETINGS_REDESIGN_FLAG}: the server renders a loading
+ * state and the browser picks the page. It gates no endpoint.
+ */
+export const GROUPS_REDESIGN_FLAG = 'groups-redesign';
+/**
  * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
  * false: the group stays hidden until LaunchDarkly targeting turns it on.
  *
@@ -236,3 +245,12 @@ export const INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG = 'insights-public-api-token-
  * (fail closed) and the SDK keeps connecting in the background.
  */
 export const LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS = 3;
+
+/**
+ * Dark-launch gate for the Foundation Lens Participating Companies page (#5697): the route
+ * (`foundation/participating-orgs`) and its nav item. The page reads the lf-dbt participating-orgs
+ * table (#5707); the flag stays off until it is rolled out.
+ * Paired with the server flag `LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED`, which is the real kill
+ * switch for the BFF; the Web SDK never runs server-side.
+ */
+export const FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG = 'foundation-participating-orgs-enabled';

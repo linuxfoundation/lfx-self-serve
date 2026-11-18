@@ -8,10 +8,11 @@ import { join } from 'node:path';
 import { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError } from '../errors';
+import { registrantFilterSql } from '../helpers/event-registrant.helper';
 import { drawPdfSignature, loadPdfFont, resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
-import { PDFTemplateDetails, CertificateData, CertificateEventRow, CertificateResult } from '@lfx-one/shared/interfaces';
+import { PDFTemplateDetails, CertificateData, CertificateEventRow, CertificateResult, EventRegistrantIdentity } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_LOGO_WIDTH,
   DEFAULT_TEMPLATE,
@@ -35,7 +36,7 @@ export class CertificateService {
       event_id: data.eventId,
     });
 
-    const eventRow = await this.getEventRow(req, data.eventId, data.userEmail);
+    const eventRow = await this.getEventRow(req, data.eventId, data.registrant);
 
     // Certificates are only issued for events the user actually attended. Use a truthy
     // check to mirror mapRowToEvent's status derivation so the UI gate and this API gate
@@ -85,7 +86,10 @@ export class CertificateService {
     return isBackfillEventSource(event.EVENT_SOURCE?.trim()) && country === LF_OPEN_SOURCE_OVERRIDE_MATCH.EVENT_COUNTRY.toLowerCase();
   }
 
-  private async getEventRow(req: Request, eventId: string, userEmail: string): Promise<CertificateEventRow> {
+  private async getEventRow(req: Request, eventId: string, registrant: EventRegistrantIdentity): Promise<CertificateEventRow> {
+    // Same ID-or-email match as the events list; prefer the attended row when both keys hit different rows.
+    const registrantFilter = registrantFilterSql(registrant);
+
     const sql = `
       SELECT
         EVENT_NAME,
@@ -99,11 +103,12 @@ export class CertificateService {
         USER_ATTENDED
       FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
       WHERE EVENT_ID = ?
-        AND USER_EMAIL = ?
+        AND ${registrantFilter.sql}
+      ORDER BY USER_ATTENDED DESC NULLS LAST
       LIMIT 1
     `;
 
-    const result = await this.snowflakeService.execute<CertificateEventRow>(sql, [eventId, userEmail]);
+    const result = await this.snowflakeService.execute<CertificateEventRow>(sql, [eventId, ...registrantFilter.binds]);
 
     if (!result.rows.length) {
       throw new ResourceNotFoundError('EventRegistration', eventId, {
