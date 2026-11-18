@@ -122,11 +122,19 @@ describe('HealthMetricsWorldMapComponent', () => {
     expect(query('health-metrics-world-map-svg')).toBeNull();
   });
 
-  it('gives way when the outlines fail, keeping the screen-reader table', async () => {
+  it('gives way when the outlines fail, dropping its box so the row reflows, and keeps the screen-reader table', async () => {
     await render(of(null));
+    const host = fixture.nativeElement as HTMLElement;
 
     expect(query('health-metrics-world-map')).toBeNull();
     expect(query('health-metrics-world-map-table')).not.toBeNull();
+    expect(host.classList).toContain('contents');
+    expect(host.classList).not.toContain('block');
+  });
+
+  it('keeps its box while the outlines load and once they draw', async () => {
+    await render(NEVER);
+    expect((fixture.nativeElement as HTMLElement).classList).toContain('block');
   });
 
   it('loads nothing on the server, where it only holds the shape', async () => {

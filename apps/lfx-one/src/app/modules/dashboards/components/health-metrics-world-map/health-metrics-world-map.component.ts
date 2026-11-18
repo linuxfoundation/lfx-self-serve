@@ -27,8 +27,14 @@ import type {
   selector: 'lfx-health-metrics-world-map',
   imports: [HealthMetricsChartTipComponent],
   templateUrl: './health-metrics-world-map.component.html',
-  // Escape closes the popup; a resize re-places an open one.
-  host: { class: 'block', '(document:keydown.escape)': 'closeTip()', '(window:resize)': 'replaceTip()' },
+  // Escape closes the popup; a resize re-places an open one. With no outlines the host drops its box, so the flex sizing a
+  // parent gives it frees the row rather than holding an empty column; the screen-reader table takes no space either way.
+  host: {
+    '[class.block]': 'geometry() !== null',
+    '[class.contents]': 'geometry() === null',
+    '(document:keydown.escape)': 'closeTip()',
+    '(window:resize)': 'replaceTip()',
+  },
 })
 export class HealthMetricsWorldMapComponent {
   private readonly geometryService = inject(WorldGeometryService);
