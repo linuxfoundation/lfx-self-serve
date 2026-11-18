@@ -14097,7 +14097,8 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     googleAudienceSegmentsEnabled = false,
     googleGeoSearchEnabled = false,
     metaInstagramDsaEnabled = false,
-    twitterCreateEnabled = false
+    twitterCreateEnabled = false,
+    linkedInDailyCapEnabled = false
   ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
@@ -14114,7 +14115,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
       linkedInTargetingEditEnabled: false,
-      linkedInDailyCapEnabled: false,
+      linkedInDailyCapEnabled,
       microsoftAssetUploadEnabled: false,
       biddingEnabled,
       microsoftScheduleEnabled,
@@ -14230,6 +14231,17 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     expect(tab()['twitterCreateEnabled']()).toBe(enabled);
     expect(q(shown)).not.toBeNull();
     expect(q(hidden)).toBeNull();
+  });
+
+  /** The LinkedIn daily-cap capability (#5774) travels the same path: the real page reads it and binds it to `linkedInDailyCapEnabled`. */
+  it.each([[true], [false]])('hands a linkedin daily-cap capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, false, enabled));
+    const withLinkedIn = { ...brief, selectedPlatforms: ['linkedin-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withLinkedIn);
+    await settle();
+
+    expect(tab()['linkedInDailyCapEnabled']()).toBe(enabled);
   });
 
   /** The Meta Instagram/DSA capability travels the same path: the real page reads it, binds it, and the tab shows the inputs only on a yes. */
