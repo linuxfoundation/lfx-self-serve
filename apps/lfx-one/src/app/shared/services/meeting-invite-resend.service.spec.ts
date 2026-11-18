@@ -245,6 +245,14 @@ describe('MeetingInviteResendService', () => {
       expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
     });
 
+    it('escapes the title, since PrimeNG renders the message as HTML', () => {
+      service.confirmAndResendOwn(confirmationService, MEETING_UID, null, 'TSC <EU/APAC> & "R&D" sync');
+
+      expect(confirm.mock.calls[0][0].message).toBe(
+        "Resend your invitation to “TSC &lt;EU/APAC&gt; &amp; &quot;R&amp;D&quot; sync”? We'll email it to your own address again."
+      );
+    });
+
     it('sends nothing when the viewer cancels or dismisses the dialog', () => {
       service.confirmAndResendOwn(confirmationService, MEETING_UID, null, 'Weekly sync');
 

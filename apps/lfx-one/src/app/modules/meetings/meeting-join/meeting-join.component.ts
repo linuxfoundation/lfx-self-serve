@@ -863,10 +863,6 @@ export class MeetingJoinComponent implements OnInit {
     this.inviteResend.confirmAndResendOwn(this.confirmationService, this.meeting().id, this.currentOccurrence()?.occurrence_id, this.meetingTitle());
   }
 
-  public resendInvite(): void {
-    this.inviteResend.resendOwn(this.meeting().id, this.currentOccurrence()?.occurrence_id);
-  }
-
   /** Sets foundation context via ProjectContextService and opens /foundation/overview in a new tab. */
   public navigateToFoundation(): void {
     const parent = this.parentProject();

@@ -157,18 +157,14 @@ export class DashboardMeetingCardComponent {
 
   /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
   public confirmResendInvite(): void {
+    // The date this card shows: the occurrence input when given, else the next occurrence it resolves from the meeting
+    // itself (Groups Overview passes only the meeting), so the registration that fits what is on screen is chosen.
     this.inviteResend.confirmAndResendOwn(
       this.confirmationService,
       this.meeting().id,
       resolveShownOccurrenceId(this.meeting(), this.occurrence()),
       this.meetingTitle()
     );
-  }
-
-  public resendInvite(): void {
-    // The date this card shows: the occurrence input when given, else the next occurrence it resolves from the meeting
-    // itself (Groups Overview passes only the meeting), so the registration that fits what is on screen is chosen.
-    this.inviteResend.resendOwn(this.meeting().id, resolveShownOccurrenceId(this.meeting(), this.occurrence()));
   }
 
   // Resending goes to the viewer's own registrant row, so it is offered only where one exists: signed in, upcoming,

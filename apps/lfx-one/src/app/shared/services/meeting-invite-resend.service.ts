@@ -3,7 +3,7 @@
 
 import { inject, Injectable, signal } from '@angular/core';
 import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
-import { getMeetingOwnResendQuestion } from '@lfx-one/shared/utils';
+import { escapeHtml, getMeetingOwnResendQuestion } from '@lfx-one/shared/utils';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -72,7 +72,8 @@ export class MeetingInviteResendService {
 
     confirmationService.confirm({
       header: 'Resend Your Invitation',
-      message: getMeetingOwnResendQuestion(title),
+      // PrimeNG renders a confirmation message as HTML, so the title is escaped.
+      message: getMeetingOwnResendQuestion(escapeHtml(title)),
       // PrimeNG sizes the confirm icon at 2rem (font-size, width and height), which dwarfs this short prompt; scale it down for this dialog only.
       icon: 'fa-light fa-paper-plane !text-xl !w-auto !h-auto',
       acceptLabel: 'Resend',
