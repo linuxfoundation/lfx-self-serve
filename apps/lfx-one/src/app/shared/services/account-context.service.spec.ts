@@ -262,6 +262,14 @@ describe('AccountContextService — address-adopted selection', () => {
 
     it('is true for an all employee view company alone (#5845)', () => {
       grants.employeeViewOrgUid.set(UID_A);
+      grants.employeeViewOrgUids.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for an addressed employee view company when role-grants never published one (#5845)', () => {
+      expect(service.hasOrgSelectorAccess()).toBe(false);
+
+      grants.employeeViewOrgUids.set(new Set([UID_A]));
       expect(service.hasOrgSelectorAccess()).toBe(true);
     });
 

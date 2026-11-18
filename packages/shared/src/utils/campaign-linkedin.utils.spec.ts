@@ -11,6 +11,7 @@ import {
   linkedInVariantTextError,
   normalizeLinkedInCreativeText,
   resolveLinkedInTargetingProfileId,
+  roundUsdToCentsLikeGo,
 } from './campaign-linkedin.utils';
 
 describe('normalizeLinkedInCreativeText', () => {
@@ -107,5 +108,31 @@ describe('linkedInTargetingAfterRemovals', () => {
       skills: profile.skills,
       groups: profile.groups,
     });
+  });
+});
+
+describe('roundUsdToCentsLikeGo (#5774)', () => {
+  it.each([
+    // Exact binary ties break to the even cent, as strconv.FormatFloat(x, 'f', 2, 64) does.
+    [100.125, 100.12],
+    [0.125, 0.12],
+    [0.375, 0.38],
+    [2.625, 2.62],
+    // Not ties: their exact binary values sit just below the half cent.
+    [1.005, 1.0],
+    [9.995, 9.99],
+    // Ordinary amounts.
+    [20, 20],
+    [9.999, 10],
+    [1000, 1000],
+    [12.344, 12.34],
+    [12.346, 12.35],
+  ])('rounds %s to %s', (amount, want) => {
+    expect(roundUsdToCentsLikeGo(amount)).toBe(want);
+  });
+
+  it('passes a non-finite amount through for the caller to refuse', () => {
+    expect(roundUsdToCentsLikeGo(Number.NaN)).toBeNaN();
+    expect(roundUsdToCentsLikeGo(Number.POSITIVE_INFINITY)).toBe(Number.POSITIVE_INFINITY);
   });
 });

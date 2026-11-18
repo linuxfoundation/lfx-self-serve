@@ -19,6 +19,7 @@ import type { MyCommittee, PersistedPersonaState, PersonaType } from '@lfx-one/s
 import { GROUPS_CARD_GRID_PAGE_SIZE, GROUPS_VIEW_MODE_STORAGE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { stubGroupsRedesignFlag } from './helpers/groups-redesign-flag.helper';
 
 test.setTimeout(60_000);
 
@@ -130,6 +131,7 @@ function skipWhenAuthMissing(): void {
 }
 
 async function gotoMyGroups(page: Page): Promise<void> {
+  await stubGroupsRedesignFlag(page);
   await suppressCookieBanner(page);
   skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });

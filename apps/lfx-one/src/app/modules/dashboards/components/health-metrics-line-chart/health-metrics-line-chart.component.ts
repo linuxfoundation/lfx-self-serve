@@ -5,13 +5,8 @@ import { _IdGenerator } from '@angular/cdk/a11y';
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, ElementRef, inject, input, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import {
-  HEALTH_METRICS_LINE_CHART_LABEL_MIN_PX,
-  HEALTH_METRICS_LINE_CHART_VIEW_WIDTH,
-  HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
-  HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX,
-  HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX,
-} from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_LINE_CHART_LABEL_MIN_PX, HEALTH_METRICS_LINE_CHART_VIEW_WIDTH } from '@lfx-one/shared/constants';
+import { placeHealthMetricsChartTip } from '@lfx-one/shared/utils';
 import { distinctUntilChanged, EMPTY, Observable, switchMap } from 'rxjs';
 
 import { HealthMetricsChartTipComponent } from '../health-metrics-chart-tip/health-metrics-chart-tip.component';
@@ -96,23 +91,11 @@ export class HealthMetricsLineChartComponent {
     });
   }
 
-  /**
-   * The design's placement: 12px right of the point, or left of it when only the left has room in the viewport. A
-   * screen with room on neither side shifts it to stay inside, as the Overview's newsletter popup does.
-   */
+  /** Beside the point, as the design places it; see `placeHealthMetricsChartTip`. */
   private placeTip(index: number, element: HTMLElement): HealthMetricsLineChartTipPlacement {
     const offset = this.chart().columns[index]?.pointOffsetPct ?? 50;
     const column = element.getBoundingClientRect();
-    const point = column.left + (column.width * offset) / 100;
-    const viewport = document.documentElement.clientWidth;
-    if (viewport - point >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { left: `calc(${offset}% + 12px)`, right: null };
-    if (point >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { left: null, right: `calc(${100 - offset}% + 12px)` };
-
-    const left = Math.max(
-      HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
-      viewport - HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX - HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX
-    );
-    return { left: `calc(${offset}% + ${Math.round(left - point)}px)`, right: null };
+    return placeHealthMetricsChartTip(offset, column.left + (column.width * offset) / 100, document.documentElement.clientWidth);
   }
 }
 

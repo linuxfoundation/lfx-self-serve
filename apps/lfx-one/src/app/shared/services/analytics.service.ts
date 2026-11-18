@@ -109,6 +109,8 @@ import {
   HealthMetricsEventsRegistrationsGrowthQuery,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsRevenueQuery,
+  HealthMetricsEventsSpeakerProposals,
+  HealthMetricsEventsSpeakerProposalsQuery,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsOrganizations,
   HealthMetricsEventsOrganizationsQuery,
@@ -1315,6 +1317,32 @@ export class AnalyticsService {
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] events-organizations failed', { foundationSlug: query.foundationSlug, range: query.range, segment: query.segment, status });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** One page of a period's proposals for the All speaker proposals drawer, and the period's events when asked. */
+  public getEventsSpeakerProposals(query: HealthMetricsEventsSpeakerProposalsQuery): Observable<HealthMetricsEventsSpeakerProposals> {
+    let params = strictHttpParams()
+      .set('foundationSlug', query.foundationSlug)
+      .set('range', query.range)
+      .set('offset', String(query.offset))
+      .set('pageSize', String(query.pageSize));
+    if (query.eventId) params = params.set('eventId', query.eventId);
+    if (query.status) params = params.set('status', query.status);
+    if (query.includeEvents) params = params.set('includeEvents', 'true');
+
+    // Errors propagate so the drawer shows its error state, not "no proposals".
+    return this.http.get<HealthMetricsEventsSpeakerProposals>('/api/analytics/events-speaker-proposals', { params }).pipe(
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        console.error('[analytics] events-speaker-proposals failed', {
+          foundationSlug: query.foundationSlug,
+          range: query.range,
+          offset: query.offset,
+          status,
+        });
         return throwError(() => error);
       })
     );

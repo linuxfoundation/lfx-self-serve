@@ -2,8 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import type {
+  BehavioralClassDisplayConfig,
+  CommitteeCategoryInfo,
+  CommitteeTab,
+  GroupBehavioralClass,
+  GroupsHomeFilters,
+  JoinMode,
+} from '../interfaces/committee.interface';
 import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
+import type { UiTone } from '../interfaces/uikit.interface';
 import { lfxColors } from './colors.constants';
 
 // Re-export helper functions from utils for backward compatibility
@@ -701,6 +709,31 @@ export const BEHAVIORAL_CLASS_CONFIG: Record<GroupBehavioralClass, BehavioralCla
     bgColor: 'bg-gray-50',
   },
 };
+
+/** Colour role of each behavioral class, matching the hues of {@link BEHAVIORAL_CLASS_CONFIG}; drives the Groups type tab dots. */
+export const BEHAVIORAL_CLASS_TONE: Record<GroupBehavioralClass, UiTone> = {
+  'governing-board': 'feature',
+  'oversight-committee': 'success',
+  'working-group': 'warning',
+  'special-interest-group': 'accent',
+  'ambassador-program': 'danger',
+  other: 'neutral',
+};
+
+/** Groups shown per batch on the redesigned Groups page; scrolling near the end shows the next batch. */
+export const GROUPS_HOME_PAGE_SIZE = 20;
+
+/** No filters applied on the redesigned Groups page. */
+export const GROUPS_HOME_DEFAULT_FILTERS: GroupsHomeFilters = { scope: null, voting: null };
+
+/** Width of the redesigned Groups page Filters popover above phone width, in px. */
+export const GROUPS_HOME_FILTERS_PANEL_WIDTH = 344;
+
+/** Navigation state for links from the redesigned Groups page, so the group page shows "Groups" as its back link. */
+export const GROUPS_HOME_LINK_STATE = { backLabel: 'Groups', fromMeLens: true } as const;
+
+/** How long Undo stays offered after a withdraw or decline on the Groups page. */
+export const GROUPS_HOME_UNDO_MS = 8000;
 
 /** Max concurrent create-invite requests when fanning out a bulk committee invite. */
 export const COMMITTEE_INVITE_CONCURRENCY = 5;

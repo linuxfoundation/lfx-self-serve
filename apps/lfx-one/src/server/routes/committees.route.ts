@@ -69,5 +69,6 @@ router.get('/:id/applications', (req, res, next) => committeeController.getCommi
 router.get('/:id/my-applications', (req, res, next) => committeeController.getMyApplication(req, res, next));
 router.post('/:id/applications/:applicationId/approve', (req, res, next) => committeeController.approveApplication(req, res, next));
 router.post('/:id/applications/:applicationId/reject', (req, res, next) => committeeController.rejectApplication(req, res, next));
+router.post('/:id/applications/:applicationId/withdraw', (req, res, next) => committeeController.withdrawApplication(req, res, next));
 
 export default router;

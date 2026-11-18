@@ -1,0 +1,62 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-button
+  class="grow"
+  fullWidth
+  variant="tertiary"
+  icon="fa-light fa-bars-filter"
+  popoverLabel="Filters"
+  popoverPadding="none"
+  popoverAlign="end"
+  [popover]="panel"
+  [popoverWidth]="panelWidth()"
+  [ariaLabel]="buttonLabel()"
+  (click)="resetDraft()"
+  data-testid="groups-home-filters-button">
+  Filters
+  @if (appliedCount()) {
+    <lfx-ui-badge tone="accent" variant="solid" size="sm" data-testid="groups-home-filters-count">{{ appliedCount() }}</lfx-ui-badge>
+  }
+</lfx-ui-button>
+
+<ng-template #panel let-close="close">
+  <!-- Exact px design values: 344px panel (full width on phones), 6px body padding; rem undershoots at the 14px root. -->
+  <div class="flex flex-col" data-testid="groups-home-filters-panel">
+    <div class="flex flex-col gap-[2px] p-[6px]">
+      <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
+        <lfx-ui-select
+          label="Foundation/Project"
+          size="small"
+          [value]="draft().scope ?? ''"
+          (valueChange)="setScope($event)"
+          data-testid="groups-home-filters-scope">
+          <lfx-ui-option value="" label="All foundations and projects" />
+          @for (option of scopeOptions(); track option.value) {
+            <lfx-ui-option [value]="option.value" [label]="option.label" />
+          }
+        </lfx-ui-select>
+      </div>
+      <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
+        <lfx-ui-select
+          label="Voting capability"
+          size="small"
+          [value]="draft().voting ?? ''"
+          (valueChange)="setVoting($event)"
+          data-testid="groups-home-filters-voting">
+          <lfx-ui-option value="" label="All voting" />
+          <lfx-ui-option value="enabled" [label]="'Voting Enabled (' + votingCounts().enabled + ')'" />
+          <lfx-ui-option value="disabled" [label]="'Voting Disabled (' + votingCounts().disabled + ')'" />
+        </lfx-ui-select>
+      </div>
+    </div>
+    <div class="flex items-center justify-between gap-[8px] border-t border-gray-200 bg-gray-50 px-[12px] py-[10px]">
+      @if (draftHasValue()) {
+        <lfx-ui-button variant="tertiary-accent" icon="fa-light fa-arrow-rotate-left" (click)="clearDraft()" data-testid="groups-home-filters-reset">
+          Reset Filters
+        </lfx-ui-button>
+      }
+      <lfx-ui-button class="ml-auto" [disabled]="!changed()" (click)="apply(close)" data-testid="groups-home-filters-apply">Apply</lfx-ui-button>
+    </div>
+  </div>
+</ng-template>
