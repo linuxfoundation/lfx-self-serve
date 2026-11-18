@@ -34,7 +34,7 @@ import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
 import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
-import { defaultIfEmpty, exhaustMap, filter, finalize, Observable, pairwise, switchMap, take, timer } from 'rxjs';
+import { defaultIfEmpty, exhaustMap, filter, finalize, identity, Observable, pairwise, switchMap, take, timer } from 'rxjs';
 
 import { MeetingProjectLogoComponent } from '../../../../meetings/meetings-redesign/components/meeting-project-logo/meeting-project-logo.component';
 import { MeetingsHomeResizeService } from '../../../../meetings/meetings-redesign/services/meetings-home-resize.service';
@@ -168,10 +168,21 @@ export class GroupInvitationsComponent {
     toObservable(this.invitations)
       .pipe(pairwise(), takeUntilDestroyed())
       .subscribe(([previous, invitations]) => {
+        if (invitations.length || !previous.length) return;
         const ref = this.drawerRef;
-        if (!ref || invitations.length || !previous.length) return;
-        ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.fallbackFocus()?.focus());
-        ref.close();
+        if (ref) {
+          ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.fallbackFocus()?.focus());
+          ref.close();
+          return;
+        }
+        // Accepted after the company step, with the drawer already closed: focus was handed back to the removed button.
+        afterNextRender(
+          () => {
+            const active = this.document.activeElement;
+            if (!active || active === this.document.body) this.fallbackFocus()?.focus();
+          },
+          { injector: this.injector }
+        );
       });
   }
 
@@ -203,6 +214,8 @@ export class GroupInvitationsComponent {
       })
       .pipe(
         take(1),
+        // The company step belongs to this page; nothing is hidden yet, so leaving the page can drop it.
+        requiresOrganization ? takeUntilDestroyed(this.destroyRef) : identity,
         finalize(() => this.setAccepting(invitation.uid, false))
       )
       .subscribe({

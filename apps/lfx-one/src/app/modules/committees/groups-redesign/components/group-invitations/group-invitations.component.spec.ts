@@ -203,6 +203,7 @@ describe('GroupInvitationsComponent', () => {
     expect(closeDrawer).toHaveBeenCalled();
     expect(accept).toHaveBeenCalledWith(expect.objectContaining({ inviteUid: 'a', inviteRequiresOrganization: true }));
     expect(text(byTestId('groups-redesign-invitations-count'))).toBe('2');
+    expect(trigger()?.getAttribute('aria-busy')).toBe('true');
     answered.next();
     answered.complete();
     await settle();

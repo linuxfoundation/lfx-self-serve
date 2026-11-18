@@ -74,6 +74,21 @@ describe('GroupsHomeStore', () => {
     expect(store.groups()).toHaveLength(2);
   });
 
+  it('clears a failed first load once a refresh succeeds', () => {
+    const subject = new Subject<MyCommittee[]>();
+    groups$ = subject;
+    const store = create();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    subject.error(new Error('offline'));
+    expect(store.failed()).toBe(true);
+
+    groups$ = of([group('a', 'Board')]);
+    store.refresh();
+    TestBed.tick();
+    expect(store.failed()).toBe(false);
+    expect(store.groups()).toHaveLength(1);
+  });
+
   it('flags a failed load, and reloads on request', () => {
     const subject = new Subject<MyCommittee[]>();
     groups$ = subject;

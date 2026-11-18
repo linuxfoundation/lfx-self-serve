@@ -3,13 +3,14 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 @if (invitations().length) {
-  <!-- At 640px and below the header stacks this button full width under the title, first of the two. -->
+  <!-- Full width under the title at 640px and below; busy during the company step so the drawer can't cover its dialog. -->
   <lfx-ui-button
     class="max-[640px]:order-1 max-[640px]:!block max-[640px]:basis-full max-[640px]:[&>button]:w-full"
     variant="secondary"
     icon="fa-light fa-envelope"
     [ariaLabel]="'Invitations (' + invitations().length + ')'"
     [ariaExpanded]="drawerOpen()"
+    [loading]="accepting().size > 0"
     (click)="openDrawer()"
     data-testid="groups-redesign-invitations-button">
     Invitations

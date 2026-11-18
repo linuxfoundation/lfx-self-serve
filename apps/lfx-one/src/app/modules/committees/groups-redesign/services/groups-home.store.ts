@@ -27,7 +27,7 @@ import {
 import { buildEngagementStatCards, getGroupBehavioralClass } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { catchError, EMPTY, filter, finalize, map, of, switchMap, take } from 'rxjs';
+import { catchError, EMPTY, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 /**
  * State of the Me lens groups page, provided by the page component.
@@ -178,6 +178,7 @@ export class GroupsHomeStore {
                 })
                 .sort((a, b) => a.name.localeCompare(b.name))
             ),
+            tap(() => this.failedState.set(false)),
             catchError((error: HttpErrorResponse) => {
               console.error('Failed to load my groups:', error.status, error.message);
               if (silent) return EMPTY;
