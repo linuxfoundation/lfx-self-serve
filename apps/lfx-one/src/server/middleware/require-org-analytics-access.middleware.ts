@@ -14,11 +14,24 @@ import { getStringQueryParam } from '../helpers/validation.helper';
  * value the handler will use. A request without an `accountId` has nothing to scope against and no
  * organization to read; the handler rejects it.
  */
-export async function requireOrgAnalyticsAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
+export async function requireOrgAnalyticsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  return applyOrgAnalyticsGate(req, res, next, false);
+}
+
+/**
+ * The same gate for the Overview involvement rows, which also admit the all employee view (epic #5845): they return
+ * only aggregate counts, monthly series and foundation names, and their handlers still pass the payload through
+ * `redactForEmployeeView`. Every other analytics route keeps refusing employee-view callers.
+ */
+export async function requireOrgAnalyticsAccessAllowingEmployeeView(req: Request, res: Response, next: NextFunction): Promise<void> {
+  return applyOrgAnalyticsGate(req, res, next, true);
+}
+
+async function applyOrgAnalyticsGate(req: Request, _res: Response, next: NextFunction, allowEmployeeView: boolean): Promise<void> {
   try {
     const accountId = getStringQueryParam(req, 'accountId');
     if (accountId) {
-      await assertOrgAnalyticsRead(req, accountId, 'require_org_analytics_access');
+      await assertOrgAnalyticsRead(req, accountId, 'require_org_analytics_access', { allowEmployeeView });
     }
     next();
   } catch (error) {
