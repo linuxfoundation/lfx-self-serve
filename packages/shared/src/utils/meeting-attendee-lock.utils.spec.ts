@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
+import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
 import { MeetingType } from '../enums';
 import type { Meeting } from '../interfaces';
 import {
@@ -88,6 +88,14 @@ describe('getSavedAttendeeVisibility', () => {
     expect(getSavedAttendeeVisibility(meeting({ restricted: true, show_meeting_attendees: true }))).toBeNull();
     expect(getSavedAttendeeVisibility(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: false }))).toBeNull();
   });
+
+  it("reports a restricted meeting's stored choice under the composer lock, keeping board undecided", () => {
+    expect(getSavedAttendeeVisibility(meeting({ restricted: true, show_meeting_attendees: true }), COMPOSER_ATTENDEE_LOCK)).toBe(true);
+    expect(getSavedAttendeeVisibility(meeting({ restricted: true, show_meeting_attendees: undefined }), COMPOSER_ATTENDEE_LOCK)).toBe(false);
+    expect(
+      getSavedAttendeeVisibility(meeting({ meeting_type: MeetingType.BOARD, restricted: true, show_meeting_attendees: true }), COMPOSER_ATTENDEE_LOCK)
+    ).toBeNull();
+  });
 });
 
 describe('isMeetingAttendeeListShared', () => {
@@ -100,9 +108,14 @@ describe('isMeetingAttendeeListShared', () => {
     expect(isMeetingAttendeeListShared(null)).toBe(false);
   });
 
-  it('keeps a locked meeting private even when a legacy row still carries the opt-in', () => {
+  it('keeps a Board meeting private even when a legacy row still carries the opt-in', () => {
     expect(isMeetingAttendeeListShared(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: true }))).toBe(false);
-    expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(false);
+    expect(isMeetingAttendeeListShared(meeting({ meeting_type: MeetingType.BOARD, restricted: true, show_meeting_attendees: true }))).toBe(false);
+  });
+
+  it('honours the opt-in on a restricted (invite-only) meeting, as the composer writes it (#5438)', () => {
+    expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(true);
+    expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: false }))).toBe(false);
   });
 });
 
@@ -116,7 +129,7 @@ describe('allowRestricted (meeting v2 composer rule)', () => {
 
   it('leaves the default rule unchanged', () => {
     expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, true)).toBe(true);
-    expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(false);
+    expect(getSavedAttendeeVisibility(meeting({ restricted: true, show_meeting_attendees: true }))).toBeNull();
   });
 
   it('shows the board-only note under the composer rule and the existing note otherwise', () => {

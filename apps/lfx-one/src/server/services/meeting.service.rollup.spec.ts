@@ -185,7 +185,17 @@ describe('MeetingService roll-up scope', () => {
       expect(countCall()).toEqual({ filters_or: ['project_uid:child-uid'], type: 'v1_meeting' });
     });
 
-    it('falls back to the root project when the tree is larger than one OR batch', async () => {
+    it('rolls up a tree of up to the roll-up project limit in one query', async () => {
+      proxyRequest.mockResolvedValue({ count: 3 });
+      const children = Array.from({ length: 122 }, (_, i) => `child-${i}`);
+      getFoundationProjectUids.mockResolvedValue([ROOT, ...children]);
+
+      await service.getMeetingsCount(req, { root_project_uid: ROOT }, 'v1_meeting');
+
+      expect(countCall()?.['filters_or']).toHaveLength(123);
+    });
+
+    it('falls back to the root project when the tree is larger than the roll-up project limit', async () => {
       proxyRequest.mockResolvedValue({ count: 3 });
       getFoundationProjectUids.mockResolvedValue([ROOT, ...Array.from({ length: 150 }, (_, i) => `child-${i}`)]);
 
@@ -194,7 +204,7 @@ describe('MeetingService roll-up scope', () => {
       expect(countCall()).toEqual({ filters_or: [`project_uid:${ROOT}`], type: 'v1_meeting' });
     });
 
-    it('keeps a selection of up to one OR batch inside a large tree', async () => {
+    it('keeps a selection within the limit inside a large tree', async () => {
       proxyRequest.mockResolvedValue({ count: 3 });
       getFoundationProjectUids.mockResolvedValue([ROOT, ...Array.from({ length: 150 }, (_, i) => `child-${i}`)]);
 

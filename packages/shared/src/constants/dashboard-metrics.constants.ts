@@ -250,7 +250,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
     drawerType: DashboardDrawerType.TotalMembers,
   },
   {
-    title: 'Organization Dependency',
+    title: 'Company Dependency',
     icon: 'fa-light fa-shield',
     chartType: 'line',
     category: 'contributors',

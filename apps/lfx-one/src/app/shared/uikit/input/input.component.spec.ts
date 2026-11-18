@@ -50,6 +50,16 @@ describe('UiInputComponent', () => {
     expect(field().getAttribute('aria-label')).toBeNull();
   });
 
+  it('marks a required field with a red asterisk that screen readers skip', async () => {
+    const mark = (): HTMLElement | null => host.querySelector('[data-testid="ui-input-required"]');
+    expect(mark()).toBeNull();
+
+    await set('required', true);
+
+    expect(mark()?.textContent).toBe(' *');
+    expect(mark()?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('uses ariaLabel when there is no visible label', async () => {
     await set('label', '');
     await set('ariaLabel', 'Search projects');

@@ -40,7 +40,7 @@ import { AddAccountDialogComponent } from './add-account-dialog.component';
  */
 describe('AddAccountDialogComponent — email verification outcome (#4253, #4328)', () => {
   const email = 'owned@example.test';
-  const conflictCopy = 'This email is already linked to an LFX account. If you believe this is an error, contact support.';
+  const conflictCopy = EMAIL_ALREADY_LINKED_MESSAGE;
   let fixture: ComponentFixture<AddAccountDialogComponent>;
 
   function setup(
@@ -495,7 +495,7 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
       expect(openMessenger).toHaveBeenLastCalledWith('test-app-id', expect.any(Function));
     });
 
-    it('words the complete email step conditionally before and after a generic successful send', () => {
+    it('distinguishes inbox ownership from account linking before and after a generic successful send (#5793)', () => {
       const response$ = new Subject<SendEmailVerificationResponse>();
       const { component, root } = setup(
         () => of<VerifyAndLinkEmailResponse>({ success: true }),
@@ -503,9 +503,10 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
       );
 
       expect(component.codeSent()).toBe(false);
-      expect(normalizedText(root)).toContain("Enter your email address. If it can be added to your account, we'll send you a verification code.");
-      expect(normalizedText(root)).toContain('Codes are sent only to addresses that can be added to your account.');
-      expect(normalizedText(root)).not.toContain("You'll receive a verification code");
+      expect(normalizedText(root)).toContain('Enter your email address to confirm you own it before we check whether it can be linked to your account.');
+      expect(normalizedText(root)).toContain('Verifying your email doesn’t guarantee it can be linked to your account.');
+      expect(normalizedText(root)).not.toContain('automatically link');
+      expect(normalizedText(root)).not.toContain('already linked');
 
       response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
       response$.complete();
@@ -513,9 +514,11 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
 
       expect(component.codeSent()).toBe(true);
       expect(root.querySelector('[data-testid="add-account-otp"]')).not.toBeNull();
-      expect(normalizedText(root)).toContain(EMAIL_VERIFICATION_SENT_MESSAGE);
-      expect(normalizedText(root)).not.toContain("Enter your email address. If it can be added to your account, we'll send you a verification code.");
-      expect(normalizedText(root)).not.toContain("Enter your email address and we'll send you a verification code.");
+      expect(normalizedText(root)).toContain(
+        'Check owned@example.test for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.'
+      );
+      expect(normalizedText(root)).not.toContain('Enter your email address to confirm you own it');
+      expect(normalizedText(root)).not.toContain('already linked');
       const hint = normalizedText(root.querySelector('[data-testid="add-account-otp-hint"]'));
       expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
       expect(hint).not.toContain('already linked');

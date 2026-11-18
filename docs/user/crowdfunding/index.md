@@ -17,22 +17,22 @@ The Crowdfunding section lets you manage the fundraising initiatives you own and
 - Track your donation history across one-time and recurring contributions
 - Manage saved payment methods
 - Cancel or review recurring donation subscriptions
-- View the initiatives run on behalf of a project, foundation, or organization you write to
-- View the donations made on behalf of an organization you can view
+- View the initiatives run on behalf of a project, foundation, or company you write to
+- View the donations made on behalf of a company you can view
 
 ## Who this applies to
 
 All authenticated users can access the Crowdfunding section. **Initiatives** is relevant to users who have created or submitted crowdfunding initiatives. **Donations** is relevant to users who have contributed to any initiative.
 
-Users with write access to a project, foundation, or organization also see that entity's initiatives under its lens — see [Lens-scoped Initiatives](./lens-initiatives/).
+Users with write access to a project, foundation, or company also see that entity's initiatives under its lens — see [Lens-scoped Initiatives](./lens-initiatives/).
 
 ## Navigation
 
 Go to **app.lfx.dev** and select **Crowdfunding** from the left navigation sidebar under the **Me** lens. The section expands to show **Initiatives** ([app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives)) and **Donations** ([app.lfx.dev/crowdfunding/donations](https://app.lfx.dev/crowdfunding/donations)).
 
-Under the **Projects**, **Foundation**, and **Organization** lenses, select **Crowdfunding Initiatives** from the left navigation sidebar to see the initiatives run on behalf of the selected project, foundation, or organization. This item appears only if you can write to that project or foundation, or are an **Admin** granted directly on that organization.
+Under the **Projects**, **Foundation**, and **Company** lenses, select **Crowdfunding Initiatives** from the left navigation sidebar to see the initiatives run on behalf of the selected project, foundation, or company. This item appears only if you can write to that project or foundation, or are an **Admin** granted directly on that company.
 
-Under the **Organization** lens, select **Crowdfunding Donations** to see the donations made on behalf of the selected organization. Anyone who can view the organization can open it — see [Organization Donations](./lens-donations/).
+Under the **Company** lens, select **Crowdfunding Donations** to see the donations made on behalf of the selected company. Anyone who can view the company can open it — see [Company Donations](./lens-donations/).
 
 ## Key concepts
 
@@ -50,8 +50,8 @@ Under the **Organization** lens, select **Crowdfunding Donations** to see the do
 
 ## Related sections
 
-- [Lens-scoped Initiatives](./lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization
-- [Organization Donations](./lens-donations/) — donations made on behalf of an organization
+- [Lens-scoped Initiatives](./lens-initiatives/) — initiatives run on behalf of a project, foundation, or company
+- [Company Donations](./lens-donations/) — donations made on behalf of a company
 - [Crowdfunding FAQ](./faq/) — answers to common questions about initiatives and donations
 - [Transactions](../account/transactions/) — view purchase and billing history across all LFX products
 - [Profile](../profile/) — manage your account details associated with your donations

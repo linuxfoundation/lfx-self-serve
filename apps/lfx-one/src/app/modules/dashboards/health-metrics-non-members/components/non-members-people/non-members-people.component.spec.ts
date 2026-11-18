@@ -138,8 +138,8 @@ describe('NonMembersPeopleComponent', () => {
     const input = fixture.nativeElement.querySelector('#non-members-people-search') as HTMLInputElement;
 
     expect(input.maxLength).toBe(100);
-    expect(input.placeholder).toBe('Search person or organization…');
-    expect(headers).toEqual(['Person', 'Organization', 'Meetings attended', 'Last attended']);
+    expect(input.placeholder).toBe('Search person or company…');
+    expect(headers).toEqual(['Person', 'Company', 'Meetings attended', 'Last attended']);
   });
 
   it('re-reads a debounced, trimmed search from page 1 and writes it to the URL with the fragment kept', async () => {
@@ -271,7 +271,7 @@ describe('NonMembersPeopleComponent', () => {
   it('keeps the controls and names the search when it matches nothing', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { nonPeopleSearch: 'zeta' });
 
-    expect(text('non-members-people-no-match')).toBe('No person or organization matches “zeta”.');
+    expect(text('non-members-people-no-match')).toBe('No person or company matches “zeta”.');
     expect(query('non-members-people-controls')).not.toBeNull();
   });
 

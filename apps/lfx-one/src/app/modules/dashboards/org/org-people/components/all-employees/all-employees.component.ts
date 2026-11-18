@@ -111,6 +111,7 @@ import type {
 import {
   computeOrgAllEmployeeStats,
   foldForSearch,
+  nameSearchKeys,
   orgCodeFilterValues,
   orgCommitFiltersFor,
   orgCommitFiltersUrlMatches,
@@ -876,7 +877,16 @@ export class AllEmployeesComponent {
       keyContactRolePills: AllEmployeesComponent.keyContactRolePillsOf(row),
       keyContactRolesTooltip: AllEmployeesComponent.keyContactRolesOf(row).length > 1 ? AllEmployeesComponent.keyContactRolesOf(row).join(', ') : '',
       rowClass: AllEmployeesComponent.rowClassActivity,
+      searchKeys: AllEmployeesComponent.searchKeysOf(row),
     }));
+  }
+
+  /**
+   * The folded keys the search box matches (lfx-self-serve#5687), built once per row rather than per keystroke: the name in
+   * either order, title, email and LF username.
+   */
+  private static searchKeysOf(row: OrgAllEmployeeRow): string[] {
+    return [...nameSearchKeys(row.name, row.firstName, row.lastName), ...[row.title, row.email, row.lfUsername].map(foldForSearch)].filter(Boolean);
   }
 
   private static keyContactRolePillsOf(row: OrgAllEmployeeRow): OrgKeyContactRolePillVm[] {
@@ -893,7 +903,7 @@ export class AllEmployeesComponent {
     const keyContact = this.selectedKeyContact();
 
     return rows.filter((row) => {
-      if (q && ![row.name, row.title, row.email, row.lfUsername].some((field) => foldForSearch(field).includes(q))) return false;
+      if (q && !row.searchKeys.some((key) => key.includes(q))) return false;
       if (foundationId && !row.engagedFoundationIds.includes(foundationId)) return false;
       if (activity !== 'all') {
         const matches =

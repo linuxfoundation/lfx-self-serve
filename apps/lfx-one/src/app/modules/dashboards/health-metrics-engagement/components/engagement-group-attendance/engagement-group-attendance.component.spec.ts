@@ -24,7 +24,8 @@ function groupRow(overrides: Partial<HealthMetricsEngagementGroupRow> = {}): Hea
     projectId: 'p-1',
     projectSlug: 'acme-core',
     projectName: 'Acme Core',
-    groupTypeLabel: 'Technical Steering Committee',
+    groupTypeLabel: 'Governance',
+    meetingTypeGroup: 'Technical',
     lastMetDate: '2026-08-14',
     periods: [
       { range: 'COMPLETED_YEAR_3', meetingsHeld: 10, invitedCount: 100, attendedCount: 54, attendancePct: 0.54, dormant: false },
@@ -75,18 +76,19 @@ describe('EngagementGroupAttendanceComponent', () => {
       imports: [EngagementGroupAttendanceComponent],
       providers: [
         provideRouter([]),
-        // The drawer this table opens is a PrimeNG p-drawer, whose panel animation needs a provider.
         provideNoopAnimations(),
         HealthMetricsChromeService,
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementGroupAttendance } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        // The component reads its initial filter and page off the URL, and writes them back.
+        // The component reads its initial page off the URL, and writes the page and type back.
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EngagementGroupAttendanceComponent);
+    // The page parses the type off the URL and binds it in, before the first read.
+    if (queryParams['groupType']) fixture.componentRef.setInput('groupType', queryParams['groupType']);
     if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
     fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
@@ -94,6 +96,17 @@ describe('EngagementGroupAttendanceComponent', () => {
       fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
       fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
     }
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  function query(testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  async function setType(groupType: string): Promise<void> {
+    fixture.componentRef.setInput('groupType', groupType);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -113,10 +126,10 @@ describe('EngagementGroupAttendanceComponent', () => {
       groupType: 'all',
       range: 'YTD',
       page: 1,
-      size: 25,
+      size: 10,
     });
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('1 group');
+    expect(query('engagement-group-attendance-row-c-1')).not.toBeNull();
+    expect(query('engagement-group-attendance-count')).toBeNull();
     expect(verdicts).toEqual([false]);
   });
 
@@ -128,9 +141,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(emitted).toEqual([null, { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }]);
 
     emitted.length = 0;
-    fixture.componentInstance['onFilterChange']('wg');
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await setType('wg');
 
     // The in-flight null clears the note rather than leaving the previous cut's number under a
     // table that is being replaced.
@@ -143,9 +154,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     getEngagementGroupAttendance.mockClear();
 
     fixture.componentInstance['page'].set(3);
-    fixture.componentInstance['onFilterChange']('wg');
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await setType('wg');
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ groupType: 'wg', page: 1 }));
   });
@@ -164,45 +173,42 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ range: 'COMPLETED_YEAR', page: 1 }));
   });
 
-  // The chips carry labels only, as the design draws them; the caption follows the selected chip.
-  it('labels each chip without a count, and captions the chip-filtered total', async () => {
-    const typeCounts = [
-      { groupType: 'all' as const, groups: 34, dormantGroups: 3 },
-      { groupType: 'gov' as const, groups: 12, dormantGroups: 1 },
-      { groupType: 'sigtag' as const, groups: 5, dormantGroups: 0 },
-      { groupType: 'wg' as const, groups: 17, dormantGroups: 2 },
-    ];
+  it('draws each group with its kind under the name, its meetings, last meeting and attendance bar', async () => {
     await render(
-      response({ counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }, typeCounts }),
-      undefined,
-      {},
-      response({ totalRecords: 17, counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }, typeCounts })
+      response({
+        rows: [
+          groupRow(),
+          groupRow({ committeeId: 'c-4', groupTypeLabel: 'Governance', meetingTypeGroup: 'Board' }),
+          groupRow({ committeeId: 'c-5', groupTypeLabel: 'SIG / TAG' }),
+        ],
+      })
     );
 
-    fixture.componentInstance['onFilterChange']('wg');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const labels = fixture.componentInstance['typeFilters'].map((option: { label: string }) => option.label);
-    expect(labels).toEqual(['All types', 'Governance', 'SIG / TAG', 'Working groups']);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('17 groups');
+    const cells = (query('engagement-group-attendance-row-c-1') as HTMLElement).querySelectorAll('td');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-text"]')?.textContent).toBe('Technical Steering Committee');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim()).toBe('Oversight committee');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-description"] i')?.className).toContain('fa-shield-check');
+    expect(cells[1].textContent?.trim()).toBe('8');
+    expect(cells[2].textContent?.trim()).toBe('Aug 14, 2026');
+    expect(cells[3].textContent).toContain('62%');
+    expect(cells[3].querySelector('[data-testid="health-metrics-value-bar-fill"]')?.className).toContain('bg-blue-500');
+    expect(query('engagement-group-attendance-row-c-4')?.querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim()).toBe('Board');
+    expect(query('engagement-group-attendance-row-c-5')?.querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim()).toBe(
+      'SIG / TAG'
+    );
   });
 
-  it('captions the scope-wide total before a chip narrows it, while the sub-nav counts stay scope-wide', async () => {
-    const emitted: unknown[] = [];
-    const counts = { groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 };
-    await render(response({ totalRecords: 34, counts }), (emittedCounts) => emitted.push(emittedCounts), {}, response({ totalRecords: 1, counts }));
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('34 groups');
+  it('shows a dash for a group with no meetings and no rate', async () => {
+    const quiet = groupRow({
+      committeeId: 'c-6',
+      periods: [{ range: 'YTD', meetingsHeld: 0, invitedCount: 0, attendedCount: 0, attendancePct: null, dormant: false }],
+    });
+    await render(response({ rows: [quiet] }));
 
-    fixture.componentInstance['onFilterChange']('gov');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    // Singular at one, and the note counts never followed the chip.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('1 group');
-    expect(emitted.at(-1)).toEqual(counts);
+    const cells = (query('engagement-group-attendance-row-c-6') as HTMLElement).querySelectorAll('td');
+    expect(cells[1].textContent?.trim()).toBe('—');
+    expect(cells[3].textContent?.trim()).toBe('—');
+    expect(cells[3].querySelector('[data-testid="health-metrics-value-bar-fill"]')).toBeNull();
   });
 
   // A `DatePipe` render of the date-only value reads a day early west of UTC, so the label is
@@ -214,88 +220,50 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(fixture.componentInstance['rowViews']()[1]?.lastMetLabel).toBe('\u2014');
   });
 
-  it('shows the Dormant badge instead of a bar, since a group that never met has no rate to draw', async () => {
+  it('shows the Dormant badge with its tooltip instead of a bar, since a group that never met has no rate to draw', async () => {
     const dormant = groupRow({
       committeeId: 'c-2',
       periods: [{ range: 'YTD', meetingsHeld: 0, invitedCount: 0, attendedCount: 0, attendancePct: null, dormant: true }],
     });
     await render(response({ rows: [dormant], counts: { groups: 1, dormantGroups: 1, lowAttendanceGroups: 0 } }));
 
-    const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-2"]');
-    const noMeetings = row.querySelector('[data-testid="engagement-group-attendance-no-meetings"]');
-    expect(noMeetings.textContent.trim()).toBe('No meetings this period');
-    expect(noMeetings.className).toContain('text-gray-400');
-    expect(noMeetings.className).toContain('font-medium');
-    expect(noMeetings.className).toContain('text-[12px]');
-    // The design's `.badge.b-act`: red, not the amber of a low rate.
-    const badge = row.querySelector('[data-testid="engagement-group-attendance-dormant"]');
-    expect(badge.textContent.trim()).toBe('Dormant');
-    expect(badge.className).toContain('bg-red-50');
-    expect(badge.className).toContain('text-red-600');
-    expect(badge.className).toContain('text-[11px]');
-    expect(badge.className).toContain('rounded-full');
-    expect(row.querySelector('[data-testid="engagement-attendance-bar"]')).toBeNull();
-    expect(row.textContent).not.toContain('Acme Core');
+    const row = query('engagement-group-attendance-row-c-2') as HTMLElement;
+    const badge = row.querySelector('[data-testid="engagement-group-attendance-dormant-c-2"]') as HTMLElement;
+    expect(badge.tagName).toBe('LFX-UI-BADGE');
+    expect(badge.textContent?.trim()).toBe('Dormant');
+    expect(badge.getAttribute('tabindex')).toBe('0');
+    // The name is the label alone; the tooltip supplies the explanation as the description, so it is read once.
+    expect(badge.getAttribute('aria-label')).toBe('Dormant');
+    expect(row.querySelector('[data-testid="health-metrics-value-bar-fill"]')).toBeNull();
+    expect(row.textContent).not.toContain('No meetings this period');
   });
 
-  // The drawer carries the project; the table's only sub-line is the dormant note.
-  it('shows no project sub-line under an active group', async () => {
+  // The design drops the drawer: rows carry no click, focus or hover.
+  it('keeps rows plain, with no drawer to open', async () => {
     await render();
 
-    const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]');
-    expect(row.textContent).not.toContain('Acme Core');
-    expect(row.querySelector('[data-testid="engagement-group-attendance-no-meetings"]')).toBeNull();
+    const row = query('engagement-group-attendance-row-c-1') as HTMLElement;
+    expect(row.getAttribute('tabindex')).toBeNull();
+    expect(row.classList).not.toContain('cursor-pointer');
+    expect(fixture.nativeElement.querySelector('lfx-engagement-group-attendance-drawer')).toBeNull();
   });
 
-  // lfx-table resolves the clicked row through `data-row-index`; without it the drawer is unreachable.
-  it('opens the drawer on the row the user clicked', async () => {
-    await render();
+  it('pages ten groups at a time with the numbered pager', async () => {
+    await render(response({ totalRecords: 34 }));
 
-    const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]');
-    expect(row.getAttribute('data-row-index')).toBe('0');
-    row.click();
+    expect(query('ui-pagination-info')?.textContent?.trim()).toBe('Showing 1 to 10 of 34');
+    getEngagementGroupAttendance.mockClear();
+
+    (fixture.nativeElement.querySelectorAll('[data-testid="ui-pagination-page"]')[2] as HTMLElement).querySelector('button')?.click();
     fixture.detectChanges();
+    await fixture.whenStable();
 
-    expect(fixture.componentInstance['drawerVisible']()).toBe(true);
-    expect(fixture.componentInstance['selectedRow']()?.committeeId).toBe('c-1');
+    expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ page: 3, size: 10 }));
   });
 
-  it('opens the drawer from the keyboard, so the detail is not mouse-only', async () => {
-    await render();
-
-    const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]');
-    expect(row.getAttribute('tabindex')).toBe('0');
-    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    fixture.detectChanges();
-
-    expect(fixture.componentInstance['drawerVisible']()).toBe(true);
-    expect(fixture.componentInstance['selectedRow']()?.committeeId).toBe('c-1');
-  });
-
-  it('opens the drawer on Space and swallows the keypress, so the pane does not page down under it', async () => {
-    await render();
-
-    const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]');
-    const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
-    row.dispatchEvent(event);
-    fixture.detectChanges();
-
-    expect(fixture.componentInstance['drawerVisible']()).toBe(true);
-    expect(event.defaultPrevented).toBe(true);
-  });
-
-  it('holds the count back while a read is in flight, so it never reads zero mid-fetch', async () => {
-    await render();
-    fixture.componentInstance['loading'].set(true);
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
-  });
-
-  it('settles an unmeasured scope empty, with no body, and captions it with an em dash, not "0 groups"', async () => {
+  it('settles an unmeasured scope empty, with no body', async () => {
     await render(response({ rows: [], totalRecords: 0, counts: null }));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
     expect(verdicts).toEqual([true]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-table"]')).toBeNull();
     // The filter-miss card is not the scope's empty state.
@@ -303,19 +271,15 @@ describe('EngagementGroupAttendanceComponent', () => {
   });
 
   // A failed read must not render the copy that asserts the foundation has no matching groups.
-  it('separates a failed read from an empty one, and keeps the note and count off a fabricated zero', async () => {
+  it('separates a failed read from an empty one, and keeps the note off a fabricated zero', async () => {
     const emitted: unknown[] = [];
     await render(response(), (counts) => emitted.push(counts));
     getEngagementGroupAttendance.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
-    fixture.componentInstance['onFilterChange']('wg');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await setType('wg');
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-error"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
     expect(emitted.at(-1)).toBeNull();
   });
 
@@ -323,15 +287,10 @@ describe('EngagementGroupAttendanceComponent', () => {
   it('recovers on the next query after a failed read', async () => {
     await render();
     getEngagementGroupAttendance.mockReturnValue(throwError(() => new Error('gateway timeout')));
-    fixture.componentInstance['onFilterChange']('wg');
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await setType('wg');
 
     getEngagementGroupAttendance.mockReturnValue(of(response()));
-    fixture.componentInstance['onFilterChange']('gov');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await setType('gov');
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-error"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]')).not.toBeNull();
@@ -355,14 +314,14 @@ describe('EngagementGroupAttendanceComponent', () => {
   });
 
   // The URL is the only carrier of table state across a reload or a shared link.
-  it('starts on the page and filter the URL carries', async () => {
+  it('starts on the page the URL carries, with the type the page binds in', async () => {
     await render(response({ totalRecords: 80 }), undefined, { groupType: 'wg', groupPage: '3' });
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ groupType: 'wg', page: 3 }));
   });
 
-  it('falls back to the defaults for URL values it cannot honour', async () => {
-    await render(response(), undefined, { groupType: 'board', groupPage: '-2' });
+  it('falls back to page 1 for a URL page it cannot honour', async () => {
+    await render(response(), undefined, { groupPage: '-2' });
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ groupType: 'all', page: 1 }));
   });
@@ -373,7 +332,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     await render(response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 } }), undefined, { groupPage: '9' });
 
     expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(1, expect.objectContaining({ page: 9 }));
-    expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
+    expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 4 }));
     // The re-read is already on the last page, so it must settle there rather than clamp again.
     expect(getEngagementGroupAttendance).toHaveBeenCalledTimes(2);
   });
@@ -389,7 +348,7 @@ describe('EngagementGroupAttendanceComponent', () => {
       response({ totalRecords: 34, counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 } })
     );
 
-    expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
+    expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 4 }));
     // One null per read; the counts arrive only with the page that has rows.
     expect(emissions).toEqual([null, null, { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }]);
     // The clamped page is the first settled render, so "34 groups" never sits over an empty table.
@@ -406,9 +365,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     lifecycle.length = 0;
     getEngagementGroupAttendance.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
-    fixture.componentInstance['onFilterChange']('wg');
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await setType('wg');
 
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
@@ -433,7 +390,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     await render(response({ totalRecords: 200 }), undefined, { groupType: 'wg', groupPage: '3' });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-    fixture.componentInstance['onTablePage']({ first: 75, rows: 25 });
+    fixture.componentInstance['onPageChange'](3);
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -443,9 +400,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     );
 
     // A default is written as null so it leaves the URL rather than pinning a redundant param.
-    fixture.componentInstance['onFilterChange']('all');
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await setType('all');
 
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { groupType: null, groupPage: null } }));
   });
@@ -460,8 +415,8 @@ describe('EngagementGroupAttendanceComponent', () => {
 
   // Otherwise a reload or a shared link keeps sending the reader to the page that has no rows.
   it.each([
-    [34, 2],
-    [12, null],
+    [34, 4],
+    [8, null],
   ])('rewrites the URL page when it clamps a set of %i to page %s', async (totalRecords, groupPage) => {
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     await render(
@@ -475,10 +430,15 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { groupType: null, groupPage } }));
   });
 
-  it('renders the empty state rather than an empty table once the read resolves with nothing', async () => {
-    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0, lowAttendanceGroups: 0 } }));
+  it('renders the empty state rather than an empty table once the read resolves with nothing, and resets the type from it', async () => {
+    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0, lowAttendanceGroups: 0 } }), undefined, { groupType: 'wg' });
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-table"]')).toBeNull();
+    const empty = query('engagement-group-attendance-empty') as HTMLElement;
+    expect(empty.textContent).toContain('No groups of this type');
+    expect(empty.textContent).toContain('This foundation has no groups matching the selected filter.');
+    expect(query('engagement-group-attendance-table')).toBeNull();
+
+    (empty.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
+    expect(fixture.componentInstance.groupType()).toBe('all');
   });
 });

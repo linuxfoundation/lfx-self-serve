@@ -122,18 +122,25 @@
             Review the rows below. Nothing is added until you confirm.
           }
         </p>
-      } @else if (phase() === 'importing' && paused()) {
-        <p role="status" class="text-sm text-amber-700" data-testid="import-members-paused-notice">
-          Paused to let the service catch up (pause {{ pauseCount() }} of {{ maxPauses }}). This pause lasts about {{ resumeInSeconds() }} seconds; automatic
-          resume is scheduled for {{ resumeAt() | date: 'mediumTime' }}. Select Stop import to end the import here; rows that were not sent stay Not yet
-          submitted.
-        </p>
-      } @else if (stopping()) {
-        <p class="text-sm text-gray-600" data-testid="import-members-progress">
-          Stopping after the current batch: {{ batchSettled() }} of {{ batchTotal() }} done… Rows after this batch will not be sent.
-        </p>
       } @else if (phase() === 'importing') {
-        <p class="text-sm text-gray-600" data-testid="import-members-progress">Adding members: {{ batchSettled() }} of {{ batchTotal() }} done…</p>
+        <p class="flex flex-wrap items-center gap-2 text-sm text-gray-600" data-testid="import-members-progress">
+          <span class="inline-flex items-center gap-2">
+            <lfx-ui-spinner [size]="14" tone="current" aria-hidden="true" data-testid="import-members-spinner" />
+            <span>
+              @if (stopping()) {
+                Stopping after the current batch…
+              } @else {
+                Importing members…
+              }
+            </span>
+          </span>
+          <span class="font-medium tabular-nums text-gray-700" data-testid="import-members-processed-count">
+            {{ batchSettled() }} of {{ batchTotal() }} processed
+          </span>
+        </p>
+        @if (stopping()) {
+          <p class="text-sm text-gray-600" data-testid="import-members-stopping-notice">Rows after this batch will not be sent.</p>
+        }
       }
 
       @if (stopReason() && !stopping()) {
@@ -185,7 +192,7 @@
           <th scope="col"><span class="text-sm text-gray-500">Row</span></th>
           <th scope="col"><span class="text-sm text-gray-500">Email</span></th>
           <th scope="col"><span class="text-sm text-gray-500">Name</span></th>
-          <th scope="col"><span class="text-sm text-gray-500">Organization</span></th>
+          <th scope="col"><span class="text-sm text-gray-500">Company</span></th>
           <th scope="col"><span class="text-sm text-gray-500">Role / voting</span></th>
           <th scope="col"><span class="text-sm text-gray-500">Status</span></th>
           @if (phase() === 'preview') {
@@ -220,7 +227,7 @@
           <td class="align-top">
             <div class="flex flex-col items-start gap-1">
               <lfx-tag [value]="view.statusLabel" [severity]="view.statusSeverity" [attr.data-testid]="'import-members-row-status-' + view.row.rowNumber" />
-              @if (view.row.reason) {
+              @if (view.row.reason && view.row.status !== 'waiting') {
                 <span class="text-xs text-gray-600">{{ view.row.reason }}</span>
               }
               @if (view.row.cleanupWarning) {
@@ -284,15 +291,6 @@
         [disabled]="!canImport()"
         (onClick)="startImport()"
         data-testid="import-members-submit-btn">
-      </lfx-button>
-    } @else if (phase() === 'importing' && paused()) {
-      <lfx-button
-        label="Stop import"
-        icon="fa-light fa-circle-stop"
-        size="small"
-        severity="secondary"
-        (onClick)="stopImport()"
-        data-testid="import-members-stop-btn">
       </lfx-button>
     } @else if (phase() === 'importing') {
       <lfx-button

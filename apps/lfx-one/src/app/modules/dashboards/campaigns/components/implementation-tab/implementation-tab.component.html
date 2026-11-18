@@ -3832,22 +3832,32 @@
             <h3 class="text-sm font-semibold text-gray-900">LinkedIn Sponsored Content</h3>
           </div>
 
-          <!-- Ad Account Selector -->
-          <div class="mb-4">
-            <label class="mb-2 block text-xs font-medium text-gray-700">Ad Account</label>
-            <select
-              [value]="linkedInAccountId()"
-              (change)="onLinkedInAccountChange($event)"
-              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              data-testid="implementation-linkedin-account">
-              @for (account of linkedInAccounts(); track account.accountId) {
-                <option [value]="account.accountId">{{ account.label }} ({{ account.accountId }})</option>
+          <!-- Ad Account: set by the connection when campaign-service owns the create (#5809), else the legacy selector -->
+          @if (linkedInAccountSetByConnection()) {
+            <div class="mb-4" data-testid="implementation-linkedin-account-from-connection">
+              <p class="mb-1 text-xs font-medium text-gray-700">Ad Account</p>
+              <p class="text-xs text-gray-600">
+                Set by this project's LinkedIn connection: the campaign is created in that connection's ad account, or in LF's shared LinkedIn account if the
+                project has no connection of its own. It can't be chosen here yet.
+              </p>
+            </div>
+          } @else {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Account</label>
+              <select
+                [value]="linkedInAccountId()"
+                (change)="onLinkedInAccountChange($event)"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-linkedin-account">
+                @for (account of linkedInAccounts(); track account.accountId) {
+                  <option [value]="account.accountId">{{ account.label }} ({{ account.accountId }})</option>
+                }
+              </select>
+              @if (selectedLinkedInAccount()) {
+                <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().orgId }} · Status: {{ selectedLinkedInAccount().status }}</p>
               }
-            </select>
-            @if (selectedLinkedInAccount()) {
-              <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().orgId }} · Status: {{ selectedLinkedInAccount().status }}</p>
-            }
-          </div>
+            </div>
+          }
 
           <!-- Geo Targets -->
           <div class="mb-4">

@@ -13,6 +13,10 @@
       [size]="size()"
       [disabled]="disabled()"
       [required]="required()"
+      [freeText]="freeText()"
+      [serverSearch]="serverSearch()"
+      [loading]="loading()"
+      (queryChange)="queries.push($event)"
       [(value)]="value">
       @for (option of options(); track option.value) {
         <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="!!option.disabled" />

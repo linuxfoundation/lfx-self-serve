@@ -2971,6 +2971,43 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
   });
 
   /**
+   * #5809: when campaign-service owns the create, the connection decides the LinkedIn account and
+   * `adAccountId` is dropped server-side, so the selector is replaced with a read-only line and an
+   * unavailable account catalog no longer blocks a create it has no part in. Unknown or `false`
+   * keeps the selector and the gate, because the legacy creator still reads the chosen account.
+   */
+  it('lets a linkedin create through without the account catalog when campaign-service owns the create', async () => {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
+    f.componentRef.setInput('briefData', brief());
+    f.componentRef.setInput('googleCreativeEnabled', true);
+    f.detectChanges();
+    await f.whenStable();
+    accountsSubject.error(new Error('ad-account endpoint unavailable'));
+    f.detectChanges();
+    await f.whenStable();
+
+    makeLinkedInOtherwiseValid(f);
+
+    expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(true);
+  });
+
+  it.each([
+    [true, true, false],
+    [false, false, true],
+    [null, false, true],
+  ])('with googleCreativeEnabled %s shows the read-only account line: %s, the selector: %s', async (capability, readOnly, selector) => {
+    const f = await mount(draftWith(ACCOUNTS[1].accountId));
+    f.componentRef.setInput('googleCreativeEnabled', capability);
+    makeLinkedInOtherwiseValid(f);
+    f.detectChanges();
+    await f.whenStable();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="implementation-linkedin-account-from-connection"]') !== null).toBe(readOnly);
+    expect(el.querySelector('[data-testid="implementation-linkedin-account"]') !== null).toBe(selector);
+  });
+
+  /**
    * The geo gate, isolated — the only place in the suite where it can be.
    *
    * `canSubmit` blocks a LinkedIn create with no geo targets, but that gate was covered NOWHERE:

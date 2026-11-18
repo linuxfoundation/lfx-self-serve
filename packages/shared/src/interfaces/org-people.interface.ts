@@ -218,6 +218,11 @@ export interface OrgAllEmployeeRowVm extends OrgAllEmployeeRow {
   keyContactRolesTooltip: string;
   /** Precomputed `<tr>` class list — keeps the template free of conditional class bindings on every cell. */
   rowClass: string;
+  /**
+   * `foldForSearch` keys the search box matches against, built once per row: the name in either order (`nameSearchKeys`),
+   * title, email and LF username (lfx-self-serve#5687).
+   */
+  searchKeys: string[];
 }
 
 /** Account-level engagement totals for the 5 stat cards above the table. */

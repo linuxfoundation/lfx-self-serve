@@ -633,13 +633,13 @@ describe('AccountSettingsComponent — resend escalation (#4695)', () => {
     vi.useRealTimers();
   });
 
-  it('words the complete email flow conditionally before and after a generic successful send', async () => {
+  it('distinguishes inbox ownership from account linking before and after a generic successful send (#5793)', async () => {
     const response$ = new Subject<SendEmailVerificationResponse>();
     const { component, fixture, root } = await setup(() => response$);
 
     expect(component.otpStep()).toBe(false);
-    expect(normalizedText(root)).toContain("If this address can be added to your account, we'll send a 6-digit verification code to it.");
-    expect(normalizedText(root)).not.toContain('A 6-digit verification code will be sent to the new address');
+    expect(normalizedText(root)).toContain('Confirm you own the email address before we check whether it can be linked to your account.');
+    expect(normalizedText(root)).not.toContain('already linked');
 
     response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
     response$.complete();
@@ -647,8 +647,11 @@ describe('AccountSettingsComponent — resend escalation (#4695)', () => {
 
     expect(component.otpStep()).toBe(true);
     const otpStep = root.querySelector('[data-testid="otp-step"]');
-    expect(normalizedText(otpStep)).toContain('If this address can be added to your account, a 6-digit code has been sent to new-address@example.test');
-    expect(normalizedText(otpStep)).not.toContain("we'll send a 6-digit code");
+    expect(normalizedText(otpStep)).toContain(
+      'Check new-address@example.test for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.'
+    );
+    expect(normalizedText(otpStep)).not.toContain('If this address can be added');
+    expect(normalizedText(otpStep)).not.toContain('already linked');
     expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
     expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_TITLE);
     expect(root.querySelector('[data-testid="resend-support-callout"]')).toBeNull();

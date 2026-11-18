@@ -2,17 +2,33 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Org Lens URL scheme (spec 050 / lfx-self-serve#2570): `/org/{segment}/{page}` where `segment`
+ * Org Lens URL scheme (spec 050 / lfx-self-serve#2570): `/company/{segment}/{page}` (was `/org/…` until #5064) where `segment`
  * is the organization's lowercase slug, or its 18-char SFID when it has none. Shared by the
  * router, the guards, the selector navigation, and the BFF segment resolver so the three tiers
  * cannot drift on what a segment is.
  */
 
-/** Route parameter carrying the organization segment on the addressed mount (`/org/:orgSegment/…`). The router declares it as `':' + ORG_SEGMENT_PARAM`; guards and pages read it by this name. */
+/**
+ * First URL segment of every Company Lens address (`/company/{segment}/{page}`). The lens id stays `org`
+ * and code names are unchanged (epic #5060); only the address people see and share is `company`.
+ */
+export const ORG_LENS_URL_ROOT = 'company';
+
+/** Root of the pre-rename addresses (`/org/…`). Never generated; every such address redirects permanently to `/company/…` (#5064). */
+export const ORG_LENS_LEGACY_URL_ROOT = 'org';
+
+/**
+ * Every pre-rename root that redirects to `/company/…`: the short `/org` form, and `/organization` — the address the
+ * product used before Company Lens (e.g. `/organization/{slug}/profile`, `/organization/{slug}/easycla`), still found in
+ * bookmarks and sent emails. Exact segments only: `/orgs` and `/org-x` are other addresses.
+ */
+export const ORG_LENS_LEGACY_URL_ROOTS: readonly string[] = [ORG_LENS_LEGACY_URL_ROOT, 'organization'];
+
+/** Route parameter carrying the organization segment on the addressed mount (`/company/:orgSegment/…`). The router declares it as `':' + ORG_SEGMENT_PARAM`; guards and pages read it by this name. */
 export const ORG_SEGMENT_PARAM = 'orgSegment';
 
 /** In-shell not-found page for unresolvable / inaccessible / unavailable Org Lens addresses (FR-022). Declared as a sibling of the `org` route node so a `canMatch` fail-closed redirect cannot loop back into itself. */
-export const ORG_NOT_FOUND_PATH = '/org/not-found';
+export const ORG_NOT_FOUND_PATH = `/${ORG_LENS_URL_ROOT}/not-found`;
 
 /** `ORG_NOT_FOUND_PATH` as primary URL segments, for callers that compare an address segment by segment. */
 export const ORG_NOT_FOUND_SEGMENTS: readonly string[] = ORG_NOT_FOUND_PATH.split('/').filter(Boolean);
@@ -65,6 +81,20 @@ export const ORG_ROLLUP_SEGMENT_PREFIX = 'family-';
 
 export const ORG_LENS_ROLL_UP_READ_METHODS: readonly string[] = ['GET', 'HEAD'];
 
+/** Where a family roll-up lands: picked in the switcher, entering Org Lens, or sent off a single-organization page (#4133). */
+export const ORG_LENS_ROLL_UP_HOME_PAGE = 'memberships';
+
+/**
+ * Org Lens routes that render a family roll-up, as `app.routes.ts` declares their paths. Every other
+ * page shows the roll-up-unavailable empty state on a roll-up instead of loading, so a page joins this
+ * map in the PR that teaches it the roll-up (#4125). Profile, EasyCLA and the donations pages are not
+ * listed either: they redirect a roll-up home, because they cover one organization by definition.
+ * Membership test as `ORG_LENS_PAGE_SEGMENTS`: `=== true`.
+ */
+export const ORG_LENS_ROLL_UP_PAGES: Readonly<Record<string, true>> = {
+  memberships: true,
+};
+
 /**
  * A family roll-up segment, capturing the family's top account id. The id is matched exactly as an
  * SFID is (`ORG_ACCOUNT_ID_PATTERN`): Salesforce ids are case-sensitive, so the prefix is the only
@@ -76,7 +106,7 @@ export const ORG_ROLLUP_SEGMENT_PATTERN = /^family-(001[A-Za-z0-9]{15})$/;
 export const ORG_ROLLUP_SEGMENT_RESERVED_PATTERN = /^family-001[a-z0-9]{15}$/i;
 
 /** Display name of a family roll-up whose family name is not known yet (cookie restore or deep link before the grant sets load). */
-export const ROLLUP_ACCOUNT_NAME = 'All Organizations Roll-Up';
+export const ROLLUP_ACCOUNT_NAME = 'All Companies Roll-Up';
 
 /** Fewest organizations in one family a roll-up is worth offering over: with one, it is the organization. */
 export const ROLLUP_MIN_ORGANIZATIONS = 2;

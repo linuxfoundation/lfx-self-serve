@@ -46,6 +46,7 @@ import type {
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsBlankCopy, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsEventTrendEvent,
   HealthMetricsOverviewBalanceView,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardRowView,
@@ -523,7 +524,7 @@ export function buildHealthMetricsOverviewScrollFadeMask(fadeTop: boolean, fadeB
  * 180 days before the event. Either input may be missing, which leaves its parts out.
  */
 export function buildHealthMetricsOverviewTrendView(
-  row: HealthMetricsOverviewEvent,
+  row: HealthMetricsEventTrendEvent,
   headline: HealthMetricsEventsForecastEvent | null,
   series: HealthMetricsEventsForecastCurveSeries | null,
   window: HealthMetricsOverviewTrendWindow | null = null
@@ -542,7 +543,8 @@ export function buildHealthMetricsOverviewTrendView(
         tip: HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP,
       },
     ],
-    ...buildTrendChart(series, goal, window, false),
+    // Past its start day a running event's curve ends at day 0, which is not today.
+    ...buildTrendChart(series, goal, window, false, headline?.daysLeft !== null),
   };
 }
 
@@ -551,7 +553,7 @@ export function buildHealthMetricsOverviewTrendView(
  * final count adds each format's last day, which the formats share once registration closes.
  */
 export function buildHealthMetricsOverviewPastTrendView(
-  row: HealthMetricsOverviewEvent,
+  row: HealthMetricsEventTrendEvent,
   curve: HealthMetricsEventsForecastCurve | null,
   series: HealthMetricsEventsForecastCurveSeries | null,
   window: HealthMetricsOverviewTrendWindow | null = null
@@ -568,7 +570,7 @@ export function buildHealthMetricsOverviewPastTrendView(
       trendKpi('final', 'Final', formatCount(row.registrations)),
     ],
     // The event is over, so nothing is predicted and nothing marks today.
-    ...buildTrendChart(series, row.registrationsGoal, window, true),
+    ...buildTrendChart(series, row.registrationsGoal, window, true, false),
   };
 }
 
@@ -689,13 +691,14 @@ function trendKpi(key: string, label: string, value: string): HealthMetricsOverv
  * The trend chart over the visible span of the last 180 days, as the design draws it. It opens on a best fit (see
  * `fitTrendWindow`) and the reader can move it. The y scale fits the visible lines in at most 5 even steps (1, 2,
  * 2.5 or 5 times a power of ten), with the goal on it only when it sits near them. The prediction, its band and the
- * Today marker start at the last measured day; a past event has none of them.
+ * Today marker start at the last measured day; a past event has none of them, and a running event no Today.
  */
 function buildTrendChart(
   series: HealthMetricsEventsForecastCurveSeries | null,
   goal: number | null,
   requested: HealthMetricsOverviewTrendWindow | null,
-  isPast: boolean
+  isPast: boolean,
+  markToday: boolean
 ): Omit<HealthMetricsOverviewTrendView, 'kpis'> {
   const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   const line = trendLines(series, isPast);
@@ -744,7 +747,7 @@ function buildTrendChart(
     const lower = [...samples].reverse().map(([day, current, prior]): [number, number] => [x(day), y(bottom(current, prior))]);
     return `${svgPath([...upper, ...lower])} Z`;
   };
-  const todayShown = !isPast && line.now !== null && line.now >= start && line.now <= end;
+  const todayShown = markToday && line.now !== null && line.now >= start && line.now <= end;
   const tickStep = trendTickStep(span);
   // Ticks count days to the event, on multiples of the step, from the nearest one inside the span's right edge.
   const firstTick = Math.ceil((days - end) / tickStep) * tickStep;

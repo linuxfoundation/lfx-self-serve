@@ -11,10 +11,10 @@ import { MeetingRecurrencePatternComponent } from './meeting-recurrence-pattern.
 const WEDNESDAY = new Date(2026, 8, 16);
 
 /**
- * The parent form this panel reads, in the shape both hosts build it.
+ * The parent form this panel reads, in the shape the composer builds it.
  * @description `MeetingComposerFormService.createMeetingFormGroup` seeds `startDate: null` and
- * `recurrence.type: null` on a new meeting; the pre-v2 wizard seeds a real date. `startDate` is the
- * only difference between the two, so one factory covers both by taking it as an argument.
+ * `recurrence.type: null` on a new meeting; a form that already holds a date has a real one. `startDate`
+ * is the only difference between the two, so one factory covers both by taking it as an argument.
  */
 function buildForm(startDate: Date | null): FormGroup {
   return new FormGroup({
@@ -36,11 +36,11 @@ function buildForm(startDate: Date | null): FormGroup {
 }
 
 /**
- * Covers the panel's start-date dependency on both sides of `MEETING_V2_ENABLED_FLAG`.
+ * Covers the panel's start-date dependency, before and after a start date is picked.
  * @description Every pattern default here is derived from the start date's weekday or week of month.
  * The composer stopped seeding a start date, so choosing Custom recurrence before picking a date used
- * to take `getDay()` on `null` and blank out Date & Schedule. The pre-v2 wizard always seeds a date,
- * so the flag-off cases below assert the old behaviour is untouched, not merely that it survives.
+ * to take `getDay()` on `null` and blank out Date & Schedule. A form that already holds a date must not
+ * change, so the seeded cases below assert the old behaviour is untouched, not merely that it survives.
  */
 describe('MeetingRecurrencePatternComponent — start date not yet picked', () => {
   /** Mounts the panel over `form` with an empty template: this suite exercises the defaults, not the markup. */

@@ -4,12 +4,13 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Provider, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { openProjectIcalSubscribeDialog } from '@app/modules/committees/utils/ical-subscribe.util';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { MEETING_PAGE_GUEST_FORM_STATE, MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp } from '@lfx-one/shared/interfaces';
 import { getActiveOccurrences, getPastMeetingResourceId, isPastMeetingCalendarRow, isSameOccurrenceId, selectApplicableRsvp } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { catchError, distinctUntilChanged, filter, of, skip, take } from 'rxjs';
 
 import { MeetingDetailsBodyComponent } from '../../meetings-redesign/components/meeting-details-drawer/body/meeting-details-body.component';
@@ -28,14 +29,21 @@ export abstract class MeetingPageRowHost {
 /**
  * The meeting details on the standalone page, for the host's row; the page re-creates it for each row it shows.
  * @description Provides what `MeetingDetailsBodyComponent` needs, with a page source: no dialog, no list behind it,
- * another date opens at its own `/meetings/...` URL, Join may open Zoom as the page loads, and after a cancel or an edit the page shows the date as it now stands at `?occurrence=`.
+ * another date opens at its own `/meetings/...` URL, the ⋯ menu offers the project calendar, Join may open Zoom as the page loads, and after a cancel or an edit the page shows the date as it now stands at `?occurrence=`.
  */
 @Component({
   selector: 'lfx-meeting-page-details',
   imports: [MeetingDetailsBodyComponent],
   templateUrl: './meeting-page-details.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [MeetingDetailsContext, MeetingDetailsArtifactsService, MeetingsHomeEditService, MeetingsHomeDeleteService, provideMeetingPageSource()],
+  providers: [
+    MeetingDetailsContext,
+    MeetingDetailsArtifactsService,
+    MeetingsHomeEditService,
+    MeetingsHomeDeleteService,
+    DialogService,
+    provideMeetingPageSource(),
+  ],
 })
 export class MeetingPageDetailsComponent {
   private readonly context = inject(MeetingDetailsContext);
@@ -65,7 +73,10 @@ export class MeetingPageDetailsComponent {
           takeUntilDestroyed()
         )
         .subscribe(
-          (occurrence) => void this.router.navigateByUrl(meetingPageUrl({ ...row, occurrenceId: occurrence.occurrence_id, startTime: occurrence.start_time }))
+          (occurrence) =>
+            void this.router.navigateByUrl(
+              meetingPageUrl({ ...row, occurrenceId: occurrence.occurrence_id, startTime: occurrence.start_time }, this.pageData.urlPassword())
+            )
         );
     }
     // The composer opens over this page only from its own Edit, so a save is an edit of this meeting.
@@ -106,23 +117,21 @@ function provideMeetingPageSource(): Provider {
       const pageData = inject(MeetingPageDataService);
       const router = inject(Router);
       const route = inject(ActivatedRoute);
+      const dialogService = inject(DialogService);
       return {
         row,
         tab: 'agenda',
         now: computed(() => new Date(pageData.clock())),
         upcomingRows: initAnsweredRows(row),
         hostRef: null,
-        open: (row) => void router.navigateByUrl(meetingPageUrl(row)),
+        open: (row) => void router.navigateByUrl(meetingPageUrl(row, pageData.urlPassword())),
         applySummaryChange: () => undefined,
+        subscribeToCalendar: (meeting) => openProjectCalendar(dialogService, meeting),
         occurrenceCancelled: (meeting, occurrence) => showOccurrence(router, route, pageData, meeting.id, nextOccurrenceStart(meeting, occurrence)),
         claimJoinOnLoad: () => pageData.claimJoinOnLoad(),
-        // The legacy page holds the guest form that joins with another email address.
-        joinWithOtherEmail: () =>
-          void router.navigateByUrl(router.url, {
-            skipLocationChange: true,
-            onSameUrlNavigation: 'reload',
-            state: { [MEETING_PAGE_LEGACY_STATE]: true, [MEETING_PAGE_GUEST_FORM_STATE]: true },
-          }),
+        fullAccess: pageData.loadedViaPastMeetingId() ? pageData.pastMeetingFullAccess() : pageData.liveMeetingFullAccess(),
+        guestJoinInPlace: true,
+        canJoin: pageData.liveMeetingCanJoin,
       };
     },
   };
@@ -167,11 +176,23 @@ function showOccurrence(router: Router, route: ActivatedRoute, pageData: Meeting
   void router.navigate(['/meetings', meetingId], { queryParams: { occurrence }, queryParamsHandling: 'merge', replaceUrl: true });
 }
 
-/** A past row opens its `{id}-{ms}` record; an upcoming date opens the series at `?occurrence=` (its start ms). */
-function meetingPageUrl(row: MeetingHomeRow): string {
+/**
+ * A past row opens its `{id}-{ms}` record; an upcoming date opens the series at `?occurrence=` (its start ms), keeping a
+ * `?password=` already in the address bar (MD-163), since a passcode guest needs it there too.
+ */
+function meetingPageUrl(row: MeetingHomeRow, password: string | null = null): string {
   if (isPastMeetingCalendarRow(row.meeting)) {
     return `/meetings/${encodeURIComponent(getPastMeetingResourceId(row.meeting))}`;
   }
-  const path = `/meetings/${encodeURIComponent(row.meeting.id)}`;
-  return row.occurrenceId ? `${path}?occurrence=${Date.parse(row.startTime)}` : path;
+  const params = new URLSearchParams();
+  if (row.occurrenceId) params.set('occurrence', String(Date.parse(row.startTime)));
+  if (password) params.set('password', password);
+  const query = params.toString();
+  return `/meetings/${encodeURIComponent(row.meeting.id)}${query ? `?${query}` : ''}`;
+}
+
+/** The project's calendar feed in the dialog the legacy page and the meetings dashboard use. */
+function openProjectCalendar(dialogService: DialogService, meeting: Meeting): void {
+  if (!meeting.project_uid) return;
+  openProjectIcalSubscribeDialog(dialogService, meeting.project_uid, meeting.project_name || 'Project');
 }

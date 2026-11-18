@@ -4,7 +4,7 @@ description: How to invite guests, add a group, resend invitations, remove peopl
 audience: [all]
 product_area: Meetings
 tags: [meetings, participants, guests, invite, registrants, groups, resend invite]
-last_updated: 2026-11-03
+last_updated: 2026-11-16
 intercom_collection: Meetings
 ---
 
@@ -28,7 +28,7 @@ You can invite people one at a time, or invite a whole group.
 1. In **Search and add guests**, start typing a name or email address.
 2. Select the person from the results to add them to the **Invited** list.
 
-If you can't find the person, select **Add manually** and fill in the guest's details: name and email, and optionally a job title and organization. Select **Add guest** to add them.
+If you can't find the person, select **Add manually** and fill in the guest's details: name and email, and optionally a job title and company. Select **Add guest** to add them.
 
 If the person is already on the list, you'll see an **Already invited** message instead of a duplicate.
 
@@ -96,7 +96,7 @@ For a recurring meeting, guests are invited to **All occurrences** by default.
 
 ## Let guests see who else is invited
 
-**Show attendees to guests** lets guests see who else is invited, and who has accepted, on the meeting in LFX. Guests who can't see the list still see how many people are invited. Calendar invites never list other guests, whatever this setting says. Board and Restricted meetings never share their guest list with guests, and the switch is locked for the Board type.
+**Show attendees to guests** lets guests see who else is invited, and who has accepted, on the meeting in LFX. Guests who can't see the list still see how many people are invited. Calendar invites never list other guests, whatever this setting says. **Board** meetings never share their guest list with guests, and the switch is locked for that type. On a **Restricted** (invited guests only) meeting you can turn the switch on in the **Invite guests** section like on any other meeting, and it stays on when you edit the meeting again.
 
 ## Related
 

@@ -33,6 +33,7 @@ type Story = StoryObj<UiComboboxComponent>;
 export const Default: Story = {};
 export const Chosen: Story = { args: { value: 'envoy' } };
 export const WithHint: Story = { args: { hint: 'Type to narrow the list.' } };
+export const FreeText: Story = { args: { freeText: true, hint: 'Pick a project or keep what you typed.' } };
 export const WithError: Story = { args: { error: 'Choose a project to continue.' } };
 export const Disabled: Story = { args: { disabled: true, value: 'envoy' } };
 export const NoVisibleLabel: Story = { args: { label: '', ariaLabel: 'Project' } };

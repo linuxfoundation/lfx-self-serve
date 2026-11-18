@@ -226,10 +226,12 @@ livenessProbe:
 # startupProbe handles the startup window, so initialDelaySeconds is 0 here.
 # Targets GET /readyz (JSON {"status":"ready"}) which is registered before
 # pino-http so probes don't pollute request logs. The endpoint confirms that
-# Express is listening and the Angular SSR engine loaded; it intentionally
-# does not probe lazy-initialized clients (NATS, Snowflake) because those
-# report not-connected at startup even when most SSR pages render fine without
-# them. See apps/lfx-one/src/server/server.ts for implementation details.
+# Express is listening, the Angular SSR engine loaded, and the browser dist has
+# the HTML shell plus the main script and stylesheet; otherwise it
+# returns 503 {"status":"not_ready","reason":...}. It intentionally does not
+# probe lazy-initialized clients (NATS, Snowflake) because those report
+# not-connected at startup even when most SSR pages render fine without them.
+# See apps/lfx-one/src/server/server.ts for implementation details.
 # Set to null to disable: readinessProbe: null
 readinessProbe:
   httpGet:

@@ -21,7 +21,7 @@ tags:
     images,
     implement,
   ]
-last_updated: 2026-11-16
+last_updated: 2026-11-17
 intercom_collection: Dashboards
 ---
 
@@ -32,6 +32,10 @@ When you create a LinkedIn campaign from the **Campaigns** page in the Foundatio
 1. Open **Campaigns** in the Foundation lens and choose **Paid Marketing**.
 2. Open the **Implement** tab for a brief that includes LinkedIn Ads.
 3. In the **LinkedIn Sponsored Content** section, scroll to **Ad variants**. The heading shows how many variants there are, out of the most you can have.
+
+## Ad account
+
+The **Ad Account** line in the LinkedIn section tells you where the campaign is created. It is set by the project's LinkedIn connection: the campaign goes into that connection's ad account, or into LF's shared LinkedIn account if the project has no LinkedIn connection of its own. You can't choose a different account here yet.
 
 ## Budget
 

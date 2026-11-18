@@ -13,6 +13,6 @@ export const LINKS_CONFIG = {
    * error states may link only to the person's own profile or to these pages.
    */
   DOCS: {
-    COMPANY_LENS_ACCESS: '/docs/organization/choose-an-organization',
+    COMPANY_LENS_ACCESS: '/docs/company/choose-a-company',
   },
 };

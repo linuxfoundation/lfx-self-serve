@@ -48,6 +48,7 @@ export class DocsTopicCardComponent {
     profile: { icon: 'fa-light fa-user', container: 'bg-gray-200 text-gray-900' },
     account: { icon: 'fa-light fa-id-card', container: 'bg-gray-200 text-gray-900' },
     crowdfunding: { icon: 'fa-solid fa-box-dollar', container: 'bg-blue-500 text-white' },
+    mentorship: { icon: 'fa-solid fa-chalkboard-user', container: 'bg-blue-500 text-white' },
   };
 
   protected readonly articleCountLabel = computed(() => {

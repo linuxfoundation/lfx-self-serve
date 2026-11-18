@@ -105,6 +105,13 @@ test.describe('Admin program detail — header and tabs', () => {
     await expect(page.getByTestId('mentorship-program-detail-tab-terms')).toHaveText(/Terms\s*2/);
   });
 
+  test('shows the created date and the program admin who submitted the program', async ({ page }) => {
+    const meta = page.getByTestId('mentorship-program-detail-header').getByTestId('mentorship-program-meta');
+    await expect(meta.getByTestId('mentorship-program-meta-date')).toContainText('Jun 1, 2026', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(meta.getByTestId('mentorship-program-meta-admin-name')).toHaveText('Test Admin');
+    await expect(meta.getByTestId('mentorship-program-meta-admin-email')).toHaveAttribute('href', 'mailto:test.admin@example.org');
+  });
+
   test('opens on Current Mentees with the first page of rows, splitting pending into Applied and Tasks Completed', async ({ page }) => {
     await expect(page.locator('[data-testid^="mentorship-current-mentee-row-"]')).toHaveCount(10);
     await expect(page.getByTestId(`mentorship-current-mentee-row-${FIRST_ID}`)).toContainText('Test Applicant 01');

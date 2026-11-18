@@ -32,7 +32,7 @@
   } @else if (!hasCompany()) {
     <lfx-empty-state
       icon="fa-light fa-building"
-      title="Select an organization to view {{ committeeLabelSingularLower }} participation."
+      title="Select a company to view {{ committeeLabelSingularLower }} participation."
       data-testid="org-groups-no-company-state" />
   } @else if (fetchError()) {
     <lfx-empty-state
@@ -184,7 +184,7 @@
         <lfx-empty-state
           icon="fa-light fa-users-rectangle"
           title="No {{ committeeLabelSingularLower }} participation found."
-          subtitle="Your organization's employees are not listed as members of any {{ committeeLabelPluralLower }}."
+          subtitle="Your company's employees are not listed as members of any {{ committeeLabelPluralLower }}."
           data-testid="org-groups-empty-state" />
       } @else if (filteredGroups().length === 0) {
         <lfx-empty-state

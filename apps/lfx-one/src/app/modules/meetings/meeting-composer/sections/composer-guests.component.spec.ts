@@ -819,8 +819,12 @@ describe('ComposerGuestsComponent', () => {
       expect(resolve({ meeting_type: 'Board', show_meeting_attendees: true })).toBeNull();
     });
 
-    it('reports a restricted meeting as decided off, so a group default cannot switch sharing on', () => {
-      expect(resolve({ restricted: true, show_meeting_attendees: true })).toBe(false);
+    it("reports a restricted meeting's stored choice, as hydration reads it (#5438)", () => {
+      expect(resolve({ restricted: true, show_meeting_attendees: true })).toBe(true);
+    });
+
+    it('reports a restricted meeting with no stored opt-in as decided off, so a group default cannot switch sharing on', () => {
+      expect(resolve({ restricted: true, show_meeting_attendees: undefined })).toBe(false);
     });
 
     it('reports an opt-out for a meeting whose flag the API omitted', () => {

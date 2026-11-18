@@ -42,6 +42,8 @@ const HEADLINE = {
   goal: 1000,
   daysLeft: 46,
   isNewEvent: false,
+  city: null,
+  isVirtual: false,
 };
 const CURVE = { eventId: 'e1', formats: [{ format: 'In Person', points: [] }] };
 

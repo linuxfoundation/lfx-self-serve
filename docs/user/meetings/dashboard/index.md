@@ -4,7 +4,7 @@ description: How to find meetings, filter by your RSVP, and subscribe to a proje
 audience: [all]
 product_area: Meetings
 tags: [meetings, dashboard, filters, rsvp, calendar, subscribe, upcoming, past]
-last_updated: 2026-11-12
+last_updated: 2026-11-17
 intercom_collection: Meetings
 ---
 
@@ -16,7 +16,7 @@ Select **Meetings** from the left navigation. What you see depends on your lens:
 
 - **Me lens** (your personal view): meetings across all of your projects. There's no way to create a meeting here. If no upcoming meetings are listed, you'll see "No upcoming meetings — Meetings from your committees and projects will appear here."
 - **Foundation or Project lens**: the foundation's or project's own meetings. To add the meetings of projects beneath it, such as a foundation's sub-projects, pick them in the project filter (see [Search and filter](#search-and-filter)). You only see the sub-project meetings you have access to. This is where **Create Meeting** appears, if you have write access. If none are scheduled, you'll see "No meetings yet — Schedule a meeting to get started."
-- **Org lens**: a meeting analytics view for the organization. It has no **Create Meeting** button.
+- **Company lens**: a meeting analytics view for the company. It has no **Create Meeting** button.
 
 The Me, Foundation, and Project lenses share the same dashboard, scoped differently.
 
@@ -49,7 +49,7 @@ Use the controls above the list to narrow it:
 - **All Types** limits the list to one meeting type.
 - In the Me lens, you can also filter by foundation or project.
 - In the Foundation or Project lens, you can also choose which of its projects' meetings to show:
-  - The project filter starts on the foundation or project alone, shown as, for example, **FINOS only**. Pick one or more projects to show theirs instead, such as the foundation and a few of its sub-projects, or select all of them. It appears when there are sub-projects. A very large foundation, with more than 100 projects, can show at most 100 projects at a time: picking more, or all of them, shows the foundation's own meetings only.
+  - The project filter starts on the foundation or project alone, shown as, for example, **FINOS only**. Pick one or more projects to show theirs instead, such as the foundation and a few of its sub-projects, or select all of them. It appears when there are sub-projects. A very large foundation, with more than 150 projects, can show at most 150 projects at a time: picking more, or all of them, shows the foundation's own meetings only.
   - Your project choice is remembered for you, for each foundation or project, the next time you open its meetings. It doesn't change what other people see.
   - If the foundation or project has no meetings of its own, the page says so and offers **Show all projects**, which selects every project.
   - **All groups** limits the list to one group. A group from a sub-project shows that project's name in brackets.

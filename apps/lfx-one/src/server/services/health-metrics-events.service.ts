@@ -15,12 +15,14 @@ import {
   HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
   HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
-  HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES,
+  HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
@@ -61,10 +63,12 @@ import type {
   HealthMetricsEventsSnapshotPackage,
   HealthMetricsEventsSnapshotQuery,
   HealthMetricsEventsSnapshotWeek,
+  HealthMetricsEventsSpeakerProposals,
+  HealthMetricsEventsSpeakerProposalsEvent,
+  HealthMetricsEventsSpeakerProposalsQuery,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersOrganization,
   HealthMetricsEventsSpeakersPeriod,
-  HealthMetricsEventsSpeakersPeriodCount,
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSpeakersStatusGroup,
@@ -94,6 +98,7 @@ const REGISTRATION_COUNTRY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_RE
 const WEEK_OVER_WEEK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS_WEEK_OVER_WEEK';
 const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER';
 const EVENT_REGISTRATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS';
+const ACCOUNT_LOGO_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING';
 
 /**
  * The forecast view `f` holds closed events and has no end date or past flag of its own; until it does, its reads keep an
@@ -105,6 +110,22 @@ const FORECAST_EVENT_NOT_ENDED = `EXISTS (
           WHERE r.event_id = f.event_id
             AND r.event_is_past = FALSE
         )`;
+
+/**
+ * Each event's city and location, which the registrations view repeats on every project row; joined as `p` on `event_id`.
+ * It reads only the foundation's events in `view`, so it binds the slug once, ahead of the outer query's own binds.
+ */
+function eventPlaces(view: string): string {
+  return `(
+        SELECT
+          event_id,
+          MAX(NULLIF(TRIM(event_city), '')) AS event_city,
+          MAX(NULLIF(TRIM(event_location), '')) AS event_location
+        FROM ${EVENT_REGISTRATIONS_VIEW}
+        WHERE event_id IN (SELECT event_id FROM ${view} WHERE foundation_slug = ?)
+        GROUP BY event_id
+      ) p`;
+}
 
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
@@ -149,6 +170,8 @@ interface ForecastEventRow {
   GOAL: number | null;
   DAYS_LEFT: number | null;
   IS_NEW_EVENT: boolean | null;
+  EVENT_CITY: string | null;
+  EVENT_LOCATION: string | null;
 }
 
 interface RegistrationHistoryRow {
@@ -205,6 +228,8 @@ interface PastEventRow {
   GOAL_MET: boolean | null;
   REVENUE_USD: number | null;
   PACE_STATUS: string | null;
+  EVENT_CITY: string | null;
+  EVENT_LOCATION: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -239,15 +264,18 @@ interface RevenueRow {
   COMBINED_REVENUE_GOAL: number | null;
   IS_PAST_EVENT: boolean | null;
   IS_REVENUE_GOAL_MET: boolean | null;
+  EVENT_CITY: string | null;
+  EVENT_LOCATION: string | null;
   [periodColumn: string]: unknown;
 }
 
-/** The foundation scope row, a ranked organization or the unaffiliated row; every count is period-suffixed. */
+/** The foundation scope row or a ranked company; every count is period-suffixed. */
 interface SpeakersDrilldownRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
   IS_ALL_ORGANIZATIONS: boolean | null;
   IS_UNAFFILIATED_ORGANIZATION: boolean | null;
+  LOGO_URL: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -263,6 +291,21 @@ interface SpeakerProposalRow {
   SUBMISSION_STATUS_ORIGINAL: string | null;
   PROPOSAL_STATUS_GROUP: string | null;
   IS_UNAFFILIATED_PROPOSAL: boolean | null;
+  LOGO_URL: string | null;
+}
+
+/** A drawer page row joined onto the filtered total; the period is the request's, so the read leaves it out. */
+interface SpeakerProposalPageRow extends Omit<SpeakerProposalRow, 'PERIOD'> {
+  /** Joins the logo; the mapper does not read it. */
+  ACCOUNT_ID: string | null;
+  TOTAL_RECORDS: number | null;
+  IS_PAGE_ROW: boolean | null;
+}
+
+/** An event with proposals in the period. */
+interface SpeakerProposalEventRow {
+  EVENT_ID: string | null;
+  EVENT_NAME: string | null;
 }
 
 /** One page row joined onto the totals; the period columns are aliased unsuffixed in the read. */
@@ -321,27 +364,31 @@ export class HealthMetricsEventsService {
     // First edition is flagged per format, so an event is new only when all of its formats are.
     const sql = `
       SELECT
-        event_id,
-        event_name,
-        event_start_date,
-        event_forecast_registrations_avg AS forecast_avg,
-        event_forecast_registrations_low AS forecast_low,
-        event_forecast_registrations_high AS forecast_high,
-        final_current_cumulative_registrations AS registrations_now,
-        event_registrations_prior_year_same_point AS prior_year_same_point,
-        event_registrations_goal AS goal,
-        days_left,
-        BOOLAND_AGG(is_new_event) OVER (PARTITION BY event_id) AS is_new_event
+        f.event_id,
+        f.event_name,
+        f.event_start_date,
+        f.event_forecast_registrations_avg AS forecast_avg,
+        f.event_forecast_registrations_low AS forecast_low,
+        f.event_forecast_registrations_high AS forecast_high,
+        f.final_current_cumulative_registrations AS registrations_now,
+        f.event_registrations_prior_year_same_point AS prior_year_same_point,
+        f.event_registrations_goal AS goal,
+        f.days_left,
+        BOOLAND_AGG(f.is_new_event) OVER (PARTITION BY f.event_id) AS is_new_event,
+        p.event_city,
+        p.event_location
       FROM ${REGISTRATION_FORECAST_VIEW} f
-      WHERE foundation_slug = ?
-        AND is_all_projects = TRUE
+      LEFT JOIN ${eventPlaces(REGISTRATION_FORECAST_VIEW)} ON p.event_id = f.event_id
+      WHERE f.foundation_slug = ?
+        AND f.is_all_projects = TRUE
         AND ${FORECAST_EVENT_NOT_ENDED}
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY event_registration_type ASC NULLS LAST, pred_type ASC, days_to_event ASC) = 1
-      ORDER BY event_start_date ASC, event_name ASC NULLS LAST, event_id ASC
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY f.event_id ORDER BY f.event_registration_type ASC NULLS LAST, f.pred_type ASC, f.days_to_event ASC) = 1
+      ORDER BY f.event_start_date ASC, f.event_name ASC NULLS LAST, f.event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}
     `;
 
-    const result = await executeSnowflakeViewRead<ForecastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+    // The place join's slug comes first, as its subquery precedes the outer WHERE.
+    const result = await executeSnowflakeViewRead<ForecastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.foundationSlug], {
       view: REGISTRATION_FORECAST_VIEW,
       operation: 'get_events_registration_forecast',
       clientMessage: 'The registration forecast is unavailable right now.',
@@ -535,7 +582,7 @@ export class HealthMetricsEventsService {
 
     const sql = `
       SELECT
-        event_id,
+        e.event_id,
         event_name,
         event_start_date,
         registrations_count AS registrations,
@@ -544,16 +591,20 @@ export class HealthMetricsEventsService {
         is_registrations_goal_met AS goal_met,
         total_event_revenue_usd AS revenue_usd,
         pace_status,
+        p.event_city,
+        p.event_location,
         ${periodColumns}
-      FROM ${PAST_EVENTS_VIEW}
+      FROM ${PAST_EVENTS_VIEW} e
+      LEFT JOIN ${eventPlaces(PAST_EVENTS_VIEW)} ON p.event_id = e.event_id
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND (${inAnyPeriod})
-      ORDER BY event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
+      ORDER BY event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, e.event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}
     `;
 
-    const result = await executeSnowflakeViewRead<PastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+    // The place join's slug comes first, as its subquery precedes the outer WHERE.
+    const result = await executeSnowflakeViewRead<PastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.foundationSlug], {
       view: PAST_EVENTS_VIEW,
       operation: 'get_events_past',
       clientMessage: 'Past events are unavailable right now.',
@@ -648,7 +699,7 @@ export class HealthMetricsEventsService {
 
     const sql = `
       SELECT
-        event_id,
+        e.event_id,
         event_name,
         event_start_date,
         registration_revenue_usd,
@@ -660,15 +711,19 @@ export class HealthMetricsEventsService {
         combined_revenue_goal,
         is_past_event,
         is_revenue_goal_met,
+        p.event_city,
+        p.event_location,
         ${periodColumns}
-      FROM ${REVENUE_VIEW}
+      FROM ${REVENUE_VIEW} e
+      LEFT JOIN ${eventPlaces(REVENUE_VIEW)} ON p.event_id = e.event_id
       WHERE foundation_slug = ?
       -- Past events in a period fill the cap before upcoming ones, so history never gives way to upcoming events.
-      ORDER BY IFF(${listed}, 0, 1), IFF(is_past_event = FALSE, 1, 0), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
+      ORDER BY IFF(${listed}, 0, 1), IFF(is_past_event = FALSE, 1, 0), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, e.event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}
     `;
 
-    const result = await executeSnowflakeViewRead<RevenueRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+    // The place join's slug comes first, as its subquery precedes the outer WHERE.
+    const result = await executeSnowflakeViewRead<RevenueRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.foundationSlug], {
       view: REVENUE_VIEW,
       operation: 'get_events_revenue',
       clientMessage: 'Event revenue is unavailable right now.',
@@ -697,7 +752,7 @@ export class HealthMetricsEventsService {
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapRevenuePeriod(row, range)), events, eventsMeasured: true };
   }
 
-  /** Each period's proposal pipeline, the top organizations and the latest proposals per period and tab. */
+  /** Each period's proposal pipeline, the top companies and the latest proposals per period. */
   public async getSpeakers(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<HealthMetricsEventsSpeakers> {
     const [drilldown, proposals] = await Promise.all([this.getSpeakersDrilldown(req, query), this.getSpeakerProposals(req, query)]);
     const scope = drilldown.find((row) => row.IS_ALL_ORGANIZATIONS === true);
@@ -711,8 +766,86 @@ export class HealthMetricsEventsService {
         .filter((row) => row.IS_ALL_ORGANIZATIONS !== true && row.IS_UNAFFILIATED_ORGANIZATION !== true)
         .map(mapSpeakersOrganization)
         .filter((organization): organization is HealthMetricsEventsSpeakersOrganization => organization !== null),
-      unaffiliated: mapSpeakersUnaffiliated(drilldown.find((row) => row.IS_UNAFFILIATED_ORGANIZATION === true)),
       proposals: proposals.map(mapSpeakerProposal).filter((proposal): proposal is HealthMetricsEventsSpeakersProposal => proposal !== null),
+    };
+  }
+
+  /**
+   * One page of the period's proposals for the All speaker proposals drawer, most recent first, cut by event and status
+   * group. With `includeEvents`, it also lists the period's events for the drawer's event filter.
+   */
+  public async getSpeakerProposalsPage(req: Request, query: HealthMetricsEventsSpeakerProposalsQuery): Promise<HealthMetricsEventsSpeakerProposals> {
+    // The flag and the page bounds come from constants or clamps, never from the request, so interpolating them is safe.
+    const inPeriod = `p.is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range]} = TRUE`;
+    const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE, HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+    const binds: string[] = [query.foundationSlug];
+    const predicates: string[] = [];
+    if (query.eventId) {
+      predicates.push('p.event_id = ?');
+      binds.push(query.eventId);
+    }
+    if (query.status) {
+      predicates.push('p.proposal_status_group = ?');
+      binds.push(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[query.status].viewValue);
+    }
+    const matchClause = predicates.map((predicate) => `AND ${predicate}`).join(' ');
+
+    // The total is joined onto the page rather than read as `COUNT(*) OVER()`, so a page past the end still reports it.
+    const sql = `
+      WITH matched AS (
+        SELECT
+          p.proposal_key,
+          p.account_name,
+          p.account_id,
+          p.job_title,
+          p.event_name,
+          p.session_title,
+          p.submission_date,
+          p.submission_status_original,
+          p.proposal_status_group,
+          p.is_unaffiliated_proposal
+        FROM ${SPEAKERS_LIST_VIEW} p
+        WHERE p.foundation_slug = ?
+          AND p.is_all_projects = TRUE
+          AND ${inPeriod}
+          AND p.proposal_key IS NOT NULL
+          ${matchClause}
+      ),
+      totals AS (
+        SELECT COUNT(*) AS total_records FROM matched
+      ),
+      page AS (
+        SELECT *, TRUE AS is_page_row
+        FROM matched
+        -- Day first, then key, as the recent proposals table sorts.
+        ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      )
+      SELECT totals.*, page.*, NULLIF(TRIM(logos.logo_url), '') AS logo_url
+      FROM totals
+      LEFT JOIN page ON TRUE
+      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
+      ORDER BY TO_DATE(page.submission_date) DESC NULLS LAST, page.proposal_key ASC
+    `;
+
+    const [result, events] = await Promise.all([
+      executeSnowflakeViewRead<SpeakerProposalPageRow>(this.snowflakeService, req, sql, binds, {
+        view: SPEAKERS_LIST_VIEW,
+        operation: 'get_events_speaker_proposals',
+        clientMessage: 'Speaker proposals are unavailable right now.',
+      }),
+      query.includeEvents ? this.getSpeakerProposalEvents(req, query) : Promise.resolve(null),
+    ]);
+
+    return {
+      rows: result.rows
+        .filter((row) => row.IS_PAGE_ROW === true)
+        .map((row) => mapSpeakerProposal({ ...row, PERIOD: query.range }))
+        .filter((proposal): proposal is HealthMetricsEventsSpeakersProposal => proposal !== null),
+      totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
+      events,
     };
   }
 
@@ -781,7 +914,7 @@ export class HealthMetricsEventsService {
     const result = await executeSnowflakeViewRead<OrganizationRow>(this.snowflakeService, req, sql, binds, {
       view: ORGANIZATIONS_VIEW,
       operation: 'get_events_organizations',
-      clientMessage: 'Organizations at events are unavailable right now.',
+      clientMessage: 'Companies at events are unavailable right now.',
     });
 
     const first = result.rows[0];
@@ -983,31 +1116,34 @@ export class HealthMetricsEventsService {
     return result.rows;
   }
 
-  /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
+  /** The scope row and every company ranked in the top few for any period; individual speakers are no company. */
   private async getSpeakersDrilldown(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakersDrilldownRow[]> {
     // Prefixes, suffixes and the cap come from constants, never from the request, so interpolating them is safe.
     const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
       const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range];
-      const columns = [...SPEAKERS_COUNT_PREFIXES.map((prefix) => `${prefix}_count_${suffix}`), `acceptance_rate_${suffix}`, `sort_rank_${suffix}`];
-      return HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES.includes(range) ? [...columns, `speakers_count_change_pct_${suffix}`] : columns;
+      const columns = [...SPEAKERS_COUNT_PREFIXES.map((prefix) => `d.${prefix}_count_${suffix}`), `d.acceptance_rate_${suffix}`, `d.sort_rank_${suffix}`];
+      return HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES.includes(range) ? [...columns, `d.speakers_count_change_pct_${suffix}`] : columns;
     }).join(',\n        ');
     const ranked = HEALTH_METRICS_L2_RANGES.map(
-      (range) => `sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} <= ${HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS}`
+      (range) => `d.sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} <= ${HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS}`
     ).join(' OR ');
 
+    // The view carries no logo, so each company's comes from the account mapping; a company without one shows its first letter.
     const sql = `
       SELECT
-        account_id,
-        account_name,
-        is_all_organizations,
-        is_unaffiliated_organization,
+        d.account_id,
+        d.account_name,
+        d.is_all_organizations,
+        d.is_unaffiliated_organization,
+        NULLIF(TRIM(logos.logo_url), '') AS logo_url,
         ${periodColumns}
-      FROM ${SPEAKERS_DRILLDOWN_VIEW}
-      WHERE foundation_slug = ?
-        AND is_all_projects = TRUE
-        AND (is_all_organizations = TRUE OR is_unaffiliated_organization = TRUE OR ${ranked})
+      FROM ${SPEAKERS_DRILLDOWN_VIEW} d
+      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = d.account_id
+      WHERE d.foundation_slug = ?
+        AND d.is_all_projects = TRUE
+        AND (d.is_all_organizations = TRUE OR ${ranked})
       -- One read serves every period, so SQL gives a stable order; each period then sorts by its own sort_rank.
-      ORDER BY is_all_organizations DESC, is_unaffiliated_organization DESC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
+      ORDER BY d.is_all_organizations DESC, d.is_unaffiliated_organization DESC, d.account_name ASC NULLS LAST, d.account_id ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<SpeakersDrilldownRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
@@ -1018,41 +1154,36 @@ export class HealthMetricsEventsService {
     return result.rows;
   }
 
-  /** The latest few proposals per period, overall and for each tab's status group, so every tab fills without another read. */
+  /** The latest few proposals per period, each with its company's logo. */
   private async getSpeakerProposals(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakerProposalRow[]> {
-    // Flags, ranges, groups and the cap come from constants, never from the request, so interpolating them is safe.
-    const periodCase = HEALTH_METRICS_L2_RANGES.map((range) => `WHEN is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} THEN '${range}'`).join(' ');
-    const inAnyPeriod = HEALTH_METRICS_L2_RANGES.map((range) => `is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(' OR ');
-    const tabGroups = HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS.flatMap(({ id }) => (id === 'all' ? [] : [id]))
-      .map((group) => `'${HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].viewValue}'`)
-      .join(', ');
+    // Flags, ranges and the cap come from constants, never from the request, so interpolating them is safe.
+    const periodCase = HEALTH_METRICS_L2_RANGES.map((range) => `WHEN p.is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} THEN '${range}'`).join(' ');
+    const inAnyPeriod = HEALTH_METRICS_L2_RANGES.map((range) => `p.is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(' OR ');
     const cap = HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS;
     // Day first, then key, as the client sorts; a raw timestamp would break same-day ties by time of day.
-    const recency = 'TO_DATE(submission_date) DESC NULLS LAST, proposal_key';
+    const recency = 'TO_DATE(p.submission_date) DESC NULLS LAST, p.proposal_key';
 
     const sql = `
       SELECT
-        proposal_key,
+        p.proposal_key,
         CASE ${periodCase} END AS period,
-        account_name,
-        job_title,
-        event_name,
-        session_title,
-        submission_date,
-        submission_status_original,
-        proposal_status_group,
-        is_unaffiliated_proposal
-      FROM ${SPEAKERS_LIST_VIEW}
-      WHERE foundation_slug = ?
-        AND is_all_projects = TRUE
+        p.account_name,
+        p.job_title,
+        p.event_name,
+        p.session_title,
+        p.submission_date,
+        p.submission_status_original,
+        p.proposal_status_group,
+        p.is_unaffiliated_proposal,
+        NULLIF(TRIM(logos.logo_url), '') AS logo_url
+      FROM ${SPEAKERS_LIST_VIEW} p
+      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = p.account_id
+      WHERE p.foundation_slug = ?
+        AND p.is_all_projects = TRUE
         AND (${inAnyPeriod})
         -- A key-less row is dropped by the mapper, so it must not take a slot under the cap.
-        AND proposal_key IS NOT NULL
+        AND p.proposal_key IS NOT NULL
       QUALIFY ROW_NUMBER() OVER (PARTITION BY period ORDER BY ${recency}) <= ${cap}
-        OR (
-          proposal_status_group IN (${tabGroups})
-          AND ROW_NUMBER() OVER (PARTITION BY period, proposal_status_group ORDER BY ${recency}) <= ${cap}
-        )
     `;
 
     const result = await executeSnowflakeViewRead<SpeakerProposalRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
@@ -1061,6 +1192,29 @@ export class HealthMetricsEventsService {
       clientMessage: 'Speakers and proposals are unavailable right now.',
     });
     return result.rows;
+  }
+
+  /** Every event with a proposal in the period, latest start first, whatever the drawer's filters. */
+  private async getSpeakerProposalEvents(req: Request, query: HealthMetricsEventsSpeakerProposalsQuery): Promise<HealthMetricsEventsSpeakerProposalsEvent[]> {
+    const inPeriod = `is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range]} = TRUE`;
+    const sql = `
+      SELECT event_id, MAX(event_name) AS event_name
+      FROM ${SPEAKERS_LIST_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND ${inPeriod}
+        AND proposal_key IS NOT NULL
+        AND event_id IS NOT NULL
+      GROUP BY event_id
+      ORDER BY MAX(event_start_date) DESC NULLS LAST, MAX(event_name) ASC, event_id ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<SpeakerProposalEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: SPEAKERS_LIST_VIEW,
+      operation: 'get_events_speaker_proposals',
+      clientMessage: 'Speaker proposals are unavailable right now.',
+    });
+    return result.rows.flatMap((row) => (row.EVENT_ID ? [{ id: row.EVENT_ID, name: row.EVENT_NAME?.trim() || row.EVENT_ID }] : []));
   }
 
   /** The headline totals alone, for a foundation the revenue view has no row for; no overview row either is unmeasured. */
@@ -1196,6 +1350,7 @@ function mapPastEvent(row: PastEventRow): HealthMetricsEventsPastEvent | null {
     revenueUsd: toNullableNumber(row.REVENUE_USD),
     paceStatus: hasGoal ? row.PACE_STATUS : null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IS_IN_PERIOD', range)] === true),
+    ...mapEventPlace(row.EVENT_CITY, row.EVENT_LOCATION),
   };
 }
 
@@ -1267,6 +1422,7 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
     isPastEvent,
     goalMet,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IN_PERIOD', range)] === true),
+    ...mapEventPlace(row.EVENT_CITY, row.EVENT_LOCATION),
   };
 }
 
@@ -1357,13 +1513,7 @@ function mapSpeakersOrganization(row: SpeakersDrilldownRow): HealthMetricsEvents
   });
   if (periods.length === 0) return null;
 
-  return { accountId: row.ACCOUNT_ID, accountName: row.ACCOUNT_NAME ?? row.ACCOUNT_ID, periods };
-}
-
-function mapSpeakersUnaffiliated(row: SpeakersDrilldownRow | undefined): HealthMetricsEventsSpeakersPeriodCount[] {
-  if (!row) return [];
-
-  return HEALTH_METRICS_L2_RANGES.map((range) => ({ range, submitted: toNullableNumber(row[periodColumn('proposals_submitted_count', range)]) }));
+  return { accountId: row.ACCOUNT_ID, accountName: row.ACCOUNT_NAME ?? row.ACCOUNT_ID, logoUrl: row.LOGO_URL ?? '', periods };
 }
 
 function mapSpeakerProposal(row: SpeakerProposalRow): HealthMetricsEventsSpeakersProposal | null {
@@ -1374,6 +1524,7 @@ function mapSpeakerProposal(row: SpeakerProposalRow): HealthMetricsEventsSpeaker
     range: row.PERIOD,
     jobTitle: row.JOB_TITLE?.trim() || null,
     organizationName: row.ACCOUNT_NAME,
+    logoUrl: row.LOGO_URL ?? '',
     unaffiliated: row.IS_UNAFFILIATED_PROPOSAL === true,
     eventName: row.EVENT_NAME ?? '',
     sessionTitle: row.SESSION_TITLE ?? '',
@@ -1440,7 +1591,18 @@ function mapForecastEvent(row: ForecastEventRow): HealthMetricsEventsForecastEve
     goal: toNullableNumber(row.GOAL),
     daysLeft: toDaysLeft(row.DAYS_LEFT),
     isNewEvent: row.IS_NEW_EVENT === true,
+    ...mapEventPlace(row.EVENT_CITY, row.EVENT_LOCATION),
   };
+}
+
+/** dbt's virtual rule: a city or location naming online or virtual. Such a city is no place, so it is dropped. */
+function mapEventPlace(city: string | null, location: string | null): Pick<HealthMetricsEventsPastEvent, 'city' | 'isVirtual'> {
+  const trimmed = city?.trim() || null;
+  const virtualCity = trimmed !== null && HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS.includes(trimmed.toLowerCase());
+  const place = (location ?? '').toLowerCase();
+  const virtualLocation = HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS.some((term) => place.includes(term));
+
+  return { city: virtualCity ? null : trimmed, isVirtual: virtualCity || virtualLocation };
 }
 
 function groupCurveRows(rows: ForecastCurveRow[]): HealthMetricsEventsForecastCurveSeries[] {

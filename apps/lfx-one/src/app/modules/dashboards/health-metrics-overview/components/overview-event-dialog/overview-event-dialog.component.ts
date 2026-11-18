@@ -22,9 +22,9 @@ import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, forkJoin, map, Observable, of, tap } from 'rxjs';
 
+import { HealthMetricsEventTrendComponent } from '../../../components/health-metrics-event-trend/health-metrics-event-trend.component';
 import { HealthMetricsTruncationTipDirective } from '../../../components/health-metrics-truncation-tip/health-metrics-truncation-tip.directive';
 import { OverviewEventSnapshotComponent } from '../overview-event-snapshot/overview-event-snapshot.component';
-import { OverviewEventTrendComponent } from '../overview-event-trend/overview-event-trend.component';
 
 import type {
   HealthMetricsOverviewCardStatus,
@@ -43,9 +43,9 @@ import type {
 @Component({
   selector: 'lfx-overview-event-dialog',
   imports: [
+    HealthMetricsEventTrendComponent,
     HealthMetricsTruncationTipDirective,
     OverviewEventSnapshotComponent,
-    OverviewEventTrendComponent,
     UiBadgeComponent,
     UiButtonComponent,
     UiTabsComponent,

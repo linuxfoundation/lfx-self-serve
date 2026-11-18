@@ -27,17 +27,22 @@ export class OrgLensMembershipsService {
   private readonly http = inject(HttpClient);
   private readonly directory = inject(OrgPeopleDirectoryStateService);
 
-  public getActiveMemberships(orgUid: string, filters?: { search?: string; tier?: string; renewal?: string }): Observable<OrgActiveMembershipsResponse> {
+  public getActiveMemberships(
+    orgUid: string,
+    filters?: { search?: string; tier?: string; renewal?: string; company?: string }
+  ): Observable<OrgActiveMembershipsResponse> {
     let params = new HttpParams();
     if (filters?.search) params = params.set('search', filters.search);
     if (filters?.tier) params = params.set('tier', filters.tier);
     if (filters?.renewal) params = params.set('renewal', filters.renewal);
+    if (filters?.company) params = params.set('company', filters.company);
     return this.http.get<OrgActiveMembershipsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/active`, { params });
   }
 
-  public getExpiredMemberships(orgUid: string, search?: string): Observable<OrgExpiredMembershipsResponse> {
+  public getExpiredMemberships(orgUid: string, search?: string, company?: string): Observable<OrgExpiredMembershipsResponse> {
     let params = new HttpParams();
     if (search) params = params.set('search', search);
+    if (company) params = params.set('company', company);
     return this.http.get<OrgExpiredMembershipsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/expired`, { params });
   }
 

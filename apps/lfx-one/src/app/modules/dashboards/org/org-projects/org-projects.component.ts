@@ -991,8 +991,8 @@ export class OrgProjectsComponent {
   }
 
   private initAddProjectDisabledReason(): string | undefined {
-    if (!this.hasCompany()) return 'Select an organization first';
-    if (!this.canManageWorkspaces()) return 'You have view-only access to this organization';
+    if (!this.hasCompany()) return 'Select a company first';
+    if (!this.canManageWorkspaces()) return 'You have view-only access to this company';
     if (this.loading()) return 'Projects are still loading';
     if (this.error()) return 'Resolve the loading error first';
     if (!this.selectedWorkspace()) return 'No workspace is selected';
@@ -1009,13 +1009,13 @@ export class OrgProjectsComponent {
         return {
           icon: 'fa-light fa-folder-open',
           title: 'No projects in this workspace yet',
-          subtitle: 'An administrator of this organization can add projects to this workspace.',
+          subtitle: 'An administrator of this company can add projects to this workspace.',
         };
       }
       return {
         icon: 'fa-light fa-folder-plus',
         title: 'No projects in this workspace yet',
-        subtitle: 'Add projects from your organization catalog to start tracking this workspace.',
+        subtitle: 'Add projects from your company catalog to start tracking this workspace.',
         ctaLabel: 'Add Project',
         ctaIcon: 'fa-light fa-plus',
         action: 'addProject',
@@ -1036,7 +1036,7 @@ export class OrgProjectsComponent {
       return {
         icon: 'fa-light fa-folder-open',
         title: 'No projects with activity yet',
-        subtitle: 'Projects will appear here once this organization has activity in the catalog.',
+        subtitle: 'Projects will appear here once this company has activity in the catalog.',
       };
     }
 
@@ -1070,7 +1070,7 @@ export class OrgProjectsComponent {
   private buildEmployeeOptions(): { label: string; value: string }[] {
     const byId = new Map<string, string>();
     for (const project of this.response()?.projects ?? []) {
-      for (const person of [...project.maintainers, ...project.contributors, ...project.participants]) {
+      for (const person of [...project.maintainers, ...project.contributors]) {
         byId.set(person.id, person.name);
       }
     }
@@ -1085,12 +1085,14 @@ export class OrgProjectsComponent {
   private buildFilteredProjects(): OrgLensProject[] {
     const all = this.response()?.projects ?? [];
     const foundation = this.formValue().foundation ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER;
+    // The Employees filter matches code activity only (maintainers + contributors). Participants include
+    // event attendance attributed to every project in a foundation, which would match nearly every row.
     // Unknown ids (stale links, or maintainer-only people while roles are unavailable) stay in the
     // predicate and match nothing, so a selection never widens the list or the CSV export.
     const employees = this.formValue().employees ?? [];
     return all
       .filter((p) => foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER || p.foundation.slug === foundation)
-      .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id)));
+      .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors].some((person) => employees.includes(person.id)));
   }
 
   private buildSortedProjects(): OrgLensProject[] {

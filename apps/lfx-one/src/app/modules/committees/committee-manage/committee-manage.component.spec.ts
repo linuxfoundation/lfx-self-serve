@@ -25,8 +25,8 @@ import { CommitteeMembersManagerComponent } from '../components/committee-member
 // must select the COMMITTEE's project/tier (not the cookie-restored last-visited project), the
 // by-uid fallback must apply when enrichment withholds project_slug, the write-access leg must
 // stay provisionally true while pending so it cannot evict a guard-admitted user mid-edit, and
-// step navigation must merge query params so ?project= survives. Mirrors the meeting-manage
-// harness (constructor context-sync streams only — no detectChanges, no template rendering).
+// step navigation must merge query params so ?project= survives. The harness drives the
+// constructor context-sync streams only — no detectChanges, no template rendering.
 describe('CommitteeManageComponent', () => {
   const COMMITTEE_UID = 'committee-uid-1';
   const PROJECT_UID = 'project-uid-1';

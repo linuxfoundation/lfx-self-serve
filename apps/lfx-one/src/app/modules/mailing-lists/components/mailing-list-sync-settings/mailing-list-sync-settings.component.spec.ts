@@ -7,6 +7,7 @@ import { MailingListAudienceAccess, MailingListSyncMode } from '@lfx-one/shared/
 import type { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { MessageService } from 'primeng/api';
 import { asapScheduler, delay, dematerialize, materialize, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -463,5 +464,63 @@ describe('MailingListSyncSettingsComponent', () => {
     fixture.detectChanges();
 
     expect(getMailingListsByCommittee).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves syncMode via getMailingListCommitteeSync instead of the unpopulated top-level field, and raises the dialog above the drawer overlay (#5790 review)', async () => {
+    // baseList's top-level `sync_mode` is unset (the real read-model shape never populates it — see
+    // getMailingListCommitteeSync's doc comment); the per-committee-entry value below is what
+    // onSyncNow must actually resolve and pass through, not `ml.sync_mode` (which would be undefined
+    // here even on a synced list — greptile/copilot/lfx-one #5790 review).
+    const synced: GroupsIOMailingList = {
+      ...baseList,
+      committees: [{ uid: 'committee-1', name: 'Technical Steering Committee', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
+    };
+    await render(synced);
+    // DialogService is provided at the component level (see `providers: [DialogService]` on the
+    // component decorator), so the instance in play is scoped to this fixture's own injector, not
+    // the TestBed module injector.
+    const openSpy = vi.spyOn(fixture.debugElement.injector.get(DialogService), 'open').mockReturnValue(null);
+
+    fixture.componentInstance['onSyncNow']();
+
+    expect(openSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        baseZIndex: 10001,
+        data: expect.objectContaining({ syncMode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }),
+      })
+    );
+  });
+
+  it('prefers the just-saved top-level sync_mode over a stale committees[] entry (cursor/greptile/copilot/lfx-one #5790 round 2 review)', async () => {
+    // save() patches only the top-level `sync_mode` and never touches `committees[]`, so right after
+    // a save the nested entry below is stale (still MANUAL) while the top-level field already carries
+    // the new mode. onSyncNow must prefer the top-level value here, not fall back to the stale nested one.
+    const justSaved: GroupsIOMailingList = {
+      ...baseList,
+      sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE,
+      committees: [{ uid: 'committee-1', name: 'Technical Steering Committee', sync_mode: MailingListSyncMode.MANUAL }],
+    };
+    await render(justSaved);
+    const openSpy = vi.spyOn(fixture.debugElement.injector.get(DialogService), 'open').mockReturnValue(null);
+
+    fixture.componentInstance['onSyncNow']();
+
+    expect(openSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ data: expect.objectContaining({ syncMode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE }) })
+    );
+  });
+
+  it('does not open the Sync Now dialog when no committee is resolved', async () => {
+    await render({ ...baseList, committees: [] });
+    // DialogService is provided at the component level (see `providers: [DialogService]` on the
+    // component decorator), so the instance in play is scoped to this fixture's own injector, not
+    // the TestBed module injector.
+    const openSpy = vi.spyOn(fixture.debugElement.injector.get(DialogService), 'open').mockReturnValue(null);
+
+    fixture.componentInstance['onSyncNow']();
+
+    expect(openSpy).not.toHaveBeenCalled();
   });
 });

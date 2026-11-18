@@ -71,6 +71,36 @@ export type OversightSubType = 'governance' | 'advisory';
  */
 export type GroupBehavioralClass = 'governing-board' | 'oversight-committee' | 'working-group' | 'special-interest-group' | 'ambassador-program' | 'other';
 
+/** Type tab on the redesigned Groups page: every group, or one behavioral class. */
+export type GroupsHomeTab = GroupBehavioralClass | 'all';
+
+/** One figure in the redesigned Groups page metrics row. */
+export interface GroupsHomeMetric {
+  label: string;
+  /** Font Awesome class string. */
+  icon: string;
+  /** Formatted value, or `—` when unknown. */
+  value: string;
+  /** Note under the value, such as how fresh it is, "Sample data", or that it covers only some groups. */
+  subLine?: string;
+}
+
+/** A group's mailing list or chat channel, shown as an icon button on its card. */
+export interface GroupChannel {
+  kind: 'mailing-list' | 'slack' | 'discord' | 'chat';
+  /** Font Awesome class string. */
+  icon: string;
+  /** Tooltip: `Slack`, `Discord`, `Chat`, or the mailing list's name or address. */
+  tooltip: string;
+  ariaLabel: string;
+  /** Chat URL, `mailto:` address, or the in-app mailing list page. */
+  href: string;
+  /** Chat links open in a new tab; mail and in-app links don't. */
+  newTab: boolean;
+  /** Router target of an in-app mailing list page, so a plain click navigates in the app; `null` otherwise. */
+  link: CommitteeMailingListLink | null;
+}
+
 /** Display metadata for a behavioral class — used by filter chips and badges. */
 export interface BehavioralClassDisplayConfig {
   label: string;
@@ -186,6 +216,8 @@ export interface PendingInvitation {
   committee_name: string;
   /** Project display name — enriched (optional) */
   project_name?: string | null;
+  /** Project logo URL — enriched (optional) */
+  project_logo_url?: string | null;
   /** Owning project slug — enriched (optional); drives the `?project=` query param on the invitation's view link (GH-1566). */
   project_slug?: string | null;
   /** Whether the owning project is a foundation — enriched (optional); drives the `/foundation` vs `/project` tier prefix on the view link. Null/absent means tier unknown → callers keep the flat `/groups/:uid` fallback (GH-1566). */
@@ -482,6 +514,8 @@ export interface Committee {
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */
   parent_project_uid?: string;
+  /** Project logo URL (populated from project data) */
+  project_logo_url?: string;
   /** Foundation name this committee belongs to (populated from project hierarchy) */
   foundation_name?: string;
   /** Calendar visibility settings */
@@ -1267,6 +1301,20 @@ export interface MailingListPickerDialogResult {
    * empty when the sync feature flag is off, same fallback contract as `syncModes`.
    */
   committeeRoleFilters: Map<string, string[]>;
+}
+
+/**
+ * Per-mailing-list sync-direction conflict state within MailingListPickerDialogComponent (#5786),
+ * matching the backend's asymmetric CheckSyncModeConflict rule: a sibling running Mailing List →
+ * Committee locks a list out of both auto directions, while a sibling running Committee → Mailing
+ * List only locks out Mailing List → Committee (multiple Committee → Mailing List lists are
+ * allowed per committee).
+ */
+export interface MailingListDirectionConflict {
+  /** uid of the sibling list currently running Mailing List → Committee, if any. */
+  mlToCUid: string | null;
+  /** uid of a sibling list currently running Committee → Mailing List, if any. */
+  cToMlUid: string | null;
 }
 
 export interface MailingListSyncPreviewDialogData {

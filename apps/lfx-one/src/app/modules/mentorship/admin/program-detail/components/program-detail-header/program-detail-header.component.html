@@ -16,6 +16,7 @@
           {{ statusLabel() }}
         </span>
       </div>
+      <lfx-mentorship-program-meta dateLabel="Created" [date]="program().createdOn" [submitter]="submitter()" />
     </div>
     <div class="flex flex-wrap items-center gap-2 shrink-0" data-testid="mentorship-program-detail-actions">
       @if (showPublicPage()) {

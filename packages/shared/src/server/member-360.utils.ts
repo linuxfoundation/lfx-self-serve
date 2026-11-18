@@ -336,7 +336,7 @@ export function renderMember360FormMessage(input: Member360FormInput): string {
       'passing it to the tools as prior_run.',
       '',
       ...mdTable(
-        ['Member Organization', 'Engagement Score', ...CATEGORY_KEYS.map((c) => CATEGORY_LABELS[c])],
+        ['Member Company', 'Engagement Score', ...CATEGORY_KEYS.map((c) => CATEGORY_LABELS[c])],
         p.member_ranking.map((r) => [
           r.member_organization,
           String(r.engagement_score),

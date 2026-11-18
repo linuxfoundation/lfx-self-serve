@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Shared fixtures/mocks for `/org/groups` row and seat-holders-drawer specs (GH-1784, GH-1780).
+ * Shared fixtures/mocks for `/company/groups` row and seat-holders-drawer specs (GH-1784, GH-1780).
  *
  * Used by each content/`-robust` spec pair — `org-groups-row-link(.spec|-robust.spec).ts` for the
  * row itself, `org-groups-seat-holders-drawer(.spec|-robust.spec).ts` for the drawer — so no pair
@@ -15,7 +15,7 @@ import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 
-export const GROUPS_URL = '/org/groups';
+export const GROUPS_URL = '/company/groups';
 export const DATA_LOAD_TIMEOUT = 30_000;
 
 export const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
@@ -215,7 +215,7 @@ export async function stubCommitteeMembers(page: Page, response: unknown = commi
 }
 
 /**
- * Navigates to `/org/groups` and stops as soon as the route is confirmed — without waiting for any
+ * Navigates to `/company/groups` and stops as soon as the route is confirmed — without waiting for any
  * roster row. Split out of `gotoGroups` for the cases where a row is never expected to appear: a
  * still-loading roster, or an org with no groups at all.
  */
