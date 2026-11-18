@@ -4532,6 +4532,18 @@
             </div>
           }
 
+          <!-- Ad set audience targeting (#5905), offered only on an explicit yes (`metaAudienceTargetingAvailable`,
+               LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING); custom audiences only for global_marketing_ops. -->
+          @if (metaAudienceTargetingAvailable()) {
+            <div class="mb-4" data-testid="implementation-meta-audience-targeting">
+              <lfx-meta-audience-targeting
+                [projectSlug]="activeFoundationSlug()"
+                [customAudiencesEnabled]="metaCustomAudiencesAvailable()"
+                [targeting]="metaAudienceTargeting()"
+                (targetingChange)="onMetaAudienceTargetingChange($event)" />
+            </div>
+          }
+
           <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
           @if (biddingAvailable()) {
             <div class="mb-4">

@@ -1,0 +1,120 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<fieldset class="flex flex-col gap-4" data-testid="meta-audience-targeting">
+  <legend class="mb-2 text-xs font-medium text-gray-700">Audience targeting</legend>
+
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <lfx-ui-select
+      label="Minimum age"
+      size="small"
+      [value]="'' + targeting().ageMin"
+      (valueChange)="onAge('ageMin', $event)"
+      data-testid="meta-audience-targeting-age-min">
+      @for (age of ages; track age) {
+        <lfx-ui-option [value]="age" [label]="age" />
+      }
+    </lfx-ui-select>
+    <lfx-ui-select
+      label="Maximum age"
+      size="small"
+      [value]="'' + targeting().ageMax"
+      (valueChange)="onAge('ageMax', $event)"
+      data-testid="meta-audience-targeting-age-max">
+      @for (age of ages; track age) {
+        <lfx-ui-option [value]="age" [label]="age === '65' ? '65+' : age" />
+      }
+    </lfx-ui-select>
+  </div>
+
+  <fieldset class="flex flex-col gap-1" data-testid="meta-audience-targeting-genders">
+    <legend class="text-xs text-gray-500">Gender (none or both reaches everyone)</legend>
+    <div class="flex flex-wrap gap-x-4 gap-y-2">
+      <lfx-ui-checkbox
+        label="Men"
+        [checked]="targeting().genders.includes('male')"
+        (checkedChange)="onGender('male', $event)"
+        data-testid="meta-audience-targeting-gender-male" />
+      <lfx-ui-checkbox
+        label="Women"
+        [checked]="targeting().genders.includes('female')"
+        (checkedChange)="onGender('female', $event)"
+        data-testid="meta-audience-targeting-gender-female" />
+    </div>
+  </fieldset>
+
+  <div class="flex flex-col gap-1">
+    <lfx-ui-checkbox
+      label="Advantage+ audience"
+      [checked]="targeting().advantageAudience"
+      (checkedChange)="onAdvantage($event)"
+      data-testid="meta-audience-targeting-advantage" />
+    <p class="text-xs text-gray-500">
+      Lets Meta reach beyond these settings when it expects better results. Needs a minimum age of {{ advantageMaxAgeMin }} or less and a maximum age of 65+.
+    </p>
+  </div>
+
+  @if (customAudiencesEnabled()) {
+    <div class="flex flex-col gap-3" data-testid="meta-audience-targeting-custom-audiences">
+      @switch (picker().status) {
+        @case ('loading') {
+          <p class="text-xs text-gray-500" data-testid="meta-audience-targeting-picker-loading">{{ pickerLoading }}</p>
+        }
+        @case ('unavailable') {
+          <p class="text-xs text-gray-500" data-testid="meta-audience-targeting-picker-unavailable">{{ picker().reason }}</p>
+        }
+        @case ('loaded') {
+          @if (picker().audiences.length === 0) {
+            <p class="text-xs text-gray-500" data-testid="meta-audience-targeting-picker-empty">{{ pickerEmpty }}</p>
+          } @else if (picker().truncated) {
+            <p class="text-xs text-gray-500" data-testid="meta-audience-targeting-picker-truncated">{{ pickerTruncated }}</p>
+          }
+        }
+      }
+
+      @for (list of audienceLists; track list.key) {
+        @let key = list.key;
+        <div class="flex flex-col gap-2" [attr.data-testid]="'meta-audience-targeting-' + key">
+          <lfx-ui-combobox
+            #box
+            freeText
+            size="small"
+            [label]="list.label + ' (' + targeting()[key].length + '/' + maxAudiences + ')'"
+            placeholder="Search audiences or enter an audience id"
+            emptyText="No audience matches"
+            (valueChange)="onAddAudience(key, $event, box)"
+            [attr.data-testid]="'meta-audience-targeting-' + key + '-add'">
+            @for (audience of pickerOptions(); track audience.id) {
+              <lfx-ui-option [value]="audience.id" [label]="audienceLabels().get(audience.id) ?? audience.id" />
+            }
+          </lfx-ui-combobox>
+          <div class="flex flex-wrap items-center gap-2">
+            @for (id of targeting()[key]; track id) {
+              @let name = audienceLabels().get(id) ?? id;
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                [attr.data-testid]="'meta-audience-targeting-' + key + '-' + id">
+                {{ name }}
+                <button
+                  type="button"
+                  (click)="onRemoveAudience(key, id)"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
+                  [attr.aria-label]="'Remove ' + name"
+                  [attr.data-testid]="'meta-audience-targeting-' + key + '-remove-' + id">
+                  <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+          </div>
+        </div>
+      }
+      @if (addError(); as error) {
+        <p role="alert" class="text-xs text-red-600" data-testid="meta-audience-targeting-add-error">{{ error }}</p>
+      }
+    </div>
+  }
+
+  @if (refusal(); as refused) {
+    <p role="alert" class="text-xs text-red-600" data-testid="meta-audience-targeting-error">{{ refused.message }}</p>
+  }
+</fieldset>

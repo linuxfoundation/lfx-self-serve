@@ -1254,6 +1254,8 @@ export interface CampaignImplementationDraft {
   metaInstagramUserId?: string;
   metaDsaBeneficiary?: string;
   metaDsaPayor?: string;
+  /** The Meta audience targeting as edited (#5905). Absent means the draft predates it. */
+  metaAudienceTargeting?: MetaAudienceTargetingDraft;
   /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
@@ -2374,6 +2376,73 @@ export interface MetaCampaignCreateRequest {
   dsaPayor?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
+  /**
+   * Ad set audience targeting (#5905; linuxfoundation/lfx-v2-campaign-service#550). Sent ONLY when
+   * `CampaignListResult.metaAudienceTargetingEnabled` is an explicit yes; the create route drops it otherwise.
+   */
+  targeting?: MetaAudienceTargeting;
+}
+
+/** A Meta gender campaign-service accepts in `metaConfig.targeting.genders`. */
+export type MetaAudienceGender = 'male' | 'female';
+
+/**
+ * `metaConfig.targeting`, the keys this app sends (campaign-service `docs/api-catalog.md`, `MetaConfig`).
+ * Every key is optional and an absent one is Meta's default: ages 18–65, every gender, no custom
+ * audience, Advantage+ audience as campaign-service decides it.
+ */
+export interface MetaAudienceTargeting {
+  ageMin?: number;
+  ageMax?: number;
+  genders?: MetaAudienceGender[];
+  /** Numeric Meta custom-audience ids (lookalikes included); needs `global_marketing_ops`. */
+  customAudiences?: string[];
+  excludedCustomAudiences?: string[];
+  advantageAudience?: boolean;
+}
+
+/** The Implement tab's Meta audience targeting as edited: every key present, defaults included. */
+export type MetaAudienceTargetingDraft = Required<MetaAudienceTargeting>;
+
+/** The two custom-audience lists of {@link MetaAudienceTargeting}. */
+export type MetaCustomAudienceListKey = 'customAudiences' | 'excludedCustomAudiences';
+
+/** One custom-audience list as the Implement tab renders it. */
+export interface MetaCustomAudienceListView {
+  key: MetaCustomAudienceListKey;
+  label: string;
+}
+
+/** Why `metaConfig.targeting` cannot be sent: the field it names (`metaConfig.targeting.ageMin`, ...) and a sentence. */
+export interface MetaAudienceTargetingRefusal {
+  field: string;
+  message: string;
+}
+
+/** One custom audience on the Meta ad account a create uses, camel-cased from campaign-service's `meta-custom-audience`. */
+export interface MetaCustomAudienceOption {
+  id: string;
+  name: string;
+  /** Meta's kind, verbatim (CUSTOM, WEBSITE, LOOKALIKE, ...). */
+  subtype: string;
+  description: string | null;
+  approximateCountLowerBound: number | null;
+  approximateCountUpperBound: number | null;
+}
+
+/** The custom-audience read: the ad account, its audiences sorted by name, and whether more matched than were returned. */
+export interface MetaCustomAudiencesResult {
+  accountId: string;
+  audiences: MetaCustomAudienceOption[];
+  truncated: boolean;
+}
+
+/** Where the Meta custom-audience picker stands; `unavailable` carries the sentence the typed boxes are offered with. */
+export interface MetaCustomAudiencePickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  audiences: MetaCustomAudienceOption[];
+  truncated: boolean;
+  reason: string | null;
 }
 
 export interface MetaCampaignCreateResult {
@@ -5354,6 +5423,24 @@ export interface CampaignServiceGoogleAdsAudiences {
   truncated: boolean;
 }
 
+/** One element of campaign-service's custom-audience read (`meta-custom-audience`, linuxfoundation/lfx-v2-campaign-service#550). */
+export interface CampaignServiceMetaCustomAudience {
+  id: string;
+  name: string;
+  subtype: string;
+  description?: string;
+  approximate_count_lower_bound?: number;
+  approximate_count_upper_bound?: number;
+}
+
+/** campaign-service `GET /projects/{project_id}/meta-ads/custom-audiences` (`global_marketing_ops` on the project): at most 500, `truncated` when more matched. */
+export interface CampaignServiceMetaCustomAudiences {
+  account_id: string;
+  audiences: CampaignServiceMetaCustomAudience[];
+  audience_count: number;
+  truncated: boolean;
+}
+
 /** campaign-service `GET /projects/{project_id}/google-ads/user-lists` (`global_marketing_ops` on the project; linuxfoundation/lfx-v2-campaign-service#508). */
 export interface CampaignServiceGoogleAdsUserLists {
   account_id: string;
@@ -7012,6 +7099,20 @@ export interface CampaignListResult {
    * inputs and sends none of the three keys.
    */
   metaInstagramDsaEnabled: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.targeting` (#5905): age, gender and Advantage+
+   * audience for every campaign manager. `cutoverOwnsCreate()` AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING`. Optional, so a BFF that predates it reads
+   * as unanswered and the tab hides the section.
+   */
+  metaAudienceTargetingEnabled?: boolean;
+  /**
+   * Whether THIS caller may pick Meta custom audiences, through `GET /api/campaigns/meta/custom-audiences`,
+   * and send `customAudiences` / `excludedCustomAudiences`: {@link metaAudienceTargetingEnabled} AND
+   * `global_marketing_ops` on the listed project, the relation campaign-service checks (the Meta ad account
+   * is shared by every foundation). `null` when that check cannot be made. Optional, as above.
+   */
+  metaCustomAudiencesEnabled?: boolean | null;
   /**
    * Whether THIS caller may send Google audience segments (`audienceSegments` or
    * `campaignAudienceSegments`) on a create.
