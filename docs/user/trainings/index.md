@@ -4,7 +4,7 @@ description: View your Linux Foundation training enrollments and certifications 
 audience: [all]
 product_area: Trainings
 tags: [trainings, courses, enrollments, certifications, learning]
-last_updated: 2026-11-06
+last_updated: 2026-11-17
 intercom_collection: Trainings
 ---
 
@@ -91,7 +91,7 @@ People › Trainees lists the people on your company's people list with training
 
 Former employees who are still on the people list count in the cards but are not rows of the table, which lists current employees only. When there are any, a note under the cards gives their number, for example "2 former employees on the people list also count in these numbers; the table lists current employees only."
 
-Learners linked to your company who are not on its people list appear in a separate list below the table, **Learners not on the people list**, with their name and one overall status for the time range, paged the same way: **Certified** if they earned a certificate in the range, **Enrolled** otherwise. No course, project or date is shown for them. The list is closed at first, with its count in the header; select the header to open it. A note in the open list says that one person can appear more than once, for example with several training accounts under different emails, and that an org admin can review it if a name looks familiar. The list follows the time range and the name search only, so it is hidden while a foundation, project, course, level or format is selected.
+Learners linked to your company who are not on its people list appear in a separate list below the table, **Learners not on the people list**, with their name and one overall status for the time range, paged the same way: **Certified** if they earned a certificate in the range, **Enrolled** otherwise. No course, project or date is shown for them. The list is closed at first, with its count in the header; select the header to open it. A note in the open list says that one person can appear more than once, for example with several training accounts under different emails, and that a company admin can review it if a name looks familiar. The list follows the time range and the name search only, so it is hidden while a foundation, project, course, level or format is selected.
 
 ### Navigation
 
