@@ -20,7 +20,9 @@ import type {
   MetaAudienceGender,
   MetaAudienceTargetingDraft,
   MetaAudienceTargetingRefusal,
+  MetaCustomAudienceChipView,
   MetaCustomAudienceListKey,
+  MetaCustomAudienceListState,
   MetaCustomAudienceOption,
   MetaCustomAudiencePickerState,
 } from '@lfx-one/shared/interfaces';
@@ -37,8 +39,9 @@ import { catchError, map, of, startWith, switchMap } from 'rxjs';
  * range, gender and Advantage+ audience for every campaign manager, and included/excluded custom
  * audiences only when `customAudiencesEnabled` (the caller holds `global_marketing_ops` on the project,
  * because the Meta ad account is shared by every foundation). Each custom-audience box picks from the ad
- * account's audiences and also takes a typed id, which is the way in when the list cannot be read. The
- * parent owns the draft, compacts it for the request and holds Create on {@link refusal}.
+ * account's audiences and also takes a typed id, which is the way in when the list cannot be read. Picks
+ * held without that relation (a restored draft) stay listed with Remove, so the operator can clear the
+ * ones the parent holds Create for. The parent owns the draft, validates the same draft and holds Create.
  */
 @Component({
   selector: 'lfx-meta-audience-targeting',
@@ -57,8 +60,6 @@ export class MetaAudienceTargetingComponent {
   protected readonly addError = signal<string | null>(null);
 
   protected readonly ages: string[] = Array.from({ length: META_AUDIENCE_MAX_AGE - META_AUDIENCE_MIN_AGE + 1 }, (_, i) => String(META_AUDIENCE_MIN_AGE + i));
-  protected readonly audienceLists = META_CUSTOM_AUDIENCE_LISTS;
-  protected readonly maxAudiences = META_MAX_CUSTOM_AUDIENCES;
   protected readonly advantageMaxAgeMin = META_ADVANTAGE_AUDIENCE_MAX_AGE_MIN;
   protected readonly pickerEmpty = META_CUSTOM_AUDIENCE_PICKER_EMPTY;
   protected readonly pickerLoading = META_CUSTOM_AUDIENCE_PICKER_LOADING;
@@ -66,17 +67,36 @@ export class MetaAudienceTargetingComponent {
 
   /** Why the targeting cannot be sent, or `null`: the same rules the create route applies. */
   protected readonly refusal: Signal<MetaAudienceTargetingRefusal | null> = computed(() => metaAudienceTargetingRefusal(this.targeting()));
+  protected readonly maleSelected = computed<boolean>(() => this.targeting().genders.includes('male'));
+  protected readonly femaleSelected = computed<boolean>(() => this.targeting().genders.includes('female'));
+  /** Whether either list holds a pick, which keeps the lists (and their Remove) on screen without the relation. */
+  protected readonly hasCustomAudiences = computed<boolean>(
+    () => this.targeting().customAudiences.length + this.targeting().excludedCustomAudiences.length > 0
+  );
   protected readonly picker: Signal<MetaCustomAudiencePickerState> = this.initPicker();
-  /** The listed audiences not yet in either list: the rows each box still offers. */
-  protected readonly pickerOptions: Signal<MetaCustomAudienceOption[]> = computed(() => {
-    const { customAudiences, excludedCustomAudiences } = this.targeting();
-    const taken = new Set([...customAudiences, ...excludedCustomAudiences]);
-    return this.picker().audiences.filter((a) => !taken.has(a.id));
-  });
   /** Each listed audience's label, by id; a typed id the list does not hold shows as itself. */
-  protected readonly audienceLabels: Signal<Map<string, string>> = computed(
+  private readonly audienceLabels: Signal<Map<string, string>> = computed(
     () => new Map(this.picker().audiences.map((a) => [a.id, this.audienceLabel(a)] as const))
   );
+  /** The listed audiences not yet in either list: the rows each box still offers. */
+  protected readonly pickerOptions: Signal<MetaCustomAudienceChipView[]> = computed(() => {
+    const { customAudiences, excludedCustomAudiences } = this.targeting();
+    const taken = new Set([...customAudiences, ...excludedCustomAudiences]);
+    const labels = this.audienceLabels();
+    return this.picker()
+      .audiences.filter((a) => !taken.has(a.id))
+      .map((a) => ({ id: a.id, label: labels.get(a.id) ?? a.id }));
+  });
+  /** Both lists with their picks as chips. */
+  protected readonly audienceLists: Signal<MetaCustomAudienceListState[]> = computed(() => {
+    const t = this.targeting();
+    const labels = this.audienceLabels();
+    return META_CUSTOM_AUDIENCE_LISTS.map((list) => ({
+      ...list,
+      heading: `${list.label} (${t[list.key].length}/${META_MAX_CUSTOM_AUDIENCES})`,
+      chips: t[list.key].map((id) => ({ id, label: labels.get(id) ?? id })),
+    }));
+  });
 
   protected onAge(key: 'ageMin' | 'ageMax', value: string | null): void {
     const age = Number(value);

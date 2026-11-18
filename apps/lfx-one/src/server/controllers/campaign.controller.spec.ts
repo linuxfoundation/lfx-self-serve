@@ -2428,7 +2428,8 @@ describe('CampaignController.createCampaign cutover', () => {
 
   /**
    * Meta audience targeting (#5905; linuxfoundation/lfx-v2-campaign-service#550): checked here, since the
-   * route has no body validator, compacted to what differs from Meta's defaults, and dropped with the flag off.
+   * route has no body validator, compacted to what differs from Meta's defaults, and refused with a 400 while
+   * the flag is off (a tab opened while it was on must reload).
    * Custom audiences name resources of the shared Meta ad account, so they need `global_marketing_ops`.
    */
   describe('meta audience targeting', () => {

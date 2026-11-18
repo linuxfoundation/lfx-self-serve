@@ -4543,6 +4543,23 @@
                 (targetingChange)="onMetaAudienceTargetingChange($event)" />
             </div>
           }
+          @if (metaAudienceTargetingHeld(); as held) {
+            <div
+              role="alert"
+              class="mb-4 flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              data-testid="implementation-meta-audience-targeting-held">
+              <span><i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ held }}</span>
+              @if (!metaAudienceTargetingAvailable()) {
+                <button
+                  type="button"
+                  class="font-medium text-amber-900 underline"
+                  (click)="clearMetaAudienceTargeting()"
+                  data-testid="implementation-meta-audience-targeting-clear">
+                  Clear audience targeting
+                </button>
+              }
+            </div>
+          }
 
           <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
           @if (biddingAvailable()) {

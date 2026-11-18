@@ -469,6 +469,7 @@ import {
   twitterTweetTextError,
   compactMetaAudienceTargeting,
   metaAudienceTargetingRefusal,
+  metaTargetingNamesCustomAudiences,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
@@ -3358,13 +3359,29 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /**
-   * The targeting this caller's create would carry, before defaults are dropped: none while the capability
-   * is off, and no custom audiences for a caller who cannot pick them (the create route would answer 403).
+   * The targeting the create would carry, before defaults are dropped: the draft exactly as the child
+   * shows and validates it, or none while the capability is off. Nothing chosen is stripped here: what
+   * cannot be sent holds Create instead ({@link metaAudienceTargetingHeld}).
    */
-  private readonly metaAudienceTargetingRequested = computed<MetaAudienceTargetingDraft | null>(() => {
-    if (!this.metaAudienceTargetingAvailable()) return null;
-    const t = this.metaAudienceTargeting();
-    return this.metaCustomAudiencesAvailable() ? t : { ...t, customAudiences: [], excludedCustomAudiences: [] };
+  private readonly metaAudienceTargetingRequested = computed<MetaAudienceTargetingDraft | null>(() =>
+    this.metaAudienceTargetingAvailable() ? this.metaAudienceTargeting() : null
+  );
+  /**
+   * Why Create is held for Meta targeting the draft holds but the request cannot carry, or `null` — the
+   * `initGoogleAudienceSegmentsBlock` pattern: held rather than dropped, because targeting changes who the
+   * campaign reaches, with a way to clear it in every state (Clear, or each audience's Remove).
+   */
+  protected readonly metaAudienceTargetingHeld = computed<string | null>(() => {
+    const chosen = compactMetaAudienceTargeting(this.metaAudienceTargeting());
+    if (chosen === null) return null;
+    if (!this.metaAudienceTargetingAvailable()) {
+      return 'Meta audience targeting is not available here, so the targeting on this brief cannot be sent. Clear it to create the campaign.';
+    }
+    if (!metaTargetingNamesCustomAudiences(chosen) || this.metaCustomAudiencesAvailable()) return null;
+    if (this.metaCustomAudiencesEnabled() === false) {
+      return 'Only the LF marketing team can use Meta custom audiences, because every foundation shares one Meta ad account. Remove them to create the campaign.';
+    }
+    return 'Could not confirm that you can use Meta custom audiences, so Create waits rather than dropping them. Reload to check again, or remove them.';
   });
   /** Why the Meta audience targeting cannot be sent, or `null`: the create route's own rules. */
   protected readonly metaAudienceTargetingError = computed<string | null>(
@@ -3929,6 +3946,7 @@ export class ImplementationTabComponent implements OnInit {
     // `null` while it is off). campaign-service refuses the same EU and one-sided states with a 400.
     if (metaSelected && (this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError()))
       return 'Meta Ads: fix the Instagram account or the EU disclosure fields.';
+    if (metaSelected && this.metaAudienceTargetingHeld() !== null) return `Meta Ads: ${this.metaAudienceTargetingHeld()}`;
     if (metaSelected && this.metaAudienceTargetingError() !== null) return `Meta Ads: ${this.metaAudienceTargetingError()}`;
 
     // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
@@ -5586,6 +5604,11 @@ export class ImplementationTabComponent implements OnInit {
   protected onMetaAudienceTargetingChange(targeting: MetaAudienceTargetingDraft): void {
     this.metaAudienceTargeting.set(targeting);
     this.emitDraft();
+  }
+
+  /** Back to Meta's defaults: the way past {@link metaAudienceTargetingHeld} while the section is hidden. */
+  protected clearMetaAudienceTargeting(): void {
+    this.onMetaAudienceTargetingChange(this.defaultMetaAudienceTargeting());
   }
 
   protected onMetaPixelIdInput(event: Event): void {
@@ -14068,10 +14091,6 @@ export class ImplementationTabComponent implements OnInit {
     return bidding === null ? {} : { bidding };
   }
 
-  /**
-   * Restores the Meta Instagram id and DSA disclosures, each only when present and a string — the
-   * same present-only rule as `restoreGoogleBidding`.
-   */
   /** `metaConfig.targeting` for the request, or nothing when it asks for nothing. `canSubmit` has already refused a bad one. */
   private metaTargetingField(): Pick<MetaCampaignCreateRequest, 'targeting'> {
     const targeting = compactMetaAudienceTargeting(this.metaAudienceTargetingRequested());
@@ -14087,6 +14106,10 @@ export class ImplementationTabComponent implements OnInit {
     return { ...t, genders: [...t.genders], customAudiences: [...t.customAudiences], excludedCustomAudiences: [...t.excludedCustomAudiences] };
   }
 
+  /**
+   * Restores the Meta Instagram id and DSA disclosures, each only when present and a string — the
+   * same present-only rule as `restoreGoogleBidding`.
+   */
   private restoreMetaInstagramDsa(draft: CampaignImplementationDraft): void {
     const fields = [
       ['metaInstagramUserId', 'instagramUserId'],

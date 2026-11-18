@@ -2378,7 +2378,8 @@ export interface MetaCampaignCreateRequest {
   bidding?: CampaignBiddingConfig;
   /**
    * Ad set audience targeting (#5905; linuxfoundation/lfx-v2-campaign-service#550). Sent ONLY when
-   * `CampaignListResult.metaAudienceTargetingEnabled` is an explicit yes; the create route drops it otherwise.
+   * `CampaignListResult.metaAudienceTargetingEnabled` is an explicit yes; the create route refuses it with a
+   * 400 otherwise, so a tab opened while the capability was on must reload.
    */
   targeting?: MetaAudienceTargeting;
 }
@@ -2411,6 +2412,19 @@ export type MetaCustomAudienceListKey = 'customAudiences' | 'excludedCustomAudie
 export interface MetaCustomAudienceListView {
   key: MetaCustomAudienceListKey;
   label: string;
+}
+
+/** One custom audience as a picker row or a chip: its id and the label it is shown with. */
+export interface MetaCustomAudienceChipView {
+  id: string;
+  label: string;
+}
+
+/** One custom-audience list with its current picks, as the Meta targeting component renders it. */
+export interface MetaCustomAudienceListState extends MetaCustomAudienceListView {
+  /** The box's label, with the count against the cap. */
+  heading: string;
+  chips: MetaCustomAudienceChipView[];
 }
 
 /** Why `metaConfig.targeting` cannot be sent: the field it names (`metaConfig.targeting.ageMin`, ...) and a sentence. */

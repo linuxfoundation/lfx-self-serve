@@ -6329,6 +6329,37 @@ describe('CampaignServiceClient.listGoogleAdsUserLists', () => {
   });
 });
 
+describe('CampaignServiceClient.listMetaCustomAudiences', () => {
+  const audiences = { account_id: 'act_100000001', audiences: [], audience_count: 0, truncated: false };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's custom-audience read, the project encoded, with no query", async () => {
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    expect(await new CampaignServiceClient().listMetaCustomAudiences(req, 'lf/ai')).toBe(audiences);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/meta-ads/custom-audiences', 'GET', undefined);
+  });
+
+  it('passes a search as q', async () => {
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    await new CampaignServiceClient().listMetaCustomAudiences(req, 'cncf', 'KubeCon');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/meta-ads/custom-audiences', 'GET', { q: 'KubeCon' });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listMetaCustomAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
 describe('CampaignServiceClient.listGoogleAdsAudiences', () => {
   beforeEach(() => {
     vi.clearAllMocks();

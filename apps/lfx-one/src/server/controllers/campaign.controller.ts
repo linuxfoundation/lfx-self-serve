@@ -9496,7 +9496,8 @@ export class CampaignController {
   private buildMetaConfig(body: CampaignCreateRequest, targeting: MetaAudienceTargeting | null = null): Record<string, unknown> | null {
     if (!body?.metaConfig) return null;
 
-    const { budgetUsd, targeting: _requested, ...rest } = body.metaConfig;
+    const { budgetUsd, ...rest } = body.metaConfig;
+    delete rest.targeting;
     return { ...rest, budget: budgetUsd, ...(targeting ? { targeting } : {}) };
   }
 

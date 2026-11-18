@@ -416,8 +416,8 @@ export enum ServerFeatureFlag {
    * DEPLOYED with its own `META_AUDIENCE_TARGETING_ENABLED` on, since campaign-service refuses any
    * `metaConfig.targeting` with a 400 otherwise. Only meaningful while the create cutover is on
    * (`cutoverOwnsCreate`). Off (the default), the section is hidden, the read answers 404 and the create
-   * route drops `targeting`. A request field and a read only, so flipping it back strands nothing. Same
-   * accepted values as the flags above.
+   * route refuses a `targeting` block with a 400, so a tab opened while the flag was on must reload. A
+   * request field and a read only, so flipping it back strands nothing. Same accepted values as the flags above.
    */
   CampaignServiceMetaAudienceTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING',
 

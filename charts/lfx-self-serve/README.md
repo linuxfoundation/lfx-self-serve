@@ -409,7 +409,8 @@ caller without `global_marketing_ops` while its selection is on.
 campaign-service accept `metaConfig.targeting` and answer `GET /projects/{projectId}/meta-ads/custom-audiences`
 ([campaign-service #550](https://github.com/linuxfoundation/lfx-v2-campaign-service/issues/550), v1.0.37)
 with its own `META_AUDIENCE_TARGETING_ENABLED` on? Off (the default), the Meta section shows no audience
-targeting and the create route drops `targeting`. On, every campaign manager may set age, gender and
+targeting and the create route refuses a `targeting` block with a 400, so a tab opened while the flag
+was on must reload. On, every campaign manager may set age, gender and
 Advantage+ audience; custom audiences are offered, and accepted, only from a caller holding
 `global_marketing_ops` on the project (403 otherwise, 503 when that cannot be checked).
 

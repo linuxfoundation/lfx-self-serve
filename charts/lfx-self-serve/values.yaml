@@ -770,7 +770,8 @@ environment:
   # JOBS) on.
   #
   # Off (the default), the section is hidden, the custom-audience read answers 404 and the create
-  # route drops `targeting`. Turning it back off strands nothing. Order: set campaign-service's
+  # route refuses a `targeting` block with a 400, so a tab opened while the flag was on must reload.
+  # Turning it back off strands nothing. Order: set campaign-service's
   # META_AUDIENCE_TARGETING_ENABLED, THEN this. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING:
     value:

@@ -113,6 +113,24 @@ describe('MetaAudienceTargetingComponent', () => {
     expect(targeting().excludedCustomAudiences).toEqual([]);
   });
 
+  it('says so when the ad account has no audiences, keeping the typed box', () => {
+    getMetaCustomAudiences.mockReturnValue(of({ ...AUDIENCES, audiences: [] }));
+    render(true);
+
+    expect(query('meta-audience-targeting-picker-empty')).not.toBeNull();
+    expect(query('meta-audience-targeting-customAudiences-add')).not.toBeNull();
+  });
+
+  it('keeps held picks removable for a caller without the relation, offering no box and reading nothing', () => {
+    render(false, { excludedCustomAudiences: ['23850000000000001'] });
+
+    expect(query('meta-audience-targeting-excludedCustomAudiences-add')).toBeNull();
+    expect(getMetaCustomAudiences).not.toHaveBeenCalled();
+    query('meta-audience-targeting-excludedCustomAudiences-remove-23850000000000001')?.click();
+    fixture.detectChanges();
+    expect(targeting().excludedCustomAudiences).toEqual([]);
+  });
+
   it('keeps the typed boxes when the list cannot be read', () => {
     getMetaCustomAudiences.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
