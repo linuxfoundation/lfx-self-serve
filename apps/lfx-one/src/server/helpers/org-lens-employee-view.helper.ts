@@ -16,7 +16,6 @@ const PERSONAL_FIELD_KEYS: ReadonlySet<string> = new Set(ORG_LENS_EMPLOYEE_VIEW_
 // technical identifiers survive: a git SSH remote (`git@github.com:org/repo.git`), a version spec (`pkg@1.2.3`).
 const EMBEDDED_EMAIL =
   /[A-Za-z0-9._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_]|[:/][\p{L}\p{N}_~])/gu;
-/[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![\p{L}\p{N}_-]|\.[\p{L}\p{N}_]|[:/][\p{L}\p{N}_~])/gu;
 
 /** A whole value that is an address, by the same rule as {@link EMBEDDED_EMAIL}: `git@git.example.com:org/repo.git` and `pkg@1.2.3` are not. */
 const EMAIL_SHAPE = /^[A-Za-z0-9._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})$/u;
