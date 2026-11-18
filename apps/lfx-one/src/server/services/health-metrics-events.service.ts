@@ -5,7 +5,6 @@ import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
-  HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
@@ -341,8 +340,9 @@ interface GeographyScopeRow {
   [periodColumn: string]: unknown;
 }
 
-/** One country's registrations per period, summed over the codes it is recorded under. */
+/** One country's registrations per period, summed over the rows it is recorded under. */
 interface GeographyCountryRow {
+  COUNTRY_CODE: string | null;
   COUNTRY: string | null;
   [periodColumn: string]: unknown;
 }
@@ -968,7 +968,7 @@ export class HealthMetricsEventsService {
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapSponsorshipPeriod(scope, tierRows, changes, range)) };
   }
 
-  /** Each period's countries represented, from the rollup, and the countries with the most registrations. */
+  /** Each period's countries represented, from the rollup, and every country's registrations, most first. */
   public async getGeography(req: Request, query: HealthMetricsEventsGeographyQuery): Promise<HealthMetricsEventsGeography> {
     const scope = await this.getGeographyScope(req, query);
     if (!scope?.FOUNDATION_ID) {
@@ -1116,7 +1116,10 @@ export class HealthMetricsEventsService {
     return result.rows[0];
   }
 
-  /** The view is already foundation-level, so rows are only summed where one country repeats under several codes. */
+  /**
+   * One row per country: by its resolved ISO code, or by its name where the view could not resolve one. The view is already
+   * foundation-level, so rows are only summed where one country repeats.
+   */
   private async getGeographyCountries(req: Request, foundationId: string): Promise<GeographyCountryRow[]> {
     // Suffixes come from constants, never from the request, so interpolating them is safe.
     const sums = HEALTH_METRICS_L2_RANGES.map((range) => {
@@ -1124,15 +1127,17 @@ export class HealthMetricsEventsService {
       return `SUM(${column}) AS ${column}`;
     }).join(',\n        ');
 
-    // Trimmed so blank and padded names cannot split one country or take a bar.
+    // Trimmed and upper-cased so a padded or lower-case code cannot split one country.
+    const code = "NULLIF(UPPER(TRIM(country_code)), '')";
     const sql = `
       SELECT
-        NULLIF(TRIM(country), '') AS country,
+        MAX(${code}) AS country_code,
+        MAX(NULLIF(TRIM(country), '')) AS country,
         ${sums}
       FROM ${REGISTRATION_COUNTRY_VIEW}
       WHERE project_id = ?
         AND NULLIF(TRIM(country), '') IS NOT NULL
-      GROUP BY NULLIF(TRIM(country), '')
+      GROUP BY COALESCE(${code}, NULLIF(TRIM(country), ''))
     `;
 
     const result = await executeSnowflakeViewRead<GeographyCountryRow>(this.snowflakeService, req, sql, [foundationId], {
@@ -1511,6 +1516,8 @@ function mapGeographyPeriod(scope: GeographyScopeRow, rows: GeographyCountryRow[
   const ranked = rows
     .map(
       (row): HealthMetricsEventsGeographyCountry => ({
+        // Only a two-letter code can key the map and the flag.
+        code: row.COUNTRY_CODE && /^[A-Z]{2}$/.test(row.COUNTRY_CODE) ? row.COUNTRY_CODE : null,
         country: row.COUNTRY ?? '',
         registrations: toNullableNumber(row[periodColumn('registration_count', range)]) ?? 0,
       })
@@ -1524,8 +1531,7 @@ function mapGeographyPeriod(scope: GeographyScopeRow, rows: GeographyCountryRow[
     changes: HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES.includes(range)
       ? { countries: toNullableNumber(scope[periodColumn('countries_change_pct', range)]) }
       : null,
-    topCountries: ranked.slice(0, HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES),
-    rankedCountries: ranked.length,
+    registrationsByCountry: ranked,
   };
 }
 

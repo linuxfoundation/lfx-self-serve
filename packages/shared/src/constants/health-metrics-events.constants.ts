@@ -337,6 +337,9 @@ export const HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED: HealthMetricsEventsGeog
 /** Countries ranked in the list. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES = 5;
 
+/** Outside the US counts every registration not from this country, as the design labels the metric. */
+export const HEALTH_METRICS_EVENTS_GEOGRAPHY_HOME_CODE = 'US';
+
 /** The event dialog Snapshot's periods, as the design orders them. */
 export const HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS: readonly HealthMetricsEventsSnapshotPeriodOption[] = [
   { value: '7d', label: '7d', days: 7 },
