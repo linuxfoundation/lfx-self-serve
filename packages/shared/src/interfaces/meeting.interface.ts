@@ -716,6 +716,15 @@ export interface MeetingRegistrationRemovalResult {
   remaining_rsvps?: MeetingRsvp[];
 }
 
+/** A confirmed organizer-side self-row delete, reconciled against the drawer's complete roster. */
+export interface MeetingSelfRegistrationRemovalEvent {
+  meeting_id: string;
+  /** IDs successfully deleted through the organizer's guest drawer. */
+  removed_registrant_ids: string[];
+  /** Other matching registrations in the complete roster; these were not necessarily deletion attempts. */
+  remaining_registrant_ids: string[];
+}
+
 /**
  * Registrants matched by the signed-in user's other verified emails.
  */
@@ -867,6 +876,34 @@ export interface MeetingRegistrantWithState extends MeetingRegistrant {
   tempId?: string;
   /** RSVP response status for this registrant */
   rsvpStatus?: RsvpResponse;
+  /** Added through "Add myself"; the only guest whose LFID and avatar go on the create body */
+  selfAdded?: boolean;
+}
+
+/**
+ * The signed-in user as a meeting guest, for the guest editors' "Add myself" action
+ * @description Built by `buildMeetingSelfGuest` from the session claims, the combined profile, the
+ * meeting-invite email preference and the current employer. `email` is the address the invite goes
+ * to; `matchEmails` holds the addresses those lookups returned, which `isMeetingSelfGuestListed`
+ * checks together with `username` to hide the action once the user is on the list.
+ */
+export interface MeetingSelfGuest {
+  /** Invite address: the meeting-invite preference, else the profile's primary email, else the session email */
+  email: string;
+  /** First name, or `''` when no source has one */
+  first_name: string;
+  /** Last name, or `''` when no source has one */
+  last_name: string;
+  /** Job title from the profile metadata */
+  job_title: string | null;
+  /** Current employer, else the profile's organization */
+  org_name: string | null;
+  /** LFID */
+  username: string | null;
+  /** Avatar URL */
+  avatar_url: string | null;
+  /** The user's emails the lookups returned (invite, primary, session), lower-cased and de-duplicated */
+  matchEmails: string[];
 }
 
 /**

@@ -609,6 +609,8 @@
           [occurrence]="occurrence()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
+          (selfAdded)="onSelfAdded($event.meeting_id)"
+          (selfRemoved)="onSelfRemoved($event)"
           (resolvedHostsChange)="drawerHosts.set($event)">
         </lfx-meeting-registrants-display>
       </p-drawer>

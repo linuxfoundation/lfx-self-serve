@@ -182,7 +182,8 @@ describe('MeetingJoinComponent', () => {
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             attachmentChanges: signal(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
-            clearRemovedRegistration: vi.fn(),
+            clearRemovedRegistration: vi.fn((id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id)))),
+            rememberRemovedRegistrants: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser,
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
@@ -237,6 +238,80 @@ describe('MeetingJoinComponent', () => {
     });
   });
 
+  it.each([false, true])('restores invitation controls after drawer self-add, previously removed: %s', async (previouslyRemoved) => {
+    if (previouslyRemoved) removedIds.set(new Set([MEETING_ID]));
+    const component = await createComponent();
+    expect(component.effectivelyInvited()).toBe(false);
+    const fetchesBefore = getPublicMeeting.mock.calls.length;
+
+    component.onSelfAdded(MEETING_ID);
+    // The page-data refresh uses the same real debounce timer as route changes.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.effectivelyInvited()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.canResendInvite()).toBe(true);
+    expect(removedIds().has(MEETING_ID)).toBe(false);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).toHaveBeenCalledWith(MEETING_ID);
+    expect(TestBed.inject(UserService).refreshUserMeetings).toHaveBeenCalledExactlyOnceWith(false);
+    expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(fetchesBefore);
+    expect(component.additionalRegistrantsCount()).toBe(0);
+  });
+
+  it('ignores a self-add event from a previously viewed meeting', async () => {
+    const component = await createComponent();
+    const fetchesBefore = getPublicMeeting.mock.calls.length;
+    component.onSelfAdded('another-meeting');
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(false);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).not.toHaveBeenCalled();
+    expect(TestBed.inject(UserService).refreshUserMeetings).not.toHaveBeenCalled();
+    expect(getPublicMeeting).toHaveBeenCalledTimes(fetchesBefore);
+  });
+
+  it.each([false, true])('reconciles drawer self-row deletion, another registration remains: %s', async (remaining) => {
+    const component = await createComponent();
+    component.onSelfAdded(MEETING_ID);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+    const result = { meeting_id: MEETING_ID, removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: remaining ? ['self-survivor'] : [] };
+    component.onSelfRemoved(result);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(remaining);
+    expect(component.canLeaveMeeting()).toBe(remaining);
+    expect(component.canResendInvite()).toBe(remaining);
+    expect(removedIds().has(MEETING_ID)).toBe(!remaining);
+    expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).toHaveBeenCalledWith(MEETING_ID, expect.any(String), result);
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+  });
+
+  it('ignores a self-row deletion belonging to another meeting', async () => {
+    const component = await createComponent();
+    component.onSelfRemoved({ meeting_id: 'another-meeting', removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: [] });
+    expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).not.toHaveBeenCalled();
+  });
+
+  it('does not restore a surviving date-scoped RSVP when a recurring date is unresolved after drawer deletion', async () => {
+    getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting({ recurrence: { type: 2, repeat_interval: 1 } }), project: buildProject() }));
+    const component = await createComponent();
+    const scoped = {
+      id: 'synthetic-survivor-rsvp',
+      meeting_id: MEETING_ID,
+      registrant_id: 'self-survivor',
+      response_type: 'accepted',
+      scope: 'single',
+      occurrence_id: '2525245200',
+      created_at: '2026-01-01T00:00:00Z',
+    } as MeetingRsvp;
+    vi.mocked(TestBed.inject(UserService).confirmedMeetingRsvps).mockReturnValue([scoped]);
+    component.onSelfRemoved({ meeting_id: MEETING_ID, removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: ['self-survivor'] });
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.currentUserRsvp()).toBeNull();
+    expect(component.effectivelyInvited()).toBe(true);
+  });
+
   it.each([
     ['composite route', '1-1700000000000'],
     ['upcoming lookup fallback', MEETING_ID],
@@ -274,6 +349,21 @@ describe('MeetingJoinComponent', () => {
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
     expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
     expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+  });
+
+  it('marks a failed roster as unconfirmed until a later fetch succeeds', async () => {
+    getMyMeetingRegistrants.mockReturnValue(throwError(() => new Error('roster fetch failed')));
+    const component = await createComponent();
+    const failed = () => (component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed();
+
+    expect(failed()).toBe(true);
+    expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
+
+    getMyMeetingRegistrants.mockReturnValue(of([]));
+    component.onRegistrantsRefreshRequested(0);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(failed()).toBe(false);
   });
 
   // The BFF returns no roster to an invitee when the organizer hides attendees, so the page must not
@@ -529,6 +619,7 @@ describe('MeetingJoinComponent', () => {
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
     expect(component.additionalRegistrantsCount()).toBe(2);
     expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
+    expect((component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed()).toBe(true);
 
     // A follow-up refetch that actually observes growth is the only way to prove the pad above
     // isn't just a leftover value the failure path left untouched — it must still be able to
@@ -538,6 +629,7 @@ describe('MeetingJoinComponent', () => {
 
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(11);
     expect(component.additionalRegistrantsCount()).toBe(1);
+    expect((component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed()).toBe(false);
   });
 
   it("falls back to an empty roster instead of leaking a previous occurrence's roster when the refetch for a newly-selected occurrence fails", async () => {
