@@ -12,6 +12,7 @@ import {
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
   ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP,
+  ORG_LENS_ROLLUP_ENABLED_FLAG,
   ORG_ROLE_GRANTS_HARD_CAP,
   ORG_STAFF_FAMILY_CLIMB_HARD_CAP,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
@@ -40,6 +41,7 @@ import { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 
 import { AccessCheckService } from './access-check.service';
+import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { cacheKeyNamespace, valkeyService } from './valkey.service';
@@ -164,6 +166,9 @@ export class OrgRoleGrantsService {
     if (!roster.isStaff) {
       return roster.staffCheck === 'failed' ? { ...rollUpSet, degraded: true, lookupOutcome: 'partial' } : rollUpSet;
     }
+    if (!(await LaunchDarklyServerService.getInstance().isFlagEnabled(req, ORG_LENS_ROLLUP_ENABLED_FLAG, false))) {
+      return rollUpSet;
+    }
 
     let staffFamily: OrgStaffRollUpFamily | null;
     try {
@@ -216,6 +221,14 @@ export class OrgRoleGrantsService {
     } finally {
       OrgRoleGrantsService.staffFamilyInFlight.delete(anchorUid);
     }
+  }
+
+  /** `b2b_org:<uid>#auditor` for each organization, asked in the same bounded waves as candidate classification; throws when a wave cannot be answered. */
+  public checkAuditorAccess(req: Request, orgUids: string[]): Promise<Map<string, boolean>> {
+    return this.runClassificationWaves(
+      req,
+      orgUids.map((uid) => ({ resource: 'b2b_org', id: uid, access: 'auditor' }))
+    );
   }
 
   /** Builds the roll-up set from a roster already loaded, for a caller that also needs the roster itself. */
@@ -325,7 +338,9 @@ export class OrgRoleGrantsService {
       }
       const parentDocs = await this.fetchOrgDetailsByUids(req, [parentUid]);
       const parentDoc = parentDocs.get(parentUid);
-      if (!parentDoc) break;
+      if (!parentDoc) {
+        throw new Error('computeStaffFamily: a parent company in the chain is missing from the index');
+      }
       docByUid.set(parentUid, parentDoc);
       chain.push(parentUid);
       rootUid = parentUid;

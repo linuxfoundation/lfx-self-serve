@@ -12,6 +12,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const getAccessAwareOrgs = vi.fn();
 const toRollUpSet = vi.fn();
 const getStaffFamily = vi.fn();
+const checkAuditorAccess = vi.fn();
+const isFlagEnabled = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 const getEffectiveUsername = vi.fn();
 
@@ -22,8 +24,10 @@ vi.mock('../services/org-role-grants.service', () => ({
     public getAccessAwareOrgs = getAccessAwareOrgs;
     public toRollUpSet = toRollUpSet;
     public getStaffFamily = getStaffFamily;
+    public checkAuditorAccess = checkAuditorAccess;
   },
 }));
+vi.mock('../services/launchdarkly-server.service', () => ({ LaunchDarklyServerService: { getInstance: () => ({ isFlagEnabled }) } }));
 // The per-org authorizer question (`b2b_org:<uid>#auditor`) the gate asks alongside the roster.
 vi.mock('../services/access-check.service', () => ({
   AccessCheckService: class {
@@ -507,11 +511,15 @@ describe('requireOrgLensAccess — family roll-up key', () => {
       complete,
     });
 
+    const auditorAnswers = (allowed: (uid: string) => boolean) => async (_req: unknown, uids: string[]) =>
+      new Map(uids.map((uid) => [`${uid}#auditor`, allowed(uid)]));
+
     beforeEach(() => {
       toRollUpSet.mockReturnValue({ families: [], degraded: false, lookupOutcome: 'ok' });
       getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: true, staffCheck: 'ok' });
-      checkSingleAccessStrict.mockResolvedValue(true);
+      checkAuditorAccess.mockImplementation(auditorAnswers(() => true));
       getStaffFamily.mockResolvedValue(staffFamily());
+      isFlagEnabled.mockResolvedValue(true);
     });
 
     it('serves a family the caller holds no grant in, rebuilt from the key’s top account', async () => {
@@ -520,6 +528,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
       const { next } = await runRollUp(req);
 
       expect(statusOf(next)).toBe('allow');
+      expect(isFlagEnabled).toHaveBeenCalledWith(req, 'org-lens-rollup-enabled', false);
       expect(getStaffFamily).toHaveBeenCalledWith(req, ROOT);
       await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toEqual({
         rollUpKey: ROLL_UP,
@@ -530,18 +539,40 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     });
 
     it('still checks every member and leaves out one the caller cannot read', async () => {
-      checkSingleAccessStrict.mockImplementation(async (_req: unknown, request: { id: string }) => request.id === ROOT);
+      checkAuditorAccess.mockImplementation(auditorAnswers((uid) => uid === ROOT));
       const req = buildRollUpReq();
 
       const { next } = await runRollUp(req);
 
       expect(statusOf(next)).toBe('allow');
-      expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: SUBSIDIARY, access: 'auditor' });
+      expect(checkAuditorAccess).toHaveBeenCalledWith(req, [ROOT, SUBSIDIARY]);
       expect((await resolveOrgLensRollUp(req, ROLL_UP, 'handler')).members).toEqual([org(ROOT, 'Parent Co')]);
     });
 
+    it('asks the authorizer once for the whole family, only about members the roster does not list', async () => {
+      getAccessAwareOrgs.mockResolvedValue({ ...grants([ROOT]), isStaff: true, staffCheck: 'ok' });
+      const req = buildRollUpReq();
+
+      const { next } = await runRollUp(req);
+      await resolveOrgLensRollUp(req, ROLL_UP, 'handler');
+
+      expect(statusOf(next)).toBe('allow');
+      expect(checkAuditorAccess).toHaveBeenCalledTimes(1);
+      expect(checkAuditorAccess).toHaveBeenCalledWith(req, [SUBSIDIARY]);
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    });
+
+    it('returns a retriable 503 when the batched member check cannot be answered', async () => {
+      checkAuditorAccess.mockRejectedValue(new Error('access-check unreachable'));
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe(503);
+      expect(errorOf(next)).toMatchObject({ path: '/access-check' });
+    });
+
     it('refuses when no member passes its read check', async () => {
-      checkSingleAccessStrict.mockResolvedValue(false);
+      checkAuditorAccess.mockImplementation(auditorAnswers(() => false));
 
       const { next } = await runRollUp(buildRollUpReq());
 
@@ -554,6 +585,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
       const { next } = await runRollUp(buildRollUpReq());
 
       expect(statusOf(next)).toBe(403);
+      expect(checkAuditorAccess).not.toHaveBeenCalled();
       expect(checkSingleAccessStrict).not.toHaveBeenCalled();
     });
 
@@ -585,6 +617,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
 
     it('serves a family in the grant families from them, without rebuilding it', async () => {
       toRollUpSet.mockReturnValue(rollUpSet());
+      getAccessAwareOrgs.mockResolvedValue({ ...grants([ROOT, SUBSIDIARY]), isStaff: true, staffCheck: 'ok' });
 
       const { next } = await runRollUp(buildRollUpReq());
 
@@ -594,6 +627,25 @@ describe('requireOrgLensAccess — family roll-up key', () => {
 
     it('returns a 503, not a 403, when the staff check could not be answered', async () => {
       getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: false, staffCheck: 'failed' });
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe(503);
+      expect(getStaffFamily).not.toHaveBeenCalled();
+    });
+
+    it('refuses a family the caller holds no grant in while the roll-up flag is off for them', async () => {
+      isFlagEnabled.mockResolvedValue(false);
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe(403);
+      expect(getStaffFamily).not.toHaveBeenCalled();
+    });
+
+    it('answers 503, as for any caller, for a family missing from a partial set while the flag is off', async () => {
+      isFlagEnabled.mockResolvedValue(false);
+      toRollUpSet.mockReturnValue({ families: [], degraded: true, lookupOutcome: 'partial' });
 
       const { next } = await runRollUp(buildRollUpReq());
 

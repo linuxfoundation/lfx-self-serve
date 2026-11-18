@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCESS_UNVERIFIABLE_MESSAGE } from '@lfx-one/shared/constants';
+import { ORG_ACCESS_UNVERIFIABLE_MESSAGE, ORG_LENS_ROLLUP_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import type { AccessAwareOrgsResult, OrgLensRollUpScope, OrgRollUpSetOrg, OrgStaffRollUpFamily } from '@lfx-one/shared/interfaces';
 import { orgRollUpRootUid } from '@lfx-one/shared/utils/org-lens-url.utils';
 import type { Request } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
+import { LaunchDarklyServerService } from '../services/launchdarkly-server.service';
 import { logger } from '../services/logger.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -85,7 +86,8 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
 
   let family = rollUpSet.families.find((candidate) => candidate.rootUid === rootUid);
   let familyComplete = true;
-  if (!family && roster.isStaff) {
+  let checkAuditor: ((orgUid: string) => Promise<boolean>) | undefined;
+  if (!family && roster.isStaff && (await LaunchDarklyServerService.getInstance().isFlagEnabled(req, ORG_LENS_ROLLUP_ENABLED_FLAG, false))) {
     let staffFamily: OrgStaffRollUpFamily | null;
     try {
       staffFamily = await roleGrants.getStaffFamily(req, rootUid);
@@ -101,6 +103,10 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     }
     family = staffFamily.family;
     familyComplete = staffFamily.complete;
+    checkAuditor = batchAuditorChecks(
+      req,
+      family.orgs.map((org) => org.accountId).filter((uid) => !roster.resolved.has(uid))
+    );
   }
   if (!family) {
     if (rollUpSet.degraded || roster.staffCheck === 'failed') {
@@ -110,7 +116,7 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
   }
 
   const sharedRoster = Promise.resolve(roster);
-  const checks = await Promise.allSettled(family.orgs.map((org) => assertOrgLensRead(req, org.accountId, operation, sharedRoster)));
+  const checks = await Promise.allSettled(family.orgs.map((org) => assertOrgLensRead(req, org.accountId, operation, sharedRoster, checkAuditor)));
   const members: OrgRollUpSetOrg[] = [];
   checks.forEach((check, index) => {
     if (check.status === 'fulfilled') {
@@ -141,4 +147,9 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     });
   }
   return { rollUpKey, rootUid, members, complete };
+}
+
+function batchAuditorChecks(req: Request, orgUids: string[]): (orgUid: string) => Promise<boolean> {
+  let answers: Promise<Map<string, boolean>> | undefined;
+  return (orgUid) => (answers ??= roleGrants.checkAuditorAccess(req, orgUids)).then((byKey) => byKey.get(`${orgUid}#auditor`) === true);
 }

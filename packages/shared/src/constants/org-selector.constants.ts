@@ -26,6 +26,7 @@ export const ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY = 8;
 /** LFXV2-3029 — global ceiling on connected-component candidates per role-grants computation, across every direct grant's walk. `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` bounds a single walk; without a bound spanning all of them, a caller with many direct grants in disjoint hierarchies multiplies the two caps into a six-figure authorizer fan-out. */
 export const ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP = 2000;
 
+/** #5901 — max companies in the parent chain a staff family lookup climbs to find the top account; a deeper chain fails the lookup instead of holding the request through more upstream calls. */
 export const ORG_STAFF_FAMILY_CLIMB_HARD_CAP = 25;
 
 /** LFXV2-3029 — max concurrent authorizer batches when classifying connected-component candidates. `checkAccessStrict` chunks internally but dispatches every chunk at once, so the pool has to be imposed by the caller. */

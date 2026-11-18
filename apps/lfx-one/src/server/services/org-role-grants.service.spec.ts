@@ -34,6 +34,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // (`is_parent: false`, no `parent_uid`), so the walk never runs and the values don't matter.
     ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP: 4,
     ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP: 6,
+    ORG_LENS_ROLLUP_ENABLED_FLAG: 'org-lens-rollup-enabled',
     ORG_ROLE_GRANTS_HARD_CAP: 500,
     ORG_STAFF_FAMILY_CLIMB_HARD_CAP: 3,
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
@@ -45,12 +46,13 @@ vi.mock('@lfx-one/shared/utils', () => ({
   isFilterSafeIdentifier: (value: string) => /^[a-z0-9_-]+$/i.test(value),
 }));
 
-const { proxyRequest, checkAccess, checkAccessStrict, getJson, setJson } = vi.hoisted(() => ({
+const { proxyRequest, checkAccess, checkAccessStrict, getJson, setJson, isFlagEnabled } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   checkAccess: vi.fn(),
   checkAccessStrict: vi.fn(),
   getJson: vi.fn(),
   setJson: vi.fn(),
+  isFlagEnabled: vi.fn(),
 }));
 
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn(), error: vi.fn(), startOperation: vi.fn(), success: vi.fn() } }));
@@ -66,6 +68,7 @@ vi.mock('./access-check.service', () => ({
   },
 }));
 vi.mock('./valkey.service', () => ({ valkeyService: { getJson, setJson }, cacheKeyNamespace: () => 'test' }));
+vi.mock('./launchdarkly-server.service', () => ({ LaunchDarklyServerService: { getInstance: () => ({ isFlagEnabled }) } }));
 
 const { OrgRoleGrantsService } = await import('./org-role-grants.service');
 
@@ -126,6 +129,7 @@ beforeEach(() => {
   classifyAnswer = async () => new Map();
   checkAccessStrict.mockImplementation(async (_req: unknown, requests: AccessBatch) => (isTeamBatch(requests) ? teamAnswer() : classifyAnswer(requests)));
   checkAccess.mockResolvedValue(new Map());
+  isFlagEnabled.mockResolvedValue(true);
 });
 
 describe('OrgRoleGrantsService — LF team determination', () => {
@@ -877,6 +881,27 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
     expect(waveSizes.reduce((a, b) => a + b, 0)).toBe(PER_ROOT_CAP * 2);
   });
 
+  it('asks the batched auditor question in the same bounded waves', async () => {
+    const uids = ['org-1', 'org-2', 'org-3', 'org-4', 'org-5'];
+    classifyAnswer = async (requests) => new Map(requests.map((request) => [`${request.id}#${request.access}`, request.id !== 'org-3']));
+
+    const answers = await new OrgRoleGrantsService().checkAuditorAccess(req, uids);
+
+    const waveSizes = classifyCalls().map((call) => (call[1] as AccessBatch).length);
+    expect(waveSizes).toEqual([4, 1]);
+    expect(classifyCalls().flatMap((call) => call[1] as AccessBatch)).toEqual(uids.map((id) => ({ resource: 'b2b_org', id, access: 'auditor' })));
+    expect(answers.get('org-1#auditor')).toBe(true);
+    expect(answers.get('org-3#auditor')).toBe(false);
+  });
+
+  it('fails the batched auditor question when a wave cannot be answered', async () => {
+    classifyAnswer = async () => {
+      throw new Error('access-check unreachable');
+    };
+
+    await expect(new OrgRoleGrantsService().checkAuditorAccess(req, ['org-1'])).rejects.toThrow('access-check unreachable');
+  });
+
   describe('roll-up set (#4126)', () => {
     function familyShape(response: { families: { rootUid: string; orgs: { uid: string }[] }[] }): { rootUid: string; orgs: string[] }[] {
       return response.families.map((family) => ({ rootUid: family.rootUid, orgs: family.orgs.map((org) => org.uid) }));
@@ -1173,6 +1198,29 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
       expect(familyShape(anchored)).toEqual([{ rootUid: 'solo', orgs: ['solo'] }]);
     });
 
+    it('ignores the selected company for a staff caller while the roll-up flag is off for them', async () => {
+      isFlagEnabled.mockResolvedValue(false);
+      seedFamilies([{ uid: 'solo', role: 'writer' }]);
+
+      const anchored = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'leaf');
+      const walkCallsWithAnchor = orgWalkCalls().length;
+      proxyRequest.mockClear();
+      const plain = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME);
+
+      expect(isFlagEnabled).toHaveBeenCalledWith(req, 'org-lens-rollup-enabled', false);
+      expect(anchored).toEqual(plain);
+      expect(walkCallsWithAnchor).toBe(orgWalkCalls().length);
+      expect(familyShape(anchored)).toEqual([{ rootUid: 'solo', orgs: ['solo'] }]);
+    });
+
+    it('does not evaluate the roll-up flag without an anchor', async () => {
+      seedFamilies([{ uid: 'solo', role: 'writer' }]);
+
+      await new OrgRoleGrantsService().getRollUpSet(req, USERNAME);
+
+      expect(isFlagEnabled).not.toHaveBeenCalled();
+    });
+
     it('answers an anchored request as partial, keeping the grant families, when the staff check could not be made', async () => {
       teamAnswer = async () => {
         throw new Error('access-check unreachable');
@@ -1300,6 +1348,24 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
 
       expect(result?.family.rootUid).toBe('cyc-a');
       expect(result?.family.orgs.map((org) => org.uid)).toEqual(['cyc-a', 'cyc-b']);
+    });
+
+    describe('a parent the index does not hold', () => {
+      it('fails the lookup instead of treating the child as the top account', async () => {
+        seedFamilies([], { missingDocs: ['top'] });
+
+        await expect(new OrgRoleGrantsService().getStaffFamily(req, 'leaf')).rejects.toThrow();
+      });
+
+      it('answers the roll-up set as partial and caches nothing', async () => {
+        const store = useCacheStore();
+        seedFamilies([], { missingDocs: ['top'] });
+
+        const response = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'leaf');
+
+        expect(response).toEqual({ families: [], degraded: true, lookupOutcome: 'partial' });
+        expect([...store.keys()].some((key) => key.includes(':org-family:'))).toBe(false);
+      });
     });
 
     describe('a parent chain deeper than the climb cap', () => {
