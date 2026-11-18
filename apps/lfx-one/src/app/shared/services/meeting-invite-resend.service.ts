@@ -92,7 +92,8 @@ export class MeetingInviteResendService {
     const label = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'this guest';
     confirmationService.confirm({
       header: 'Resend invitation',
-      message: `Resend the meeting invitation to ${label}?`,
+      // PrimeNG renders a confirmation message as HTML, so the guest's name is escaped.
+      message: `Resend the meeting invitation to ${escapeHtml(label)}?`,
       // PrimeNG sizes the confirm icon at 2rem (font-size, width and height), which dwarfs this short prompt; scale it down for this dialog only.
       icon: 'fa-light fa-paper-plane !text-xl !w-auto !h-auto',
       acceptLabel: 'Resend',

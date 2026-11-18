@@ -797,6 +797,14 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.canLeaveMeeting()).toBe(false);
   });
 
+  it('escapes the title, since PrimeNG renders the message as HTML', async () => {
+    const component = await mount({ ...INVITEE, title: 'TSC <EU/APAC> & sync' } as Meeting);
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain('"TSC &lt;EU/APAC&gt; &amp; sync"');
+  });
+
   it('says the removal covers every occurrence', async () => {
     const component = await mount();
 

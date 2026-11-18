@@ -1331,6 +1331,16 @@ describe('MeetingJoinComponent', () => {
       expect(confirm.mock.calls[0][0].message).toContain("it won't invite you to this meeting again");
     });
 
+    it('escapes the title, since PrimeNG renders the message as HTML', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true, title: 'TSC <EU/APAC> & sync' }));
+      const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+      const confirm = vi.spyOn(confirmation, 'confirm').mockReturnValue(confirmation);
+
+      fixture.componentInstance.confirmLeaveMeeting();
+
+      expect(confirm.mock.calls[0][0].message).toContain('"TSC &lt;EU/APAC&gt; &amp; sync"');
+    });
+
     it('offers it to an organizer who is also registered, and says they stay an organizer', async () => {
       const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
       const confirmation = fixture.debugElement.injector.get(ConfirmationService);

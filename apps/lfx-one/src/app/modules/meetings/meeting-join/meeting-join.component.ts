@@ -63,6 +63,7 @@ import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
   canScopeAttachmentToOccurrence,
+  escapeHtml,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
   getMeetingSelfRemovalMessage,
@@ -848,7 +849,11 @@ export class MeetingJoinComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting()?.invited_via_committee, organizer: this.meeting()?.organizer }),
+      // PrimeNG renders a confirmation message as HTML, so the title is escaped.
+      message: getMeetingSelfRemovalMessage(escapeHtml(this.meetingTitle()), {
+        viaCommittee: this.meeting()?.invited_via_committee,
+        organizer: this.meeting()?.organizer,
+      }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',

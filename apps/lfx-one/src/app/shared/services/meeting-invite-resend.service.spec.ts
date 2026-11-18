@@ -70,6 +70,12 @@ describe('MeetingInviteResendService', () => {
       expect(resendMeetingInvitation).not.toHaveBeenCalled();
     });
 
+    it("escapes the guest's name, since PrimeNG renders the message as HTML", () => {
+      service.confirmAndResend(confirmationService, MEETING_UID, { ...registrant, first_name: '<b>Jane</b>', last_name: '& Co' });
+
+      expect(confirm.mock.calls[0][0].message).toBe('Resend the meeting invitation to &lt;b&gt;Jane&lt;/b&gt; &amp; Co?');
+    });
+
     it('resends to the registrant and shows a success toast once accepted', () => {
       service.confirmAndResend(confirmationService, MEETING_UID, registrant);
       acceptConfirmation();
