@@ -988,7 +988,7 @@ export class AccountContextService {
   }
 
   private initStaffRollUpAnchor(): string | null {
-    if (!this.rollUpFlag.enabled() || !this.orgRoleGrantsService.isStaff()) {
+    if (!this.orgRoleGrantsService.isStaff() || !this.rollUpFlag.enabled()) {
       return null;
     }
     const uid = this.selectedRollUpRootUid() ?? this.selectedAccount().uid;
