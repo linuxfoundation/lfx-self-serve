@@ -4804,6 +4804,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
       linkedInTargetingEditEnabled: false,
+      linkedInAccountSelectionEnabled: false,
+      linkedInDailyCapEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5286,6 +5288,55 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** The LinkedIn account-selection capability (#5809): the cutover AND its own flag, and not any sibling's. */
+  it.each([
+    [{ cutover: true, selection: true, others: false }, true],
+    [{ cutover: true, selection: false, others: true }, false],
+    [{ cutover: false, selection: true, others: true }, false],
+  ])('reports the LinkedIn account-selection capability from the cutover and its own flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (
+        flag === ServerFeatureFlag.CampaignServiceCreate ||
+        flag === ServerFeatureFlag.CampaignServiceBriefs ||
+        flag === ServerFeatureFlag.CampaignServiceJobs
+      )
+        return flags.cutover;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAccountSelection) return flags.selection;
+      return flags.others;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInAccountSelectionEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, others: false }, true],
+    [{ create: false, briefs: true, jobs: true, others: true }, false],
+  ])('reports the LinkedIn daily-cap capability from the cutover alone (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      return flags.others;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInDailyCapEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The Microsoft upload capability: the cutover AND its own flag, and not any sibling's. */
   it.each([
     [{ create: true, briefs: true, jobs: true, microsoft: true, others: false }, true],
@@ -5357,6 +5408,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
       linkedInTargetingEditEnabled: false,
+      linkedInAccountSelectionEnabled: false,
+      linkedInDailyCapEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -6036,6 +6089,24 @@ describe('CampaignServiceClient account monitors', () => {
 
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-google-ads/account-monitor', 'GET', { days: 30 });
   });
+
+  it('omits account_id for a LinkedIn monitor read with no account, so campaign-service picks it (#5889)', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'tlf', undefined, 30);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-linkedin-ads/account-monitor', 'GET', { days: 30 });
+  });
+
+  it.each(['getMetaAdsAccountMonitor', 'getRedditAdsAccountMonitor', 'getMicrosoftAdsAccountMonitor', 'getTwitterAdsAccountMonitor'] as const)(
+    '%s refuses a read with no account, which campaign-service requires, without calling the proxy',
+    async (method) => {
+      const caught = await new CampaignServiceClient()[method](req, 'tlf', undefined as unknown as string, 30).catch((e: unknown) => e);
+
+      expect((caught as ServiceValidationError).validationErrors[0].field).toBe('accountKey');
+      expect(proxyRequest).not.toHaveBeenCalled();
+    }
+  );
 
   it('encodes the project as a path segment', async () => {
     proxyRequest.mockResolvedValueOnce(monitor);

@@ -6,11 +6,17 @@ import {
   HEALTH_METRICS_LINE_CHART_QUARTER_STEPS,
   HEALTH_METRICS_LINE_CHART_VIEW_WIDTH,
 } from '../constants/health-metrics-line-chart.constants';
+import {
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX,
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX,
+} from '../constants/health-metrics-overview.constants';
 
 import type { HealthMetricsChartTipView } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsLineChartInput,
   HealthMetricsLineChartTickView,
+  HealthMetricsLineChartTipPlacement,
   HealthMetricsLineChartView,
 } from '../interfaces/health-metrics-line-chart.interface';
 
@@ -100,12 +106,19 @@ export function buildHealthMetricsLineChart(input: HealthMetricsLineChartInput):
  * times a power of ten). A chart with nothing above zero still gets an axis of 4.
  */
 export function healthMetricsLineChartCountCeiling(peak: number): number {
-  // Never below 4, so a tiny peak still labels its quarters with whole, distinct numbers.
+  return healthMetricsQuarterCeiling(peak, HEALTH_METRICS_LINE_CHART_QUARTER_STEPS);
+}
+
+/**
+ * A peak rounded up so each of the axis's four quarters is one of `steps` times a power of ten; never below 4, so a tiny
+ * peak still labels its quarters distinctly. `wholeQuarters` skips a step that would make a quarter fractional.
+ */
+export function healthMetricsQuarterCeiling(peak: number, steps: readonly number[], wholeQuarters = false): number {
   if (!Number.isFinite(peak) || peak <= 4) return 4;
 
   const quarter = peak / 4;
   const magnitude = 10 ** Math.floor(Math.log10(quarter));
-  const step = HEALTH_METRICS_LINE_CHART_QUARTER_STEPS.find((candidate) => candidate * magnitude >= quarter) ?? 10;
+  const step = steps.find((candidate) => candidate * magnitude >= quarter && (!wholeQuarters || Number.isInteger(candidate * magnitude))) ?? 10;
   return step * magnitude * 4;
 }
 
@@ -143,4 +156,19 @@ function lineChartTickAlign(index: number, count: number): HealthMetricsLineChar
 /** "Title, Label value, Label value": the popup as one line, for the column's accessible name. */
 function lineChartTipLabel(tip: HealthMetricsChartTipView): string {
   return [tip.title, ...tip.rows.map((row) => `${row.label} ${row.value}`)].join(', ');
+}
+
+/**
+ * The design's popup placement beside a point `offsetPct` across its column: 12px right of it, or left of it when only
+ * the left has room in the viewport. A screen with room on neither side shifts it to stay 8px inside.
+ */
+export function placeHealthMetricsChartTip(offsetPct: number, pointPx: number, viewportPx: number): HealthMetricsLineChartTipPlacement {
+  if (viewportPx - pointPx >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { left: `calc(${offsetPct}% + 12px)`, right: null };
+  if (pointPx >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { left: null, right: `calc(${100 - offsetPct}% + 12px)` };
+
+  const left = Math.max(
+    HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
+    viewportPx - HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX - HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX
+  );
+  return { left: `calc(${offsetPct}% + ${Math.round(left - pointPx)}px)`, right: null };
 }

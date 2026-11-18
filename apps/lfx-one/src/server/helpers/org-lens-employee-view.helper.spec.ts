@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ getOrgLensViewMode: vi.fn() }));
 vi.mock('./org-lens-read-access.helper', () => ({ getOrgLensViewMode: mocks.getOrgLensViewMode }));
 
-const { redactForEmployeeView, stripPersonalFields } = await import('./org-lens-employee-view.helper');
+const { redactForEmployeeView, scrubFreeText, stripPersonalFields } = await import('./org-lens-employee-view.helper');
 
 const page = { page: 'projects' };
 
@@ -68,6 +68,69 @@ describe('stripPersonalFields', () => {
 
     expect(stripPersonalFields(input, { page: 'projects', exceptions })).toEqual({ email: 'maintainer@acme.example' });
     expect(stripPersonalFields(input, { page: 'events', exceptions })).toEqual({});
+  });
+});
+
+describe('embedded personal data in free text', () => {
+  it('removes an email inside a sentence', () => {
+    expect(stripPersonalFields({ message: 'Fix bug\n\nSigned-off-by: Ada <ada@acme.example>' }, page)).toEqual({
+      message: 'Fix bug\n\nSigned-off-by: Ada <>',
+    });
+    expect(stripPersonalFields({ note: 'contact ada@acme.example for access' }, page)).toEqual({ note: 'contact  for access' });
+  });
+
+  it('keeps git remotes and version specs, which only look like addresses', () => {
+    expect(scrubFreeText('clone git@git.example.com:acme-org/repo.git then pin pkg@1.2.3')).toBe(
+      'clone git@git.example.com:acme-org/repo.git then pin pkg@1.2.3'
+    );
+    expect(scrubFreeText('contact ada@acme.example, thanks')).toBe('contact , thanks');
+  });
+
+  it('keeps whole-value git remotes and version specs through stripPersonalFields', () => {
+    const input = {
+      remote: 'git@git.example.com:acme-org/repo.git',
+      pin: 'pkg@1.2.3',
+      list: ['git@git.example.com:acme-org/repo.git', 'ada@example.com'],
+      owner: 'ada@example.com',
+    };
+    expect(stripPersonalFields(input, { page: 'projects' })).toEqual({ remote: input.remote, pin: input.pin, list: [input.remote] });
+  });
+
+  it('removes addresses on punycode and non-ASCII top-level domains', () => {
+    // Built at runtime: the fixture-domain check only knows ASCII reserved domains, and these TLDs are the point of the test.
+    const punycode = ['ada', 'acme.xn--p1ai'].join('@');
+    const unicode = ['ada', 'acme.рф'].join('@');
+    expect(stripPersonalFields({ owner: punycode, list: [punycode, unicode] }, page)).toEqual({ list: [] });
+    expect(scrubFreeText(`write ${punycode} or ${unicode} today`)).toBe('write  or  today');
+    expect(scrubFreeText('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git')).toBe('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git');
+  });
+
+  it('does not swallow unspaced CJK text next to an address', () => {
+    expect(scrubFreeText('联系ada@example.com')).toBe('联系');
+    expect(stripPersonalFields({ note: '联系ada@example.com 谢谢' }, page)).toEqual({ note: '联系 谢谢' });
+  });
+
+  it('removes embedded emails in nested objects and arrays', () => {
+    const input = { rows: [{ detail: { text: 'ping bob@team.example now' } }], tags: ['ok', 'see carol@team.example', 'dan@team.example'] };
+
+    expect(stripPersonalFields(input, page)).toEqual({ rows: [{ detail: { text: 'ping  now' } }], tags: ['ok', 'see '] });
+  });
+
+  it('removes mailto links and personal profile URLs but keeps ordinary URLs', () => {
+    expect(scrubFreeText('mail mailto:ada@acme.example or https://www.linkedin.com/in/ada-lovelace today')).toBe('mail  or  today');
+    expect(scrubFreeText('see https://github.com/kubernetes/kubernetes and https://acme.example/about')).toBe(
+      'see https://github.com/kubernetes/kubernetes and https://acme.example/about'
+    );
+  });
+
+  it('leaves text with no personal data and non-string values alone', () => {
+    expect(stripPersonalFields({ text: 'plain text', n: 4, ok: true, none: null }, page)).toEqual({ text: 'plain text', n: 4, ok: true, none: null });
+  });
+
+  it('keeps an excepted field exactly as supplied', () => {
+    const exceptions: OrgLensEmployeeViewException[] = [{ page: 'projects', field: 'note', reason: 'public', approvedBy: 'product owner' }];
+
+    expect(stripPersonalFields({ note: 'a@b.example here' }, { page: 'projects', exceptions })).toEqual({ note: 'a@b.example here' });
   });
 });
 

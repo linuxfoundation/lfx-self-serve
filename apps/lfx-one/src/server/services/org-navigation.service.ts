@@ -193,7 +193,8 @@ export class OrgNavigationService {
       const verdict = await this.employeeView.resolveReduced(req);
       // An authorizer-only reader who also qualifies is listed as a FULL company (`fullAccess`), never employee-view and never
       // CLA-only: the client cannot see authorizer entitlements, so the row is how it learns the company opens in full.
-      const org = verdict.eligible ? verdict.org : verdict.reason === 'holds-full-access' ? verdict.org : undefined;
+      const listed = verdict.eligible || verdict.reason === 'holds-full-access';
+      const org = listed ? verdict.org : undefined;
       if (!org) {
         return { item: null, failed: false };
       }
