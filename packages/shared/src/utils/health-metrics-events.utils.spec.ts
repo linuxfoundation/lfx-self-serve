@@ -1007,6 +1007,9 @@ describe('buildHealthMetricsEventsOrganizationRowView', () => {
     ['Associate', 'Associate'],
     [null, 'Member'],
     ['  ', 'Member'],
+    // The tier is current and membership is the period's, so a period member's current non-member tier is no tier.
+    ['Non-Member', 'Member'],
+    ['non member', 'Member'],
   ])('reads a member tier of %o as %s', (membershipTier, label) => {
     expect(buildHealthMetricsEventsOrganizationRowView(organization({ membershipTier })).membershipLabel).toBe(label);
   });

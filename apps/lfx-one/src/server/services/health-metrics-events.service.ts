@@ -925,6 +925,7 @@ export class HealthMetricsEventsService {
       FROM totals
       LEFT JOIN page ON TRUE
       LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
+      -- One row per company at the foundation's all-projects grain, as the Engagement read takes it; MAX only drops repeats.
       LEFT JOIN (
         SELECT account_id, MAX(NULLIF(TRIM(membership_tier), '')) AS membership_tier
         FROM ${MEMBERSHIP_TIER_VIEW}

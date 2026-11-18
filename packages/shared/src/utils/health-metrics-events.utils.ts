@@ -115,11 +115,15 @@ export function buildHealthMetricsEventsOrganizationRowView(organization: Health
   };
 }
 
-/** A member's tier, a reserved one spelled as the Members tab spells it; "Member" when the view has none. */
+/**
+ * A member's tier, a reserved one spelled as the Members tab spells it; "Member" when the view has none. The tier is current
+ * while membership is the period's, so a current "Non-Member" tier on a period member is no tier.
+ */
 function formatOrganizationMembership(organization: HealthMetricsEventsOrganization): string {
   if (!organization.isMember) return HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.nonMember;
 
-  const tierName = organization.membershipTier?.trim() ?? '';
+  const raw = organization.membershipTier?.trim() ?? '';
+  const tierName = raw.toLowerCase().replace(/[^a-z]/g, '') === 'nonmember' ? '' : raw;
   const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((tier) => tier === tierName.toLowerCase());
   if (reserved) return HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved];
   return tierName || HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.member;
