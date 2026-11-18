@@ -6,6 +6,7 @@ import {
   ACCOUNT_MONITOR_CURRENCY_PATTERN,
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
   ACCOUNT_MONITOR_NO_CONNECTION_CODE,
+  ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE,
   ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE,
   ERROR_CODES,
   META_ADS_MONITOR_ACCOUNT_ID_PATTERN,
@@ -31,6 +32,7 @@ import type {
   MetaMonitorResponse,
   MonitorConnectionAccount,
   MonitorConnectionState,
+  MonitorSystemAccountRead,
   RedditMonitorResponse,
   ReportBackedMonitorResponse,
 } from '@lfx-one/shared/interfaces';
@@ -307,6 +309,20 @@ export function toRecordedCampaignsGoogleMonitorResponse(payload: CampaignServic
 }
 
 /**
+ * What a LinkedIn, Reddit or Meta monitor read through the LF system account adds to its response
+ * (#5889): the account campaign-service read, and the empty state a project with no campaigns
+ * recorded on the platform gets instead of "no active campaigns for this account". An empty
+ * `account_id` (LinkedIn with nothing recorded) is null, never an empty string the panel would print.
+ */
+export function toSystemAccountRead(payload: CampaignServiceAccountMonitor, platformLabel: string): MonitorSystemAccountRead {
+  const accountId = typeof payload.account_id === 'string' ? payload.account_id.trim() : '';
+  return {
+    accountId: accountId === '' ? null : accountId,
+    emptyMessage: `No ${platformLabel} campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.`,
+  };
+}
+
+/**
  * campaign-service's Microsoft Ads or X account monitor as the Monitor tab's report-backed panel
  * renders it: the Reddit/Meta rows and totals, plus the report's freshness.
  *
@@ -530,10 +546,10 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
 }
 
 /**
- * Why the Google Ads monitor cannot read through this project's own connection (#4526), as the error
- * its panel shows. The Google panel has no account picker, so the route resolves the account from the
- * connection itself and has no connection notice to fall back on: each state becomes a sentence the
- * panel prints.
+ * Why an account monitor cannot read through this project's own connection, as the error its panel
+ * shows: the Google Ads monitor (#4526), which has no account picker, and a LinkedIn, Reddit or Meta
+ * read the BFF resolves itself because the tab sent no account (#5889). Each state becomes a sentence
+ * the panel prints.
  *
  * - `no_connection` is the same 404 and `connection_not_found` code an upstream "no connection"
  *   answer gets in `toAccountMonitorClientError`, so both ways of learning it read alike.
@@ -541,31 +557,35 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
  * - `unavailable` is a 503 `SERVICE_ADVISORY`, the one 5xx code whose text the panel shows, so the
  *   operator sees a retry prompt rather than the generic heading repeated.
  */
-export function toGoogleMonitorConnectionError(state: Exclude<MonitorConnectionState, 'connected'>, operation: string): MicroserviceError {
+export function toMonitorConnectionError(
+  state: Exclude<MonitorConnectionState, 'connected' | 'system_account'>,
+  platformLabel: string,
+  operation: string
+): MicroserviceError {
   const context = { operation, service: 'campaign_controller' };
   switch (state) {
     case 'no_connection':
-      return new MicroserviceError('This project has no Google Ads connection of its own to read the account with.', 404, getCodeForStatus(404), {
+      return new MicroserviceError(`This project has no ${platformLabel} connection of its own to read the account with.`, 404, getCodeForStatus(404), {
         ...context,
         errorBody: { error: ACCOUNT_MONITOR_NO_CONNECTION_CODE },
       });
     case 'forbidden':
       return new MicroserviceError(
-        "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project.",
+        `campaign-service refused to read this project's ${platformLabel} connection. Your account needs the campaign manager role on this project.`,
         403,
         getCodeForStatus(403),
         context
       );
     case 'no_account':
       return new MicroserviceError(
-        "This project's Google Ads connection has no ad account bound to it, so there is nothing to monitor. Ask an LFX administrator to choose the ad account on the connection.",
+        `This project's ${platformLabel} connection has no ad account bound to it, so there is nothing to monitor. Ask an LFX administrator to choose the ad account on the connection.`,
         409,
         getCodeForStatus(409),
         context
       );
     default:
       return new MicroserviceError(
-        "This project's Google Ads connection could not be read just now. Please try again shortly.",
+        `This project's ${platformLabel} connection could not be read just now. Please try again shortly.`,
         503,
         ERROR_CODES.SERVICE_ADVISORY,
         context
@@ -574,13 +594,14 @@ export function toGoogleMonitorConnectionError(state: Exclude<MonitorConnectionS
 }
 
 /**
- * Whether a failed Google Ads monitor read WITHOUT `account_id` came from a campaign-service that
- * still requires it (before 1.0.36, #5622): Goa answers a missing required query parameter with a
- * 400 named `missing_field`. The controller then reports the project's connection state, exactly as
- * it did before the account became optional, rather than a 400 about an unusable connection.
+ * Whether a failed monitor read WITHOUT `account_id` came from a campaign-service that still requires
+ * it: Goa answers a missing required query parameter with a 400 named `missing_field`. Google Ads made
+ * the account optional in 1.0.36 (#5622) and LinkedIn in 1.0.37 (linuxfoundation/lfx-v2-campaign-service#628,
+ * #5889). The controller then reports the project's connection state, exactly as it did before the
+ * account became optional, rather than a 400 about an unusable connection.
  *
- * TODO(#5622): remove this fallback once every environment runs campaign-service 1.0.36 or later,
- * where `account_id` is optional and this 400 can no longer happen.
+ * TODO(#5622, #5889): remove this fallback once every environment runs campaign-service 1.0.37 or
+ * later, where `account_id` is optional on both and this 400 can no longer happen.
  */
 export function isAccountIdRequiredByUpstream(error: unknown): boolean {
   return (
@@ -588,6 +609,38 @@ export function isAccountIdRequiredByUpstream(error: unknown): boolean {
     !error.transportFailure &&
     error.statusCode === 400 &&
     (error.errorBody as { name?: unknown } | undefined)?.name === 'missing_field'
+  );
+}
+
+/**
+ * Whether a LinkedIn, Reddit or Meta monitor read through the LF system account (#5889) was refused
+ * as a way of reading at all, rather than failing: campaign-service's typed "no connection" 404 (no
+ * system account configured for the platform or account), or the 400 `missing_field` of a release
+ * that still requires the account (`isAccountIdRequiredByUpstream`).
+ */
+export function isSystemAccountRefusal(error: unknown): boolean {
+  if (isAccountIdRequiredByUpstream(error)) {
+    return true;
+  }
+  return error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+}
+
+/**
+ * The error for an `isSystemAccountRefusal`: a 404 carrying `ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE`,
+ * so the Monitor tab shows the notice for the project's own state behind the fallback. Upstream text
+ * is never forwarded.
+ */
+export function toSystemAccountRefusedError(error: unknown, platformLabel: string, operation: string): MicroserviceError {
+  return new MicroserviceError(
+    `campaign-service cannot read this project's ${platformLabel} campaigns through the LF system account.`,
+    404,
+    getCodeForStatus(404),
+    {
+      operation,
+      service: 'campaign_controller',
+      originalError: error instanceof Error ? error : undefined,
+      errorBody: { error: ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE },
+    }
   );
 }
 

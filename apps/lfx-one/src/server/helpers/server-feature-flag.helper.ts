@@ -611,8 +611,8 @@ export enum ServerFeatureFlag {
    * Monitor tab's Google panel — is campaign-service-only, and root-only.
    *
    * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Meta, Reddit and X run ONE ad account shared by every
-   * foundation, and campaign-service's `account-monitor` is account-scoped, so either arm returns
-   * every foundation's campaigns. Those monitors (`/meta/monitor`, `/reddit/monitor`,
+   * foundation. The legacy arm returns every foundation's campaigns; campaign-service now returns only
+   * the campaigns recorded for the project, but this app does not rely on that for these. Those monitors (`/meta/monitor`, `/reddit/monitor`,
    * `/twitter/monitor`) are therefore root-only whatever this flag says — a ROOT writer or ROOT
    * `global_marketing_ops` holder; everyone else gets a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED` before
    * any upstream call (lfx-self-serve-ops#54). Google Ads' account is shared too, but campaign-service's
@@ -623,14 +623,14 @@ export enum ServerFeatureFlag {
    * HubSpot are not gated.
    *
    * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
-   * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
-   * OWN connection only — never the LF system fallback — and refuses an account that connection
-   * is not bound to. So on, the Monitor tab's account pickers are filled from those connections
-   * (`/api/campaigns/monitor/connections`) instead of the configured allowlists, and the monitor
-   * routes check the account id's SHAPE rather than allowlist membership. A project with no
-   * connection of its own for a platform, or whose connection has no account bound, sees that
-   * stated in the panel rather than an error. Verify the foundations that use these tabs have
-   * connections before turning this on.
+   * account with this app's own environment credentials. Campaign-service resolves the project's
+   * own connection, and refuses an account that connection is not bound to. So on, the Monitor tab's
+   * account pickers are filled from those connections (`/api/campaigns/monitor/connections`) instead
+   * of the configured allowlists, and the monitor routes check the account id's SHAPE rather than
+   * allowlist membership. A project with no connection of its own for a platform, or whose connection
+   * has no account bound, reads LinkedIn, Reddit and Meta through campaign-service's LF system-account
+   * fallback, scoped to its recorded campaigns (from campaign-service 1.0.37, #5889); on Microsoft
+   * and X, which have no such fallback, it sees that stated in the panel rather than an error.
    *
    * IT ALSO CHANGES THE NUMBERS, deliberately: campaign-service fixed the rule-engine bugs the
    * legacy LinkedIn and Reddit paths still have (#3018-#3022): MED items now sort between HIGH

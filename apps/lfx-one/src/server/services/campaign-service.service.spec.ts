@@ -6037,6 +6037,24 @@ describe('CampaignServiceClient account monitors', () => {
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-google-ads/account-monitor', 'GET', { days: 30 });
   });
 
+  it('omits account_id for a LinkedIn monitor read with no account, so campaign-service picks it (#5889)', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'tlf', undefined, 30);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-linkedin-ads/account-monitor', 'GET', { days: 30 });
+  });
+
+  it.each(['getMetaAdsAccountMonitor', 'getRedditAdsAccountMonitor', 'getMicrosoftAdsAccountMonitor', 'getTwitterAdsAccountMonitor'] as const)(
+    '%s refuses a read with no account, which campaign-service requires, without calling the proxy',
+    async (method) => {
+      const caught = await new CampaignServiceClient()[method](req, 'tlf', undefined as unknown as string, 30).catch((e: unknown) => e);
+
+      expect((caught as ServiceValidationError).validationErrors[0].field).toBe('accountKey');
+      expect(proxyRequest).not.toHaveBeenCalled();
+    }
+  );
+
   it('encodes the project as a path segment', async () => {
     proxyRequest.mockResolvedValueOnce(monitor);
 

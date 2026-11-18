@@ -333,16 +333,19 @@ import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMet
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
 import {
   isAccountIdRequiredByUpstream,
+  isSystemAccountRefusal,
   toAccountMonitorClientError,
-  toGoogleMonitorConnectionError,
   toGoogleMonitorResponse,
   toHubSpotEmailMonitorResponse,
   toLinkedInMonitorResponse,
   toMetaMonitorResponse,
   toMonitorConnectionAccount,
+  toMonitorConnectionError,
   toRecordedCampaignsGoogleMonitorResponse,
   toRedditMonitorResponse,
   toReportBackedMonitorResponse,
+  toSystemAccountRead,
+  toSystemAccountRefusedError,
 } from '../services/campaign-monitor-mapper';
 import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import {
@@ -3084,8 +3087,8 @@ export class CampaignController {
    * floor beneath which CTR is judged at all, and whether a paused campaign raises anything. This
    * route exposes the single-source version; nothing is cut over to it yet.
    *
-   * The two are NOT interchangeable. The monitor routes are ACCOUNT-scoped — every campaign in
-   * the ad account — while this is BRIEF-scoped. A consumer swapping one for the other narrows
+   * The two are NOT interchangeable. The monitor routes are account- or project-scoped — every
+   * campaign in the ad account, or every campaign recorded for the project — while this is BRIEF-scoped. A consumer swapping one for the other narrows
    * what an operator sees, which is why `brief` is required rather than defaulted. Because the
    * Google Ads, Meta, Reddit and X accounts (and LinkedIn's legacy allowlist account) are shared by
    * every foundation, those account monitors are root-only — see `requireSharedAccountMonitorAccess`
@@ -3462,7 +3465,7 @@ export class CampaignController {
    * relation, so this arm is open to whoever the route's guard admits, as LinkedIn's campaign-service
    * arm is (#4837). A caller campaign-service refuses — a ROOT writer or ROOT `global_marketing_ops`
    * holder without the project role, which `requireGoogleMonitorAccess` admits for the legacy arm —
-   * gets a non-retryable 403 naming that role (`toGoogleMonitorConnectionError`,
+   * gets a non-retryable 403 naming that role (`toMonitorConnectionError`,
    * `toAccountMonitorClientError`), never a 503.
    *
    * Off, it is the legacy account-wide read through the BFF's own `GADS_*` credentials, which fails
@@ -3922,6 +3925,24 @@ export class CampaignController {
       if (this.refuseLegacyReadOnCutover(req, next, 'linkedin_monitor')) {
         return;
       }
+      // No account: the panel reads through the LF system account (#5889), and campaign-service
+      // picks the account this project's campaigns were created under.
+      if (this.isMonitorAccountOmitted(req)) {
+        await this.serveSystemAccountMonitor(req, res, next, {
+          operation: 'linkedin_monitor',
+          platformLabel: 'LinkedIn Ads',
+          provider: 'linkedin-ads',
+          days,
+          read: (projectSlug, accountId) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+          toResponse: (payload) =>
+            toLinkedInMonitorResponse(
+              payload,
+              config.accounts.find((a) => a.accountId === payload.account_id)?.label || payload.account_id || 'LinkedIn Ads',
+              new Date().toISOString()
+            ),
+        });
+        return;
+      }
       const accountId = this.requireMonitorAccountId(req, next, 'linkedin_monitor', 'LinkedIn Ads', LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN);
       if (accountId === null) {
         return;
@@ -4174,6 +4195,23 @@ export class CampaignController {
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
       // A legacy picker's account, picked on a pod with the flag OFF, is refused — see the LinkedIn route.
       if (this.refuseLegacyReadOnCutover(req, next, 'reddit_monitor')) {
+        return;
+      }
+      // No account: the panel reads through the LF system account (#5889), on LF's own Reddit account.
+      if (this.isMonitorAccountOmitted(req)) {
+        await this.serveSystemAccountMonitor(req, res, next, {
+          operation: 'reddit_monitor',
+          platformLabel: 'Reddit Ads',
+          provider: 'reddit-ads',
+          days,
+          read: (projectSlug, accountId) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
+          toResponse: (payload) =>
+            toRedditMonitorResponse(
+              payload,
+              REDDIT_ACCOUNTS.find((a) => a.accountId === payload.account_id)?.label || payload.account_id,
+              new Date().toISOString()
+            ),
+        });
         return;
       }
       const accountId = this.requireMonitorAccountId(req, next, 'reddit_monitor', 'Reddit Ads', REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN);
@@ -4785,6 +4823,23 @@ export class CampaignController {
       if (this.refuseLegacyReadOnCutover(req, next, 'meta_monitor')) {
         return;
       }
+      // No account: the panel reads through the LF system account (#5889), on LF's own Meta account.
+      if (this.isMonitorAccountOmitted(req)) {
+        await this.serveSystemAccountMonitor(req, res, next, {
+          operation: 'meta_monitor',
+          platformLabel: 'Meta Ads',
+          provider: 'meta-ads',
+          days,
+          read: (projectSlug, accountId) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
+          toResponse: (payload) =>
+            toMetaMonitorResponse(
+              payload,
+              META_ACCOUNTS.find((a) => a.accountId === payload.account_id)?.label || payload.account_id,
+              new Date().toISOString()
+            ),
+        });
+        return;
+      }
       const accountId = this.requireMonitorAccountId(req, next, 'meta_monitor', 'Meta Ads', META_ADS_MONITOR_ACCOUNT_ID_PATTERN);
       if (accountId === null) {
         return;
@@ -4841,6 +4896,7 @@ export class CampaignController {
    * campaign-service-only routes answer, because the tab must be able to tell "off" from "no
    * connection". On, it reads the five providers' connections in parallel. One provider's failure
    * is that provider's `unavailable` state, never the whole answer: the other panels still work.
+   * LinkedIn, Reddit and Meta without an account bound of their own are `system_account` (#5889).
    */
   public async getMonitorConnections(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'monitor_connections';
@@ -4858,7 +4914,8 @@ export class CampaignController {
     try {
       const entries = await Promise.all(
         (Object.entries(MONITOR_CONNECTION_PROVIDERS) as [MonitorConnectionPlatform, CampaignServiceMonitorProvider][]).map(
-          async ([platform, provider]) => [platform, await this.readMonitorConnection(req, projectSlug, provider)] as const
+          async ([platform, provider]) =>
+            [platform, this.withSystemAccountFallback(provider, await this.readMonitorConnection(req, projectSlug, provider))] as const
         )
       );
       const body: CampaignMonitorConnections = { viaCampaignService: true, platforms: Object.fromEntries(entries) };
@@ -5707,7 +5764,7 @@ export class CampaignController {
     const operation = 'campaign_monitor';
     const connection = await this.readMonitorConnection(req, projectSlug, 'google-ads', operation);
     if (connection.state === 'forbidden' || connection.state === 'unavailable') {
-      next(toGoogleMonitorConnectionError(connection.state, operation));
+      next(toMonitorConnectionError(connection.state, 'Google Ads', operation));
       return;
     }
     const days = this.parseMonitorDays(req);
@@ -5735,7 +5792,113 @@ export class CampaignController {
       accountId: null,
       read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, undefined, days),
       toResponse: (payload) => toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString()),
-      mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toGoogleMonitorConnectionError(priorState, operation) : undefined),
+      mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toMonitorConnectionError(priorState, 'Google Ads', operation) : undefined),
+    });
+  }
+
+  /**
+   * The account LinkedIn, Reddit or Meta monitors read through the LF system account when a project
+   * has no connection with an account bound of its own (#5889), or `null` for a platform with no such
+   * read. campaign-service 1.0.37 falls back to the system account on these three only
+   * (linuxfoundation/lfx-v2-campaign-service#616, #628); Microsoft and X still read the project's own
+   * connection only, so their panels keep the "no connection" notice.
+   *
+   * - LinkedIn: `account_id` is optional, so none is named (`accountId` undefined) and campaign-service
+   *   reads the account the project's campaigns were created under.
+   * - Reddit and Meta: `account_id` is required, so it is LF's own shared account, the one this app
+   *   already lists for those platforms. campaign-service reads it with the system credential only when
+   *   the system row is configured for it; any other account is a typed 404, shown as "no connection".
+   */
+  private systemAccountFallback(provider: CampaignServiceMonitorProvider): { accountId: string | undefined } | null {
+    switch (provider) {
+      case 'linkedin-ads':
+        return { accountId: undefined };
+      case 'reddit-ads':
+        return REDDIT_ACCOUNTS[0] ? { accountId: REDDIT_ACCOUNTS[0].accountId } : null;
+      case 'meta-ads':
+        return META_ACCOUNTS[0] ? { accountId: META_ACCOUNTS[0].accountId } : null;
+      default:
+        return null;
+    }
+  }
+
+  /** A connection with no account bound of its own, as `system_account` where the platform has that read (#5889). */
+  private withSystemAccountFallback(provider: CampaignServiceMonitorProvider, account: MonitorConnectionAccount): MonitorConnectionAccount {
+    if ((account.state === 'no_connection' || account.state === 'no_account') && this.systemAccountFallback(provider) !== null) {
+      return { state: 'system_account', accountId: null, label: null, fallbackFrom: account.state };
+    }
+    return account;
+  }
+
+  /** Whether a LinkedIn/Reddit/Meta monitor read named no account: absent or blank, never a malformed one. */
+  private isMonitorAccountOmitted(req: Request): boolean {
+    const raw = req.query['accountKey'];
+    return raw === undefined || (typeof raw === 'string' && raw.trim() === '');
+  }
+
+  /**
+   * The campaign-service arm of the LinkedIn, Reddit and Meta monitors when the read named no account
+   * (#5889): the Monitor tab was told the panel reads through the LF system account (`system_account`).
+   *
+   * The connection is read again here, as the Google Ads route does, so the account is never the
+   * client's choice. A project whose own connection has an account bound reads that account, as a
+   * read naming it would. One with no connection, or no account bound, reads `systemAccountFallback`'s
+   * account, and the response names the account campaign-service read (`systemAccountRead`).
+   * campaign-service scopes that read to the campaigns it recorded for the project. A connection read
+   * that was refused or failed is the panel's error, never a fallback.
+   *
+   * A typed 404 (no LF system account configured for it), or a 400 `missing_field` from a
+   * campaign-service that still requires LinkedIn's account, is `toSystemAccountRefusedError`: the tab
+   * then shows the notice for the project's own state behind the fallback, as it did before.
+   */
+  private async serveSystemAccountMonitor<T>(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    opts: {
+      operation: string;
+      platformLabel: string;
+      provider: CampaignServiceMonitorProvider;
+      days: number;
+      read: (projectSlug: string, accountId: string | undefined) => Promise<CampaignServiceAccountMonitor>;
+      toResponse: (payload: CampaignServiceAccountMonitor) => T;
+    }
+  ): Promise<void> {
+    const projectSlug = this.requireMonitorProject(req, next, opts.operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const connection = await this.readMonitorConnection(req, projectSlug, opts.provider, opts.operation);
+    if (connection.state === 'forbidden' || connection.state === 'unavailable') {
+      next(toMonitorConnectionError(connection.state, opts.platformLabel, opts.operation));
+      return;
+    }
+    const ownAccountId = connection.state === 'connected' ? connection.accountId : null;
+    if (ownAccountId !== null) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: opts.operation,
+        platformLabel: opts.platformLabel,
+        days: opts.days,
+        accountId: ownAccountId,
+        read: (slug) => opts.read(slug, ownAccountId),
+        toResponse: opts.toResponse,
+      });
+      return;
+    }
+    const priorState = connection.state === 'no_account' ? 'no_account' : 'no_connection';
+    const fallback = this.systemAccountFallback(opts.provider);
+    if (fallback === null) {
+      next(toMonitorConnectionError(priorState, opts.platformLabel, opts.operation));
+      return;
+    }
+    await this.serveLegacyShapedMonitor(req, res, next, {
+      operation: opts.operation,
+      platformLabel: opts.platformLabel,
+      days: opts.days,
+      accountId: fallback.accountId ?? null,
+      read: (slug) => opts.read(slug, fallback.accountId),
+      toResponse: (payload) => ({ ...opts.toResponse(payload), systemAccountRead: toSystemAccountRead(payload, opts.platformLabel) }),
+      mapError: (error) => (isSystemAccountRefusal(error) ? toSystemAccountRefusedError(error, opts.platformLabel, opts.operation) : undefined),
     });
   }
 

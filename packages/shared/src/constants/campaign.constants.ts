@@ -1421,6 +1421,15 @@ export const ACCOUNT_MONITOR_METRICS_DISABLED_CODE = 'metrics_not_enabled';
 export const ACCOUNT_MONITOR_NO_CONNECTION_CODE = 'connection_not_found';
 
 /**
+ * The `upstreamCode` the BFF puts on a LinkedIn, Reddit or Meta monitor read through the LF system
+ * account (#5889) that campaign-service could not serve that way: its typed "no connection" 404 (no
+ * system account configured for the platform or account), or a 400 `missing_field` from a release
+ * that still requires LinkedIn's account. The Monitor tab then shows the notice for the state behind
+ * the fallback (`MonitorConnectionAccount.fallbackFrom`), as it did before the fallback existed.
+ */
+export const ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE = 'system_account_refused';
+
+/**
  * The Monitor tab's connection-backed platforms, each with the campaign-service provider whose
  * connection binds its account. Ordered as the tab's buttons are.
  */

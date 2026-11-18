@@ -2755,6 +2755,8 @@ export interface MetaMonitorResponse {
    * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
    */
   currency?: string;
+  /** Campaign-service path only: see `MonitorSystemAccountRead`. */
+  systemAccountRead?: MonitorSystemAccountRead;
 }
 
 export interface CampaignBriefRefineRequest {
@@ -5317,9 +5319,13 @@ export type MonitorConnectionPlatform = 'linkedin' | 'meta' | 'reddit' | 'micros
  * - `unavailable`: the connection could not be read, so neither of the above is known;
  * - `forbidden`: campaign-service refused the read (403). It authorizes every connection and monitor
  *   read with the project's `campaign_manager` relation, which a ROOT writer this app admits need not
- *   hold (#4837) — a standing refusal, so never reported as the retryable `unavailable`.
+ *   hold (#4837) — a standing refusal, so never reported as the retryable `unavailable`;
+ * - `system_account`: the project has no connection with an account bound of its own (`no_connection`
+ *   or `no_account` above), and campaign-service reads this platform's monitor through the LF system
+ *   account instead, scoped to the campaigns it recorded for the project (#5889). The tab reads the
+ *   monitor WITHOUT an account and the BFF picks it, so `accountId` and `label` are null.
  */
-export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable' | 'forbidden';
+export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable' | 'forbidden' | 'system_account';
 
 /** One platform's connection, as the Monitor tab's account picker consumes it. */
 export interface MonitorConnectionAccount {
@@ -5328,6 +5334,25 @@ export interface MonitorConnectionAccount {
   accountId: string | null;
   /** The connection's own label, else the account id. Set only when `state` is `connected`. */
   label: string | null;
+  /**
+   * Set only when `state` is `system_account`: the project's own state behind the fallback, so a
+   * refused system-account read shows the notice that state calls for ("connect" or "choose the
+   * ad account").
+   */
+  fallbackFrom?: 'no_connection' | 'no_account';
+}
+
+/**
+ * A LinkedIn, Reddit or Meta monitor read through the LF system account (#5889): the project has no
+ * connection with an account bound of its own, so campaign-service read the LF account its campaigns
+ * were created in, scoped to the campaigns it recorded for the project. ABSENT on a read through the
+ * project's own connection, and on the legacy path.
+ */
+export interface MonitorSystemAccountRead {
+  /** The ad account campaign-service read; NULL when it read none (no campaigns recorded for the project). */
+  accountId: string | null;
+  /** The panel's empty state when no campaign came back: no campaigns are recorded for the project yet. */
+  emptyMessage: string;
 }
 
 /**
@@ -5361,7 +5386,7 @@ export type MonitorDateRangeOption = (typeof MONITOR_DATE_RANGE_OPTIONS)[number]
  * switched off upstream, or `restricted` — the read was refused because its ad account is shared by
  * every foundation (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`).
  */
-export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled' | 'restricted';
+export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected' | 'system_account'> | 'metrics_disabled' | 'restricted';
 
 /** The empty state a Monitor panel renders in place of its data, with the action that resolves it. */
 export interface MonitorPanelNotice {
@@ -5851,6 +5876,8 @@ export interface LinkedInMonitorResponse {
    * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
    */
   currency?: string;
+  /** Campaign-service path only: see `MonitorSystemAccountRead`. */
+  systemAccountRead?: MonitorSystemAccountRead;
 }
 
 // ---------------------------------------------------------------------------
@@ -5926,6 +5953,8 @@ export interface RedditMonitorResponse {
    * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
    */
   currency?: string;
+  /** Campaign-service path only: see `MonitorSystemAccountRead`. */
+  systemAccountRead?: MonitorSystemAccountRead;
 }
 
 // ---------------------------------------------------------------------------
