@@ -112,8 +112,8 @@
         data-testid="groups-redesign-tabs" />
     </div>
 
-    <!-- One tabpanel per tab, so every aria-controls resolves -->
-    <div class="flex flex-col">
+    <!-- One tabpanel per tab, so every aria-controls resolves; only the active one renders the grid -->
+    <div #panels class="flex flex-col">
       @for (tab of tabs(); track tab.value) {
         <div
           role="tabpanel"
@@ -122,11 +122,41 @@
           [attr.id]="idPrefix + '-panel-' + tab.value"
           [attr.aria-labelledby]="idPrefix + '-tab-' + tab.value"
           [hidden]="store.tab() !== tab.value"
-          [attr.data-testid]="'groups-redesign-panel-' + tab.value"></div>
+          [attr.data-testid]="'groups-redesign-panel-' + tab.value">
+          @if (store.tab() === tab.value) {
+            <ng-container [ngTemplateOutlet]="grid" />
+          }
+        </div>
       }
     </div>
   }
 </div>
+
+<ng-template #grid>
+  <p class="sr-only" role="status" data-testid="groups-redesign-grid-status">
+    Showing {{ store.visibleGroups().length }} of {{ store.filteredGroups().length }} groups
+  </p>
+  <!-- At most 3 columns, then 2 and 1 as the width falls below 3 and 2 times 220px -->
+  <div class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]" data-testid="groups-redesign-grid">
+    @for (group of store.visibleGroups(); track group.uid) {
+      <lfx-group-card [group]="group" />
+    }
+  </div>
+  @if (store.hasMore()) {
+    <!-- Re-created per batch so skeletons still in view after a batch loads fire again. -->
+    @for (count of [store.visibleGroups().length]; track count) {
+      <div
+        #loadMoreTrigger
+        class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]"
+        aria-hidden="true"
+        data-testid="groups-redesign-load-more">
+        <ng-container [ngTemplateOutlet]="skeletons" />
+      </div>
+    }
+  } @else if (store.filteredGroups().length > pageSize) {
+    <p class="py-[4px] text-center text-[12px] text-gray-500" data-testid="groups-redesign-all-loaded">All {{ store.filteredGroups().length }} groups loaded</p>
+  }
+</ng-template>
 
 <ng-template #skeletons>
   <!-- Mirrors a card: name and project lines, two pills, a description line and the footer. -->

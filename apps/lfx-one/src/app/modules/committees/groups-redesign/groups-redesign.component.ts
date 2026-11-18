@@ -1,9 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, Signal, signal, viewChild } from '@angular/core';
-import { BEHAVIORAL_CLASS_CONFIG, BEHAVIORAL_CLASS_TONE, IMPERSONATION_BANNER_HEIGHT_PX } from '@lfx-one/shared/constants';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { BEHAVIORAL_CLASS_CONFIG, BEHAVIORAL_CLASS_TONE, GROUPS_HOME_PAGE_SIZE, IMPERSONATION_BANNER_HEIGHT_PX } from '@lfx-one/shared/constants';
 import { GroupBehavioralClass, GroupsHomeTab, UiTabItem } from '@lfx-one/shared/interfaces';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { UserService } from '@services/user.service';
@@ -11,18 +24,20 @@ import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
+import { EMPTY, Observable, switchMap } from 'rxjs';
 
+import { GroupCardComponent } from './components/group-card/group-card.component';
 import { GroupsHomeStore } from './services/groups-home.store';
 
 /**
  * Redesigned Home / Me lens groups page (#5823).
- * @description Sticky header with Create Group, the metrics row and sticky type tabs. Rendered by `GroupsEntryComponent`
- * behind `GROUPS_REDESIGN_FLAG`. The host cancels `main-layout`'s content padding so the design's gutters start at the
- * page edge; the window scrolls.
+ * @description Sticky header with Create Group, the metrics row, sticky type tabs and the group card grid, shown 20 at a
+ * time as the page scrolls. Rendered by `GroupsEntryComponent` behind `GROUPS_REDESIGN_FLAG`. The host cancels
+ * `main-layout`'s content padding so the design's gutters start at the page edge; the window scrolls.
  */
 @Component({
   selector: 'lfx-groups-redesign',
-  imports: [NgTemplateOutlet, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTabsComponent],
+  imports: [NgTemplateOutlet, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTabsComponent, GroupCardComponent],
   templateUrl: './groups-redesign.component.html',
   providers: [GroupsHomeStore],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -33,6 +48,7 @@ import { GroupsHomeStore } from './services/groups-home.store';
   },
 })
 export class GroupsRedesignComponent {
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
   private readonly createArtifactDialog = inject(CreateArtifactDialogService);
@@ -40,8 +56,11 @@ export class GroupsRedesignComponent {
 
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly toolbar = viewChild<ElementRef<HTMLElement>>('toolbar');
+  private readonly panels = viewChild<ElementRef<HTMLElement>>('panels');
+  private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
 
   protected readonly idPrefix = 'groups-redesign';
+  protected readonly pageSize = GROUPS_HOME_PAGE_SIZE;
   protected readonly skeletonCards = [0, 1, 2];
   /** Measured header height; the toolbar sticks right below it. */
   protected readonly headerHeight = signal(0);
@@ -55,6 +74,7 @@ export class GroupsRedesignComponent {
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
 
   public constructor() {
+    this.initLoadMore();
     afterNextRender(() => {
       const observer = new ResizeObserver(() => this.measure());
       const header = this.header()?.nativeElement;
@@ -66,6 +86,13 @@ export class GroupsRedesignComponent {
 
   protected onTabChange(value: string): void {
     this.store.setTab(value as GroupsHomeTab);
+    if (!isPlatformBrowser(this.platformId)) return;
+    // A new tab starts at the top of the grid when the grid has scrolled under the toolbar.
+    const panels = this.panels()?.nativeElement;
+    const toolbar = this.toolbar()?.nativeElement;
+    if (!panels || !toolbar) return;
+    const offset = panels.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom;
+    if (offset < 0) window.scrollBy({ top: offset });
   }
 
   protected createGroup(): void {
@@ -96,5 +123,29 @@ export class GroupsRedesignComponent {
         .map((type) => ({ value: type, label: BEHAVIORAL_CLASS_CONFIG[type].label, count: counts[type], dotTone: BEHAVIORAL_CLASS_TONE[type] }));
       return [{ value: 'all', label: 'All', count: this.store.groups().length }, ...types];
     });
+  }
+
+  /** Shows the next batch once the skeletons below the grid come within 280px of the viewport; a new batch re-creates them. */
+  private initLoadMore(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    toObservable(this.loadMoreTrigger)
+      .pipe(
+        switchMap((trigger) =>
+          trigger
+            ? new Observable<void>((subscriber) => {
+                const observer = new IntersectionObserver(
+                  (entries) => {
+                    if (entries.some((entry) => entry.isIntersecting)) subscriber.next();
+                  },
+                  { rootMargin: '0px 0px 280px 0px' }
+                );
+                observer.observe(trigger.nativeElement);
+                return () => observer.disconnect();
+              })
+            : EMPTY
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.store.loadMore());
   }
 }

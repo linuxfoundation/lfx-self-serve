@@ -93,6 +93,7 @@ describe('GroupsHomeStore', () => {
       'ambassador-program': 0,
       other: 1,
     });
+    expect(store.filteredGroups().map((g) => g.uid)).toEqual(['a']);
   });
 
   it('computes the metrics over every group, and shows a dash while active members are unknown', () => {
@@ -141,5 +142,24 @@ describe('GroupsHomeStore', () => {
 
     statsFlag.set(false);
     expect(store.metrics()[3]).toEqual(expect.objectContaining({ value: '—', subLine: undefined }));
+  });
+
+  it('shows 20 groups at a time and starts over on a new tab', () => {
+    groups$ = of([...Array.from({ length: 45 }, (_, i) => group(`w${String(i).padStart(2, '0')}`, 'Working Group')), group('b', 'Board')]);
+    const store = create();
+
+    expect(store.visibleGroups()).toHaveLength(20);
+    expect(store.hasMore()).toBe(true);
+    store.loadMore();
+    store.loadMore();
+    expect(store.visibleGroups()).toHaveLength(46);
+    expect(store.hasMore()).toBe(false);
+
+    store.setTab('working-group');
+    expect(store.visibleGroups()).toHaveLength(20);
+    store.loadMore();
+    store.loadMore();
+    store.loadMore();
+    expect(store.visibleGroups()).toHaveLength(45);
   });
 });

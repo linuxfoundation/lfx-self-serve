@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
+import { computed, inject, Injectable, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { BEHAVIORAL_CLASS_CONFIG, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
+import { BEHAVIORAL_CLASS_CONFIG, GROUPS_HOME_PAGE_SIZE, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
 import { GroupBehavioralClass, GroupsHomeMetric, GroupsHomeTab, MyCommittee, StatCardItem } from '@lfx-one/shared/interfaces';
 import { buildEngagementStatCards, getGroupBehavioralClass } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -13,7 +13,8 @@ import { catchError, filter, finalize, map, of, switchMap, take } from 'rxjs';
 
 /**
  * State of the Me lens groups page, provided by the page component.
- * @description Loads the viewer's groups once, sorted A–Z with their type resolved. Metrics and tab counts cover every group.
+ * @description Loads the viewer's groups once, sorted A–Z with their type resolved, then filters them by the type tab
+ * and shows {@link GROUPS_HOME_PAGE_SIZE} groups at a time. Metrics and tab counts cover every group.
  */
 @Injectable()
 export class GroupsHomeStore {
@@ -24,6 +25,7 @@ export class GroupsHomeStore {
   private readonly failedState: WritableSignal<boolean> = signal(false);
   private readonly reloadState: WritableSignal<number> = signal(0);
   private readonly tabState: WritableSignal<GroupsHomeTab> = signal<GroupsHomeTab>('all');
+  private readonly visibleCountState: WritableSignal<number> = linkedSignal({ source: this.tabState, computation: () => GROUPS_HOME_PAGE_SIZE });
 
   public readonly loading: Signal<boolean> = this.loadingState.asReadonly();
   /** True when the groups failed to load. */
@@ -37,6 +39,13 @@ export class GroupsHomeStore {
   /** Unique people active across the viewer's groups, with its freshness, sample-data or coverage note; `null` while the flag is off or the stats load. */
   private readonly activeMembers: Signal<StatCardItem | null> = this.initActiveMembers();
   public readonly metrics: Signal<GroupsHomeMetric[]> = this.initMetrics();
+  /** Groups in the selected tab. */
+  public readonly filteredGroups: Signal<MyCommittee[]> = computed(() => {
+    const tab = this.tab();
+    return tab === 'all' ? this.groups() : this.groups().filter((group) => group.behavioralClass === tab);
+  });
+  public readonly visibleGroups: Signal<MyCommittee[]> = computed(() => this.filteredGroups().slice(0, this.visibleCountState()));
+  public readonly hasMore: Signal<boolean> = computed(() => this.visibleCountState() < this.filteredGroups().length);
 
   public setTab(tab: GroupsHomeTab): void {
     this.tabState.set(tab);
@@ -45,6 +54,10 @@ export class GroupsHomeStore {
   /** Fetches the groups again, after a failure or a change to the viewer's memberships. */
   public reload(): void {
     this.reloadState.update((count) => count + 1);
+  }
+
+  public loadMore(): void {
+    if (this.hasMore()) this.visibleCountState.update((count) => count + GROUPS_HOME_PAGE_SIZE);
   }
 
   private initGroups(): Signal<MyCommittee[]> {

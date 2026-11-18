@@ -713,6 +713,9 @@ export const BEHAVIORAL_CLASS_TONE: Record<GroupBehavioralClass, UiTone> = {
   other: 'neutral',
 };
 
+/** Groups shown per batch on the redesigned Groups page; scrolling near the end shows the next batch. */
+export const GROUPS_HOME_PAGE_SIZE = 20;
+
 /** Max concurrent create-invite requests when fanning out a bulk committee invite. */
 export const COMMITTEE_INVITE_CONCURRENCY = 5;
 

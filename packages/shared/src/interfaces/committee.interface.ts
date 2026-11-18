@@ -85,6 +85,22 @@ export interface GroupsHomeMetric {
   subLine?: string;
 }
 
+/** A group's mailing list or chat channel, shown as an icon button on its card. */
+export interface GroupChannel {
+  kind: 'mailing-list' | 'slack' | 'discord' | 'chat';
+  /** Font Awesome class string. */
+  icon: string;
+  /** Tooltip: `Slack`, `Discord`, `Chat`, or the mailing list's name or address. */
+  tooltip: string;
+  ariaLabel: string;
+  /** Chat URL, `mailto:` address, or the in-app mailing list page. */
+  href: string;
+  /** Chat links open in a new tab; mail and in-app links don't. */
+  newTab: boolean;
+  /** Router target of an in-app mailing list page, so a plain click navigates in the app; `null` otherwise. */
+  link: CommitteeMailingListLink | null;
+}
+
 /** Display metadata for a behavioral class — used by filter chips and badges. */
 export interface BehavioralClassDisplayConfig {
   label: string;

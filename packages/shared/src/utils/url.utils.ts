@@ -1010,3 +1010,14 @@ export function isMentorshipMentorInvitePath(url: string): boolean {
   const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   return normalized === '/mentorship/mentor/invites';
 }
+
+/** Joins router-style segments (with or without slashes) into one app URL. */
+export function toAppUrl(segments: readonly string[], queryParams?: Record<string, string>): string {
+  const path = segments
+    .flatMap((segment) => segment.split('/'))
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+  const query = new URLSearchParams(queryParams).toString();
+  return `/${path}${query ? `?${query}` : ''}`;
+}
