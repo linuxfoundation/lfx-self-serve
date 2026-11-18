@@ -48,6 +48,8 @@ interface Harness {
   affiliatedToMember: WritableSignal<boolean>;
   /** #4314 — the employer-affiliation probe is owed an answer. */
   affiliationPending: WritableSignal<boolean>;
+  /** #4314 — a re-ask is out with a previous answer still rendered. */
+  affiliationRefreshing: WritableSignal<boolean>;
   /** #4314 — a resolved "affiliated with a company that holds no active LF membership". */
   affiliatedToNonMember: WritableSignal<boolean>;
   /** #4314 — the same probe's *member* answer, which rule 6 accepts alongside #4225's verdict. */
@@ -100,6 +102,7 @@ function setup(): Harness {
   const claLookupFailed = signal(false);
   const affiliatedToMember = signal(false);
   const affiliationPending = signal(false);
+  const affiliationRefreshing = signal(false);
   const affiliatedToNonMember = signal(false);
   const probeSaysMember = signal(false);
   const affiliationEmployerName = signal<string | null>(null);
@@ -169,6 +172,7 @@ function setup(): Harness {
         provide: OrgLensEmployerAffiliationService,
         useValue: {
           pending: affiliationPending,
+          refreshing: affiliationRefreshing,
           affiliatedToNonMember,
           affiliatedToMember: probeSaysMember,
           employerName: affiliationEmployerName,
@@ -213,6 +217,7 @@ function setup(): Harness {
     affiliatedToMember,
     probeSaysMember,
     affiliationPending,
+    affiliationRefreshing,
     affiliatedToNonMember,
     affiliationEmployerName,
     affiliationLookupFailed,
@@ -579,6 +584,14 @@ describe('OrgLensEmptyStateService.pageState', () => {
     h.affiliatedToNonMember.set(true);
 
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-non-member');
+  });
+
+  // Retry's employer half outlives the grants refresh, so the control must stay busy until the
+  // answer that decides rules 6–8 lands — not drop back to idle the moment the roster returns.
+  it('keeps the Retry control busy while the employer re-ask is still out', () => {
+    h.affiliationRefreshing.set(true);
+
+    expect(h.service.retrying()).toBe(true);
   });
 
   it('re-asks the employer affiliation as part of the shared Retry', () => {

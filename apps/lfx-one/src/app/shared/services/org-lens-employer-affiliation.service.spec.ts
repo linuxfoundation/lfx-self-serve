@@ -289,10 +289,31 @@ describe('OrgLensEmployerAffiliationService', () => {
     flush();
 
     expect(h.get).toHaveBeenCalledTimes(2);
-    expect(h.service.pending()).toBe(true);
+    // The previous answer stays up while the new one is out — `refreshing`, not `pending`, so the
+    // page keeps the state it is showing instead of dropping back to a skeleton.
+    expect(h.service.refreshing()).toBe(true);
+    expect(h.service.pending()).toBe(false);
+    expect(h.service.affiliatedToNonMember()).toBe(true);
+    expect(h.service.employerName()).toBe('Delta Harbour');
+
     h.answers[1].next(affiliation({ employerName: 'Vendor Corp', membership: 'member' }));
+    expect(h.service.refreshing()).toBe(false);
     expect(h.service.affiliatedToNonMember()).toBe(false);
     expect(h.service.employerName()).toBe('Vendor Corp');
+  });
+
+  // Retry on the employer outage must not take the outage state — and the Retry control inside it —
+  // off the page, nor let `could-not-load` read as `no-organization` while the re-ask is out.
+  it('holds the failed answer across a Retry instead of blanking the page', () => {
+    h = setup({ failing: true });
+    expect(h.service.lookupFailed()).toBe(true);
+    expect(h.service.pending()).toBe(false);
+
+    h.service.refresh();
+    flush();
+
+    expect(h.service.lookupFailed()).toBe(true);
+    expect(h.service.pending()).toBe(false);
   });
 
   it('re-asks on refresh, so the shared Retry covers the employer half', () => {

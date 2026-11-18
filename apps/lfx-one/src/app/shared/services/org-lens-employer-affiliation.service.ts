@@ -6,14 +6,21 @@ import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@a
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ORG_AFFILIATION_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { OrgLensEmployerAffiliation } from '@lfx-one/shared/interfaces';
-import { catchError, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take, timeout } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, Observable, of, scan, startWith, switchMap, take, timeout } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { UserService } from './user.service';
 
-/** The probe's state: not needed, in flight, or an answer (`failed` when the request did not land). */
-type AffiliationProbe = { status: 'idle' } | { status: 'pending' } | { status: 'answered'; affiliation: OrgLensEmployerAffiliation } | { status: 'failed' };
+/** An answer from the probe; `failed` when the request did not land. */
+type AffiliationAnswer = { status: 'answered'; affiliation: OrgLensEmployerAffiliation } | { status: 'failed' };
+
+/**
+ * The probe's state. `answer` is the last one that landed and is held across a re-ask, so a question
+ * asked again — the shared Retry, or a work-history edit — leaves the state it produced on screen
+ * instead of pulling the page back to a skeleton; `inFlight` says a request is out for `key`.
+ */
+interface AffiliationProbe { key: string | null; answer: AffiliationAnswer | null; inFlight: boolean }
 
 /**
  * #4314 — the caller's own employer and whether it is an LF member, for the Org Lens empty states.
@@ -99,10 +106,19 @@ export class OrgLensEmployerAffiliationService {
       distinctUntilChanged(),
       switchMap(
         (key): Observable<AffiliationProbe> =>
-          key === null ? of<AffiliationProbe>({ status: 'idle' }) : this.fetch().pipe(startWith<AffiliationProbe>({ status: 'pending' }))
-      )
+          key === null
+            ? of<AffiliationProbe>({ key: null, answer: null, inFlight: false })
+            : this.fetch().pipe(
+                map((answer): AffiliationProbe => ({ key, answer, inFlight: false })),
+                startWith<AffiliationProbe>({ key, answer: null, inFlight: true })
+              )
+      ),
+      // Carry the previous answer through a re-ask. Without this, Retry on the employer outage
+      // replaces that state — and the Retry control inside it — with a skeleton until the new answer
+      // lands, and `could-not-load` momentarily reads as `no-organization` on the way.
+      scan((previous, next) => (next.inFlight && previous.answer !== null ? { ...next, answer: previous.answer } : next))
     ),
-    { initialValue: { status: 'idle' } as AffiliationProbe }
+    { initialValue: { key: null, answer: null, inFlight: false } as AffiliationProbe }
   );
 
   /**
@@ -113,21 +129,25 @@ export class OrgLensEmployerAffiliationService {
    * that as settled would let `no-organization` — the "add an affiliation" copy this state exists to
    * replace — render for a tick before the skeleton.
    */
-  public readonly pending: Signal<boolean> = computed(() => {
-    if (!this.needed()) {
-      return false;
-    }
-    const status = this.probe().status;
-    return status !== 'answered' && status !== 'failed';
+  public readonly pending: Signal<boolean> = computed(() => this.needed() && this.probe().answer === null);
+
+  /**
+   * A re-ask is out and a previous answer is still on screen — the shared Retry's employer half.
+   * Distinct from {@link pending}, which is the first answer and holds the page on its skeleton:
+   * here the state is already rendered, so the Retry control binds to this and stays put.
+   */
+  public readonly refreshing: Signal<boolean> = computed(() => {
+    const probe = this.probe();
+    return this.needed() && probe.answer !== null && probe.inFlight;
   });
 
   /** The request did not land, so "no membership" is unknown rather than false. */
-  public readonly lookupFailed: Signal<boolean> = computed(() => this.needed() && this.probe().status === 'failed');
+  public readonly lookupFailed: Signal<boolean> = computed(() => this.needed() && this.probe().answer?.status === 'failed');
 
   /** The caller's current employer from their own profile; `null` when they have none, or nothing was asked. */
   public readonly employerName: Signal<string | null> = computed(() => {
-    const probe = this.probe();
-    return probe.status === 'answered' ? probe.affiliation.employerName : null;
+    const answer = this.probe().answer;
+    return answer?.status === 'answered' ? answer.affiliation.employerName : null;
   });
 
   /**
@@ -137,8 +157,8 @@ export class OrgLensEmployerAffiliationService {
    * not render copy stating a company is not a member.
    */
   public readonly affiliatedToNonMember: Signal<boolean> = computed(() => {
-    const probe = this.probe();
-    return probe.status === 'answered' && !!probe.affiliation.employerName && probe.affiliation.membership === 'non-member';
+    const answer = this.probe().answer;
+    return answer?.status === 'answered' && !!answer.affiliation.employerName && answer.affiliation.membership === 'non-member';
   });
 
   /**
@@ -151,8 +171,8 @@ export class OrgLensEmployerAffiliationService {
    * added, which is the loop #4314 exists to close.
    */
   public readonly affiliatedToMember: Signal<boolean> = computed(() => {
-    const probe = this.probe();
-    return probe.status === 'answered' && !!probe.affiliation.employerName && probe.affiliation.membership === 'member';
+    const answer = this.probe().answer;
+    return answer?.status === 'answered' && !!answer.affiliation.employerName && answer.affiliation.membership === 'member';
   });
 
   /** Re-ask the question — the shared Retry's employer half. */
@@ -160,17 +180,17 @@ export class OrgLensEmployerAffiliationService {
     this.refreshCount.update((count) => count + 1);
   }
 
-  private fetch(): Observable<AffiliationProbe> {
+  private fetch(): Observable<AffiliationAnswer> {
     return this.http.get<OrgLensEmployerAffiliation>('/api/profile/employer-affiliation').pipe(
       // `settled` holds the page on its skeleton until this answers, so an answer that never comes —
       // a hung warehouse read, a dropped socket — would strand every grant-less caller there with no
       // Retry to reach. Bounded by the same budget #4225 gives its sibling lookup; a timeout is a
       // failed lookup, which renders `could-not-load` and its Retry rather than a silent skeleton.
       timeout(ORG_AFFILIATION_LOOKUP_TIMEOUT_MS),
-      map((affiliation): AffiliationProbe => ({ status: 'answered', affiliation })),
+      map((affiliation): AffiliationAnswer => ({ status: 'answered', affiliation })),
       catchError((error) => {
         console.warn('[OrgLensEmployerAffiliationService] employer affiliation lookup failed', error);
-        return of<AffiliationProbe>({ status: 'failed' });
+        return of<AffiliationAnswer>({ status: 'failed' });
       })
     );
   }

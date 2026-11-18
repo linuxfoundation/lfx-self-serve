@@ -330,6 +330,11 @@ export class OrgLensEmptyStateService {
     if (this.roleGrants.loading()) {
       return true;
     }
+    // #4314 — the employer half of `retry()`, which outlives the grants refresh: the control must stay
+    // busy until the answer that decides rules 6–8 has landed, not just until the roster has.
+    if (this.employerAffiliation.refreshing()) {
+      return true;
+    }
     const retryGeneration = this.retryGeneration();
     // Busy only while Retry's own first page is the active fetch and has not landed: a later search
     // or reset moves the generation on, and scrolling after it landed reuses the generation but not
