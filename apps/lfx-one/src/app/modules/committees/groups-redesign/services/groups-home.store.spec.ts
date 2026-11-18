@@ -74,6 +74,21 @@ describe('GroupsHomeStore', () => {
     expect(store.groups()).toHaveLength(2);
   });
 
+  it('turns a refresh during the first load into a normal load', () => {
+    groups$ = new Subject<MyCommittee[]>();
+    const store = create();
+    const subject = new Subject<MyCommittee[]>();
+    groups$ = subject;
+    store.refresh();
+    TestBed.tick();
+
+    expect(store.loading()).toBe(true);
+    subject.next([group('a', 'Board')]);
+    subject.complete();
+    expect(store.loading()).toBe(false);
+    expect(store.groups()).toHaveLength(1);
+  });
+
   it('clears a failed first load once a refresh succeeds', () => {
     const subject = new Subject<MyCommittee[]>();
     groups$ = subject;

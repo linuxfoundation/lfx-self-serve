@@ -145,7 +145,8 @@ export class GroupsHomeStore {
 
   /** Fetches the groups again without the loading state, after a change the viewer just made; a failure keeps the list. */
   public refresh(): void {
-    this.reloadState.set({ silent: true });
+    // During the first load a refresh restarts it as a normal load, which it would otherwise cancel.
+    this.reloadState.set({ silent: !this.loadingState() });
   }
 
   public loadMore(): void {
