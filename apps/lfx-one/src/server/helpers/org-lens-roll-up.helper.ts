@@ -84,29 +84,38 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     throw unavailable(undefined, '/query/resources');
   }
 
-  let family = rollUpSet.families.find((candidate) => candidate.rootUid === rootUid);
+  const grantFamily = rollUpSet.families.find((candidate) => candidate.rootUid === rootUid);
+  let family = grantFamily;
   let familyComplete = true;
   let checkAuditor: ((orgUid: string) => Promise<boolean>) | undefined;
-  if (!family && roster.isStaff && (await LaunchDarklyServerService.getInstance().isFlagEnabled(req, ORG_LENS_ROLLUP_ENABLED_FLAG, false))) {
-    let staffFamily: OrgStaffRollUpFamily | null;
+  if (roster.isStaff && (await LaunchDarklyServerService.getInstance().isFlagEnabled(req, ORG_LENS_ROLLUP_ENABLED_FLAG, false))) {
+    let staffFamily: OrgStaffRollUpFamily | null = null;
+    let lookupError: unknown;
     try {
       staffFamily = await roleGrants.getStaffFamily(req, rootUid);
     } catch (error) {
+      lookupError = error;
       logger.warning(req, operation, 'Staff family lookup failed; cannot verify Org Lens roll-up access', {
         roll_up_key: rollUpKey,
         err: error instanceof Error ? error.message : String(error),
       });
-      throw unavailable(error, '/query/resources');
     }
-    if (!staffFamily || staffFamily.family.rootUid !== rootUid) {
-      throw forbidden();
+    if (staffFamily && staffFamily.family.rootUid === rootUid) {
+      const orgs = [...staffFamily.family.orgs];
+      for (const org of grantFamily?.orgs ?? []) {
+        if (!orgs.some((member) => member.uid === org.uid)) orgs.push(org);
+      }
+      family = { ...staffFamily.family, orgs };
+      familyComplete = staffFamily.complete;
+      checkAuditor = batchAuditorChecks(
+        req,
+        orgs.map((org) => org.accountId).filter((uid) => !roster.resolved.has(uid))
+      );
+    } else if (!grantFamily) {
+      throw lookupError === undefined ? forbidden() : unavailable(lookupError, '/query/resources');
+    } else if (lookupError !== undefined) {
+      familyComplete = false;
     }
-    family = staffFamily.family;
-    familyComplete = staffFamily.complete;
-    checkAuditor = batchAuditorChecks(
-      req,
-      family.orgs.map((org) => org.accountId).filter((uid) => !roster.resolved.has(uid))
-    );
   }
   if (!family) {
     if (rollUpSet.degraded || roster.staffCheck === 'failed') {
