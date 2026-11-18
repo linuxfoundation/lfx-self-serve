@@ -12,6 +12,16 @@ strategy:
     maxSurge: "100%"
     maxUnavailable: 0
 
+# minReadySeconds is how long a new pod must keep its Ready condition before the rollout counts it
+# as available and moves on to terminating an old pod. A crash or a change to NotReady during this
+# time resets the wait. Without it a pod that passes /readyz once is trusted immediately.
+# 40s is longer than the readiness probe needs to mark a failing pod NotReady
+# (failureThreshold 3 × periodSeconds 10 = 30s) plus one period of margin, so a pod that passes
+# once and then stops answering goes NotReady before it counts as available. Keep this above
+# readinessProbe.failureThreshold × periodSeconds if those change.
+# Set to null to omit the field.
+minReadySeconds: 40
+
 # terminationGracePeriodSeconds must exceed preStop.sleep + PM2 kill_timeout.
 # IMPORTANT: preStop runs *inside* the grace period — the clock starts when the pod enters
 # Terminating (before preStop executes), not after it finishes.
