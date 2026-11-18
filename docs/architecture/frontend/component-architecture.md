@@ -11,7 +11,9 @@ Feature modules live as top-level directories under `apps/lfx-one/src/app/module
 ```text
 apps/lfx-one/src/app/modules/
 ├── committees/                 # Committee management
-│   ├── committee-dashboard/    # Main committees route component
+│   ├── groups-entry/           # Route entry for /groups: picks the dashboard or the redesign (flag + Me lens)
+│   ├── committee-dashboard/    # Existing groups page (also the only page at /foundation/groups and /project/groups)
+│   ├── groups-redesign/        # Me lens groups page redesign (flag-gated)
 │   ├── committee-view/         # Committee detail route component
 │   ├── committee-manage/       # Committee create/edit
 │   └── components/             # Committee-specific components
@@ -61,6 +63,8 @@ apps/lfx-one/src/app/modules/
 > **Meetings create/edit**: `meeting-composer/` is the only create/edit surface, a drawer mounted once by `AppComponent` and raised from every entry point: the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks and the create-artifact dialog. The `/meetings/create` and `/meetings/:id/edit` deep links load `MeetingComposerRouteComponent`, which opens the composer in the browser and replaces the URL with the meetings list; on the server it renders nothing and does not redirect (an SSR redirect would become an HTTP 302 and drop the deep link).
 >
 > **Meetings page**: the flat `/meetings` route loads `MeetingsEntryComponent`, a thin wrapper that renders a loading state on the server and until LaunchDarkly is ready, then either `MeetingsDashboardComponent` or, when `MEETINGS_REDESIGN_FLAG` is on, the active lens is `me` and the URL is the flat `/meetings`, the `@defer`-loaded `MeetingsRedesignComponent`. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, where the wrapper renders the dashboard immediately (server included) with no loader or flag wait.
+>
+> **Groups page**: the flat `/groups` route loads `GroupsEntryComponent`, which works like `MeetingsEntryComponent`: a loading state on the server and until LaunchDarkly is ready, then `CommitteeDashboardComponent` or, when `GROUPS_REDESIGN_FLAG` is on in the Me lens, the `@defer`-loaded `GroupsRedesignComponent`. `/foundation/groups` and `/project/groups` render the dashboard immediately.
 
 ### Key Principles
 
@@ -219,7 +223,7 @@ Every main lens page (Me, Foundation, Project, Org) opens with `<lfx-page-header
 - **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters to the right of the title; they wrap below it when the row runs out of room. `eyebrow` adds an uppercase label above the title (Marketing Kit).
 - **Test ids.** `titleTestId` and `descriptionTestId` keep page-specific test ids. They default to `page-header-title` and `page-header-description`.
 
-Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 12px subtitle and pins the tab bar inside the header. The Me lens meetings redesign (`meetings-redesign`, behind `MEETINGS_REDESIGN_FLAG`) is the other: it hand-builds a sticky header with the same type spec, and its fade and tabs bar stick to the measured header height.
+Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 12px subtitle and pins the tab bar inside the header. The Me lens meetings and groups redesigns (`meetings-redesign` behind `MEETINGS_REDESIGN_FLAG`, `groups-redesign` behind `GROUPS_REDESIGN_FLAG`) are the others: each hand-builds a sticky header with the same type spec, and its fade and tabs bar stick to the measured header height.
 
 ### Tab shells: signal state vs. child routes
 
@@ -502,7 +506,7 @@ AppComponent
         ├── /                    → DashboardComponent (role-based dashboard)
         ├── /projects            → HomeComponent (project listing)
         ├── /meetings            → MeetingsEntryComponent (lazy loaded; renders MeetingsDashboardComponent or, behind `meetings-redesign` in the Me lens, MeetingsRedesignComponent)
-        ├── /groups              → CommitteeDashboardComponent (lazy loaded)
+        ├── /groups              → GroupsEntryComponent (lazy loaded; renders CommitteeDashboardComponent or, behind `groups-redesign` in the Me lens, GroupsRedesignComponent)
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)
         ├── /votes/:id           → VoteDetailComponent (vote detail page, keeps the current lens, in-place 404)

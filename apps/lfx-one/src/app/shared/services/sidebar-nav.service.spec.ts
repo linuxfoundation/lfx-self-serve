@@ -23,6 +23,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -618,6 +619,25 @@ describe('SidebarNavService', () => {
     expect(labels(sectionItems(items, 'Company Engagement'))).toContain('People');
   });
 
+  // #5856 — the People page is hidden in the all employee view (epic #5845): no left-nav link, and the Company Engagement
+  // section keeps its other pages. The full view is unchanged.
+  it('drops the People nav item in the all employee view only', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000Te2ovAAB');
+    const service = TestBed.inject(SidebarNavService);
+
+    expect(labels(sectionItems(service.sidebarItems(), 'Company Engagement'))).toContain('People');
+
+    (TestBed.inject(OrgRoleGrantsService) as unknown as { employeeViewOrgUids: { set(uids: ReadonlySet<string>): void } }).employeeViewOrgUids.set(
+      new Set(['0014100000Te2ovAAB'])
+    );
+    const items = service.sidebarItems();
+
+    expect(findByLink(items, '/company/people')).toBeUndefined();
+    expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain('People');
+    expect(labels(items)).toContain('Dashboard');
+  });
+
   // EasyCLA is single-company for the same reason as Profile: a corporate CLA belongs to one
   // company, so `/company/family-{id}/easycla` could only error (#4415, Copilot).
   it('drops EasyCLA in roll-up mode', () => {
@@ -628,6 +648,22 @@ describe('SidebarNavService', () => {
 
     expect(labels(items)).not.toContain('EasyCLA');
     expect(findByLink(items, '/company/family-0014100000RootAAAA/easycla')).toBeUndefined();
+  });
+
+  // Epic #5845 (#5857): the all employee view hides EasyCLA entirely; the full view keeps it.
+  it('drops the EasyCLA item in the all employee view and keeps it in the full view', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+    const grants = TestBed.inject(OrgRoleGrantsService);
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('EasyCLA');
+
+    (grants.employeeViewOrgUids as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set(['0014100000MgaAAAAA']));
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('EasyCLA');
+    expect(findByLink(items, '/company/easycla')).toBeUndefined();
+    expect(labels(items)).toContain('Dashboard');
   });
 
   // Crowdfunding Donations is single-company too: its endpoint takes one `orgUid` (#4415, Copilot).
@@ -828,6 +864,29 @@ describe('SidebarNavService', () => {
       impersonating.set(true);
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('LF Staff Only');
+    });
+  });
+
+  describe('the all employee view hides Memberships (#5855)', () => {
+    const MEMBERSHIPS_LINK = '/company/acme-inc/memberships';
+
+    const itemsFor = (employeeView: boolean): SidebarMenuItem[] => {
+      TestBed.overrideProvider(OrgLensViewModeService, { useValue: { isEmployeeView: signal(employeeView) } });
+      activeLens.set('org');
+      orgSegment.set('acme-inc');
+      return TestBed.inject(SidebarNavService).sidebarItems();
+    };
+
+    it('drops the Memberships link in the employee view', () => {
+      const items = itemsFor(true);
+
+      expect(findByLink(items, MEMBERSHIPS_LINK)).toBeUndefined();
+      expect(labels(items)).not.toContain('Memberships');
+      expect(findByLink(items, '/company/acme-inc/overview')).toBeDefined();
+    });
+
+    it('keeps the Memberships link in the full view', () => {
+      expect(findByLink(itemsFor(false), MEMBERSHIPS_LINK)).toEqual(expect.objectContaining({ label: 'Memberships' }));
     });
   });
 

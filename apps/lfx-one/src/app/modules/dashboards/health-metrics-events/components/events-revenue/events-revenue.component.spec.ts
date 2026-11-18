@@ -31,6 +31,8 @@ function revenueEvent(overrides: Partial<HealthMetricsEventsRevenueEvent> = {}):
     isPastEvent: true,
     goalMet: null,
     ranges: ['YTD'],
+    city: 'Toronto',
+    isVirtual: false,
     ...overrides,
   };
 }
@@ -140,42 +142,30 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-loading')).toBeNull();
   });
 
-  it("renders the period's headline, side stats and the pending note", async () => {
+  it("lays out the period's three money lines with their changes, with no caption", async () => {
     await render();
 
-    expect(text('events-revenue-pending')).toBe('All figures pending validation');
-    expect(text('events-revenue-headline-value')).toBe('$258K');
-    // The hero sits flush in the section, as the design draws it, not inside a card.
-    expect(query('events-revenue-hero')?.classList).not.toContain('border');
-    expect(text('events-revenue-headline-delta')).toBe('+6%');
-    expect(text('events-revenue-side-registration-value')).toBe('$180K');
-    expect(query('events-revenue-side-registration-delta')).not.toBeNull();
-    expect(text('events-revenue-side-sponsorship-delta')).toBe('−9%');
-    expect(text('events-revenue-side-split-value')).toBe('70 / 30');
-    expect(query('events-revenue-side-split-delta')).toBeNull();
+    expect(text('events-revenue-metrics-total-value')).toBe('$258K');
+    expect(text('events-revenue-metrics-total-trend')).toBe('+6%');
+    expect(text('events-revenue-metrics-registration-value')).toBe('$180K');
+    expect(text('events-revenue-metrics-registration-trend')).toBe('not available');
+    expect(text('events-revenue-metrics-sponsorship-trend')).toBe('−9%');
+    expect(query('events-revenue-metrics-split')).toBeNull();
+    expect(query('events-revenue-pending')).toBeNull();
+    expect(text('events-revenue-by-event-heading')).toBe('Revenue by event');
   });
 
-  it('lists the events in the period, each value bold over its goal or a "no goal set" line', async () => {
+  it('lists the events in the period with place and date, each amount with its goal as an inline suffix', async () => {
     await render();
 
-    expect(query('events-revenue-row-rev-1')).not.toBeNull();
+    expect(text('events-revenue-row-rev-1')).toContain('Toronto · Mar 10, 2026');
     expect(query('events-revenue-row-rev-2')).toBeNull();
-    expect(query('events-revenue-registration-value-rev-1')?.tagName).toBe('B');
-    expect(text('events-revenue-registration-value-rev-1')).toBe('$180K');
-    expect(text('events-revenue-registration-goal-rev-1')).toBe('/ $200K');
-    expect(query('events-revenue-registration-goal-rev-1')?.classList).toContain('text-[12px]');
-    expect(query('events-revenue-registration-no-goal-rev-1')).toBeNull();
-    expect(query('events-revenue-sponsorship-goal-rev-1')).toBeNull();
-    expect(text('events-revenue-sponsorship-no-goal-rev-1')).toBe('no goal set');
-    expect(query('events-revenue-sponsorship-no-goal-rev-1')?.classList).toContain('text-[12px]');
-    expect(query('events-revenue-row-rev-1')?.textContent).not.toContain('Set goal');
-    expect(query('events-revenue-unconverted-rev-1')).toBeNull();
+    expect(text('events-revenue-registration-rev-1')).toBe('$180K / $200K (goal)');
+    expect(text('events-revenue-sponsorship-rev-1')).toBe('$78K / no goal set');
     expect(query('events-revenue-unconverted-note')).toBeNull();
-    expect(query('events-revenue-headline-unconverted')).toBeNull();
-    expect(query('events-revenue-side-registration-unconverted')).toBeNull();
   });
 
-  it('re-projects a period change off the loaded response, marking unconverted revenue', async () => {
+  it('re-projects a period change off the loaded response, with no unconverted markers', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR');
@@ -183,14 +173,21 @@ describe('EventsRevenueComponent', () => {
     expect(getEventsRevenue).toHaveBeenCalledTimes(1);
     expect(lifecycle).toEqual(['reading', 'settled', 'settled']);
     expect(query('events-revenue-row-rev-1')).toBeNull();
-    expect(text('events-revenue-unconverted-rev-2')).toBe('*');
-    expect(query('events-revenue-registration-goal-rev-2')).toBeNull();
-    expect(text('events-revenue-sponsorship-goal-rev-2')).toBe('/ $50K');
-    expect(text('events-revenue-side-split-value')).toBe('not available');
-    expect(text('events-revenue-unconverted-note')).toContain('leave out registration revenue not yet converted to USD');
-    expect(text('events-revenue-headline-unconverted')).toBe('*');
-    expect(text('events-revenue-side-registration-unconverted')).toBe('*');
-    expect(query('events-revenue-side-sponsorship-unconverted')).toBeNull();
+    expect(text('events-revenue-registration-rev-2')).toBe('$90K / no goal set');
+    expect(text('events-revenue-sponsorship-rev-2')).toBe('$78K / $50K (goal)');
+    expect(query('events-revenue-row-rev-2')?.textContent).not.toContain('*');
+  });
+
+  it('pages the table at 10 events', async () => {
+    const events = Array.from({ length: 12 }, (_, index) => revenueEvent({ eventId: `evt-${index}` }));
+    await render(revenue({ events }));
+
+    const rows = () => fixture.nativeElement.querySelectorAll('[data-testid^="events-revenue-row-"]').length;
+    expect(rows()).toBe(10);
+    fixture.componentInstance['page'].set(1);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(rows()).toBe(2);
   });
 
   it('lists upcoming events first in the one table on the current-year view, with no goal chip', async () => {
@@ -201,27 +198,17 @@ describe('EventsRevenueComponent', () => {
       row.getAttribute('data-testid')
     );
     expect(rowIds).toEqual(['events-revenue-row-rev-3', 'events-revenue-row-rev-1']);
-    expect(query('events-revenue-table')?.textContent).not.toContain('Hit goal');
 
     await pickRange('COMPLETED_YEAR');
 
     expect(query('events-revenue-row-rev-3')).toBeNull();
   });
 
-  it('says a goal is unset only when none is set, not when it is withheld', async () => {
-    await render(revenue({ events: [revenueEvent({ registrationGoal: null, registrationGoalWithheld: true })] }));
+  it('says a goal is withheld for its currency, and reads $0 with no goal as "—"', async () => {
+    await render(revenue({ events: [revenueEvent({ registrationGoal: null, registrationGoalWithheld: true, sponsorshipUsd: 0 })] }));
 
-    expect(query('events-revenue-registration-no-goal-rev-1')).toBeNull();
-    expect(text('events-revenue-sponsorship-no-goal-rev-1')).toBe('no goal set');
-  });
-
-  it('says a goal is withheld for its currency without marking the revenue', async () => {
-    await render(revenue({ events: [revenueEvent({ registrationGoal: null, registrationGoalWithheld: true })] }));
-
-    expect(text('events-revenue-registration-goal-rev-1')).toBe('/ goal not in USD');
-    expect(query('events-revenue-sponsorship-goal-rev-1')).toBeNull();
-    expect(query('events-revenue-unconverted-rev-1')).toBeNull();
-    expect(query('events-revenue-unconverted-note')).toBeNull();
+    expect(text('events-revenue-registration-rev-1')).toBe('$180K / goal not in USD');
+    expect(text('events-revenue-sponsorship-rev-1')).toBe('— / no goal set');
   });
 
   // $0 with no event in the period is nothing to show, so the shell's empty state takes the section over.
@@ -231,13 +218,13 @@ describe('EventsRevenueComponent', () => {
     await pickRange('COMPLETED_YEAR_2');
 
     expect(verdicts).toEqual([false, true]);
-    expect(query('events-revenue-hero')).toBeNull();
+    expect(query('events-revenue-metrics')).toBeNull();
   });
 
   it('shows the empty table note for a period with revenue but no listed events', async () => {
     await render(revenue({ events: [revenueEvent({ ranges: ['COMPLETED_YEAR'] })] }));
 
-    expect(text('events-revenue-headline-value')).toBe('$258K');
+    expect(text('events-revenue-metrics-total-value')).toBe('$258K');
     expect(query('events-revenue-empty')).not.toBeNull();
     expect(query('events-revenue-table')).toBeNull();
     expect(verdicts).toEqual([false]);
@@ -246,7 +233,7 @@ describe('EventsRevenueComponent', () => {
   it('says per-event figures are missing, not that no event ran, when only the totals were read', async () => {
     await render(revenue({ events: [], eventsMeasured: false }));
 
-    expect(text('events-revenue-headline-value')).toBe('$258K');
+    expect(text('events-revenue-metrics-total-value')).toBe('$258K');
     expect(query('events-revenue-events-unmeasured')).not.toBeNull();
     expect(query('events-revenue-empty')).toBeNull();
   });
@@ -257,14 +244,14 @@ describe('EventsRevenueComponent', () => {
     await pickRange('COMPLETED_YEAR_3');
 
     expect(verdicts).toEqual([false, true]);
-    expect(query('events-revenue-hero')).toBeNull();
+    expect(query('events-revenue-metrics')).toBeNull();
   });
 
   it('settles empty, with no body, when no period was read for the foundation', async () => {
     await render(revenue({ periods: [], events: [], eventsMeasured: false }));
 
     expect(verdicts).toEqual([true]);
-    expect(query('events-revenue-hero')).toBeNull();
+    expect(query('events-revenue-metrics')).toBeNull();
   });
 
   it('shows the error state and does not re-settle on a period change after a failed read', async () => {

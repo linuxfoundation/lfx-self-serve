@@ -10,7 +10,7 @@ import { TableComponent } from '@components/table/table.component';
 import {
   getYearForRange,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
-  HEALTH_METRICS_EVENTS_FORECAST_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED,
   HEALTH_METRICS_EVENTS_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
@@ -87,7 +87,7 @@ export class EventsRegistrationForecastComponent {
   /** The event a deep link named, which stands until the reader picks another. */
   private readonly linkedEventId = this.route.snapshot.queryParamMap.get(HEALTH_METRICS_EVENTS_QUERY_PARAMS.forecastEvent);
 
-  protected readonly pageSize = HEALTH_METRICS_EVENTS_FORECAST_PAGE_SIZE;
+  protected readonly pageSize = HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE;
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
   protected readonly curveLoading = signal<boolean>(true);

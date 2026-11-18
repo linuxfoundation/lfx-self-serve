@@ -35,6 +35,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
   HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_L2_RANGES,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
@@ -42,7 +43,7 @@ import {
 
 import { HealthMetricsEventsService, isSupportedEventsRange } from './health-metrics-events.service';
 
-import type { HealthMetricsEventsOrganizationsQuery } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsOrganizationsQuery, HealthMetricsEventsSpeakerProposalsQuery } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 /** The logger only reads request metadata off this, so a bare cast is enough for the service call. */
@@ -95,6 +96,8 @@ function pastRow(overrides: Record<string, unknown> = {}) {
     GOAL_MET: false,
     REVENUE_USD: 0,
     PACE_STATUS: 'needs_attention',
+    EVENT_CITY: 'Springfield',
+    EVENT_LOCATION: null,
     IS_IN_PERIOD_YTD: true,
     SCOPE_PAST_EVENTS_COUNT_YTD: 4,
     SCOPE_REGISTRATIONS_COUNT_YTD: 2400,
@@ -125,11 +128,12 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     execute.mockResolvedValue({ rows: [eventRow()] });
   });
 
-  it('binds only the foundation, keeps events that have not ended, and reads one past the cap', async () => {
+  it('binds only the foundation, twice, keeps events that have not ended, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(sql).toContain('is_all_projects = TRUE');
     expect(sql).toMatch(NOT_ENDED_SCOPE);
     expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
@@ -442,17 +446,28 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     execute.mockResolvedValue({ rows: [pastRow()] });
   });
 
-  it('binds only the foundation, keeps events in some period, newest first, and reads one past the cap', async () => {
+  it('binds only the foundation, twice, keeps events in some period, newest first, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(sql).toContain('MARKETING_EVENT_PAST_EVENTS');
     expect(sql).toContain('is_all_projects = TRUE');
     expect(sql).toContain('is_in_period_3rd_last_completed_year OR is_in_period_prev_completed_year OR is_in_period_last_completed_year OR is_in_period_ytd');
     expect(sql).toContain('scope_registrations_count_3rd_last_completed_year');
     expect(sql).toContain('ORDER BY event_start_date DESC');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}`);
+  });
+
+  it("joins each event's city and location from the registrations view, one row per event", async () => {
+    await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS e');
+    expect(sql).toContain('WHERE event_id IN (SELECT event_id FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS WHERE foundation_slug = ?)');
+    expect(sql).toContain('GROUP BY event_id\n      ) p ON p.event_id = e.event_id');
+    expect(sql).toContain('p.event_city,');
   });
 
   it('maps an event with the periods it closed in, keeping $0 revenue as measured', async () => {
@@ -469,6 +484,8 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
         revenueUsd: 0,
         paceStatus: 'needs_attention',
         ranges: ['YTD'],
+        city: 'Springfield',
+        isVirtual: false,
       },
     ]);
   });
@@ -832,6 +849,8 @@ function revenueRow(overrides: Record<string, unknown> = {}) {
     COMBINED_REVENUE_GOAL: 200000,
     IS_PAST_EVENT: true,
     IS_REVENUE_GOAL_MET: false,
+    EVENT_CITY: null,
+    EVENT_LOCATION: 'Virtual',
     FOUNDATION_TOTAL_REVENUE_USD_YTD: 258000,
     FOUNDATION_REGISTRATION_REVENUE_USD_YTD: 180000,
     FOUNDATION_SPONSORSHIP_REVENUE_USD_YTD: 78000,
@@ -864,11 +883,21 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     execute.mockResolvedValue({ rows: [revenueRow()] });
   });
 
-  it('binds only the foundation, sorts older events and those outside every period last, and reads one past the cap', async () => {
+  it("joins each event's city and location, reading a location that says virtual as a virtual event", async () => {
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE e');
+    expect(sql).toContain(') p ON p.event_id = e.event_id');
+    expect(events[0]).toMatchObject({ city: null, isVirtual: true });
+  });
+
+  it('binds only the foundation, twice, sorts older events and those outside every period last, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(execute).toHaveBeenCalledTimes(1);
     expect(sql).toContain('MARKETING_EVENT_REVENUE');
     expect(sql).toContain("event_start_date >= DATE_TRUNC('YEAR', CURRENT_DATE()) AND event_start_date < CURRENT_DATE()) AS in_period_ytd");
@@ -903,6 +932,8 @@ describe('HealthMetricsEventsService.getRevenue', () => {
         isPastEvent: true,
         goalMet: false,
         ranges: ['YTD'],
+        city: null,
+        isVirtual: true,
       },
     ]);
   });
@@ -1102,14 +1133,21 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
       [
         drilldownRow(),
         drilldownRow({ IS_ALL_ORGANIZATIONS: false, IS_UNAFFILIATED_ORGANIZATION: true, PROPOSALS_SUBMITTED_COUNT_YTD: 1351 }),
-        drilldownRow({ IS_ALL_ORGANIZATIONS: false, ACCOUNT_ID: 'org-a', ACCOUNT_NAME: 'Acme Motors', PROPOSALS_SUBMITTED_COUNT_YTD: 324, SORT_RANK_YTD: 1 }),
-        drilldownRow({ IS_ALL_ORGANIZATIONS: false, ACCOUNT_ID: 'org-b', ACCOUNT_NAME: 'Beta Coastal', SORT_RANK_YTD: 9, SORT_RANK_LAST_COMPLETED_YEAR: 4 }),
+        drilldownRow({
+          IS_ALL_ORGANIZATIONS: false,
+          ACCOUNT_ID: 'org-a',
+          ACCOUNT_NAME: 'Acme Motors',
+          LOGO_URL: 'https://logos.example/acme.png',
+          PROPOSALS_SUBMITTED_COUNT_YTD: 324,
+          SORT_RANK_YTD: 1,
+        }),
+        drilldownRow({ IS_ALL_ORGANIZATIONS: false, ACCOUNT_ID: 'org-b', ACCOUNT_NAME: 'Beta Coastal', SORT_RANK_YTD: 12, SORT_RANK_LAST_COMPLETED_YEAR: 4 }),
       ],
       [proposalRow()]
     );
   });
 
-  it('binds only the foundation in both reads and keeps the latest few per period and tab', async () => {
+  it('binds only the foundation in both reads, joins company logos, and keeps the top ten and the latest few per period', async () => {
     await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
 
     expect(execute).toHaveBeenCalledTimes(2);
@@ -1117,16 +1155,19 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     const [listSql, listBinds] = execute.mock.calls.find(([sql]) => sql.includes('PROPOSALS_LIST')) ?? [];
     expect(drilldownBinds).toEqual(['acme']);
     expect(listBinds).toEqual(['acme']);
-    expect(drilldownSql).toContain('sort_rank_3rd_last_completed_year <= 5');
-    expect(drilldownSql).toContain('speakers_count_change_pct_last_completed_year');
+    expect(drilldownSql).toContain('d.sort_rank_3rd_last_completed_year <= 10');
+    expect(drilldownSql).toContain('d.speakers_count_change_pct_last_completed_year');
     expect(drilldownSql).not.toContain('change_pct_prev_completed_year');
+    expect(drilldownSql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = d.account_id');
     expect(drilldownSql).toContain(
-      'ORDER BY is_all_organizations DESC, is_unaffiliated_organization DESC, account_name ASC NULLS LAST, account_id ASC NULLS LAST'
+      'ORDER BY d.is_all_organizations DESC, d.is_unaffiliated_organization DESC, d.account_name ASC NULLS LAST, d.account_id ASC NULLS LAST'
     );
-    expect(listSql).toContain("WHEN is_ytd THEN 'YTD'");
-    expect(listSql).toContain("proposal_status_group IN ('Accepted', 'In review')");
-    expect(listSql).toContain(`<= ${HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS}`);
-    expect(listSql).toContain('ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key');
+    expect(listSql).toContain("WHEN p.is_ytd THEN 'YTD'");
+    expect(listSql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = p.account_id');
+    expect(listSql).toContain(
+      `QUALIFY ROW_NUMBER() OVER (PARTITION BY period ORDER BY TO_DATE(p.submission_date) DESC NULLS LAST, p.proposal_key) <= ${HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS}`
+    );
+    expect(listSql).not.toContain('proposal_status_group IN');
     // The speaker is shown by job title; the name never leaves the warehouse.
     expect(listSql).toContain('job_title');
     expect(listSql).not.toContain('speaker_name');
@@ -1149,14 +1190,13 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     expect(periods.find((period) => period.range === 'COMPLETED_YEAR_3')).toMatchObject({ submitted: 8017, changes: null });
   });
 
-  it('keeps organizations to the periods they rank in and the unaffiliated row apart', async () => {
-    const { organizations, unaffiliated } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
+  it('keeps companies to the periods they rank in, leaving the unaffiliated row out of the ranking', async () => {
+    const { organizations } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
 
     expect(organizations).toEqual([
-      { accountId: 'org-a', accountName: 'Acme Motors', periods: [{ range: 'YTD', rank: 1, submitted: 324 }] },
-      { accountId: 'org-b', accountName: 'Beta Coastal', periods: [{ range: 'COMPLETED_YEAR', rank: 4, submitted: null }] },
+      { accountId: 'org-a', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', periods: [{ range: 'YTD', rank: 1, submitted: 324 }] },
+      { accountId: 'org-b', accountName: 'Beta Coastal', logoUrl: '', periods: [{ range: 'COMPLETED_YEAR', rank: 4, submitted: null }] },
     ]);
-    expect(unaffiliated.find((entry) => entry.range === 'YTD')).toEqual({ range: 'YTD', submitted: 1351 });
   });
 
   it('maps a proposal with its status group and drops one with no key or period', async () => {
@@ -1166,8 +1206,8 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     const [listSql] = execute.mock.calls.find(([sql]) => sql.includes('PROPOSALS_LIST')) ?? [];
 
     // Filtered before the cap, so a key-less row cannot crowd a real one out of the list.
-    expect(listSql.indexOf('AND proposal_key IS NOT NULL')).toBeGreaterThan(-1);
-    expect(listSql.indexOf('AND proposal_key IS NOT NULL')).toBeLessThan(listSql.indexOf('QUALIFY'));
+    expect(listSql.indexOf('AND p.proposal_key IS NOT NULL')).toBeGreaterThan(-1);
+    expect(listSql.indexOf('AND p.proposal_key IS NOT NULL')).toBeLessThan(listSql.indexOf('QUALIFY'));
 
     expect(proposals).toEqual([
       {
@@ -1175,6 +1215,7 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
         range: 'YTD',
         jobTitle: 'Staff Engineer',
         organizationName: 'Acme Motors',
+        logoUrl: '',
         unaffiliated: false,
         eventName: 'Acme Summit',
         sessionTitle: 'A talk',
@@ -1199,7 +1240,6 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     await expect(new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' })).resolves.toEqual({
       periods: [],
       organizations: [],
-      unaffiliated: [],
       proposals: [],
     });
   });
@@ -1217,8 +1257,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
       ACCOUNT_NAME: 'Acme Motors',
       LOGO_URL: 'https://acme-motors.example/logo.png',
       IS_MEMBER: true,
+      MEMBERSHIP_TIER: ' Gold ',
       REGISTRATIONS_COUNT: 420,
-      REGISTRATIONS_SHARE: '0.5',
       SPONSORSHIP_REVENUE: 150000,
       PROPOSALS_COUNT: 12,
       SPEAKERS_COUNT: 4,
@@ -1238,7 +1278,7 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_ORG_OVERVIEW');
     expect(sql).toContain('registrations_count_3rd_last_completed_year AS registrations_count');
-    expect(sql).toContain('registrations_share_of_scope_max_3rd_last_completed_year AS registrations_share');
+    expect(sql).not.toContain('registrations_share');
     expect(sql).toContain('sort_rank_3rd_last_completed_year AS sort_rank');
     expect(sql).toContain('AND is_all_projects = TRUE');
     // The mapper drops a row with no account id, so the counts must not include it either.
@@ -1246,7 +1286,17 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     expect(sql).toContain('events_count_3rd_last_completed_year > 0');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC');
     expect(sql).not.toContain('ILIKE');
-    expect(binds).toEqual(['acme']);
+    expect(binds).toEqual(['acme', 'acme']);
+  });
+
+  it("joins the mapped logo over the view's own, and the company's current tier from the foundation's all-projects rows", async () => {
+    await new HealthMetricsEventsService().getOrganizations(req, baseQuery);
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).toContain("COALESCE(NULLIF(TRIM(logos.logo_url), ''), NULLIF(TRIM(page.logo_url), '')) AS logo_url");
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION');
+    expect(sql).toMatch(/WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+GROUP BY account_id\s+\) tiers ON tiers\.account_id = page\.account_id/);
   });
 
   it('binds the search once, with its wildcards escaped', async () => {
@@ -1255,7 +1305,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(sql).toContain("account_name ILIKE ? ESCAPE '!'");
     expect((sql as string).match(/\?/g)).toHaveLength(binds.length);
-    expect(binds).toEqual(['acme', '%50!%!_off%']);
+    // The tier lookup's slug comes after the search, in text order.
+    expect(binds).toEqual(['acme', '%50!%!_off%', 'acme']);
   });
 
   it.each([
@@ -1276,7 +1327,10 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
 
   it('maps the page rows and reads the totals off the first row', async () => {
     execute.mockResolvedValue({
-      rows: [organizationRow(), organizationRow({ ACCOUNT_ID: 'org-b', ACCOUNT_NAME: null, LOGO_URL: '', IS_MEMBER: null, SPONSORSHIP_REVENUE: null })],
+      rows: [
+        organizationRow(),
+        organizationRow({ ACCOUNT_ID: 'org-b', ACCOUNT_NAME: null, LOGO_URL: '', IS_MEMBER: null, MEMBERSHIP_TIER: '  ', SPONSORSHIP_REVENUE: null }),
+      ],
     });
 
     await expect(new HealthMetricsEventsService().getOrganizations(req, baseQuery)).resolves.toEqual({
@@ -1286,8 +1340,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
           accountName: 'Acme Motors',
           logoUrl: 'https://acme-motors.example/logo.png',
           isMember: true,
+          membershipTier: 'Gold',
           registrations: 420,
-          registrationsShare: 0.5,
           sponsorshipUsd: 150000,
           proposals: 12,
           speakers: 4,
@@ -1298,8 +1352,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
           accountName: 'org-b',
           logoUrl: null,
           isMember: false,
+          membershipTier: null,
           registrations: 420,
-          registrationsShare: 0.5,
           sponsorshipUsd: null,
           proposals: 12,
           speakers: 4,
@@ -1327,6 +1381,124 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const { rows } = await new HealthMetricsEventsService().getOrganizations(req, baseQuery);
 
     expect(rows).toEqual([]);
+  });
+});
+
+describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
+  const baseQuery: HealthMetricsEventsSpeakerProposalsQuery = {
+    foundationSlug: 'acme',
+    range: 'YTD',
+    eventId: '',
+    status: null,
+    offset: 0,
+    pageSize: 25,
+    includeEvents: false,
+  };
+  const PAGE_SQL = /WITH matched AS/;
+
+  function proposalRow(overrides: Record<string, unknown> = {}) {
+    return {
+      TOTAL_RECORDS: 42,
+      IS_PAGE_ROW: true,
+      PROPOSAL_KEY: 'p-1',
+      ACCOUNT_NAME: 'Acme Motors',
+      JOB_TITLE: ' Staff Engineer ',
+      EVENT_NAME: 'Acme Summit',
+      SESSION_TITLE: 'Scaling builds',
+      SUBMISSION_DATE: new Date('2026-03-02T00:00:00.000Z'),
+      SUBMISSION_STATUS_ORIGINAL: 'Accepted',
+      PROPOSAL_STATUS_GROUP: 'Accepted',
+      IS_UNAFFILIATED_PROPOSAL: false,
+      LOGO_URL: 'https://acme-motors.example/logo.png',
+      ...overrides,
+    };
+  }
+
+  function respond(pageRows: unknown[], eventRows: unknown[] = []): void {
+    execute.mockImplementation(async (sql: string) => ({ rows: PAGE_SQL.test(sql) ? pageRows : eventRows }));
+  }
+
+  function pageCall() {
+    return execute.mock.calls.find(([sql]) => PAGE_SQL.test(sql as string)) ?? [];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    respond([proposalRow()]);
+  });
+
+  it('reads the period flag of the all-projects proposals, newest day first, with no filter bound', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, range: 'COMPLETED_YEAR_2' });
+
+    const [sql, binds] = pageCall();
+    expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_LIST');
+    expect(sql).toContain('AND p.is_all_projects = TRUE');
+    expect(sql).toContain('AND p.is_prev_completed_year = TRUE');
+    expect(sql).toContain('AND p.proposal_key IS NOT NULL');
+    expect(sql).toContain('ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).not.toContain('event_id = ?');
+    expect(binds).toEqual(['acme']);
+  });
+
+  it('binds the event and the status group the view names', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, eventId: 'evt-1', status: 'in-review' });
+
+    const [sql, binds] = pageCall();
+    expect(sql).toContain('AND p.event_id = ?');
+    expect(sql).toContain('AND p.proposal_status_group = ?');
+    expect((sql as string).match(/\?/g)).toHaveLength(binds.length);
+    expect(binds).toEqual(['acme', 'evt-1', 'In review']);
+  });
+
+  it('clamps the page size and offset it interpolates', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, pageSize: 5000, offset: Number.MAX_SAFE_INTEGER });
+
+    const maxOffset = MAX_SNOWFLAKE_PAGINATION_PAGE * HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE;
+    expect(pageCall()[0]).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE} OFFSET ${maxOffset}`);
+  });
+
+  it('maps the page rows to the requested period and lists the period events when asked', async () => {
+    respond(
+      [proposalRow(), proposalRow({ PROPOSAL_KEY: 'p-2', JOB_TITLE: null, IS_UNAFFILIATED_PROPOSAL: true, PROPOSAL_STATUS_GROUP: 'Other', LOGO_URL: null })],
+      [
+        { EVENT_ID: 'evt-2', EVENT_NAME: ' Acme Summit 2026 ' },
+        { EVENT_ID: 'evt-1', EVENT_NAME: null },
+        { EVENT_ID: null, EVENT_NAME: 'Orphan' },
+      ]
+    );
+
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, includeEvents: true });
+
+    expect(page.totalRecords).toBe(42);
+    expect(page.rows.map((row) => [row.proposalKey, row.range, row.jobTitle, row.unaffiliated, row.statusGroup, row.logoUrl])).toEqual([
+      ['p-1', 'YTD', 'Staff Engineer', false, 'accepted', 'https://acme-motors.example/logo.png'],
+      ['p-2', 'YTD', null, true, null, ''],
+    ]);
+    expect(page.events).toEqual([
+      { id: 'evt-2', name: 'Acme Summit 2026' },
+      { id: 'evt-1', name: 'evt-1' },
+    ]);
+    const eventsCall = execute.mock.calls.find(([sql]) => !PAGE_SQL.test(sql as string));
+    expect(eventsCall?.[0]).toContain('GROUP BY event_id');
+    expect(eventsCall?.[0]).toContain('ORDER BY MAX(event_start_date) DESC NULLS LAST');
+    expect(eventsCall?.[0]).toContain('AND is_ytd = TRUE');
+    expect(eventsCall?.[1]).toEqual(['acme']);
+  });
+
+  it('skips the events read unless asked, as filter changes keep the list', async () => {
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, baseQuery);
+
+    expect(page.events).toBeNull();
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the total when the page is past the end', async () => {
+    respond([proposalRow({ IS_PAGE_ROW: null, PROPOSAL_KEY: null })]);
+
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, offset: 500 });
+
+    expect(page).toEqual({ rows: [], totalRecords: 42, events: null });
   });
 });
 

@@ -25,8 +25,8 @@ function period(overrides: Partial<HealthMetricsEventsSponsorshipPeriod> = {}): 
     progressToGoal: 0.75,
     changes: { revenue: 0.2 },
     tiers: [
-      { name: 'Gold Sponsor', packages: 20 },
-      { name: 'Silver Sponsor', packages: 10 },
+      { name: 'Gold', packages: 20 },
+      { name: 'Startup', packages: 10 },
     ],
     ...overrides,
   };
@@ -106,55 +106,29 @@ describe('EventsSponsorshipComponent', () => {
     expect(query('events-sponsorship-loading')).toBeNull();
   });
 
-  it("renders the period's revenue, delta, side stats and packages pill", async () => {
+  it("lays out the period's metrics row: revenue with its change, the goal reached, packages and add-ons", async () => {
     await render();
 
-    expect(text('events-sponsorship-headline-value')).toBe('$750K');
-    // The hero sits flush in the section, as the design draws it, not inside a card.
-    expect(query('events-sponsorship-hero')?.classList).not.toContain('border');
-    expect(text('events-sponsorship-headline-delta')).toBe('+20%');
-    expect(query('events-sponsorship-headline-delta')?.className).toContain('text-emerald-600');
-    expect(text('events-sponsorship-side-goal-value')).toBe('$1M');
-    expect(text('events-sponsorship-side-tier-packages-value')).toBe('30');
-    expect(text('events-sponsorship-side-add-ons-value')).toBe('12');
-    expect(text('events-sponsorship-packages')).toBe('30 packages sold');
+    expect(text('events-sponsorship-metrics-revenue-value')).toBe('$750K');
+    expect(text('events-sponsorship-metrics-revenue-trend')).toBe('+20%');
+    expect(text('events-sponsorship-metrics-goal-value')).toBe('$1M');
+    expect(text('events-sponsorship-metrics-goal-description')).toBe('75% reached');
+    expect(text('events-sponsorship-metrics-tier-packages-value')).toBe('30');
+    expect(text('events-sponsorship-metrics-add-ons-value')).toBe('12');
+    expect(query('events-sponsorship-packages')).toBeNull();
+    expect(query('events-sponsorship-progress')).toBeNull();
   });
 
-  it('shows progress to the goal and ranks the tiers', async () => {
+  it('draws the tier packages as bars, most sold first, with the tier icon or the ticket', async () => {
     await render();
 
-    expect(text('events-sponsorship-progress-value')).toBe('75%');
-    expect(query('events-sponsorship-no-goal')).toBeNull();
-    expect(text('events-sponsorship-tier-0')).toContain('Gold Sponsor');
-    expect(text('events-sponsorship-tier-0-value')).toBe('20');
-    expect(text('events-sponsorship-tier-1-value')).toBe('10');
+    expect(text('events-sponsorship-tiers-heading')).toBe('Tier packages');
+    expect([...(query('events-sponsorship-tiers-row-Gold')?.children ?? [])].map((cell) => cell.textContent?.trim())).toEqual(['Gold', '', '20']);
+    expect(query('events-sponsorship-tiers-row-Gold')?.querySelector('lfx-health-metrics-tier-icon')).not.toBeNull();
+    expect(query('events-sponsorship-tiers-row-Startup')?.querySelector('.fa-ticket')).not.toBeNull();
   });
 
-  it('draws the progress as a short bar with the bold percent beside it, under a vtitle', async () => {
-    await render();
-    const progress = query('events-sponsorship-progress');
-    const bar = progress?.querySelector('[role="progressbar"]');
-
-    expect(progress?.querySelector('h4')?.textContent?.trim()).toBe('Progress to goal');
-    expect(bar?.classList).toContain('w-[62px]');
-    expect(bar?.classList).toContain('h-[6px]');
-    expect(bar?.getAttribute('aria-valuenow')).toBe('75');
-    expect((bar?.firstElementChild as HTMLElement | null)?.style.width).toBe('75%');
-    expect(bar?.firstElementChild?.classList).toContain('bg-blue-500');
-    expect(query('events-sponsorship-progress-value')?.tagName).toBe('B');
-  });
-
-  it('shows the missing goal as an amber low-confidence banner with a decorative glyph', async () => {
-    await render(sponsorship([period({ goalUsd: null, progressToGoal: null })]));
-    const banner = query('events-sponsorship-no-goal');
-
-    expect(banner?.classList).toContain('bg-amber-50');
-    expect(banner?.classList).toContain('text-amber-700');
-    expect(banner?.querySelector('[aria-hidden="true"]')?.textContent).toBe('◐');
-    expect(text('events-sponsorship-no-goal')).toBe('◐ No sponsorship goal is set for this period, so no progress bar is shown.');
-  });
-
-  it('re-projects a period change without re-reading, and shows the callout when no goal is set', async () => {
+  it('re-projects a period change without re-reading, reading Goal as "—" when none is set', async () => {
     await render();
     lifecycle = [];
 
@@ -162,27 +136,10 @@ describe('EventsSponsorshipComponent', () => {
 
     expect(getEventsSponsorship).toHaveBeenCalledTimes(1);
     expect(lifecycle).toEqual(['settled']);
-    expect(text('events-sponsorship-headline-value')).toBe('$500K');
-    expect(query('events-sponsorship-headline-delta')).toBeNull();
-    expect(text('events-sponsorship-side-goal-value')).toBe('not set');
-    expect(query('events-sponsorship-progress')).toBeNull();
-    expect(query('events-sponsorship-no-goal')).not.toBeNull();
-  });
-
-  it('never renders a bar for a $0 goal', async () => {
-    await render(sponsorship([period({ goalUsd: 0, progressToGoal: null })]));
-
-    expect(query('events-sponsorship-progress')).toBeNull();
-    expect(query('events-sponsorship-no-goal')).not.toBeNull();
-  });
-
-  it('draws no bar and no callout for a goal the view models no progress for', async () => {
-    await render(sponsorship([period({ range: 'COMPLETED_YEAR_2', progressToGoal: null })]));
-
-    await pickRange('COMPLETED_YEAR_2');
-
-    expect(text('events-sponsorship-side-goal-value')).toBe('$1M');
-    expect(query('events-sponsorship-progress')).toBeNull();
+    expect(text('events-sponsorship-metrics-revenue-value')).toBe('$500K');
+    expect(query('events-sponsorship-metrics-revenue-trend')).toBeNull();
+    expect(text('events-sponsorship-metrics-goal-value')).toBe('—');
+    expect(query('events-sponsorship-metrics-goal-description')).toBeNull();
     expect(query('events-sponsorship-no-goal')).toBeNull();
   });
 
@@ -198,7 +155,7 @@ describe('EventsSponsorshipComponent', () => {
     await pickRange('COMPLETED_YEAR_2');
 
     expect(verdicts).toEqual([false, true]);
-    expect(query('events-sponsorship-hero')).toBeNull();
+    expect(query('events-sponsorship-metrics')).toBeNull();
   });
 
   it('settles empty, with no body, when the read carries no period', async () => {
@@ -206,7 +163,7 @@ describe('EventsSponsorshipComponent', () => {
 
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([true]);
-    expect(query('events-sponsorship-hero')).toBeNull();
+    expect(query('events-sponsorship-metrics')).toBeNull();
   });
 
   it('shows the error state and still settles when the read fails', async () => {

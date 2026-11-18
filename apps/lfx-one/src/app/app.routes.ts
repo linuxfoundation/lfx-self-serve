@@ -23,7 +23,9 @@ import { authenticatedMatchGuard } from './shared/guards/authenticated-match.gua
 import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
+import { orgLensFullViewOnlyGuard } from './shared/guards/org-lens-full-view-only.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
+import { foundationParticipatingOrgsEnabledGuard } from './shared/guards/foundation-participating-orgs-enabled.guard';
 import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
 import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
 import { formationOverviewReleaseGuard } from './shared/guards/formation-overview-release.guard';
@@ -39,7 +41,6 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { legacyOrgLensMatcher, legacyOrgLensRedirect } from './shared/utils/legacy-org-lens-redirect.utils';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
-import { orgLensFullViewOnlyGuard } from './shared/guards/org-lens-full-view-only.guard';
 import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
@@ -74,7 +75,7 @@ function orgLensPageRoutes(): Routes {
     {
       path: 'easycla',
       // A corporate CLA belongs to one company, so the roll-up redirects to its own home page (#4415, #4133).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       data: {
         lens: 'org',
         title: 'EasyCLA',
@@ -149,11 +150,13 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'memberships',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: { lens: 'org', title: 'Memberships', description: 'Active memberships and tier history.', icon: 'fa-light fa-display' },
       loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
     },
     {
       path: 'memberships/:foundationSlug',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: {
         lens: 'org',
         title: 'Membership Detail',
@@ -210,6 +213,7 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'people',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your company.', icon: 'fa-light fa-users' },
       loadComponent: () => import('./modules/dashboards/org/org-people/org-people.component').then((m) => m.OrgPeopleComponent),
     },
@@ -423,6 +427,18 @@ export const routes: Routes = [
         data: { lens: 'foundation' },
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
+      },
+      // Foundation Lens — Participating Companies page (ED + LF Staff, same policy as Health Metrics; #5697)
+      {
+        path: 'foundation/participating-orgs',
+        title: 'Participating Companies',
+        data: { lens: 'foundation' },
+        canMatch: [foundationParticipatingOrgsEnabledGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        loadComponent: () =>
+          import('./modules/dashboards/foundation-participating-orgs/foundation-participating-orgs.component').then(
+            (m) => m.FoundationParticipatingOrgsComponent
+          ),
       },
       // Foundation Lens — Projects page
       {

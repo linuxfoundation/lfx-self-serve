@@ -336,9 +336,18 @@ export interface CertificateEventRow {
   USER_ATTENDED: number | null;
 }
 
+/**
+ * Who a "my events" query matches: the user's Salesforce ID from user-service (null when the lookup
+ * failed) OR their session email, so merged accounts still see registrations made under another email.
+ */
+export interface EventRegistrantIdentity {
+  email: string;
+  userId: string | null;
+}
+
 export interface CertificateData {
   eventId: string;
-  userEmail: string;
+  registrant: EventRegistrantIdentity;
   userName: string;
 }
 
