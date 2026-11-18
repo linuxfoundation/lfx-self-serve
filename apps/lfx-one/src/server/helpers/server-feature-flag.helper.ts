@@ -386,6 +386,24 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS',
 
   /**
+   * Offers choosing the LinkedIn ad account in the create flow (#5809), sent as
+   * `linkedInConfig.adAccountId`, and serves `GET /api/campaigns/linkedin/create-account`.
+   *
+   * A CAPABILITY flag: it asserts that the DEPLOYED campaign-service answers
+   * `get-linkedin-ads-create-account` and reads `adAccountId` as a SELECTOR among the project's
+   * selectable accounts (lfx-v2-campaign-service#581, v1.0.37 on), and that campaign-service's own
+   * `LINKEDIN_ADS_ACCOUNT_SELECTION_ENABLED` is on. Before #581 the field was only an assertion
+   * that had to match the connection's account, so this app drops it (`buildLinkedInConfig`).
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * the mounted ConfigMap's account instead, so the capability the client sees
+   * (`CampaignListResult.linkedInAccountSelectionEnabled`) needs both. With it off the Implement tab
+   * shows the connection's account read-only, the create-account route answers 404, and
+   * `adAccountId` is dropped. OFF in the chart; same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInAccountSelection = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *

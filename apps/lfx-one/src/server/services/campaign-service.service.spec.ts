@@ -68,6 +68,7 @@ import {
   isCampaignServiceJobId,
   multiCampaignPlatforms,
   readBriefValidator,
+  toLinkedInCreateAccount,
 } from './campaign-service.service';
 
 const req = {} as unknown as Request;
@@ -4803,6 +4804,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
+      linkedInAccountSelectionEnabled: false,
       linkedInTargetingEditEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
@@ -5260,6 +5262,35 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
   });
 
   /**
+   * The LinkedIn account-selection capability (#5809): the cutover AND its own flag, on both the
+   * refused-scope answer and the queried one.
+   */
+  it.each([
+    [{ create: true, selection: true }, '', true],
+    [{ create: true, selection: true }, 'b-1', true],
+    [{ create: true, selection: false }, 'b-1', false],
+    [{ create: false, selection: true }, '', false],
+    [{ create: false, selection: true }, 'b-1', false],
+  ])('reports the LinkedIn account-selection capability from the cutover and its flag (%o, brief %j)', async (flags, briefId, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs || flag === ServerFeatureFlag.CampaignServiceJobs) return true;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAccountSelection) return flags.selection;
+      return false;
+    });
+    // The blank brief is refused before any query, so only the queried path gets an answer.
+    if (briefId !== '') proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', briefId);
+
+      expect(result.linkedInAccountSelectionEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
    * The LinkedIn targeting-edit capability (#5546): the cutover alone. The legacy creator reads the
    * ConfigMap and never the edit, and no asset flag has anything to do with it.
    */
@@ -5356,6 +5387,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
+      linkedInAccountSelectionEnabled: false,
       linkedInTargetingEditEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
@@ -6816,6 +6848,73 @@ describe('CampaignServiceClient.createSendWorkflow', () => {
     proxyRequest.mockResolvedValueOnce({ ...wire, edit_url: '' });
 
     await expect(new CampaignServiceClient().createSendWorkflow(req, 'tlf', { name: 'w', briefIds: ['a', 'b'] })).rejects.toThrow(/no usable workflow link/);
+  });
+});
+
+describe('CampaignServiceClient.getLinkedInCreateAccount (#5809)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's LinkedIn create account with no query or body", async () => {
+    const body = { account_id: '500000001' };
+    proxyRequest.mockResolvedValueOnce(body);
+
+    const result = await new CampaignServiceClient().getLinkedInCreateAccount(req, 'lf/ai');
+
+    expect(result).toBe(body);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/linkedin-ads/create-account', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().getLinkedInCreateAccount(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('toLinkedInCreateAccount (#5809)', () => {
+  /** Synthetic ids: a project connection with no organization stored, so the only account is the default. */
+  const valid = {
+    account_id: '500000001',
+    org_id: '',
+    label: 'Example project',
+    source: 'project',
+    status: 'active',
+    account_selection_enabled: false,
+    selectable_accounts: [{ account_id: '500000001', org_id: '', label: 'Example project', default: true }],
+  };
+
+  it('camel-cases a well-formed answer', () => {
+    expect(toLinkedInCreateAccount(valid)).toEqual({
+      accountId: '500000001',
+      orgId: '',
+      label: 'Example project',
+      source: 'project',
+      status: 'active',
+      accountSelectionEnabled: false,
+      selectableAccounts: [{ accountId: '500000001', orgId: '', label: 'Example project', default: true }],
+    });
+  });
+
+  const grant = { account_id: '500000002', org_id: '600000002', label: 'Example Foundation', default: false };
+  it.each([
+    ['not an object', null],
+    ['a non-numeric account id', { ...valid, account_id: 'urn:li:sponsoredAccount:500000001' }],
+    ['a non-numeric org id', { ...valid, org_id: 'org' }],
+    ['an unknown source', { ...valid, source: 'other' }],
+    ['a missing status', { ...valid, status: undefined }],
+    ['a non-boolean selection flag', { ...valid, account_selection_enabled: 'true' }],
+    ['no selectable accounts', { ...valid, selectable_accounts: [] }],
+    ['a selectable list that is not an array', { ...valid, selectable_accounts: {} }],
+    ['a malformed grant', { ...valid, selectable_accounts: [...valid.selectable_accounts, { ...grant, default: 'no' }] }],
+    ['a default that is not first', { ...valid, selectable_accounts: [grant, ...valid.selectable_accounts] }],
+    ['a first entry that is not the resolved account', { ...valid, selectable_accounts: [{ ...grant, default: true }] }],
+    ['two defaults', { ...valid, selectable_accounts: [...valid.selectable_accounts, { ...grant, default: true }] }],
+    ['a repeated account', { ...valid, selectable_accounts: [...valid.selectable_accounts, grant, grant] }],
+  ])('refuses %s', (_label, payload) => {
+    expect(toLinkedInCreateAccount(payload)).toBeNull();
   });
 });
 

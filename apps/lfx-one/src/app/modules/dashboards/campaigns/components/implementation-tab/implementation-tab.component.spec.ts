@@ -81,6 +81,8 @@ import type {
   GoogleAdsUserListsResult,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
+  LinkedInCreateAccount,
+  LinkedInSelectableAccount,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
@@ -3177,6 +3179,194 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     expect(sent).toBe(displayed.accountId);
     // And specifically not the revoked id the draft carried.
     expect(sent).not.toBe('urn:li:sponsoredAccount:revoked-999');
+  });
+});
+
+/**
+ * #5809: with LinkedIn account selection on and campaign-service owning the create, the tab reads the
+ * project's create account. More than one selectable account is a picker with the default chosen;
+ * exactly one names the real account read-only. Off, unknown, loading or failed keeps the read-only
+ * connection line and never blocks Create. `adAccountId` travels only for a non-default pick, because
+ * upstream needs `global_marketing_ops` for any value, the default included.
+ */
+describe('ImplementationTabComponent LinkedIn create account (#5809)', () => {
+  /** Synthetic ids: the LF system account's default, then one granted account. */
+  const DEFAULT_ACCOUNT: LinkedInSelectableAccount = { accountId: '500000001', orgId: '600000001', label: 'Example system account', default: true };
+  const GRANT: LinkedInSelectableAccount = { accountId: '500000002', orgId: '600000002', label: 'Example Foundation', default: false };
+  const createAccount = (selectableAccounts: LinkedInSelectableAccount[]): LinkedInCreateAccount => ({
+    accountId: DEFAULT_ACCOUNT.accountId,
+    orgId: DEFAULT_ACCOUNT.orgId,
+    label: DEFAULT_ACCOUNT.label,
+    source: 'system',
+    status: 'active',
+    accountSelectionEnabled: selectableAccounts.length > 1,
+    selectableAccounts,
+  });
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['linkedin-ads'],
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  let answer: Subject<LinkedInCreateAccount>;
+  let getLinkedInCreateAccount: ReturnType<typeof vi.fn>;
+  let posted: Record<string, unknown> | null;
+
+  beforeEach(async () => {
+    answer = new Subject<LinkedInCreateAccount>();
+    getLinkedInCreateAccount = vi.fn(() => answer.asObservable());
+    posted = null;
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
+            getLinkedInCreateAccount,
+            createCampaign: (request: Record<string, unknown>) => {
+              posted = request;
+              return of({ jobId: '' });
+            },
+          },
+        },
+      ],
+    }).compileComponents();
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+  });
+
+  /** Mounts with every LinkedIn gate satisfied except the account, so the account is the only variable. */
+  async function mount(selection: boolean | null, ownsCreate = true): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    f.componentRef.setInput('briefData', brief());
+    f.componentRef.setInput('googleCreativeEnabled', ownsCreate);
+    f.componentRef.setInput('linkedInAccountSelectionEnabled', selection);
+    f.detectChanges();
+    await f.whenStable();
+    const c = f.componentInstance as unknown as {
+      selectedPlatforms: { set(v: string[]): void };
+      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+      linkedInVariants: { set(v: unknown[]): void };
+    };
+    c.selectedPlatforms.set(['linkedin-ads']);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    c.linkedInVariants.set([
+      { key: 'linkedin-variant-test', headline: 'Attend', introText: 'Join us', imageAssetId: '', imageAssetName: '', imageAssetBriefId: '' },
+    ]);
+    f.detectChanges();
+    await f.whenStable();
+    return f;
+  }
+
+  async function settle(f: ComponentFixture<ImplementationTabComponent>): Promise<void> {
+    f.detectChanges();
+    await f.whenStable();
+    f.detectChanges();
+  }
+
+  const el = (f: ComponentFixture<ImplementationTabComponent>, testId: string): HTMLElement | null =>
+    (f.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+  /** What `submit()` sends as `linkedInConfig`; `canSubmit` must hold first, so a blocked create fails here. */
+  function submitted(f: ComponentFixture<ImplementationTabComponent>): Record<string, unknown> {
+    const c = f.componentInstance as unknown as { canSubmit(): boolean; submit(): void };
+    expect(c.canSubmit()).toBe(true);
+    c.submit();
+    return (posted?.['linkedInConfig'] ?? {}) as Record<string, unknown>;
+  }
+
+  it('offers a picker with the default chosen, and omits adAccountId for the default', async () => {
+    const f = await mount(true);
+    answer.next(createAccount([DEFAULT_ACCOUNT, GRANT]));
+    await settle(f);
+
+    expect(getLinkedInCreateAccount).toHaveBeenCalledWith('tlf');
+    const select = el(f, 'implementation-linkedin-account-select') as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['500000001', '500000002']);
+    expect(select.value).toBe('500000001');
+    expect(select.options[1].textContent).toContain('Example Foundation (500000002)');
+    expect(el(f, 'implementation-linkedin-account-from-connection')).toBeNull();
+    expect(el(f, 'implementation-linkedin-account')).toBeNull();
+    expect('adAccountId' in submitted(f)).toBe(false);
+  });
+
+  it('sends the granted account the operator picks', async () => {
+    const f = await mount(true);
+    answer.next(createAccount([DEFAULT_ACCOUNT, GRANT]));
+    await settle(f);
+
+    const select = el(f, 'implementation-linkedin-account-select') as HTMLSelectElement;
+    select.value = GRANT.accountId;
+    select.dispatchEvent(new Event('change'));
+    await settle(f);
+
+    expect(submitted(f)['adAccountId']).toBe(GRANT.accountId);
+  });
+
+  it('names the real account read-only when it is the only one', async () => {
+    const f = await mount(true);
+    answer.next(createAccount([DEFAULT_ACCOUNT]));
+    await settle(f);
+
+    expect(el(f, 'implementation-linkedin-account-resolved')?.textContent).toContain('Example system account (500000001)');
+    expect(el(f, 'implementation-linkedin-account-select')).toBeNull();
+    expect(el(f, 'implementation-linkedin-account-from-connection')).toBeNull();
+    expect('adAccountId' in submitted(f)).toBe(false);
+  });
+
+  it.each([null, false])('keeps the connection line and reads nothing with account selection %s', async (selection) => {
+    const f = await mount(selection);
+    await settle(f);
+
+    expect(getLinkedInCreateAccount).not.toHaveBeenCalled();
+    expect(el(f, 'implementation-linkedin-account-from-connection')).not.toBeNull();
+    expect(el(f, 'implementation-linkedin-account-select')).toBeNull();
+    expect('adAccountId' in submitted(f)).toBe(false);
+  });
+
+  it('keeps the connection line, and Create open, while the read is in flight', async () => {
+    const f = await mount(true);
+    await settle(f);
+
+    expect(el(f, 'implementation-linkedin-account-from-connection')).not.toBeNull();
+    expect('adAccountId' in submitted(f)).toBe(false);
+  });
+
+  it('falls back to the connection line, and does not block Create, when the read fails', async () => {
+    const f = await mount(true);
+    answer.error(new Error('create account unavailable'));
+    await settle(f);
+
+    expect(el(f, 'implementation-linkedin-account-from-connection')).not.toBeNull();
+    expect(el(f, 'implementation-linkedin-account-select')).toBeNull();
+    expect('adAccountId' in submitted(f)).toBe(false);
+  });
+
+  it('leaves the legacy selector alone when campaign-service does not own the create', async () => {
+    const f = await mount(true, false);
+    await settle(f);
+
+    expect(getLinkedInCreateAccount).not.toHaveBeenCalled();
+    expect(el(f, 'implementation-linkedin-account')).not.toBeNull();
+    expect(el(f, 'implementation-linkedin-account-from-connection')).toBeNull();
   });
 });
 

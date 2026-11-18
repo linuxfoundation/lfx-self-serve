@@ -362,6 +362,8 @@ import type {
   GoogleUserListPickerState,
   GoogleAudiencePickerState,
   LinkedInAccount,
+  LinkedInCreateAccount,
+  LinkedInSelectableAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
@@ -707,9 +709,18 @@ export class ImplementationTabComponent implements OnInit {
    * to an account on billing hold while the picker named another. So on an explicit yes the
    * selector is replaced with a read-only line, and the account gate below does not block on it.
    * `false` or unknown keeps the selector: the legacy creator still reads the chosen account.
-   * Choosing the account for real arrives with lfx-v2-campaign-service#581's account grants.
+   * Choosing the account for real is `linkedInAccountSelectionEnabled` below.
    */
   protected readonly linkedInAccountSetByConnection = computed<boolean>(() => this.googleCreativeEnabled() === true);
+
+  /**
+   * Whether the LinkedIn section may name the real account and offer choosing it
+   * (`CampaignListResult.linkedInAccountSelectionEnabled`, #5809). Read only together with
+   * `linkedInAccountSetByConnection()`. On an explicit yes the tab reads the project's create account
+   * (`linkedInCreateAccount`); `false`, unknown, or a read still loading or failed keeps the
+   * read-only line above, and never blocks Create.
+   */
+  public readonly linkedInAccountSelectionEnabled = input<boolean | null>(null);
 
   /**
    * Whether the Google image slots may offer the brief's stored-image LIBRARY
@@ -1609,6 +1620,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInLifetimeBudget = signal(false);
   protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
   protected readonly linkedInAccountsLoading = signal(false);
+  /** The account picked in the connection-mode picker (#5809); '' or an id no longer offered means the default. */
+  protected readonly linkedInChosenAccountId = signal('');
   /** The configured targeting profiles (#5546), from the mounted ConfigMap; the same list for every foundation. */
   protected readonly linkedInTargetingProfiles = signal<LinkedInTargetingProfileConfig[]>([]);
   protected readonly linkedInTargetingProfilesLoading = signal(false);
@@ -3332,6 +3345,17 @@ export class ImplementationTabComponent implements OnInit {
     const accounts = this.linkedInAccounts();
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
   });
+  /**
+   * The account a campaign-service create resolves to for this project, and the accounts it may name
+   * instead (#5809). `null` while account selection is off, while the read is in flight, and when it
+   * failed — each of which shows the read-only line rather than blocking Create.
+   */
+  protected readonly linkedInCreateAccount: Signal<LinkedInCreateAccount | null> = this.initLinkedInCreateAccount();
+  /** The operator's pick while it is still offered, else the default; `null` until the read answers. */
+  protected readonly linkedInChosenAccount = computed<LinkedInSelectableAccount | null>(() => {
+    const accounts = this.linkedInCreateAccount()?.selectableAccounts ?? [];
+    return accounts.find((a) => a.accountId === this.linkedInChosenAccountId()) ?? accounts.find((a) => a.default) ?? null;
+  });
 
   /**
    * What each platform's Bidding control renders (#3299): the choice, and why it cannot be sent —
@@ -4900,6 +4924,11 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInAccountId.setValue((event.target as HTMLSelectElement).value);
   }
 
+  /** The connection-mode picker (#5809); the legacy selector above writes the form instead. */
+  protected onLinkedInChosenAccountChange(event: Event): void {
+    this.linkedInChosenAccountId.set((event.target as HTMLSelectElement).value);
+  }
+
   protected onGeoTargetChange(event: Event): void {
     const select = event.target as HTMLSelectElement;
     this.addGeoTarget(select.value);
@@ -6430,7 +6459,7 @@ export class ImplementationTabComponent implements OnInit {
               // Only when something was removed, so an untouched profile sends what it always did.
               ...this.linkedInTargetingEditField(),
               variants: this.linkedInVariantsForCreate(),
-              adAccountId: this.linkedInAccountId(),
+              ...this.linkedInAdAccountField(),
               ...this.biddingField('linkedin-ads'),
             },
           }
@@ -7375,6 +7404,25 @@ export class ImplementationTabComponent implements OnInit {
     return this.linkedInImageUploadStatus() === 'error' && briefId !== '' && this.linkedInImageUploadFailedBriefId() === briefId;
   }
 
+  private initLinkedInCreateAccount(): Signal<LinkedInCreateAccount | null> {
+    // The slug to read for, or '' when the read is not wanted. `switchMap` drops a late answer for a
+    // previous foundation, and a failure is `null` — the read-only line — never an error state.
+    const slug = computed(() => (this.linkedInAccountSetByConnection() && this.linkedInAccountSelectionEnabled() === true ? this.activeFoundationSlug() : ''));
+    return toSignal(
+      toObservable(slug).pipe(
+        switchMap((requestedSlug) =>
+          requestedSlug === ''
+            ? of(null)
+            : this.campaignService.getLinkedInCreateAccount(requestedSlug).pipe(
+                startWith(null),
+                catchError(() => of(null))
+              )
+        )
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initLinkedInSelectedTargetingProfile(): Signal<LinkedInTargetingProfileConfig | null> {
     return computed(() => {
       const id = resolveLinkedInTargetingProfileId(this.linkedInTargetingProfile());
@@ -8195,6 +8243,18 @@ export class ImplementationTabComponent implements OnInit {
           this.linkedInTargetingProfilesLoading.set(false);
         },
       });
+  }
+
+  /**
+   * `{ adAccountId }` for the create (#5809). The legacy selector's id when the legacy creator runs.
+   * When campaign-service owns the create, only a picked account that is NOT the default: upstream
+   * requires `global_marketing_ops` for any `adAccountId`, the default included, so the default is
+   * reached by omitting it — and without account selection there is nothing to send.
+   */
+  private linkedInAdAccountField(): { adAccountId?: string } {
+    if (!this.linkedInAccountSetByConnection()) return { adAccountId: this.linkedInAccountId() };
+    const chosen = this.linkedInChosenAccount();
+    return chosen && !chosen.default ? { adAccountId: chosen.accountId } : {};
   }
 
   /** `{ targetingProfileEdit }` when the operator removed something from the selected profile, else nothing. */

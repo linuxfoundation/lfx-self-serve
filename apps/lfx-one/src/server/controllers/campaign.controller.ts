@@ -357,6 +357,7 @@ import {
   canCreateWithGoogleCriteria,
   canEditLinkedInTargeting,
   canSearchGoogleGeoTargets,
+  canSelectLinkedInAccount,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -366,6 +367,7 @@ import {
   deriveEventSlug,
   isCampaignServiceJobId,
   isCampaignServiceNotFound,
+  toLinkedInCreateAccount,
 } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { personaDetectionService } from '../utils/persona-helper';
@@ -3901,6 +3903,44 @@ export class CampaignController {
       const profiles = getLinkedInConfig().targetingProfiles;
       logger.success(req, operation, startTime, { count: profiles.length });
       res.json(profiles);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The LinkedIn ad account a create for this project resolves to, and the accounts
+   * `linkedInConfig.adAccountId` may name, for the Implement tab's account picker (#5809):
+   * campaign-service's `get-linkedin-ads-create-account` (lfx-v2-campaign-service#581), camel-cased.
+   *
+   * Answers 404, as if it were not mounted, while `canSelectLinkedInAccount` is off: an older
+   * campaign-service has no such route, and the create would drop the choice anyway. The router's
+   * `requireCampaignManager` applies, the relation campaign-service checks too. An upstream body
+   * that fails `toLinkedInCreateAccount` is a 502, so the tab never offers an account it cannot
+   * trust; every failure leaves the tab on its read-only line.
+   */
+  public async getLinkedInCreateAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'linkedin_create_account';
+    if (!canSelectLinkedInAccount()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const result = toLinkedInCreateAccount(await this.campaignServiceClient.getLinkedInCreateAccount(req, projectSlug));
+      if (result === null) {
+        throw new MicroserviceError('campaign-service returned an unreadable LinkedIn create account.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      logger.success(req, operation, startTime, { source: result.source, selectable: result.selectableAccounts.length });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -8974,33 +9014,23 @@ export class CampaignController {
    * Passing the legacy object through unchanged fails the dispatch twice over, which is why this
    * adapter exists at all:
    *
-   * 1. `adAccountId` is DELETED, because forwarding it can only ever cost a create and can never
-   *    win one.
+   * 1. `adAccountId` is FORWARDED only while account selection is on (`canSelectLinkedInAccount`,
+   *    #5809), and DELETED otherwise.
    *
-   *    The field is an assertion, never a selector. `internal/dispatch/linkedin.go:304-309` builds
-   *    the runtime allowlist from the connection's own account alone and says so: "Do NOT append a
-   *    caller-supplied adAccountId — that would defeat the client's cross-tenant fail-closed
-   *    check... A caller override is therefore only honored when it MATCHES the connection's
-   *    account." So of the three possible values, two are the same outcome and the third is a
-   *    refusal: omitted uses the connection's account, a matching override uses the connection's
-   *    account, and anything else fails the `adAccountID != "" && adAccountID != accountID` guard
-   *    at `:322` with "cross-account campaigns are not allowed".
+   *    On, campaign-service reads it as a SELECTOR among the project's selectable accounts
+   *    (lfx-v2-campaign-service#581): the Implement tab offers exactly that list
+   *    (`getLinkedInCreateAccount`) and sends the field only for a non-default choice, because
+   *    upstream requires `global_marketing_ops` for ANY `adAccountId`, the default included. A
+   *    non-selectable id is upstream's 400 and a caller without the relation its 403, both
+   *    surfaced like any other create refusal. A blank value is dropped, so it means the default.
    *
-   *    That matters because this app cannot tell which case it is in. The id the operator picked
-   *    comes from `getLinkedInAccounts` (this controller, `:1496`) — note the `_req`: it ignores
-   *    the project entirely and serves this application's own mounted
-   *    `/etc/lfx-self-serve/linkedin/linkedin.json`. campaign-service compares against the
-   *    PROJECT's connection row. Two unrelated sources, and nothing makes them agree per project.
-   *    The form compounds it by auto-selecting `accounts[0]` when a restored id is not in the
-   *    catalogue, so an untouched form forwards a global default that was never a human choice.
-   *
-   *    Deleting it is therefore not a lost opportunity to catch a mismatch — the mismatch this app
-   *    can observe is not the one upstream checks. Naming a genuine mismatch needs the connection's
-   *    chosen account, which campaign-service does not expose: `list-linkedin-ads-accounts` returns
-   *    the credential-reachable superset ("ready to store as the connection's account_id"), and
-   *    `monitor-linkedin-ads-account` takes the id as an input. Scoping the picker to the project's
-   *    own connection is tracked separately; until then, letting the connection decide is both the
-   *    pre-existing behaviour and the only one that cannot refuse a working create.
+   *    Off, the field is an assertion, never a selector: campaign-service creates in the
+   *    connection's account and refuses any other id with "cross-account campaigns are not
+   *    allowed" (`internal/dispatch/linkedin.go`). The id the legacy selector offers comes from
+   *    `getLinkedInAccounts`, which ignores the project and serves this application's own mounted
+   *    `linkedin.json`, so nothing makes it agree with the project's connection, and forwarding it
+   *    can only ever cost a create. Letting the connection decide is the only choice that cannot
+   *    refuse a working create.
    *
    * 2. The dispatcher builds its LinkedIn runtime config from `targetingProfiles` (PLURAL, the
    *    full catalogue) and `employerExclusions` in this envelope — `linkedin.go:135`. The legacy
@@ -9024,7 +9054,9 @@ export class CampaignController {
     const runtime = getLinkedInConfig();
     const edit = body.linkedInConfig.targetingProfileEdit;
 
-    delete rest['adAccountId'];
+    const adAccountId = typeof body.linkedInConfig.adAccountId === 'string' ? body.linkedInConfig.adAccountId.trim() : '';
+    if (canSelectLinkedInAccount() && adAccountId !== '') rest['adAccountId'] = adAccountId;
+    else delete rest['adAccountId'];
     delete rest['targetingProfileEdit'];
 
     return {

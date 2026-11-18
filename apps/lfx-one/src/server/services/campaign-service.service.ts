@@ -99,6 +99,7 @@ import type {
   CampaignServiceKeywordActionInput,
   CampaignServiceKeywordActions,
   CampaignServiceKeywords,
+  CampaignServiceLinkedInCreateAccount,
   CampaignServiceMicrosoftKeywords,
   CampaignServiceMonitorProvider,
   CampaignServiceNegativeKeywordInput,
@@ -119,7 +120,9 @@ import type {
   KeywordActionPlatform,
   LinkedInBriefCopy,
   ListAudiencesResult,
+  LinkedInCreateAccount,
   LinkedInCreativeVariant,
+  LinkedInSelectableAccount,
   MetaAdVariant,
   MetaBriefCopy,
   MicrosoftKeywordsWindow,
@@ -751,6 +754,18 @@ export function canUseLinkedInCreativeAssets(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may choose its ad account by `linkedInConfig.adAccountId` (#5809), and
+ * the Implement tab may read `get-linkedin-ads-create-account`.
+ *
+ * Needs the campaign-service create path to serve the create AND the account-selection flag, which
+ * says the deployed campaign-service reads `adAccountId` as a selector (lfx-v2-campaign-service#581).
+ * The legacy creator reads the mounted ConfigMap's account instead, hence the cutover half.
+ */
+export function canSelectLinkedInAccount(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
+}
+
+/**
  * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
  * targeting profile with entries removed.
  *
@@ -787,6 +802,50 @@ export function canCreateTwitter(): boolean {
  */
 export function canUseMicrosoftCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMicrosoftAssets);
+}
+
+/** A LinkedIn ad account or organization id: digits only, as `linkedInConfig.adAccountId` takes it. */
+const LINKEDIN_NUMERIC_ID_PATTERN = /^\d+$/;
+
+/** One `selectable_accounts` entry camel-cased, or `null` when any field is missing or malformed. */
+function toLinkedInSelectableAccount(value: unknown): LinkedInSelectableAccount | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  const accountId = v['account_id'];
+  const orgId = v['org_id'];
+  if (typeof accountId !== 'string' || !LINKEDIN_NUMERIC_ID_PATTERN.test(accountId)) return null;
+  // Upstream sends '' when the connection stores no organization.
+  if (typeof orgId !== 'string' || (orgId !== '' && !LINKEDIN_NUMERIC_ID_PATTERN.test(orgId))) return null;
+  if (typeof v['label'] !== 'string' || typeof v['default'] !== 'boolean') return null;
+  return { accountId, orgId, label: v['label'], default: v['default'] };
+}
+
+/**
+ * campaign-service's `get-linkedin-ads-create-account` answer camel-cased (#5809), or `null` when
+ * it cannot be trusted, so the caller fails the whole read rather than offering part of it.
+ *
+ * Strict like `isLinkedInAccount` in `linkedin-ads.service.ts`: an account id that is not the bare
+ * number `adAccountId` takes would be sent to campaign-service as a selector, and a list whose
+ * default is not first, not the resolved account, or not the only default would make the picker
+ * preselect one account while an omitted `adAccountId` creates in another.
+ */
+export function toLinkedInCreateAccount(payload: unknown): LinkedInCreateAccount | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as Record<string, unknown>;
+  const resolved = toLinkedInSelectableAccount({ account_id: p['account_id'], org_id: p['org_id'], label: p['label'], default: true });
+  if (!resolved) return null;
+  const source = p['source'];
+  if (source !== 'project' && source !== 'system') return null;
+  const status = p['status'];
+  const accountSelectionEnabled = p['account_selection_enabled'];
+  if (typeof status !== 'string' || typeof accountSelectionEnabled !== 'boolean') return null;
+  const raw = p['selectable_accounts'];
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const accounts = raw.map(toLinkedInSelectableAccount);
+  if (!accounts.every((a): a is LinkedInSelectableAccount => a !== null)) return null;
+  if (!accounts[0].default || accounts[0].accountId !== resolved.accountId || accounts.filter((a) => a.default).length !== 1) return null;
+  if (new Set(accounts.map((a) => a.accountId)).size !== accounts.length) return null;
+  return { accountId: resolved.accountId, orgId: resolved.orgId, label: resolved.label, source, status, accountSelectionEnabled, selectableAccounts: accounts };
 }
 
 /**
@@ -987,6 +1046,7 @@ export class CampaignServiceClient {
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+        linkedInAccountSelectionEnabled: canSelectLinkedInAccount(),
         linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
@@ -1059,6 +1119,7 @@ export class CampaignServiceClient {
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+      linkedInAccountSelectionEnabled: canSelectLinkedInAccount(),
       linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
@@ -3497,6 +3558,28 @@ export class CampaignServiceClient {
       `/projects/${encodePathSegment(projectSlug)}/google-ads/audiences`,
       'GET',
       q === undefined ? { type } : { type, q }
+    );
+  }
+
+  /**
+   * The LinkedIn ad account a create for this project resolves to, and the accounts
+   * `linkedInConfig.adAccountId` may name (`get-linkedin-ads-create-account`,
+   * lfx-v2-campaign-service#581), for the Implement tab's account picker (#5809). A database read
+   * upstream, gated there on `campaign_manager` of the project; nothing is sent to LinkedIn.
+   * Failures (404 no connection, 500 unusable system connection, 503) are left to the caller.
+   */
+  public async getLinkedInCreateAccount(req: Request, projectSlug: string): Promise<CampaignServiceLinkedInCreateAccount> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A LinkedIn create account read requires the project it belongs to.', {
+        operation: 'get_linkedin_create_account',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceLinkedInCreateAccount>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/linkedin-ads/create-account`,
+      'GET'
     );
   }
 

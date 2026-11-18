@@ -739,6 +739,21 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS:
     value: "true"
 
+  # Offers choosing the LinkedIn ad account in the create flow (#5809): the Implement tab reads
+  # campaign-service's `get-linkedin-ads-create-account` and sends `linkedInConfig.adAccountId` when
+  # the operator picks one of the LF system account's granted accounts instead of the default.
+  #
+  # A CAPABILITY flag: it says the DEPLOYED campaign-service has lfx-v2-campaign-service#581 (v1.0.37
+  # on) AND runs with its own LINKEDIN_ADS_ACCOUNT_SELECTION_ENABLED on. It also needs the create
+  # pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator reads the mounted ConfigMap's
+  # account instead.
+  #
+  # OFF in this chart until both are true. Off, the tab shows the connection's account read-only,
+  # the create-account route answers 404 and `adAccountId` is dropped from the create, so the
+  # connection decides. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION:
+    value: "false"
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the

@@ -2245,6 +2245,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2292,6 +2293,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2350,6 +2352,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2393,6 +2396,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
@@ -2432,6 +2436,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2474,6 +2479,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: true,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             googleAudienceSegmentsEnabled: false,
@@ -2502,6 +2508,52 @@ describe('CampaignsComponent brief persistence', () => {
         expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBeNull();
       });
 
+      /** The LinkedIn account-selection capability (#5809), read from its own key on the same terms as the one above. */
+      it('loads the linkedin account-selection capability from its own key, and leaves it unknown when the read fails', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: true,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsLinkedInAccountSelectionEnabled(): boolean | null;
+          briefCampaignsLinkedInAssetUploadEnabled(): boolean | null;
+          retryCreateCapabilities(): void;
+        };
+        expect(c.briefCampaignsLinkedInAccountSelectionEnabled()).toBe(true);
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBe(false);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        c.retryCreateCapabilities();
+        await fixture.whenStable();
+        expect(c.briefCampaignsLinkedInAccountSelectionEnabled()).toBeNull();
+      });
+
       /** The LinkedIn targeting-edit capability (#5546), read from its own key on the same terms as the one above. */
       it('loads the linkedin targeting-edit capability from its own key, and leaves it unknown when the read fails', async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
@@ -2519,6 +2571,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: true,
             microsoftAssetUploadEnabled: false,
             googleAudienceSegmentsEnabled: false,
@@ -2564,6 +2617,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: true,
             googleAudienceSegmentsEnabled: false,
@@ -2676,6 +2730,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2733,6 +2788,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2761,6 +2817,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           linkedInAssetUploadEnabled: false,
+          linkedInAccountSelectionEnabled: false,
           linkedInTargetingEditEnabled: false,
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
@@ -2805,6 +2862,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2850,6 +2908,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2890,6 +2949,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2943,6 +3003,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -2997,6 +3058,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           linkedInAssetUploadEnabled: false,
+          linkedInAccountSelectionEnabled: false,
           linkedInTargetingEditEnabled: false,
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
@@ -3051,6 +3113,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           linkedInAssetUploadEnabled: false,
+          linkedInAccountSelectionEnabled: false,
           linkedInTargetingEditEnabled: false,
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
@@ -3089,6 +3152,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -3153,6 +3217,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -3213,6 +3278,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -3243,6 +3309,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -3282,6 +3349,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
@@ -3333,6 +3401,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           linkedInAssetUploadEnabled: false,
+          linkedInAccountSelectionEnabled: false,
           linkedInTargetingEditEnabled: false,
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
@@ -3378,6 +3447,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -3423,6 +3493,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -3471,6 +3542,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           linkedInAssetUploadEnabled: false,
+          linkedInAccountSelectionEnabled: false,
           linkedInTargetingEditEnabled: false,
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
@@ -3550,6 +3622,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             linkedInAssetUploadEnabled: false,
+            linkedInAccountSelectionEnabled: false,
             linkedInTargetingEditEnabled: false,
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
@@ -14086,6 +14159,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
+      linkedInAccountSelectionEnabled: false,
       linkedInTargetingEditEnabled: false,
       microsoftAssetUploadEnabled: false,
       biddingEnabled,

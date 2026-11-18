@@ -2094,6 +2094,55 @@ export interface LinkedInCampaignCreateRequest {
   targetingProfileEdit?: LinkedInTargetingProfileEdit;
 }
 
+/** One entry of campaign-service's `get-linkedin-ads-create-account` `selectable_accounts`, as it is on the wire (lfx-v2-campaign-service#581). */
+export interface CampaignServiceLinkedInSelectableAccount {
+  account_id: string;
+  org_id: string;
+  label: string;
+  default: boolean;
+}
+
+/** campaign-service `GET /projects/{project_id}/linkedin-ads/create-account` (`campaign_manager` on the project, lfx-v2-campaign-service#581). */
+export interface CampaignServiceLinkedInCreateAccount {
+  account_id: string;
+  org_id: string;
+  label: string;
+  source: 'project' | 'system';
+  status: string;
+  account_selection_enabled: boolean;
+  selectable_accounts: CampaignServiceLinkedInSelectableAccount[];
+}
+
+/** One account `linkedInConfig.adAccountId` may name, camel-cased from {@link CampaignServiceLinkedInSelectableAccount}. */
+export interface LinkedInSelectableAccount {
+  /** The bare account number, exactly as `linkedInConfig.adAccountId` takes it. */
+  accountId: string;
+  /** The organization page the campaign's posts are authored by. Empty when the connection stores none. */
+  orgId: string;
+  /** Display text only, never an identifier. */
+  label: string;
+  /** The account a create uses when `adAccountId` is omitted. */
+  default: boolean;
+}
+
+/**
+ * `GET /api/campaigns/linkedin/create-account` (#5809): the LinkedIn ad account a create for the
+ * project resolves to, and the accounts `linkedInConfig.adAccountId` may name — the project's own
+ * connection, else the LF system connection. `selectableAccounts` lists the default first, and holds
+ * more than the default only when the source is `system` and campaign-service's account selection is
+ * on. Naming any account then needs `global_marketing_ops` on the project, so the client omits
+ * `adAccountId` for the default.
+ */
+export interface LinkedInCreateAccount {
+  accountId: string;
+  orgId: string;
+  label: string;
+  source: 'project' | 'system';
+  status: string;
+  accountSelectionEnabled: boolean;
+  selectableAccounts: LinkedInSelectableAccount[];
+}
+
 export interface LinkedInCampaignCreateResult {
   platform: 'linkedin-ads';
   campaignGroupName: string;
@@ -6820,6 +6869,17 @@ export interface CampaignListResult {
    * the client like the capabilities above.
    */
   linkedInAssetUploadEnabled: boolean;
+  /**
+   * Whether the LinkedIn section may offer choosing the ad account (#5809), sent as
+   * `linkedInConfig.adAccountId` only when the operator picks an account other than the default.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION` flag, which says the deployed
+   * campaign-service answers `get-linkedin-ads-create-account` and treats `adAccountId` as a
+   * selector (lfx-v2-campaign-service#581). Off, the server drops `adAccountId` and the connection
+   * decides. Modelled on the client like the capabilities above.
+   */
+  linkedInAccountSelectionEnabled: boolean;
   /**
    * Whether the LinkedIn section may offer removing entries from the selected targeting profile,
    * sent as `linkedInConfig.targetingProfileEdit` (#5546).

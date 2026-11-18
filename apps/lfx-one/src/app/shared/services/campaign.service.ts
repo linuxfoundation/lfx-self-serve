@@ -99,6 +99,7 @@ import {
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
   LinkedInAccount,
+  LinkedInCreateAccount,
   LinkedInMonitorResponse,
   LinkedInTargetingProfileConfig,
   ListAudiencesResult,
@@ -646,6 +647,14 @@ export class CampaignService {
 
   public getLinkedInAccounts(projectSlug: string): Observable<LinkedInAccount[]> {
     return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The LinkedIn ad account a create for the project resolves to, and the accounts it may choose
+   * instead (#5809). 404 while the server's account-selection capability is off.
+   */
+  public getLinkedInCreateAccount(projectSlug: string): Observable<LinkedInCreateAccount> {
+    return this.http.get<LinkedInCreateAccount>('/api/campaigns/linkedin/create-account', { params: { project: projectSlug } });
   }
 
   /** The configured LinkedIn targeting profiles and the facet URNs each one targets (#5546). */

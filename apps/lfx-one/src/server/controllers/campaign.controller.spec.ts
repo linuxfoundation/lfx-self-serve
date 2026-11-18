@@ -1072,17 +1072,17 @@ describe('CampaignController.createCampaign cutover', () => {
   /**
    * The legacy LinkedIn object cannot be forwarded unchanged, and both halves fail the dispatch:
    *
-   *   - `adAccountId` is an assertion, never a selector: `internal/dispatch/linkedin.go:304-309`
-   *     builds the allowlist from the connection's account alone and honours an override only when
-   *     it matches, so omitting it and matching it reach the SAME account while any other value is
-   *     refused at `:322` ("cross-account campaigns are not allowed"). The id this request carries
-   *     comes from this app's own global account file, which has no per-project relationship to the
+   *   - with account selection off, `adAccountId` is an assertion, never a selector: campaign-service
+   *     honours an override only when it matches the connection's account and refuses any other
+   *     value ("cross-account campaigns are not allowed"). The id this request carries comes from
+   *     this app's own global account file, which has no per-project relationship to the
    *     connection, so forwarding it can only ever cost a create. Dropped.
    *   - the dispatcher builds its runtime config from `targetingProfiles` (plural catalogue) and
    *     `employerExclusions` (`linkedin.go:135`); the legacy request carries neither, so an
    *     ordinary profile selection fails with "not found in runtime config".
    */
   it('strips the legacy ad account and adds the runtime targeting catalogue for LinkedIn', async () => {
+    isServerFeatureEnabled.mockImplementation((flag: string) => flag !== ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
@@ -1100,6 +1100,26 @@ describe('CampaignController.createCampaign cutover', () => {
     // duplicate of it.
     expect(sent['targetingProfile']).toEqual({ id: 'cloud-native' });
     expect(sent['budgetUsd']).toBe(100);
+  });
+
+  /**
+   * #5809: with account selection on, campaign-service reads `adAccountId` as a selector
+   * (lfx-v2-campaign-service#581), so the picked account is forwarded, trimmed. A blank one is
+   * dropped, which is how the Implement tab asks for the default.
+   */
+  it.each([
+    { label: 'forwards a picked account, trimmed', adAccountId: ' 507654321 ', expected: '507654321' },
+    { label: 'drops a blank account, so the default applies', adAccountId: '  ', expected: undefined },
+  ])('with LinkedIn account selection on, $label', async ({ adAccountId, expected }) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const linkedInBody = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, adAccountId, targetingProfile: { id: 'cloud-native' } } };
+    await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['linkedInConfig'] as Record<string, unknown>;
+    expect(sent['adAccountId']).toBe(expected);
+    expect('adAccountId' in sent).toBe(expected !== undefined);
   });
 
   /**
