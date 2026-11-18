@@ -19,6 +19,19 @@
 
 <ng-template #drawer>
   <lfx-ui-drawer heading="Pending applications" [subtitle]="subtitle()">
+    <!-- Repeats the toast's Undo: the drawer's focus trap keeps the toast out of keyboard reach. -->
+    @if (undo(); as pending) {
+      <lfx-ui-button
+        drawerActions
+        variant="secondary"
+        size="small"
+        icon="fa-light fa-arrow-rotate-left"
+        [ariaLabel]="pending.ariaLabel"
+        (click)="pending.run()"
+        data-testid="groups-redesign-applications-undo">
+        Undo
+      </lfx-ui-button>
+    }
     <!-- Rows split by a 1px inset line, not a border; the button moves under the text below a 480px row. -->
     <div
       class="@container -my-[20px] flex flex-col pb-[8px] pt-[4px] [&>*+*]:shadow-[inset_0_1px_0_0] [&>*+*]:shadow-gray-100"
@@ -28,21 +41,19 @@
           #rowElement
           class="flex flex-wrap items-start gap-x-[24px] gap-y-[12px] py-[16px] @[480px]:flex-nowrap"
           data-testid="groups-redesign-applications-row">
-          <!-- Cut-off names get a tooltip with the full text, measured as the pointer or focus arrives. -->
-          <div class="flex min-w-0 flex-1 flex-col gap-[4px]" (mouseenter)="checkTruncated(groupName)" (focusin)="checkTruncated(groupName)">
+          <div class="flex min-w-0 flex-1 flex-col gap-[4px]">
             @if (row.project_name; as scope) {
               <span
                 class="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[12px] text-gray-900"
-                (mouseenter)="checkTruncated(scopeName)"
                 data-testid="groups-redesign-applications-row-scope">
                 <lfx-meeting-project-logo [src]="row.project_logo_url ?? ''" />
-                <span #scopeName class="min-w-0 truncate" [lfxUiTooltip]="scope" [lfxUiTooltipDisabled]="!truncated().has(scopeName)">{{ scope }}</span>
+                <span #name class="min-w-0 truncate" [lfxUiTooltip]="scope" [lfxUiTooltipDisabled]="!truncated().has(name)">{{ scope }}</span>
               </span>
             }
             <a
-              #groupName
+              #name
               [lfxUiTooltip]="row.committee_name"
-              [lfxUiTooltipDisabled]="!truncated().has(groupName)"
+              [lfxUiTooltipDisabled]="!truncated().has(name)"
               class="min-w-0 max-w-full self-start truncate text-[14px] font-medium text-gray-900 hover:text-blue-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
               [routerLink]="row.viewCommands"
               [queryParams]="row.viewQueryParams"

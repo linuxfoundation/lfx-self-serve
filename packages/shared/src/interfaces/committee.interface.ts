@@ -740,6 +740,13 @@ export interface PendingInvitationRowVm extends PendingInvitation {
   viewQueryParams: { project: string } | null;
 }
 
+/** The Undo a Groups page drawer repeats from its toast, which the drawer's focus trap keeps out of keyboard reach. */
+export interface GroupsHomeUndo {
+  /** Accessible name of the drawer's Undo button, naming what it restores. */
+  ariaLabel: string;
+  run: () => void;
+}
+
 /**
  * One card's display data on the My Groups card grid. Built entirely client-side from a
  * `MyCommittee` — no new upstream shape.

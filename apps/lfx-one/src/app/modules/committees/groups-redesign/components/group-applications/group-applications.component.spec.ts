@@ -167,6 +167,35 @@ describe('GroupApplicationsComponent', () => {
     await settle();
     expect(submit).toHaveBeenCalledWith('committee-a', 'Synthetic message a');
     expect(all('groups-redesign-applications-row')).toHaveLength(2);
+    expect(byTestId('groups-redesign-applications-undo')).toBeNull();
+  });
+
+  it('repeats Undo in the drawer, where the keyboard can reach it, and closes the toast when used', async () => {
+    const dismiss = vi.fn<() => void>();
+    show.mockReturnValue({ id: 'toast', dismiss });
+    await render();
+    await open();
+    await withdrawRow(0);
+
+    const undo = byTestId('groups-redesign-applications-undo')?.querySelector('button') as HTMLButtonElement;
+    expect(undo.getAttribute('aria-label')).toBe('Undo withdrawing your application to Synthetic Group a');
+    undo.click();
+    await settle();
+    expect(dismiss).toHaveBeenCalled();
+    expect(submit).toHaveBeenCalledWith('committee-a', 'Synthetic message a');
+    expect(all('groups-redesign-applications-row')).toHaveLength(2);
+  });
+
+  it('keeps the row off and says so when Undo fails', async () => {
+    submit.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    await render();
+    await open();
+    await withdrawRow(0);
+    show.mock.calls[0][0].actions?.[0].run();
+    await settle();
+
+    expect(all('groups-redesign-applications-row')).toHaveLength(1);
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: "Couldn't restore the application" }));
   });
 
   it('puts the row back when withdrawing fails', async () => {

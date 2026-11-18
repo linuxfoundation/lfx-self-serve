@@ -24,7 +24,8 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { MyPendingApplication, PendingApplicationRowVm, UiFocusable } from '@lfx-one/shared/interfaces';
+import { GROUPS_HOME_UNDO_MS } from '@lfx-one/shared/constants';
+import { GroupsHomeUndo, MyPendingApplication, PendingApplicationRowVm, UiFocusable } from '@lfx-one/shared/interfaces';
 import { getEntityCommands } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
@@ -33,9 +34,10 @@ import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
 import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
-import { EMPTY, pairwise, take } from 'rxjs';
+import { EMPTY, Observable, pairwise, switchMap, take } from 'rxjs';
 
 import { MeetingProjectLogoComponent } from '../../../../meetings/meetings-redesign/components/meeting-project-logo/meeting-project-logo.component';
+import { MeetingsHomeResizeService } from '../../../../meetings/meetings-redesign/services/meetings-home-resize.service';
 import { GroupsHomeStore } from '../../services/groups-home.store';
 
 /**
@@ -55,10 +57,12 @@ export class GroupApplicationsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly drawerService = inject(UiDrawerService);
   private readonly toast = inject(UiToastService);
+  private readonly resize = inject(MeetingsHomeResizeService);
   private readonly committeeService = inject(CommitteeService);
   private readonly store = inject(GroupsHomeStore);
   private readonly drawerTemplate = viewChild.required<TemplateRef<unknown>>('drawer');
   private readonly rowElements = viewChildren<ElementRef<HTMLElement>>('rowElement');
+  private readonly names = viewChildren<ElementRef<HTMLElement>>('name');
 
   /** Takes focus when the last application is withdrawn, since the button then hides. */
   public readonly fallbackFocus = input<UiFocusable | null>(null);
@@ -68,6 +72,8 @@ export class GroupApplicationsComponent {
   protected readonly drawerOpen = signal(false);
   /** Names cut off by the row width; only those get a tooltip with the full text. */
   protected readonly truncated = signal<ReadonlySet<HTMLElement>>(new Set());
+  /** Undo of the last withdraw, also shown in the drawer while its toast is up. */
+  protected readonly undo = signal<GroupsHomeUndo | null>(null);
   protected readonly linkState = { backLabel: 'Groups', fromMeLens: true };
   private readonly loaded: Signal<MyPendingApplication[]> = this.initLoaded();
   /** Pending applications, without withdrawn ones and groups the viewer already belongs to. */
@@ -75,10 +81,15 @@ export class GroupApplicationsComponent {
   protected readonly subtitle: Signal<string> = this.initSubtitle();
 
   private drawerRef: DialogRef | null = null;
+  private undoTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor() {
     this.initCloseWhenEmpty();
-    this.destroyRef.onDestroy(() => this.drawerRef?.close());
+    this.initTruncation();
+    this.destroyRef.onDestroy(() => {
+      this.clearUndo();
+      this.drawerRef?.close();
+    });
   }
 
   protected openDrawer(): void {
@@ -97,28 +108,12 @@ export class GroupApplicationsComponent {
     this.drawerRef?.close();
   }
 
-  protected checkTruncated(element: HTMLElement): void {
-    const cut = element.scrollWidth > element.clientWidth;
-    if (cut === this.truncated().has(element)) return;
-    this.truncated.update((elements) => {
-      const next = new Set(elements);
-      if (cut) next.add(element);
-      else next.delete(element);
-      return next;
-    });
-  }
-
   protected withdraw(application: MyPendingApplication): void {
     const index = this.rows().findIndex((row) => row.uid === application.uid);
     this.setWithdrawn(application.uid, true);
-    if (this.drawerRef && index >= 0) {
-      // The focused button leaves with its row; focus moves to the next one left.
-      afterNextRender(() => this.rowElements()[Math.min(index, this.rowElements().length - 1)]?.nativeElement.querySelector('button')?.focus(), {
-        injector: this.injector,
-      });
-    }
+    this.focusRow(index);
     this.committeeService.withdrawApplication(application.committee_uid, application.uid).subscribe({
-      next: () => this.toast.show({ message: 'Application withdrawn', actions: [{ label: 'Undo', run: () => this.undoWithdraw(application) }] }),
+      next: () => this.offerUndo(application),
       error: (error: HttpErrorResponse) => {
         // 404 and 409: the application is gone or already reviewed, so it stays off the list.
         if (error.status === 404 || error.status === 409) {
@@ -169,17 +164,68 @@ export class GroupApplicationsComponent {
       .subscribe(([previous, rows]) => {
         const ref = this.drawerRef;
         if (!ref || rows.length || !previous.length) return;
-        ref.closed.pipe(take(1)).subscribe(() => this.fallbackFocus()?.focus());
+        ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.fallbackFocus()?.focus());
         ref.close();
       });
   }
 
+  /** Measured on render and resize, so the tooltip is ready before the first hover. */
+  private initTruncation(): void {
+    toObservable(computed(() => this.names().map((ref) => ref.nativeElement)))
+      .pipe(
+        switchMap(
+          (elements) =>
+            new Observable<ReadonlySet<HTMLElement>>((subscriber) =>
+              this.resize.observe(elements, () => subscriber.next(new Set(elements.filter((element) => element.scrollWidth > element.clientWidth))))
+            )
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe((truncated) => this.truncated.set(truncated));
+  }
+
+  private offerUndo(application: MyPendingApplication): void {
+    this.clearUndo();
+    const run = (): void => this.undoWithdraw(application);
+    const toast = this.toast.show({ message: 'Application withdrawn', duration: GROUPS_HOME_UNDO_MS, actions: [{ label: 'Undo', run }] });
+    this.undo.set({
+      ariaLabel: `Undo withdrawing your application to ${application.committee_name}`,
+      run: () => {
+        toast.dismiss();
+        run();
+      },
+    });
+    this.undoTimer = setTimeout(() => this.clearUndo(), GROUPS_HOME_UNDO_MS);
+  }
+
   /** Applying again reopens the same application with its message. */
   private undoWithdraw(application: MyPendingApplication): void {
+    this.clearUndo();
     this.committeeService.submitApplication(application.committee_uid, application.message).subscribe({
-      next: () => this.setWithdrawn(application.uid, false),
+      next: () => {
+        this.setWithdrawn(application.uid, false);
+        this.focusRow(this.rows().findIndex((row) => row.uid === application.uid));
+      },
       error: () => this.toast.show({ variant: 'error', message: "Couldn't restore the application", description: 'Apply again from the group page.' }),
     });
+  }
+
+  private clearUndo(): void {
+    if (this.undoTimer) clearTimeout(this.undoTimer);
+    this.undoTimer = null;
+    this.undo.set(null);
+  }
+
+  /** The focused button leaves with its row, or the drawer's Undo with the restore, so focus moves to the row now at `index`. */
+  private focusRow(index: number): void {
+    if (!this.drawerRef || index < 0) return;
+    afterNextRender(
+      () => {
+        const rows = this.rowElements();
+        rows[Math.min(index, rows.length - 1)]?.nativeElement.querySelector('button')?.focus();
+      },
+      { injector: this.injector }
+    );
   }
 
   private setWithdrawn(uid: string, withdrawn: boolean): void {
