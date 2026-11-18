@@ -21,7 +21,13 @@ import type * as ReadAccessHelper from '../helpers/org-lens-read-access.helper';
  */
 
 const ORG_UID = '0016100000ACMEAAA1';
-const ALLOWED_FOR_EMPLOYEE_VIEW = new Set<string>();
+const ALLOWED_FOR_EMPLOYEE_VIEW = new Set<string>([
+  '/org-foundation-coverage',
+  '/org-involvement-contributors-monthly',
+  '/org-involvement-maintainers-monthly',
+  '/org-involvement-event-attendance-monthly',
+]);
+const OPT_IN_MIDDLEWARE = 'requireOrgAnalyticsAccessAllowingEmployeeView';
 
 vi.mock('../helpers/org-lens-read-access.helper', async (importOriginal) => ({
   ...(await importOriginal<typeof ReadAccessHelper>()),
@@ -43,10 +49,20 @@ interface Layer {
   route?: { path: string; methods: Record<string, boolean>; stack: { name: string; handle: { name?: string } }[] };
 }
 
-const gatedPaths = (): string[] =>
+const GATES = ['requireOrgAnalyticsAccess', OPT_IN_MIDDLEWARE];
+
+const gatedLayers = (): NonNullable<Layer['route']>[] =>
   (analyticsRouter as unknown as { stack: Layer[] }).stack
-    .filter((layer) => layer.route?.stack.some((s) => s.handle?.name === 'requireOrgAnalyticsAccess') && layer.route.methods['get'])
-    .map((layer) => (layer.route as NonNullable<Layer['route']>).path);
+    .filter((layer) => layer.route?.stack.some((s) => GATES.includes(s.handle?.name ?? '')) && layer.route.methods['get'])
+    .map((layer) => layer.route as NonNullable<Layer['route']>);
+
+const gatedPaths = (): string[] => gatedLayers().map((route) => route.path);
+
+/** The paths whose route actually carries the opt-in gate (not merely listed). */
+const optedInPaths = (): string[] =>
+  gatedLayers()
+    .filter((route) => route.stack.some((s) => s.handle?.name === OPT_IN_MIDDLEWARE))
+    .map((route) => route.path);
 
 let server: Server;
 let baseUrl: string;
@@ -79,6 +95,20 @@ describe('analytics router, all employee view', () => {
       const body = (await res.json().catch(() => ({}))) as { code?: string };
 
       expect({ path, status: res.status, code: body.code }, `GET ${path}`).toEqual({ path, status: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+    }
+  });
+
+  // Skipped only while the Overview story (#5847), which introduces the opt-in gate, is not yet in this branch's base.
+  it.skipIf(optedInPaths().length === 0)('opts in exactly the allow-listed rows, so an opt-in cannot be added without this list (and its review)', () => {
+    expect([...optedInPaths()].sort()).toEqual([...ALLOWED_FOR_EMPLOYEE_VIEW].sort());
+  });
+
+  it.skipIf(optedInPaths().length === 0)('admits the all employee view on the allow-listed rows (no 403 EMPLOYEE_VIEW_FORBIDDEN)', async () => {
+    for (const path of ALLOWED_FOR_EMPLOYEE_VIEW) {
+      const res = await fetch(`${baseUrl}/api/analytics${path}?accountId=${ORG_UID}`);
+      const body = (await res.json().catch(() => ({}))) as { code?: string };
+
+      expect({ path, code: body.code }, `GET ${path}`).not.toEqual({ path, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
     }
   });
 });
