@@ -1214,6 +1214,23 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     expect(view.countries.map((country) => country.valueLabel)).toEqual(['99,000 · 99%', '950 · 1%', '48 · 0.1%', '2 · 0.1%']);
   });
 
+  it('never reads a small share outside the US as 0%', () => {
+    const view = buildHealthMetricsEventsGeographyView(
+      geography(
+        geographyPeriod({
+          registrationsByCountry: [
+            { code: 'US', country: 'United States', registrations: 999 },
+            { code: 'CA', country: 'Canada', registrations: 1 },
+          ],
+        })
+      ),
+      'YTD'
+    );
+
+    expect(view.metrics[2].value).toBe('0.1%');
+    expect(view.topCountries[1].pctLabel).toBe('0.1%');
+  });
+
   it('reads one registration in the singular', () => {
     const view = buildHealthMetricsEventsGeographyView(
       geography(geographyPeriod({ registrationsByCountry: [{ code: 'FJ', country: 'Fiji', registrations: 1 }] })),

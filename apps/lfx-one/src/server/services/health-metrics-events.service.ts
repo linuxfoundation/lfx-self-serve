@@ -1120,19 +1120,22 @@ export class HealthMetricsEventsService {
   }
 
   /**
-   * One row per country. Rows first fold by name, taking any valid two-letter code the name carries; names that share a code
-   * then fold into one, so neither a country under several codes nor a code under several names splits.
+   * One row per country. Rows first fold by name, taking the assigned code the name carries; names that share a code then
+   * fold into one, so neither a country under several codes nor a code under several names splits.
    */
   private async getGeographyCountries(req: Request, foundationId: string): Promise<GeographyCountryRow[]> {
     // Suffixes come from constants, never from the request, so interpolating them is safe.
     const columns = HEALTH_METRICS_L2_RANGES.map((range) => `registration_count_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`);
     const sums = (source: string) => columns.map((column) => `SUM(${source}${column}) AS ${column}`).join(',\n          ');
 
+    // Only a code that can key a country is kept, before either fold, so a placeholder code never merges two countries or
+    // outranks a real one. The list comes from constants, never from the request, so interpolating it is safe.
+    const codes = [...HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES].map((code) => `'${code}'`).join(', ');
     const sql = `
       WITH by_name AS (
         SELECT
           NULLIF(TRIM(country), '') AS country,
-          MAX(CASE WHEN REGEXP_LIKE(UPPER(TRIM(country_code)), '^[A-Z]{2}$') THEN UPPER(TRIM(country_code)) END) AS country_code,
+          MAX(CASE WHEN UPPER(TRIM(country_code)) IN (${codes}) THEN UPPER(TRIM(country_code)) END) AS country_code,
           ${sums('')}
         FROM ${REGISTRATION_COUNTRY_VIEW}
         WHERE project_id = ?

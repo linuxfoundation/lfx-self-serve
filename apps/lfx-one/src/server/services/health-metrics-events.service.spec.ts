@@ -1662,7 +1662,13 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(countryBinds).toEqual(['fdn-acme']);
     expect(countrySql).toContain("AND NULLIF(TRIM(country), '') IS NOT NULL");
     // Rows fold by name first, keeping any valid two-letter code, then names sharing a code fold into one.
-    expect(countrySql).toContain("MAX(CASE WHEN REGEXP_LIKE(UPPER(TRIM(country_code)), '^[A-Z]{2}$') THEN UPPER(TRIM(country_code)) END) AS country_code");
+    // Only an assigned code (or XK) survives the first fold, so a placeholder code can neither merge countries nor outrank a real one.
+    const kept = /UPPER\(TRIM\(country_code\)\) IN \(([^)]*)\)/.exec(countrySql as string)?.[1] ?? '';
+    expect(kept).toContain("'US'");
+    expect(kept).toContain("'GB'");
+    expect(kept).toContain("'XK'");
+    expect(kept).not.toContain("'UK'");
+    expect(kept).not.toContain("'ZZ'");
     expect(countrySql).toContain("GROUP BY NULLIF(TRIM(country), '')");
     expect(countrySql).toContain('GROUP BY COALESCE(country_code, country)');
     for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {

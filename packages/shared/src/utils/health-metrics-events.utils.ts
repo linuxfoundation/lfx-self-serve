@@ -647,7 +647,7 @@ export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEv
       {
         key: 'outside-us',
         label: 'Outside the US',
-        value: measured ? `${Math.round(100 - share(unitedStates))}%` : HEALTH_METRICS_TABLE_DASH,
+        value: measured ? formatGeographyShare(share(total - unitedStates)) : HEALTH_METRICS_TABLE_DASH,
         ...(measured ? { description: 'of registrations' } : {}),
       },
     ],
