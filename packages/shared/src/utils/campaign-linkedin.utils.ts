@@ -103,9 +103,10 @@ export function linkedInTargetingAfterRemovals(profile: LinkedInTargetingProfile
  * binary) is 100.12 in Go but 100.13 that way — so a limit judged with it can pass here and be refused
  * upstream (#5774).
  *
- * `toFixed(60)` spells out the exact binary value for every realistic amount (a double under 2^53
+ * `toFixed(60)` spells out the exact binary value of any amount from $1 up to 2^53 (such a double
  * carries at most 52 fractional bits, so at most 52 decimal places), and the tie is then decided on
- * that exact expansion. Non-finite input is returned unchanged for the caller to refuse.
+ * that exact expansion. Below $1 the expansion can be cut short, which only matters for amounts every
+ * caller already refuses (LinkedIn's minimums are $10 and up). Non-finite input is returned unchanged for the caller to refuse.
  */
 export function roundUsdToCentsLikeGo(amount: number): number {
   if (!Number.isFinite(amount)) return amount;

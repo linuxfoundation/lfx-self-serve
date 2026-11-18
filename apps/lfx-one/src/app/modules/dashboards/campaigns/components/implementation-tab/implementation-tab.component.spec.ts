@@ -4375,6 +4375,29 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
   });
 
+  it('leaves an entry the browser cannot parse in the box instead of writing over it', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '20');
+    const input = linkedInDailyCapInput(fixture) as HTMLInputElement;
+    // Record what the binding writes into the box from here on.
+    const writes: string[] = [];
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get: () => '',
+      set: (v: string) => writes.push(String(v)),
+    });
+    Object.defineProperty(input, 'validity', { configurable: true, value: { badInput: true } });
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(at(fixture).linkedInDailyCapUsd()).toBeNaN();
+    expect(writes).toEqual([]);
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
   it('judges a half-cent lifetime budget as campaign-service rounds it', async () => {
     const { fixture } = await mount(null);
     enableDailyCap(fixture);

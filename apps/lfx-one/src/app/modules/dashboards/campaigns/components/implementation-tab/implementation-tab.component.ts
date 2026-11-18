@@ -13,6 +13,7 @@ import {
   inject,
   Injector,
   input,
+  linkedSignal,
   OnInit,
   output,
   PLATFORM_ID,
@@ -1621,6 +1622,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInLifetimeBudget = signal(false);
   /** The optional daily cap beside a lifetime budget (#5774). null is no cap; cleared when the lifetime budget is turned off. */
   protected readonly linkedInDailyCapUsd = signal<number | null>(null);
+  /**
+   * What the Daily cap box shows. An entry the browser cannot parse (NaN) keeps the previous value, so
+   * the binding does not change and never writes back into the box, which would wipe the typed text
+   * and leave an empty box that still blocks Create.
+   */
+  protected readonly linkedInDailyCapInputValue = linkedSignal<number | null, number | null>({
+    source: this.linkedInDailyCapUsd,
+    computation: (cap, previous) => (cap !== null && Number.isNaN(cap) ? (previous?.value ?? null) : cap),
+  });
   protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
   protected readonly linkedInAccountsLoading = signal(false);
   /** The configured targeting profiles (#5546), from the mounted ConfigMap; the same list for every foundation. */
