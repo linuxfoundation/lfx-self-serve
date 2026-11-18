@@ -14,10 +14,25 @@ const PERSONAL_FIELD_KEYS: ReadonlySet<string> = new Set(ORG_LENS_EMPLOYEE_VIEW_
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const EMBEDDED_EMAIL = /[^\s@<>()[\]]+@[^\s@<>()[\]]+\.[^\s@<>()[\]]+/g;
+
+/** A URL that names a person: a `mailto:` link, or a LinkedIn / X / Twitter profile path. */
+const PERSONAL_URL = /(?:mailto:\S+|https?:\/\/(?:[\w-]+\.)?(?:linkedin\.com\/(?:in|pub)\/|(?:x|twitter)\.com\/(?!i\/|intent\/|share)[\w]+)\S*)/gi;
+
+/**
+ * Removes personal data embedded in free text: an email address inside a sentence (a commit message's
+ * `Signed-off-by: A <a@b.co>`), a `mailto:` link, and personal-profile URLs. Strings only; use
+ * {@link stripPersonalFields} for whole payloads, which applies this to every string value.
+ */
+export function scrubFreeText(text: string): string {
+  return text.replace(PERSONAL_URL, '').replace(EMBEDDED_EMAIL, '');
+}
+
 /**
  * Returns a deep copy of `data` with every personal field removed: the keys in
  * `ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS`, the route's `extraFields`, and any value that is shaped like an email
- * address (a defence against an address arriving under a key nobody listed). Works through nested objects and
+ * address (a defence against an address arriving under a key nobody listed), and an email address or personal-profile
+ * URL embedded in free text (replaced with nothing, see {@link scrubFreeText}). Works through nested objects and
  * arrays; never mutates its input; leaves primitives, `null` and dates as they are.
  *
  * Nothing is exposed by default. A field survives only when `ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS` holds an entry for
@@ -39,6 +54,9 @@ function strip(value: unknown, removed: ReadonlySet<string>, allowed: ReadonlySe
     // An email-shaped string inside an array of values (`['a@b.co']`) has no key to match, so it is dropped here.
     return value.filter((item) => !(typeof item === 'string' && EMAIL_SHAPE.test(item))).map((item) => strip(item, removed, allowed));
   }
+  if (typeof value === 'string') {
+    return scrubFreeText(value);
+  }
   if (value === null || typeof value !== 'object' || value instanceof Date) {
     return value;
   }
@@ -47,7 +65,7 @@ function strip(value: unknown, removed: ReadonlySet<string>, allowed: ReadonlySe
     const normalized = normalizeKey(key);
     if (removed.has(normalized)) continue;
     if (typeof entry === 'string' && EMAIL_SHAPE.test(entry) && !allowed.has(normalized)) continue;
-    result[key] = strip(entry, removed, allowed);
+    result[key] = allowed.has(normalized) && typeof entry === 'string' ? entry : strip(entry, removed, allowed);
   }
   return result;
 }
