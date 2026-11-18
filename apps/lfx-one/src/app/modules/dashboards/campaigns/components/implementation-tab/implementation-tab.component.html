@@ -3833,7 +3833,51 @@
           </div>
 
           <!-- Ad Account: set by the connection when campaign-service owns the create (#5809), else the legacy selector -->
-          @if (linkedInAccountSetByConnection()) {
+          @if (linkedInAccountSetByConnection() && linkedInAccountSelectionAvailable() && linkedInCreateAccount().status !== 'idle') {
+            <!-- Read from campaign-service (#5809): a picker for global_marketing_ops, else the default account read-only -->
+            @let createAccount = linkedInCreateAccount();
+            @let effectiveAccount = linkedInEffectiveAccount();
+            <div class="mb-4 flex flex-col gap-1" data-testid="implementation-linkedin-create-account">
+              @if (createAccount.status === 'loading') {
+                <p class="text-xs font-medium text-gray-700">Ad Account</p>
+                <p class="text-xs text-gray-500" data-testid="implementation-linkedin-create-account-loading">Loading the ad account…</p>
+              } @else if (linkedInCanChooseAccount() && effectiveAccount) {
+                <label for="implementation-linkedin-create-account-select" class="text-xs font-medium text-gray-700">Ad Account</label>
+                <lfx-select
+                  [form]="linkedInCreateAccountForm"
+                  control="accountId"
+                  [options]="linkedInCreateAccountOptions()"
+                  optionLabel="label"
+                  optionValue="value"
+                  inputId="implementation-linkedin-create-account-select"
+                  styleClass="w-fit"
+                  dataTest="implementation-linkedin-create-account-select"
+                  data-testid="implementation-linkedin-create-account-select" />
+                @if (effectiveAccount.orgId) {
+                  <p class="text-xs text-gray-500" data-testid="implementation-linkedin-create-account-page">
+                    Posts as LinkedIn page {{ effectiveAccount.orgId }}.
+                  </p>
+                }
+                <p class="text-xs text-gray-500">
+                  The campaign is created in the account chosen here. Only the LF marketing team can choose an account other than the default.
+                </p>
+              } @else if (effectiveAccount) {
+                <p class="text-xs font-medium text-gray-700">Ad Account</p>
+                <p class="text-sm text-gray-900" data-testid="implementation-linkedin-create-account-default">
+                  {{ effectiveAccount.label }} ({{ effectiveAccount.accountId }})
+                </p>
+                <p class="text-xs text-gray-500">
+                  Set by this project's LinkedIn connection. Only the LF marketing team can create a campaign in another account.
+                </p>
+              } @else {
+                <p class="text-xs font-medium text-gray-700">Ad Account</p>
+                <p class="text-xs text-gray-600" data-testid="implementation-linkedin-create-account-failed">
+                  The ad account couldn't be loaded. The campaign is created in the account this project's LinkedIn connection is set up for, or in LF's shared
+                  LinkedIn account if the project has no connection of its own.
+                </p>
+              }
+            </div>
+          } @else if (linkedInAccountSetByConnection()) {
             <div class="mb-4" data-testid="implementation-linkedin-account-from-connection">
               <p class="mb-1 text-xs font-medium text-gray-700">Ad Account</p>
               <p class="text-xs text-gray-600">
@@ -4029,6 +4073,38 @@
               </label>
             </div>
           </div>
+
+          <!-- Daily cap beside a lifetime budget (#5774): offered only while the lifetime budget is on. -->
+          @if (linkedInLifetimeBudget() && linkedInDailyCapAvailable()) {
+            <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div class="flex flex-col gap-1">
+                <label for="implementation-linkedin-daily-cap" class="text-xs font-medium text-gray-700">Daily cap (USD, optional)</label>
+                <input
+                  id="implementation-linkedin-daily-cap"
+                  type="number"
+                  [value]="linkedInDailyCapInputValue() ?? ''"
+                  (input)="onLinkedInDailyCapInput($event)"
+                  min="10"
+                  step="0.01"
+                  [attr.aria-describedby]="linkedInDailyCapDescribedBy()"
+                  [attr.aria-invalid]="linkedInDailyCapError() !== null"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-linkedin-daily-cap" />
+                <span id="implementation-linkedin-daily-cap-hint" class="text-xs text-gray-500"
+                  >Most LinkedIn spends in one day. At least $10 and no more than the lifetime budget. Leave it empty for no cap.</span
+                >
+                @if (linkedInDailyCapError(); as error) {
+                  <span
+                    id="implementation-linkedin-daily-cap-error"
+                    class="text-xs text-red-600"
+                    role="alert"
+                    data-testid="implementation-linkedin-daily-cap-error"
+                    >{{ error }}</span
+                  >
+                }
+              </div>
+            </div>
+          }
 
           <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
           @if (biddingAvailable()) {

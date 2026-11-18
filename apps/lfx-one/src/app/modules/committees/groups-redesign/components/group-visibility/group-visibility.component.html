@@ -1,0 +1,14 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. Focusable so keyboard users get the tooltip. -->
+<span
+  class="relative z-[1] flex h-[20px] w-[20px] flex-none items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+  [class]="isPublic() ? 'text-emerald-600' : 'bg-gray-900 text-white'"
+  tabindex="0"
+  role="img"
+  [attr.aria-label]="isPublic() ? 'Public' : 'Private'"
+  [lfxUiTooltip]="isPublic() ? 'Public' : 'Private'"
+  data-testid="group-visibility">
+  <i [class]="isPublic() ? 'fa-light fa-globe text-[14px]' : 'fa-solid fa-lock text-[11px]'" aria-hidden="true"></i>
+</span>

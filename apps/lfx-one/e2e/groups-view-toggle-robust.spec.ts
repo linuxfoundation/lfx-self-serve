@@ -9,6 +9,7 @@
 import type { MyCommittee, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
+import { stubGroupsRedesignFlag } from './helpers/groups-redesign-flag.helper';
 
 test.setTimeout(60_000);
 
@@ -74,6 +75,7 @@ function skipWhenAuthMissing(): void {
 }
 
 async function gotoMyGroups(page: Page): Promise<void> {
+  await stubGroupsRedesignFlag(page);
   skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
