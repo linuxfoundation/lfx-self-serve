@@ -110,6 +110,8 @@ export class AccountContextService {
   /** True while a family roll-up is the selection — every page reads combined data and every write is gated off (#4125). */
   public readonly isRollUp: Signal<boolean> = computed(() => this.selectedRollUpRootUid() !== null);
 
+  private readonly staffRollUpAnchor: Signal<string | null> = computed(() => this.initStaffRollUpAnchor());
+
   /**
    * The caller's organizations grouped by Salesforce family — one roll-up per family (#4125). Every
    * family the caller holds anything in, including one-organization families, which are not offered
@@ -132,7 +134,9 @@ export class AccountContextService {
    */
   public readonly rollUpFamiliesIncomplete: Signal<boolean> = computed(() => this.rollUpFlag.enabled() && this.rollUpFamiliesService.incomplete());
   /** True while the families cannot settle roll-up eligibility — the window admission rides out, so held-ness must ride it out too. */
-  public readonly rollUpFamiliesUnsettled: Signal<boolean> = this.rollUpFamiliesService.unsettled;
+  public readonly rollUpFamiliesUnsettled: Signal<boolean> = computed(
+    () => this.rollUpFamiliesService.unsettled() || this.staffRollUpAnchor() !== this.rollUpFamiliesService.staffAnchor()
+  );
   /** Gated like `rollUpFamiliesIncomplete`: the switcher's Retry stays busy through the refetch only when the roll-up is offered at all. */
   public readonly rollUpFamiliesLoading: Signal<boolean> = computed(() => this.rollUpFlag.enabled() && this.rollUpFamiliesService.loading());
 
@@ -146,7 +150,7 @@ export class AccountContextService {
    * None at all unless the `org-lens-rollup-enabled` flag is known to be on for this viewer.
    */
   public readonly eligibleRollUpFamilies: Signal<OrgRollUpFamily[]> = computed(() =>
-    !this.rollUpFlag.enabled() || this.rollUpFamiliesService.unsettled()
+    !this.rollUpFlag.enabled() || this.rollUpFamiliesUnsettled()
       ? []
       : this.rollUpFamilies().filter((family) => family.orgUids.length >= ROLLUP_MIN_ORGANIZATIONS)
   );
@@ -204,7 +208,7 @@ export class AccountContextService {
    * family is simply not known yet.
    */
   public readonly grantsUnsettled: Signal<boolean> = computed(
-    () => !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok' || this.rollUpFamiliesService.unsettled()
+    () => !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok' || this.rollUpFamiliesUnsettled()
   );
 
   /**
@@ -224,7 +228,7 @@ export class AccountContextService {
     () =>
       this.rollUpFlag.unsettled() ||
       (this.rollUpFlag.enabled()
-        ? this.grantsUnsettled()
+        ? this.grantsUnsettled() || this.orgRoleGrantsService.staffCheck() === 'failed'
         : !this.orgRoleGrantsService.loaded() || (this.orgRoleGrantsService.lookupOutcome() !== 'failed' && !this.rollUpFamiliesService.answered()))
   );
 
@@ -312,6 +316,10 @@ export class AccountContextService {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((family) => this.renameSelectedRollUp(family));
+
+    toObservable(this.staffRollUpAnchor)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((uid) => this.rollUpFamiliesService.setStaffAnchor(uid));
   }
 
   /** Seed persona-authorised orgs and trigger Snowflake enrichment; selection matches by stored accountId only — display attributes always come from seeds or live response. */
@@ -458,7 +466,15 @@ export class AccountContextService {
     // not-found. Admitting is self-correcting instead — `rollUpShouldDemote` is the exact
     // complement of this condition, so the moment the grants land either they confirm the roll-up
     // or reconciliation demotes and re-points (#4415 reviews 10 and 12).
-    const admissible = this.canSelectRollUpFor(rootUid) || (options?.admitWhilePending === true && this.rollUpEligibilityUnsettled());
+    // Only the anchor's family is staff-expanded; any other family the answer lists is just the
+    // caller's grants in it, a lower bound that must not refuse the address.
+    const staffAnchor = this.rollUpFamiliesService.staffAnchor();
+    const awaitsStaffFamily =
+      this.rollUpFlag.enabled() &&
+      this.orgRoleGrantsService.isStaff() &&
+      staffAnchor !== rootUid &&
+      !this.rollUpFamilies().some((family) => family.rootUid === rootUid && staffAnchor !== null && family.orgUids.includes(staffAnchor));
+    const admissible = this.canSelectRollUpFor(rootUid) || (options?.admitWhilePending === true && (this.rollUpEligibilityUnsettled() || awaitsStaffFamily));
     if (!admissible) {
       return false;
     }
@@ -969,6 +985,14 @@ export class AccountContextService {
       return;
     }
     this.selectedAccount.set({ ...current, accountName: named.accountName });
+  }
+
+  private initStaffRollUpAnchor(): string | null {
+    if (!this.orgRoleGrantsService.isStaff() || !this.rollUpFlag.enabled()) {
+      return null;
+    }
+    const uid = this.selectedRollUpRootUid() ?? this.selectedAccount().uid;
+    return uid && ORG_ACCOUNT_ID_PATTERN.test(uid) ? uid : null;
   }
 
   /** Spec 002: persist only the org account id (SFID, in `uid`) — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake + the canonical fetch. */
