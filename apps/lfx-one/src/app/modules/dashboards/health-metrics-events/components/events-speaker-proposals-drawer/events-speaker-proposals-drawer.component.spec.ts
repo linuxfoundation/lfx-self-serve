@@ -233,4 +233,33 @@ describe('EventsSpeakerProposalsDrawerComponent', () => {
     expect(query('events-speaker-proposals-more-error')).not.toBeNull();
     expect(query('events-speaker-proposals-sentinel')).toBeNull();
   });
+
+  it('retries a failed first page from scratch', async () => {
+    getEventsSpeakerProposals.mockReturnValueOnce(throwError(() => new Error('down')));
+    await render();
+    getEventsSpeakerProposals.mockReturnValueOnce(of(page(['p-1'], 1, [])));
+
+    query('events-speaker-proposals-retry')?.querySelector('button')?.click();
+    await settle();
+
+    expect(getEventsSpeakerProposals).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, includeEvents: true }));
+    expect(rowKeys()).toEqual(['p-1']);
+    expect(query('events-speaker-proposals-error')).toBeNull();
+  });
+
+  it('retries a failed later page under the rows already shown', async () => {
+    getEventsSpeakerProposals.mockReturnValueOnce(of(page(['p-1'], 2, [])));
+    await render();
+    getEventsSpeakerProposals.mockReturnValueOnce(throwError(() => new Error('down')));
+    listEnd()?.fire(true);
+    await settle();
+    getEventsSpeakerProposals.mockReturnValueOnce(of(page(['p-2'], 2)));
+
+    query('events-speaker-proposals-more-retry')?.querySelector('button')?.click();
+    await settle();
+
+    expect(getEventsSpeakerProposals).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 1 }));
+    expect(rowKeys()).toEqual(['p-1', 'p-2']);
+    expect(query('events-speaker-proposals-more-error')).toBeNull();
+  });
 });

@@ -30,9 +30,10 @@
   </ng-container>
 
   @if (loadFailed() && rows().length === 0) {
-    <p class="m-0 py-[24px] text-center text-[13px] text-gray-500" role="alert" data-testid="events-speaker-proposals-error">
-      We could not load speaker proposals. Close the drawer and try again.
-    </p>
+    <div class="flex flex-col items-center gap-[8px] py-[24px]" data-testid="events-speaker-proposals-error">
+      <p class="m-0 text-center text-[13px] text-gray-500" role="alert">We could not load speaker proposals.</p>
+      <lfx-ui-button variant="secondary" size="small" (click)="retry()" data-testid="events-speaker-proposals-retry">Try again</lfx-ui-button>
+    </div>
   } @else if (loading()) {
     <div class="flex flex-col" aria-hidden="true" data-testid="events-speaker-proposals-loading">
       @for (placeholder of [1, 2, 3, 4, 5, 6]; track placeholder) {
@@ -75,9 +76,11 @@
         <p-skeleton width="55%" height="12px" />
       </div>
     } @else if (loadFailed()) {
-      <p class="m-0 py-[12px] text-center text-[13px] text-gray-500" role="alert" data-testid="events-speaker-proposals-more-error">
-        We could not load more proposals.
-      </p>
+      <!-- Keeps the loaded rows; Try again asks for the page that failed. -->
+      <div class="flex flex-col items-center gap-[8px] py-[12px]" data-testid="events-speaker-proposals-more-error">
+        <p class="m-0 text-center text-[13px] text-gray-500" role="alert">We could not load more proposals.</p>
+        <lfx-ui-button variant="secondary" size="small" (click)="retry()" data-testid="events-speaker-proposals-more-retry">Try again</lfx-ui-button>
+      </div>
     }
     @if (canLoadMore()) {
       <div #sentinel class="h-px" aria-hidden="true" data-testid="events-speaker-proposals-sentinel"></div>

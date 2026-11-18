@@ -14,6 +14,7 @@ import { buildHealthMetricsEventsSpeakersProposalRowView, formatHealthMetricsEve
 import { AnalyticsService } from '@services/analytics.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
@@ -35,7 +36,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-speaker-proposals-drawer',
-  imports: [Skeleton, UiAvatarComponent, UiBadgeComponent, UiDrawerComponent, UiOptionComponent, UiSelectComponent],
+  imports: [Skeleton, UiAvatarComponent, UiBadgeComponent, UiButtonComponent, UiDrawerComponent, UiOptionComponent, UiSelectComponent],
   templateUrl: './events-speaker-proposals-drawer.component.html',
 })
 export class EventsSpeakerProposalsDrawerComponent {
@@ -101,6 +102,18 @@ export class EventsSpeakerProposalsDrawerComponent {
   protected onStatusChange(id: string | null): void {
     this.status.set(id ?? '');
     this.reload();
+  }
+
+  /** Asks again for the page that failed: the first one from scratch, a later one under the rows already shown. */
+  protected retry(): void {
+    if (this.rows().length === 0) {
+      this.reload();
+      return;
+    }
+
+    this.loadFailed.set(false);
+    this.loadingMore.set(true);
+    this.pageRequests.next(this.rows().length);
   }
 
   /** Starts again from the first page, as the filters changed; the subtitle keeps the last total until the new one lands. */
