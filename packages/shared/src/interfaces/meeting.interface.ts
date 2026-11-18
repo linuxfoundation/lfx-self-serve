@@ -2063,9 +2063,10 @@ export interface MeetingPageRedesignDecision {
  * are carried alongside `meeting` because `MeetingJoinComponent.initializeMeeting()` sets them as
  * side effects of the same fetch — seeding the meeting alone would lose the past-meeting/full-access
  * branch on hydration.
- * `meeting` is `null` and `meetingLoadFailed` is `true` for the terminal, non-navigating error
- * branch (a 5xx/network failure) — without seeding that branch too, the client would hydrate
- * `meetingLoadFailed` back to `false` and tear down the SSR-rendered error view.
+ * `meeting` is `null` and `meetingLoadFailed` is `true` when the server's fetch failed without a
+ * not-found redirect (a 5xx/network failure). The server renders the loading skeleton rather than an
+ * error, and the client hydrates to that same skeleton while its own fetch retries; the error view
+ * appears only if the client's attempts fail too (#5907).
  */
 export interface MeetingJoinPageState {
   meeting: (Meeting & { project: PublicMeetingProject }) | null;

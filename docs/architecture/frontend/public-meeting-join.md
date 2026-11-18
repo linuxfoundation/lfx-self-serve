@@ -10,7 +10,7 @@ Key files:
 
 - `meeting-join.component.ts` — signals, join flow logic, attachment/registrant gating
 - `meeting-join.component.html` — template: badge row, content, join section, signed-out branch
-- `../services/meeting-page-data.service.ts` — page-scoped `MeetingPageDataService`: the public meeting load (`{id}-{ms}` past ids, upcoming-then-past fallback), SSR seed and TransferState, password (`?password=` or router state), not-found and error routing, `?occurrence=` and the page clock
+- `../services/meeting-page-data.service.ts` — page-scoped `MeetingPageDataService`: the public meeting load (`{id}-{ms}` past ids, upcoming-then-past fallback), SSR seed and TransferState, password (`?password=` or router state), not-found and error routing, `?occurrence=` and the page clock. A server fetch that fails without a not-found status renders the loading skeleton and hands off to the browser, which retries a transient failure once (`retryTransientHttpError`) before showing the error (#5907)
 
 **Backend contracts:** See [Public Meetings](../backend/public-meetings.md) for the server-side M2M auth, controller, and route allowlist details.
 
