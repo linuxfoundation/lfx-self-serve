@@ -279,6 +279,7 @@
       [eventName]="activeDrawerEvent()?.eventName ?? ''"
       [attendeeCount]="activeDrawerEvent()?.orgAttendeeCount ?? 0"
       [participation]="drawerParticipation()"
+      [company]="effectiveCompany()"
       data-testid="org-events-attendees-drawer" />
     <lfx-event-speakers-drawer
       [visible]="speakersDrawerVisible()"
@@ -287,6 +288,7 @@
       [eventName]="activeDrawerEvent()?.eventName ?? ''"
       [acceptedCount]="activeDrawerEvent()?.orgSpeakerAcceptedCount ?? 0"
       [submittedCount]="activeDrawerEvent()?.orgSpeakerSubmittedCount ?? 0"
+      [company]="effectiveCompany()"
       data-testid="org-events-speakers-drawer" />
   }
 </div>

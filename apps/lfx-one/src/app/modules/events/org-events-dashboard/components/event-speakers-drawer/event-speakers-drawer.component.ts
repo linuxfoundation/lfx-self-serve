@@ -14,6 +14,7 @@ import type { OrgEventSpeakerVm } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
+import { organizationNames } from '@shared/utils/org-lens-row-organizations.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 @Component({
@@ -30,6 +31,8 @@ export class EventSpeakersDrawerComponent {
   public readonly eventName = input<string>('');
   public readonly acceptedCount = input<number>(0);
   public readonly submittedCount = input<number>(0);
+  // Roll-up only: the Company filter's pick, so the drawer lists the people its row counted.
+  public readonly company = input<string>('');
 
   protected readonly searchTerm = signal('');
   protected readonly loading = signal(false);
@@ -41,22 +44,27 @@ export class EventSpeakersDrawerComponent {
   protected readonly filteredSpeakers = computed<OrgEventSpeakerVm[]>(() => {
     const term = this.searchTerm().toLowerCase().trim();
     const data = this.speakersData()?.data ?? [];
-    const matched = !term ? data : data.filter((s) => s.name.toLowerCase().includes(term) || (s.jobTitle ?? '').toLowerCase().includes(term));
-    return matched.map((s) => ({ ...s, initials: computePersonInitials(s.name), avatarColorClass: avatarColorClass(s.contactId) }));
+    const rows = data.map((s) => ({
+      ...s,
+      initials: computePersonInitials(s.name),
+      avatarColorClass: avatarColorClass(s.contactId),
+      organizationNames: organizationNames(s.organizations),
+    }));
+    return !term ? rows : rows.filter((s) => [s.name, s.jobTitle, s.organizationNames].some((field) => (field ?? '').toLowerCase().includes(term)));
   });
 
   private initSpeakersData() {
     return toSignal(
-      combineLatest([toObservable(this.visible), toObservable(this.eventId)]).pipe(
+      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.company)]).pipe(
         skip(1),
-        switchMap(([isVisible, currentEventId]) => {
+        switchMap(([isVisible, currentEventId, company]) => {
           if (!isVisible || !currentEventId) return of(null);
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);
           this.searchTerm.set('');
           this.loadFailed.set(false);
           this.loading.set(true);
-          return this.eventsService.getEventSpeakers(accountId, currentEventId).pipe(
+          return this.eventsService.getEventSpeakers(accountId, currentEventId, { company }).pipe(
             catchError((error: unknown) => {
               console.error('Failed to load event speakers', error);
               this.loadFailed.set(true);

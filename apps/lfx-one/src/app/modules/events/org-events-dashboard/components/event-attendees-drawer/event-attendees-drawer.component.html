@@ -72,6 +72,11 @@
               @if (attendee.jobTitle) {
                 <span class="text-xs text-gray-500 truncate">{{ attendee.jobTitle }}</span>
               }
+              @if (attendee.organizationNames) {
+                <span class="text-xs text-gray-500 truncate" [attr.data-testid]="'event-attendee-companies-' + index">
+                  <i class="fa-light fa-building mr-1" aria-hidden="true"></i>{{ attendee.organizationNames }}
+                </span>
+              }
             </div>
             <!-- Status badge -->
             <span

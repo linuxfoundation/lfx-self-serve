@@ -15,6 +15,7 @@ import type { OrgEventAttendeeVm, OrgEventsParticipation } from '@lfx-one/shared
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
+import { organizationNames } from '@shared/utils/org-lens-row-organizations.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 @Component({
@@ -31,6 +32,8 @@ export class EventAttendeesDrawerComponent {
   public readonly eventName = input<string>('');
   public readonly attendeeCount = input<number>(0);
   public readonly participation = input<OrgEventsParticipation>(DEFAULT_ORG_EVENTS_PARTICIPATION);
+  // Roll-up only: the Company filter's pick, so the drawer lists the people its row counted.
+  public readonly company = input<string>('');
 
   protected readonly searchTerm = signal('');
   protected readonly loading = signal(false);
@@ -49,22 +52,27 @@ export class EventAttendeesDrawerComponent {
   protected readonly filteredAttendees = computed<OrgEventAttendeeVm[]>(() => {
     const term = this.searchTerm().toLowerCase().trim();
     const data = this.attendeesData()?.data ?? [];
-    const matched = !term ? data : data.filter((a) => a.name.toLowerCase().includes(term) || (a.jobTitle ?? '').toLowerCase().includes(term));
-    return matched.map((a) => ({ ...a, initials: computePersonInitials(a.name), avatarColorClass: avatarColorClass(a.contactId) }));
+    const rows = data.map((a) => ({
+      ...a,
+      initials: computePersonInitials(a.name),
+      avatarColorClass: avatarColorClass(a.contactId),
+      organizationNames: organizationNames(a.organizations),
+    }));
+    return !term ? rows : rows.filter((a) => [a.name, a.jobTitle, a.organizationNames].some((field) => (field ?? '').toLowerCase().includes(term)));
   });
 
   private initAttendeesData() {
     return toSignal(
-      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.participation)]).pipe(
+      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.participation), toObservable(this.company)]).pipe(
         skip(1),
-        switchMap(([isVisible, currentEventId, participation]) => {
+        switchMap(([isVisible, currentEventId, participation, company]) => {
           if (!isVisible || !currentEventId) return of(null);
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);
           this.searchTerm.set('');
           this.loadFailed.set(false);
           this.loading.set(true);
-          return this.eventsService.getEventAttendees(accountId, currentEventId, { participation }).pipe(
+          return this.eventsService.getEventAttendees(accountId, currentEventId, { participation, company }).pipe(
             catchError(() => {
               this.loadFailed.set(true);
               return of(null);

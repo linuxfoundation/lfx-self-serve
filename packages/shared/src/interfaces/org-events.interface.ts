@@ -133,6 +133,8 @@ export interface OrgEventAttendee {
 export interface OrgEventAttendeeVm extends OrgEventAttendee {
   readonly initials: string;
   readonly avatarColorClass: string;
+  /** Roll-up only: the person's organizations, comma-separated; null outside a roll-up. */
+  readonly organizationNames: string | null;
 }
 
 /** Response for GET /api/orgs/:accountId/lens/events/:eventId/attendees */
@@ -167,6 +169,8 @@ export interface OrgEventSpeaker {
 export interface OrgEventSpeakerVm extends OrgEventSpeaker {
   readonly initials: string;
   readonly avatarColorClass: string;
+  /** Roll-up only: the person's organizations, comma-separated; null outside a roll-up. */
+  readonly organizationNames: string | null;
 }
 
 /** Response for GET /api/orgs/:accountId/lens/events/:eventId/speakers */

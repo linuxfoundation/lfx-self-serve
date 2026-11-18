@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EventSpeakersDrawerComponent } from './event-speakers-drawer.component';
 
-async function open(failing = false): Promise<void> {
+async function open(failing = false, { rollUp = false, company = '' }: { rollUp?: boolean; company?: string } = {}) {
   const getEventSpeakers = vi.fn(() =>
     failing
       ? throwError(() => new Error('boom'))
@@ -19,8 +19,23 @@ async function open(failing = false): Promise<void> {
           eventId: 'event-1',
           eventName: 'Event One',
           acceptedCount: 1,
-          submittedCount: 1,
-          data: [{ contactId: '0', name: 'Jane Doe', jobTitle: null, status: 'ACCEPTED' as const }],
+          submittedCount: 2,
+          data: [
+            {
+              contactId: '0',
+              name: 'Jane Doe',
+              jobTitle: null,
+              status: 'ACCEPTED' as const,
+              ...(rollUp ? { organizations: [{ accountId: 'acc-a', name: 'Acme Motors, Inc.' }] } : {}),
+            },
+            {
+              contactId: '1',
+              name: 'Sam Lee',
+              jobTitle: null,
+              status: 'SUBMITTED' as const,
+              ...(rollUp ? { organizations: [{ accountId: 'acc-b', name: 'Acme Robotics' }] } : {}),
+            },
+          ],
         })
   );
   await TestBed.configureTestingModule({
@@ -37,11 +52,13 @@ async function open(failing = false): Promise<void> {
   fixture.componentRef.setInput('eventName', 'Event One');
   fixture.componentRef.setInput('acceptedCount', 3);
   fixture.componentRef.setInput('submittedCount', 5);
+  fixture.componentRef.setInput('company', company);
   fixture.detectChanges();
   fixture.componentRef.setInput('visible', true);
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
+  return { fixture, getEventSpeakers };
 }
 
 describe('EventSpeakersDrawerComponent', () => {
@@ -61,5 +78,30 @@ describe('EventSpeakersDrawerComponent', () => {
     expect(document.body.querySelector('[data-testid="event-speakers-list"]')).toBeNull();
     expect(document.body.textContent).not.toContain('No speakers found for this event.');
     expect(document.body.querySelector('[data-testid="event-speakers-drawer-subtitle"]')?.textContent).toContain('3 accepted of 5 submitted');
+  });
+
+  it('shows no company line on a single organization', async () => {
+    await open();
+
+    expect(document.body.querySelector('[data-testid^="event-speaker-companies-"]')).toBeNull();
+  });
+
+  it("shows each speaker's company in a roll-up, and the drawer search matches it", async () => {
+    const { fixture } = await open(false, { rollUp: true });
+
+    expect(document.body.querySelector('[data-testid="event-speaker-companies-1"]')?.textContent?.trim()).toBe('Acme Robotics');
+    const search = document.body.querySelector('[data-testid="event-speakers-search"]') as HTMLInputElement;
+    search.value = 'robotics';
+    search.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    const rows = Array.from(document.body.querySelectorAll('[data-testid="event-speakers-list"] > li'));
+    expect(rows.map((row) => row.textContent ?? '')).toEqual([expect.stringContaining('Sam Lee')]);
+  });
+
+  it('asks for the picked Company only', async () => {
+    const { getEventSpeakers } = await open(false, { rollUp: true, company: 'acc-b' });
+
+    expect(getEventSpeakers).toHaveBeenCalledWith('acc-1', 'event-1', { company: 'acc-b' });
   });
 });
