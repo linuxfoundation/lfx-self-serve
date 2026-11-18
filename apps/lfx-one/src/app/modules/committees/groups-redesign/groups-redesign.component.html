@@ -6,7 +6,7 @@
   <!-- Sticky page header; its negative margins cancel the padding above so it spans the page -->
   <div
     #header
-    class="sticky z-[8] -mx-[20px] -mb-[8px] -mt-[28px] flex items-center justify-between gap-[20px] bg-white px-[20px] pb-[12px] pt-[28px] min-[641px]:-mx-[40px] min-[641px]:items-start min-[641px]:px-[40px]"
+    class="sticky z-[8] -mx-[20px] -mb-[8px] -mt-[28px] flex items-center justify-between gap-[20px] bg-white px-[20px] pb-[12px] pt-[28px] max-[640px]:flex-wrap max-[640px]:gap-y-[8px] min-[641px]:-mx-[40px] min-[641px]:items-start min-[641px]:px-[40px]"
     [style.top.px]="stickyTop()"
     data-testid="groups-redesign-header">
     <span
@@ -15,13 +15,17 @@
       aria-hidden="true"
       data-testid="groups-redesign-header-fade"></span>
     <div class="flex min-w-0 flex-col gap-[4px]">
-      <h1 class="font-display text-[24px] font-light leading-[1.2] text-gray-900" data-testid="groups-redesign-title">Groups</h1>
+      <h1 #heading tabindex="-1" class="font-display text-[24px] font-light leading-[1.2] text-gray-900 outline-none" data-testid="groups-redesign-title">
+        Groups
+      </h1>
       <!-- Hidden at 640px and below, per the design. -->
       <p class="hidden max-w-[820px] text-[12px] leading-[1.5] text-gray-500 min-[641px]:block" data-testid="groups-redesign-description">
         Groups you are a member of across all foundations and projects.
       </p>
     </div>
-    <div class="flex flex-none items-center gap-[12px]" data-testid="groups-redesign-header-actions">
+    <!-- At 640px and below the actions join the header's wrapping row: Create Group stays by the title, the drawer button stacks under it. -->
+    <div class="flex flex-none items-center gap-[12px] max-[640px]:contents" data-testid="groups-redesign-header-actions">
+      <lfx-group-applications [fallbackFocus]="heading" />
       @if (hasGroups()) {
         <lfx-ui-button variant="tertiary-accent" icon="fa-light fa-plus" (click)="createGroup()" data-testid="groups-redesign-create">
           Create Group

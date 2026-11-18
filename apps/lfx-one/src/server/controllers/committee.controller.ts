@@ -17,7 +17,7 @@ import {
   RejectCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { canViewCommitteeRoster, isFileTypeAllowed, isSafeUploadFileName } from '@lfx-one/shared/utils';
+import { canViewCommitteeRoster, isFileTypeAllowed, isSafeUploadFileName, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -1617,6 +1617,42 @@ export class CommitteeController {
       const application = await this.committeeService.rejectApplication(req, id, applicationId, body);
 
       logger.success(req, 'reject_committee_application', startTime, {
+        committee_id: id,
+        application_id: applicationId,
+      });
+      res.json(application);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/applications/:applicationId/withdraw
+   * Withdraws the caller's own pending application; upstream answers 403 for anyone but the applicant.
+   */
+  public async withdrawApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, applicationId } = req.params;
+    const startTime = logger.startOperation(req, 'withdraw_committee_application', {
+      committee_id: id,
+      application_id: applicationId,
+    });
+
+    try {
+      // Both go into the upstream path, which only takes UUIDs.
+      if (!isUuid(id ?? '') || !isUuid(applicationId ?? '')) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID and application ID must be UUIDs', {
+            operation: 'withdraw_committee_application',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const application = await this.committeeService.withdrawApplication(req, id, applicationId);
+
+      logger.success(req, 'withdraw_committee_application', startTime, {
         committee_id: id,
         application_id: applicationId,
       });

@@ -32,6 +32,7 @@ import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { EMPTY, Observable, switchMap } from 'rxjs';
 
 import { GroupActionsComponent } from './components/group-actions/group-actions.component';
+import { GroupApplicationsComponent } from './components/group-applications/group-applications.component';
 import { GroupCardComponent } from './components/group-card/group-card.component';
 import { GroupsFiltersComponent } from './components/groups-filters/groups-filters.component';
 import { GroupsTableComponent } from './components/groups-table/groups-table.component';
@@ -60,6 +61,7 @@ import { GroupsHomeStore } from './services/groups-home.store';
     GroupCardComponent,
     GroupsFiltersComponent,
     GroupsTableComponent,
+    GroupApplicationsComponent,
   ],
   templateUrl: './groups-redesign.component.html',
   providers: [GroupsHomeStore],

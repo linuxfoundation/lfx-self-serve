@@ -732,6 +732,9 @@ export const GROUPS_HOME_FILTERS_PANEL_WIDTH = 344;
 /** Navigation state for links from the redesigned Groups page, so the group page shows "Groups" as its back link. */
 export const GROUPS_HOME_LINK_STATE = { backLabel: 'Groups', fromMeLens: true } as const;
 
+/** How long Undo stays offered after a withdraw or decline on the Groups page. */
+export const GROUPS_HOME_UNDO_MS = 8000;
+
 /** Max concurrent create-invite requests when fanning out a bulk committee invite. */
 export const COMMITTEE_INVITE_CONCURRENCY = 5;
 

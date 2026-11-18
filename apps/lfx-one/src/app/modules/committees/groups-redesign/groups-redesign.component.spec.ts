@@ -10,7 +10,7 @@ import { CommitteeService } from '@services/committee.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
-import { Subject } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GroupsRedesignComponent } from './groups-redesign.component';
@@ -64,7 +64,7 @@ describe('GroupsRedesignComponent', () => {
     );
     TestBed.configureTestingModule({
       providers: [
-        { provide: CommitteeService, useValue: { getMyCommitteesOrError: () => groups$, getGroupsEngagementStats: vi.fn() } },
+        { provide: CommitteeService, useValue: { getMyCommitteesOrError: () => groups$, getGroupsEngagementStats: vi.fn(), getMyApplications: () => of([]) } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: CreateArtifactDialogService, useValue: { open: openCreateDialog } },
