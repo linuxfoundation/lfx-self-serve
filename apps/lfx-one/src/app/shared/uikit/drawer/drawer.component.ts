@@ -17,8 +17,8 @@ import { UiDrawerContext } from './drawer.context';
  * Set `bare` (or `UiDrawerConfig.bare`) to drop the header and footer: the title stays for screen readers only, and the content fills an
  * unpadded body that is the only scroller, so it can pin its own header and tabs. Close from the content with `UiDrawerContext.requestClose`.
  *
- * Project the body as plain content, a tile before the title with `drawerLeading`, header actions with `drawerActions` and footer buttons
- * with `drawerFooter`:
+ * Project the body as plain content, a tile before the title with `drawerLeading`, header actions with `drawerActions`, a full-width row
+ * under the title (such as filters) with `drawerToolbar` and footer buttons with `drawerFooter`:
  *
  * ```html
  * <lfx-ui-drawer heading="Weekly Sync" subtitle="Technical Steering Committee">

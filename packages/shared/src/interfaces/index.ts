@@ -216,6 +216,7 @@ export * from './health-metrics-events.interface';
 export * from './health-metrics-l2.interface';
 
 // Health Metrics shared line chart
+export * from './health-metrics-column-chart.interface';
 export * from './health-metrics-line-chart.interface';
 
 // Health Metrics Members page interfaces
@@ -333,6 +334,8 @@ export * from './org-contributions.interface';
 export * from './org-contributions.internal.interface';
 
 // Project Lens — Participating Organizations (#2091)
+export * from './foundation-participating-orgs.interface';
+export * from './foundation-participating-orgs.internal.interface';
 export * from './project-participating-orgs.interface';
 export * from './project-participating-orgs.internal.interface';
 
