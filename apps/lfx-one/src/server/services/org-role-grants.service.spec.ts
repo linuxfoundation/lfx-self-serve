@@ -36,7 +36,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP: 6,
     ORG_ROLE_GRANTS_HARD_CAP: 500,
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
-    VALKEY_CACHE: { APP_PREFIX: 'lfx', ORG_ACCESS_NAMESPACE: 'org-access' },
+    VALKEY_CACHE: { APP_PREFIX: 'lfx', ORG_ACCESS_NAMESPACE: 'org-access', ORG_FAMILY_NAMESPACE: 'org-family' },
   };
 });
 vi.mock('@lfx-one/shared/utils', () => ({
@@ -1104,6 +1104,158 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
       expect(guard(entry)).toBe(false);
       expect(guard({ ...entry, familyRoots: [['org', { rootName: 'No Root Uid', rootLogoUrl: null }]] })).toBe(false);
       expect(guard({ ...entry, familyRoots: [['org', { rootUid: 'org', rootName: null, rootLogoUrl: null }]] })).toBe(true);
+    });
+  });
+
+  describe('staff family of the selected company (#5901)', () => {
+    const FAMILY_DOCS: Record<string, Doc> = {
+      top: { name: 'Top Co', is_parent: true },
+      mid: { name: 'Mid Co', parent_uid: 'top', is_parent: true },
+      aunt: { name: 'Aunt Co', parent_uid: 'top' },
+      leaf: { name: 'Leaf Co', parent_uid: 'mid' },
+      other: { name: 'Other Group', is_parent: true },
+      'other-sub': { name: 'Other Sub', parent_uid: 'other' },
+      solo: { name: 'Solo Co' },
+    };
+    const FAMILY_CHILDREN = { top: ['mid', 'aunt'], mid: ['leaf'], other: ['other-sub'] };
+
+    function familyShape(response: { families: { rootUid: string; orgs: { uid: string }[] }[] }): { rootUid: string; orgs: string[] }[] {
+      return response.families.map((family) => ({ rootUid: family.rootUid, orgs: family.orgs.map((org) => org.uid) }));
+    }
+
+    function seedFamilies(grants: { uid: string; role: 'writer' | 'auditor' }[] = [], extra: { missingDocs?: string[]; failChildrenFor?: string } = {}): void {
+      seedHierarchy({ grants, docs: FAMILY_DOCS, children: FAMILY_CHILDREN, ...extra });
+    }
+
+    function orgWalkCalls(): unknown[][] {
+      return proxyRequest.mock.calls.filter((call) => (call[4] as { type?: string } | undefined)?.type === 'b2b_org');
+    }
+
+    function useCacheStore(): Map<string, unknown> {
+      const store = new Map<string, unknown>();
+      setJson.mockImplementation(async (key: string, value: unknown) => {
+        store.set(key, value);
+        return true;
+      });
+      getJson.mockImplementation(async (key: string, accept?: (value: unknown) => boolean) =>
+        store.has(key) && (!accept || accept(store.get(key))) ? store.get(key) : null
+      );
+      return store;
+    }
+
+    beforeEach(() => {
+      setTeamAnswer(teamMembership(['lf-staff']));
+    });
+
+    it('adds the whole family of the selected company for a staff caller with no grants', async () => {
+      seedFamilies();
+
+      const response = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'leaf');
+
+      expect(familyShape(response)).toEqual([{ rootUid: 'top', orgs: ['aunt', 'leaf', 'mid', 'top'] }]);
+      expect(response.families[0]).toMatchObject({ rootName: 'Top Co' });
+      expect(response.lookupOutcome).toBe('ok');
+      expect(response.degraded).toBe(false);
+    });
+
+    it('ignores the selected company for a caller who is not staff', async () => {
+      setTeamAnswer(teamMembership());
+      seedFamilies([{ uid: 'solo', role: 'writer' }]);
+
+      const anchored = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'leaf');
+      const walkCallsWithAnchor = orgWalkCalls().length;
+      proxyRequest.mockClear();
+      const plain = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME);
+
+      expect(anchored).toEqual(plain);
+      expect(walkCallsWithAnchor).toBe(orgWalkCalls().length);
+      expect(familyShape(anchored)).toEqual([{ rootUid: 'solo', orgs: ['solo'] }]);
+    });
+
+    it('keeps a staff caller’s grant families and adds the selected company’s family', async () => {
+      classifyEveryCandidateAsWriter();
+      seedFamilies([{ uid: 'other', role: 'writer' }]);
+
+      const response = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'aunt');
+
+      expect(familyShape(response)).toEqual([
+        { rootUid: 'other', orgs: ['other', 'other-sub'] },
+        { rootUid: 'top', orgs: ['aunt', 'leaf', 'mid', 'top'] },
+      ]);
+    });
+
+    it('lists a family reached both ways once, with every company in it', async () => {
+      seedFamilies([{ uid: 'leaf', role: 'auditor' }]);
+
+      const response = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'mid');
+
+      expect(familyShape(response)).toEqual([{ rootUid: 'top', orgs: ['aunt', 'leaf', 'mid', 'top'] }]);
+    });
+
+    it('adds nothing for a selected company the index does not hold', async () => {
+      seedFamilies([{ uid: 'solo', role: 'writer' }], { missingDocs: ['leaf'] });
+
+      const response = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'leaf');
+
+      expect(familyShape(response)).toEqual([{ rootUid: 'solo', orgs: ['solo'] }]);
+      expect(response.lookupOutcome).toBe('ok');
+    });
+
+    it('reports a cut-short family walk as partial and does not cache it', async () => {
+      const store = useCacheStore();
+      seedFamilies([], { failChildrenFor: 'mid' });
+
+      const response = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'aunt');
+
+      expect(response.lookupOutcome).toBe('partial');
+      expect(response.degraded).toBe(true);
+      expect([...store.keys()].some((key) => key.includes(':org-family:'))).toBe(false);
+    });
+
+    it('answers the grant families as partial when the family lookup fails', async () => {
+      seedFamilies();
+      const seeded = proxyRequest.getMockImplementation()!;
+      proxyRequest.mockImplementation(async (...args: unknown[]) => {
+        if ((args[4] as { type?: string } | undefined)?.type === 'b2b_org') throw new Error('query-service unreachable');
+        return seeded(...(args as Parameters<typeof seeded>));
+      });
+
+      const response = await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'leaf');
+
+      expect(response).toEqual({ families: [], degraded: true, lookupOutcome: 'partial' });
+    });
+
+    it('shares a complete family across staff callers, keyed by the family top account', async () => {
+      const store = useCacheStore();
+      seedFamilies();
+
+      await new OrgRoleGrantsService().getRollUpSet(req, USERNAME, false, 'leaf');
+      expect(store.get('lfx:test:org-family:anchor:leaf')).toBe('top');
+      expect(store.get('lfx:test:org-family:root:top')).toMatchObject({ rootUid: 'top' });
+
+      proxyRequest.mockClear();
+      const second = await new OrgRoleGrantsService().getRollUpSet(req, 'another-staffer', false, 'leaf');
+
+      expect(orgWalkCalls()).toHaveLength(0);
+      expect(familyShape(second)).toEqual([{ rootUid: 'top', orgs: ['aunt', 'leaf', 'mid', 'top'] }]);
+    });
+
+    it('names the real top account when asked for a company below it', async () => {
+      seedFamilies();
+
+      const result = await new OrgRoleGrantsService().getStaffFamily(req, 'mid');
+
+      expect(result?.family.rootUid).toBe('top');
+      expect(result?.complete).toBe(true);
+    });
+
+    it('settles a parent cycle on its smallest uid, as the grant path does', async () => {
+      seedHierarchy({ grants: [], docs: { 'cyc-b': { name: 'Cycle B', parent_uid: 'cyc-a' }, 'cyc-a': { name: 'Cycle A', parent_uid: 'cyc-b' } } });
+
+      const result = await new OrgRoleGrantsService().getStaffFamily(req, 'cyc-b');
+
+      expect(result?.family.rootUid).toBe('cyc-a');
+      expect(result?.family.orgs.map((org) => org.uid)).toEqual(['cyc-a', 'cyc-b']);
     });
   });
 });

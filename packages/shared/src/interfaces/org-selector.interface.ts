@@ -140,6 +140,11 @@ export interface OrgLensRollUpScope {
   complete: boolean;
 }
 
+export interface OrgStaffRollUpFamily {
+  family: OrgRollUpSetFamily;
+  complete: boolean;
+}
+
 /** Where the caller's families stand: `pending` until the roll-up set first answers, `server` once it has (successfully or not). */
 export type OrgRollUpFamiliesSource = 'pending' | 'server';
 

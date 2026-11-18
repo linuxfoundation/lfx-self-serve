@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getAccessAwareOrgs = vi.fn();
 const toRollUpSet = vi.fn();
+const getStaffFamily = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 const getEffectiveUsername = vi.fn();
 
@@ -20,6 +21,7 @@ vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
     public toRollUpSet = toRollUpSet;
+    public getStaffFamily = getStaffFamily;
   },
 }));
 // The per-org authorizer question (`b2b_org:<uid>#auditor`) the gate asks alongside the roster.
@@ -497,5 +499,115 @@ describe('requireOrgLensAccess — family roll-up key', () => {
   it('rejects a key without a valid top account id before loading the roll-up set', async () => {
     await expect(resolveOrgLensRollUp(buildRollUpReq(), 'family-123', 'handler')).rejects.toMatchObject({ statusCode: 400 });
     expect(toRollUpSet).not.toHaveBeenCalled();
+  });
+
+  describe('LF staff (#5901)', () => {
+    const staffFamily = (rootUid = ROOT, complete = true) => ({
+      family: { rootUid, rootName: 'Parent Co', rootLogoUrl: null, orgs: [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')] },
+      complete,
+    });
+
+    beforeEach(() => {
+      toRollUpSet.mockReturnValue({ families: [], degraded: false, lookupOutcome: 'ok' });
+      getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: true, staffCheck: 'ok' });
+      checkSingleAccessStrict.mockResolvedValue(true);
+      getStaffFamily.mockResolvedValue(staffFamily());
+    });
+
+    it('serves a family the caller holds no grant in, rebuilt from the key’s top account', async () => {
+      const req = buildRollUpReq();
+
+      const { next } = await runRollUp(req);
+
+      expect(statusOf(next)).toBe('allow');
+      expect(getStaffFamily).toHaveBeenCalledWith(req, ROOT);
+      await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toEqual({
+        rollUpKey: ROLL_UP,
+        rootUid: ROOT,
+        members: [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
+        complete: true,
+      });
+    });
+
+    it('still checks every member and leaves out one the caller cannot read', async () => {
+      checkSingleAccessStrict.mockImplementation(async (_req: unknown, request: { id: string }) => request.id === ROOT);
+      const req = buildRollUpReq();
+
+      const { next } = await runRollUp(req);
+
+      expect(statusOf(next)).toBe('allow');
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: SUBSIDIARY, access: 'auditor' });
+      expect((await resolveOrgLensRollUp(req, ROLL_UP, 'handler')).members).toEqual([org(ROOT, 'Parent Co')]);
+    });
+
+    it('refuses when no member passes its read check', async () => {
+      checkSingleAccessStrict.mockResolvedValue(false);
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe(403);
+    });
+
+    it('refuses a key naming a company below the top of its family', async () => {
+      getStaffFamily.mockResolvedValue(staffFamily(OTHER_ROOT));
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe(403);
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    });
+
+    it('refuses a key whose company is not in the index', async () => {
+      getStaffFamily.mockResolvedValue(null);
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe(403);
+    });
+
+    it('marks a cut-short staff family incomplete', async () => {
+      getStaffFamily.mockResolvedValue(staffFamily(ROOT, false));
+      const req = buildRollUpReq();
+
+      await runRollUp(req);
+
+      expect((await resolveOrgLensRollUp(req, ROLL_UP, 'handler')).complete).toBe(false);
+    });
+
+    it('returns a retriable 503 when the staff family lookup throws', async () => {
+      getStaffFamily.mockRejectedValue(new Error('query-service unreachable'));
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe(503);
+      expect(errorOf(next)).toMatchObject({ path: '/query/resources' });
+    });
+
+    it('serves a family in the grant families from them, without rebuilding it', async () => {
+      toRollUpSet.mockReturnValue(rollUpSet());
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe('allow');
+      expect(getStaffFamily).not.toHaveBeenCalled();
+    });
+
+    it('returns a 503, not a 403, when the staff check could not be answered', async () => {
+      getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: false, staffCheck: 'failed' });
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe(503);
+      expect(getStaffFamily).not.toHaveBeenCalled();
+    });
+
+    it('never rebuilds a family for a caller who is not staff', async () => {
+      getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: false, staffCheck: 'ok' });
+
+      const { next } = await runRollUp(buildRollUpReq());
+
+      expect(statusOf(next)).toBe(403);
+      expect(getStaffFamily).not.toHaveBeenCalled();
+    });
   });
 });

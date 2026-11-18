@@ -303,7 +303,7 @@ describe('OrgIdentityController.getRollUpSet', () => {
 
     await new OrgIdentityController().getRollUpSet(request(), res, next);
 
-    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'jdoe', false);
+    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'jdoe', false, null);
     expect(res.status).not.toHaveBeenCalled();
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(res.json).toHaveBeenCalledWith(rollUpSet);
@@ -320,6 +320,28 @@ describe('OrgIdentityController.getRollUpSet', () => {
 
     expect(getRollUpSet.mock.calls.map((call) => call[2])).toEqual([true, false, false]);
   });
+
+  it('passes a well-formed ?anchor= company id to the service (#5901)', async () => {
+    getRollUpSet.mockResolvedValueOnce(rollUpSet);
+
+    await new OrgIdentityController().getRollUpSet(request({ anchor: '0014100000MgbAAAAA' }), buildRes(), vi.fn());
+
+    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'jdoe', false, '0014100000MgbAAAAA');
+  });
+
+  it.each(['not-an-id', '0014100000Mgb', 'family-0014100000MgaAAAAA', ''])(
+    'rejects a malformed ?anchor=%s with a 400 before reaching the service',
+    async (anchor) => {
+      const res = buildRes();
+      const next = vi.fn();
+
+      await new OrgIdentityController().getRollUpSet(request({ anchor }), res, next);
+
+      expect(getRollUpSet).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(res.json).not.toHaveBeenCalled();
+    }
+  );
 
   it('passes partial and failed outcomes through unchanged, so an outage never reads as no organizations', async () => {
     const partial = { ...rollUpSet, degraded: true, lookupOutcome: 'partial' };

@@ -12,6 +12,8 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the org access / role-grants cache. `v2`: `resolved` now carries connected-component (upward + cascading) roles alongside the required `degraded` completeness flag, so no entry written by the direct/downward-only resolver can be read back under the new semantics. */
   ORG_ACCESS_NAMESPACE: 'org-access:v2',
 
+  ORG_FAMILY_NAMESPACE: 'org-family:v1',
+
   /** Domain + schema-version segment for the per-org Snowflake-backed Org Lens cache (shared across callers). */
   ORG_LENS_SNOWFLAKE_NAMESPACE: 'org-lens-sf:v1',
 

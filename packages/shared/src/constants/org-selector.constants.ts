@@ -70,6 +70,8 @@ export const ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS = 5 * 1000;
 /** #4126 — the caller's organizations grouped by Salesforce family, which every family roll-up is built from. */
 export const ORG_ROLL_UP_SET_PATH = '/api/orgs/me/roll-up-set';
 
+export const ORG_ROLL_UP_SET_ANCHOR_PARAM = 'anchor';
+
 /** Spec 053 — query flag the viewer's Retry sends on `GET /api/orgs/me/role-grants` so the BFF skips its cache read (still coalesced, still written). */
 export const ORG_ROLE_GRANTS_REFRESH_PARAM = 'refresh';
 

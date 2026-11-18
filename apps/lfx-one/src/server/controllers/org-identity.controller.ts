@@ -7,6 +7,7 @@ import {
   ORG_ACCOUNT_ID_PATTERN,
   ORG_ROLE_GRANTS_CORRELATION_HEADER,
   ORG_ROLE_GRANTS_REFRESH_PARAM,
+  ORG_ROLL_UP_SET_ANCHOR_PARAM,
 } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
@@ -111,12 +112,22 @@ export class OrgIdentityController {
       }
 
       const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
-      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache);
+      const rawAnchor = req.query[ORG_ROLL_UP_SET_ANCHOR_PARAM];
+      const anchorUid = typeof rawAnchor === 'string' && ORG_ACCOUNT_ID_PATTERN.test(rawAnchor) ? rawAnchor : null;
+      if (rawAnchor !== undefined && anchorUid === null) {
+        throw ServiceValidationError.forField(ORG_ROLL_UP_SET_ANCHOR_PARAM, 'Invalid organization id format', {
+          operation: 'get_org_roll_up_set',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache, anchorUid);
 
       logger.success(req, 'get_org_roll_up_set', startTime, {
         family_count: result.families.length,
         org_count: result.families.reduce((total, family) => total + family.orgs.length, 0),
         lookup_outcome: result.lookupOutcome,
+        anchored: anchorUid !== null,
       });
 
       res.setHeader('Cache-Control', 'no-store');

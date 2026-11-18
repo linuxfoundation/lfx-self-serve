@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_ACCESS_UNVERIFIABLE_MESSAGE } from '@lfx-one/shared/constants';
-import type { AccessAwareOrgsResult, OrgLensRollUpScope, OrgRollUpSetOrg } from '@lfx-one/shared/interfaces';
+import type { AccessAwareOrgsResult, OrgLensRollUpScope, OrgRollUpSetOrg, OrgStaffRollUpFamily } from '@lfx-one/shared/interfaces';
 import { orgRollUpRootUid } from '@lfx-one/shared/utils/org-lens-url.utils';
 import type { Request } from 'express';
 
@@ -84,9 +84,27 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     throw unavailable(undefined, '/query/resources');
   }
 
-  const family = rollUpSet.families.find((candidate) => candidate.rootUid === rootUid);
+  let family = rollUpSet.families.find((candidate) => candidate.rootUid === rootUid);
+  let familyComplete = true;
+  if (!family && roster.isStaff) {
+    let staffFamily: OrgStaffRollUpFamily | null;
+    try {
+      staffFamily = await roleGrants.getStaffFamily(req, rootUid);
+    } catch (error) {
+      logger.warning(req, operation, 'Staff family lookup failed; cannot verify Org Lens roll-up access', {
+        roll_up_key: rollUpKey,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      throw unavailable(error, '/query/resources');
+    }
+    if (!staffFamily || staffFamily.family.rootUid !== rootUid) {
+      throw forbidden();
+    }
+    family = staffFamily.family;
+    familyComplete = staffFamily.complete;
+  }
   if (!family) {
-    if (rollUpSet.degraded) {
+    if (rollUpSet.degraded || roster.staffCheck === 'failed') {
       throw unavailable();
     }
     throw forbidden();
@@ -116,7 +134,7 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     });
   }
 
-  const complete = rollUpSet.lookupOutcome === 'ok';
+  const complete = rollUpSet.lookupOutcome === 'ok' && familyComplete;
   if (!complete) {
     logger.warning(req, operation, 'Roll-up set is partial; serving the verified members of the family', {
       roll_up_key: rollUpKey,

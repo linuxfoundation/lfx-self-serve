@@ -201,7 +201,7 @@ describe('orgs router — GET /me/roll-up-set (#4126)', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(rollUpSet);
-    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'lguerra', true);
+    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'lguerra', true, null);
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 });
