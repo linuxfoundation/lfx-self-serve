@@ -149,6 +149,34 @@ describe('CrowdfundingController all employee view (epic #5845)', () => {
       expect(JSON.stringify(body)).not.toContain('Synthetic Owner');
     });
 
+    it('scrubs emails and personal URLs from the name, description and website free text in the employee view', async () => {
+      mocks.flagEnabled.mockReturnValue(true);
+      mocks.resolveOrgLensViewMode.mockResolvedValue('employee');
+      mocks.getMyInitiatives.mockResolvedValue({
+        data: [
+          {
+            id: 'i3',
+            slug: 'c',
+            name: 'Fund run by owner@example.com',
+            description: 'Questions? Write to owner@example.com or see https://www.linkedin.com/in/synthetic-owner for details.',
+            website: 'https://www.linkedin.com/in/synthetic-owner',
+            attribution: { type: 'organization', entityUid: ORG_UID, name: 'Acme' },
+          },
+          { id: 'i4', slug: 'd', name: 'Plain Fund', description: 'Supports tooling.', website: 'https://fund.example.com' },
+        ],
+        total: 2,
+        pageSize: 20,
+        offset: 0,
+      });
+
+      const { res } = await call('getMyInitiatives', { orgUid: ORG_UID });
+
+      const body = res.json.mock.calls[0][0];
+      expect(JSON.stringify(body)).not.toMatch(/owner@example\.com|linkedin\.com/);
+      expect(body.data[0].name).toBe('Fund run by ');
+      expect(body.data[1]).toMatchObject({ name: 'Plain Fund', description: 'Supports tooling.', website: 'https://fund.example.com' });
+    });
+
     it('is untouched in the full view', async () => {
       mocks.flagEnabled.mockReturnValue(true);
       mocks.resolveOrgLensViewMode.mockResolvedValue('full');
