@@ -302,6 +302,16 @@ describe('GroupInvitationsComponent', () => {
     expect(decline).toHaveBeenCalledWith('committee-a', 'a');
   });
 
+  it('sends a pending decline without moving focus when the page goes away from the drawer Undo', async () => {
+    await render([invitation('a'), invitation('b')]);
+    await open();
+    await press(all('groups-redesign-invitations-row')[0], 'groups-redesign-invitations-decline');
+    (byTestId('groups-redesign-invitations-undo')?.querySelector('button') as HTMLButtonElement).focus();
+
+    expect(() => fixture.destroy()).not.toThrow();
+    expect(decline).toHaveBeenCalledWith('committee-a', 'a');
+  });
+
   it('closes the drawer with the last invitation and hands focus to the fallback', async () => {
     await render([invitation('a')]);
     await open();
