@@ -64,8 +64,8 @@ export function emailBelongsToCompanyDomain(email: string, domains: readonly str
  *   1. the caller's CURRENT employer (CDP work history, no end date) resolves to a crowd.dev organization whose
  *      LF account is `orgUid` — the company is whichever one the affiliation names, never one the URL asserts;
  *   2. that account is an active LF member (`ORG_LENS_ACCOUNT_CONTEXT.IS_MEMBER`);
- *   3. the caller holds a VERIFIED email whose domain is one of the company's (member-service `primary_domain` or
- *      the host of its `website`).
+ *   3. the caller holds a VERIFIED email whose domain is one of the company's (member-service `primary_domain` or one of
+ *      its registered `domain_aliases`; never the host of its `website`).
  *
  * "Could not check" is different from "checked and no": a CDP, warehouse, member-service or email-lookup failure
  * REJECTS (the gate answers 503 `ROLE_GRANTS_UNAVAILABLE`), so an outage never reads as "you are not an employee".
