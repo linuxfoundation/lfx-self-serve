@@ -860,6 +860,35 @@ describe('AccountContextService — family roll-up', () => {
         expect(service.canSelectRollUpFor(ROOT)).toBe(true);
       });
 
+      it("admits an addressed roll-up whose family another anchor's answer lists only by the caller's grants, then confirms it", () => {
+        serverAnswer.set([alpha]);
+        service.setAccount(seedB);
+        TestBed.tick();
+        expect(service.selectRollUp(ROOT)).toBe(true);
+        TestBed.tick();
+        service.setAccount(otherCo);
+        TestBed.tick();
+        serverAnswer.set([
+          { rootUid: ROOT, name: 'Alpha', orgUids: [UID_B] },
+          { rootUid: OTHER, name: 'Other', orgUids: [OTHER] },
+        ]);
+        refetchOnAnchor();
+
+        expect(service.selectRollUp(ROOT)).toBe(false);
+        expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(lastAnchor()).toBe(ROOT);
+
+        serverAnswer.set([alpha]);
+        serverFamilies.unsettled.set(false);
+        TestBed.tick();
+
+        expect(service.isRollUp()).toBe(true);
+        expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+      });
+
       it('still refuses an addressed roll-up once the anchored family has answered without it', () => {
         serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A] }]);
         service.setAccount(seedA);

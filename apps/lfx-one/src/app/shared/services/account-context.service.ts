@@ -466,11 +466,14 @@ export class AccountContextService {
     // not-found. Admitting is self-correcting instead — `rollUpShouldDemote` is the exact
     // complement of this condition, so the moment the grants land either they confirm the roll-up
     // or reconciliation demotes and re-points (#4415 reviews 10 and 12).
+    // Only the anchor's family is staff-expanded; any other family the answer lists is just the
+    // caller's grants in it, a lower bound that must not refuse the address.
+    const staffAnchor = this.rollUpFamiliesService.staffAnchor();
     const awaitsStaffFamily =
       this.rollUpFlag.enabled() &&
       this.orgRoleGrantsService.isStaff() &&
-      this.rollUpFamiliesService.staffAnchor() !== rootUid &&
-      !this.rollUpFamilies().some((family) => family.rootUid === rootUid);
+      staffAnchor !== rootUid &&
+      !this.rollUpFamilies().some((family) => family.rootUid === rootUid && staffAnchor !== null && family.orgUids.includes(staffAnchor));
     const admissible = this.canSelectRollUpFor(rootUid) || (options?.admitWhilePending === true && (this.rollUpEligibilityUnsettled() || awaitsStaffFamily));
     if (!admissible) {
       return false;
