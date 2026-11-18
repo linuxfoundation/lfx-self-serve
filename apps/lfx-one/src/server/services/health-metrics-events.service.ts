@@ -99,6 +99,8 @@ const WEEK_OVER_WEEK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS_WEEK
 const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER';
 const EVENT_REGISTRATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS';
 const ACCOUNT_LOGO_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING';
+/** Each company's current membership tier; the events views carry membership but no tier. */
+const MEMBERSHIP_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 
 /**
  * The forecast view `f` holds closed events and has no end date or past flag of its own; until it does, its reads keep an
@@ -317,8 +319,8 @@ interface OrganizationRow {
   ACCOUNT_NAME: string | null;
   LOGO_URL: string | null;
   IS_MEMBER: boolean | null;
+  MEMBERSHIP_TIER: string | null;
   REGISTRATIONS_COUNT: number | null;
-  REGISTRATIONS_SHARE: number | null;
   SPONSORSHIP_REVENUE: number | null;
   PROPOSALS_COUNT: number | null;
   SPEAKERS_COUNT: number | null;
@@ -850,8 +852,8 @@ export class HealthMetricsEventsService {
   }
 
   /**
-   * One page of the organizations active in the period, ranked by the view's `sort_rank_<period>`
-   * (registrations first) so the ranking survives pagination.
+   * One page of the companies active in the period, ranked by the view's `sort_rank_<period>` (registrations first) so
+   * the ranking survives pagination. The page joins each company's mapped logo and its current tier.
    */
   public async getOrganizations(req: Request, query: HealthMetricsEventsOrganizationsQuery): Promise<HealthMetricsEventsOrganizations> {
     // The suffix and column names come from constants, never from the request, so interpolating them is safe.
@@ -880,7 +882,6 @@ export class HealthMetricsEventsService {
           logo_url,
           is_member_${suffix} AS is_member,
           registrations_count_${suffix} AS registrations_count,
-          registrations_share_of_scope_max_${suffix} AS registrations_share,
           sponsorship_revenue_${suffix} AS sponsorship_revenue,
           proposals_count_${suffix} AS proposals_count,
           speakers_count_${suffix} AS speakers_count,
@@ -905,11 +906,37 @@ export class HealthMetricsEventsService {
         ORDER BY sort_rank ASC NULLS LAST, account_id ASC
         LIMIT ${pageSize} OFFSET ${offset}
       )
-      SELECT totals.*, page.*
+      SELECT
+        totals.scope_total,
+        totals.total_records,
+        page.is_page_row,
+        page.account_id,
+        page.account_name,
+        -- The mapped logo first; the view's own is the fallback.
+        COALESCE(NULLIF(TRIM(logos.logo_url), ''), NULLIF(TRIM(page.logo_url), '')) AS logo_url,
+        page.is_member,
+        tiers.membership_tier,
+        page.registrations_count,
+        page.sponsorship_revenue,
+        page.proposals_count,
+        page.speakers_count,
+        page.events_count,
+        page.sort_rank
       FROM totals
       LEFT JOIN page ON TRUE
+      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
+      -- One row per company at the foundation's all-projects grain, as the Engagement read takes it; MAX only drops repeats.
+      LEFT JOIN (
+        SELECT account_id, MAX(NULLIF(TRIM(membership_tier), '')) AS membership_tier
+        FROM ${MEMBERSHIP_TIER_VIEW}
+        WHERE foundation_slug = ?
+          AND is_all_projects = TRUE
+        GROUP BY account_id
+      ) tiers ON tiers.account_id = page.account_id
       ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC
     `;
+    // The tier lookup's slug comes last in the text, after the search.
+    binds.push(query.foundationSlug);
 
     const result = await executeSnowflakeViewRead<OrganizationRow>(this.snowflakeService, req, sql, binds, {
       view: ORGANIZATIONS_VIEW,
@@ -1542,8 +1569,8 @@ function mapOrganization(row: OrganizationRow): HealthMetricsEventsOrganization 
     accountName: row.ACCOUNT_NAME ?? row.ACCOUNT_ID,
     logoUrl: row.LOGO_URL || null,
     isMember: row.IS_MEMBER === true,
+    membershipTier: row.MEMBERSHIP_TIER?.trim() || null,
     registrations: toNullableNumber(row.REGISTRATIONS_COUNT),
-    registrationsShare: toNullableNumber(row.REGISTRATIONS_SHARE),
     sponsorshipUsd: toNullableNumber(row.SPONSORSHIP_REVENUE),
     proposals: toNullableNumber(row.PROPOSALS_COUNT),
     speakers: toNullableNumber(row.SPEAKERS_COUNT),

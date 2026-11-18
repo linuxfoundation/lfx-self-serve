@@ -1257,8 +1257,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
       ACCOUNT_NAME: 'Acme Motors',
       LOGO_URL: 'https://acme-motors.example/logo.png',
       IS_MEMBER: true,
+      MEMBERSHIP_TIER: ' Gold ',
       REGISTRATIONS_COUNT: 420,
-      REGISTRATIONS_SHARE: '0.5',
       SPONSORSHIP_REVENUE: 150000,
       PROPOSALS_COUNT: 12,
       SPEAKERS_COUNT: 4,
@@ -1278,7 +1278,7 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_ORG_OVERVIEW');
     expect(sql).toContain('registrations_count_3rd_last_completed_year AS registrations_count');
-    expect(sql).toContain('registrations_share_of_scope_max_3rd_last_completed_year AS registrations_share');
+    expect(sql).not.toContain('registrations_share');
     expect(sql).toContain('sort_rank_3rd_last_completed_year AS sort_rank');
     expect(sql).toContain('AND is_all_projects = TRUE');
     // The mapper drops a row with no account id, so the counts must not include it either.
@@ -1286,7 +1286,17 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     expect(sql).toContain('events_count_3rd_last_completed_year > 0');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC');
     expect(sql).not.toContain('ILIKE');
-    expect(binds).toEqual(['acme']);
+    expect(binds).toEqual(['acme', 'acme']);
+  });
+
+  it("joins the mapped logo over the view's own, and the company's current tier from the foundation's all-projects rows", async () => {
+    await new HealthMetricsEventsService().getOrganizations(req, baseQuery);
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).toContain("COALESCE(NULLIF(TRIM(logos.logo_url), ''), NULLIF(TRIM(page.logo_url), '')) AS logo_url");
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION');
+    expect(sql).toMatch(/WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+GROUP BY account_id\s+\) tiers ON tiers\.account_id = page\.account_id/);
   });
 
   it('binds the search once, with its wildcards escaped', async () => {
@@ -1295,7 +1305,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(sql).toContain("account_name ILIKE ? ESCAPE '!'");
     expect((sql as string).match(/\?/g)).toHaveLength(binds.length);
-    expect(binds).toEqual(['acme', '%50!%!_off%']);
+    // The tier lookup's slug comes after the search, in text order.
+    expect(binds).toEqual(['acme', '%50!%!_off%', 'acme']);
   });
 
   it.each([
@@ -1316,7 +1327,10 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
 
   it('maps the page rows and reads the totals off the first row', async () => {
     execute.mockResolvedValue({
-      rows: [organizationRow(), organizationRow({ ACCOUNT_ID: 'org-b', ACCOUNT_NAME: null, LOGO_URL: '', IS_MEMBER: null, SPONSORSHIP_REVENUE: null })],
+      rows: [
+        organizationRow(),
+        organizationRow({ ACCOUNT_ID: 'org-b', ACCOUNT_NAME: null, LOGO_URL: '', IS_MEMBER: null, MEMBERSHIP_TIER: '  ', SPONSORSHIP_REVENUE: null }),
+      ],
     });
 
     await expect(new HealthMetricsEventsService().getOrganizations(req, baseQuery)).resolves.toEqual({
@@ -1326,8 +1340,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
           accountName: 'Acme Motors',
           logoUrl: 'https://acme-motors.example/logo.png',
           isMember: true,
+          membershipTier: 'Gold',
           registrations: 420,
-          registrationsShare: 0.5,
           sponsorshipUsd: 150000,
           proposals: 12,
           speakers: 4,
@@ -1338,8 +1352,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
           accountName: 'org-b',
           logoUrl: null,
           isMember: false,
+          membershipTier: null,
           registrations: 420,
-          registrationsShare: 0.5,
           sponsorshipUsd: null,
           proposals: 12,
           speakers: 4,

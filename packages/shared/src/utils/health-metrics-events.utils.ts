@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_CHART_BAR_WIDTH_PX,
@@ -31,6 +32,7 @@ import { HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP } from '../constants/health
 import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS,
   HEALTH_METRICS_MEMBERS_RESERVED_TIERS,
 } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH, HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-non-members.constants';
@@ -57,6 +59,7 @@ import type {
   HealthMetricsEventsOrganization,
   HealthMetricsEventsOrganizationLink,
   HealthMetricsEventsOrganizationRowView,
+  HealthMetricsEventsOrganizationsSegment,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsPastRowView,
@@ -89,26 +92,41 @@ export function buildHealthMetricsEventsSubNavItems(notes: Partial<Record<Health
   return HEALTH_METRICS_EVENTS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: notes[section.key] ?? '' }));
 }
 
-/** One organizations row. A zero sponsorship or proposal count reads as `—`: the view cannot tell it from not tracked. */
-export function buildHealthMetricsEventsOrganizationRowView(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationRowView {
-  const membership = organization.isMember ? HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.member : HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.nonMember;
-  const share = organization.registrationsShare ?? 0;
+/** The Companies at events segment a URL value or switch pick names; anything else is All. */
+export function parseHealthMetricsEventsOrganizationsSegment(id: string | null): HealthMetricsEventsOrganizationsSegment {
+  return HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.find((option) => option.id === id)?.id ?? 'all';
+}
 
+/** One Companies at events row. A zero sponsorship or proposal count reads as `—`: the view cannot tell it from not tracked. */
+export function buildHealthMetricsEventsOrganizationRowView(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationRowView {
   return {
     accountId: organization.accountId,
     accountName: organization.accountName,
-    memberLabel: membership.label,
-    memberGlyph: membership.glyph,
-    memberClass: membership.textClass,
+    company: { kind: 'company', name: organization.accountName, logoUrl: organization.logoUrl ?? '' },
+    isMember: organization.isMember,
+    membershipLabel: formatOrganizationMembership(organization),
     registrationsLabel: formatHealthMetricsEventsCount(organization.registrations),
-    barWidthPct: Math.min(Math.max(share * 100, 0), 100),
-    sponsorshipLabel: organization.sponsorshipUsd ? formatCurrency(organization.sponsorshipUsd) : '—',
-    proposalsLabel: organization.proposals ? formatHealthMetricsEventsCount(organization.proposals) : '—',
+    sponsorshipLabel: organization.sponsorshipUsd ? formatCurrency(organization.sponsorshipUsd) : HEALTH_METRICS_TABLE_DASH,
+    proposalsLabel: organization.proposals ? formatHealthMetricsEventsCount(organization.proposals) : HEALTH_METRICS_TABLE_DASH,
     speakersLabel: formatHealthMetricsEventsCount(organization.speakers),
     eventsLabel: formatHealthMetricsEventsCount(organization.events),
     link: buildHealthMetricsEventsOrganizationLink(organization),
     linkLabel: `Open ${organization.accountName} in ${organization.isMember ? 'Members' : 'Non-Members'}`,
   };
+}
+
+/**
+ * A member's tier, a reserved one spelled as the Members tab spells it; "Member" when the view has none. The tier is current
+ * while membership is the period's, so a current "Non-Member" tier on a period member is no tier.
+ */
+function formatOrganizationMembership(organization: HealthMetricsEventsOrganization): string {
+  if (!organization.isMember) return HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.nonMember;
+
+  const raw = organization.membershipTier?.trim() ?? '';
+  const tierName = raw.toLowerCase().replace(/[^a-z]/g, '') === 'nonmember' ? '' : raw;
+  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((tier) => tier === tierName.toLowerCase());
+  if (reserved) return HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved];
+  return tierName || HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.member;
 }
 
 /** A member opens the Members directory and a non-member opens Non-Members company participation, each searched by name with other filters cleared. */
@@ -135,13 +153,6 @@ function buildHealthMetricsEventsOrganizationLink(organization: HealthMetricsEve
       [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsPage]: null,
     },
   };
-}
-
-/** The control line, e.g. `1,204 organizations`; `—` while the count is unknown. */
-export function formatHealthMetricsEventsOrganizationsCountLabel(total: number | null): string {
-  if (total === null) return '—';
-
-  return `${formatHealthMetricsEventsCount(total)} ${total === 1 ? 'organization' : 'organizations'}`;
 }
 
 /** A registration goal of zero or less is no goal set; every registration-goal check reads it through here. */

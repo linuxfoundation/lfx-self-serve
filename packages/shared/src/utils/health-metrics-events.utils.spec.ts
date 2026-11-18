@@ -15,10 +15,10 @@ import {
   buildHealthMetricsEventsRegistrationsGrowthChart,
   buildHealthMetricsEventsRevenueView,
   buildHealthMetricsEventsSpeakersView,
+  parseHealthMetricsEventsOrganizationsSegment,
   formatHealthMetricsEventsSpeakerProposalsSubtitle,
   buildHealthMetricsEventsSponsorshipView,
   buildHealthMetricsEventsSubNavItems,
-  formatHealthMetricsEventsOrganizationsCountLabel,
   hasHealthMetricsEventsGoal,
   formatHealthMetricsEventsPlaceLabel,
   pickHealthMetricsEventsForecastFormat,
@@ -953,14 +953,27 @@ describe('formatHealthMetricsEventsSpeakerProposalsSubtitle', () => {
   });
 });
 
+describe('parseHealthMetricsEventsOrganizationsSegment', () => {
+  it.each([
+    ['members', 'members'],
+    ['non-members', 'non-members'],
+    ['all', 'all'],
+    ['partners', 'all'],
+    ['toString', 'all'],
+    [null, 'all'],
+  ] as const)('reads %o as %s', (id, segment) => {
+    expect(parseHealthMetricsEventsOrganizationsSegment(id)).toBe(segment);
+  });
+});
+
 describe('buildHealthMetricsEventsOrganizationRowView', () => {
   const organization = (overrides: Partial<HealthMetricsEventsOrganization> = {}): HealthMetricsEventsOrganization => ({
     accountId: '0014100000AcmeAAAA',
     accountName: 'Acme Motors',
     logoUrl: 'https://acme-motors.example/logo.png',
     isMember: true,
+    membershipTier: 'Gold',
     registrations: 1204,
-    registrationsShare: 0.5,
     sponsorshipUsd: 150000,
     proposals: 12,
     speakers: 4,
@@ -968,15 +981,14 @@ describe('buildHealthMetricsEventsOrganizationRowView', () => {
     ...overrides,
   });
 
-  it('labels a member with its figures and a bar scaled to the top organization', () => {
+  it('labels a member with its logo, tier and figures', () => {
     expect(buildHealthMetricsEventsOrganizationRowView(organization())).toEqual({
       accountId: '0014100000AcmeAAAA',
       accountName: 'Acme Motors',
-      memberLabel: 'Member',
-      memberGlyph: '●',
-      memberClass: 'text-emerald-600',
+      company: { kind: 'company', name: 'Acme Motors', logoUrl: 'https://acme-motors.example/logo.png' },
+      isMember: true,
+      membershipLabel: 'Gold',
       registrationsLabel: '1,204',
-      barWidthPct: 50,
       sponsorshipLabel: '$150K',
       proposalsLabel: '12',
       speakersLabel: '4',
@@ -988,6 +1000,24 @@ describe('buildHealthMetricsEventsOrganizationRowView', () => {
       },
       linkLabel: 'Open Acme Motors in Members',
     });
+  });
+
+  it.each([
+    [' platinum ', 'Platinum'],
+    ['Associate', 'Associate'],
+    [null, 'Member'],
+    ['  ', 'Member'],
+    // The tier is current and membership is the period's, so a period member's current non-member tier is no tier.
+    ['Non-Member', 'Member'],
+    ['non member', 'Member'],
+  ])('reads a member tier of %o as %s', (membershipTier, label) => {
+    expect(buildHealthMetricsEventsOrganizationRowView(organization({ membershipTier })).membershipLabel).toBe(label);
+  });
+
+  it('reads a non-member as Non-member whatever tier the view carries, and a missing logo as empty', () => {
+    const row = buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false, membershipTier: 'Gold', logoUrl: null }));
+
+    expect(row).toMatchObject({ isMember: false, membershipLabel: 'Non-member', company: { logoUrl: '' } });
   });
 
   it('opens a non-member in Non-Members company participation, searched by name with its filters cleared', () => {
@@ -1017,30 +1047,7 @@ describe('buildHealthMetricsEventsOrganizationRowView', () => {
     expect(row.proposalsLabel).toBe('—');
     expect(row.registrationsLabel).toBe('0');
     expect(row.speakersLabel).toBe('0');
-  });
-
-  it('labels a non-member with a hollow dot in grey and keeps the bar inside its track', () => {
-    const row = buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false, registrationsShare: 1.2, sponsorshipUsd: null }));
-
-    expect(row).toMatchObject({ memberLabel: 'Non-member', memberGlyph: '○', memberClass: 'text-gray-400' });
-    expect(row.barWidthPct).toBe(100);
-    expect(row.sponsorshipLabel).toBe('—');
-  });
-
-  it('draws no bar when the share is not available', () => {
-    expect(buildHealthMetricsEventsOrganizationRowView(organization({ registrationsShare: null })).barWidthPct).toBe(0);
-  });
-});
-
-describe('formatHealthMetricsEventsOrganizationsCountLabel', () => {
-  it('counts organizations, singular for one', () => {
-    expect(formatHealthMetricsEventsOrganizationsCountLabel(1204)).toBe('1,204 organizations');
-    expect(formatHealthMetricsEventsOrganizationsCountLabel(1)).toBe('1 organization');
-    expect(formatHealthMetricsEventsOrganizationsCountLabel(0)).toBe('0 organizations');
-  });
-
-  it('shows a dash while the count is unknown', () => {
-    expect(formatHealthMetricsEventsOrganizationsCountLabel(null)).toBe('—');
+    expect(buildHealthMetricsEventsOrganizationRowView(organization({ sponsorshipUsd: null })).sponsorshipLabel).toBe('—');
   });
 });
 

@@ -312,8 +312,8 @@ export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS: readonly Healt
   { id: 'non-members', label: 'Non-members' },
 ];
 
-/** Rows per page; the server caps a request at `HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE`. */
-export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE = 25;
+/** Rows per page, as the design pages its tables; the server caps a request at `HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE`. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE = 10;
 
 export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE = 100;
 
@@ -322,14 +322,8 @@ export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEARCH_DEBOUNCE_MS = 200;
 
-/** Membership as the design's text status: a filled dot for a member, a hollow one otherwise. */
-export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP = {
-  member: { label: 'Member', glyph: '●', textClass: 'text-emerald-600' },
-  nonMember: { label: 'Non-member', glyph: '○', textClass: 'text-gray-400' },
-} as const;
-
-/** Fill for the registrations mini bar. */
-export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS = 'bg-blue-300';
+/** The Membership cell: a member with no known tier, and a company that is not a member. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP = { member: 'Member', nonMember: 'Non-member' } as const;
 
 /** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED: HealthMetricsEventsSponsorship = { periods: [] };
