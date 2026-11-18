@@ -68,8 +68,15 @@
   <ng-template lfxHealthMetricsL2Section="spk">
     <lfx-events-speakers (reading)="shell.sectionReading('spk')" (settled)="shell.sectionSettled('spk', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="orgs">
+    <lfx-ui-switch size="small" ariaLabel="Membership" [value]="orgSegment()" (valueChange)="onOrgSegmentChange($event)" data-testid="events-orgs-segments">
+      @for (option of orgSegments; track option.id) {
+        <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'events-orgs-segment-' + option.id" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="orgs">
-    <lfx-events-organizations (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
+    <lfx-events-organizations [(segment)]="orgSegment" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="geo">
     <lfx-events-geography (reading)="shell.sectionReading('geo')" (settled)="shell.sectionSettled('geo', $event)" />

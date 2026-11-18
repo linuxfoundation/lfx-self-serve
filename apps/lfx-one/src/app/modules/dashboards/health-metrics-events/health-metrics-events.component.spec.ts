@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, output, signal } from '@angular/core';
+import { Component, input, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED, HEALTH_METRICS_EVENTS_SECTIONS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -83,9 +83,10 @@ class SpeakersStubComponent {
   public readonly reading = output<void>();
 }
 
-/** Stands in for Organizations at events, whose read its own spec covers; the test drives its outputs. */
+/** Stands in for Companies at events, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-organizations', template: '<div data-testid="events-orgs-stub"></div>' })
 class OrganizationsStubComponent {
+  public readonly segment = model<string>('all');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -108,7 +109,8 @@ describe('HealthMetricsEventsComponent', () => {
   async function setup(
     initialFragment: string | null = null,
     glance: HealthMetricsEventsAtAGlance | Error | Observable<never> = GLANCE,
-    initialSlug: string | null = 'acme'
+    initialSlug: string | null = 'acme',
+    queryParams: Record<string, string> = {}
   ): Promise<void> {
     getEventsAtAGlance = vi.fn().mockReturnValue(read(glance));
     selectedFoundation = signal<{ slug: string } | null>(initialSlug === null ? null : { slug: initialSlug });
@@ -119,7 +121,13 @@ describe('HealthMetricsEventsComponent', () => {
         { provide: AnalyticsService, useValue: { getEventsAtAGlance } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            fragment: new BehaviorSubject<string | null>(initialFragment).asObservable(),
+            snapshot: { queryParamMap: convertToParamMap(queryParams) },
+          },
+        },
       ],
     })
       .overrideComponent(HealthMetricsEventsComponent, {
@@ -288,6 +296,32 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.componentInstance['onGrowthMetricChange']('bogus');
     fixture.detectChanges();
     expect(growth.metric()).toBe('attendees');
+  });
+
+  it("puts the All / Members / Non-members switch in the companies header, starting on the URL's segment", async () => {
+    await setup(null, GLANCE, 'acme', { orgSegment: 'non-members' });
+    await sectionsReport('');
+    const orgs = fixture.debugElement.query(By.directive(OrganizationsStubComponent)).componentInstance as OrganizationsStubComponent;
+    const options = [...fixture.nativeElement.querySelectorAll('[data-testid="events-controls-orgs"] [data-testid^="events-orgs-segment-"]')];
+    expect(options.map((option) => (option as HTMLElement).dataset['testid'])).toEqual([
+      'events-orgs-segment-all',
+      'events-orgs-segment-members',
+      'events-orgs-segment-non-members',
+    ]);
+    expect(orgs.segment()).toBe('non-members');
+
+    fixture.componentInstance['onOrgSegmentChange']('members');
+    fixture.detectChanges();
+    expect(orgs.segment()).toBe('members');
+
+    fixture.componentInstance['onOrgSegmentChange']('partners');
+    fixture.detectChanges();
+    expect(orgs.segment()).toBe('all');
+
+    // The section's reset writes back through the two-way binding.
+    orgs.segment.set('members');
+    fixture.detectChanges();
+    expect(fixture.componentInstance['orgSegment']()).toBe('members');
   });
 
   it("shows only the forecast's note in the sub-nav, as the design does", async () => {

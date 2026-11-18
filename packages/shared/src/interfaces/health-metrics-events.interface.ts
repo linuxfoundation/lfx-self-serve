@@ -613,11 +613,12 @@ export interface HealthMetricsEventsOrganizationsQuery {
 export interface HealthMetricsEventsOrganization {
   accountId: string;
   accountName: string;
+  /** The mapped company logo, else the view's own; `null` falls back to the first letter. */
   logoUrl: string | null;
   isMember: boolean;
+  /** The company's current tier, not the period's; `null` when the view has none. */
+  membershipTier: string | null;
   registrations: number | null;
-  /** 0–1, registrations over the foundation's top organization for the period. */
-  registrationsShare: number | null;
   sponsorshipUsd: number | null;
   proposals: number | null;
   speakers: number | null;
@@ -637,13 +638,12 @@ export interface HealthMetricsEventsOrganizations {
 export interface HealthMetricsEventsOrganizationRowView {
   accountId: string;
   accountName: string;
-  memberLabel: string;
-  /** `●` for a member, `○` otherwise; decorative, since the label says it. */
-  memberGlyph: string;
-  memberClass: string;
+  /** The logo box beside the name; an empty logo shows the first letter. */
+  company: HealthMetricsCellCompanyLead;
+  isMember: boolean;
+  /** The tier for a member ("Member" with none known), "Non-member" otherwise. */
+  membershipLabel: string;
   registrationsLabel: string;
-  /** 0–100. */
-  barWidthPct: number;
   /** `—` when the period shows no sponsorship, which the view cannot tell from not tracked. */
   sponsorshipLabel: string;
   /** `—` when the period shows no proposals, for the same reason. */

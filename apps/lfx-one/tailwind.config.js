@@ -28,8 +28,6 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS,
   HEALTH_METRICS_EVENTS_FORECAST_PACES,
-  HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
-  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
@@ -238,9 +236,6 @@ export default {
     ...Object.values(HEALTH_METRICS_OVERVIEW_FILL_CLASSES),
     // Overview events list's stacked status lines (HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES),
-    // Events organizations membership text and registrations bar (HEALTH_METRICS_EVENTS_ORGANIZATIONS_* in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP).map((m) => m.textClass),
-    HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
     // Events forecast goal-bar fills (HEALTH_METRICS_EVENTS_FORECAST_PACES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_EVENTS_FORECAST_PACES).map((pace) => pace.fillClass),
     // Members directory tier pill, NPS chips and engagement dots (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].

@@ -461,7 +461,7 @@ describe('AnalyticsController.getEventsOrganizations', () => {
       segment: 'all',
       search: '',
       offset: 0,
-      pageSize: 25,
+      pageSize: 10,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED);
   });

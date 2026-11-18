@@ -4,10 +4,13 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
 import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED,
   HEALTH_METRICS_EVENTS_BLANK,
   HEALTH_METRICS_EVENTS_DATA_SECTIONS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
+  HEALTH_METRICS_EVENTS_QUERY_PARAMS,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS,
   HEALTH_METRICS_EVENTS_SECTIONS,
   HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX,
@@ -38,6 +41,7 @@ import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsAtAGlanceStatus,
   HealthMetricsEventsForecastPicker,
+  HealthMetricsEventsOrganizationsSegment,
   HealthMetricsEventsRegistrationsGrowthMetric,
   HealthMetricsEventsSubNavItem,
 } from '@lfx-one/shared/interfaces';
@@ -72,6 +76,7 @@ export class HealthMetricsEventsComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly sections = HEALTH_METRICS_EVENTS_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX;
@@ -86,12 +91,21 @@ export class HealthMetricsEventsComponent {
   protected readonly growthMetrics = HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS;
   /** Registrations & growth's header switch. */
   protected readonly growthMetric = signal<HealthMetricsEventsRegistrationsGrowthMetric>(HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS[0].id);
+  protected readonly orgSegments = HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS;
+  /** Companies at events' header switch, read from the URL on arrival; the section writes it back. */
+  protected readonly orgSegment = signal<HealthMetricsEventsOrganizationsSegment>(
+    toOrgSegment(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgSegment))
+  );
   // Owned here and handed to the at-a-glance section as inputs.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 
   protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() => buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote() }));
 
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();
+
+  protected onOrgSegmentChange(id: string | null): void {
+    this.orgSegment.set(toOrgSegment(id));
+  }
 
   protected onGrowthMetricChange(id: string | null): void {
     const option = this.growthMetrics.find((candidate) => candidate.id === id);
@@ -131,4 +145,9 @@ export class HealthMetricsEventsComponent {
       { initialValue: HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED }
     );
   }
+}
+
+/** A segment id from the URL or the switch; anything else is All. */
+function toOrgSegment(id: string | null): HealthMetricsEventsOrganizationsSegment {
+  return HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.find((option) => option.id === id)?.id ?? 'all';
 }
