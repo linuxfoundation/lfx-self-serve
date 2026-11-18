@@ -14,8 +14,16 @@ import { getStringQueryParam } from '../helpers/validation.helper';
  * value the handler will use. A request without an `accountId` has nothing to scope against and no
  * organization to read; the handler rejects it.
  */
-export async function requireOrgAnalyticsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
-  return applyOrgAnalyticsGate(req, res, next, false);
+export async function requireOrgAnalyticsAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    const accountId = getStringQueryParam(req, 'accountId');
+    if (accountId) {
+      await assertOrgAnalyticsRead(req, accountId, 'require_org_analytics_access');
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
 }
 
 /**
@@ -23,15 +31,11 @@ export async function requireOrgAnalyticsAccess(req: Request, res: Response, nex
  * only aggregate counts, monthly series and foundation names, and their handlers still pass the payload through
  * `redactForEmployeeView`. Every other analytics route keeps refusing employee-view callers.
  */
-export async function requireOrgAnalyticsAccessAllowingEmployeeView(req: Request, res: Response, next: NextFunction): Promise<void> {
-  return applyOrgAnalyticsGate(req, res, next, true);
-}
-
-async function applyOrgAnalyticsGate(req: Request, _res: Response, next: NextFunction, allowEmployeeView: boolean): Promise<void> {
+export async function requireOrgAnalyticsAccessAllowingEmployeeView(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const accountId = getStringQueryParam(req, 'accountId');
     if (accountId) {
-      await assertOrgAnalyticsRead(req, accountId, 'require_org_analytics_access', { allowEmployeeView });
+      await assertOrgAnalyticsRead(req, accountId, 'require_org_analytics_access', { allowEmployeeView: true });
     }
     next();
   } catch (error) {
