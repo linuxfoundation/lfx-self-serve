@@ -14,7 +14,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { EventsOrganizationsComponent } from './events-organizations.component';
 
-import type { HealthMetricsEventsOrganization, HealthMetricsEventsOrganizations } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsOrganization, HealthMetricsEventsOrganizations, HealthMetricsEventsOrganizationsSegment } from '@lfx-one/shared/interfaces';
 
 const ACCOUNT_ID = '0014100000AcmeAAAA';
 
@@ -24,8 +24,8 @@ function organization(overrides: Partial<HealthMetricsEventsOrganization> = {}):
     accountName: 'Acme Motors',
     logoUrl: null,
     isMember: true,
+    membershipTier: 'Gold',
     registrations: 1204,
-    registrationsShare: 1,
     sponsorshipUsd: 150000,
     proposals: 12,
     speakers: 4,
@@ -50,7 +50,8 @@ describe('EventsOrganizationsComponent', () => {
   async function render(
     payload: HealthMetricsEventsOrganizations = response(),
     queryParams: Record<string, string> = {},
-    followUpPayload?: HealthMetricsEventsOrganizations
+    followUpPayload?: HealthMetricsEventsOrganizations,
+    segment: HealthMetricsEventsOrganizationsSegment = 'all'
   ): Promise<void> {
     getEventsOrganizations = vi
       .fn()
@@ -71,6 +72,8 @@ describe('EventsOrganizationsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventsOrganizationsComponent);
+    // The tab reads the segment off the URL and binds it in.
+    fixture.componentRef.setInput('segment', segment);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -96,54 +99,65 @@ describe('EventsOrganizationsComponent', () => {
     verdicts = [];
   });
 
-  it('reads the selected foundation and period, renders the page, and settles', async () => {
+  function text(testId: string): string {
+    return query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+  }
+
+  it('reads the selected foundation and period ten rows at a time, renders the page, and settles', async () => {
     await render();
 
-    expect(getEventsOrganizations).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25 });
-    expect(query(`events-orgs-row-${ACCOUNT_ID}-name`)?.textContent?.trim()).toBe('Acme Motors');
-    expect(query('events-orgs-count')?.textContent?.trim()).toBe('1 organization');
+    expect(getEventsOrganizations).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 10 });
+    expect(query(`events-orgs-row-${ACCOUNT_ID}-name`)?.querySelector('[data-testid="health-metrics-cell-text"]')?.textContent?.trim()).toBe('Acme Motors');
+    // The count caption is gone; the sub-nav and the pager carry the totals.
+    expect(query('events-orgs-count')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
+  });
+
+  it('puts the design columns in order, at its 880px minimum', async () => {
+    await render();
+    const headers = [...fixture.nativeElement.querySelectorAll('[data-testid="events-orgs-table"] th')].map((th) => (th as HTMLElement).textContent?.trim());
+
+    expect(headers).toEqual(['Company', 'Membership', 'Registrations', 'Sponsorship', 'Proposals', 'Speakers', 'Events']);
+    expect((fixture.nativeElement.querySelector('[data-testid="events-orgs-table"] table') as HTMLElement | null)?.style.minWidth).toBe('880px');
   });
 
   it('renders untracked sponsorship and proposals as a dash, and real zeroes for the counted columns', async () => {
     await render(response({ rows: [organization({ sponsorshipUsd: 0, proposals: null, speakers: 0, events: 0, registrations: 0 })] }));
 
-    expect(query(`events-orgs-row-${ACCOUNT_ID}-sponsorship`)?.textContent?.trim()).toBe('—');
-    expect(query(`events-orgs-row-${ACCOUNT_ID}-proposals`)?.textContent?.trim()).toBe('—');
-    expect(query(`events-orgs-row-${ACCOUNT_ID}-speakers`)?.textContent?.trim()).toBe('0');
-    expect(query(`events-orgs-row-${ACCOUNT_ID}-events`)?.textContent?.trim()).toBe('0');
-    expect(query(`events-orgs-row-${ACCOUNT_ID}-registrations`)?.textContent?.trim()).toBe('0');
+    expect(text(`events-orgs-row-${ACCOUNT_ID}-sponsorship`)).toBe('—');
+    expect(text(`events-orgs-row-${ACCOUNT_ID}-proposals`)).toBe('—');
+    expect(text(`events-orgs-row-${ACCOUNT_ID}-speakers`)).toBe('0');
+    expect(text(`events-orgs-row-${ACCOUNT_ID}-events`)).toBe('0');
+    expect(text(`events-orgs-row-${ACCOUNT_ID}-registrations`)).toBe('0');
   });
 
-  it('labels members and non-members as dotted text, the glyph hidden from screen readers', async () => {
+  it("labels a member by its tier in the row's ink and a non-member as Non-member in neutral-500", async () => {
     await render(
-      response({ rows: [organization(), organization({ accountId: '0014100000BetaAAAA', accountName: 'Beta Coastal', isMember: false })], totalRecords: 2 })
+      response({
+        rows: [
+          organization(),
+          organization({ accountId: '0014100000BetaAAAA', accountName: 'Beta Coastal', isMember: false }),
+          organization({ accountId: '0014100000GammAAAA', accountName: 'Gamma Works', membershipTier: null }),
+        ],
+        totalRecords: 3,
+      })
     );
-    const member = query(`events-orgs-row-${ACCOUNT_ID}-membership`);
-    const nonMember = query('events-orgs-row-0014100000BetaAAAA-membership');
+    const label = (id: string) => query(`events-orgs-row-${id}-membership`)?.querySelector('[data-testid="health-metrics-cell-text"]');
 
-    expect(member?.textContent?.trim()).toBe('● Member');
-    expect(member?.classList).toContain('text-emerald-600');
-    expect(member?.classList).toContain('whitespace-nowrap');
-    expect(member?.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('●');
-    expect(nonMember?.textContent?.trim()).toBe('○ Non-member');
-    expect(nonMember?.classList).toContain('text-gray-400');
-    expect(nonMember?.classList).not.toContain('rounded-full');
+    expect(label(ACCOUNT_ID)?.textContent?.trim()).toBe('Gold');
+    expect(label(ACCOUNT_ID)?.classList).not.toContain('text-gray-500');
+    expect(label('0014100000BetaAAAA')?.textContent?.trim()).toBe('Non-member');
+    expect(label('0014100000BetaAAAA')?.classList).toContain('text-gray-500');
+    expect(label('0014100000GammAAAA')?.textContent?.trim()).toBe('Member');
   });
 
-  it('draws registrations as a tiny light-blue bar before the bold count, with no organization logo', async () => {
-    await render(response({ rows: [organization({ registrations: 640, registrationsShare: 0.5 })], totalRecords: 1 }));
-    const count = query(`events-orgs-row-${ACCOUNT_ID}-registrations`);
-    const track = count?.previousElementSibling as HTMLElement | null;
+  it('draws registrations as a plain number with no bar, and leads the name with its logo box', async () => {
+    await render(response({ rows: [organization({ registrations: 640, logoUrl: 'https://acme-motors.example/logo.png' })] }));
 
-    expect(count?.tagName).toBe('B');
-    expect(count?.textContent?.trim()).toBe('640');
-    expect(track?.classList).toContain('w-[52px]');
-    expect(track?.classList).toContain('h-[5px]');
-    expect((track?.firstElementChild as HTMLElement | null)?.style.width).toBe('50%');
-    expect(track?.firstElementChild?.classList).toContain('bg-blue-300');
-    expect(query(`events-orgs-row-${ACCOUNT_ID}`)?.querySelector('lfx-avatar')).toBeNull();
+    expect(text(`events-orgs-row-${ACCOUNT_ID}-registrations`)).toBe('640');
+    expect(query(`events-orgs-row-${ACCOUNT_ID}-registrations`)?.querySelector('[class*="bg-blue"]')).toBeNull();
+    expect(query(`events-orgs-row-${ACCOUNT_ID}-name`)?.querySelector('[data-testid="health-metrics-cell-company"]')).not.toBeNull();
   });
 
   it('links each name to Members or Non-Members, searched by name and named for where it opens', async () => {
@@ -158,12 +172,13 @@ describe('EventsOrganizationsComponent', () => {
     expect(nonMember?.getAttribute('href')).toBe('/foundation/health-metrics/non-members?nonSearch=Beta%20Coastal#orgs');
     expect(nonMember?.getAttribute('aria-label')).toBe('Open Beta Coastal in Non-Members');
     expect(query(`events-orgs-row-${ACCOUNT_ID}`)?.getAttribute('tabindex')).toBeNull();
-    // Plain row text, not a blue underlined link: the row itself carries the click affordance.
+    // Plain row text at the cell's own size, not the table's blue 0.875rem link: the row itself carries the click affordance.
     expect(member?.classList).toContain('!text-gray-900');
     expect(member?.classList).toContain('!no-underline');
+    expect(member?.classList).toContain('![font-size:inherit]');
   });
 
-  it('opens the organization from anywhere on its row', async () => {
+  it('opens the company from anywhere on its row', async () => {
     await render();
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
@@ -176,11 +191,11 @@ describe('EventsOrganizationsComponent', () => {
     });
   });
 
-  it('re-reads from page 1 when the segment changes, and writes it to the URL with the fragment kept', async () => {
+  it('re-reads from page 1 when the header switch changes the segment, and writes it to the URL with the fragment kept', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { orgPage: '3' });
     getEventsOrganizations.mockClear();
 
-    fixture.componentInstance['onSegmentChange']('members');
+    fixture.componentRef.setInput('segment', 'members');
     await settle();
 
     expect(getEventsOrganizations).toHaveBeenCalledWith(expect.objectContaining({ segment: 'members', offset: 0 }));
@@ -194,7 +209,7 @@ describe('EventsOrganizationsComponent', () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { orgPage: '2' });
     getEventsOrganizations.mockClear();
 
-    fixture.componentInstance['searchForm'].controls.search.setValue('  acme ');
+    fixture.componentInstance['searchText'].set('  acme ');
     await new Promise((resolve) => setTimeout(resolve, 250));
     await settle();
 
@@ -203,28 +218,29 @@ describe('EventsOrganizationsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgSegment: null, orgSearch: 'acme', orgPage: null } }));
   });
 
-  it('pages through the table and writes the page to the URL', async () => {
+  it('pages through the table with the numbered pager and writes the page to the URL', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }));
     getEventsOrganizations.mockClear();
+    expect(fixture.nativeElement.querySelector('lfx-ui-pagination')).not.toBeNull();
 
-    fixture.componentInstance['onTablePage']({ first: 50, rows: 25 });
+    fixture.componentInstance['page'].set(2);
     await settle();
 
-    expect(getEventsOrganizations).toHaveBeenCalledWith(expect.objectContaining({ offset: 50, pageSize: 25 }));
+    expect(getEventsOrganizations).toHaveBeenCalledWith(expect.objectContaining({ offset: 20, pageSize: 10 }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgSegment: null, orgSearch: null, orgPage: 3 } }));
   });
 
   it('starts on the segment, search and page the URL carries', async () => {
-    await render(response({ totalRecords: 80, scopeTotal: 80 }), { orgSegment: 'non-members', orgSearch: 'acme', orgPage: '2' });
+    await render(response({ totalRecords: 80, scopeTotal: 80 }), { orgSearch: 'acme', orgPage: '2' }, undefined, 'non-members');
 
-    expect(getEventsOrganizations).toHaveBeenCalledWith(expect.objectContaining({ segment: 'non-members', search: 'acme', offset: 25 }));
-    expect((fixture.nativeElement.querySelector('#events-orgs-search') as HTMLInputElement).value).toBe('acme');
+    expect(getEventsOrganizations).toHaveBeenCalledWith(expect.objectContaining({ segment: 'non-members', search: 'acme', offset: 10 }));
+    expect(fixture.componentInstance['searchText']()).toBe('acme');
   });
 
-  it('falls back to the defaults for URL values it cannot honour', async () => {
-    await render(response(), { orgSegment: 'partners', orgPage: '-2' });
+  it('falls back to the first page for a URL page it cannot honour', async () => {
+    await render(response(), { orgPage: '-2' });
 
-    expect(getEventsOrganizations).toHaveBeenCalledWith(expect.objectContaining({ segment: 'all', offset: 0 }));
+    expect(getEventsOrganizations).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
   });
 
   it('re-reads from page 1 when the period changes', async () => {
@@ -251,38 +267,49 @@ describe('EventsOrganizationsComponent', () => {
   it('lands on the last page holding rows, settling once and rewriting the URL', async () => {
     await render(response({ rows: [], totalRecords: 34, scopeTotal: 34 }), { orgPage: '9' }, response({ totalRecords: 34, scopeTotal: 34 }));
 
-    expect(getEventsOrganizations).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 200 }));
-    expect(getEventsOrganizations).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 25 }));
+    expect(getEventsOrganizations).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 80 }));
+    expect(getEventsOrganizations).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 30 }));
     expect(getEventsOrganizations).toHaveBeenCalledTimes(2);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgSegment: null, orgSearch: null, orgPage: 2 } }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgSegment: null, orgSearch: null, orgPage: 4 } }));
   });
 
-  it('settles empty, with no body, when the period has no active organization', async () => {
+  it('settles empty, with no body, when the period has no active company', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 0 }));
 
     expect(verdicts).toEqual([true]);
-    expect(query('events-orgs-controls')).toBeNull();
     expect(query('events-orgs-table')).toBeNull();
     expect(query('events-orgs-search')).toBeNull();
   });
 
-  it('keeps the controls and shows the no-match state when a filter matches nothing', async () => {
+  it('keeps the search and shows the no-match state when a filter matches nothing', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }));
 
-    expect(query('events-orgs-no-match')).not.toBeNull();
-    expect(query('events-orgs-controls')).not.toBeNull();
+    expect(text('events-orgs-no-match')).toContain('No matching companies');
+    expect(query('events-orgs-search')).not.toBeNull();
     // A filter miss is not an empty period, so the shell must not take the section over.
     expect(verdicts).toEqual([false]);
   });
 
-  // A failed read must not render copy that asserts the foundation had no organizations.
+  it('resets both the search and the header switch from the no-match state', async () => {
+    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { orgSearch: 'zzz' }, undefined, 'members');
+    const segmentChanges: string[] = [];
+    fixture.componentInstance.segment.subscribe((segment) => segmentChanges.push(segment));
+
+    (query('events-orgs-no-match')?.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
+    await settle();
+
+    expect(fixture.componentInstance['searchText']()).toBe('');
+    expect(segmentChanges).toEqual(['all']);
+  });
+
+  // A failed read must not render copy that asserts the foundation had no companies.
   it('separates a failed read from an empty one, settling it', async () => {
     await render();
     lifecycle.length = 0;
     getEventsOrganizations.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
-    fixture.componentInstance['onSegmentChange']('members');
+    fixture.componentRef.setInput('segment', 'members');
     await settle();
 
     expect(query('events-orgs-error')).not.toBeNull();
@@ -296,6 +323,6 @@ describe('EventsOrganizationsComponent', () => {
 
     expect(getEventsOrganizations).not.toHaveBeenCalled();
     expect(lifecycle).not.toContain('settled');
-    expect(query('events-orgs-count')?.textContent?.trim()).toBe('—');
+    expect(query('events-orgs-table')).not.toBeNull();
   });
 });

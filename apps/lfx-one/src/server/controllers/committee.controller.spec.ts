@@ -24,6 +24,7 @@ const { getEffectiveEmailMock, committeeSvc } = vi.hoisted(() => ({
     getMyCommittees: vi.fn(),
     uploadCommitteeDocument: vi.fn(),
     bulkCreateCommitteeMembers: vi.fn(),
+    withdrawApplication: vi.fn(),
   },
 }));
 
@@ -36,6 +37,7 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // mocked enums/constants barrels above.
 vi.mock('@lfx-one/shared/utils', () => ({
   isFileTypeAllowed: vi.fn(() => true),
+  isUuid: (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value),
   canViewCommitteeRoster: (committee: { member_visibility?: string; writer?: boolean; auditor?: boolean } | null | undefined) =>
     !!committee && (committee.member_visibility === 'basic_profile' || !!committee.writer || committee.auditor === true),
 }));
@@ -632,5 +634,38 @@ describe('CommitteeController.bulkCreateCommitteeMembers', () => {
     await controller.bulkCreateCommitteeMembers(buildReq({ members }), buildJsonRes(), next);
 
     expect(next).toHaveBeenCalledWith(error);
+  });
+});
+
+describe('CommitteeController.withdrawApplication', () => {
+  const APPLICATION_ID = 'c0000000-0000-0000-0000-000000000003';
+  const withdrawReq = (id: string, applicationId: string): any => ({ params: { id, applicationId }, path: '/test', log: {} });
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns the withdrawn application', async () => {
+    const withdrawn = { uid: APPLICATION_ID, committee_uid: COMMITTEE_ID, status: 'withdrawn' };
+    committeeSvc.withdrawApplication.mockResolvedValueOnce(withdrawn);
+    const res = { json: vi.fn() } as any;
+    const next = vi.fn();
+
+    await new CommitteeController().withdrawApplication(withdrawReq(COMMITTEE_ID, APPLICATION_ID), res, next);
+
+    expect(committeeSvc.withdrawApplication).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, APPLICATION_ID);
+    expect(res.json).toHaveBeenCalledWith(withdrawn);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['..', APPLICATION_ID],
+    [COMMITTEE_ID, '..%2Fapprove'],
+    [COMMITTEE_ID, ''],
+  ])('rejects ids that are not UUIDs (%s, %s) before calling upstream', async (id, applicationId) => {
+    const next = vi.fn();
+
+    await new CommitteeController().withdrawApplication(withdrawReq(id, applicationId), { json: vi.fn() } as any, next);
+
+    expect(committeeSvc.withdrawApplication).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].constructor.name).toBe('ServiceValidationError');
   });
 });
