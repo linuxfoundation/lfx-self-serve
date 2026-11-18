@@ -8,6 +8,7 @@ import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_SEND_STAGES,
   LF_OWNED_EMAIL_LINK_DOMAINS,
+  LINKEDIN_NUMERIC_ID_PATTERN,
   CAMPAIGN_FUNNEL_STAGE_OPTIONS,
   CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS,
   CAMPAIGN_TACTIC_OPTIONS,
@@ -803,9 +804,6 @@ export function canCreateTwitter(): boolean {
 export function canUseMicrosoftCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMicrosoftAssets);
 }
-
-/** A LinkedIn ad account or organization id: digits only, as `linkedInConfig.adAccountId` takes it. */
-const LINKEDIN_NUMERIC_ID_PATTERN = /^\d+$/;
 
 /** One `selectable_accounts` entry camel-cased, or `null` when any field is missing or malformed. */
 function toLinkedInSelectableAccount(value: unknown): LinkedInSelectableAccount | null {

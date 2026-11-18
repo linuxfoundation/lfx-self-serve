@@ -268,6 +268,7 @@ import {
   ISO_CALENDAR_DATE_PATTERN,
   KEYWORD_ACTION_PLATFORMS,
   LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+  LINKEDIN_NUMERIC_ID_PATTERN,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
   LINKEDIN_TARGETING_PROFILE_EDIT_FIELD,
@@ -9014,23 +9015,25 @@ export class CampaignController {
    * Passing the legacy object through unchanged fails the dispatch twice over, which is why this
    * adapter exists at all:
    *
-   * 1. `adAccountId` is FORWARDED only while account selection is on (`canSelectLinkedInAccount`,
-   *    #5809), and DELETED otherwise.
+   * 1. The legacy `adAccountId` is always DELETED. The account campaign-service creates in comes
+   *    from `selectedAdAccountId` (#5809), sent as `adAccountId` only while account selection is on
+   *    (`canSelectLinkedInAccount`) and dropped otherwise.
    *
-   *    On, campaign-service reads it as a SELECTOR among the project's selectable accounts
-   *    (lfx-v2-campaign-service#581): the Implement tab offers exactly that list
-   *    (`getLinkedInCreateAccount`) and sends the field only for a non-default choice, because
-   *    upstream requires `global_marketing_ops` for ANY `adAccountId`, the default included. A
-   *    non-selectable id is upstream's 400 and a caller without the relation its 403, both
-   *    surfaced like any other create refusal. A blank value is dropped, so it means the default.
+   *    The legacy field is an assertion, never a selector, as far as this app can know: its id
+   *    comes from `getLinkedInAccounts`, which ignores the project and serves this application's
+   *    own mounted `linkedin.json`, so nothing makes it agree with the project's connection. With
+   *    selection off, campaign-service refuses any id but the connection's ("cross-account
+   *    campaigns are not allowed", `internal/dispatch/linkedin.go`); with it on, any id needs
+   *    `global_marketing_ops` and must be selectable. Either way forwarding it can only cost a
+   *    create, including when a client whose capabilities did not load falls back to the legacy
+   *    selector and sends it.
    *
-   *    Off, the field is an assertion, never a selector: campaign-service creates in the
-   *    connection's account and refuses any other id with "cross-account campaigns are not
-   *    allowed" (`internal/dispatch/linkedin.go`). The id the legacy selector offers comes from
-   *    `getLinkedInAccounts`, which ignores the project and serves this application's own mounted
-   *    `linkedin.json`, so nothing makes it agree with the project's connection, and forwarding it
-   *    can only ever cost a create. Letting the connection decide is the only choice that cannot
-   *    refuse a working create.
+   *    `selectedAdAccountId` is set only by the Implement tab's picker, which offers exactly the
+   *    project's selectable accounts (`getLinkedInCreateAccount`) and sends one only for a
+   *    non-default pick, because upstream requires `global_marketing_ops` for ANY `adAccountId`, the
+   *    default included. Blank means the default; anything but a bare account number is refused
+   *    here with a 400. A non-selectable id is upstream's 400 and a caller without the relation its
+   *    403, both surfaced like any other create refusal.
    *
    * 2. The dispatcher builds its LinkedIn runtime config from `targetingProfiles` (PLURAL, the
    *    full catalogue) and `employerExclusions` in this envelope — `linkedin.go:135`. The legacy
@@ -9054,10 +9057,19 @@ export class CampaignController {
     const runtime = getLinkedInConfig();
     const edit = body.linkedInConfig.targetingProfileEdit;
 
-    const adAccountId = typeof body.linkedInConfig.adAccountId === 'string' ? body.linkedInConfig.adAccountId.trim() : '';
-    if (canSelectLinkedInAccount() && adAccountId !== '') rest['adAccountId'] = adAccountId;
-    else delete rest['adAccountId'];
+    const selected = typeof body.linkedInConfig.selectedAdAccountId === 'string' ? body.linkedInConfig.selectedAdAccountId.trim() : '';
+    delete rest['adAccountId'];
+    delete rest['selectedAdAccountId'];
     delete rest['targetingProfileEdit'];
+    if (canSelectLinkedInAccount() && selected !== '') {
+      if (!LINKEDIN_NUMERIC_ID_PATTERN.test(selected)) {
+        throw ServiceValidationError.forField('linkedInConfig.selectedAdAccountId', 'The LinkedIn ad account must be a bare account number.', {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      rest['adAccountId'] = selected;
+    }
 
     return {
       ...rest,

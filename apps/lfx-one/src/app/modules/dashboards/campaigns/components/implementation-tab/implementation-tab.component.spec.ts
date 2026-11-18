@@ -3186,8 +3186,8 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
  * #5809: with LinkedIn account selection on and campaign-service owning the create, the tab reads the
  * project's create account. More than one selectable account is a picker with the default chosen;
  * exactly one names the real account read-only. Off, unknown, loading or failed keeps the read-only
- * connection line and never blocks Create. `adAccountId` travels only for a non-default pick, because
- * upstream needs `global_marketing_ops` for any value, the default included.
+ * connection line and never blocks Create. The pick travels as `selectedAdAccountId`, only when it is
+ * not the default, because upstream needs `global_marketing_ops` for any account, the default included.
  */
 describe('ImplementationTabComponent LinkedIn create account (#5809)', () => {
   /** Synthetic ids: the LF system account's default, then one granted account. */
@@ -3292,33 +3292,60 @@ describe('ImplementationTabComponent LinkedIn create account (#5809)', () => {
     return (posted?.['linkedInConfig'] ?? {}) as Record<string, unknown>;
   }
 
-  it('offers a picker with the default chosen, and omits adAccountId for the default', async () => {
+  interface PickerInternals {
+    linkedInAccountOptions(): { label: string; value: string }[];
+    linkedInAccountForm: { controls: { accountId: { value: string; setValue(v: string): void } } };
+  }
+  const picker = (f: ComponentFixture<ImplementationTabComponent>): PickerInternals => f.componentInstance as unknown as PickerInternals;
+  /** Neither account field travels: the legacy one is never sent on this path, and the default is reached by omission. */
+  const sendsNoAccount = (config: Record<string, unknown>): boolean => !('adAccountId' in config) && !('selectedAdAccountId' in config);
+
+  it('offers a picker with the default chosen, and sends no account for the default', async () => {
     const f = await mount(true);
     answer.next(createAccount([DEFAULT_ACCOUNT, GRANT]));
     await settle(f);
 
     expect(getLinkedInCreateAccount).toHaveBeenCalledWith('tlf');
-    const select = el(f, 'implementation-linkedin-account-select') as HTMLSelectElement;
-    expect(select).not.toBeNull();
-    expect(Array.from(select.options).map((o) => o.value)).toEqual(['500000001', '500000002']);
-    expect(select.value).toBe('500000001');
-    expect(select.options[1].textContent).toContain('Example Foundation (500000002)');
+    expect(el(f, 'implementation-linkedin-account-select')?.tagName.toLowerCase()).toBe('lfx-select');
+    expect(picker(f).linkedInAccountOptions()).toEqual([
+      { label: 'Example system account (500000001) · default', value: '500000001' },
+      { label: 'Example Foundation (500000002)', value: '500000002' },
+    ]);
+    expect(picker(f).linkedInAccountForm.controls.accountId.value).toBe('500000001');
     expect(el(f, 'implementation-linkedin-account-from-connection')).toBeNull();
     expect(el(f, 'implementation-linkedin-account')).toBeNull();
-    expect('adAccountId' in submitted(f)).toBe(false);
+    expect(sendsNoAccount(submitted(f))).toBe(true);
   });
 
-  it('sends the granted account the operator picks', async () => {
+  it('sends the granted account the operator picks as selectedAdAccountId, never adAccountId', async () => {
     const f = await mount(true);
     answer.next(createAccount([DEFAULT_ACCOUNT, GRANT]));
     await settle(f);
 
-    const select = el(f, 'implementation-linkedin-account-select') as HTMLSelectElement;
-    select.value = GRANT.accountId;
-    select.dispatchEvent(new Event('change'));
+    picker(f).linkedInAccountForm.controls.accountId.setValue(GRANT.accountId);
     await settle(f);
 
-    expect(submitted(f)['adAccountId']).toBe(GRANT.accountId);
+    const config = submitted(f);
+    expect(config['selectedAdAccountId']).toBe(GRANT.accountId);
+    expect('adAccountId' in config).toBe(false);
+  });
+
+  it('resets a pick to the new default when the foundation changes', async () => {
+    const f = await mount(true);
+    answer.next(createAccount([DEFAULT_ACCOUNT, GRANT]));
+    await settle(f);
+    picker(f).linkedInAccountForm.controls.accountId.setValue(GRANT.accountId);
+    await settle(f);
+
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-cncf', slug: 'cncf', name: 'cncf' } as ProjectContext, false);
+    await settle(f);
+    expect(getLinkedInCreateAccount).toHaveBeenLastCalledWith('cncf');
+    expect(picker(f).linkedInAccountForm.controls.accountId.value).toBe('');
+    answer.next(createAccount([DEFAULT_ACCOUNT, GRANT]));
+    await settle(f);
+
+    expect(picker(f).linkedInAccountForm.controls.accountId.value).toBe(DEFAULT_ACCOUNT.accountId);
+    expect(sendsNoAccount(submitted(f))).toBe(true);
   });
 
   it('names the real account read-only when it is the only one', async () => {
@@ -3329,7 +3356,7 @@ describe('ImplementationTabComponent LinkedIn create account (#5809)', () => {
     expect(el(f, 'implementation-linkedin-account-resolved')?.textContent).toContain('Example system account (500000001)');
     expect(el(f, 'implementation-linkedin-account-select')).toBeNull();
     expect(el(f, 'implementation-linkedin-account-from-connection')).toBeNull();
-    expect('adAccountId' in submitted(f)).toBe(false);
+    expect(sendsNoAccount(submitted(f))).toBe(true);
   });
 
   it.each([null, false])('keeps the connection line and reads nothing with account selection %s', async (selection) => {
@@ -3339,7 +3366,7 @@ describe('ImplementationTabComponent LinkedIn create account (#5809)', () => {
     expect(getLinkedInCreateAccount).not.toHaveBeenCalled();
     expect(el(f, 'implementation-linkedin-account-from-connection')).not.toBeNull();
     expect(el(f, 'implementation-linkedin-account-select')).toBeNull();
-    expect('adAccountId' in submitted(f)).toBe(false);
+    expect(sendsNoAccount(submitted(f))).toBe(true);
   });
 
   it('keeps the connection line, and Create open, while the read is in flight', async () => {
@@ -3347,7 +3374,7 @@ describe('ImplementationTabComponent LinkedIn create account (#5809)', () => {
     await settle(f);
 
     expect(el(f, 'implementation-linkedin-account-from-connection')).not.toBeNull();
-    expect('adAccountId' in submitted(f)).toBe(false);
+    expect(sendsNoAccount(submitted(f))).toBe(true);
   });
 
   it('falls back to the connection line, and does not block Create, when the read fails', async () => {
@@ -3357,7 +3384,7 @@ describe('ImplementationTabComponent LinkedIn create account (#5809)', () => {
 
     expect(el(f, 'implementation-linkedin-account-from-connection')).not.toBeNull();
     expect(el(f, 'implementation-linkedin-account-select')).toBeNull();
-    expect('adAccountId' in submitted(f)).toBe(false);
+    expect(sendsNoAccount(submitted(f))).toBe(true);
   });
 
   it('leaves the legacy selector alone when campaign-service does not own the create', async () => {

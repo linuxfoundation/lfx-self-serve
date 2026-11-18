@@ -2087,7 +2087,16 @@ export interface LinkedInCampaignCreateRequest {
   variants: LinkedInCreativeVariant[];
   project?: string;
   driveFolderUrl?: string;
+  /**
+   * The legacy selector's account, from this app's mounted `linkedin.json`. Read by the legacy
+   * creator only; the campaign-service path always drops it, because nothing ties it to the project.
+   */
   adAccountId?: string;
+  /**
+   * Set only by the Implement tab's account picker (#5809), and only for an account other than the
+   * default. Forwarded to campaign-service as `adAccountId` while account selection is on; dropped otherwise.
+   */
+  selectedAdAccountId?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
   /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */

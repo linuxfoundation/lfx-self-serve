@@ -1103,23 +1103,48 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * #5809: with account selection on, campaign-service reads `adAccountId` as a selector
-   * (lfx-v2-campaign-service#581), so the picked account is forwarded, trimmed. A blank one is
-   * dropped, which is how the Implement tab asks for the default.
+   * #5809: the picker's account travels as `selectedAdAccountId` and is forwarded to campaign-service
+   * as `adAccountId` only while account selection is on. The legacy `adAccountId` is dropped whatever
+   * the flag says: a client whose capabilities did not load falls back to the legacy selector and
+   * sends this app's ConfigMap account, which upstream would refuse as a selector.
    */
   it.each([
-    { label: 'forwards a picked account, trimmed', adAccountId: ' 507654321 ', expected: '507654321' },
-    { label: 'drops a blank account, so the default applies', adAccountId: '  ', expected: undefined },
-  ])('with LinkedIn account selection on, $label', async ({ adAccountId, expected }) => {
+    { label: 'on: a legacy adAccountId alone is not forwarded', selection: true, config: { adAccountId: '507654321' }, expected: undefined },
+    {
+      label: 'on: a picked account is forwarded as adAccountId, trimmed',
+      selection: true,
+      config: { adAccountId: '507654321', selectedAdAccountId: ' 500000002 ' },
+      expected: '500000002',
+    },
+    { label: 'on: a blank pick means the default', selection: true, config: { selectedAdAccountId: '  ' }, expected: undefined },
+    { label: 'off: a picked account is dropped', selection: false, config: { selectedAdAccountId: '500000002' }, expected: undefined },
+  ])('LinkedIn account selection $label', async ({ selection, config, expected }) => {
+    isServerFeatureEnabled.mockImplementation((flag: string) => selection || flag !== ServerFeatureFlag.CampaignServiceLinkedInAccountSelection);
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
-    const linkedInBody = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, adAccountId, targetingProfile: { id: 'cloud-native' } } };
+    const linkedInBody = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, targetingProfile: { id: 'cloud-native' }, ...config } };
     await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     const sent = envelopeFor(createCampaigns)['linkedInConfig'] as Record<string, unknown>;
     expect(sent['adAccountId']).toBe(expected);
     expect('adAccountId' in sent).toBe(expected !== undefined);
+    expect(sent).not.toHaveProperty('selectedAdAccountId');
+  });
+
+  /** A picked account that is not a bare account number is refused with a 400 before any create. */
+  it('refuses a picked LinkedIn account that is not a bare account number', async () => {
+    const linkedInBody = {
+      platforms: ['linkedin-ads'],
+      linkedInConfig: { budgetUsd: 100, targetingProfile: { id: 'cloud-native' }, selectedAdAccountId: 'urn:li:sponsoredAccount:500000002' },
+    };
+    await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.validationErrors[0].field).toBe('linkedInConfig.selectedAdAccountId');
   });
 
   /**

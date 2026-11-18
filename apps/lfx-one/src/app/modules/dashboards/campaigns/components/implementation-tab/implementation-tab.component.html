@@ -3837,18 +3837,14 @@
             <!-- The real create account (#5809): a picker when the LF system account offers grants, else the account itself -->
             @if (createAccount.selectableAccounts.length > 1) {
               <div class="mb-4 flex flex-col gap-1" data-testid="implementation-linkedin-account-picker">
-                <label for="implementation-linkedin-account-select" class="text-xs font-medium text-gray-700">Ad Account</label>
-                <select
-                  id="implementation-linkedin-account-select"
-                  (change)="onLinkedInChosenAccountChange($event)"
-                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  data-testid="implementation-linkedin-account-select">
-                  @for (account of createAccount.selectableAccounts; track account.accountId) {
-                    <option [value]="account.accountId" [selected]="account.accountId === linkedInChosenAccount()?.accountId">
-                      {{ account.label }} ({{ account.accountId }}){{ account.default ? ' · default' : '' }}
-                    </option>
-                  }
-                </select>
+                <p class="text-xs font-medium text-gray-700">Ad Account</p>
+                <lfx-select
+                  [form]="linkedInAccountForm"
+                  control="accountId"
+                  [options]="linkedInAccountOptions()"
+                  ariaLabel="LinkedIn ad account"
+                  styleClass="w-full"
+                  data-testid="implementation-linkedin-account-select" />
                 <p class="text-xs text-gray-400">
                   The default is the account this project's LinkedIn connection uses. Only the LF marketing team can create in another account.
                 </p>

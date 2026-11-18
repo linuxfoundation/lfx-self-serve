@@ -247,7 +247,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { extractFieldOrEnvelopeMessage, isBffValidationError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, filter, from, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take, timer } from 'rxjs';
+import { catchError, filter, from, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take, tap, timer } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -1466,6 +1466,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleCallExtensionForm = this.fb.nonNullable.group<CampaignCallExtensionDraft>({ countryCode: '', phoneNumber: '' });
   protected readonly googlePromotionForm = this.fb.nonNullable.group<CampaignPromotionDraft>(this.emptyGooglePromotionDraft());
+  /** The connection-mode LinkedIn account picker (#5809); set to the default whenever a create account read lands. */
+  protected readonly linkedInAccountForm = this.fb.nonNullable.group({ accountId: '' });
   protected readonly googlePriceForm = this.fb.nonNullable.group({
     type: this.fb.nonNullable.control<string>(GOOGLE_ADS_PRICE_TYPES[0]),
     priceQualifier: '',
@@ -1620,8 +1622,6 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInLifetimeBudget = signal(false);
   protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
   protected readonly linkedInAccountsLoading = signal(false);
-  /** The account picked in the connection-mode picker (#5809); '' or an id no longer offered means the default. */
-  protected readonly linkedInChosenAccountId = signal('');
   /** The configured targeting profiles (#5546), from the mounted ConfigMap; the same list for every foundation. */
   protected readonly linkedInTargetingProfiles = signal<LinkedInTargetingProfileConfig[]>([]);
   protected readonly linkedInTargetingProfilesLoading = signal(false);
@@ -3351,11 +3351,21 @@ export class ImplementationTabComponent implements OnInit {
    * failed — each of which shows the read-only line rather than blocking Create.
    */
   protected readonly linkedInCreateAccount: Signal<LinkedInCreateAccount | null> = this.initLinkedInCreateAccount();
+  /** The picker's value as a signal; '' or an id no longer offered means the default. */
+  protected readonly linkedInAccountDraft: Signal<{ accountId: string }> = this.initFormDraft(this.linkedInAccountForm);
   /** The operator's pick while it is still offered, else the default; `null` until the read answers. */
   protected readonly linkedInChosenAccount = computed<LinkedInSelectableAccount | null>(() => {
     const accounts = this.linkedInCreateAccount()?.selectableAccounts ?? [];
-    return accounts.find((a) => a.accountId === this.linkedInChosenAccountId()) ?? accounts.find((a) => a.default) ?? null;
+    const chosenId = this.linkedInAccountDraft().accountId;
+    return accounts.find((a) => a.accountId === chosenId) ?? accounts.find((a) => a.default) ?? null;
   });
+  /** The picker's options: `label (accountId)`, the default marked. */
+  protected readonly linkedInAccountOptions = computed<{ label: string; value: string }[]>(() =>
+    (this.linkedInCreateAccount()?.selectableAccounts ?? []).map((a) => ({
+      label: `${a.label} (${a.accountId})${a.default ? ' · default' : ''}`,
+      value: a.accountId,
+    }))
+  );
 
   /**
    * What each platform's Bidding control renders (#3299): the choice, and why it cannot be sent —
@@ -4924,11 +4934,6 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInAccountId.setValue((event.target as HTMLSelectElement).value);
   }
 
-  /** The connection-mode picker (#5809); the legacy selector above writes the form instead. */
-  protected onLinkedInChosenAccountChange(event: Event): void {
-    this.linkedInChosenAccountId.set((event.target as HTMLSelectElement).value);
-  }
-
   protected onGeoTargetChange(event: Event): void {
     const select = event.target as HTMLSelectElement;
     this.addGeoTarget(select.value);
@@ -6459,7 +6464,7 @@ export class ImplementationTabComponent implements OnInit {
               // Only when something was removed, so an untouched profile sends what it always did.
               ...this.linkedInTargetingEditField(),
               variants: this.linkedInVariantsForCreate(),
-              ...this.linkedInAdAccountField(),
+              ...this.linkedInAccountFields(),
               ...this.biddingField('linkedin-ads'),
             },
           }
@@ -7406,18 +7411,24 @@ export class ImplementationTabComponent implements OnInit {
 
   private initLinkedInCreateAccount(): Signal<LinkedInCreateAccount | null> {
     // The slug to read for, or '' when the read is not wanted. `switchMap` drops a late answer for a
-    // previous foundation, and a failure is `null` — the read-only line — never an error state.
+    // previous foundation, and a failure is `null` — the read-only line — never an error state. Each
+    // read clears the picker and each answer sets it to that project's default, so a pick never
+    // carries across foundations.
     const slug = computed(() => (this.linkedInAccountSetByConnection() && this.linkedInAccountSelectionEnabled() === true ? this.activeFoundationSlug() : ''));
     return toSignal(
       toObservable(slug).pipe(
-        switchMap((requestedSlug) =>
-          requestedSlug === ''
-            ? of(null)
-            : this.campaignService.getLinkedInCreateAccount(requestedSlug).pipe(
-                startWith(null),
-                catchError(() => of(null))
-              )
-        )
+        switchMap((requestedSlug) => {
+          this.linkedInAccountForm.reset();
+          if (requestedSlug === '') return of(null);
+          return this.campaignService.getLinkedInCreateAccount(requestedSlug).pipe(
+            tap((account) => this.linkedInAccountForm.setValue({ accountId: account.selectableAccounts.find((a) => a.default)?.accountId ?? '' })),
+            catchError((err: unknown) => {
+              console.error('Failed to read the LinkedIn create account for the ad account picker:', err);
+              return of(null);
+            }),
+            startWith(null)
+          );
+        })
       ),
       { initialValue: null }
     );
@@ -8246,15 +8257,15 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * `{ adAccountId }` for the create (#5809). The legacy selector's id when the legacy creator runs.
-   * When campaign-service owns the create, only a picked account that is NOT the default: upstream
-   * requires `global_marketing_ops` for any `adAccountId`, the default included, so the default is
-   * reached by omitting it — and without account selection there is nothing to send.
+   * The LinkedIn account fields for the create (#5809). The legacy creator reads `adAccountId`, the
+   * legacy selector's id. When campaign-service owns the create, the server drops `adAccountId`, and
+   * the picker's account travels as `selectedAdAccountId` — only when it is NOT the default, because
+   * upstream requires `global_marketing_ops` for any account it is told, the default included.
    */
-  private linkedInAdAccountField(): { adAccountId?: string } {
+  private linkedInAccountFields(): { adAccountId?: string; selectedAdAccountId?: string } {
     if (!this.linkedInAccountSetByConnection()) return { adAccountId: this.linkedInAccountId() };
     const chosen = this.linkedInChosenAccount();
-    return chosen && !chosen.default ? { adAccountId: chosen.accountId } : {};
+    return chosen && !chosen.default ? { selectedAdAccountId: chosen.accountId } : {};
   }
 
   /** `{ targetingProfileEdit }` when the operator removed something from the selected profile, else nothing. */
