@@ -7,6 +7,7 @@ import {
   ORG_ACCOUNT_ID_PATTERN,
   ORG_ROLE_GRANTS_CORRELATION_HEADER,
   ORG_ROLE_GRANTS_REFRESH_PARAM,
+  ORG_ROLL_UP_SET_ANCHOR_PARAM,
 } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
@@ -20,6 +21,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { OrgAffiliationService } from '../services/org-affiliation.service';
@@ -111,12 +113,22 @@ export class OrgIdentityController {
       }
 
       const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
-      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache);
+      const anchor = getStringQueryParam(req, ORG_ROLL_UP_SET_ANCHOR_PARAM);
+      const anchorUid = anchor !== undefined && ORG_ACCOUNT_ID_PATTERN.test(anchor) ? anchor : null;
+      if (req.query[ORG_ROLL_UP_SET_ANCHOR_PARAM] !== undefined && anchorUid === null) {
+        throw ServiceValidationError.forField(ORG_ROLL_UP_SET_ANCHOR_PARAM, 'Invalid company id format', {
+          operation: 'get_org_roll_up_set',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache, anchorUid);
 
       logger.success(req, 'get_org_roll_up_set', startTime, {
         family_count: result.families.length,
         org_count: result.families.reduce((total, family) => total + family.orgs.length, 0),
         lookup_outcome: result.lookupOutcome,
+        anchored: anchorUid !== null,
       });
 
       res.setHeader('Cache-Control', 'no-store');

@@ -15,6 +15,8 @@ export interface UiTabItem {
   countLabel?: string;
   /** Font Awesome class string for an icon before the label, 14px (13px in small default tabs), for example `fa-brands fa-github`. */
   icon?: string;
+  /** Colour role of a 7px dot before the label, such as a group type's colour. Also shown in the collapsed select. */
+  dotTone?: UiTone;
   /** Greys the tab out and blocks selection. Arrow keys, Home and End still move focus onto it so its reason tooltip opens; it stays out of the initial tab stop. */
   disabled?: boolean;
   /** Tooltip explaining why a disabled tab is unavailable. Shown on hover; ignored while the tab is enabled. */

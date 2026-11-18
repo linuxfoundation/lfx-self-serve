@@ -18,8 +18,25 @@
       (reading)="shell.sectionReading('kpi')"
       (settled)="shell.sectionSettled('kpi', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="forecast">
+    <!-- The forecast reports its events only in year to date, once read. -->
+    @if (forecastPicker().options.length) {
+      <lfx-ui-select
+        size="small"
+        ariaLabel="Event"
+        [value]="forecastPicker().eventId"
+        (valueChange)="forecastEventId.set($event)"
+        data-testid="events-registration-forecast-event">
+        @for (option of forecastPicker().options; track option.eventId) {
+          <lfx-ui-option [value]="option.eventId" [label]="option.label" />
+        }
+      </lfx-ui-select>
+    }
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="forecast">
     <lfx-events-registration-forecast
+      [pickedEventId]="forecastEventId()"
+      (pickerChange)="forecastPicker.set($event)"
       (countsChange)="forecastNote.set($event)"
       (reading)="shell.sectionReading('forecast')"
       (settled)="shell.sectionSettled('forecast', $event)" />
@@ -27,8 +44,20 @@
   <ng-template lfxHealthMetricsL2Section="past">
     <lfx-events-past-events (reading)="shell.sectionReading('past')" (settled)="shell.sectionSettled('past', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="reg">
+    <lfx-ui-switch
+      size="small"
+      ariaLabel="View"
+      [value]="growthMetric()"
+      (valueChange)="onGrowthMetricChange($event)"
+      data-testid="events-registrations-growth-metric">
+      @for (option of growthMetrics; track option.id) {
+        <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'events-registrations-growth-metric-' + option.id" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="reg">
-    <lfx-events-registrations-growth (reading)="shell.sectionReading('reg')" (settled)="shell.sectionSettled('reg', $event)" />
+    <lfx-events-registrations-growth [metric]="growthMetric()" (reading)="shell.sectionReading('reg')" (settled)="shell.sectionSettled('reg', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="rev">
     <lfx-events-revenue (reading)="shell.sectionReading('rev')" (settled)="shell.sectionSettled('rev', $event)" />
@@ -37,10 +66,17 @@
     <lfx-events-sponsorship (reading)="shell.sectionReading('spon')" (settled)="shell.sectionSettled('spon', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="spk">
-    <lfx-events-speakers (noteChange)="speakersNote.set($event)" (reading)="shell.sectionReading('spk')" (settled)="shell.sectionSettled('spk', $event)" />
+    <lfx-events-speakers (reading)="shell.sectionReading('spk')" (settled)="shell.sectionSettled('spk', $event)" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="orgs">
+    <lfx-ui-switch size="small" ariaLabel="Membership" [value]="orgSegment()" (valueChange)="onOrgSegmentChange($event)" data-testid="events-orgs-segments">
+      @for (option of orgSegments; track option.id) {
+        <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'events-orgs-segment-' + option.id" />
+      }
+    </lfx-ui-switch>
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="orgs">
-    <lfx-events-organizations (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
+    <lfx-events-organizations [(segment)]="orgSegment" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="geo">
     <lfx-events-geography (reading)="shell.sectionReading('geo')" (settled)="shell.sectionSettled('geo', $event)" />

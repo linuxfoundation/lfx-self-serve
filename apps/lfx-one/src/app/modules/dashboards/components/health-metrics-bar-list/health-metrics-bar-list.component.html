@@ -1,0 +1,24 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem: the design's `hbars`, 10px between rows, 12px between columns and a 6px bar. -->
+<ul class="m-0 flex list-none flex-col gap-[10px] p-0" [attr.data-testid]="testId()">
+  @for (row of rows(); track row.key) {
+    <li class="grid items-center gap-[12px]" [class]="gridClass()" [attr.data-testid]="testId() + '-row-' + row.key">
+      <span class="inline-flex min-w-0 items-center gap-[8px] text-[14px] text-gray-900" [class]="labelClass()">
+        @if (row.tier; as tier) {
+          <lfx-health-metrics-tier-icon [tier]="tier" />
+        } @else if (row.company; as company) {
+          <lfx-ui-avatar class="flex-none" shape="logo" [size]="24" [name]="company.name" [src]="company.logoUrl" decorative />
+        } @else if (row.icon) {
+          <i class="w-[14px] flex-none text-center text-[12px] text-gray-500" [class]="row.icon" aria-hidden="true"></i>
+        }
+        <span class="min-w-0 truncate">{{ row.label }}</span>
+      </span>
+      <span class="block h-[6px] overflow-hidden rounded-full" aria-hidden="true">
+        <span class="block h-full rounded-full bg-blue-500" [style.width.%]="row.pct"></span>
+      </span>
+      <span class="whitespace-nowrap text-right text-[12px] text-gray-900">{{ row.value }}</span>
+    </li>
+  }
+</ul>

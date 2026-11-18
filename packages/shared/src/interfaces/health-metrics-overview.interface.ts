@@ -722,6 +722,9 @@ export interface HealthMetricsOverviewEventDialogData {
   tab: HealthMetricsOverviewEventDialogTab;
 }
 
+/** What the registration trend needs of its event: the Overview's event, or the Events forecast's, mapped onto it. */
+export type HealthMetricsEventTrendEvent = Pick<HealthMetricsOverviewEvent, 'eventId' | 'registrations' | 'registrationsGoal'>;
+
 /** The event dialog's trend read: an upcoming event's forecast headline and curve, or a past event's history alone. */
 export interface HealthMetricsOverviewEventTrendReads {
   forecast: HealthMetricsEventsForecast | null;

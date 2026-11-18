@@ -386,6 +386,27 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS',
 
   /**
+   * Lets the LinkedIn section of the create flow choose the ad account a campaign is created in
+   * (#5809), sent as `linkedInConfig.adAccountId`. The account list comes from campaign-service's
+   * `GET /projects/{projectId}/linkedin-ads/create-account` (`selectable_accounts`, the default
+   * first), not from the mounted `linkedin.json`, so it lists exactly what the create accepts.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES lfx-v2-campaign-service#581 (v1.0.37) DEPLOYED,
+   * and only offers a choice where that deployment's own `LINKEDIN_ADS_ACCOUNT_SELECTION_ENABLED` is
+   * on and the create resolves to the LF system connection. Only a caller holding
+   * `global_marketing_ops` on the project is offered the picker; everyone else sees the default
+   * account read-only and sends no `adAccountId`. The default account itself is never sent either,
+   * because campaign-service requires `global_marketing_ops` for ANY `adAccountId` while its
+   * selection flag is on, so an executive director naming the default would get a 403.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default),
+   * `buildLinkedInConfig` drops `adAccountId` as before and the tab shows the read-only "set by the
+   * connection" line. Reads and one request field only, so flipping it back strands nothing. Same
+   * accepted values as the flags above.
+   */
+  CampaignServiceLinkedInAccountSelection = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *
@@ -611,8 +632,8 @@ export enum ServerFeatureFlag {
    * Monitor tab's Google panel — is campaign-service-only, and root-only.
    *
    * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Meta, Reddit and X run ONE ad account shared by every
-   * foundation, and campaign-service's `account-monitor` is account-scoped, so either arm returns
-   * every foundation's campaigns. Those monitors (`/meta/monitor`, `/reddit/monitor`,
+   * foundation. The legacy arm returns every foundation's campaigns; campaign-service now returns only
+   * the campaigns recorded for the project, but this app does not rely on that for these. Those monitors (`/meta/monitor`, `/reddit/monitor`,
    * `/twitter/monitor`) are therefore root-only whatever this flag says — a ROOT writer or ROOT
    * `global_marketing_ops` holder; everyone else gets a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED` before
    * any upstream call (lfx-self-serve-ops#54). Google Ads' account is shared too, but campaign-service's
@@ -623,14 +644,14 @@ export enum ServerFeatureFlag {
    * HubSpot are not gated.
    *
    * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
-   * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
-   * OWN connection only — never the LF system fallback — and refuses an account that connection
-   * is not bound to. So on, the Monitor tab's account pickers are filled from those connections
-   * (`/api/campaigns/monitor/connections`) instead of the configured allowlists, and the monitor
-   * routes check the account id's SHAPE rather than allowlist membership. A project with no
-   * connection of its own for a platform, or whose connection has no account bound, sees that
-   * stated in the panel rather than an error. Verify the foundations that use these tabs have
-   * connections before turning this on.
+   * account with this app's own environment credentials. Campaign-service resolves the project's
+   * own connection, and refuses an account that connection is not bound to. So on, the Monitor tab's
+   * account pickers are filled from those connections (`/api/campaigns/monitor/connections`) instead
+   * of the configured allowlists, and the monitor routes check the account id's SHAPE rather than
+   * allowlist membership. A project with no connection of its own for a platform, or whose connection
+   * has no account bound, reads LinkedIn, Reddit and Meta through campaign-service's LF system-account
+   * fallback, scoped to its recorded campaigns (from campaign-service 1.0.37, #5889); on Microsoft
+   * and X, which have no such fallback, it sees that stated in the panel rather than an error.
    *
    * IT ALSO CHANGES THE NUMBERS, deliberately: campaign-service fixed the rule-engine bugs the
    * legacy LinkedIn and Reddit paths still have (#3018-#3022): MED items now sort between HIGH
@@ -696,6 +717,19 @@ export enum ServerFeatureFlag {
    * flag exists so a bad rollout can be reverted with an env var, not a revert PR.
    */
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
+
+  /**
+   * Dark-launch gate for the Foundation Lens Participating Companies endpoints
+   * (`/api/foundation-participating-orgs`, #5697). OFF answers every request with a neutral 404,
+   * whether or not the caller may use the page. The endpoints read the lf-dbt participating-orgs
+   * table through `foundation-participating-orgs.snowflake-source.ts` (#5707); this stays OFF until the rollout.
+   *
+   * Paired with, and independent of, the client-side `foundation-participating-orgs-enabled`
+   * flag: the client flag hides the route and the nav item, this one is the real kill switch for a
+   * direct API call. Reads only, so a rolling update where pods disagree just means some pods answer
+   * 404 and others serve; nothing is half-written. OFF by default.
+   */
+  FoundationParticipatingOrgs = 'LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED',
 
   /**
    * The master kill switch for the embedded Gatewaze admin pilot (`GwModuleOutletComponent`,

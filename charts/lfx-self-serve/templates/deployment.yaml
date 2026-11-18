@@ -15,6 +15,9 @@ metadata:
   {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if not (eq .Values.minReadySeconds nil) }}
+  minReadySeconds: {{ .Values.minReadySeconds }}
+  {{- end }}
   {{- with .Values.strategy }}
   strategy:
     {{- toYaml . | nindent 4 }}

@@ -660,6 +660,71 @@ describe('MeetingCardComponent — remove myself', () => {
     rsvpButtons = undefined;
   });
 
+  it.each([false, true])('restores invitation controls after drawer self-add, previously removed: %s', async (previouslyRemoved) => {
+    if (previouslyRemoved) removedIds.set(new Set(['meeting-1']));
+    const component = await mount({ ...INVITEE, invited: false, organizer: true, my_registrant_ids: [] });
+    const meetings = TestBed.inject(MeetingService);
+    expect(component.effectivelyInvited()).toBe(false);
+    vi.mocked(meetings.getMeeting).mockClear();
+    const users = TestBed.inject(UserService);
+    const refresh = vi.spyOn(users, 'refreshUserMeetings');
+    const cachedFeed = users.getUserMeetings();
+    cachedFeed.subscribe();
+    const http = vi.mocked(TestBed.inject(HttpClient).get);
+    http.mockClear();
+
+    component.onSelfAdded('meeting-1');
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.effectivelyInvited()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.canResendInvite()).toBe(true);
+    expect(removedIds().has('meeting-1')).toBe(false);
+    expect(meetings.getMeeting).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
+    expect(http).not.toHaveBeenCalled();
+    const freshFeed = users.getUserMeetings();
+    expect(freshFeed).not.toBe(cachedFeed);
+    freshFeed.subscribe();
+    expect(http).toHaveBeenCalledExactlyOnceWith('/api/user/meetings', { params: undefined });
+    expect(component.additionalRegistrantsCount()).toBe(0);
+  });
+
+  it('ignores drawer self-add events belonging to another meeting', async () => {
+    const component = await mount({ ...INVITEE, invited: false, organizer: true, my_registrant_ids: [] });
+    const meetings = TestBed.inject(MeetingService);
+    vi.mocked(meetings.getMeeting).mockClear();
+    const refresh = vi.spyOn(TestBed.inject(UserService), 'refreshUserMeetings');
+    component.onSelfAdded('another-meeting');
+    expect(component.effectivelyInvited()).toBe(false);
+    expect(meetings.getMeeting).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('reconciles drawer self-row deletion, another registration remains: %s', async (remaining) => {
+    const component = await mount({ ...INVITEE, invited: false, organizer: true, my_registrant_ids: [] });
+    component.onSelfAdded('meeting-1');
+    const users = TestBed.inject(UserService);
+    const clear = vi.spyOn(users, 'clearConfirmedMeetingRsvps');
+    const result = { meeting_id: 'meeting-1', removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: remaining ? ['self-survivor'] : [] };
+    component.onSelfRemoved(result);
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(remaining);
+    expect(component.canLeaveMeeting()).toBe(remaining);
+    expect(component.canResendInvite()).toBe(remaining);
+    expect(removedIds().has('meeting-1')).toBe(!remaining);
+    expect(clear).toHaveBeenCalledWith('meeting-1', expect.any(String), result);
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+  });
+
+  it('ignores self-row deletion from another meeting', async () => {
+    const component = await mount();
+    const clear = vi.spyOn(TestBed.inject(UserService), 'clearConfirmedMeetingRsvps');
+    component.onSelfRemoved({ meeting_id: 'another-meeting', removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: [] });
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(clear).not.toHaveBeenCalled();
+  });
+
   it.each([{ sub: 'synthetic-other', username: 'synthetic-viewer' }, null])(
     "removes the previous viewer's card-local confirmations from an organizer overview after identity changes to %s",
     async (nextUser) => {

@@ -4,7 +4,7 @@ description: View the crowdfunding initiatives run on behalf of a project, found
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, project, foundation, company, attribution, lens]
-last_updated: 2026-11-06
+last_updated: 2026-11-17
 intercom_collection: Crowdfunding
 ---
 
@@ -13,7 +13,7 @@ A crowdfunding initiative can be run on behalf of a project, foundation, or comp
 ## Who sees it
 
 - **Projects and Foundation lenses** — users who can write to the selected project or foundation.
-- **Company lens** — users who are an **Admin** (Org Admin – Editor) of the selected company, granted directly on that company on its [Company Lens Access](../../company/manage-company-lens-access/) tab. Admin access to a parent or other related company does not carry over, and neither does a **Viewer** role.
+- **Company lens** — users who are an **Admin** (Company Admin – Editor) of the selected company, granted directly on that company on its [Company Lens Access](../../company/manage-company-lens-access/) tab. Admin access to a parent or other related company does not carry over, and neither does a **Viewer** role.
 
 Other users don't see the navigation item. If they open the page's address anyway, it says **You don't have access to these initiatives**.
 

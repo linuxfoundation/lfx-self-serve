@@ -3,16 +3,16 @@
 
 import { inject } from '@angular/core';
 import { Router, UrlMatchResult, UrlSegment, UrlTree } from '@angular/router';
-import { ORG_LENS_LEGACY_URL_ROOT } from '@lfx-one/shared/constants';
+import { ORG_LENS_LEGACY_URL_ROOTS } from '@lfx-one/shared/constants';
 import { companyLensRedirectTarget, legacyDocsRedirectTarget } from '@lfx-one/shared/utils';
 
 /**
- * Matches every pre-rename Company Lens address — `/org` and anything beneath it — consuming the whole path so the
- * redirect sees the tail (`not-found`, `{slug|SFID}/{page}/…`, a legacy `{page}/…`). Only the exact segment `org`:
- * `organization` or `orgs` are other addresses.
+ * Matches every pre-rename Company Lens address — `/org`, `/organization` and anything beneath them — consuming the whole path so the
+ * redirect sees the tail (`not-found`, `{slug|SFID}/{page}/…`, a legacy `{page}/…`). Only the exact segments `org` and
+ * `organization`: `orgs` is another address.
  */
 export function legacyOrgLensMatcher(segments: UrlSegment[]): UrlMatchResult | null {
-  return segments[0]?.path === ORG_LENS_LEGACY_URL_ROOT ? { consumed: segments } : null;
+  return segments[0] && ORG_LENS_LEGACY_URL_ROOTS.includes(segments[0].path) ? { consumed: segments } : null;
 }
 
 /**
@@ -31,8 +31,10 @@ export function legacyDocsRedirect(data: LegacyRedirectData): UrlTree {
 
 /** Matches the moved docs section (`organization` and anything beneath it) and the renamed dashboards page under the `docs` route. */
 export function legacyDocsMatcher(segments: UrlSegment[]): UrlMatchResult | null {
-  const first = segments[0]?.path.toLowerCase();
-  const movedDashboardsPage = segments.length === 2 && first === 'dashboards' && segments[1].path.toLowerCase() === 'organization-involvement';
+  // An address ending in `/` keeps a trailing empty segment, so count only the named ones.
+  const named = segments.filter((segment) => segment.path !== '');
+  const first = named[0]?.path.toLowerCase();
+  const movedDashboardsPage = named.length === 2 && first === 'dashboards' && named[1].path.toLowerCase() === 'organization-involvement';
 
   return first === 'organization' || movedDashboardsPage ? { consumed: segments } : null;
 }

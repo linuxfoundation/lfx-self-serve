@@ -67,6 +67,7 @@ const qualificationByRequest = new WeakMap<Request, Map<string, Promise<OrgLensR
  *
  * `roster` lets a caller checking many orgs in one request (a family roll-up) share one roster
  * lookup across them; it must be this request's caller's `getAccessAwareOrgs` answer.
+ * `checkAuditor` likewise replaces the single authorizer call with the caller's batched answer.
  *
  * Must run before any cache read or Snowflake query so an ungranted caller never reaches the data.
  * Returns how the caller qualified; throwing is the only way this function denies.
@@ -75,7 +76,8 @@ export async function assertOrgLensRead(
   req: Request,
   orgUid: string,
   operation: string,
-  roster?: Promise<AccessAwareOrgsResult>
+  roster?: Promise<AccessAwareOrgsResult>,
+  checkAuditor?: (orgUid: string) => Promise<boolean>
 ): Promise<OrgLensReadQualification> {
   let byOrg = qualificationByRequest.get(req);
   if (!byOrg) {
@@ -84,7 +86,7 @@ export async function assertOrgLensRead(
   }
   let qualification = byOrg.get(orgUid);
   if (!qualification) {
-    qualification = resolveOrgLensRead(req, orgUid, operation, roster);
+    qualification = resolveOrgLensRead(req, orgUid, operation, roster, checkAuditor);
     byOrg.set(orgUid, qualification);
   }
   return qualification;
@@ -94,7 +96,8 @@ async function resolveOrgLensRead(
   req: Request,
   orgUid: string,
   operation: string,
-  roster: Promise<AccessAwareOrgsResult> | undefined
+  roster: Promise<AccessAwareOrgsResult> | undefined,
+  checkAuditor: ((orgUid: string) => Promise<boolean>) | undefined
 ): Promise<OrgLensReadQualification> {
   const forbidden = (): MicroserviceError =>
     new MicroserviceError('You do not have access to Company Lens data for this company.', 403, 'FORBIDDEN', {
@@ -152,12 +155,12 @@ async function resolveOrgLensRead(
 
   // Strict, so an authorizer outage is a retriable 503, never a silent `false` that reads as
   // "denied". Settled into a value so the failure branch below is a return, not a rethrow.
-  const auditor: { allowed: boolean } | { failed: unknown } = await accessCheck
-    .checkSingleAccessStrict(req, { resource: 'b2b_org', id: orgUid, access: 'auditor' })
-    .then(
-      (allowed) => ({ allowed }),
-      (failed: unknown) => ({ failed })
-    );
+  const auditor: { allowed: boolean } | { failed: unknown } = await (
+    checkAuditor ? checkAuditor(orgUid) : accessCheck.checkSingleAccessStrict(req, { resource: 'b2b_org', id: orgUid, access: 'auditor' })
+  ).then(
+    (allowed) => ({ allowed }),
+    (failed: unknown) => ({ failed })
+  );
   if ('allowed' in auditor && auditor.allowed) {
     return 'auditor-entitlement';
   }

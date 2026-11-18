@@ -1,0 +1,89 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<lfx-ui-drawer heading="All speaker proposals" [subtitle]="subtitle()" data-testid="events-speaker-proposals-drawer">
+  <!-- The design's filters: the event takes the room, the status keeps 160px. A narrow drawer stacks them. -->
+  <ng-container drawerToolbar>
+    <lfx-ui-select
+      class="min-w-0 flex-[1_1_100%] @[560px]:flex-[1_1_200px]"
+      size="small"
+      ariaLabel="Event"
+      [value]="eventId()"
+      (valueChange)="onEventChange($event)"
+      data-testid="events-speaker-proposals-event">
+      @for (option of eventOptions(); track option.id) {
+        <lfx-ui-option [value]="option.id" [label]="option.label" />
+      }
+    </lfx-ui-select>
+    <lfx-ui-select
+      class="min-w-0 flex-[1_1_100%] @[560px]:flex-[0_1_160px]"
+      size="small"
+      ariaLabel="Status"
+      [value]="status()"
+      (valueChange)="onStatusChange($event)"
+      data-testid="events-speaker-proposals-status">
+      @for (option of statusOptions; track option.id) {
+        <lfx-ui-option [value]="option.id" [label]="option.label" />
+      }
+    </lfx-ui-select>
+  </ng-container>
+
+  @if (loadFailed() && rows().length === 0) {
+    <div class="flex flex-col items-center gap-[8px] py-[24px]" data-testid="events-speaker-proposals-error">
+      <p class="m-0 text-center text-[13px] text-gray-500" role="alert">We could not load speaker proposals.</p>
+      <lfx-ui-button variant="secondary" size="small" (click)="retry()" data-testid="events-speaker-proposals-retry">Try again</lfx-ui-button>
+    </div>
+  } @else if (loading()) {
+    <div class="flex flex-col" aria-hidden="true" data-testid="events-speaker-proposals-loading">
+      @for (placeholder of [1, 2, 3, 4, 5, 6]; track placeholder) {
+        <div class="flex flex-col gap-[6px] border-b border-gray-100 py-[12px]">
+          <p-skeleton width="40%" height="12px" />
+          <p-skeleton width="70%" height="14px" />
+          <p-skeleton width="55%" height="12px" />
+        </div>
+      }
+    </div>
+  } @else if (rows().length === 0) {
+    <p class="m-0 py-[24px] text-center text-[13px] text-gray-500" data-testid="events-speaker-proposals-empty">No proposals match these filters.</p>
+  } @else {
+    <ul class="m-0 flex list-none flex-col p-0" data-testid="events-speaker-proposals-list">
+      @for (row of rows(); track row.key) {
+        <li class="flex items-start gap-[12px] border-b border-gray-100 py-[12px]" [attr.data-testid]="'events-speaker-proposals-row-' + row.key">
+          <div class="flex min-w-0 flex-1 flex-col gap-[2px]">
+            <span class="mb-[4px] flex min-w-0 items-center gap-[6px] text-[12px] text-gray-600">
+              <lfx-ui-avatar class="flex-none" shape="logo" [size]="20" [initialsSize]="9" [name]="row.company.name" [src]="row.company.logoUrl" decorative />
+              <span class="min-w-0 break-words">{{ row.company.name }}</span>
+            </span>
+            <span class="text-[13px] font-medium text-gray-900">{{ row.title }}</span>
+            @if (row.description) {
+              <span class="text-[12px] text-gray-500">{{ row.description }}</span>
+            }
+            @if (row.eventLine) {
+              <span class="text-[12px] text-gray-400">{{ row.eventLine }}</span>
+            }
+          </div>
+          <lfx-ui-badge class="flex-none" [tone]="row.statusTone" [attr.data-testid]="'events-speaker-proposals-row-' + row.key + '-status'">{{
+            row.statusLabel
+          }}</lfx-ui-badge>
+        </li>
+      }
+    </ul>
+    @if (loadingMore()) {
+      <div class="flex flex-col gap-[6px] py-[12px]" aria-hidden="true" data-testid="events-speaker-proposals-loading-more">
+        <p-skeleton width="40%" height="12px" />
+        <p-skeleton width="70%" height="14px" />
+        <p-skeleton width="55%" height="12px" />
+      </div>
+    } @else if (loadFailed()) {
+      <!-- Keeps the loaded rows; Try again asks for the page that failed. -->
+      <div class="flex flex-col items-center gap-[8px] py-[12px]" data-testid="events-speaker-proposals-more-error">
+        <p class="m-0 text-center text-[13px] text-gray-500" role="alert">We could not load more proposals.</p>
+        <lfx-ui-button variant="secondary" size="small" (click)="retry()" data-testid="events-speaker-proposals-more-retry">Try again</lfx-ui-button>
+      </div>
+    }
+    @if (canLoadMore()) {
+      <div #sentinel class="h-px" aria-hidden="true" data-testid="events-speaker-proposals-sentinel"></div>
+    }
+  }
+</lfx-ui-drawer>
