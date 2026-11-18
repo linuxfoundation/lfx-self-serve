@@ -3262,6 +3262,8 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     linkedInVariants: () => unknown[];
     linkedInBudgetUsd: () => number;
     linkedInLifetimeBudget: () => boolean;
+    linkedInDailyCapUsd: { (): number | null; set(v: number | null): void };
+    createBlockedReason: () => string | null;
     redditSubreddits: () => string[];
     redditInterests: () => string[];
     redditKeywords: () => string[];
@@ -3388,6 +3390,24 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const box = budget.closest('.grid')?.querySelector('input[type="checkbox"]') as HTMLInputElement;
     box.checked = checked;
     box.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
+  /** The daily cap field (#5774); null while the lifetime budget is off, which several tests assert on. */
+  function linkedInDailyCapInput(f: ComponentFixture<ImplementationTabComponent>): HTMLInputElement | null {
+    return f.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap"]') as HTMLInputElement | null;
+  }
+
+  /** The deployment offers the daily cap (`linkedInDailyCapEnabled`); left unset, the field is withheld. */
+  function enableDailyCap(f: ComponentFixture<ImplementationTabComponent>): void {
+    f.componentRef.setInput('linkedInDailyCapEnabled', true);
+    f.detectChanges();
+  }
+
+  function typeLinkedInDailyCap(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const input = linkedInDailyCapInput(f) as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
     f.detectChanges();
   }
 
@@ -4285,6 +4305,195 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const config = sentConfig('linkedInConfig');
     expect(config['budgetUsd']).toBe(2500);
     expect(config['lifetimeBudget']).toBe(false);
+  });
+
+  // === LinkedIn: the daily cap beside a lifetime budget (#5774) ===
+
+  /** Driven through the template's own bindings, like the budget pair above. */
+  it('carries the linkedin daily cap through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    enableDailyCap(first.fixture);
+    typeLinkedInBudget(first.fixture, 1000);
+    toggleLinkedInLifetimeBudget(first.fixture, true);
+    typeLinkedInDailyCap(first.fixture, '20');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.linkedInDailyCapUsd).toBe(20);
+
+    const second = await mount(draft);
+    enableDailyCap(second.fixture);
+    const c = at(second.fixture);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(second.fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    second.fixture.detectChanges();
+    c.submit();
+
+    expect(linkedInDailyCapInput(second.fixture)?.value).toBe('20');
+    const config = sentConfig('linkedInConfig');
+    expect(config['lifetimeBudget']).toBe(true);
+    expect(config['budgetUsd']).toBe(1000);
+    expect(config['dailyCapUsd']).toBe(20);
+  });
+
+  it('shows the daily cap only beside a lifetime budget, and drops it when the lifetime budget is turned off', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    toggleLinkedInLifetimeBudget(fixture, false);
+    expect(linkedInDailyCapInput(fixture)).toBeNull();
+
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '20');
+    toggleLinkedInLifetimeBudget(fixture, false);
+
+    expect(linkedInDailyCapInput(fixture)).toBeNull();
+    const c = at(fixture);
+    expect(c.linkedInDailyCapUsd()).toBeNull();
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    fixture.detectChanges();
+    c.submit();
+    expect('dailyCapUsd' in sentConfig('linkedInConfig')).toBe(false);
+  });
+
+  it('refuses an entry the browser cannot parse instead of reading it as no cap', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    // A number input holding `1e` reports value '' with validity.badInput; jsdom does not model it.
+    const input = linkedInDailyCapInput(fixture) as HTMLInputElement;
+    Object.defineProperty(input, 'validity', { configurable: true, value: { badInput: true } });
+    typeLinkedInDailyCap(fixture, '');
+
+    expect(at(fixture).linkedInDailyCapUsd()).toBeNaN();
+    const error = fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]') as HTMLElement | null;
+    expect(error?.textContent).toContain('Enter the daily cap in US dollars');
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it('restores an unparsable daily cap as no cap after a remount, as its empty box shows', async () => {
+    const first = await mount(null);
+    enableDailyCap(first.fixture);
+    typeLinkedInBudget(first.fixture, 1000);
+    toggleLinkedInLifetimeBudget(first.fixture, true);
+    const input = linkedInDailyCapInput(first.fixture) as HTMLInputElement;
+    Object.defineProperty(input, 'validity', { configurable: true, value: { badInput: true } });
+    typeLinkedInDailyCap(first.fixture, '');
+    expect(at(first.fixture).linkedInDailyCapUsd()).toBeNaN();
+    const draft = first.latest();
+    first.fixture.destroy();
+    expect(draft?.linkedInDailyCapUsd).toBeNaN();
+
+    const second = await mount(draft);
+    enableDailyCap(second.fixture);
+    const c = at(second.fixture);
+    expect(c.linkedInDailyCapUsd()).toBeNull();
+    expect(linkedInDailyCapInput(second.fixture)?.value).toBe('');
+    expect(second.fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]')).toBeNull();
+    c.selectedPlatforms.set(['linkedin-ads']);
+    expect(c.createBlockedReason()).not.toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it('leaves an entry the browser cannot parse in the box instead of writing over it', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '20');
+    const input = linkedInDailyCapInput(fixture) as HTMLInputElement;
+    // Record what the binding writes into the box from here on.
+    const writes: string[] = [];
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get: () => '',
+      set: (v: string) => writes.push(String(v)),
+    });
+    Object.defineProperty(input, 'validity', { configurable: true, value: { badInput: true } });
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(at(fixture).linkedInDailyCapUsd()).toBeNaN();
+    expect(writes).toEqual([]);
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it('judges a half-cent lifetime budget as campaign-service rounds it', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 100.125);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '100.13');
+
+    const error = fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]') as HTMLElement | null;
+    expect(error?.textContent).toContain("can't be more than the lifetime budget");
+  });
+
+  it('treats an emptied daily cap as no cap', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '20');
+    typeLinkedInDailyCap(fixture, '');
+    expect(at(fixture).linkedInDailyCapUsd()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]')).toBeNull();
+  });
+
+  it.each([
+    ["under LinkedIn's $10 daily minimum", '9.99', 'at least $10'],
+    ['above the lifetime budget', '1500', "can't be more than the lifetime budget"],
+  ])('blocks Create, with the reason under the field, for a daily cap %s', async (_name, value, message) => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    const c = at(fixture);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, value);
+
+    const error = fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]') as HTMLElement | null;
+    expect(error?.textContent).toContain(message);
+    expect(c.createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
+
+    expect(linkedInDailyCapInput(fixture)?.getAttribute('aria-describedby')).toBe(
+      'implementation-linkedin-daily-cap-hint implementation-linkedin-daily-cap-error'
+    );
+
+    typeLinkedInDailyCap(fixture, '20');
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]')).toBeNull();
+    expect(linkedInDailyCapInput(fixture)?.getAttribute('aria-describedby')).toBe('implementation-linkedin-daily-cap-hint');
+    expect(c.createBlockedReason()).not.toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it.each([
+    ['unknown (null)', null],
+    ['off', false],
+  ])('withholds the daily cap, and sends none, while the deployment capability is %s', async (_name, enabled) => {
+    const { fixture } = await mount(null);
+    if (enabled !== null) {
+      fixture.componentRef.setInput('linkedInDailyCapEnabled', enabled);
+      fixture.detectChanges();
+    }
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    expect(linkedInDailyCapInput(fixture)).toBeNull();
+
+    // A cap restored from a draft written while the capability was on is not sent either.
+    const c = at(fixture);
+    c.linkedInDailyCapUsd.set(20);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    fixture.detectChanges();
+    expect(c.createBlockedReason()).not.toBe('LinkedIn Ads: fix the daily cap.');
+    c.submit();
+    expect('dailyCapUsd' in sentConfig('linkedInConfig')).toBe(false);
   });
 
   // === Handler emission, which naming the field in `emitDraft` does not give you ===

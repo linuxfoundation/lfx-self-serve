@@ -1275,6 +1275,8 @@ export interface CampaignImplementationDraft {
    */
   linkedInBudgetUsd?: number;
   linkedInLifetimeBudget?: boolean;
+  /** The optional daily cap beside a LinkedIn lifetime budget (#5774); null or absent is no cap. */
+  linkedInDailyCapUsd?: number | null;
   /**
    * The Reddit budget (LFXV2-3315, which named exactly this field).
    *
@@ -2080,6 +2082,13 @@ export interface LinkedInCampaignCreateRequest {
   hsToken?: string;
   budgetUsd: number;
   lifetimeBudget: boolean;
+  /**
+   * Optional daily spending cap, in USD, beside a LIFETIME budget (#5774): campaign-service sends it
+   * as the campaign's dailyBudget next to its totalBudget (linuxfoundation/lfx-v2-campaign-service#607).
+   * Omitted means no cap. Only with `lifetimeBudget: true`; at least LinkedIn's $10 daily minimum and
+   * no more than `budgetUsd`.
+   */
+  dailyCapUsd?: number;
   startDate: string;
   endDate: string;
   geoTargets: LinkedInGeoTarget[];
@@ -6830,6 +6839,13 @@ export interface CampaignListResult {
    * shows the profile read-only.
    */
   linkedInTargetingEditEnabled: boolean;
+  /**
+   * Whether the LinkedIn section may offer a daily cap beside a lifetime budget, sent as
+   * `linkedInConfig.dailyCapUsd` (#5774). `cutoverOwnsCreate()` and nothing else, like
+   * `linkedInTargetingEditEnabled`: only campaign-service sends the cap, and the legacy creator would
+   * drop it and spend uncapped.
+   */
+  linkedInDailyCapEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

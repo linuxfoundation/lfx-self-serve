@@ -266,6 +266,9 @@ export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'clo
 /** The create request field an edited LinkedIn targeting profile rides in (#5546), as a refusal names it. */
 export const LINKEDIN_TARGETING_PROFILE_EDIT_FIELD = 'linkedInConfig.targetingProfileEdit';
 
+/** The request field a refused LinkedIn daily cap (#5774) is reported against. */
+export const LINKEDIN_DAILY_CAP_FIELD = 'linkedInConfig.dailyCapUsd';
+
 /**
  * Selections campaign-service resolves to another configured profile before reading its facets:
  * `custom` reads `cloud-native` (`internal/platform/linkedin/targeting.go` `buildTargetingCriteria`,
