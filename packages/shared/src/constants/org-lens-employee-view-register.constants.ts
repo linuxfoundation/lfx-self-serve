@@ -62,8 +62,14 @@ export const ORG_LENS_EMPLOYEE_VIEW_REVIEWED_PERSONAL_FIELDS: readonly string[] 
   'participantName',
 ];
 
-/** Source files (relative to `apps/lfx-one/src/server`) allowed to pass `allowEmployeeView: true`. Empty: no analytics route is reviewed yet. */
-export const ORG_LENS_EMPLOYEE_VIEW_ANALYTICS_OPT_INS: readonly OrgLensEmployeeViewAnalyticsOptIn[] = [];
+/** Source files (relative to `apps/lfx-one/src/server`) allowed to pass `allowEmployeeView: true`: the gate the four Overview involvement routes sit behind. */
+export const ORG_LENS_EMPLOYEE_VIEW_ANALYTICS_OPT_INS: readonly OrgLensEmployeeViewAnalyticsOptIn[] = [
+  {
+    file: 'middleware/require-org-analytics-access.middleware.ts',
+    reason:
+      'requireOrgAnalyticsAccessAllowingEmployeeView guards org-foundation-coverage and the three org-involvement-*-monthly routes: aggregate counts, monthly series and foundation names only, no person field, and the handlers still redact.',
+  },
+];
 
 /**
  * The personal-data review register for the Company Lens all employee view (epic #5845, story #5861): every place a
@@ -90,9 +96,8 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     source: 'snowflake',
     verdict: 'count-only',
     enforcement: 'by-construction',
-    status: 'decision',
-    note: 'Counts of seats the company holds. A count of 1 names the one director to anyone who knows the foundation board.',
-    followUp: 'Product owner: set a minimum-count rule for governance seat counts (see all.small-counts).',
+    status: 'enforced',
+    note: 'Counts of seats the company holds. A count of 1 names the one director to anyone who knows the foundation board. Accepted by product decision: small counts have no minimum floor.',
   },
   {
     id: 'overview.foundations.role-badges',
@@ -116,11 +121,9 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     example: 'monthlyData: [4, 6, 5]',
     source: 'snowflake',
     verdict: 'count-only',
-    enforcement: 'refused-by-default',
-    status: 'gap',
-    note: 'Counts only, but the four routes answer 403 in the employee view: none opts in with allowEmployeeView, so the Overview charts fail closed there. Privacy-safe, functionally broken.',
-    followUp:
-      'Overview story: opt these four routes in with allowEmployeeView: true, add them to ORG_LENS_EMPLOYEE_VIEW_ANALYTICS_OPT_INS, and cover them with a test.',
+    enforcement: 'by-construction',
+    status: 'enforced',
+    note: 'Counts only. Fixed: the four routes sit behind requireOrgAnalyticsAccessAllowingEmployeeView (allowEmployeeView: true), so the Overview charts load in the employee view; the handlers still pass the payload through redactForEmployeeView. The payloads (OrgFoundationCoverageResponse, OrgInvolvement*Response) hold counts, monthly series and foundation names, no person field.',
   },
   {
     id: 'overview.analytics.key-members',
@@ -199,9 +202,8 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     source: 'cdp',
     verdict: 'count-only',
     enforcement: 'by-construction',
-    status: 'decision',
-    note: 'A project with one contributor identifies them when the project contributor list is public. The Our Contributors count also links to the named contributors panel on Project detail (allowed there).',
-    followUp: 'Product owner: minimum-count rule (see all.small-counts).',
+    status: 'enforced',
+    note: 'A project with one contributor identifies them when the project contributor list is public. The Our Contributors count also links to the named contributors panel on Project detail (allowed there). Accepted by product decision: small counts have no minimum floor.',
   },
   {
     id: 'projects.workspaces.name',
@@ -382,9 +384,8 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     source: 'insights',
     verdict: 'count-only',
     enforcement: 'by-construction',
-    status: 'decision',
-    note: 'Aggregate per repository. One commit with its dates is a single public commit, so the risk is low, but no minimum-count rule exists.',
-    followUp: 'Product owner: minimum-count rule (see all.small-counts).',
+    status: 'enforced',
+    note: 'Aggregate per repository. One commit with its dates is a single public commit, so the risk is low. Accepted by product decision: small counts have no minimum floor.',
   },
 
   // ─── Events ────────────────────────────────────────────────────────────────
@@ -424,9 +425,8 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     source: 'lfx',
     verdict: 'count-only',
     enforcement: 'by-construction',
-    status: 'decision',
-    note: 'A count of 1 for a named event tells anyone who knows the attendee list who it is.',
-    followUp: 'Product owner: minimum-count rule (see all.small-counts).',
+    status: 'enforced',
+    note: 'A count of 1 for a named event tells anyone who knows the attendee list who it is. Accepted by product decision: small counts have no minimum floor.',
   },
 
   // ─── Training ──────────────────────────────────────────────────────────────
@@ -467,9 +467,8 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     source: 'snowflake',
     verdict: 'count-only',
     enforcement: 'by-construction',
-    status: 'decision',
-    note: 'A course with one learner names the learner to colleagues; an option in the course list proves someone at the company took it.',
-    followUp: 'Product owner: minimum-count rule (see all.small-counts).',
+    status: 'enforced',
+    note: 'A course with one learner names the learner to colleagues; an option in the course list proves someone at the company took it. Accepted by product decision: small counts have no minimum floor.',
   },
 
   // ─── Meetings ──────────────────────────────────────────────────────────────
@@ -484,9 +483,8 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     verdict: 'count-only',
     enforcement: 'stripped',
     strippedBy: 'shared-list',
-    status: 'decision',
-    note: 'Aggregates by construction, with the shared strip as defence in depth. A role or project segment backed by one person is identifiable.',
-    followUp: 'Product owner: minimum-count rule (see all.small-counts).',
+    status: 'enforced',
+    note: 'Aggregates by construction, with the shared strip as defence in depth. A role or project segment backed by one person is identifiable. Accepted by product decision: small counts have no minimum floor.',
   },
 
   // ─── Crowdfunding ──────────────────────────────────────────────────────────
@@ -598,9 +596,8 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     source: 'crowdfunding',
     verdict: 'count-only',
     enforcement: 'none',
-    status: 'unverified',
-    note: 'The page is blocked in the client only. These routes carry no company id, so the lens gate cannot apply; they rely on the upstream service to authorise the caller own token.',
-    followUp: 'Confirm with the crowdfunding service what an employee-only token can read, or add a server-side employee-view refusal.',
+    status: 'enforced',
+    note: 'Product decision: a simple client block is accepted; the initiative, transaction and announcement data is not sensitive. These routes carry no company id, so the lens gate does not apply.',
   },
 
   // ─── Navigation ────────────────────────────────────────────────────────────
@@ -709,9 +706,8 @@ export const ORG_LENS_EMPLOYEE_VIEW_REGISTER: readonly OrgLensEmployeeViewRegist
     source: 'snowflake',
     verdict: 'count-only',
     enforcement: 'none',
-    status: 'decision',
-    note: 'No minimum-count suppression exists anywhere in the view. A count of 1 on a small company, a niche project, a named event or a single course identifies one person to anyone who knows the context.',
-    followUp: 'Product owner: pick a threshold (for example hide or round counts below 5) and apply it in one shared helper.',
+    status: 'enforced',
+    note: 'Product decision: small counts are allowed with no minimum floor; a count does not reveal a name.',
   },
   {
     id: 'all.embedded-email',
