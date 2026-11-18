@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_CHART_BAR_WIDTH_PX,
@@ -58,6 +59,7 @@ import type {
   HealthMetricsEventsOrganization,
   HealthMetricsEventsOrganizationLink,
   HealthMetricsEventsOrganizationRowView,
+  HealthMetricsEventsOrganizationsSegment,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsPastRowView,
@@ -90,6 +92,11 @@ export function buildHealthMetricsEventsSubNavItems(notes: Partial<Record<Health
   return HEALTH_METRICS_EVENTS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: notes[section.key] ?? '' }));
 }
 
+/** The Companies at events segment a URL value or switch pick names; anything else is All. */
+export function parseHealthMetricsEventsOrganizationsSegment(id: string | null): HealthMetricsEventsOrganizationsSegment {
+  return HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.find((option) => option.id === id)?.id ?? 'all';
+}
+
 /** One Companies at events row. A zero sponsorship or proposal count reads as `—`: the view cannot tell it from not tracked. */
 export function buildHealthMetricsEventsOrganizationRowView(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationRowView {
   return {
@@ -118,6 +125,7 @@ function formatOrganizationMembership(organization: HealthMetricsEventsOrganizat
   return tierName || HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.member;
 }
 
+/** A member opens the Members directory and a non-member opens Non-Members company participation, each searched by name with other filters cleared. */
 function buildHealthMetricsEventsOrganizationLink(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationLink {
   if (organization.isMember) {
     return {
@@ -143,7 +151,6 @@ function buildHealthMetricsEventsOrganizationLink(organization: HealthMetricsEve
   };
 }
 
-/** The control line, e.g. `1,204 organizations`; `—` while the count is unknown. */
 /** A registration goal of zero or less is no goal set; every registration-goal check reads it through here. */
 export function hasHealthMetricsEventsGoal(goal: number | null): goal is number {
   return goal !== null && goal > 0;

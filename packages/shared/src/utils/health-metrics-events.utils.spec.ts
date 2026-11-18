@@ -15,6 +15,7 @@ import {
   buildHealthMetricsEventsRegistrationsGrowthChart,
   buildHealthMetricsEventsRevenueView,
   buildHealthMetricsEventsSpeakersView,
+  parseHealthMetricsEventsOrganizationsSegment,
   formatHealthMetricsEventsSpeakerProposalsSubtitle,
   buildHealthMetricsEventsSponsorshipView,
   buildHealthMetricsEventsSubNavItems,
@@ -949,6 +950,19 @@ describe('formatHealthMetricsEventsSpeakerProposalsSubtitle', () => {
 
     expect(formatHealthMetricsEventsSpeakerProposalsSubtitle(1240, 'YTD')).toBe(`1,240 proposals · ${year} (YTD)`);
     expect(formatHealthMetricsEventsSpeakerProposalsSubtitle(1, 'COMPLETED_YEAR')).toBe(`1 proposal · ${year - 1}`);
+  });
+});
+
+describe('parseHealthMetricsEventsOrganizationsSegment', () => {
+  it.each([
+    ['members', 'members'],
+    ['non-members', 'non-members'],
+    ['all', 'all'],
+    ['partners', 'all'],
+    ['toString', 'all'],
+    [null, 'all'],
+  ] as const)('reads %o as %s', (id, segment) => {
+    expect(parseHealthMetricsEventsOrganizationsSegment(id)).toBe(segment);
   });
 });
 

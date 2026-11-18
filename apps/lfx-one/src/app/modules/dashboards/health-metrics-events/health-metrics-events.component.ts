@@ -15,7 +15,7 @@ import {
   HEALTH_METRICS_EVENTS_SECTIONS,
   HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEventsSubNavItems } from '@lfx-one/shared/utils';
+import { buildHealthMetricsEventsSubNavItems, parseHealthMetricsEventsOrganizationsSegment } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
@@ -94,7 +94,7 @@ export class HealthMetricsEventsComponent {
   protected readonly orgSegments = HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS;
   /** Companies at events' header switch, read from the URL on arrival; the section writes it back. */
   protected readonly orgSegment = signal<HealthMetricsEventsOrganizationsSegment>(
-    toOrgSegment(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgSegment))
+    parseHealthMetricsEventsOrganizationsSegment(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgSegment))
   );
   // Owned here and handed to the at-a-glance section as inputs.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
@@ -104,7 +104,7 @@ export class HealthMetricsEventsComponent {
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();
 
   protected onOrgSegmentChange(id: string | null): void {
-    this.orgSegment.set(toOrgSegment(id));
+    this.orgSegment.set(parseHealthMetricsEventsOrganizationsSegment(id));
   }
 
   protected onGrowthMetricChange(id: string | null): void {
@@ -145,9 +145,4 @@ export class HealthMetricsEventsComponent {
       { initialValue: HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED }
     );
   }
-}
-
-/** A segment id from the URL or the switch; anything else is All. */
-function toOrgSegment(id: string | null): HealthMetricsEventsOrganizationsSegment {
-  return HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.find((option) => option.id === id)?.id ?? 'all';
 }
