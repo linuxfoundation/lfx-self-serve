@@ -18,7 +18,11 @@ When you create a LinkedIn campaign from the **Campaigns** page in the Foundatio
 
 ## Ad account
 
-The **Ad Account** line in the LinkedIn section tells you where the campaign is created. It is set by the project's LinkedIn connection: the campaign goes into that connection's ad account, or into LF's shared LinkedIn account if the project has no LinkedIn connection of its own. You can't choose a different account here yet.
+The **Ad Account** line in the LinkedIn section tells you where the campaign is created. It is set by the project's LinkedIn connection: the campaign goes into that connection's ad account, or into LF's shared LinkedIn account if the project has no LinkedIn connection of its own.
+
+Where account choice is turned on, the line names the account and its number. Members of the LF marketing team can instead pick from a list of the accounts LF has set up for LinkedIn campaigns, and the line under the list shows the LinkedIn page the ads post as. The first account in the list, marked **default**, is the one the connection uses. Everyone else sees the default account and can't change it. If the account can't be loaded, the campaign is created in the default account.
+
+Where account choice isn't turned on, you can't choose a different account here.
 
 ## Edit a variant
 
