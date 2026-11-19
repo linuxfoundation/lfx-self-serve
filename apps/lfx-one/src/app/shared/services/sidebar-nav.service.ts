@@ -9,7 +9,6 @@ import {
   DOCUMENT_LABEL,
   FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
-  FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
@@ -87,7 +86,6 @@ export class SidebarNavService {
    * is the checklist plus Meetings, Mailing Lists and Groups (#2754, #3059).
    */
   private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
-  private readonly isFoundationParticipatingOrgsEnabled = this.featureFlagService.getBooleanFlag(FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG, false);
 
   /**
    * True when the user has non-marketing foundation access (board role, root-writer, LF-staff, or
@@ -691,15 +689,13 @@ export class SidebarNavService {
           },
         ];
 
-        // Dark-launched (#5697): the page reads live PROJECT_PARTICIPATING_ORGS figures from the warehouse, so the flag is the only gate before it is generally available.
-        if (this.isFoundationParticipatingOrgsEnabled()) {
-          metricsItems.push({
-            label: 'Participating companies',
-            icon: 'fa-light fa-building',
-            routerLink: '/foundation/participating-orgs',
-            testId: 'sidebar-metrics-participating-companies',
-          });
-        }
+        // The page reads live PROJECT_PARTICIPATING_ORGS figures (#5697); its route and BFF admit only the foundation's executive director and LF staff.
+        metricsItems.push({
+          label: 'Participating companies',
+          icon: 'fa-light fa-building',
+          routerLink: '/foundation/participating-orgs',
+          testId: 'sidebar-metrics-participating-companies',
+        });
 
         items.push({
           label: 'Metrics',
