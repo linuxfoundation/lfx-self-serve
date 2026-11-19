@@ -719,8 +719,8 @@ export interface MeetingRegistrationRemovalResult {
 /**
  * Outcome of adding the signed-in user to a meeting's guests from a meeting card.
  * @description `added` when the invite was saved, with the registrant the API returned; `already-listed` when the
- * confirmed roster already has the user, so nothing was posted; `unavailable` when the user's profile has no email or
- * no first and last name to invite them with.
+ * confirmed roster already has the user, so nothing was posted; `unavailable` when the user could not be resolved as a
+ * guest: their profile has no email or no first and last name, or the meeting-invite email lookup failed or timed out.
  */
 export interface MeetingSelfInviteResult {
   status: 'added' | 'already-listed' | 'unavailable';

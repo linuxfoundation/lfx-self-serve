@@ -1430,6 +1430,24 @@ describe('MeetingCardComponent — add myself', () => {
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to add you to this meeting. Please try again.' }));
   });
 
+  it('counts the viewer out once they confirm Remove Myself', async () => {
+    const component = await mount({
+      ...ORGANIZER,
+      invited: true,
+      my_registrant_ids: ['reg-self'],
+      registrant_count: undefined,
+      individual_registrants_count: 3,
+    } as unknown as Meeting);
+    expect(component.guestCount()).toBe(3);
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.guestCount()).toBe(2);
+    expect(component.additionalRegistrantsCount()).toBe(-1);
+    expect(component.canAddMyself()).toBe(true);
+  });
+
   it('offers Add Myself again once the viewer confirms Remove Myself, and on the rebuilt card', async () => {
     const component = await mount();
     component.addMyself();

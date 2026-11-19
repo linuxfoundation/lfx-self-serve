@@ -34,20 +34,44 @@ describe('MeetingSelfInviteService', () => {
   let getMeetingRegistrants: ReturnType<typeof vi.fn>;
   let addMeetingRegistrants: ReturnType<typeof vi.fn>;
   let clearRemovedRegistration: ReturnType<typeof vi.fn>;
+  let removedIds: WritableSignal<ReadonlySet<string>>;
+  let removedSelfRegistrantUids: Map<string, ReadonlySet<string>>;
+
+  /** The viewer's Remove Myself, as `MeetingService.markRegistrationRemoved` records it. */
+  function markRemoved(registrantUids: string[]): void {
+    removedSelfRegistrantUids.set(MEETING_ID, new Set(registrantUids));
+    removedIds.set(new Set([MEETING_ID]));
+  }
 
   beforeEach(() => {
     user = signal({ sub: 'synthetic-subject' } as User);
     getMeetingSelfGuest = vi.fn().mockReturnValue(of(self));
     getMeetingRegistrants = vi.fn().mockReturnValue(of([otherGuest]));
     addMeetingRegistrants = vi.fn().mockReturnValue(of(success));
-    clearRemovedRegistration = vi.fn();
+    removedIds = signal<ReadonlySet<string>>(new Set());
+    removedSelfRegistrantUids = new Map();
+    clearRemovedRegistration = vi.fn((meetingId: string) => removedIds.update((ids) => new Set([...ids].filter((id) => id !== meetingId))));
     // The real mapping, so the posted body is the one the BFF would receive.
     const stripMetadata = (meetingId: string, registrant: Parameters<MeetingService['stripMetadata']>[1]) =>
       MeetingService.prototype.stripMetadata.call({}, meetingId, registrant);
+    // The real re-invite check, over the same removal state the service reads.
+    const removalState = { removedRegistrationIds: removedIds, removedSelfRegistrantUids, clearRemovedRegistration };
+    const clearRemovalIfReinvited = (meetingId: string, selfUids: readonly string[]) =>
+      MeetingService.prototype.clearRemovalIfReinvited.call(removalState, meetingId, selfUids);
 
     TestBed.configureTestingModule({
       providers: [
-        { provide: MeetingService, useValue: { getMeetingRegistrants, addMeetingRegistrants, clearRemovedRegistration, stripMetadata } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeetingRegistrants,
+            addMeetingRegistrants,
+            clearRemovedRegistration,
+            clearRemovalIfReinvited,
+            removedRegistrationMeetingIds: removedIds,
+            stripMetadata,
+          },
+        },
         { provide: UserService, useValue: { user, viewerUsername: signal(null), getMeetingSelfGuest } },
       ],
     });
@@ -96,6 +120,24 @@ describe('MeetingSelfInviteService', () => {
 
     await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({ status: 'already-listed' });
     expect(addMeetingRegistrants).not.toHaveBeenCalled();
+  });
+
+  it('adds the viewer again when the roster still lists the registration they just removed', async () => {
+    markRemoved(['synthetic-self']);
+    getMeetingRegistrants.mockReturnValue(of([otherGuest, { uid: 'synthetic-self', email: self.email } as MeetingRegistrant]));
+
+    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({ status: 'added', registrant: saved });
+    expect(addMeetingRegistrants).toHaveBeenCalledOnce();
+    expect(removedIds().has(MEETING_ID)).toBe(false);
+  });
+
+  it('treats a row under a new uid after a removal as a re-invite: posts nothing and lifts the removal', async () => {
+    markRemoved(['synthetic-self']);
+    getMeetingRegistrants.mockReturnValue(of([{ uid: 'synthetic-reinvite', email: self.email } as MeetingRegistrant]));
+
+    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({ status: 'already-listed' });
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    expect(removedIds().has(MEETING_ID)).toBe(false);
   });
 
   it('reports unavailable without reading the roster when the viewer cannot be resolved', async () => {

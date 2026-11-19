@@ -3,7 +3,7 @@
 
 import { inject, Injectable } from '@angular/core';
 import { MeetingRegistrantWithState, MeetingSelfGuest, MeetingSelfInviteResult } from '@lfx-one/shared/interfaces';
-import { isMeetingSelfGuestListed } from '@lfx-one/shared/utils';
+import { isMeetingSelfGuestListed, toMeetingSelfGuestRegistrant } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
@@ -45,29 +45,28 @@ export class MeetingSelfInviteService {
     return isBffValidationError(error) || error instanceof Error ? extractErrorMessage(error, fallback) : fallback;
   }
 
-  /** A failed roster fetch errors the stream, so nothing is posted when the list may be incomplete. */
+  /**
+   * A failed roster fetch errors the stream, so nothing is posted when the list may be incomplete.
+   * @description While the viewer's own removal stands, their rows are the deleted registrations the query index has
+   * not dropped yet, as in the Guests drawer, so they do not count as listed; a row under a new uid is a re-invite.
+   */
   private addIfUnlisted(meetingId: string, self: MeetingSelfGuest): Observable<MeetingSelfInviteResult> {
     return this.meetingService.getMeetingRegistrants(meetingId, false, undefined, true).pipe(
       take(1),
-      switchMap((roster) => (isMeetingSelfGuestListed(self, roster) ? of<MeetingSelfInviteResult>({ status: 'already-listed' }) : this.invite(meetingId, self)))
+      switchMap((roster) => {
+        const selfUids = roster.filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
+        this.meetingService.clearRemovalIfReinvited(meetingId, selfUids);
+        const listed = selfUids.length > 0 && !this.meetingService.removedRegistrationMeetingIds().has(meetingId);
+        return listed ? of<MeetingSelfInviteResult>({ status: 'already-listed' }) : this.invite(meetingId, self);
+      })
     );
   }
 
   private invite(meetingId: string, self: MeetingSelfGuest): Observable<MeetingSelfInviteResult> {
-    // Same body as the Guests drawer's "Add myself" for every occurrence: `selfAdded` forwards the LFID and avatar.
-    const guest = {
-      email: self.email,
-      first_name: self.first_name,
-      last_name: self.last_name,
-      job_title: self.job_title,
-      org_name: self.org_name,
-      username: self.username,
-      avatar_url: self.avatar_url,
-      host: false,
-      selfAdded: true,
-    } satisfies Partial<MeetingRegistrantWithState>;
+    // Same body as the Guests drawer's "Add myself", for every occurrence.
+    const guest = toMeetingSelfGuestRegistrant(self) as MeetingRegistrantWithState;
 
-    return this.meetingService.addMeetingRegistrants(meetingId, [this.meetingService.stripMetadata(meetingId, guest as MeetingRegistrantWithState)]).pipe(
+    return this.meetingService.addMeetingRegistrants(meetingId, [this.meetingService.stripMetadata(meetingId, guest)]).pipe(
       // A rejected row carries its own reason; an empty one falls back to the generic copy in describeFailure.
       switchMap((response) =>
         response.summary.successful > 0 ? of(response.successes[0]) : throwError(() => new Error(response.failures[0]?.error?.message ?? ''))

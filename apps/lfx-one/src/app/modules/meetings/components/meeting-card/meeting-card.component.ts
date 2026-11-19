@@ -616,8 +616,9 @@ export class MeetingCardComponent implements OnInit {
   /**
    * Adds the viewer to this meeting's guests, for every occurrence, from the card's own-actions row.
    * @description Mirrors {@link registerForMeeting}: the card shows the viewer as invited at once, then refetches. When
-   * the roster already lists the viewer the card only catches up. A profile the service cannot invite (no email, or no
-   * first and last name) opens the Guests drawer on its Add Guest form instead.
+   * the roster already lists the viewer the card only catches up. When the service cannot resolve the viewer as a guest
+   * (no email, no first and last name, or a failed meeting-invite email lookup), the Guests drawer opens on its Add
+   * Guest form instead.
    */
   public addMyself(): void {
     if (this.addingMyself() || !this.canAddMyself()) return;
@@ -958,6 +959,8 @@ export class MeetingCardComponent implements OnInit {
           }
           this.confirmedRsvps.set([]);
           this.optimisticInvited.set(false);
+          // Mirrors Add Myself's +1. Not refetched: the card keeps its own snapshot, and a lagging index would bring the viewer back.
+          this.additionalRegistrantsCount.update((count) => count - 1);
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
           this.messageService.add({
             severity: 'success',

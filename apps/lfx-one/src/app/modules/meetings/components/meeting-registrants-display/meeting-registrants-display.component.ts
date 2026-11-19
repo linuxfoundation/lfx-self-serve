@@ -61,6 +61,7 @@ import {
   resolveMeetingGuestRole,
   resolveRsvpOccurrenceId,
   occurrenceIdToSeconds,
+  toMeetingSelfGuestRegistrant,
 } from '@lfx-one/shared/utils';
 import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -471,19 +472,7 @@ export class MeetingRegistrantsDisplayComponent {
 
     const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
     const focusContext = this.selfFocusContextKey();
-    const guest = {
-      email: self.email,
-      first_name: self.first_name,
-      last_name: self.last_name,
-      job_title: self.job_title,
-      org_name: self.org_name,
-      username: self.username,
-      avatar_url: self.avatar_url,
-      host: false,
-      selfAdded: true,
-    } satisfies Partial<MeetingRegistrantWithState>;
-
-    this.submitGuest(guest, occurrenceId, this.selfSubmitId, () => {
+    this.submitGuest(toMeetingSelfGuestRegistrant(self), occurrenceId, this.selfSubmitId, () => {
       if (!this.destroyRef.destroyed) this.pendingSelfFocusContext.set(focusContext);
     });
   }
