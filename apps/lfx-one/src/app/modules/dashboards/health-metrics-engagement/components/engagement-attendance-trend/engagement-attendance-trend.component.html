@@ -30,30 +30,33 @@
 
       <lfx-health-metrics-line-chart [chart]="chart" testId="engagement-attendance-trend-chart" />
       <!-- Screen-reader equivalent of the chart, one row per month -->
-      <table class="sr-only" data-testid="engagement-attendance-trend-table">
-        <caption>
-          All-meeting attendance by month,
-          {{
-            view().year
-          }}
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Month</th>
-            <th scope="col">Attendance</th>
-            <th scope="col">Meetings</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (point of view().points; track point.monthStartDate) {
+      <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+      <div class="sr-only">
+        <table data-testid="engagement-attendance-trend-table">
+          <caption>
+            All-meeting attendance by month,
+            {{
+              view().year
+            }}
+          </caption>
+          <thead>
             <tr>
-              <th scope="row">{{ point.monthLabel }}</th>
-              <td>{{ point.rateLabel }}</td>
-              <td>{{ point.meetingsLabel }}</td>
+              <th scope="col">Month</th>
+              <th scope="col">Attendance</th>
+              <th scope="col">Meetings</th>
             </tr>
-          }
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            @for (point of view().points; track point.monthStartDate) {
+              <tr>
+                <th scope="row">{{ point.monthLabel }}</th>
+                <td>{{ point.rateLabel }}</td>
+                <td>{{ point.meetingsLabel }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
     }
   }
 </div>
