@@ -57,6 +57,7 @@ import type {
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { redactForEmployeeView } from '../helpers/org-lens-employee-view.helper';
 import { filterReadableAccountIds } from '../helpers/org-analytics-access.helper';
 import {
   assertHealthMetricsRange,
@@ -1959,7 +1960,7 @@ export class AnalyticsController {
         foundation_count: response.foundationCount,
       });
 
-      res.json(response);
+      res.json(redactForEmployeeView(req, accountId, response, { page: 'overview' }));
     } catch (error) {
       next(error);
     }
@@ -1985,7 +1986,7 @@ export class AnalyticsController {
         monthly_data_points: response.monthlyData.length,
       });
 
-      res.json(response);
+      res.json(redactForEmployeeView(req, accountId, response, { page: 'overview' }));
     } catch (error) {
       next(error);
     }
@@ -2010,7 +2011,7 @@ export class AnalyticsController {
         monthly_data_points: response.monthlyData.length,
       });
 
-      res.json(response);
+      res.json(redactForEmployeeView(req, accountId, response, { page: 'overview' }));
     } catch (error) {
       next(error);
     }
@@ -2036,7 +2037,7 @@ export class AnalyticsController {
         monthly_data_points: response.monthlyLabels.length,
       });
 
-      res.json(response);
+      res.json(redactForEmployeeView(req, accountId, response, { page: 'overview' }));
     } catch (error) {
       next(error);
     }
