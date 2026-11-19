@@ -1285,6 +1285,7 @@ describe('MeetingCardComponent — add myself', () => {
   let add$: ReturnType<typeof vi.fn>;
   let getMeeting: ReturnType<typeof vi.fn>;
   let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
+  let externalInvitePending: ReturnType<typeof signal<boolean>>;
   let mountedFixture: ComponentFixture<MeetingCardComponent> | undefined;
 
   async function mount(meeting: Meeting = ORGANIZER, options: { authenticated?: boolean; past?: boolean } = {}): Promise<MeetingCardComponent> {
@@ -1300,7 +1301,7 @@ describe('MeetingCardComponent — add myself', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
         {
           provide: MeetingSelfInviteService,
-          useValue: { add$, describeFailure: vi.fn(() => 'Unable to add you to this meeting. Please try again.') },
+          useValue: { add$, isPending: () => externalInvitePending(), describeFailure: vi.fn(() => 'Unable to add you to this meeting. Please try again.') },
         },
         {
           provide: MeetingService,
@@ -1346,6 +1347,7 @@ describe('MeetingCardComponent — add myself', () => {
     // Pending, so the optimistic count is observable before the refetch replaces it.
     getMeeting = vi.fn().mockReturnValue(new Subject<Meeting>());
     removedIds = signal<ReadonlySet<string>>(new Set());
+    externalInvitePending = signal(false);
     mountedFixture = undefined;
   });
 
@@ -1374,7 +1376,7 @@ describe('MeetingCardComponent — add myself', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
         {
           provide: MeetingSelfInviteService,
-          useValue: { add$: () => of({ status: 'added', registrant: { uid: '', meeting_id: 'meeting-1' } }), describeFailure: vi.fn() },
+          useValue: { add$: () => of({ status: 'added', registrant: { uid: '', meeting_id: 'meeting-1' } }), isPending: () => false, describeFailure: vi.fn() },
         },
       ],
     });
@@ -1542,6 +1544,64 @@ describe('MeetingCardComponent — add myself', () => {
     expect(component.confirmedRemovedRegistrantIds()).toEqual(['reg-a', 'reg-b', 'reg-c']);
     expect(component.canAddMyself()).toBe(true);
     expect(getMeeting).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('preserves the original count baseline through an external re-invitation, split counts: %s', async (splitCounts) => {
+    const countFields = splitCounts ? { registrant_count: undefined, individual_registrants_count: 5 } : { registrant_count: 5 };
+    const original = { ...ORGANIZER, ...countFields, invited: true, my_registrant_ids: ['reg-self'] } as Meeting;
+    const replacement = { uid: 'synthetic-reinvite', meeting_id: original.id, email: 'synthetic@example.com' } as MeetingRegistrant;
+    getMeeting.mockReturnValue(of({ ...original, invited: true, my_registrant_ids: [replacement.uid] }));
+    const component = await mount(original);
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    expect(component.guestCount()).toBe(4);
+    add$.mockImplementation(() => {
+      TestBed.inject(MeetingService).clearRemovedRegistration(original.id);
+      return of<MeetingSelfInviteResult>({ status: 'already-listed', registrants: [replacement, replacement, { ...replacement, uid: 'reg-self' }] });
+    });
+    component.addMyself();
+    expect(component.guestCount()).toBe(5);
+    expect(component.confirmedSelfCountDelta()).toBe(0);
+    expect(component.confirmedSelfRegistrants()).toEqual([replacement]);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(getMeeting).not.toHaveBeenCalled();
+    vi.mocked(TestBed.inject(MeetingService).removeMyMeetingRegistration).mockReturnValueOnce(
+      of({ removed_registrant_ids: [replacement.uid], remaining_registrant_ids: [] })
+    );
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[1][0].accept();
+    expect(component.guestCount()).toBe(4);
+    expect(component.canAddMyself()).toBe(true);
+  });
+
+  it('counts multiple newly discovered registrations after distinct prior removals', async () => {
+    const component = await mount({ ...ORGANIZER, invited: true, registrant_count: 5 } as Meeting);
+    vi.mocked(TestBed.inject(MeetingService).removeMyMeetingRegistration).mockReturnValueOnce(
+      of({ removed_registrant_ids: ['reg-a', 'reg-b'], remaining_registrant_ids: [] })
+    );
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    expect(component.guestCount()).toBe(3);
+    const registrants = ['synthetic-new-a', 'synthetic-new-b'].map(
+      (uid) => ({ uid, meeting_id: 'meeting-1', email: 'synthetic@example.com' }) as MeetingRegistrant
+    );
+    add$.mockReturnValueOnce(of<MeetingSelfInviteResult>({ status: 'already-listed', registrants }));
+    component.addMyself();
+    expect(component.guestCount()).toBe(5);
+    expect(component.confirmedSelfRegistrants()).toEqual(registrants);
+    expect(getMeeting).not.toHaveBeenCalled();
+  });
+
+  it('keeps the card pending and ignores clicks while another self-invite entry point is saving', async () => {
+    const component = await mount();
+    externalInvitePending.set(true);
+    expect(component.selfInvitePending()).toBe(true);
+    component.addMyself();
+    expect(add$).not.toHaveBeenCalled();
+    externalInvitePending.set(false);
+    component.addMyself();
+    expect(add$).toHaveBeenCalledOnce();
+    expect(component.selfInvitePending()).toBe(false);
   });
 
   it('only catches up, without counting a new guest, when the roster already lists the viewer', async () => {

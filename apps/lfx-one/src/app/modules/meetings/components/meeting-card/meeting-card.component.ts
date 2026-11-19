@@ -230,6 +230,7 @@ export class MeetingCardComponent implements OnInit {
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
   public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
   public readonly addingMyself: WritableSignal<boolean> = signal(false);
+  public readonly selfInvitePending = computed(() => this.addingMyself() || this.selfInvite.isPending(this.meeting().id));
   public readonly resendingInvite: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.meeting().id));
 
   // Computed values for template
@@ -642,12 +643,13 @@ export class MeetingCardComponent implements OnInit {
   /**
    * Adds the viewer to this meeting's guests, for every occurrence, from the card's own-actions row.
    * @description A saved invite updates the card locally so a stale detail refetch cannot undo the guest count. When
-   * the roster already lists the viewer the card refetches to catch up. When the service cannot resolve the viewer as a guest
+   * the roster already lists the viewer the card refetches to catch up, unless confirmed removals require retaining
+   * the original count baseline and incorporating the newly discovered re-invitation instead. When the service cannot resolve the viewer as a guest
    * (no email, no first and last name, or a failed meeting-invite email lookup), the Guests drawer opens on its Add
    * Guest form instead.
    */
   public addMyself(): void {
-    if (this.addingMyself() || !this.canAddMyself()) return;
+    if (this.selfInvitePending() || !this.canAddMyself()) return;
     const meetingId = this.meeting().id;
     this.addingMyself.set(true);
 
@@ -679,7 +681,21 @@ export class MeetingCardComponent implements OnInit {
             this.messageService.add({ severity: 'success', summary: 'Added', detail: "You've been added to this meeting." });
           } else {
             this.messageService.add({ severity: 'info', summary: 'Already Invited', detail: "You're already a guest of this meeting." });
-            this.refreshMeeting();
+            if (this.confirmedRemovedRegistrantIds().length > 0 && result.registrants) {
+              // Retain the original baseline: a new snapshot may already include our earlier deletion.
+              const known = new Set([...this.confirmedRemovedRegistrantIds(), ...this.confirmedSelfRegistrants().map((row) => row.uid)]);
+              const reinvited = result.registrants.filter((row) => {
+                if (known.has(row.uid)) return false;
+                known.add(row.uid);
+                return true;
+              });
+              this.confirmedSelfCountDelta.update((count) => count + reinvited.length);
+              for (const registrant of reinvited) this.rememberSelfRegistrant(registrant);
+              this.drawerGuestCount.set(null);
+              this.meeting.update((meeting) => ({ ...meeting, invited: true }));
+            } else {
+              this.refreshMeeting();
+            }
           }
           this.userService.refreshUserMeetings(false);
         },

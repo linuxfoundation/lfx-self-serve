@@ -118,7 +118,10 @@ describe('MeetingSelfInviteService', () => {
   it('posts nothing when the roster already lists one of the viewer emails', async () => {
     getMeetingRegistrants.mockReturnValue(of([otherGuest, { uid: 'synthetic-self', email: 'Pat@Vendor-Corp.example' } as MeetingRegistrant]));
 
-    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({ status: 'already-listed' });
+    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({
+      status: 'already-listed',
+      registrants: [{ uid: 'synthetic-self', email: 'Pat@Vendor-Corp.example' }],
+    });
     expect(addMeetingRegistrants).not.toHaveBeenCalled();
     expect(clearRemovedRegistration).not.toHaveBeenCalled();
   });
@@ -128,7 +131,10 @@ describe('MeetingSelfInviteService', () => {
       of([{ uid: 'synthetic-self', email: 'group-alias@acme-motors.example', username: 'Synthetic-Viewer' } as MeetingRegistrant])
     );
 
-    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({ status: 'already-listed' });
+    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({
+      status: 'already-listed',
+      registrants: [{ uid: 'synthetic-self', email: 'group-alias@acme-motors.example', username: 'Synthetic-Viewer' }],
+    });
     expect(addMeetingRegistrants).not.toHaveBeenCalled();
   });
 
@@ -145,7 +151,10 @@ describe('MeetingSelfInviteService', () => {
     markRemoved(['synthetic-self']);
     getMeetingRegistrants.mockReturnValue(of([{ uid: 'synthetic-reinvite', email: self.email } as MeetingRegistrant]));
 
-    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({ status: 'already-listed' });
+    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({
+      status: 'already-listed',
+      registrants: [{ uid: 'synthetic-reinvite', email: self.email }],
+    });
     expect(addMeetingRegistrants).not.toHaveBeenCalled();
     expect(removedIds().has(MEETING_ID)).toBe(false);
   });
@@ -220,6 +229,75 @@ describe('MeetingSelfInviteService', () => {
     expect(addMeetingRegistrants).not.toHaveBeenCalled();
     expect(clearRemovalIfReinvited).not.toHaveBeenCalled();
     expect(clearRemovedRegistration).not.toHaveBeenCalled();
+  });
+
+  it('keeps overlapping card attempts out throughout profile, roster and POST resolution', async () => {
+    const profile$ = new Subject<MeetingSelfGuest>();
+    const roster$ = new Subject<MeetingRegistrant[]>();
+    const post$ = new Subject<BatchRegistrantOperationResponse<MeetingRegistrant>>();
+    getMeetingSelfGuest.mockReturnValue(profile$);
+    getMeetingRegistrants.mockReturnValue(roster$);
+    addMeetingRegistrants.mockReturnValue(post$);
+    const result = firstValueFrom(service.add$(MEETING_ID));
+    expect(service.isPending(MEETING_ID)).toBe(true);
+    await expect(firstValueFrom(service.add$(MEETING_ID).pipe(toArray()))).resolves.toEqual([]);
+    profile$.next(self);
+    await expect(firstValueFrom(service.add$(MEETING_ID).pipe(toArray()))).resolves.toEqual([]);
+    roster$.next([]);
+    await expect(firstValueFrom(service.add$(MEETING_ID).pipe(toArray()))).resolves.toEqual([]);
+    expect(getMeetingSelfGuest).toHaveBeenCalledTimes(1);
+    expect(getMeetingRegistrants).toHaveBeenCalledTimes(1);
+    expect(addMeetingRegistrants).toHaveBeenCalledTimes(1);
+    post$.next(success);
+    await expect(result).resolves.toEqual({ status: 'added', registrant: saved });
+    expect(service.isPending(MEETING_ID)).toBe(false);
+  });
+
+  it('shares the guard with drawer submissions and permits retry after a failed drawer request', async () => {
+    const pending$ = new Subject<unknown>();
+    const failure = new Error('Synthetic invitation rejected');
+    const drawerResult = firstValueFrom(service.withPendingInvite$(MEETING_ID, () => pending$)).catch((error: unknown) => error);
+    await expect(firstValueFrom(service.add$(MEETING_ID).pipe(toArray()))).resolves.toEqual([]);
+    expect(getMeetingSelfGuest).not.toHaveBeenCalled();
+    pending$.error(failure);
+    await expect(drawerResult).resolves.toBe(failure);
+    expect(service.isPending(MEETING_ID)).toBe(false);
+    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({ status: 'added', registrant: saved });
+  });
+
+  it('blocks a drawer write during a card attempt without starting the drawer request', async () => {
+    const roster$ = new Subject<MeetingRegistrant[]>();
+    getMeetingRegistrants.mockReturnValue(roster$);
+    const card = service.add$(MEETING_ID).subscribe();
+    const drawer = vi.fn(() => of(success));
+    await expect(firstValueFrom(service.withPendingInvite$(MEETING_ID, drawer).pipe(toArray()))).resolves.toEqual([]);
+    expect(drawer).not.toHaveBeenCalled();
+    card.unsubscribe();
+    expect(service.isPending(MEETING_ID)).toBe(false);
+  });
+
+  it('isolates pending attempts by meeting and viewer, including late cleanup for the old viewer', () => {
+    const first = service.withPendingInvite$(MEETING_ID, () => new Subject<unknown>()).subscribe();
+    expect(service.isPending('synthetic-other-meeting')).toBe(false);
+    user.set({ sub: 'synthetic-other-subject' } as User);
+    expect(service.isPending(MEETING_ID)).toBe(false);
+    const second = service.withPendingInvite$(MEETING_ID, () => new Subject<unknown>()).subscribe();
+    first.unsubscribe();
+    expect(service.isPending(MEETING_ID)).toBe(true);
+    second.unsubscribe();
+    expect(service.isPending(MEETING_ID)).toBe(false);
+  });
+
+  it('releases pending state when constructing the request throws synchronously', async () => {
+    const failure = new Error('Synthetic request failed');
+    await expect(
+      firstValueFrom(
+        service.withPendingInvite$(MEETING_ID, () => {
+          throw failure;
+        })
+      )
+    ).rejects.toBe(failure);
+    expect(service.isPending(MEETING_ID)).toBe(false);
   });
 
   describe('describeFailure', () => {

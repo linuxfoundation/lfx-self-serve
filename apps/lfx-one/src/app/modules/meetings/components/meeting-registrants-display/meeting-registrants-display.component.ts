@@ -67,12 +67,13 @@ import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, defer, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
 
 import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
@@ -113,6 +114,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
+  private readonly selfInvite = inject(MeetingSelfInviteService);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   protected readonly inviteResend = inject(MeetingInviteResendService);
 
@@ -679,6 +681,9 @@ export class MeetingRegistrantsDisplayComponent {
     stagedGuestId?: string,
     onAdded?: (added: MeetingRegistrant) => void
   ): void {
+    const self = this.selfGuest();
+    const addsSelf = !!self && isMeetingSelfGuestListed(self, [formValue as unknown as MeetingRegistrant]);
+    if (addsSelf && this.selfInvite.isPending(this.meeting().id)) return;
     if (stagedGuestId) {
       this.submittingGuestIds.update((ids) => new Set([...ids, stagedGuestId]));
     } else {
@@ -692,8 +697,8 @@ export class MeetingRegistrantsDisplayComponent {
       ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
     };
 
-    this.meetingService
-      .addMeetingRegistrants(meetingId, [createData])
+    const request = () => this.meetingService.addMeetingRegistrants(meetingId, [createData]);
+    defer(() => (addsSelf ? this.selfInvite.withPendingInvite$(meetingId, request) : request()))
       .pipe(take(1))
       .subscribe({
         next: (response) => {
@@ -1116,6 +1121,7 @@ export class MeetingRegistrantsDisplayComponent {
       if (
         this.selfInvited() ||
         this.selfInvitePending() ||
+        (this.selfInvite.isPending(this.meeting().id) && !this.selfSubmitting()) ||
         !self?.first_name ||
         !self.last_name ||
         this.pastMeeting() ||

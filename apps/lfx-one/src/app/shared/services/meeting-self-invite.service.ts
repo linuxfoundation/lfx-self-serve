@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { MeetingRegistrantWithState, MeetingSelfGuest, MeetingSelfInviteResult } from '@lfx-one/shared/interfaces';
 import { isBatchRegistrantOperationResponse, isMeetingSelfGuestListed, toMeetingSelfGuestRegistrant } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
-import { defer, filter, map, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
+import { defer, EMPTY, filter, finalize, map, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
 
 /**
  * Adds the signed-in user to a meeting as a regular guest, with no UI of its own.
@@ -22,10 +22,35 @@ import { defer, filter, map, Observable, of, switchMap, take, tap, throwError } 
 export class MeetingSelfInviteService {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
+  private readonly pendingInvites = signal<ReadonlySet<string>>(new Set());
+
+  /** Reactive pending state shared by every self-invite entry point for this viewer and meeting. */
+  public isPending(meetingId: string): boolean {
+    const pending = this.pendingInvites();
+    return pending.size > 0 && pending.has(JSON.stringify([this.subject(), meetingId]));
+  }
+
+  /** Owns one self-invite attempt from subscription through settlement; overlapping attempts complete without writing. */
+  public withPendingInvite$<T>(meetingId: string, request: () => Observable<T>): Observable<T> {
+    return defer(() => {
+      const key = JSON.stringify([this.subject(), meetingId]);
+      if (this.pendingInvites().has(key)) return EMPTY;
+      this.pendingInvites.update((pending) => new Set([...pending, key]));
+      return defer(request).pipe(
+        finalize(() =>
+          this.pendingInvites.update((pending) => {
+            const next = new Set(pending);
+            next.delete(key);
+            return next;
+          })
+        )
+      );
+    });
+  }
 
   /** Work starts on subscribe, which is when the viewer is captured. */
   public add$(meetingId: string): Observable<MeetingSelfInviteResult> {
-    return defer(() => {
+    return this.withPendingInvite$(meetingId, () => {
       const subject = this.subject();
       return this.userService.getMeetingSelfGuest().pipe(
         take(1),
@@ -60,10 +85,11 @@ export class MeetingSelfInviteService {
       take(1),
       filter(() => this.subject() === subject),
       switchMap((roster) => {
-        const selfUids = roster.filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
+        const registrants = roster.filter((row) => isMeetingSelfGuestListed(self, [row]));
+        const selfUids = registrants.map((row) => row.uid);
         this.meetingService.clearRemovalIfReinvited(meetingId, selfUids);
         const listed = selfUids.length > 0 && !this.meetingService.removedRegistrationMeetingIds().has(meetingId);
-        return listed ? of<MeetingSelfInviteResult>({ status: 'already-listed' }) : this.invite(meetingId, self);
+        return listed ? of<MeetingSelfInviteResult>({ status: 'already-listed', registrants }) : this.invite(meetingId, self);
       })
     );
   }

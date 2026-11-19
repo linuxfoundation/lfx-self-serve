@@ -16,6 +16,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { BehaviorSubject, Observable, of, Subject, take, throwError } from 'rxjs';
@@ -646,7 +647,7 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
       providers: [
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest } },
+        { provide: UserService, useValue: { getMeetingSelfGuest, user: signal({ sub: 'synthetic-subject' }) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -777,6 +778,29 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     fixture.componentRef.setInput('selfInvitePending', false);
     fixture.detectChanges();
     expect(button()).not.toBeNull();
+  });
+
+  it('keeps a closed drawer self-invite exclusive against the card and permits retry after failure', async () => {
+    const pending$ = new Subject<typeof SUCCESS>();
+    addMeetingRegistrants.mockReturnValueOnce(pending$);
+    const { fixture, button } = await mount();
+    const invites = TestBed.inject(MeetingSelfInviteService);
+    fixture.componentInstance.onAddSelf();
+    expect(invites.isPending('meeting-1')).toBe(true);
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    const cardResult: unknown[] = [];
+    invites.add$('meeting-1').subscribe((result) => cardResult.push(result));
+    expect(cardResult).toEqual([]);
+    expect(addMeetingRegistrants).toHaveBeenCalledTimes(1);
+    pending$.error(new Error('Synthetic invitation failed'));
+    expect(invites.isPending('meeting-1')).toBe(false);
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(button()).not.toBeNull();
+    fixture.componentInstance.onAddSelf();
+    expect(addMeetingRegistrants).toHaveBeenCalledTimes(2);
   });
 
   it('merges a card-saved row, preserves its count through stale loads, and deduplicates indexed UIDs', async () => {

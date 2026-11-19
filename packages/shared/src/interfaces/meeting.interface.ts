@@ -726,6 +726,8 @@ export interface MeetingSelfInviteResult {
   status: 'added' | 'already-listed' | 'unavailable';
   /** The saved registrant, present only for `added`. */
   registrant?: MeetingRegistrant;
+  /** Matching roster rows for `already-listed`, used to reconcile an external re-invitation without replacing the count baseline. */
+  registrants?: MeetingRegistrant[];
 }
 
 /** A confirmed organizer-side self-row delete, reconciled against the drawer's complete roster. */
