@@ -9,7 +9,7 @@ import type { HealthMetricsSortColumn, HealthMetricsSortHeaderView, HealthMetric
 
 /**
  * A table's sort, kept out of the URL (tab links keep the query string) and reset to `defaultSort` on a foundation change;
- * a tab or page change destroys the table. A paged table resets its page when `sort` changes.
+ * a tab or page change destroys the table. A paged consumer resets its own page when `sort` changes.
  */
 export function injectHealthMetricsTableSort<K extends string>(columns: readonly HealthMetricsSortColumn<K>[], defaultSort: HealthMetricsTableSort<K> | null) {
   const projectContextService = inject(ProjectContextService);

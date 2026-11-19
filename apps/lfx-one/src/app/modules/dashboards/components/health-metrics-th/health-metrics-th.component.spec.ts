@@ -58,11 +58,14 @@ describe('HealthMetricsThComponent', () => {
     expect(button.getAttribute('type')).toBe('button');
     expect(button.textContent?.trim()).toBe('Attendance');
     button.click();
-    query('health-metrics-th-sort')?.click();
+    const arrow = query('health-metrics-th-sort-arrow') as HTMLButtonElement;
+    expect(arrow.getAttribute('tabindex')).toBe('-1');
+    expect(arrow.getAttribute('aria-hidden')).toBe('true');
+    arrow.click();
     expect(sorted).toHaveBeenCalledTimes(2);
 
     const order = [...fixture.nativeElement.children].map((child: Element) => child.getAttribute('data-testid'));
-    expect(order).toEqual(['health-metrics-th-sort-button', 'health-metrics-th-tip', 'health-metrics-th-sort']);
+    expect(order).toEqual(['health-metrics-th-sort-button', 'health-metrics-th-tip', 'health-metrics-th-sort-arrow']);
   });
 
   it('adds a focusable question-mark tip named by its text', async () => {

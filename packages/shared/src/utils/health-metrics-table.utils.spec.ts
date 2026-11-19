@@ -98,10 +98,11 @@ describe('health metrics table sorting', () => {
     expect(order([3, null, 10, 1], 'desc')).toEqual([10, 3, 1, null]);
     expect(order(['beta', '—', 'Alpha', ' ', 'alpha 2'], 'asc')).toEqual(['Alpha', 'alpha 2', 'beta', '—', ' ']);
     expect(order(['2026-01-05', '2025-12-31'], 'desc')).toEqual(['2026-01-05', '2025-12-31']);
+    expect(order(['Item 2', 'item 10', 'Éclair', 'Eagle'], 'asc')).toEqual(['Eagle', 'Éclair', 'item 10', 'Item 2']);
     expect(order([0, HEALTH_METRICS_SORT_DORMANT_VALUE, 12], 'asc')).toEqual([HEALTH_METRICS_SORT_DORMANT_VALUE, 0, 12]);
   });
 
-  it('sorts the whole list, keeps the given order for ties and keeps pinned rows last', () => {
+  it('sorts the whole list, keeps the given order for ties and keeps pinned rows last, sorted or not', () => {
     const rows = [
       { key: 'a', value: 2 },
       { key: 'b', value: 1 },
@@ -119,7 +120,14 @@ describe('health metrics table sorting', () => {
 
     expect(sorted('desc')).toEqual(['a', 'c', 'b', 'd', 'total']);
     expect(sorted('asc')).toEqual(['b', 'a', 'c', 'd', 'total']);
-    expect(sortHealthMetricsRows(rows, null, (row) => row.value).map((row) => row.key)).toEqual(['a', 'b', 'total', 'c', 'd']);
+    expect(
+      sortHealthMetricsRows(
+        rows,
+        null,
+        (row) => row.value,
+        (row) => row.key === 'total'
+      ).map((row) => row.key)
+    ).toEqual(['a', 'b', 'c', 'd', 'total']);
   });
 
   it("keeps a request's sort only for an allowed column and a known direction", () => {

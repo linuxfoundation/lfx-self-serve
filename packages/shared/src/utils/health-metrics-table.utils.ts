@@ -82,15 +82,15 @@ export function healthMetricsTierSortRank(tier: string | null | undefined): numb
 }
 
 /**
- * Two cells' order in the direction: numbers by value, text alphabetically ignoring case; an empty cell ("—", blank or
- * `null`) goes last in both directions.
+ * Two cells' order: numbers by value, text alphabetically ignoring case and accents, as the server's `en-ci-ai`
+ * collation sorts it; an empty cell ("—", blank or `null`) goes last in both directions.
  */
 export function compareHealthMetricsSortValues(a: HealthMetricsSortValue, b: HealthMetricsSortValue, direction: HealthMetricsSortDirection): number {
   const aEmpty = isEmptySortValue(a);
   const bEmpty = isEmptySortValue(b);
   if (aEmpty || bEmpty) return Number(aEmpty) - Number(bEmpty);
 
-  const order = typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), 'en', { sensitivity: 'base', numeric: true });
+  const order = typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), 'en', { sensitivity: 'base' });
   return direction === 'asc' ? order : -order;
 }
 
@@ -104,7 +104,7 @@ export function sortHealthMetricsRows<T, K extends string>(
   value: (row: T, key: K) => HealthMetricsSortValue,
   pinned: (row: T) => boolean = () => false
 ): T[] {
-  if (!sort) return [...rows];
+  if (!sort) return [...rows.filter((row) => !pinned(row)), ...rows.filter(pinned)];
 
   const sorted = rows
     .filter((row) => !pinned(row))

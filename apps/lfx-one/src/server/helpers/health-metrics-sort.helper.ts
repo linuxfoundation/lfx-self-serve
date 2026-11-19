@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Deep import, as across the server: the `utils` barrel loads `@angular/forms`, which throws in the Node spec runtime.
 import { healthMetricsTierSortRanks } from '@lfx-one/shared/utils/health-metrics-table.utils';
 
 import type { HealthMetricsSqlSortColumn, HealthMetricsTableSort } from '@lfx-one/shared/interfaces';
@@ -30,7 +31,8 @@ export function healthMetricsTierRankSql(expression: string): string {
 }
 
 function sortExpression(column: HealthMetricsSqlSortColumn): string {
-  if (column.kind === 'text') return `NULLIF(LOWER(TRIM(${column.expression})), '')`;
+  // Case- and accent-insensitive, as the client's `localeCompare` with base sensitivity.
+  if (column.kind === 'text') return `COLLATE(NULLIF(TRIM(${column.expression}), ''), 'en-ci-ai')`;
   if (column.kind === 'tier') return healthMetricsTierRankSql(column.expression);
   return column.expression;
 }

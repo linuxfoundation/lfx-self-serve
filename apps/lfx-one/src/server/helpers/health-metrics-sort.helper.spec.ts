@@ -24,7 +24,7 @@ describe('buildHealthMetricsSortOrderBy', () => {
       `registrations_ytd DESC NULLS LAST, ${DEFAULT_ORDER}`
     );
     expect(buildHealthMetricsSortOrderBy({ key: 'company', direction: 'asc' }, COLUMNS, DEFAULT_ORDER)).toBe(
-      `NULLIF(LOWER(TRIM(account_name)), '') ASC NULLS LAST, ${DEFAULT_ORDER}`
+      `COLLATE(NULLIF(TRIM(account_name), ''), 'en-ci-ai') ASC NULLS LAST, ${DEFAULT_ORDER}`
     );
   });
 
