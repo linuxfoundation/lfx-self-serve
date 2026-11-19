@@ -3,6 +3,7 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HEALTH_METRICS_OVERVIEW_FILL_CLASSES } from '@lfx-one/shared/constants';
 import { provideRouter } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -75,9 +76,10 @@ describe('OverviewBalanceCardComponent', () => {
     expect(header('risk').closest('[role="columnheader"]')?.querySelector('.sr-only')).toBeNull();
     expect(header('amount').parentElement?.getAttribute('aria-sort')).toBe('descending');
     expect(rows()).toEqual(['overview-balance-medium', 'overview-balance-high']);
+    // The table is medium first; the bar stays high, then medium.
     expect([...fixture.nativeElement.querySelectorAll('[data-testid="overview-balance-bar"] span')].map((bar: Element) => bar.className)).toEqual([
-      expect.stringContaining('bg-'),
-      expect.stringContaining('bg-'),
+      HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low,
+      HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium,
     ]);
 
     (header('risk').querySelector('button') as HTMLButtonElement).click();

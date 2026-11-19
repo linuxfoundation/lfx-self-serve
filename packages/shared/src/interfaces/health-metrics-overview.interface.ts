@@ -469,7 +469,7 @@ export interface HealthMetricsOverviewEventRowView {
   isPast: boolean;
   registrations: HealthMetricsOverviewEventRegistrationsView;
   talks: HealthMetricsOverviewEventTalksView;
-  /** Raw counts for sorting; `null` is unmeasured. */
+  /** Raw counts for sorting; `null` is unmeasured, and `acceptedTalks` is `null` when the cell shows a note, not a count. */
   registrationsCount: number | null;
   acceptedTalks: number | null;
 }

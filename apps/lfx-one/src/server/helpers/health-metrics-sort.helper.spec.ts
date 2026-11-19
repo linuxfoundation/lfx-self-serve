@@ -62,12 +62,14 @@ describe('the SQL trim set', () => {
     expect(sql).toContain('\\u00a0');
     expect(sql).toContain('\\u3000');
     expect(/^[\x20-\x7e—]*$/.test(sql)).toBe(true);
-    // Every code point in the set is whitespace to the client, and the client trims nothing else from a normal value.
+    // The set is exactly what the client trims: every code point in it is whitespace there, and none is missing.
     expect(
       HEALTH_METRICS_SORT_TRIM_CODE_POINTS.map((code) => String.fromCodePoint(code))
         .join('')
         .trim()
     ).toBe('');
+    const trimmedByClient = Array.from({ length: 0x10000 }, (_, code) => code).filter((code) => String.fromCharCode(code).trim() === '');
+    expect(trimmedByClient).toEqual([...HEALTH_METRICS_SORT_TRIM_CODE_POINTS].sort((a, b) => a - b));
     expect('\u00a0—\u00a0'.trim()).toBe('—');
   });
 });

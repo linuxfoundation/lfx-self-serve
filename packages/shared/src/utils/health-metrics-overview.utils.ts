@@ -1259,7 +1259,8 @@ function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
     registrations: buildRegistrationsBar(event, isPast),
     talks: buildTalksBar(event, isPast),
     registrationsCount: event.registrations,
-    acceptedTalks: event.acceptedTalks,
+    // An event with no proposals shows its call-for-proposals note, not a count, so it sorts as empty.
+    acceptedTalks: (event.totalProposals ?? 0) > 0 ? (event.acceptedTalks ?? 0) : null,
   };
 }
 
