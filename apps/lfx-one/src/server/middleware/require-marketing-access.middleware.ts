@@ -283,3 +283,11 @@ export async function requireGoogleUserListsAccess(req: Request, res: Response, 
 export async function requireGoogleAudiencesAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   await deferToControllerMarketingOpsCheck(req, res, next);
 }
+
+/**
+ * Meta custom-audience read only (#5905; lfx-v2-campaign-service#550): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireMetaCustomAudiencesAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}

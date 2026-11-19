@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../services/org-employee-view.service', () => ({
   OrgEmployeeViewService: class {
-    public resolve = vi.fn().mockResolvedValue({ eligible: false, reason: 'no-employer' });
+    public resolve = vi.fn().mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
     public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
   },
 }));

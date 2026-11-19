@@ -1122,12 +1122,15 @@ describe('buildHealthMetricsEventsGeographyView', () => {
       range: 'YTD',
       countries: 42,
       changes: { countries: 0.1 },
-      topCountries: [
-        { country: 'Canada', registrations: 800 },
-        { country: 'Germany', registrations: 400 },
-        { country: 'Japan', registrations: 200 },
+      registrationsByCountry: [
+        { code: 'US', country: 'United States', registrations: 520 },
+        { code: 'DE', country: 'Germany', registrations: 300 },
+        { code: 'JP', country: 'Japan', registrations: 100 },
+        { code: 'CA', country: 'Canada', registrations: 50 },
+        { code: 'IN', country: 'India', registrations: 25 },
+        { code: null, country: 'Atlantis', registrations: 4 },
+        { code: 'FJ', country: 'Fiji', registrations: 1 },
       ],
-      rankedCountries: 40,
       ...overrides,
     };
   }
@@ -1136,47 +1139,119 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     return { periods: periods.length ? periods : [geographyPeriod()] };
   }
 
-  it('builds the headline, the pill and the top-country rows', () => {
+  it('lays out countries represented with its change, the top country and the share from outside the US', () => {
     const view = buildHealthMetricsEventsGeographyView(geography(), 'YTD');
 
-    expect(view.foundationMeasured).toBe(true);
-    expect(view.measured).toBe(true);
-    expect(view.countriesLabel).toBe('42 countries');
-    expect(view.headline).toMatchObject({ label: 'Countries represented', value: '42', delta: '+10%', deltaDirection: 'up' });
-    expect(view.topCountries.map((row) => [row.label, row.valueLabel])).toEqual([
-      ['Canada', '800'],
-      ['Germany', '400'],
-      ['Japan', '200'],
+    expect(view).toMatchObject({ foundationMeasured: true, measured: true });
+    expect(view.metrics.map(({ key, label, value, description, trend }) => [key, label, value, description, trend])).toEqual([
+      ['countries', 'Countries represented', '42', undefined, '+10%'],
+      // 1,000 registrations with a known country: the US holds 520.
+      ['top', 'Top country', 'United States', '520 registrations · 52%', undefined],
+      ['outside-us', 'Outside the US', '48%', 'of registrations', undefined],
     ]);
   });
 
-  it('uses the singular for one country', () => {
+  it('counts every non-US registration as outside the US, even when another country tops the list', () => {
     const view = buildHealthMetricsEventsGeographyView(
-      geography(geographyPeriod({ countries: 1, topCountries: [{ country: 'Canada', registrations: 5 }], rankedCountries: 1 })),
+      geography(
+        geographyPeriod({
+          registrationsByCountry: [
+            { code: 'IN', country: 'India', registrations: 600 },
+            { code: 'US', country: 'United States', registrations: 400 },
+          ],
+        })
+      ),
       'YTD'
     );
 
-    expect(view.countriesLabel).toBe('1 country');
+    expect(view.metrics[1]).toMatchObject({ value: 'India', description: '600 registrations · 60%' });
+    expect(view.metrics[2]).toMatchObject({ value: '60%' });
   });
 
-  it('carries no delta for a period that is not compared', () => {
-    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ range: 'COMPLETED_YEAR_2', changes: null })), 'COMPLETED_YEAR_2');
+  it('lists the top five with flags, counts and shares, and drops the flag for a country with no code', () => {
+    const { topCountries } = buildHealthMetricsEventsGeographyView(geography(), 'YTD');
 
-    expect(view.headline).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+    expect(topCountries.map((row) => [row.flag, row.name, row.registrationsLabel, row.pctLabel])).toEqual([
+      ['🇺🇸', 'United States', '520', '52%'],
+      ['🇩🇪', 'Germany', '300', '30%'],
+      ['🇯🇵', 'Japan', '100', '10%'],
+      ['🇨🇦', 'Canada', '50', '5%'],
+      ['🇮🇳', 'India', '25', '3%'],
+    ]);
+    const noCode = buildHealthMetricsEventsGeographyView(
+      geography(geographyPeriod({ registrationsByCountry: [{ code: null, country: 'Atlantis', registrations: 4 }] })),
+      'YTD'
+    );
+    expect(noCode.topCountries[0]).toMatchObject({ key: 'Atlantis', flag: '' });
   });
 
-  it('marks a compared period with no prior value as not available', () => {
-    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ changes: { countries: null } })), 'YTD');
+  it('hands every country to the map, a share under one percent to one decimal', () => {
+    const { countries } = buildHealthMetricsEventsGeographyView(geography(), 'YTD');
 
-    expect(view.headline).toMatchObject({ delta: 'not available', deltaDirection: 'neutral' });
+    expect(countries).toHaveLength(7);
+    expect(countries[0]).toEqual({ code: 'US', name: 'United States', value: 520, valueLabel: '520 · 52%' });
+    expect(countries.find((country) => country.code === 'FJ')?.valueLabel).toBe('1 · 0.1%');
+    // A country with no code still counts; the map just cannot draw it.
+    expect(countries.find((country) => country.name === 'Atlantis')).toMatchObject({ code: null, valueLabel: '4 · 0.4%' });
+  });
+
+  it('never reads a small share as 0%: under 1% it keeps one decimal, at least 0.1%, and the list matches the popup', () => {
+    const view = buildHealthMetricsEventsGeographyView(
+      geography(
+        geographyPeriod({
+          registrationsByCountry: [
+            { code: 'US', country: 'United States', registrations: 99_000 },
+            { code: 'CA', country: 'Canada', registrations: 950 },
+            { code: 'MX', country: 'Mexico', registrations: 48 },
+            { code: 'FJ', country: 'Fiji', registrations: 2 },
+          ],
+        })
+      ),
+      'YTD'
+    );
+
+    expect(view.topCountries.map((row) => row.pctLabel)).toEqual(['99%', '1%', '0.1%', '0.1%']);
+    expect(view.countries.map((country) => country.valueLabel)).toEqual(['99,000 · 99%', '950 · 1%', '48 · 0.1%', '2 · 0.1%']);
+  });
+
+  it('never reads a small share outside the US as 0%', () => {
+    const view = buildHealthMetricsEventsGeographyView(
+      geography(
+        geographyPeriod({
+          registrationsByCountry: [
+            { code: 'US', country: 'United States', registrations: 999 },
+            { code: 'CA', country: 'Canada', registrations: 1 },
+          ],
+        })
+      ),
+      'YTD'
+    );
+
+    expect(view.metrics[2].value).toBe('0.1%');
+    expect(view.topCountries[1].pctLabel).toBe('0.1%');
+  });
+
+  it('reads one registration in the singular', () => {
+    const view = buildHealthMetricsEventsGeographyView(
+      geography(geographyPeriod({ registrationsByCountry: [{ code: 'FJ', country: 'Fiji', registrations: 1 }] })),
+      'YTD'
+    );
+
+    expect(view.metrics[1].description).toBe('1 registration · 100%');
+  });
+
+  it('carries no change for a period that is not compared, and "not available" for one with no prior value', () => {
+    expect(
+      buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ range: 'COMPLETED_YEAR_2', changes: null })), 'COMPLETED_YEAR_2').metrics[0].trend
+    ).toBe(undefined);
+    expect(buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ changes: { countries: null } })), 'YTD').metrics[0].trend).toBe('not available');
   });
 
   it('reads a period with no country registrations as unmeasured, even with a rollup count', () => {
-    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ countries: 3, topCountries: [], rankedCountries: 0 })), 'YTD');
+    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ countries: 3, registrationsByCountry: [] })), 'YTD');
 
     expect(view.measured).toBe(false);
-    expect(view.countriesLabel).toBe('');
-    expect(view.headline).toMatchObject({ value: 'not available', delta: null });
+    expect(view.metrics.map((metric) => metric.value)).toEqual(['—', '—', '—']);
     expect(view.topCountries).toEqual([]);
   });
 

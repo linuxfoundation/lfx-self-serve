@@ -8,10 +8,12 @@ import { HEALTH_METRICS_BASE_PATH } from './health-metrics-engagement.constants'
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
 import type { HealthMetricsBlankCopy, HealthMetricsBlankTile, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsOverviewBoardSortKey,
   HealthMetricsOverviewEmptyCopy,
   HealthMetricsOverviewEmptyStateCopy,
   HealthMetricsOverviewExploreLink,
 } from '../interfaces/health-metrics-overview.interface';
+import type { HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
 
 /**
  * Period selector — the 4 most recent options from {@link buildHealthMetricsYearOptions} (3 completed years
@@ -36,6 +38,15 @@ export const HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP = 1000;
 
 /** Board members read for the Overview table; one past it flags a truncated read. */
 export const HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP = 500;
+
+/** The board table's sortable columns. */
+export const HEALTH_METRICS_OVERVIEW_BOARD_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsOverviewBoardSortKey>[] = [
+  { key: 'name', kind: 'text' },
+  { key: 'att', kind: 'number' },
+];
+
+/** The design opens the board table on the lowest attendance first. */
+export const HEALTH_METRICS_OVERVIEW_BOARD_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsOverviewBoardSortKey> = { key: 'att', direction: 'asc' };
 
 /** Newsletters read for the Overview chart; one past it flags a truncated read. */
 export const HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP = 1000;

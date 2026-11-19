@@ -67,7 +67,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   getEffectiveUsername.mockReturnValue('viewer');
   delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
-  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-employer' });
+  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
   buildPerUserOrgKey.mockImplementation((namespace: string, username: string, segment: string) => `${namespace}:${username}:${segment}`);
   // Pass-through cache: the fetcher decides, the predicates are captured for assertion.
   withCache.mockImplementation((_key: string | null, _ttl: number, fetcher: () => Promise<unknown>) => fetcher());

@@ -297,13 +297,17 @@ export class OrgMembershipsComponent {
   private initMemberships(): ActiveMembershipRow[] {
     const memberships = this.activeData()?.memberships ?? [];
     const ordered = this.isRollUp()
-      ? [...memberships].sort((a, b) => a.foundationName.localeCompare(b.foundationName, 'en-US') || a.foundationId.localeCompare(b.foundationId, 'en-US'))
+      ? [...memberships].sort(
+          (a, b) =>
+            (a.foundationName ?? '').localeCompare(b.foundationName ?? '', 'en-US') ||
+            (a.foundationId ?? '').localeCompare(b.foundationId ?? '', 'en-US') ||
+            (a.organization?.name ?? '').localeCompare(b.organization?.name ?? '', 'en-US')
+        )
       : memberships;
-    return ordered.map((m, index) => ({
+    return ordered.map((m) => ({
       ...m,
       // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
       membershipLink: this.membershipLink(m),
-      groupStart: index === 0 || ordered[index - 1].foundationId !== m.foundationId,
       companyLinkLabel: m.organization ? `${m.organization.name} membership in ${m.foundationName}` : null,
       initials: foundationInitials(m.foundationName),
       tierRange: `${this.formatDateShort(m.tierStartDate)} – ${this.formatDateShort(m.tierEndDate)}`,

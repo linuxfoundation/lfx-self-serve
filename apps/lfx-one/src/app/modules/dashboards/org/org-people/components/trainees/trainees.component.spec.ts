@@ -568,7 +568,7 @@ describe('TraineesComponent', () => {
       expect(outsideToggle()?.getAttribute('aria-expanded')).toBe('true');
       expect(outsideNote()?.textContent).toContain('not on its people list');
       expect(outsideNote()?.textContent).toContain('can appear more than once');
-      expect(outsideNote()?.textContent).toContain('org admin');
+      expect(outsideNote()?.textContent).toContain('company admin');
       expect(outsideNames()).toEqual(['Bea Outside', 'Zoe Outside', 'Name not available']);
 
       await openOutside();

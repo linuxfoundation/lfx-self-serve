@@ -30,6 +30,14 @@ export const HEALTH_METRICS_VALUE_BAR_FILL: HealthMetricsBarFillRule = {
 /** The bar-under-value and goal-bar cells' default fill. */
 export const HEALTH_METRICS_PROGRESS_BAR_FILL_CLASS = 'bg-blue-500';
 
+// ── Sorting ────────────────────────────────────────────────────────────────
+
+/** Membership tiers from the highest rank to the lowest, as the design sorts them; any other named tier ranks above Non-member. */
+export const HEALTH_METRICS_SORT_TIER_ORDER: readonly string[] = ['Diamond', 'Platinum', 'Gold', 'Silver', 'Associate', 'End User Supporter', 'Non-member'];
+
+/** "Dormant" attendance as a sort value: below every rate, including 0%. */
+export const HEALTH_METRICS_SORT_DORMANT_VALUE = -1;
+
 // ── Truncation tooltip ─────────────────────────────────────────────────────
 
 /** Milliseconds between hover or keyboard focus on cut-off text and its full-text tooltip; the uikit tooltip's default. */
