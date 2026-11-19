@@ -615,8 +615,8 @@ export class MeetingCardComponent implements OnInit {
 
   /**
    * Adds the viewer to this meeting's guests, for every occurrence, from the card's own-actions row.
-   * @description Mirrors {@link registerForMeeting}: the card shows the viewer as invited at once, then refetches. When
-   * the roster already lists the viewer the card only catches up. When the service cannot resolve the viewer as a guest
+   * @description A saved invite updates the card locally so a stale detail refetch cannot undo the guest count. When
+   * the roster already lists the viewer the card refetches to catch up. When the service cannot resolve the viewer as a guest
    * (no email, no first and last name, or a failed meeting-invite email lookup), the Guests drawer opens on its Add
    * Guest form instead.
    */
@@ -646,12 +646,14 @@ export class MeetingCardComponent implements OnInit {
           this.optimisticInvited.set(true);
           if (result.status === 'added') {
             this.additionalRegistrantsCount.update((count) => count + 1);
+            // Keep the confirmed count instead of replacing it with cached, pre-add details.
+            this.meeting.update((meeting) => ({ ...meeting, invited: true }));
             this.messageService.add({ severity: 'success', summary: 'Added', detail: "You've been added to this meeting." });
           } else {
             this.messageService.add({ severity: 'info', summary: 'Already Invited', detail: "You're already a guest of this meeting." });
+            this.refreshMeeting();
           }
           this.userService.refreshUserMeetings(false);
-          this.refreshMeeting();
         },
         error: (error: unknown) => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfInvite.describeFailure(error) });

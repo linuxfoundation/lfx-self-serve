@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MeetingRegistrantWithState, MeetingSelfGuest, MeetingSelfInviteResult } from '@lfx-one/shared/interfaces';
-import { isMeetingSelfGuestListed, toMeetingSelfGuestRegistrant } from '@lfx-one/shared/utils';
+import { isBatchRegistrantOperationResponse, isMeetingSelfGuestListed, toMeetingSelfGuestRegistrant } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
@@ -42,6 +43,9 @@ export class MeetingSelfInviteService {
   /** User-facing copy for a failed add: the BFF's validation message, the saved batch's own failure, or generic copy. */
   public describeFailure(error: unknown): string {
     const fallback = 'Unable to add you to this meeting. Please try again.';
+    if (error instanceof HttpErrorResponse && isBatchRegistrantOperationResponse(error.error)) {
+      return error.error.failures[0]?.error?.message?.trim() || fallback;
+    }
     return isBffValidationError(error) || error instanceof Error ? extractErrorMessage(error, fallback) : fallback;
   }
 

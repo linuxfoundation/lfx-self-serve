@@ -164,14 +164,20 @@ describe('MeetingSelfInviteService', () => {
     expect(clearRemovedRegistration).not.toHaveBeenCalled();
   });
 
-  it('errors with the rejected row reason when nothing was saved', async () => {
-    addMeetingRegistrants.mockReturnValue(
-      of({ successes: [], failures: [{ input: {}, error: { message: 'This guest is already invited.' } }], summary: { total: 1, successful: 0, failed: 1 } })
-    );
+  it.each([
+    [' This guest is already invited. ', 'This guest is already invited.'],
+    ['   ', 'Unable to add you to this meeting. Please try again.'],
+  ])('describes an HTTP 400 batch rejection with reason %j', async (message, expected) => {
+    const rejection = new HttpErrorResponse({
+      status: 400,
+      error: { successes: [], failures: [{ input: {}, error: { message } }], summary: { total: 1, successful: 0, failed: 1 } },
+    });
+    addMeetingRegistrants.mockReturnValue(throwError(() => rejection));
 
     const error = await firstValueFrom(service.add$(MEETING_ID)).catch((caught: unknown) => caught);
 
-    expect(service.describeFailure(error)).toBe('This guest is already invited.');
+    expect(error).toBe(rejection);
+    expect(service.describeFailure(error)).toBe(expected);
     expect(clearRemovedRegistration).not.toHaveBeenCalled();
   });
 

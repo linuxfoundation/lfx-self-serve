@@ -1378,7 +1378,7 @@ describe('MeetingCardComponent — add myself', () => {
     expect(component.addingMyself()).toBe(false);
   });
 
-  it('swaps to Remove Myself, counts the new guest and refreshes once added', async () => {
+  it('swaps to Remove Myself, counts the new guest and refreshes the feed once added', async () => {
     const component = await mount();
     const refresh = vi.spyOn(TestBed.inject(UserService), 'refreshUserMeetings');
     expect(component.guestCount()).toBe(3);
@@ -1389,9 +1389,30 @@ describe('MeetingCardComponent — add myself', () => {
     expect(component.canLeaveMeeting()).toBe(true);
     expect(component.guestCount()).toBe(4);
     expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
-    expect(getMeeting).toHaveBeenCalledExactlyOnceWith('meeting-1');
+    expect(getMeeting).not.toHaveBeenCalled();
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: "You've been added to this meeting." }));
   });
+
+  it.each([ORGANIZER, { ...ORGANIZER, registrant_count: undefined, individual_registrants_count: 3 } as unknown as Meeting])(
+    'keeps the confirmed guest count through an add/remove round trip despite stale meeting details',
+    async (meeting) => {
+      getMeeting.mockReturnValue(of(meeting));
+      const component = await mount(meeting);
+
+      component.addMyself();
+
+      expect(component.guestCount()).toBe(4);
+      expect(component.meeting().invited).toBe(true);
+      expect(getMeeting).not.toHaveBeenCalled();
+
+      component.confirmLeaveMeeting();
+      confirm.mock.calls[0][0].accept();
+
+      expect(component.guestCount()).toBe(3);
+      expect(component.additionalRegistrantsCount()).toBe(0);
+      expect(component.canAddMyself()).toBe(true);
+    }
+  );
 
   it('only catches up, without counting a new guest, when the roster already lists the viewer', async () => {
     add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'already-listed' }));
