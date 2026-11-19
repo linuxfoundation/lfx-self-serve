@@ -94,4 +94,12 @@ describe('orgLensFullViewOnlyGuard', () => {
 
     expect(await verdictFor('/company/acme-inc/groups', 'projects')).toBe('/company/acme-inc/projects');
   });
+
+  it('redirects every EasyCLA address (page, CLA group detail, signing return, legacy mount) to Overview in the employee view', async () => {
+    isEmployeeView.set(true);
+
+    expect(await verdictFor('/company/acme-inc/easycla')).toBe('/company/acme-inc/overview');
+    expect(await verdictFor('/company/acme-inc/easycla/7c1a9000-0000-4000-8000-000000000001?sig=abc&signed=1')).toBe('/company/acme-inc/overview');
+    expect(await verdictFor('/company/easycla/7c1a9000-0000-4000-8000-000000000001?company=acme-inc&signed=1')).toBe('/company/overview');
+  });
 });

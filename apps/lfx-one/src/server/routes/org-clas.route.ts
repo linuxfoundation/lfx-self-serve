@@ -12,6 +12,10 @@ import { requireOrgLensClaAccess } from '../middleware/require-org-lens-cla-acce
 // `cla-manager` scope asked, and it admits only when that scope names this organization's company.
 // So a CLA Manager without a `b2b_org` grant can run the EasyCLA tab and nothing else of the lens.
 // "The CLA gate" below means this check. EasyCLA v4 still checks each action against ACS.
+// Epic #5845 (S12 #5857): the all employee view hides EasyCLA entirely. There is no `blockEmployeeView` on these routes
+// on purpose: `requireOrgLensClaAccess` (every route below) refuses an `employee-view` qualification with 403
+// EMPLOYEE_VIEW_FORBIDDEN (see `assertOrgLensClaRead`), and `blockEmployeeView` would replay the read gate, whose 403 for
+// a CLA Manager without an Org Lens grant would run ahead of the CLA scope fallback and lock the CLA-only flow out.
 const router = Router();
 const orgClasController = new OrgClasController();
 
