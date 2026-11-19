@@ -305,11 +305,8 @@ describe('MeetingMaterialsDrawerComponent', () => {
       expect(rowFor('Agenda.pdf')?.textContent).toContain('This occurrence');
     });
 
-    it('uploads a file with the scope it was queued with', async () => {
+    it('uploads a file scoped to this occurrence by default (#5912)', async () => {
       await renderUpcoming();
-      const occurrenceTile = query('meeting-materials-scope-occurrence')?.querySelector('input') as HTMLInputElement;
-      occurrenceTile.click();
-      await fixture.whenStable();
       expect(query('meeting-materials-scope')?.textContent).toContain('apply to this occurrence only');
 
       await pick(pdf('Minutes.pdf'));
@@ -384,7 +381,7 @@ describe('MeetingMaterialsDrawerComponent', () => {
       expect(rowFor('Charter.pdf')?.textContent).toContain('All occurrences');
     });
 
-    it('records a new link for every list showing the meeting', async () => {
+    it('records a new link scoped to this occurrence by default (#5912)', async () => {
       await renderUpcoming();
       await type('meeting-materials-link-title', 'Repo');
       await type('meeting-materials-link-url', 'https://repo.example');
@@ -395,9 +392,30 @@ describe('MeetingMaterialsDrawerComponent', () => {
         category: 'Other',
         name: 'Repo',
         link: 'https://repo.example',
+        occurrence_id: OCCURRENCE.occurrence_id,
       });
       expect(upcoming['recordAttachmentChanges']).toHaveBeenCalledWith('synthetic-meeting', { added: [expect.objectContaining({ uid: 'link-new' })] });
       expect(onChanged).not.toHaveBeenCalled();
+    });
+
+    it('records a series-wide link when All occurrences is chosen', async () => {
+      await renderUpcoming();
+      const seriesTile = query('meeting-materials-scope-series')?.querySelector('input') as HTMLInputElement;
+      seriesTile.click();
+      await fixture.whenStable();
+      expect(query('meeting-materials-scope')?.textContent).toContain('apply to every occurrence');
+
+      await type('meeting-materials-link-title', 'Repo');
+      await type('meeting-materials-link-url', 'https://repo.example');
+      await click(query('meeting-materials-link-add'));
+
+      expect(upcoming['createMeetingAttachment']).toHaveBeenCalledWith('synthetic-meeting', {
+        type: 'link',
+        category: 'Other',
+        name: 'Repo',
+        link: 'https://repo.example',
+      });
+      expect(upcoming['createMeetingAttachment'].mock.calls[0][1]).not.toHaveProperty('occurrence_id');
     });
   });
 });

@@ -4093,7 +4093,7 @@ export class AnalyticsController {
 
       const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_events_organizations');
       if (!isSupportedEventsRange(range)) {
-        throw ServiceValidationError.forField('range', 'Organizations at events have no data for this range', { operation: 'get_events_organizations' });
+        throw ServiceValidationError.forField('range', 'Companies at events have no data for this range', { operation: 'get_events_organizations' });
       }
 
       const segment = getStringQueryParam(req, 'segment') || 'all';

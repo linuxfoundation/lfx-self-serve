@@ -1,0 +1,77 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+@if (geometry() !== null) {
+  <div class="flex flex-col gap-[12px]" [attr.data-testid]="testId()">
+    <div #frame class="relative">
+      @if (view(); as view) {
+        <svg [attr.viewBox]="view.viewBox" width="100%" role="img" [attr.aria-label]="ariaLabel()" class="block h-auto" [attr.data-testid]="testId() + '-svg'">
+          @for (path of view.paths; track path.code) {
+            <!-- Exact px: the design's 0.6 white borders between countries. -->
+            <path
+              class="transition-opacity hover:opacity-80"
+              [attr.d]="path.d"
+              [attr.fill]="path.fill"
+              stroke="white"
+              stroke-width="0.6"
+              stroke-linejoin="round"
+              (mouseenter)="onEnter(path.code, $event)"
+              (mouseleave)="onLeave(path.code)"
+              [attr.data-testid]="testId() + '-country-' + path.code" />
+          }
+        </svg>
+      } @else {
+        <!-- Holds the map's 960 × 470 shape while the outlines load. -->
+        <div class="aspect-[960/470] w-full rounded-[8px] bg-gray-50" aria-hidden="true" [attr.data-testid]="testId() + '-loading'"></div>
+      }
+      @if (activePath(); as path) {
+        <lfx-health-metrics-chart-tip
+          class="pointer-events-none absolute z-10 -translate-y-1/2"
+          [style.left]="tipPlacement()?.left ?? null"
+          [style.right]="tipPlacement()?.right ?? null"
+          [style.top]="tipPlacement()?.top ?? null"
+          aria-hidden="true"
+          [tip]="path.tip"
+          [attr.data-testid]="testId() + '-tip'" />
+      }
+    </div>
+
+    <!-- The legend reads as text; its swatches are decoration. Exact px: the design's 20 × 8 swatches. -->
+    <div class="flex flex-wrap items-center gap-[8px] text-[11px] text-gray-500" [attr.data-testid]="testId() + '-legend'">
+      <span>Fewer</span>
+      <span class="flex gap-[2px]" aria-hidden="true">
+        @for (color of ramp; track color) {
+          <span class="h-[8px] w-[20px] rounded-[2px]" [style.background]="color"></span>
+        }
+      </span>
+      <span>{{ moreLabel() }}</span>
+      <span class="ml-[12px] inline-flex items-center gap-[6px]">
+        <span class="h-[8px] w-[20px] rounded-[2px]" [style.background]="emptyFill" aria-hidden="true"></span>{{ noneLabel() }}
+      </span>
+    </div>
+  </div>
+}
+
+<!-- The map's figures for screen readers, which cannot hover a country. -->
+<table class="sr-only" [attr.data-testid]="testId() + '-table'">
+  <caption>
+    {{
+      ariaLabel()
+    }}
+  </caption>
+  <thead>
+    <tr>
+      <th scope="col">Country</th>
+      <th scope="col">{{ label() }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    @for (country of countries(); track country.code ?? country.name) {
+      <tr>
+        <th scope="row">{{ country.name }}</th>
+        <td>{{ country.valueLabel }}</td>
+      </tr>
+    }
+  </tbody>
+</table>

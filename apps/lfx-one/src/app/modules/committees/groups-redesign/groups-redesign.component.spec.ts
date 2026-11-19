@@ -9,6 +9,8 @@ import { MyCommittee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
+import { InvitationService } from '@services/invitation.service';
 import { UserService } from '@services/user.service';
 import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,6 +67,11 @@ describe('GroupsRedesignComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: CommitteeService, useValue: { getMyCommitteesOrError: () => groups$, getGroupsEngagementStats: vi.fn(), getMyApplications: () => of([]) } },
+        {
+          provide: InvitationService,
+          useValue: { pendingInvitations: signal([]), resolvedInviteUids: signal(new Set()), loadPendingInvitations: () => of([]) },
+        },
+        { provide: InvitationAcceptFlowService, useValue: {} },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: CreateArtifactDialogService, useValue: { open: openCreateDialog } },

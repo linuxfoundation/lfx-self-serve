@@ -59,7 +59,7 @@ export const DOCS_TAXONOMY_ORDER: readonly string[] = [
   'profile',
   'account',
   'permissions',
-  'organization',
+  'company',
   'roi',
   'crowdfunding',
   'social-listening',

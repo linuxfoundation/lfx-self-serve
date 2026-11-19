@@ -54,6 +54,56 @@ describe('GroupsHomeStore', () => {
     expect(store.groups()).toHaveLength(1);
   });
 
+  it('refreshes without the loading state, and keeps the list when the refresh fails', () => {
+    groups$ = of([group('a', 'Board')]);
+    const store = create();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const subject = new Subject<MyCommittee[]>();
+    groups$ = subject;
+    store.refresh();
+    TestBed.tick();
+    expect(store.loading()).toBe(false);
+    subject.error(new Error('offline'));
+    expect(store.failed()).toBe(false);
+    expect(store.groups()).toHaveLength(1);
+
+    groups$ = of([group('a', 'Board'), group('b', 'Board')]);
+    store.refresh();
+    TestBed.tick();
+    expect(store.groups()).toHaveLength(2);
+  });
+
+  it('turns a refresh during the first load into a normal load', () => {
+    groups$ = new Subject<MyCommittee[]>();
+    const store = create();
+    const subject = new Subject<MyCommittee[]>();
+    groups$ = subject;
+    store.refresh();
+    TestBed.tick();
+
+    expect(store.loading()).toBe(true);
+    subject.next([group('a', 'Board')]);
+    subject.complete();
+    expect(store.loading()).toBe(false);
+    expect(store.groups()).toHaveLength(1);
+  });
+
+  it('clears a failed first load once a refresh succeeds', () => {
+    const subject = new Subject<MyCommittee[]>();
+    groups$ = subject;
+    const store = create();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    subject.error(new Error('offline'));
+    expect(store.failed()).toBe(true);
+
+    groups$ = of([group('a', 'Board')]);
+    store.refresh();
+    TestBed.tick();
+    expect(store.failed()).toBe(false);
+    expect(store.groups()).toHaveLength(1);
+  });
+
   it('flags a failed load, and reloads on request', () => {
     const subject = new Subject<MyCommittee[]>();
     groups$ = subject;
@@ -194,6 +244,15 @@ describe('GroupsHomeStore', () => {
     expect(store.groups().map((g) => g.uid)).toEqual(['b']);
     expect(store.classCounts()['governing-board']).toBe(0);
     expect(store.metrics()[0].value).toBe('1');
+  });
+
+  it('shows a left group again once the viewer rejoins it', () => {
+    groups$ = of([group('a', 'Board'), group('b', 'Working Group')]);
+    const store = create();
+
+    store.removeGroup('a');
+    store.restoreGroup('a');
+    expect(store.groups().map((g) => g.uid)).toEqual(['a', 'b']);
   });
 
   it('falls back to every group when a leave empties the selected tab or scope', () => {

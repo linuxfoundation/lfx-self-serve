@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ASSIGNED_COUNTRY_CODES } from './campaign.constants';
 import { lfxColors } from './colors.constants';
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type {
@@ -336,6 +337,12 @@ export const HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED: HealthMetricsEventsGeog
 
 /** Countries ranked in the list. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES = 5;
+
+/** Outside the US counts every registration not from this country, as the design labels the metric. */
+export const HEALTH_METRICS_EVENTS_GEOGRAPHY_HOME_CODE = 'US';
+
+/** Codes that can key a country: every assigned ISO 3166-1 alpha-2 code, and XK for Kosovo, which the outlines draw. */
+export const HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES: ReadonlySet<string> = new Set([...ASSIGNED_COUNTRY_CODES, 'XK']);
 
 /** The event dialog Snapshot's periods, as the design orders them. */
 export const HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS: readonly HealthMetricsEventsSnapshotPeriodOption[] = [

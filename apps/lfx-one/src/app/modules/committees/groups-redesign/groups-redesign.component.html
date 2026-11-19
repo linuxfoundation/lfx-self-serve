@@ -23,9 +23,10 @@
         Groups you are a member of across all foundations and projects.
       </p>
     </div>
-    <!-- At 640px and below the actions join the header's wrapping row: Create Group stays by the title, the drawer button stacks under it. -->
+    <!-- At 640px and below the actions join the header's wrapping row: Create Group stays by the title, the drawer buttons stack under it. -->
     <div class="flex flex-none items-center gap-[12px] max-[640px]:contents" data-testid="groups-redesign-header-actions">
       <lfx-group-applications [fallbackFocus]="heading" />
+      <lfx-group-invitations [fallbackFocus]="heading" />
       @if (hasGroups()) {
         <lfx-ui-button variant="tertiary-accent" icon="fa-light fa-plus" (click)="createGroup()" data-testid="groups-redesign-create">
           Create Group
