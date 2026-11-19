@@ -101,6 +101,9 @@ export class ProfileClasComponent {
    */
   protected readonly impersonating = this.userService.impersonating;
 
+  // Same build-time gate as the Add identity dialog: staging and production keep "coming soon" for new GitLab links.
+  protected readonly gitlabLinkingDisabled = environment.production;
+
   // signatureID currently resolving a PDF URL (drives the row's spinner + guards double-clicks).
   protected readonly downloadingId = signal<string | null>(null);
 
