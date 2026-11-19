@@ -36,17 +36,16 @@ import type {
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementGroupSortKey,
   HealthMetricsEngagementMeetingParticipation,
   HealthMetricsEngagementNewsletter,
   HealthMetricsEngagementNewsletterPerformance,
   HealthMetricsEngagementNewsletterPeriod,
   HealthMetricsEngagementNewsletterQuery,
   HealthMetricsEngagementNewsletterRecipients,
-  HealthMetricsEngagementRecipient,
-  HealthMetricsEngagementRecipientQuery,
-  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberPeriod,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgCounts,
@@ -57,14 +56,18 @@ import type {
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementParticipationRow,
+  HealthMetricsEngagementRecipient,
+  HealthMetricsEngagementRecipientQuery,
   HealthMetricsEngagementRepPeriod,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementRepRow,
+  HealthMetricsSqlSortColumn,
 } from '@lfx-one/shared/interfaces';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { buildHealthMetricsSortOrderBy } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -269,6 +272,24 @@ export class HealthMetricsEngagementService {
       `${typeCondition ? `COUNT_IF(${typeCondition})` : 'COUNT(*)'} AS total_records`,
     ];
 
+    // The reader's column first, over every page; with none, the view's rank. Only these trusted expressions reach the SQL.
+    const sortColumns: Record<HealthMetricsEngagementGroupSortKey, HealthMetricsSqlSortColumn> = {
+      group: { expression: 'committee_name', kind: 'text' },
+      // A group that held no meetings reads "—", so it sorts as empty.
+      meetings: { expression: `NULLIF(meetings_count_${suffix}, 0)`, kind: 'number' },
+      last: { expression: 'last_met_date', kind: 'date' },
+      // Dormant sorts below every rate; a group with too few meetings to rate reads "—", so it is empty.
+      attendance: {
+        expression: `CASE WHEN COALESCE(is_dormant_${suffix}, FALSE) THEN -1 WHEN meetings_count_${suffix} >= ${HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE} THEN attendance_pct_${suffix} END`,
+        kind: 'number',
+      },
+    };
+    const orderBy = buildHealthMetricsSortOrderBy(
+      query.sort,
+      sortColumns,
+      `sort_rank_${suffix} ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST, project_slug ASC NULLS LAST, group_type_label ASC NULLS LAST`
+    );
+
     const size = clampInteger(query.size, 1, 100, HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
     const offset = (clampInteger(query.page, 1, 10_000, 1) - 1) * size;
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => periodSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
@@ -302,6 +323,8 @@ export class HealthMetricsEngagementService {
           meeting_type_group,
           ${periodColumns},
           sort_rank_${suffix} AS sort_rank,
+          -- The row's place in the page's order, which the outer select keeps after the join.
+          ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position,
           -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
           -- committee_id cannot serve: it is nullable, so a null-id group would be dropped silently.
           TRUE AS is_page_row
@@ -312,14 +335,14 @@ export class HealthMetricsEngagementService {
         -- null id still tie; a hard guarantee needs a non-null row key on the view itself.
         -- Every key is nullable, and NULLS LAST pins their placement: the session's
         -- DEFAULT_NULL_ORDERING would otherwise let a pooled connection drift a null between pages.
-        ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST, project_slug ASC NULLS LAST, group_type_label ASC NULLS LAST
+        ORDER BY ${orderBy}
         LIMIT ${size} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
       SELECT totals.*, page.*
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST, page.project_slug ASC NULLS LAST, page.group_type_label ASC NULLS LAST
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<GroupAttendanceRow>(this.snowflakeService, req, sql, binds, {

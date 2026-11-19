@@ -12,12 +12,15 @@ import {
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_SORT_COLUMNS,
   HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsEngagementRecipientMetrics,
   buildHealthMetricsEngagementRecipientRow,
   filterHealthMetricsEngagementRecipients,
+  healthMetricsRowSortValue,
+  sortHealthMetricsRows,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -30,6 +33,8 @@ import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, debounce, distinctUntilChanged, of, skip, switchMap, tap, timer } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 
@@ -51,6 +56,7 @@ import type {
     EmptyStateComponent,
     HealthMetricsCellComponent,
     HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
     Skeleton,
     TableComponent,
     UiBadgeComponent,
@@ -101,9 +107,11 @@ export class EngagementNewsletterRecipientsComponent {
   }));
   protected readonly response: Signal<HealthMetricsEngagementNewsletterRecipients> = this.initResponse();
 
-  /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
+  /** No arrow by default: recipients keep the view's engagement order. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_ENGAGEMENT_RECIPIENT_SORT_COLUMNS, null);
+  /** Narrowing or re-sorting the table must land the reader on rows, so any change to the cut or the order restarts paging. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.query().foundationSlug}|${this.filter()}|${this.search()}`),
+    source: computed(() => `${this.query().foundationSlug}|${this.filter()}|${this.search()}|${JSON.stringify(this.sorting.sort())}`),
     computation: () => 0,
   });
 
@@ -117,9 +125,10 @@ export class EngagementNewsletterRecipientsComponent {
   });
   protected readonly rowViews = computed<HealthMetricsEngagementRecipientRowView[]>(() => {
     const views = this.rowViewsByRecipient();
-    return filterHealthMetricsEngagementRecipients(this.response().recipients, this.filter(), this.search())
+    const filtered = filterHealthMetricsEngagementRecipients(this.response().recipients, this.filter(), this.search())
       .map((recipient) => views.get(recipient))
       .filter((view) => view !== undefined);
+    return sortHealthMetricsRows(filtered, this.sorting.order(), healthMetricsRowSortValue);
   });
   // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
   protected readonly pageRows = computed(() => {

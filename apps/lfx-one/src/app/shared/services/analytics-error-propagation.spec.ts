@@ -45,7 +45,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/engagement-group-attendance',
       // Its empty state claims the foundation has no matching groups, so a zero-filled response
       // reads as measured absence.
-      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', groupType: 'all', range: 'YTD', page: 1, size: 25 }),
+      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', groupType: 'all', range: 'YTD', page: 1, size: 25, sort: null }),
     },
     {
       name: 'getEngagementAttendanceTrend',

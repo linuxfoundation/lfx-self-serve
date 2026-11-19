@@ -344,6 +344,7 @@ describe('participation period selection and delta formatting', () => {
       attendanceLabel: '86%',
       attendancePct: 86,
       fillRule: HEALTH_METRICS_ENGAGEMENT_BOARD_BAR_FILL,
+      sortValues: { type: 'Board', meetings: 7, attendance: 86 },
     });
   });
 
@@ -470,6 +471,7 @@ describe('organization participation rules', () => {
       attendedFillClass: 'bg-blue-500',
       avgRepsLabel: '1.8',
       lastEngagedLabel: 'Aug 14, 2026',
+      sortValues: { company: 'Acme Motors', membership: 5, attended: 78, reps: 1.75, last: '2026-08-14' },
     });
     expect(buildHealthMetricsEngagementOrgRowView(orgRow('Acme Motors', 1), 'COMPLETED_YEAR')).toMatchObject({
       attendedPct: 33,
@@ -562,6 +564,7 @@ describe('non-member participation rules', () => {
       logoUrl: 'https://logo.example/v.png',
       meetings: '8',
       people: '3',
+      sortValues: { company: 'Vendor Corp', meetings: 8, people: 3 },
     });
   });
 
@@ -788,6 +791,7 @@ describe('buildHealthMetricsEngagementRepRowView', () => {
       attendedLabel: '2 / 6',
       neverAttended: false,
       lastAttendedLabel: 'Aug 14, 2026',
+      sortValues: { representative: 'Dana Fields', group: 'Governing Board', attended: 2 / 6, last: '2026-08-14' },
     });
   });
 

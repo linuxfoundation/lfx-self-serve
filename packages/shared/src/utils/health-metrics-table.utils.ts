@@ -124,6 +124,11 @@ export function sortHealthMetricsRows<T, K extends string>(
   return [...sorted, ...rows.filter(pinned)];
 }
 
+/** A row's sort value from the `sortValues` its view builder records for each column. */
+export function healthMetricsRowSortValue<K extends string>(row: { sortValues: Readonly<Record<K, HealthMetricsSortValue>> }, key: K): HealthMetricsSortValue {
+  return row.sortValues[key];
+}
+
 /** A request's sort, kept only for an allowed column and a known direction; anything else is the table's default order. */
 export function parseHealthMetricsTableSort<K extends string>(key: unknown, direction: unknown, allowed: readonly K[]): HealthMetricsTableSort<K> | null {
   if (typeof key !== 'string' || !(allowed as readonly string[]).includes(key)) return null;
