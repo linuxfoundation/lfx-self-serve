@@ -162,6 +162,9 @@ export interface OrgRollUpSelectorRow {
 export interface OrgRelatedCompanyRow {
   org: OrgRollUpSetOrg;
   isSelected: boolean;
+  roleLabel: string;
+  roleIcon: string;
+  roleTooltip: string;
 }
 
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */

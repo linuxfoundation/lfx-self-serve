@@ -907,6 +907,16 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.selectedAccount().accountName).toContain('Alpha Group');
     });
 
+    it('keeps that label when the path guard re-admits the same roll-up without a name', () => {
+      serverAnswer.set([]);
+      TestBed.tick();
+      service.selectRollUp(ROOT, { admitWhilePending: true, name: 'Alpha Group' });
+
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+
+      expect(service.selectedAccount().accountName).toContain('Alpha Group');
+    });
+
     describe('when the anchor moves, the families stay unsettled until its answer lands', () => {
       const alpha: OrgRollUpFamily = { rootUid: ROOT, name: 'Alpha', orgUids: [UID_A, UID_B] };
       const refetchOnAnchor = (): void => {

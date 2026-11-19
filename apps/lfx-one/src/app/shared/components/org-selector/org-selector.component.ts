@@ -486,7 +486,7 @@ export class OrgSelectorComponent {
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
       // Spec 050: URL identity for `/org/{segment}/…` — from the indexed doc, never derived here.
-      slug: item.slug ?? null,
+      slug: item.slug,
     };
     this.accountContextService.setAccount(account);
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
@@ -753,7 +753,7 @@ export class OrgSelectorComponent {
   }
 
   private initSearchRollUpRows(): OrgRollUpSelectorRow[] {
-    if (!this.searchActive()) {
+    if (!this.searchActive() || !this.accountContextService.rollUpEnabled()) {
       return [];
     }
     const selectedRootUid = this.accountContextService.selectedRollUpRootUid();
@@ -774,7 +774,17 @@ export class OrgSelectorComponent {
   private initRelatedRows(): OrgRelatedCompanyRow[] {
     if (this.searchActive()) return [];
     const selectedUid = this.selectedAccountUid();
-    return this.accountContextService.relatedCompanies().map((org) => ({ org, isSelected: org.uid === selectedUid }));
+    const displayByUid = new Map(this.displayedItems().map((display) => [display.item.uid, display]));
+    return this.accountContextService.relatedCompanies().map((org) => {
+      const display = displayByUid.get(org.uid);
+      return {
+        org,
+        isSelected: org.uid === selectedUid,
+        roleLabel: display?.roleLabel ?? '',
+        roleIcon: display?.roleIcon ?? '',
+        roleTooltip: display?.roleTooltip ?? '',
+      };
+    });
   }
 
   private initDisplayedRows(): OrgSelectorRow[] {

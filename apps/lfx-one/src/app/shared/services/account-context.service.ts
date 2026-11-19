@@ -110,6 +110,9 @@ export class AccountContextService {
   /** True while a family roll-up is the selection — every page reads combined data and every write is gated off (#4125). */
   public readonly isRollUp: Signal<boolean> = computed(() => this.selectedRollUpRootUid() !== null);
 
+  /** True only while the `org-lens-rollup-enabled` flag is known to be on for this viewer. */
+  public readonly rollUpEnabled: Signal<boolean> = computed(() => this.rollUpFlag.enabled());
+
   private readonly staffRollUpAnchor: Signal<string | null> = computed(() => this.initStaffRollUpAnchor());
 
   /**
@@ -971,7 +974,11 @@ export class AccountContextService {
   /** Writes the family roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */
   private applyRollUpSelection(rootUid: string, name?: string | null): void {
     const family = this.rollUpFamilies().find((candidate) => candidate.rootUid === rootUid);
-    const account = orgRollUpAccount(rootUid, family?.name ?? name);
+    const knownName = family?.name ?? name;
+    const current = this.selectedAccount();
+    const named = orgRollUpAccount(rootUid, knownName);
+    // A re-admission without a name (the path guard's) must not demote a label already held for this roll-up.
+    const account = !knownName && current.uid === named.uid ? { ...named, accountName: current.accountName } : named;
     this.selectedAccount.set(account);
     this.persistToStorage(account);
     this.addressedUid.set(account.uid ?? null);

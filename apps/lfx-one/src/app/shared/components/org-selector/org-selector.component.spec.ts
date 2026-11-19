@@ -503,6 +503,8 @@ describe('OrgSelectorComponent family roll-ups', () => {
     staffSearch?: string;
     related?: OrgRollUpSetOrg[];
     canSelectFor?: boolean;
+    rollUpEnabled?: boolean;
+    writerUids?: string[];
   }): Promise<RollUpView> => {
     selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
     navigateSpy.mockReset();
@@ -537,6 +539,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
             isRollUp: signal(selectedRootUid !== null),
             rollUpOrganizationCount: signal(opts.count ?? 0),
             relatedCompanies: signal(opts.related ?? []),
+            rollUpEnabled: signal(opts.rollUpEnabled ?? true),
             canSelectRollUpFor: vi.fn(() => opts.canSelectFor ?? false),
             selectRollUp: selectRollUpSpy,
           },
@@ -560,7 +563,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
           provide: OrgRoleGrantsService,
           useValue: {
             isStaff: signal(opts.staffSearch !== undefined),
-            writerSet: signal(new Set<string>()),
+            writerSet: signal(new Set<string>(opts.writerUids ?? [])),
             auditorSet: signal(new Set<string>()),
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet: signal(new Set<string>()),
@@ -720,6 +723,12 @@ describe('OrgSelectorComponent family roll-ups', () => {
       expect(view.showRollUpRow()).toBe(false);
     });
 
+    it('offers nothing while the roll-up flag is off, even for rows already labelled with a family', async () => {
+      const view = await create({ families: [], staffSearch: 'charlie', items: [charlieSub], rollUpEnabled: false });
+
+      expect(view.showRollUpRow()).toBe(false);
+    });
+
     it('admits a picked search roll-up while its family is fetched, labelled with the family name', async () => {
       const view = await create({ families: [], staffSearch: 'charlie', items: [charlieSub] });
 
@@ -778,13 +787,38 @@ describe('OrgSelectorComponent family roll-ups', () => {
       };
 
       expect(activate(UID_C)).toBe(true);
-      expect(setAccountSpy).toHaveBeenLastCalledWith(expect.objectContaining({ uid: UID_C, accountName: 'Charlie', slug: null }));
+      expect(setAccountSpy).toHaveBeenLastCalledWith(expect.objectContaining({ uid: UID_C, accountName: 'Charlie' }));
       expect(navigateSpy).toHaveBeenCalledWith('switch');
 
       setAccountSpy.mockClear();
       expect(activate(UID_D)).toBe(true);
       expect(setAccountSpy).not.toHaveBeenCalled();
       expect(activate('nope')).toBe(false);
+    });
+
+    // A slug no organization row answered for is unknown, not absent: null would tell the path guard
+    // there is none to resolve.
+    it('leaves the slug unknown for a picked company the organization rows do not hold', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD, items: [rowD] });
+      const el = document.createElement('button');
+      el.dataset['optionKind'] = 'related';
+      el.dataset['orgUid'] = UID_C;
+
+      view.activateOption(el);
+
+      const account = setAccountSpy.mock.lastCall?.[0] as Account;
+      expect(account.uid).toBe(UID_C);
+      expect(account.slug).toBeUndefined();
+    });
+
+    it('keeps the role badge of a granted company listed under related companies', async () => {
+      const grantedD: OrgItem = { ...rowD, isAssigned: true };
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD, items: [grantedD, rowA], writerUids: [UID_D] });
+
+      const relatedD = view.relatedRows().find((row) => row.org.uid === UID_D);
+      expect(relatedD?.roleLabel).toMatch(/^Company Admin Editor/);
+      expect(relatedD?.roleIcon).toBe('fa-light fa-pen-to-square');
+      expect(view.relatedRows().find((row) => row.org.uid === UID_C)?.roleLabel).toBe('');
     });
   });
 
