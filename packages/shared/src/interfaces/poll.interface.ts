@@ -652,6 +652,8 @@ export interface VoteLinkBallotState {
   voter_removed: boolean;
   /** ITX's answer to whether this submitted ballot can still be changed; omitted when ITX omits it */
   can_change_vote?: boolean;
+  /** Point-in-time: whether submitting this ballot now would end the vote (#4726); missing is treated as false */
+  would_end_vote?: boolean;
   abstained?: boolean;
   poll_answers?: IndexedPollAnswer[];
   comment_responses?: CommentResponseInput[];
@@ -1408,6 +1410,8 @@ export interface VoteResponseDetail {
   vote_creation_time?: string;
   /** ITX's answer to whether this ballot can still be changed; omitted when ITX omits it */
   can_change_vote?: boolean;
+  /** Point-in-time: whether submitting this pending response now would end the vote (#4726); missing is treated as false */
+  would_end_vote?: boolean;
 }
 
 /**
@@ -1429,6 +1433,15 @@ export interface MyVoteBallot {
   vote_creation_time?: string;
   /** Whether this ballot can still be changed, passed through from ITX; omitted when ITX omits it */
   can_change_vote?: boolean;
+}
+
+/**
+ * Returned by GET /api/votes/:uid/my-response/would-end-vote (#4726).
+ * @description Whether the caller's first submission would end the vote, read at submit time. Advisory and point-in-time.
+ */
+export interface MyVoteWouldEndVote {
+  /** True only when the caller's pending response is the last one outstanding */
+  would_end_vote: boolean;
 }
 
 /** Inputs to `canChangeSubmittedBallot` (#4723), shared by the vote-link page and the Me-lens Review drawer. */

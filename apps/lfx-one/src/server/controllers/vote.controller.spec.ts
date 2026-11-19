@@ -16,6 +16,7 @@ const {
   getVoteResults,
   sendVoteReminders,
   getMyVoteBallot,
+  getMyWouldEndVote,
   createVoteResponse,
   updateMyVoteResponse,
   endVoteSvc,
@@ -34,6 +35,7 @@ const {
   getVoteResults: vi.fn(),
   sendVoteReminders: vi.fn(),
   getMyVoteBallot: vi.fn(),
+  getMyWouldEndVote: vi.fn(),
   createVoteResponse: vi.fn(),
   updateMyVoteResponse: vi.fn(),
   endVoteSvc: vi.fn(),
@@ -54,6 +56,7 @@ vi.mock('../services/vote.service', () => ({
     public getVoteResults = getVoteResults;
     public sendVoteReminders = sendVoteReminders;
     public getMyVoteBallot = getMyVoteBallot;
+    public getMyWouldEndVote = getMyWouldEndVote;
     public createVoteResponse = createVoteResponse;
     public updateMyVoteResponse = updateMyVoteResponse;
     public endVote = endVoteSvc;
@@ -507,6 +510,36 @@ describe('VoteController own ballot (#4331)', () => {
 
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
       expect(getMyVoteBallot).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMyWouldEndVote', () => {
+    it.each([true, false])('returns { would_end_vote: %s }', async (wouldEndVote) => {
+      getMyWouldEndVote.mockResolvedValue(wouldEndVote);
+      const req = { params: { uid: VOTE_UID } } as unknown as Request;
+
+      await controller.getMyWouldEndVote(req, res, next);
+
+      expect(getMyWouldEndVote).toHaveBeenCalledWith(req, VOTE_UID);
+      expect(json).toHaveBeenCalledWith({ would_end_vote: wouldEndVote });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('rejects a blank vote uid without reading upstream', async () => {
+      await controller.getMyWouldEndVote({ params: { uid: ' ' }, path: '/votes/%20/my-response/would-end-vote' } as unknown as Request, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(getMyWouldEndVote).not.toHaveBeenCalled();
+    });
+
+    it('forwards service errors to next', async () => {
+      const error = new MicroserviceError('synthetic upstream failure', 502, 'UPSTREAM_ERROR', {});
+      getMyWouldEndVote.mockRejectedValue(error);
+
+      await controller.getMyWouldEndVote({ params: { uid: VOTE_UID } } as unknown as Request, res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(json).not.toHaveBeenCalled();
     });
   });
 

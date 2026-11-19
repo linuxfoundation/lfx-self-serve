@@ -8,7 +8,7 @@ import { provideRouter } from '@angular/router';
 import type { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -173,6 +173,15 @@ describe('DashboardMeetingCardComponent', () => {
   describe('resend my invitation', () => {
     const RESEND_BUTTON = '[data-testid="dashboard-meeting-card-resend-button"]';
 
+    /** Takes over the dialog the card's own `ConfirmationService` would open; accepts it only when asked to. */
+    const answerResendConfirmation = (accept: boolean, target: ComponentFixture<DashboardMeetingCardComponent> = fixture) => {
+      const confirmation = target.debugElement.injector.get(ConfirmationService);
+      return vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+        if (accept) options.accept?.();
+        return confirmation;
+      });
+    };
+
     it('offers the action to a signed-in invitee on an upcoming meeting', async () => {
       await render(buildMeeting({ invited: true }), { authenticated: true });
 
@@ -198,14 +207,50 @@ describe('DashboardMeetingCardComponent', () => {
       expect(fixture.componentInstance.canResendInvite()).toBe(true);
     });
 
-    it('resends to the viewer, without a confirmation, when clicked', async () => {
+    it('asks for confirmation when clicked, and sends nothing until it is accepted', async () => {
       await render(buildMeeting({ invited: true }), { authenticated: true });
+      const confirm = answerResendConfirmation(false);
+
+      fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          header: 'Resend Your Invitation',
+          message: "Resend your invitation to “LFX Extended Leadership”? We'll email it to your own address again.",
+          acceptLabel: 'Resend',
+          rejectLabel: 'Cancel',
+        })
+      );
+      expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+      expect(toastAdd).not.toHaveBeenCalled();
+    });
+
+    it('resends to the viewer once the confirmation is accepted', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true });
+      answerResendConfirmation(true);
 
       fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
       // A one-time meeting has no occurrences to tell apart, so no occurrence is named.
+      expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
       expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', null);
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+    });
+
+    it("renders its own confirm dialog, so a list of cards opens only the clicked card's", async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true });
+      const other = TestBed.createComponent(DashboardMeetingCardComponent);
+      other.componentRef.setInput('meeting', buildMeeting({ id: 'meeting-2', invited: true }));
+      other.detectChanges();
+      const confirm = answerResendConfirmation(false);
+      const otherConfirm = answerResendConfirmation(false, other);
+
+      expect(fixture.nativeElement.querySelector('p-confirmdialog')).not.toBeNull();
+      fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(otherConfirm).not.toHaveBeenCalled();
     });
 
     describe('when only the meeting is passed, as on Groups Overview', () => {
@@ -225,6 +270,7 @@ describe('DashboardMeetingCardComponent', () => {
           }),
           { authenticated: true }
         );
+        answerResendConfirmation(true);
 
         fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
@@ -233,6 +279,7 @@ describe('DashboardMeetingCardComponent', () => {
 
       it("falls back to the shown start's Unix seconds when the list has no matching occurrence", async () => {
         await render(buildMeeting({ ...recurring, invited: true, next_occurrence_start_time: NEXT_START }), { authenticated: true });
+        answerResendConfirmation(true);
 
         fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
@@ -258,6 +305,7 @@ describe('DashboardMeetingCardComponent', () => {
         authenticated: true,
         occurrence: { occurrence_id: 'occ-b', start_time: '2026-10-08T15:00:00Z', duration: 45 },
       });
+      answerResendConfirmation(true);
 
       fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
@@ -292,13 +340,16 @@ describe('DashboardMeetingCardComponent', () => {
       const pending$ = new Subject<{ message: string }>();
       await render(buildMeeting({ invited: true }), { authenticated: true });
       resendMyMeetingInvitation.mockReturnValue(pending$);
+      const confirm = answerResendConfirmation(true);
 
       const button: HTMLButtonElement = fixture.nativeElement.querySelector(RESEND_BUTTON);
       button.click();
       fixture.detectChanges();
 
       expect(button.disabled).toBe(true);
-      fixture.componentInstance.resendInvite();
+      fixture.componentInstance.confirmResendInvite();
+      // No second dialog opens and nothing more is sent while the first send is in flight.
+      expect(confirm).toHaveBeenCalledTimes(1);
       expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
 
       pending$.next({ message: 'ok' });

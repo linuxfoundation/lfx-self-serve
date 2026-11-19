@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="events-geo">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="events-geo">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -11,44 +11,31 @@
       subtitle="We could not load registrations by country for this foundation. Refresh the page to try again."
       data-testid="events-geo-error" />
   } @else if (loading()) {
-    <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="events-geo-loading" aria-hidden="true" />
+    <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-geo-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    <span class="self-end rounded-full bg-gray-100 px-2.5 py-0.5 text-[12px] text-gray-600" data-testid="events-geo-countries">{{
-      view().countriesLabel
-    }}</span>
+    <lfx-health-metrics-metrics-row [items]="view().metrics" testId="events-geo-metrics" />
 
-    <div class="flex flex-col gap-2" data-testid="events-geo-headline">
-      <div class="flex items-baseline gap-2">
-        <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-geo-headline-value">{{
-          view().headline.value
-        }}</span>
-        @if (view().headline.delta !== null) {
-          <span
-            class="text-[13px] font-medium tabular-nums"
-            [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
-            [class.text-red-600]="view().headline.deltaDirection === 'down'"
-            [class.text-gray-400]="view().headline.deltaDirection === 'neutral'"
-            data-testid="events-geo-headline-delta">
-            {{ view().headline.delta }}
-          </span>
-        }
-      </div>
-      <span class="text-[12px] text-gray-500">{{ view().headline.label }}</span>
-    </div>
+    <!-- The design's wrapping row: the map takes three parts from 520px, the list one part from 260px (never under 220px),
+         and the list drops under the map once both no longer fit. -->
+    <div class="flex flex-wrap items-start gap-x-[32px] gap-y-[24px]">
+      <lfx-health-metrics-world-map class="min-w-0 flex-[3_1_520px]" [countries]="view().countries" label="Registrations" testId="events-geo-map" />
 
-    <div class="flex flex-col gap-3" data-testid="events-geo-top">
-      <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Top countries</h4>
-        <span class="text-[12px] text-gray-400">registrations</span>
-      </div>
-      <ul class="flex flex-col gap-[8px]">
+      <div class="flex min-w-[220px] flex-[1_1_260px] flex-col" data-testid="events-geo-top">
+        <h4 class="m-0 pb-[8px] text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500">Top countries</h4>
         @for (row of view().topCountries; track row.key; let index = $index) {
-          <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'events-geo-country-' + index">
-            <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
-            <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-geo-country-' + index + '-value'">{{ row.valueLabel }}</span>
-          </li>
+          <div class="flex items-center gap-[8px] border-t border-gray-100 py-[8px] text-[13px]" [attr.data-testid]="'events-geo-country-' + index">
+            <!-- The design's colour-emoji stack, so the flag draws as a flag rather than as two letters. -->
+            <span
+              class="flex-none text-[16px] leading-none [font-family:'Apple_Color_Emoji','Segoe_UI_Emoji','Noto_Color_Emoji',sans-serif]"
+              aria-hidden="true"
+              >{{ row.flag }}</span
+            >
+            <span class="min-w-0 flex-1 truncate text-gray-900">{{ row.name }}</span>
+            <span class="text-gray-900" [attr.data-testid]="'events-geo-country-' + index + '-value'">{{ row.registrationsLabel }}</span>
+            <span class="w-[36px] text-right text-gray-400" [attr.data-testid]="'events-geo-country-' + index + '-pct'">{{ row.pctLabel }}</span>
+          </div>
         }
-      </ul>
+      </div>
     </div>
   }
 </div>

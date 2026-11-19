@@ -60,6 +60,7 @@ import {
   MeetingGroupLink,
   MeetingOccurrence,
   MeetingRsvp,
+  MeetingSelfRegistrationRemovalEvent,
   MeetingRecurrence,
   RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
@@ -76,6 +77,7 @@ import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
   canScopeAttachmentToOccurrence,
+  escapeHtml,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
   getMeetingSelfRemovalMessage,
@@ -304,6 +306,8 @@ export class MeetingCardComponent implements OnInit {
   // `invited` comes from the registrant lookup. It is read from the input, not the local snapshot, which is only
   // seeded once, so a feed refresh that adds or drops the viewer's registration is picked up.
   private readonly hasOwnRegistration: Signal<boolean> = computed(() => {
+    // An acknowledged registration is authoritative while indexed registration IDs are still stale.
+    if (this.optimisticInvited()) return true;
     const registrantIds = this.meetingInput().my_registrant_ids;
     return registrantIds ? registrantIds.length > 0 : this.effectivelyInvited();
   });
@@ -566,10 +570,37 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
+  /** The guest drawer already updates counts; synchronize only the viewer's invitation state here. */
+  public onSelfAdded(meetingId: string): void {
+    if (this.meeting().id !== meetingId) return;
+    this.optimisticInvited.set(true);
+    this.meetingService.clearRemovedRegistration(meetingId);
+    this.userService.refreshUserMeetings(false);
+    this.refreshMeeting();
+  }
+
+  public onSelfRemoved(result: MeetingSelfRegistrationRemovalEvent): void {
+    const meetingId = result.meeting_id;
+    if (this.meeting().id !== meetingId) return;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+    this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
+    const stillInvited = result.remaining_registrant_ids.length > 0;
+    this.optimisticInvited.set(stillInvited);
+    if (stillInvited) this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
+    else this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
+    this.userService.refreshUserMeetings(false);
+    this.refreshMeeting();
+  }
+
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting().invited_via_committee, organizer: this.meeting().organizer }),
+      // PrimeNG renders a confirmation message as HTML, so the title is escaped.
+      message: getMeetingSelfRemovalMessage(escapeHtml(this.meetingTitle()), {
+        viaCommittee: this.meeting().invited_via_committee,
+        organizer: this.meeting().organizer,
+      }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -578,10 +609,16 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  public resendInvite(): void {
+  /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
+  public confirmResendInvite(): void {
     // The occurrence being shown, not the series' current one: an explicit `occurrenceInput` (the meeting modal pins one) wins
     // over the next occurrence, and the registration to resend has to fit what the card displays.
-    this.inviteResend.resendOwn(this.meeting().id, (this.occurrence() ?? this.currentOccurrence())?.occurrence_id);
+    this.inviteResend.confirmAndResendOwn(
+      this.confirmationService,
+      this.meeting().id,
+      (this.occurrence() ?? this.currentOccurrence())?.occurrence_id,
+      this.meetingTitle()
+    );
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {

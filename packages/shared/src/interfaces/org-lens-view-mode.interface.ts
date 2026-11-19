@@ -41,14 +41,7 @@ export interface OrgLensEmployeeViewException {
 }
 
 /** Why a caller is not in the all employee view of a company. Every one of these is "no access" (403), never an outage. */
-export type OrgEmployeeViewDenial =
-  | 'no-employer'
-  | 'employer-unresolvable'
-  | 'other-company'
-  | 'not-member'
-  | 'company-domains-unknown'
-  | 'no-verified-company-email'
-  | 'holds-full-access';
+export type OrgEmployeeViewDenial = 'no-employer' | 'employer-mismatch' | 'other-company' | 'no-verified-company-email' | 'holds-full-access';
 
 /** A clean answer to "is this caller in the all employee view?". A failed lookup is a rejection, never a verdict. */
 export type OrgEmployeeViewVerdict =

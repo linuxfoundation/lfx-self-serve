@@ -21,7 +21,22 @@ import { isPastMeetingCompositeId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, EMPTY, filter, map, Observable, Subscription, switchMap, take, tap } from 'rxjs';
+import { retryTransientHttpError } from '@shared/utils/http-error.utils';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  debounceTime,
+  EMPTY,
+  filter,
+  map,
+  MonoTypeOperatorFunction,
+  Observable,
+  Subscription,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs';
 
 /**
  * Loads the public meeting behind `/meetings/:id` for a meeting page, the way the legacy join page always has.
@@ -84,7 +99,8 @@ export class MeetingPageDataService {
   public readonly liveMeetingFullAccess: Signal<boolean> = this.liveMeetingFullAccessState.asReadonly();
   // The server's join-window result, for viewers whose response has no start time to check against.
   public readonly liveMeetingCanJoin: Signal<boolean> = this.liveMeetingCanJoinState.asReadonly();
-  // A fetch settled with an error that doesn't navigate away (5xx, network); 404/403/400 go to not-found.
+  // The browser's fetch settled with an error that doesn't navigate away (5xx, network); 404/403/400 go to not-found.
+  // Never set on the server, which only records the failure in TransferState (#5907).
   public readonly meetingLoadFailed: Signal<boolean> = this.meetingLoadFailedState.asReadonly();
   public readonly routeId: Signal<string | null> = this.meetingRouteId.asReadonly();
   // False right after navigating to a different `/meetings/:id` until that route's fetch settles.
@@ -135,8 +151,8 @@ export class MeetingPageDataService {
       this.liveMeetingFullAccessState.set(seed.liveMeetingFullAccess ?? false);
       this.liveMeetingCanJoinState.set(seed.liveMeetingCanJoin ?? false);
       if (seed.meetingLoadFailed) {
-        this.meetingLoadFailedState.set(true);
-        // Seed the route id too, or the first hydration emission reads as a navigation and clears the failure (#2046).
+        // The server could not load the meeting and rendered the skeleton; the browser's own fetch retries under it and
+        // only its failure shows the error (#5907). Seed the route id so the first hydration emission isn't read as a navigation (#2046).
         this.meetingRouteId.set(this.activatedRoute.snapshot.paramMap.get('id'));
       } else if (seed.meeting) {
         this.projectState.set(seed.meeting.project);
@@ -154,8 +170,13 @@ export class MeetingPageDataService {
     return this.initMeeting(seed, onRouteChange);
   }
 
-  /** Refetches the meeting for the current route. */
+  /**
+   * Refetches the meeting for the current route.
+   * @description Clears a shown load error first, so the page shows loading rather than "refresh" copy while the refetch
+   * and its retry run; only a failure of that refetch shows the error again (#5907).
+   */
   public refresh(): void {
+    this.meetingLoadFailedState.set(false);
     this.reloadOnNextLoad();
     this.refreshTrigger$.next();
   }
@@ -271,7 +292,8 @@ export class MeetingPageDataService {
       map((res) => ({ ...res.meeting, project: res.project })),
       tap((res) => {
         this.projectState.set(res.project);
-        // Only a settled success clears a prior failure; clearing eagerly would flash a seeded error view back to the skeleton.
+        // Besides an explicit `refresh()`, only a settled success clears a prior failure; clearing on a re-emission would
+        // flash an error view back to the skeleton.
         this.meetingLoadFailedState.set(false);
         this.meetingResolvedRouteId.set(this.meetingRouteId());
         this.reloadsDoneState.set(this.reloadsRequested);
@@ -284,14 +306,15 @@ export class MeetingPageDataService {
       })
     );
 
-    // `toSignal`'s `initialValue` overload needs a `T`, so branch on the seed. A seed carrying the error branch
-    // (`meeting: null`) has no initial value; `meetingLoadFailed`, seeded above, already renders the matching view.
+    // `toSignal`'s `initialValue` overload needs a `T`, so branch on the seed. A failure seed (`meeting: null`) has
+    // no initial value, so the browser renders the same skeleton the server did while its own fetch runs.
     return (seed?.meeting ? toSignal(meeting$, { initialValue: seed.meeting }) : toSignal(meeting$)) as Signal<Meeting & { project: PublicMeetingProject }>;
   }
 
   private loadPast(meetingId: string): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
     this.loadedViaPastMeetingIdState.set(true);
     return this.meetingService.getPublicPastMeeting(meetingId).pipe(
+      this.retryTransientInBrowser(),
       tap((res: PublicPastMeetingResponse) => this.pastMeetingFullAccessState.set(res.full_access)),
       // Preserve the legacy join-page view model without claiming a complete PastMeeting at the HTTP boundary.
       map((res: PublicPastMeetingResponse) => ({ meeting: res.meeting as Meeting, project: res.project })),
@@ -302,6 +325,7 @@ export class MeetingPageDataService {
   private loadUpcomingOrPast(meetingId: string): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
     // Flags reset to "upcoming" only once that lookup succeeds, so a seeded past id re-entering here on hydration keeps its past streams.
     return this.meetingService.getPublicMeeting(meetingId, this.password()).pipe(
+      this.retryTransientInBrowser(),
       tap((res: PublicMeetingResponse) => {
         this.loadedViaPastMeetingIdState.set(false);
         this.pastMeetingFullAccessState.set(false);
@@ -313,6 +337,7 @@ export class MeetingPageDataService {
       catchError((error) => {
         if (error.status === 404) {
           return this.meetingService.getPublicPastMeeting(meetingId).pipe(
+            this.retryTransientInBrowser(),
             tap((res: PublicPastMeetingResponse) => {
               this.loadedViaPastMeetingIdState.set(true);
               this.pastMeetingFullAccessState.set(res.full_access);
@@ -336,12 +361,19 @@ export class MeetingPageDataService {
     return EMPTY;
   }
 
-  // Persists the error branch during SSR so the client hydrates to the same error view (GH-2041 follow-up).
+  // The server never renders the error: it persists a failure seed and keeps the skeleton, and the browser retries under
+  // that skeleton (#5907). Only a browser failure shows the error, so a load that would still succeed never flashes it.
   private setMeetingLoadFailed(): void {
-    this.meetingLoadFailedState.set(true);
     if (isPlatformServer(this.platformId)) {
       this.transferState.set(this.stateKey, { ...this.accessState(), meeting: null, meetingLoadFailed: true });
+      return;
     }
+    this.meetingLoadFailedState.set(true);
+  }
+
+  // The browser retries a transient failure once before the error shows (#5907). The server doesn't, since the browser takes over anyway.
+  private retryTransientInBrowser<T>(): MonoTypeOperatorFunction<T> {
+    return isPlatformBrowser(this.platformId) ? retryTransientHttpError<T>() : (source) => source;
   }
 
   private accessState(): Pick<MeetingJoinPageState, 'loadedViaPastMeetingId' | 'pastMeetingFullAccess' | 'liveMeetingFullAccess' | 'liveMeetingCanJoin'> {

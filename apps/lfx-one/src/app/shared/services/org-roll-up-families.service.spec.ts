@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ORG_ROLL_UP_SET_PATH } from '@lfx-one/shared/constants';
+import { ORG_ROLL_UP_SET_ANCHOR_PARAM, ORG_ROLL_UP_SET_PATH } from '@lfx-one/shared/constants';
 import { OrgRollUpSetResponse } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -215,5 +215,70 @@ describe('OrgRollUpFamiliesService', () => {
     expect(service.hasServerFamilies()).toBe(false);
     expect(service.unsettled()).toBe(true);
     expect(service.families()).toEqual([]);
+  });
+
+  describe('staff anchor', () => {
+    const anchoredUrl = (uid: string): string => `${ORG_ROLL_UP_SET_PATH}?${ORG_ROLL_UP_SET_ANCHOR_PARAM}=${uid}`;
+    const anchor = (uid: string | null): void => {
+      service.setStaffAnchor(uid);
+      TestBed.tick();
+    };
+
+    it('sends the anchor with the request', () => {
+      anchor(UID_B);
+      grantsLoad(1);
+
+      http.expectOne(anchoredUrl(UID_B)).flush(response());
+      expect(service.unsettled()).toBe(false);
+    });
+
+    it('re-fetches when the anchor moves, keeping the previous families and unsettled until the new answer lands', () => {
+      grantsLoad(1);
+      http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());
+
+      service.setStaffAnchor(UID_C);
+      expect(service.unsettled()).toBe(true);
+      expect(service.answered()).toBe(false);
+      TestBed.tick();
+      const pending = http.expectOne(anchoredUrl(UID_C));
+      expect(service.families().map((family) => family.rootUid)).toEqual([UID_A, UID_C]);
+
+      pending.flush(response({ families: [{ rootUid: UID_C, rootName: 'Charlie', rootLogoUrl: null, orgs: [org(UID_C, 'Charlie'), org(UID_B, 'Bravo')] }] }));
+      expect(service.unsettled()).toBe(false);
+      expect(service.families()).toEqual([{ rootUid: UID_C, name: 'Charlie', orgUids: [UID_C, UID_B] }]);
+    });
+
+    it('does not re-fetch for an anchor that did not move', () => {
+      anchor(UID_B);
+      grantsLoad(1);
+      http.expectOne(anchoredUrl(UID_B)).flush(response());
+
+      anchor(UID_B);
+
+      http.expectNone(anchoredUrl(UID_B));
+      expect(service.unsettled()).toBe(false);
+    });
+
+    it('drops the anchor from the request once it is cleared', () => {
+      anchor(UID_B);
+      grantsLoad(1);
+      http.expectOne(anchoredUrl(UID_B)).flush(response());
+
+      anchor(null);
+
+      http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());
+    });
+
+    it('ignores an answer for an anchor that has since moved', () => {
+      anchor(UID_B);
+      grantsLoad(1);
+      const stale = http.expectOne(anchoredUrl(UID_B));
+
+      anchor(UID_C);
+
+      expect(stale.cancelled).toBe(true);
+      http.expectOne(anchoredUrl(UID_C)).flush(response());
+      expect(service.unsettled()).toBe(false);
+    });
   });
 });

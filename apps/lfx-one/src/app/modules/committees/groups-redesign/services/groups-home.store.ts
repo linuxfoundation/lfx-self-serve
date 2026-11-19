@@ -27,7 +27,7 @@ import {
 import { buildEngagementStatCards, getGroupBehavioralClass } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { catchError, filter, finalize, map, of, switchMap, take } from 'rxjs';
+import { catchError, EMPTY, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 /**
  * State of the Me lens groups page, provided by the page component.
@@ -43,7 +43,8 @@ export class GroupsHomeStore {
 
   private readonly loadingState: WritableSignal<boolean> = signal(true);
   private readonly failedState: WritableSignal<boolean> = signal(false);
-  private readonly reloadState: WritableSignal<number> = signal(0);
+  /** Each fetch of the groups; a silent one keeps the list on screen and keeps it if the request fails. */
+  private readonly reloadState: WritableSignal<{ silent: boolean }> = signal({ silent: false });
   private readonly tabState: WritableSignal<GroupsHomeTab> = signal<GroupsHomeTab>('all');
   private readonly searchState: WritableSignal<string> = signal('');
   private readonly filtersState: WritableSignal<GroupsHomeFilters> = signal(GROUPS_HOME_DEFAULT_FILTERS);
@@ -126,6 +127,16 @@ export class GroupsHomeStore {
     if (scope && !this.groups().some((group) => group.project_uid === scope)) this.clearFilter('scope');
   }
 
+  /** Shows a group left earlier in this visit again, once the viewer rejoins it. */
+  public restoreGroup(uid: string): void {
+    if (!this.leftUidsState().has(uid)) return;
+    this.leftUidsState.update((left) => {
+      const next = new Set(left);
+      next.delete(uid);
+      return next;
+    });
+  }
+
   public clearFilter(key: keyof GroupsHomeFilters): void {
     this.filtersState.update((filters) => ({ ...filters, [key]: null }));
   }
@@ -139,7 +150,13 @@ export class GroupsHomeStore {
 
   /** Fetches the groups again, after a failure or a change to the viewer's memberships. */
   public reload(): void {
-    this.reloadState.update((count) => count + 1);
+    this.reloadState.set({ silent: false });
+  }
+
+  /** Fetches the groups again without the loading state, after a change the viewer just made; a failure keeps the list. */
+  public refresh(): void {
+    // During the first load a refresh restarts it as a normal load, which it would otherwise cancel.
+    this.reloadState.set({ silent: !this.loadingState() });
   }
 
   public loadMore(): void {
@@ -158,9 +175,11 @@ export class GroupsHomeStore {
   private initGroups(): Signal<MyCommittee[]> {
     return toSignal(
       toObservable(this.reloadState).pipe(
-        switchMap(() => {
-          this.loadingState.set(true);
-          this.failedState.set(false);
+        switchMap(({ silent }) => {
+          if (!silent) {
+            this.loadingState.set(true);
+            this.failedState.set(false);
+          }
           return this.committeeService.getMyCommitteesOrError().pipe(
             map((groups) =>
               groups
@@ -170,8 +189,10 @@ export class GroupsHomeStore {
                 })
                 .sort((a, b) => a.name.localeCompare(b.name))
             ),
+            tap(() => this.failedState.set(false)),
             catchError((error: HttpErrorResponse) => {
               console.error('Failed to load my groups:', error.status, error.message);
+              if (silent) return EMPTY;
               this.failedState.set(true);
               return of([]);
             }),
