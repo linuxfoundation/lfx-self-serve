@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { metaLeadFormId, metaLeadFormRefusal } from './campaign-meta-lead-form.utils';
+import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from './campaign-meta-lead-form.utils';
 
 describe('metaLeadFormRefusal', () => {
   it.each([
@@ -47,5 +47,15 @@ describe('metaLeadFormId', () => {
     [undefined, null],
   ])('reads %j as %j', (raw, expected) => {
     expect(metaLeadFormId(raw)).toBe(expected);
+  });
+});
+
+describe('hasMetaLeadFormKeyVariant', () => {
+  it('flags any other spelling of leadFormId, and nothing else', () => {
+    expect(hasMetaLeadFormKeyVariant({ LeadFormId: '1' })).toBe(true);
+    expect(hasMetaLeadFormKeyVariant({ leadformid: '1', leadFormId: '1' })).toBe(true);
+    expect(hasMetaLeadFormKeyVariant({ leadFormId: '1' })).toBe(false);
+    expect(hasMetaLeadFormKeyVariant({ objective: 'leads' })).toBe(false);
+    expect(hasMetaLeadFormKeyVariant(undefined)).toBe(false);
   });
 });

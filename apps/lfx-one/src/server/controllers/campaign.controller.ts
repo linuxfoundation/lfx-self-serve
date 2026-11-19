@@ -61,7 +61,7 @@ import {
   metaTargetingNamesCustomAudiences,
 } from '@lfx-one/shared/utils/campaign-meta-audience-targeting.utils';
 import { compactMetaAdOptions, metaAdOptionOffMessage, metaAdOptionsRefusal, metaConfigRecord } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
-import { metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
+import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
 import {
   googleDemandGenAudienceCarried,
   googleDemandGenAudiencesRefusal,
@@ -9643,6 +9643,8 @@ export class CampaignController {
   /**
    * The `metaConfig.leadFormId` a create sends (#5940), or `null` to send none.
    *
+   * - the form under any other spelling of the key (`hasMetaLeadFormKeyVariant`): 400, whatever the flag.
+   *   campaign-service decodes keys ignoring case, so it would otherwise pass every check below;
    * - a form present (anything but absent or null) while lead forms are off (`canSetMetaLeadForm`): 400, never a
    *   silent drop. Dropping it would create a website-traffic campaign where the operator chose a lead ad;
    * - a form that breaks campaign-service's rules (`metaLeadFormRefusal`: the id shape, the `leads` objective,
@@ -9655,6 +9657,12 @@ export class CampaignController {
   private async metaLeadFormToForward(req: Request, projectSlug: string, body: CampaignCreateRequest): Promise<string | null> {
     const operation = 'campaign_create';
     const meta = metaConfigRecord(body?.metaConfig);
+    if (hasMetaLeadFormKeyVariant(meta)) {
+      throw ServiceValidationError.forField('metaConfig.leadFormId', 'Send the lead form as metaConfig.leadFormId, spelled exactly.', {
+        operation,
+        service: 'campaign_controller',
+      });
+    }
     const raw = meta?.['leadFormId'];
     if (raw === undefined || raw === null) return null;
     if (!canSetMetaLeadForm()) {

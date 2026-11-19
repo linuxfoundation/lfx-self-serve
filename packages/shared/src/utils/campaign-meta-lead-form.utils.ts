@@ -18,6 +18,16 @@ export function metaLeadFormId(raw: unknown): string | null {
 }
 
 /**
+ * Whether `raw` carries the lead form under any spelling but `leadFormId` (`LeadFormId`, `leadformid`, ...).
+ * campaign-service decodes JSON keys ignoring case, so such a key would reach it past every check on
+ * `leadFormId`; the create route refuses it instead.
+ */
+export function hasMetaLeadFormKeyVariant(raw: unknown): boolean {
+  const record = metaConfigRecord(raw);
+  return record !== undefined && Object.keys(record).some((key) => key !== 'leadFormId' && key.toLowerCase() === 'leadformid');
+}
+
+/**
  * Why `raw`'s lead form cannot be sent, or `null`. Typed runtime checks, since the create route has no body
  * validator. The form needs the `leads` objective (matched ignoring case; absent is `traffic`), automatic
  * bidding (`manualBidding` is a `bidding.strategy` of `manual`, a link-click cap) and a call to action a form

@@ -427,8 +427,10 @@ field with a 400. On, the dropdown is offered to every campaign manager where it
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS` is of the Bidding kind too (campaign-service v1.0.38 with
 `META_LEAD_FORMS_ENABLED` on). Off (the default), the `leads` objective stays hidden, the lead form read answers
-404 and the create route refuses `metaConfig.leadFormId` with a 400. On, `leads` is offered with a form picker
-only to a caller holding `global_marketing_ops` on the project (403 otherwise, 503 when that cannot be checked).
+404 and the create route refuses `metaConfig.leadFormId` with a 400. On, the lead form read answers and the
+create route accepts `metaConfig.leadFormId`, only from a caller holding `global_marketing_ops` on the project
+(403 otherwise, 503 when that cannot be checked). The Implement tab offers `leads` with a form picker once the
+UI change lands; until then the flag opens the server half only.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS` is an eighth, of the Meta kind: it asserts that the
 deployed campaign-service resolves **Microsoft** creative asset ids, which every release from

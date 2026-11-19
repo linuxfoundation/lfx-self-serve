@@ -805,10 +805,10 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL:
     value:
 
-  # Offer the Meta `leads` objective with an existing Instant Form on the Implement tab (#5940), sent as
-  # `metaConfig.leadFormId` and picked from `GET /api/campaigns/meta/lead-forms`. campaign-service then
-  # creates a lead ad (OUTCOME_LEADS) instead of a website-traffic campaign. Forms are made in Meta Ads
-  # Manager; LFX never creates one.
+  # Opens the Meta lead form read (`GET /api/campaigns/meta/lead-forms`) and accepts `metaConfig.leadFormId`
+  # on create (#5940), so campaign-service creates a lead ad (OUTCOME_LEADS) instead of a website-traffic
+  # campaign. The Implement tab offers `leads` with a form picker once the UI change lands; until then this
+  # flag opens the server half only. Forms are made in Meta Ads Manager; LFX never creates one.
   #
   # A CAPABILITY flag of the Bidding kind. REQUIRES campaign-service v1.0.38 DEPLOYED with
   # META_LEAD_FORMS_ENABLED="true": campaign-service refuses the read and `leadFormId` with a 400 otherwise.

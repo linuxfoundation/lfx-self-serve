@@ -2643,6 +2643,16 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
     });
 
+    it('refuses another spelling of the key with a 400 whatever the flag, since campaign-service reads keys ignoring case', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceMetaLeadForms);
+
+      expect(await sendWith({ LeadFormId: '1234567890123456' })).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe('metaConfig.leadFormId');
+      expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    });
+
     it('forwards the checked id trimmed, and sends nothing for "Not set"', async () => {
       vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(true);
       expect(await sendWith({ leadFormId: ' 1234567890123456 ', callToAction: 'sign_up' })).toMatchObject({

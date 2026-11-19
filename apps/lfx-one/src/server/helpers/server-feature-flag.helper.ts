@@ -436,8 +436,9 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaOptimizationGoal = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL',
 
   /**
-   * Offer the Meta `leads` objective with an existing Instant Form on the Implement tab (#5940), sent as
-   * `metaConfig.leadFormId`, the form picked from `GET /api/campaigns/meta/lead-forms`. Only a caller holding
+   * Open the Meta lead form read (`GET /api/campaigns/meta/lead-forms`) and accept `metaConfig.leadFormId` on
+   * create (#5940). The Implement tab offers `leads` with a form picker once the UI change lands; until then
+   * this flag opens the server half only. Only a caller holding
    * `global_marketing_ops` on the project may read the forms or send one: a project without its own Meta
    * connection uses the shared LF Page, which holds every foundation's forms.
    *
