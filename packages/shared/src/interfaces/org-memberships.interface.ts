@@ -434,7 +434,6 @@ export interface ActiveMembershipRow extends OrgActiveMembership {
   tierRange: string;
   memberSinceFormatted: string;
   membershipLink: string[] | null;
-  groupStart: boolean;
   companyLinkLabel: string | null;
 }
 
