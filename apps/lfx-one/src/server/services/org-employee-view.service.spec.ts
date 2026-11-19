@@ -258,7 +258,7 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgSlug: 'acme-motors' } });
   });
 
-  it('reads companies with the BFF machine token and the work history without creating a CDP member', async () => {
+  it('reads companies with the BFF machine token and the work history read-only, never creating a CDP member', async () => {
     const { svc, proxy, cdp } = build();
 
     await svc.resolve(req(), ORG_UID);
@@ -283,6 +283,14 @@ describe('OrgEmployeeViewService.resolve', () => {
 
     await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('only reads work history: a caller CDP has never seen simply has none, and no CDP member is created', async () => {
+    const { svc, cdp } = build({ experiences: [] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-employer' });
+    expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(1);
+    expect(Object.keys(cdp)).toEqual(['getWorkExperiencesForKnownUser']);
   });
 
   it('shares ONE lookup between the specific-company and unscoped calls of one page', async () => {
