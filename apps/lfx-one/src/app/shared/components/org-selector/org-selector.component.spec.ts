@@ -486,6 +486,12 @@ describe('OrgSelectorComponent navbar card', () => {
   describe('an all employee view company (#5845)', () => {
     const EMPLOYEE_TOOLTIP = 'You work for this company. You can see a read-only summary with no names or email addresses.';
 
+    it('labels a row that is both CLA-only and employee-view as Employee, matching the selected-company copy', async () => {
+      const card = await createCard({ items: [{ ...rowA, claOnly: true, employeeView: true }] });
+
+      expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([[UID_A, 'Employee', EMPLOYEE_TOOLTIP]]);
+    });
+
     it('labels an employee-view row that carries no grant', async () => {
       const card = await createCard({ items: [{ ...rowA, employeeView: true }] });
 

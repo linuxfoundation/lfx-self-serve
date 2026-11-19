@@ -277,7 +277,8 @@ export class OrgSelectorComponent {
       // Prefer the BFF-attached `parentName` on the item (D-006 in-memory join) — fall back to the
       // signal map only if the server response somehow omitted it on a row known to be inherited.
       const parentName = item.parentName ?? parentNameByUid.get(item.uid) ?? '';
-      if (!persona && item.claOnly === true) {
+      // Proven employee (or authorizer full) access supersedes CLA-only, as `OrgClaOnlyAccessService.isClaOnly` does for the selected company.
+      if (!persona && item.claOnly === true && item.employeeView !== true && item.fullAccess !== true) {
         return {
           item,
           isSelected: !!selectedUid && selectedUid === item.uid,
