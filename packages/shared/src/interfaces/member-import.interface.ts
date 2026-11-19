@@ -141,3 +141,57 @@ export interface MemberImportDialogResult {
   /** Refresh the roster when an attempted write may have committed without a confirmed response. */
   uncertain?: boolean;
 }
+
+/** Whether a confirmed import run is still writing (`importing`) or has finished its latest attempt (`settled`). */
+export type MemberImportRunStatus = 'importing' | 'settled';
+
+/** A confirmed Members-tab import, captured from the preview when the user starts it (#5730). */
+export interface MemberImportRunInput {
+  /** Pinned at confirmation — every write targets this group even if the page navigates elsewhere. */
+  committeeUid: string;
+  committeeName: string;
+  rules: MemberImportGroupRules;
+  /** Original file name, kept only in memory. */
+  fileName: string | null;
+  /** Every previewed row; only `ready` rows are submitted. */
+  rows: MemberImportRow[];
+  skipNotification: boolean;
+  /** Pending invitation UID by normalized email, revoked after a direct add so the roster does not show member + invite. */
+  pendingInviteUidByEmail: Record<string, string>;
+  /** Roster size from the complete pre-import snapshot. */
+  baselineMemberCount: number;
+}
+
+/** Identity of one run: its group, its unique ID, and the user subject that started it. */
+export interface MemberImportRunRef {
+  committeeUid: string;
+  runId: string;
+  ownerSubject: string;
+}
+
+/** Immutable in-memory snapshot of a confirmed import run, owned by the committee member import service. */
+export interface MemberImportRun extends MemberImportRunRef, MemberImportRunInput {
+  status: MemberImportRunStatus;
+  /** Submissions made so far: 1 for the initial import, plus one per Retry. */
+  attempt: number;
+  /** Rows submitted by the current attempt and how many of them have settled. */
+  batchTotal: number;
+  batchSettled: number;
+  /** Automatic pauses taken by the current attempt (at most MEMBER_IMPORT_MAX_PAUSES). */
+  pauseCount: number;
+  /** Epoch ms when a paused attempt resumes automatically; null while not paused. */
+  resumeAt: number | null;
+  /** Length of the current pause, rounded up to whole seconds. */
+  resumeInSeconds: number;
+  /** Minimum server deadline for Retry, retained even if automatic recovery or a pause is stopped; 0 when none. */
+  retryNotBefore: number;
+  /** Set when auth/not-found, the pause cap, an excessive server cooldown or Stop import ends the attempt. */
+  stopReason: string | null;
+  /** Distinguishes the manager's Stop action from fatal errors and automatic recovery limits. */
+  manualStopRequested: boolean;
+  /**
+   * `baselineMemberCount` plus every confirmed addition across attempts. Retries keep the original
+   * baseline; this never rebases onto a roster that already includes the import's own additions.
+   */
+  reconciliationTarget: number;
+}

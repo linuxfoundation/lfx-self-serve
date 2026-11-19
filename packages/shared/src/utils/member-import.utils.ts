@@ -368,6 +368,11 @@ export function getMemberImportRetryDelayMs(retryAfter: string | null, pauseInde
   return Math.max(delay, MEMBER_IMPORT_RETRY_AFTER_MIN_MS);
 }
 
+/** Retry unresolved attempts, unsent rows and retryable failures, but never unchanged invalid data. */
+export function isMemberImportRowRetryable(row: MemberImportRow): boolean {
+  return row.status === 'not_submitted' || ((row.status === 'failed' || row.status === 'unknown') && row.retryable !== false);
+}
+
 function parseRetryAfterMs(value: string, now: number): number | null {
   const trimmed = value.trim();
   if (RETRY_AFTER_SECONDS_PATTERN.test(trimmed)) {
