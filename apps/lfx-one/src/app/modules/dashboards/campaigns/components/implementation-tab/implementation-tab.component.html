@@ -4579,6 +4579,54 @@
             </div>
           }
 
+          <!-- Call to action, conversion event and optimization goal (#5934), each offered only on an explicit yes
+               (LFX_CUTOVER_CAMPAIGN_SERVICE_META_*) and where the objective fits. "Not set" sends nothing. -->
+          @if (metaAdOptionViews().length > 0) {
+            <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="implementation-meta-ad-options">
+              @for (view of metaAdOptionViews(); track view.key) {
+                <lfx-ui-select
+                  [label]="view.label"
+                  size="small"
+                  [value]="metaAdOptions()[view.key] ?? ''"
+                  (valueChange)="onMetaAdOptionChange(view.key, $event)"
+                  [attr.data-testid]="'implementation-meta-' + view.key">
+                  <lfx-ui-option value="" [label]="view.notSetLabel" />
+                  @for (option of view.options; track option.value) {
+                    <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="option.disabled" />
+                  }
+                </lfx-ui-select>
+              }
+            </div>
+          }
+          @if (metaAdOptionsError(); as error) {
+            <p role="alert" class="mb-4 text-xs text-red-600" data-testid="implementation-meta-ad-options-error">{{ error }}</p>
+          }
+          @if (metaAdOptionsBlock(); as block) {
+            <div
+              role="alert"
+              class="mb-4 flex flex-col items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              [attr.data-testid]="'implementation-meta-ad-options-block-' + block.kind">
+              <p>{{ block.message }}</p>
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryCreateCapabilities.emit()"
+                  data-testid="implementation-meta-ad-options-block-retry" />
+              } @else if (block.kind === 'unsupported') {
+                <lfx-button
+                  label="Clear"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="clearUnsupportedMetaAdOptions()"
+                  data-testid="implementation-meta-ad-options-clear" />
+              }
+            </div>
+          }
+
           <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
           @if (biddingAvailable()) {
             <div class="mb-4">

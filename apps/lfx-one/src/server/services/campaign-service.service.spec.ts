@@ -4815,6 +4815,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       twitterCreateEnabled: false,
       metaInstagramDsaEnabled: false,
       metaAudienceTargetingEnabled: false,
+      metaCallToActionEnabled: false,
+      metaConversionEventEnabled: false,
+      metaOptimizationGoalEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -5024,6 +5027,29 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
 
       expect(result.metaAudienceTargetingEnabled).toBe(expected);
       expect(result.metaInstagramDsaEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  // The Meta ad choices (#5934) need the create cutover AND each its own flag.
+  it.each([
+    [{ cutover: true, own: true }, true],
+    [{ cutover: true, own: false }, false],
+    [{ cutover: false, own: true }, false],
+  ])('reports each meta ad choice capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
+    const own = [
+      ServerFeatureFlag.CampaignServiceMetaCallToAction,
+      ServerFeatureFlag.CampaignServiceMetaConversionEvent,
+      ServerFeatureFlag.CampaignServiceMetaOptimizationGoal,
+    ];
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (own.includes(flag as ServerFeatureFlag) ? flags.own : flags.cutover));
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect([result.metaCallToActionEnabled, result.metaConversionEventEnabled, result.metaOptimizationGoalEnabled]).toEqual([expected, expected, expected]);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -5443,6 +5469,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       twitterCreateEnabled: false,
       metaInstagramDsaEnabled: false,
       metaAudienceTargetingEnabled: false,
+      metaCallToActionEnabled: false,
+      metaConversionEventEnabled: false,
+      metaOptimizationGoalEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],

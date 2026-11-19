@@ -814,6 +814,20 @@ export function canSetMetaAudienceTargeting(): boolean {
 }
 
 /**
+ * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal` (#5934),
+ * one flag each, each also needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaCallToAction(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaCallToAction);
+}
+export function canSetMetaConversionEvent(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaConversionEvent);
+}
+export function canSetMetaOptimizationGoal(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaOptimizationGoal);
+}
+
+/**
  * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
  * targeting profile with entries removed.
  *
@@ -1069,6 +1083,9 @@ export class CampaignServiceClient {
         twitterCreateEnabled: canCreateTwitter(),
         metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
         metaAudienceTargetingEnabled: canSetMetaAudienceTargeting(),
+        metaCallToActionEnabled: canSetMetaCallToAction(),
+        metaConversionEventEnabled: canSetMetaConversionEvent(),
+        metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -1144,6 +1161,9 @@ export class CampaignServiceClient {
       twitterCreateEnabled: canCreateTwitter(),
       metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
       metaAudienceTargetingEnabled: canSetMetaAudienceTargeting(),
+      metaCallToActionEnabled: canSetMetaCallToAction(),
+      metaConversionEventEnabled: canSetMetaConversionEvent(),
+      metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),

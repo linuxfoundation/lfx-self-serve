@@ -422,6 +422,20 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaAudienceTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING',
 
   /**
+   * Offer the Meta call to action, conversion event and optimization goal on the Implement tab (#5934),
+   * sent as `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`, one flag each.
+   *
+   * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.38 DEPLOYED with its own
+   * `META_CALL_TO_ACTION_ENABLED`, `META_CONVERSION_EVENT_ENABLED` or `META_OPTIMIZATION_GOAL_ENABLED` on,
+   * since campaign-service refuses the field with a 400 otherwise, and is only meaningful while the create
+   * cutover is on (`cutoverOwnsCreate`). Off (the default), the dropdown is hidden and the create route
+   * refuses the field with a 400, never dropping it. A request field only, so flipping one back strands nothing.
+   */
+  CampaignServiceMetaCallToAction = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION',
+  CampaignServiceMetaConversionEvent = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_CONVERSION_EVENT',
+  CampaignServiceMetaOptimizationGoal = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *
