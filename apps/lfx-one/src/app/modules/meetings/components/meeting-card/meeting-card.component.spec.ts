@@ -890,7 +890,7 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1', 'meeting-card');
   });
 
-  it('stops offering the action and tells the list to refresh once removed', async () => {
+  it('stops offering the action without requesting a destructive list refresh', async () => {
     const component = await mount();
     const deleted = vi.fn();
     component.meetingDeleted.subscribe(deleted);
@@ -899,7 +899,7 @@ describe('MeetingCardComponent — remove myself', () => {
     confirm.mock.calls[0][0].accept();
 
     expect(component.canLeaveMeeting()).toBe(false);
-    expect(deleted).toHaveBeenCalledTimes(1);
+    expect(deleted).not.toHaveBeenCalled();
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
   });
 
@@ -1372,6 +1372,10 @@ describe('MeetingCardComponent — add myself', () => {
         { provide: MeetingComposerService, useValue: { open: vi.fn() } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        {
+          provide: MeetingSelfInviteService,
+          useValue: { add$: () => of({ status: 'added', registrant: { uid: '', meeting_id: 'meeting-1' } }), describeFailure: vi.fn() },
+        },
       ],
     });
     TestBed.overrideComponent(MeetingCardComponent, { add: { providers: [] } });
@@ -1389,6 +1393,11 @@ describe('MeetingCardComponent — add myself', () => {
     expect(row?.querySelector('[data-testid="add-myself-button"]')?.textContent).toContain('Add Myself');
     expect(card.querySelector('[data-testid="leave-meeting-button"]')).toBeNull();
     expect(card.querySelector('[data-testid="resend-invite-button"]')).toBeNull();
+    fixture.componentInstance.addMyself();
+    fixture.detectChanges();
+    const syncing = card.querySelector('[data-testid="self-invite-syncing"]');
+    expect(syncing?.getAttribute('role')).toBe('status');
+    expect(syncing?.textContent).toContain('Your invitation is saved');
   });
 
   it('offers the action to a signed-in organizer of an upcoming meeting who is not a guest', async () => {
@@ -1459,6 +1468,41 @@ describe('MeetingCardComponent — add myself', () => {
       expect(component.canAddMyself()).toBe(true);
     }
   );
+
+  it.each(['optimistic-self', '', '   '])('does not send an unusable drawer UID as a self-removal hint: %j', async (uid) => {
+    const component = await mount();
+    component.onSelfAdded('meeting-1', { uid, meeting_id: 'meeting-1', email: 'synthetic@example.com' } as MeetingRegistrant);
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    expect(TestBed.inject(MeetingService).removeMyMeetingRegistration).toHaveBeenCalledExactlyOnceWith('meeting-1', 'meeting-card');
+  });
+
+  it('retains a no-UID invitation through a syncing 404 and removes it on retry without another POST', async () => {
+    const saved = { uid: '', meeting_id: 'meeting-1', email: 'synthetic@example.com' } as MeetingRegistrant;
+    add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'added', registrant: saved }));
+    const component = await mount();
+    component.addMyself();
+    expect(component.selfIdentityPending()).toBe(true);
+    expect(component.guestCount()).toBe(4);
+    const remove = vi.mocked(TestBed.inject(MeetingService).removeMyMeetingRegistration);
+    remove.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.canAddMyself()).toBe(false);
+    expect(component.guestCount()).toBe(4);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Invitation syncing' }));
+    expect(add$).toHaveBeenCalledTimes(1);
+
+    remove.mockReturnValueOnce(of({ removed_registrant_ids: ['reg-self'], remaining_registrant_ids: [] }));
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[1][0].accept();
+    expect(component.selfIdentityPending()).toBe(false);
+    expect(component.confirmedSelfRegistrants()).toEqual([]);
+    expect(component.guestCount()).toBe(3);
+    expect(add$).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith('meeting-1', 'meeting-card');
+  });
 
   it('keeps card confirmations separate from drawer count updates and forwards the saved UID on removal', async () => {
     const saved = { uid: 'reg-self', meeting_id: 'meeting-1', email: 'synthetic@example.com' } as MeetingRegistrant;

@@ -139,6 +139,8 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly occurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
 
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
+  /** The complete reconciled roster, so the card overview can reuse the same saved rows and deletions. */
+  public readonly registrantsChange = output<MeetingRegistrant[]>();
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
   /** A successful self-invite, so parents can expose RSVP and self-registration controls immediately. */
   public readonly selfAdded: OutputEmitterRef<MeetingRegistrant> = output<MeetingRegistrant>();
@@ -330,12 +332,16 @@ export class MeetingRegistrantsDisplayComponent {
 
     effect(() => {
       if (this.pastMeeting() || this.externallyManaged() || this.registrantsLoading() || this.internalLoadFailed()) return;
-      const base = (resolveMeetingBaseCount(this.meeting()) ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
+      const resolvedBase = resolveMeetingBaseCount(this.meeting());
+      const base = (resolvedBase ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
       // The merged roster acknowledges saved UIDs and excludes confirmed deletions before counting.
-      const additional = Math.max(this.registrants().length - base, this.additionalRegistrantsCount());
+      const rosterDelta = this.registrants().length - base;
+      // With no backend count, each fetched roster is the new baseline, not an additional delta.
+      const additional = resolvedBase === undefined ? rosterDelta : Math.max(rosterDelta, this.additionalRegistrantsCount());
       this.additionalRegistrantsCount.set(additional);
       this.registrantsCountChange.emit(additional);
       this.totalCountChange.emit(Math.max(0, base + additional));
+      this.registrantsChange.emit(this.registrants());
     });
 
     toObservable(this.inviteResponsesEnabled)

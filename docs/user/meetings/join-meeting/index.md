@@ -85,6 +85,7 @@ If you're registered for an upcoming meeting and can't attend, select **Remove M
 - If you were added through a group or a mailing list, you stay a member of it. Its syncs won't add you back to this meeting unless you leave and rejoin the group or list. An organizer, or you registering yourself, can still add you.
 - Organizers who are also registered can remove their registration and stay organizers. On the card of a meeting you organize, the button then changes back to **Add Myself**, so you can invite yourself again. See [Add yourself](../manage-participants/#add-yourself).
 - If only some of your registrations can be removed, you see **Removal incomplete**. You stay invited, and you can try again.
+- If you just added yourself from a card and it shows **Invitation syncing**, the invitation is saved but its registration details aren't available yet. Try **Remove Myself** again shortly; don't add yourself again.
 
 ## Meeting materials
 

@@ -5,7 +5,7 @@ import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Meeting, MeetingRegistrant, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { attachRsvpsToRegistrants } from '../../../../../server/helpers/meeting-rsvp.helper';
@@ -107,6 +107,78 @@ describe('MeetingRsvpDetailsComponent', () => {
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect(fixture.componentInstance.meetingRegistrantCount()).toBe(11);
+  });
+
+  it('reconciles an unindexed self-add and its removal without doubling fallback totals', async () => {
+    const other = buildRegistrant({ uid: 'other', email: 'other@example.com' });
+    const saved = buildRegistrant({ uid: 'saved-self', email: 'self@example.com' });
+    const roster$ = new BehaviorSubject<MeetingRegistrant[]>([other]);
+    getMeetingRegistrants.mockReturnValue(roster$);
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting({ is_invite_responses_enabled: true }));
+    fixture.componentRef.setInput('confirmedRegistrants', [saved]);
+    fixture.componentRef.setInput('confirmedCountAdjustment', 1);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.meetingRegistrantCount()).toBe(2);
+    expect(fixture.componentInstance.previewPeople().map((person) => person.key)).toContain('saved-self');
+    expect(fixture.componentInstance.acceptedCount()).toBe(0);
+
+    roster$.next([other, saved]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.meetingRegistrantCount()).toBe(2);
+    expect(fixture.componentInstance.registrants().filter((row) => row.uid === saved.uid)).toHaveLength(1);
+    fixture.componentRef.setInput('confirmedRegistrants', []);
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['saved-self']);
+    fixture.componentRef.setInput('confirmedCountAdjustment', 0);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.meetingRegistrantCount()).toBe(1);
+    expect(fixture.componentInstance.previewPeople().map((person) => person.key)).not.toContain('saved-self');
+    roster$.complete();
+  });
+
+  it.each(['roster', 'rsvps'] as const)('removes stale self responses and previews without hiding other guests from %s data', async (source) => {
+    const selfRsvp = {
+      id: 'self-answer',
+      meeting_id: MEETING_ID,
+      registrant_id: 'saved-self',
+      email: 'self@example.com',
+      username: 'synthetic-self',
+      first_name: 'Self',
+      last_name: 'Guest',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-11-19T10:00:00Z',
+    } as MeetingRsvp;
+    const otherRsvp = { ...selfRsvp, id: 'other-answer', registrant_id: 'other', email: 'other@example.com', response_type: 'maybe' } as MeetingRsvp;
+    const saved = buildRegistrant({ uid: 'saved-self', email: 'self@example.com', rsvp: selfRsvp });
+    const other = buildRegistrant({ uid: 'other', email: 'other@example.com', rsvp: otherRsvp });
+    getMeetingRegistrants.mockReturnValue(of([saved, other]));
+    getMeetingRsvps.mockReturnValue(of([selfRsvp, otherRsvp]));
+    const fixture = createComponent();
+    fixture.componentRef.setInput(
+      'meeting',
+      buildMeeting({ is_invite_responses_enabled: true, ...(source === 'rsvps' ? { individual_registrants_count: 2 } : {}) })
+    );
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['saved-self']);
+    fixture.componentRef.setInput('confirmedCountAdjustment', -1);
+    fixture.componentRef.setInput('confirmedRsvps', [selfRsvp]);
+    const pending = buildRegistrant({ uid: 'pending', email: 'pending@example.com', rsvp: null });
+    fixture.componentRef.setInput('confirmedRegistrants', [pending]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.acceptedCount()).toBe(0);
+    expect(fixture.componentInstance.maybeCount()).toBe(1);
+    expect(fixture.componentInstance.previewPeople().map((person) => person.key)).toEqual(expect.arrayContaining(['other', 'pending']));
+    expect(fixture.componentInstance.previewPeople().map((person) => person.key)).not.toContain('saved-self');
+  });
+
+  it('uses the live drawer roster without adding its already-included numeric adjustment', async () => {
+    const roster = [buildRegistrant(), buildRegistrant()];
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting({ individual_registrants_count: 3 }));
+    fixture.componentRef.setInput('initialRegistrants', roster);
+    fixture.componentRef.setInput('confirmedCountAdjustment', -1);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.meetingRegistrantCount()).toBe(2);
   });
 
   it('derives response counts from the supplied registrants', async () => {

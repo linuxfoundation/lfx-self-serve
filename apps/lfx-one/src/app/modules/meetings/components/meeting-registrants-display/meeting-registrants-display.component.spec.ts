@@ -787,6 +787,8 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     const delta = vi.fn();
     fixture.componentInstance.totalCountChange.subscribe(total);
     fixture.componentInstance.registrantsCountChange.subscribe(delta);
+    const rowsChanged = vi.fn();
+    fixture.componentInstance.registrantsChange.subscribe(rowsChanged);
     fixture.componentRef.setInput('confirmedRegistrants', [saved]);
     fixture.componentRef.setInput('confirmedCountAdjustment', 1);
     fixture.componentRef.setInput('selfInvited', true);
@@ -795,6 +797,7 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     expect(fixture.componentInstance.registrants()).toHaveLength(4);
     expect(total).toHaveBeenLastCalledWith(4);
     expect(delta).toHaveBeenLastCalledWith(0);
+    expect(rowsChanged).toHaveBeenLastCalledWith(expect.arrayContaining([saved]));
 
     roster$.next([...roster$.value, saved]);
     fixture.componentRef.setInput('visible', false);
@@ -833,6 +836,51 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     expect(fixture.componentInstance.registrants()).toHaveLength(3);
     expect(total).toHaveBeenLastCalledWith(3);
     expect(delta).toHaveBeenLastCalledWith(0);
+    expect(rowsChanged.mock.lastCall?.[0]).toHaveLength(3);
+    expect(rowsChanged.mock.lastCall?.[0].map((row: MeetingRegistrant) => row.uid)).not.toContain('saved-self');
+  });
+
+  it.each([false, true])('uses the refreshed roster as the baseline without count fields, with a card-saved guest: %s', async (cardSaved) => {
+    const original = [listed('one@example.com'), listed('two@example.com'), listed('three@example.com')];
+    const saved = { ...listed(SELF_GUEST.email), uid: 'saved-self', meeting_id: 'meeting-1' };
+    const extra = { ...listed('extra@example.com'), uid: 'saved-extra', meeting_id: 'meeting-1' };
+    const { fixture } = await mount({ fetched: of(original) });
+    const total = vi.fn();
+    const delta = vi.fn();
+    fixture.componentInstance.totalCountChange.subscribe(total);
+    fixture.componentInstance.registrantsCountChange.subscribe(delta);
+    if (cardSaved) {
+      fixture.componentRef.setInput('confirmedRegistrants', [saved]);
+      fixture.componentRef.setInput('confirmedCountAdjustment', 1);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(total).toHaveBeenLastCalledWith(4);
+    }
+
+    const indexed = cardSaved ? [...original, saved] : original;
+    const getRoster = vi.mocked(TestBed.inject(MeetingService).getMeetingRegistrants);
+    getRoster.mockReturnValueOnce(of([...indexed, extra]));
+    addMeetingRegistrants.mockReturnValueOnce(of({ ...SUCCESS, successes: [extra] }));
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(extra.email));
+    form.addControl('first_name', new FormControl('Extra'));
+    form.addControl('last_name', new FormControl('Guest'));
+    fixture.componentInstance.onAddRegistrant();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(indexed.length + 1);
+    expect(total).toHaveBeenLastCalledWith(indexed.length + 1);
+    expect(delta).toHaveBeenLastCalledWith(cardSaved ? -1 : 0);
+
+    getRoster.mockReturnValueOnce(of(indexed));
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    fixture.componentInstance.onRequestRemoveGuest(extra);
+    confirm.mock.calls[0][0].accept?.();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(indexed.length);
+    expect(total).toHaveBeenLastCalledWith(indexed.length);
+    expect(delta).toHaveBeenLastCalledWith(cardSaved ? -1 : 0);
   });
 
   it.each([false, true])('preserves a card-confirmed deletion with a stale roster: %s', async (stale) => {

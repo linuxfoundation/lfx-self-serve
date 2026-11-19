@@ -407,7 +407,11 @@
               [pastMeeting]="pastMeeting()"
               [showAddButton]="!pastMeeting()"
               [showAttendeePreview]="true"
-              [additionalRegistrantsCount]="additionalRegistrantsCount() + confirmedSelfCountDelta()"
+              [initialRegistrants]="drawerRegistrants()"
+              [confirmedRegistrants]="confirmedSelfRegistrants()"
+              [confirmedRemovedRegistrantIds]="confirmedRemovedRegistrantIds()"
+              [confirmedCountAdjustment]="confirmedSelfCountDelta()"
+              [additionalRegistrantsCount]="drawerRegistrants() ? 0 : additionalRegistrantsCount()"
               (addClicked)="onInvitePeople()"
               (viewAllClicked)="showRegistrants.set(true)">
             </lfx-meeting-rsvp-details>
@@ -578,6 +582,11 @@
               </lfx-button>
             }
           </div>
+          @if (selfIdentityPending()) {
+            <p class="text-xs text-gray-500 mt-2" role="status" data-testid="self-invite-syncing">
+              Your invitation is saved. If Remove Myself is not ready yet, try again shortly.
+            </p>
+          }
         }
       </div>
     </div>
@@ -627,6 +636,7 @@
           [confirmedCountAdjustment]="confirmedSelfCountDelta()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
+          (registrantsChange)="drawerRegistrants.set($event)"
           (selfAdded)="onSelfAdded($event.meeting_id, $event)"
           (selfRemoved)="onSelfRemoved($event)"
           (resolvedHostsChange)="drawerHosts.set($event)">

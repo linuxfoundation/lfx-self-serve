@@ -107,6 +107,14 @@ describe('MeetingSelfInviteService', () => {
     expect(clearRemovedRegistration).toHaveBeenCalledWith(MEETING_ID);
   });
 
+  it('preserves a successful empty-body fallback without reposting or inventing a UID', async () => {
+    const fallback = { ...saved, uid: '' };
+    addMeetingRegistrants.mockReturnValueOnce(of({ ...success, successes: [fallback] }));
+    await expect(firstValueFrom(service.add$(MEETING_ID))).resolves.toEqual({ status: 'added', registrant: fallback });
+    expect(addMeetingRegistrants).toHaveBeenCalledTimes(1);
+    expect(clearRemovedRegistration).toHaveBeenCalledWith(MEETING_ID);
+  });
+
   it('posts nothing when the roster already lists one of the viewer emails', async () => {
     getMeetingRegistrants.mockReturnValue(of([otherGuest, { uid: 'synthetic-self', email: 'Pat@Vendor-Corp.example' } as MeetingRegistrant]));
 
