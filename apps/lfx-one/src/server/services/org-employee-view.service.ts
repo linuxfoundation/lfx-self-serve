@@ -53,7 +53,7 @@ export class OrgEmployeeViewService {
   private readonly emailVerification: EmailVerificationService;
   private readonly proxy: MicroserviceProxyService;
   private readonly accessCheck: AccessCheckService;
-  private readonly cache = new Map<string, { expiresAt: number; verdict: Promise<OrgEmployeeViewVerdict> }>();
+  private readonly cache = new Map<string, { expiresAt: number; companies: Promise<OrgLensEmployeeViewGrant[]> }>();
 
   public constructor(
     deps: {
@@ -72,43 +72,59 @@ export class OrgEmployeeViewService {
    * (the role-grants and selector callers, who do not know it yet). Rejects when it cannot be established.
    */
   public async resolve(req: Request, orgUid: string | null): Promise<OrgEmployeeViewVerdict> {
-    const username = getEffectiveUsername(req);
-    if (!username) {
-      return { eligible: false, reason: 'no-verified-company-email' };
-    }
-
-    const key = `${username}\u0000${orgUid ?? ''}`;
-    const now = Date.now();
-    const hit = this.cache.get(key);
-    if (hit && hit.expiresAt > now) {
-      return hit.verdict;
-    }
-
-    const verdict = this.compute(req, username, orgUid);
-    this.cache.set(key, { expiresAt: now + ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS, verdict });
-    if (this.cache.size > ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES) {
-      this.evict(now);
-    }
-    verdict.catch(() => {
-      if (this.cache.get(key)?.verdict === verdict) this.cache.delete(key);
-    });
-    return verdict;
+    return this.verdictFor(await this.companiesFor(req), orgUid ? (company) => company.orgUid === orgUid : undefined);
   }
 
   /**
    * The company the caller reaches ONLY as an employee, for the surfaces that publish the mode to the client (role-grants,
-   * the selector row, the address resolver). Like {@link resolve} with no company, plus one more fact: a caller who also holds
+   * the selector row, the address resolver). Like {@link resolve}, plus one more fact: a caller who also holds
    * `b2b_org#auditor` on that company (an authorizer-only reader such as a key contact absent from the roster) is resolved
    * `full` by the read gate, so they are NOT employee-only and get `holds-full-access` here — otherwise the client would give
    * an existing full-view reader the reduced mode. The authorizer is asked strictly: a failure rejects, never reads as "no".
+   *
+   * A caller whose emails name several member companies gets the first in a stable order, unless `prefer` picks one: the
+   * address resolver passes the company being addressed, so every matching company opens by its own address.
    */
-  public async resolveReduced(req: Request): Promise<OrgEmployeeViewVerdict> {
-    const verdict = await this.resolve(req, null);
+  public async resolveReduced(req: Request, prefer?: (company: OrgLensEmployeeViewGrant) => boolean): Promise<OrgEmployeeViewVerdict> {
+    const verdict = await this.verdictFor(await this.companiesFor(req), prefer);
     if (!verdict.eligible) {
       return verdict;
     }
     const holdsAuditor = await this.accessCheck.checkSingleAccessStrict(req, { resource: 'b2b_org', id: verdict.org.orgUid, access: 'auditor' });
     return holdsAuditor ? { eligible: false, reason: 'holds-full-access', org: verdict.org } : verdict;
+  }
+
+  /** The caller's verified-email companies, held per caller so a page's parallel requests share one lookup. Rejects when it cannot be established. */
+  private async companiesFor(req: Request): Promise<OrgLensEmployeeViewGrant[]> {
+    const username = getEffectiveUsername(req);
+    if (!username) {
+      return [];
+    }
+
+    const now = Date.now();
+    const hit = this.cache.get(username);
+    if (hit && hit.expiresAt > now) {
+      return hit.companies;
+    }
+
+    const companies = this.findCompanies(req);
+    this.cache.set(username, { expiresAt: now + ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS, companies });
+    if (this.cache.size > ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES) {
+      this.evict(now);
+    }
+    companies.catch(() => {
+      if (this.cache.get(username)?.companies === companies) this.cache.delete(username);
+    });
+    return companies;
+  }
+
+  /** The verdict for the company `pick` selects (the first when it is absent). */
+  private verdictFor(companies: OrgLensEmployeeViewGrant[], pick?: (company: OrgLensEmployeeViewGrant) => boolean): OrgEmployeeViewVerdict {
+    const deny = (reason: OrgEmployeeViewDenial): OrgEmployeeViewVerdict => ({ eligible: false, reason });
+    if (companies.length === 0) return deny('no-verified-company-email');
+    const match = pick ? companies.find(pick) : companies[0];
+    // A request for a specific company must be one the caller's own verified email names.
+    return match ? { eligible: true, org: match } : deny('other-company');
   }
 
   /**
@@ -160,12 +176,7 @@ export class OrgEmployeeViewService {
     }
   }
 
-  private async compute(req: Request, username: string, requestedOrgUid: string | null): Promise<OrgEmployeeViewVerdict> {
-    const deny = (reason: OrgEmployeeViewDenial): OrgEmployeeViewVerdict => {
-      logger.debug(req, OPERATION, 'Caller is not in the employee view', { reason });
-      return { eligible: false, reason };
-    };
-
+  private async findCompanies(req: Request): Promise<OrgLensEmployeeViewGrant[]> {
     const emails = await this.getVerifiedEmails(req);
     // Personal mailbox providers never prove employment; a public suffix yields no candidate at all.
     const candidates = [
@@ -176,15 +187,11 @@ export class OrgEmployeeViewService {
         })
       ),
     ].slice(0, ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS);
-    if (candidates.length === 0) return deny('no-verified-company-email');
-
-    const companies = await this.findMemberCompanies(req, candidates);
-    if (companies.length === 0) return deny('no-verified-company-email');
-
-    // A request for a specific company must be one the caller's own verified email names; with none (role-grants, selector),
-    // the first company in a stable order.
-    const match = requestedOrgUid ? companies.find((company) => company.orgUid === requestedOrgUid) : companies[0];
-    return match ? { eligible: true, org: match } : deny('other-company');
+    if (candidates.length === 0) {
+      logger.debug(req, OPERATION, 'Caller has no verified company email', {});
+      return [];
+    }
+    return this.findMemberCompanies(req, candidates);
   }
 
   /**

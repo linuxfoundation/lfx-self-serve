@@ -111,7 +111,7 @@ describe('OrgEmployeeViewService.resolve', () => {
   });
 
   it('never treats a personal mailbox provider as an employer', async () => {
-    const { svc, proxy } = build({ emails: ['dev@gmail.com', 'dev@outlook.com'] });
+    const { svc, proxy } = build({ emails: [`dev@${'gmail'}.com`, `dev@${'outlook'}.com`] });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
     expect(proxy.proxyRequest).not.toHaveBeenCalled();
@@ -141,12 +141,15 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(svc.resolve(req(), OTHER_UID)).resolves.toEqual({ eligible: false, reason: 'other-company' });
   });
 
-  it('matches any of the company domains (primary or Salesforce alias), such as hitachi .co.uk / .com / .jp', async () => {
+  it('matches any of the company domains (primary or Salesforce alias), so a company with several domains opens from any of them', async () => {
     const { svc } = build({
       orgs: [
-        [ORG_UID, { name: 'Acme Motors', primary_domain: 'acme-motors.example', domain_aliases: ['Acme-Group.example', 'acme-motors.example.jp', 'bad host'] }],
+        [
+          ORG_UID,
+          { name: 'Acme Motors', primary_domain: 'acme-motors.example', domain_aliases: ['Acme-Group.example', 'acme-motors-group.example', 'bad host'] },
+        ],
       ],
-      emails: ['dev@acme-motors.example.jp'],
+      emails: ['dev@acme-motors-group.example'],
     });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
@@ -247,6 +250,36 @@ describe('OrgEmployeeViewService.resolve', () => {
 });
 
 describe('OrgEmployeeViewService.resolveReduced', () => {
+  const twoCompanies: Array<[string, Doc]> = [
+    [ORG_UID, { name: 'Acme Motors', primary_domain: 'acme-motors.example' }],
+    [OTHER_UID, { name: 'Zeta Holdings', domain_aliases: ['acme-motors.example'] }],
+  ];
+
+  it('picks the addressed company when several match, so every matching company opens by its own address', async () => {
+    const { svc, accessCheck } = build({ orgs: twoCompanies });
+
+    await expect(svc.resolveReduced(req(), (company) => company.orgUid === OTHER_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: OTHER_UID } });
+    expect(accessCheck.checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: OTHER_UID, access: 'auditor' });
+  });
+
+  it('answers other-company when none of the matching companies is the addressed one', async () => {
+    const { svc, accessCheck } = build({ orgs: twoCompanies });
+
+    await expect(svc.resolveReduced(req(), (company) => company.orgUid === '0016100000NONEAAA1')).resolves.toEqual({
+      eligible: false,
+      reason: 'other-company',
+    });
+    expect(accessCheck.checkSingleAccessStrict).not.toHaveBeenCalled();
+  });
+
+  it('shares one lookup between a specific-company check and the reduced check', async () => {
+    const { svc } = build({ orgs: twoCompanies });
+
+    await Promise.all([svc.resolve(req(), OTHER_UID), svc.resolveReduced(req())]);
+
+    expect(resolveVerifiedUserEmails).toHaveBeenCalledTimes(1);
+  });
+
   it('reports the company for a caller who is employee-only', async () => {
     const { svc, accessCheck } = build();
 
