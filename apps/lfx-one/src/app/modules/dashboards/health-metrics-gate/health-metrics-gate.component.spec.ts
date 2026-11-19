@@ -234,6 +234,14 @@ describe('HealthMetricsGateComponent', () => {
     expect(query('health-metrics-header-fade')?.className).not.toMatch(/hidden|lg:block/);
   });
 
+  // The selects draw their outline as an outer ring; a fade painted over the header's content would cut its bottom edge.
+  it('paints the fade behind the header content, so the view select keeps its whole outline', async () => {
+    await render(signal(true));
+
+    expect(query('health-metrics-header-fade')?.classList).toContain('-z-10');
+    expect(query('health-metrics-sticky-header')?.classList).toContain('z-10');
+  });
+
   it('pins the header below the fixed impersonation banner while impersonating', async () => {
     impersonating.set(true);
     await render(signal(true));

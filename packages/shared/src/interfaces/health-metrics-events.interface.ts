@@ -18,6 +18,7 @@ import type { HealthMetricsMembersQueryParams } from './health-metrics-members.i
 import type { HealthMetricsColumnChartView } from './health-metrics-column-chart.interface';
 import type { HealthMetricsBarListRow, HealthMetricsCellCompanyLead } from './health-metrics-table.interface';
 import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-members.interface';
+import type { HealthMetricsWorldMapCountry } from './health-metrics-world-map.interface';
 import type { UiBadgeTone } from './uikit.interface';
 
 /** Section key from the design's `E2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
@@ -254,19 +255,6 @@ export interface HealthMetricsEventsAtAGlance {
 /** Where the at-a-glance read stands; the Events tab owns the read and hands its state to the section. */
 export type HealthMetricsEventsAtAGlanceStatus = 'loading' | 'failed' | 'ready';
 
-/** A year-over-year delta label; `null` when the period has no comparison, so none is drawn. */
-export interface HealthMetricsEventsAtAGlanceDelta {
-  delta: string | null;
-  deltaDirection: 'up' | 'down' | 'neutral';
-}
-
-/** One figure with its year-over-year delta. */
-export interface HealthMetricsEventsAtAGlanceStatView extends HealthMetricsEventsAtAGlanceDelta {
-  key: string;
-  label: string;
-  value: string;
-}
-
 /** One comparison-table row: the period's value, the comparison period's, and the change as a badge (`null` reads "—"). */
 export interface HealthMetricsEventsAtAGlanceRowView {
   key: string;
@@ -493,20 +481,6 @@ export interface HealthMetricsEventsSpeakers {
   proposals: HealthMetricsEventsSpeakersProposal[];
 }
 
-/** One ranked-list row before formatting; `null` is not available, never zero. */
-export interface HealthMetricsEventsRankedRowInput {
-  key: string;
-  label: string;
-  value: number | null;
-}
-
-/** One ranked-list row as the design draws it: name and value, no bar. */
-export interface HealthMetricsEventsRankedRowView {
-  key: string;
-  label: string;
-  valueLabel: string;
-}
-
 /** A recent-proposals row with its labels resolved. The speaker is shown by job title, never by name. */
 export interface HealthMetricsEventsSpeakersProposalRowView {
   key: string;
@@ -714,6 +688,8 @@ export interface HealthMetricsEventsGeographyQuery {
 
 /** Registrations from one country in a period. */
 export interface HealthMetricsEventsGeographyCountry {
+  /** ISO 3166-1 alpha-2; `null` when the view could not resolve the country to a code. */
+  code: string | null;
   country: string;
   registrations: number;
 }
@@ -725,15 +701,24 @@ export interface HealthMetricsEventsGeographyPeriod {
   countries: number | null;
   /** Year-over-year change in countries as a fraction; `null` for a period the rollup does not compare. */
   changes: { countries: number | null } | null;
-  /** The countries with the most registrations in the period, most first. */
-  topCountries: HealthMetricsEventsGeographyCountry[];
-  /** Countries with a registration in the period, the top list included. */
-  rankedCountries: number;
+  /** Every country with a registration in the period, most first. */
+  registrationsByCountry: HealthMetricsEventsGeographyCountry[];
 }
 
-/** `GET /api/analytics/events-geography` — each period's countries represented and top countries by registrations. */
+/** `GET /api/analytics/events-geography` — each period's countries represented and registrations by country. */
 export interface HealthMetricsEventsGeography {
   periods: HealthMetricsEventsGeographyPeriod[];
+}
+
+/** A Top countries row: flag, name, registrations and share. */
+export interface HealthMetricsEventsGeographyTopCountryView {
+  key: string;
+  /** Regional-indicator emoji; empty for a country with no code. */
+  flag: string;
+  name: string;
+  registrationsLabel: string;
+  /** Share of registrations with a known country, e.g. `52%`. */
+  pctLabel: string;
 }
 
 /** The section for one period, with every label ready to render. */
@@ -742,10 +727,10 @@ export interface HealthMetricsEventsGeographyView {
   foundationMeasured: boolean;
   /** `false` when no country has a registration in the period, so nothing reads as a measured zero. */
   measured: boolean;
-  /** e.g. `42 countries`; empty when unmeasured. */
-  countriesLabel: string;
-  headline: HealthMetricsEventsAtAGlanceStatView;
-  topCountries: HealthMetricsEventsRankedRowView[];
+  metrics: HealthMetricsMetricItem[];
+  /** Every country with a registration, for the map and its screen-reader table. */
+  countries: HealthMetricsWorldMapCountry[];
+  topCountries: HealthMetricsEventsGeographyTopCountryView[];
 }
 
 /** The event dialog Snapshot's period switch. */

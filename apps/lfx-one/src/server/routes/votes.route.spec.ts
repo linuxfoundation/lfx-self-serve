@@ -16,6 +16,7 @@ const {
   voters,
   sendReminders,
   myBallot,
+  myWouldEndVote,
   updateVote,
   submitBallot,
   changeBallot,
@@ -37,6 +38,7 @@ const {
   voters: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'b-1', status: 'voted' }])),
   sendReminders: vi.fn((_req: unknown, res: Response) => res.json({ recipient_count: 1 })),
   myBallot: vi.fn((_req: unknown, res: Response) => res.json({ vote_response_uid: 'vr-1' })),
+  myWouldEndVote: vi.fn((_req: unknown, res: Response) => res.json({ would_end_vote: true })),
   updateVote: vi.fn(),
   submitBallot: vi.fn((_req: unknown, res: Response) => res.status(204).send()),
   changeBallot: vi.fn((_req: unknown, res: Response) => res.status(204).send()),
@@ -54,6 +56,7 @@ vi.mock('../controllers/vote.controller', () => ({
     public getVoteVoters = voters;
     public sendVoteReminders = sendReminders;
     public getMyVoteBallot = myBallot;
+    public getMyWouldEndVote = myWouldEndVote;
     public updateVote = updateVote;
     public createVoteResponse = submitBallot;
     public updateMyVoteResponse = changeBallot;
@@ -242,6 +245,14 @@ describe('own ballot route dispatch (#4331)', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ vote_response_uid: 'vr-1' });
     expect(myBallot).toHaveBeenCalledOnce();
+    expect(byId).not.toHaveBeenCalled();
+  });
+
+  it('dispatches GET /:uid/my-response/would-end-vote to its handler, not the vote UID handler (#4726)', async () => {
+    const response = await fetch(`${baseUrl}/api/votes/vote-1/my-response/would-end-vote`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ would_end_vote: true });
+    expect(myWouldEndVote).toHaveBeenCalledOnce();
     expect(byId).not.toHaveBeenCalled();
   });
 
