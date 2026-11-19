@@ -22,25 +22,26 @@ import {
   buildHealthMetricsOverviewBoardView,
   buildHealthMetricsOverviewChurnView,
   buildHealthMetricsOverviewCodeView,
-  buildHealthMetricsOverviewNewsletterView,
-  buildHealthMetricsOverviewScrollFadeMask,
   buildHealthMetricsOverviewEmptyCopy,
   buildHealthMetricsOverviewEventDialogBadges,
   buildHealthMetricsOverviewEventMeta,
   buildHealthMetricsOverviewEventsView,
+  buildHealthMetricsOverviewNewsletterView,
   buildHealthMetricsOverviewNpsView,
   buildHealthMetricsOverviewOrgsView,
-  buildHealthMetricsOverviewTrainingView,
   buildHealthMetricsOverviewPastTrendView,
+  buildHealthMetricsOverviewScrollFadeMask,
   buildHealthMetricsOverviewSnapshotView,
+  buildHealthMetricsOverviewTrainingView,
   buildHealthMetricsOverviewTrendMeta,
   buildHealthMetricsOverviewTrendView,
   buildHealthMetricsYtdRangeLabel,
-  sortHealthMetricsOverviewBoardRows,
+  healthMetricsOverviewBoardSortValue,
   toHealthMetricsOverviewKpiStripLayout,
   toHealthMetricsOverviewPastYear,
   toHealthMetricsOverviewRange,
 } from './health-metrics-overview.utils';
+import { sortHealthMetricsRows } from './health-metrics-table.utils';
 
 import type {
   HealthMetricsEventsAtAGlance,
@@ -1021,9 +1022,12 @@ describe('buildHealthMetricsOverviewBoardView', () => {
   it('sorts by name or attendance either way', () => {
     const { rows } = buildHealthMetricsOverviewBoardView(board, 'YTD');
 
-    expect(sortHealthMetricsOverviewBoardRows(rows, 'name-asc').map((row) => row.name)).toEqual(['Alex Moe', 'Pat Doe', 'Sam Roe']);
-    expect(sortHealthMetricsOverviewBoardRows(rows, 'name-desc').map((row) => row.name)).toEqual(['Sam Roe', 'Pat Doe', 'Alex Moe']);
-    expect(sortHealthMetricsOverviewBoardRows(rows, 'att-desc').map((row) => row.name)).toEqual(['Pat Doe', 'Alex Moe', 'Sam Roe']);
+    const sorted = (key: 'name' | 'att', direction: 'asc' | 'desc'): string[] =>
+      sortHealthMetricsRows(rows, { key, direction }, healthMetricsOverviewBoardSortValue).map((row) => row.name);
+
+    expect(sorted('name', 'asc')).toEqual(['Alex Moe', 'Pat Doe', 'Sam Roe']);
+    expect(sorted('name', 'desc')).toEqual(['Sam Roe', 'Pat Doe', 'Alex Moe']);
+    expect(sorted('att', 'desc')).toEqual(['Pat Doe', 'Alex Moe', 'Sam Roe']);
   });
 
   it('is empty for a period with no board meetings', () => {

@@ -50,7 +50,7 @@ import type {
   HealthMetricsOverviewBalanceView,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardRowView,
-  HealthMetricsOverviewBoardSort,
+  HealthMetricsOverviewBoardSortKey,
   HealthMetricsOverviewBoardView,
   HealthMetricsOverviewChurn,
   HealthMetricsOverviewChurnView,
@@ -96,6 +96,7 @@ import type {
   HealthMetricsOverviewTrendView,
   HealthMetricsOverviewTrendWindow,
 } from '../interfaces/health-metrics-overview.interface';
+import type { HealthMetricsSortValue } from '../interfaces/health-metrics-table.interface';
 import type { HealthMetricsTrainingEnrollment } from '../interfaces/health-metrics-training.interface';
 
 const NOT_AVAILABLE = '—';
@@ -491,20 +492,18 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
         note: '',
       },
     ],
-    rows: sortHealthMetricsOverviewBoardRows(rows, 'att-asc'),
+    rows: orderHealthMetricsOverviewBoardRows(rows),
   };
 }
 
-/** The board table in the picked order; ties fall back to the name, then the row key. */
-export function sortHealthMetricsOverviewBoardRows(
-  rows: readonly HealthMetricsOverviewBoardRowView[],
-  sort: HealthMetricsOverviewBoardSort
-): HealthMetricsOverviewBoardRowView[] {
-  const byName = (a: HealthMetricsOverviewBoardRowView, b: HealthMetricsOverviewBoardRowView): number =>
-    a.name.localeCompare(b.name) || a.key.localeCompare(b.key);
-  const sign = sort.endsWith('asc') ? 1 : -1;
+/** A board row's sort value for a column: the name, or the attendance share. */
+export function healthMetricsOverviewBoardSortValue(row: HealthMetricsOverviewBoardRowView, key: HealthMetricsOverviewBoardSortKey): HealthMetricsSortValue {
+  return key === 'name' ? row.name : row.attendance;
+}
 
-  return [...rows].sort((a, b) => (sort.startsWith('name') ? sign * byName(a, b) : sign * (a.attendance - b.attendance) || byName(a, b)));
+/** The default order: lowest attendance first, then the name and the row key, which a sort keeps for its ties. */
+function orderHealthMetricsOverviewBoardRows(rows: readonly HealthMetricsOverviewBoardRowView[]): HealthMetricsOverviewBoardRowView[] {
+  return [...rows].sort((a, b) => a.attendance - b.attendance || a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
 }
 
 /** "Missing a meeting?" goes to PCC's add-past-meeting page for the foundation, by its Salesforce id. */

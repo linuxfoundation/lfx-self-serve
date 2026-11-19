@@ -289,7 +289,7 @@ export class OrgLensMembershipsService {
 
   private static familyMembershipsSummary(rows: readonly OrgLensMembershipSummaryRow[]): OrgMembershipsSummary {
     return {
-      activeMemberships: new Set(rows.map((row) => row.FOUNDATION_ID)).size,
+      activeMemberships: rows.length,
       renewingWithin90Days: rows.filter((row) => row.IS_RENEWING_WITHIN_90_DAYS).length,
       governanceRoles: new Set(rows.flatMap((row) => (Array.isArray(row.GOVERNANCE_SEAT_KEYS) ? row.GOVERNANCE_SEAT_KEYS : []))).size,
     };

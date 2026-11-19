@@ -98,6 +98,7 @@ import {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
+  MetaCustomAudiencesResult,
   LinkedInAccount,
   LinkedInCreateAccountResult,
   LinkedInMonitorResponse,
@@ -751,6 +752,15 @@ export class CampaignService {
    */
   public getGoogleAdsUserLists(projectSlug: string): Observable<GoogleAdsUserListsResult> {
     return this.http.get<GoogleAdsUserListsResult>('/api/campaigns/google/user-lists', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The custom audiences on the Meta ad account a create for this project uses, for the Implement tab's
+   * Meta audience targeting (#5905). A coded 403 without `global_marketing_ops` on the project, a coded
+   * 503 when that check cannot be made, and a 404 while Meta audience targeting is off.
+   */
+  public getMetaCustomAudiences(projectSlug: string): Observable<MetaCustomAudiencesResult> {
+    return this.http.get<MetaCustomAudiencesResult>('/api/campaigns/meta/custom-audiences', { params: { project: projectSlug } });
   }
 
   /**

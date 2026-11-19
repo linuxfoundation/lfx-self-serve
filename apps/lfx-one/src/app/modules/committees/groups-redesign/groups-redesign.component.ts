@@ -34,6 +34,7 @@ import { EMPTY, Observable, switchMap } from 'rxjs';
 import { GroupActionsComponent } from './components/group-actions/group-actions.component';
 import { GroupApplicationsComponent } from './components/group-applications/group-applications.component';
 import { GroupCardComponent } from './components/group-card/group-card.component';
+import { GroupInvitationsComponent } from './components/group-invitations/group-invitations.component';
 import { GroupsFiltersComponent } from './components/groups-filters/groups-filters.component';
 import { GroupsTableComponent } from './components/groups-table/groups-table.component';
 import { GroupsHomeStore } from './services/groups-home.store';
@@ -62,6 +63,7 @@ import { GroupsHomeStore } from './services/groups-home.store';
     GroupsFiltersComponent,
     GroupsTableComponent,
     GroupApplicationsComponent,
+    GroupInvitationsComponent,
   ],
   templateUrl: './groups-redesign.component.html',
   providers: [GroupsHomeStore],
