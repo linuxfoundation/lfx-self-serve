@@ -109,6 +109,42 @@ describe('MeetingRsvpDetailsComponent', () => {
     expect(fixture.componentInstance.meetingRegistrantCount()).toBe(11);
   });
 
+  it.each(['', 'optimistic-self'])('retires a fallback confirmation after its indexed row appears then disappears: %j', async (uid) => {
+    const fallback = buildRegistrant({ uid, email: 'self@example.com' });
+    const indexed = { ...fallback, uid: 'indexed-self', email: ' SELF@example.com ' };
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting());
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.componentRef.setInput('confirmedRegistrants', [fallback]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([fallback]);
+    fixture.componentRef.setInput('initialRegistrants', [indexed]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([indexed]);
+    fixture.componentRef.setInput('initialRegistrants', []);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+    const reinvited = { ...fallback };
+    fixture.componentRef.setInput('confirmedRegistrants', [reinvited]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([reinvited]);
+  });
+
+  it('does not retire a fallback for another invitation scope with the same email', async () => {
+    const allDates = buildRegistrant({ uid: '', email: 'self@example.com', occurrence_id: null });
+    const singleDate = { ...allDates, occurrence_id: '4071031200' };
+    const indexed = { ...allDates, uid: 'indexed-self' };
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting());
+    fixture.componentRef.setInput('initialRegistrants', [indexed]);
+    fixture.componentRef.setInput('confirmedRegistrants', [allDates, singleDate]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual(expect.arrayContaining([indexed, singleDate]));
+    fixture.componentRef.setInput('initialRegistrants', []);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([singleDate]);
+  });
+
   it('reconciles an unindexed self-add and its removal without doubling fallback totals', async () => {
     const other = buildRegistrant({ uid: 'other', email: 'other@example.com' });
     const saved = buildRegistrant({ uid: 'saved-self', email: 'self@example.com' });

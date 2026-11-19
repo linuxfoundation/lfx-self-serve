@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, effect, inject, input, InputSignal, output, signal, Signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, input, InputSignal, output, signal, Signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingAttendeePreviewComponent } from '@app/modules/meetings/components/meeting-attendee-preview/meeting-attendee-preview.component';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -69,7 +69,7 @@ export class MeetingRsvpDetailsComponent {
 
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalLoading: WritableSignal<boolean> = signal(true);
-  private readonly indexedConfirmedRegistrantIds = signal<Set<string>>(new Set());
+  private readonly acknowledgedConfirmedRegistrants = signal<MeetingRegistrant[]>([]);
   public readonly loading: Signal<boolean> = computed(() =>
     this.externallyManaged() && !this.pastMeeting() ? this.initialRegistrantsLoading() : this.internalLoading()
   );
@@ -120,13 +120,20 @@ export class MeetingRsvpDetailsComponent {
   public readonly summaryTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-900' : 'text-gray-900'));
 
   public constructor() {
-    effect(() => {
-      const roster = this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
-      const indexed = new Set(roster.map((row) => row.uid));
-      const known = this.indexedConfirmedRegistrantIds();
-      const added = this.confirmedRegistrants().filter((row) => row.uid && indexed.has(row.uid) && !known.has(row.uid));
-      if (added.length) this.indexedConfirmedRegistrantIds.set(new Set([...known, ...added.map((row) => row.uid)]));
-    });
+    toObservable(
+      computed(() => ({
+        roster: this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants,
+        confirmed: this.confirmedRegistrants(),
+      }))
+    )
+      .pipe(takeUntilDestroyed())
+      .subscribe(({ roster, confirmed }) => {
+        const known = this.acknowledgedConfirmedRegistrants();
+        const candidates = this.unacknowledgedConfirmedRegistrants(confirmed);
+        const pending = filterUnindexedMeetingRegistrants(candidates, roster);
+        const acknowledged = candidates.filter((row) => !pending.includes(row));
+        if (acknowledged.length) this.acknowledgedConfirmedRegistrants.set([...known, ...acknowledged]);
+      });
   }
 
   private initializeRegistrants(): Signal<MeetingRegistrant[]> {
@@ -136,7 +143,7 @@ export class MeetingRsvpDetailsComponent {
       const removed = new Set(this.confirmedRemovedRegistrantIds());
       const indexed = source.filter((row) => !removed.has(row.uid));
       const pending = filterUnindexedMeetingRegistrants(
-        this.confirmedRegistrants().filter((row) => !removed.has(row.uid) && !this.indexedConfirmedRegistrantIds().has(row.uid)),
+        this.unacknowledgedConfirmedRegistrants().filter((row) => !removed.has(row.uid)),
         indexed
       );
       const registrants = [...pending, ...indexed];
@@ -371,5 +378,11 @@ export class MeetingRsvpDetailsComponent {
       }
       return '';
     });
+  }
+
+  /** Real UIDs persist across row copies; a UID-less acknowledgement belongs only to that saved write. */
+  private unacknowledgedConfirmedRegistrants(rows = this.confirmedRegistrants()): MeetingRegistrant[] {
+    const known = this.acknowledgedConfirmedRegistrants();
+    return rows.filter((row) => !known.includes(row) && (!row.uid || row.uid.startsWith('optimistic-') || !known.some((saved) => saved.uid === row.uid)));
   }
 }

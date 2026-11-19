@@ -155,7 +155,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly internalLoadFailed: WritableSignal<boolean> = signal(false);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
-  private readonly indexedConfirmedRegistrantIds = signal<Set<string>>(new Set());
+  private readonly acknowledgedConfirmedRegistrants = signal<MeetingRegistrant[]>([]);
   private readonly pendingSelfFocusContext = signal<string | null>(null);
   // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
   // disappears without waiting for the async refetch to complete.
@@ -330,19 +330,29 @@ export class MeetingRegistrantsDisplayComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((hosts) => this.resolvedHostsChange.emit(hosts));
 
-    effect(() => {
-      if (this.pastMeeting() || this.externallyManaged() || this.registrantsLoading() || this.internalLoadFailed()) return;
-      const resolvedBase = resolveMeetingBaseCount(this.meeting());
-      const base = (resolvedBase ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
-      // The merged roster acknowledges saved UIDs and excludes confirmed deletions before counting.
-      const rosterDelta = this.registrants().length - base;
-      // With no backend count, each fetched roster is the new baseline, not an additional delta.
-      const additional = resolvedBase === undefined ? rosterDelta : Math.max(rosterDelta, this.additionalRegistrantsCount());
-      this.additionalRegistrantsCount.set(additional);
-      this.registrantsCountChange.emit(additional);
-      this.totalCountChange.emit(Math.max(0, base + additional));
-      this.registrantsChange.emit(this.registrants());
-    });
+    toObservable(
+      computed(() => {
+        if (this.pastMeeting() || this.externallyManaged() || this.registrantsLoading() || this.internalLoadFailed()) return null;
+        const resolvedBase = resolveMeetingBaseCount(this.meeting());
+        const base = (resolvedBase ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
+        // The merged roster acknowledges saved UIDs and excludes confirmed deletions before counting.
+        const registrants = this.registrants();
+        const rosterDelta = registrants.length - base;
+        // With no backend count, each fetched roster is the new baseline, not an additional delta.
+        const additional = resolvedBase === undefined ? rosterDelta : Math.max(rosterDelta, this.additionalRegistrantsCount());
+        return { additional, total: Math.max(0, base + additional), registrants };
+      })
+    )
+      .pipe(
+        filter((counts) => counts !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ additional, total, registrants }) => {
+        this.additionalRegistrantsCount.set(additional);
+        this.registrantsCountChange.emit(additional);
+        this.totalCountChange.emit(total);
+        this.registrantsChange.emit(registrants);
+      });
 
     toObservable(this.inviteResponsesEnabled)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -358,7 +368,7 @@ export class MeetingRegistrantsDisplayComponent {
       .subscribe(() => {
         this.optimisticRegistrants.set([]);
         this.deletedRegistrantUids.set(new Set());
-        this.indexedConfirmedRegistrantIds.set(new Set());
+        this.acknowledgedConfirmedRegistrants.set([]);
       });
 
     toObservable(
@@ -374,9 +384,11 @@ export class MeetingRegistrantsDisplayComponent {
     )
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ fetched, confirmed, self, selfRemoved }) => {
-        const fetchedIds = new Set(fetched.map((row) => row.uid));
-        const indexed = confirmed.filter((row) => fetchedIds.has(row.uid)).map((row) => row.uid);
-        this.indexedConfirmedRegistrantIds.update((known) => new Set([...known, ...indexed]));
+        const known = this.acknowledgedConfirmedRegistrants();
+        const candidates = this.unacknowledgedConfirmedRegistrants(confirmed);
+        const pending = filterUnindexedMeetingRegistrants(candidates, fetched);
+        const acknowledged = candidates.filter((row) => !pending.includes(row));
+        if (acknowledged.length) this.acknowledgedConfirmedRegistrants.set([...known, ...acknowledged]);
         this.optimisticRegistrants.update((rows) => {
           if (selfRemoved && self) {
             const removedUids = [...fetched, ...rows].filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
@@ -960,17 +972,9 @@ export class MeetingRegistrantsDisplayComponent {
         list = list.filter((row) => !isMeetingSelfGuestListed(self, [row]));
       }
       // Real UIDs match exactly; UID-less hints reconcile only to the same email and invitation scope.
-      const pending = filterUnindexedMeetingRegistrants(
-        [
-          ...new Map(
-            [...this.optimisticRegistrants(), ...this.confirmedRegistrants().filter((row) => !this.indexedConfirmedRegistrantIds().has(row.uid))].map((row) => [
-              row.uid,
-              row,
-            ])
-          ).values(),
-        ].filter((row) => !deletedUids.has(row.uid)),
-        list
-      );
+      const optimistic = this.optimisticRegistrants().filter((row) => !deletedUids.has(row.uid));
+      const confirmed = this.unacknowledgedConfirmedRegistrants().filter((row) => !deletedUids.has(row.uid));
+      const pending = filterUnindexedMeetingRegistrants([...optimistic, ...filterUnindexedMeetingRegistrants(confirmed, optimistic)], list);
       const merged = pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
 
       const overrides = this.hostOverrides();
@@ -1128,5 +1132,11 @@ export class MeetingRegistrantsDisplayComponent {
 
       return new Map(people.map((person) => [person.uid, resolveMeetingGuestRole(person, organizerKeys)] as const));
     });
+  }
+
+  /** Real UIDs persist across row copies; a UID-less acknowledgement belongs only to that saved write. */
+  private unacknowledgedConfirmedRegistrants(rows = this.confirmedRegistrants()): MeetingRegistrant[] {
+    const known = this.acknowledgedConfirmedRegistrants();
+    return rows.filter((row) => !known.includes(row) && (!row.uid || row.uid.startsWith('optimistic-') || !known.some((saved) => saved.uid === row.uid)));
   }
 }

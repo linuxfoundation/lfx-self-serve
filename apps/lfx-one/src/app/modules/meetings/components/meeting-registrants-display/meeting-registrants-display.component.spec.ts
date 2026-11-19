@@ -904,20 +904,45 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     expect(delta).toHaveBeenLastCalledWith(0);
   });
 
-  it('does not resurrect a parent-saved row after indexing acknowledged it and later drops it', async () => {
-    const saved = { ...listed(SELF_GUEST.email), uid: 'saved-self' };
+  it.each(['saved-self', '', 'optimistic-self'])('does not resurrect a parent-saved row after indexing acknowledges it then drops it: %j', async (uid) => {
+    const saved = { ...listed(SELF_GUEST.email), uid };
     const { fixture } = await mount();
     fixture.componentRef.setInput('confirmedRegistrants', [saved]);
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance.registrants()).toEqual([saved]);
-    fixture.componentRef.setInput('initialRegistrants', [saved]);
+    fixture.componentRef.setInput('initialRegistrants', [{ ...saved, uid: 'saved-self', email: saved.email.toUpperCase() }]);
     fixture.detectChanges();
     await fixture.whenStable();
+    expect(fixture.componentInstance.registrants().map((row) => row.uid)).toEqual(['saved-self']);
     fixture.componentRef.setInput('initialRegistrants', []);
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance.registrants()).toEqual([]);
+    const nextWrite = { ...saved };
+    fixture.componentRef.setInput('confirmedRegistrants', [nextWrite]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual(uid && !uid.startsWith('optimistic-') ? [] : [nextWrite]);
+  });
+
+  it('retires only the acknowledged invitation scope when fallback UIDs are empty', async () => {
+    const allDates = { ...listed(SELF_GUEST.email), uid: '', occurrence_id: null };
+    const singleDate = { ...allDates, occurrence_id: '4071031200' };
+    const indexed = { ...allDates, uid: 'indexed-self' };
+    const { fixture } = await mount();
+    fixture.componentRef.setInput('confirmedRegistrants', [allDates, singleDate]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(2);
+    fixture.componentRef.setInput('initialRegistrants', [indexed]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual(expect.arrayContaining([indexed, singleDate]));
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([singleDate]);
   });
 
   it('is hidden when the drawer cannot add guests', async () => {
