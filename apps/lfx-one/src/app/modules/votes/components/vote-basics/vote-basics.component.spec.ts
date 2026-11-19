@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { PollType } from '@lfx-one/shared/enums';
 import { CommitteeReference } from '@lfx-one/shared/interfaces';
 import { trimmedMinLength, trimmedRequired, validCommitteeReference, validTimeFormat, voteDeadlineValidator } from '@lfx-one/shared/validators';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,6 +38,7 @@ function buildForm(): FormGroup {
       description: new FormControl(''),
       committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
       eligible_participants: new FormControl('', [Validators.required]),
+      poll_type: new FormControl<PollType>(PollType.GENERIC, { nonNullable: true }),
       close_date: new FormControl<Date | null>(null, [Validators.required]),
       close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
       timezone: new FormControl<string>('Pacific/Honolulu', { nonNullable: true, validators: [Validators.required] }),
@@ -289,5 +291,81 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
 
     expect(closeDate.value).toBeInstanceOf(Date);
     expect(form.errors?.['futureDateTime']).toBeTruthy(); // surfaced by the validator, not by wiping the date
+  });
+});
+
+describe('VoteBasicsComponent — voting method (#2921)', () => {
+  let fixture: ComponentFixture<VoteBasicsComponent>;
+  let form: FormGroup;
+
+  const element = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  const render = async (pollType: PollType, inputs: Record<string, unknown> = {}): Promise<void> => {
+    form.get('poll_type')?.setValue(pollType);
+    for (const [name, value] of Object.entries(inputs)) {
+      fixture.componentRef.setInput(name, value);
+    }
+    await fixture.whenStable();
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [VoteBasicsComponent],
+      providers: [provideRouter([]), provideNoopAnimations()],
+    })
+      .overrideComponent(VoteBasicsComponent, {
+        remove: { imports: [CommitteeSelectorComponent] },
+        add: { imports: [StubCommitteeSelectorComponent] },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(VoteBasicsComponent);
+    form = buildForm();
+    const formValue = signal(form.getRawValue());
+    form.valueChanges.subscribe(() => formValue.set(form.getRawValue()));
+    fixture.componentRef.setInput('form', form);
+    fixture.componentRef.setInput('formValue', formValue);
+  });
+
+  it('offers Plurality and Condorcet IRV, describing the selected one', async () => {
+    await render(PollType.CONDORCET_IRV);
+
+    expect(element('vote-method-select')).not.toBeNull();
+    expect(fixture.componentInstance.methodOptions.map((option) => [option.label, option.value])).toEqual([
+      ['Plurality', PollType.GENERIC],
+      ['Condorcet IRV', PollType.CONDORCET_IRV],
+    ]);
+    expect(element('vote-method-description')?.textContent).toContain('Voters rank the options.');
+    expect(element('vote-method-locked')).toBeNull();
+  });
+
+  it('explains the lock in edit mode', async () => {
+    await render(PollType.CONDORCET_IRV, { isEditMode: true });
+
+    expect(element('vote-method-locked')?.textContent).toContain("The voting method can't be changed after the vote is created.");
+  });
+
+  it('warns when Condorcet IRV has fewer than three eligible voters', async () => {
+    await render(PollType.CONDORCET_IRV, { eligibleVoterCountState: { status: 'loaded', count: 2 } });
+
+    expect(element('vote-basics-min-voters-warning')?.textContent).toContain('Condorcet IRV needs at least 3 eligible voters. This group has 2.');
+    expect(element('vote-basics-min-voters-unchecked')).toBeNull();
+  });
+
+  it.each([
+    ['three eligible voters', PollType.CONDORCET_IRV, { status: 'loaded', count: 3 }],
+    ['a count still loading', PollType.CONDORCET_IRV, { status: 'loading', count: null }],
+    ['a plurality vote', PollType.GENERIC, { status: 'loaded', count: 1 }],
+  ])('shows no warning for %s', async (_label, pollType, state) => {
+    await render(pollType, { eligibleVoterCountState: state });
+
+    expect(element('vote-basics-min-voters-warning')).toBeNull();
+  });
+
+  it('notes, without blocking, when the eligible count could not be checked', async () => {
+    await render(PollType.CONDORCET_IRV, { eligibleVoterCountState: { status: 'error', count: null } });
+
+    expect(element('vote-basics-min-voters-unchecked')?.textContent).toContain("We couldn't check how many people are eligible to vote.");
+    expect(element('vote-basics-min-voters-warning')).toBeNull();
   });
 });

@@ -4,13 +4,13 @@
 import { isPlatformBrowser, LowerCasePipe } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT } from '@lfx-one/shared';
 import { MY_VOTES_STATS_WINDOW_DAYS, VOTE_INVITATION_COUNT_REFRESH_MS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
-import { VoteResponseStatus } from '@lfx-one/shared/enums';
+import { PollType, VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
   MyVotesQuickFilter,
@@ -59,6 +59,7 @@ import {
 } from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
+import { VoteCreateMenuComponent } from '../components/vote-create-menu/vote-create-menu.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
@@ -69,7 +70,7 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
     ButtonComponent,
     VotesTableComponent,
     VoteCastDrawerComponent,
-    RouterLink,
+    VoteCreateMenuComponent,
     EmptyStateComponent,
     SkeletonModule,
     StatCardGridComponent,
@@ -274,6 +275,11 @@ export class VotesDashboardComponent {
       }
     }
     void this.router.navigate(['/votes', voteId]);
+  }
+
+  /** The Create Vote dropdown's chosen method opens the create form with that method preselected. */
+  protected onCreateVoteMethod(pollType: PollType): void {
+    void this.router.navigate(['/votes', 'create'], { queryParams: { poll_type: pollType } });
   }
 
   protected onViewResults(voteId: string): void {

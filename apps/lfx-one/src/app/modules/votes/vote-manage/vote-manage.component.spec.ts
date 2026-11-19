@@ -8,14 +8,14 @@ import { FormArray, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
 import { CommitteeMemberVotingStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
-import { Vote } from '@lfx-one/shared/interfaces';
+import { CommitteeMember, Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { VoteManageComponent } from './vote-manage.component';
 
@@ -39,6 +39,8 @@ describe('VoteManageComponent', () => {
   let getProject: Mock;
   let fetchCommittee: Mock;
   let getCommittee: Mock;
+  let getCommitteeDetail: Mock;
+  let getCommitteeMembers: Mock;
   let routerEvents$: BehaviorSubject<NavigationEnd>;
   let setProject: Mock;
   let messageAdd: Mock;
@@ -115,6 +117,8 @@ describe('VoteManageComponent', () => {
     // Committee leg grants write access by default so the eviction predicate stays quiet.
     fetchCommittee = vi.fn().mockReturnValue(of({ uid: COMMITTEE_UID, writer: true }));
     getCommittee = vi.fn().mockReturnValue(of(null));
+    getCommitteeDetail = vi.fn().mockReturnValue(of({ uid: COMMITTEE_UID, enable_voting: true }));
+    getCommitteeMembers = vi.fn().mockReturnValue(of([]));
     routerEvents$ = new BehaviorSubject<NavigationEnd>(new NavigationEnd(0, '/project/votes/x/edit', '/project/votes/x/edit'));
     setRouteMode(VOTE_UID);
     activeContext.set(null);
@@ -171,6 +175,8 @@ describe('VoteManageComponent', () => {
           provide: CommitteeService,
           useValue: {
             getCommittee,
+            getCommitteeDetail,
+            getCommitteeMembers,
             fetchCommittee,
           },
         },
@@ -1050,5 +1056,188 @@ describe('VoteManageComponent', () => {
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect(router.navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  // #2921: the voting method is seeded from the Create Vote dropdown's ?poll_type=, locked once the
+  // vote exists, and a Condorcet IRV vote needs at least three eligible voters before it can open.
+  describe('voting method (#2921)', () => {
+    let capturedConfirmation: Confirmation | null;
+
+    const members = (count: number, status = CommitteeMemberVotingStatus.VOTING_REP): CommitteeMember[] =>
+      Array.from({ length: count }, (_, index) => ({ uid: `member-${index}`, voting: { status } }) as CommitteeMember);
+
+    const setQueryParams = (params: Record<string, string>) => {
+      routeMock.queryParamMap = of(convertToParamMap(params));
+      routeMock.snapshot.queryParamMap = convertToParamMap(params);
+    };
+
+    const fillValidForm = (component: VoteManageComponent, pollType: PollType = PollType.CONDORCET_IRV) => {
+      const form = component.form();
+      form.get('title')?.setValue('Chair election 2026');
+      form.get('committee')?.setValue({ uid: COMMITTEE_UID, name: 'Test Committee' });
+      form.get('eligible_participants')?.setValue('voting_rep');
+      form.get('poll_type')?.setValue(pollType);
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Who should chair the board?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Alice');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('Bob');
+      form.updateValueAndValidity();
+    };
+
+    const createFilled = async (pollType: PollType = PollType.CONDORCET_IRV) => {
+      const fixture = await createComponent();
+      fillValidForm(fixture.componentInstance, pollType);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture;
+    };
+
+    const rankedVote = () =>
+      ({
+        ...enrichedVote(),
+        name: 'Ranked draft',
+        status: PollStatus.DISABLED,
+        poll_type: PollType.CONDORCET_IRV,
+        committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
+        end_time: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        end_time_timezone: 'UTC',
+        poll_questions: [
+          {
+            question_id: 'q1',
+            prompt: 'Who should chair the board?',
+            type: 'multiple_choice',
+            choices: [
+              { choice_id: 'c1', choice_text: 'Alice' },
+              { choice_id: 'c2', choice_text: 'Bob' },
+            ],
+          },
+        ],
+      }) as unknown as Vote;
+
+    beforeEach(() => {
+      setRouteMode(null); // create mode
+      setQueryParams({});
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Test Project' });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      getCommitteeMembers.mockReturnValue(of(members(3)));
+      capturedConfirmation = null;
+      const confirmationService = TestBed.inject(ConfirmationService);
+      vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation) => {
+        capturedConfirmation = confirmation;
+        return confirmationService;
+      });
+    });
+
+    afterEach(() => setQueryParams({}));
+
+    it.each([
+      ['condorcet_irv', PollType.CONDORCET_IRV],
+      ['generic', PollType.GENERIC],
+      ['meek_stv', PollType.GENERIC],
+      ['bogus', PollType.GENERIC],
+    ])('seeds ?poll_type=%s on create, leaving the method changeable', async (param, expected) => {
+      setQueryParams({ poll_type: param });
+      const fixture = await createComponent();
+      const control = fixture.componentInstance.form().get('poll_type')!;
+
+      expect(control.value).toBe(expected);
+      expect(control.enabled).toBe(true);
+      control.setValue(PollType.GENERIC);
+      expect(control.value).toBe(PollType.GENERIC);
+    });
+
+    it('defaults to plurality without a ?poll_type=', async () => {
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form().get('poll_type')?.value).toBe(PollType.GENERIC);
+    });
+
+    it('keeps an existing vote’s method in edit mode, locked, whatever ?poll_type= says', async () => {
+      setRouteMode(VOTE_UID);
+      setQueryParams({ poll_type: 'generic' });
+      fetchVote.mockReturnValue(of(rankedVote()));
+      const fixture = await createComponent();
+      const control = fixture.componentInstance.form().get('poll_type')!;
+
+      expect(control.value).toBe(PollType.CONDORCET_IRV);
+      expect(control.disabled).toBe(true);
+    });
+
+    it('sends condorcet_irv with multiple_choice questions when the vote is opened', async () => {
+      const fixture = await createFilled();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
+      const request = voteServiceMock.beginSpeculativeCreate.mock.calls[0][0];
+      expect(request.poll_type).toBe(PollType.CONDORCET_IRV);
+      expect(request.poll_questions.map((question: { type: string }) => question.type)).toEqual(['multiple_choice']);
+      expect(capturedConfirmation).not.toBeNull();
+    });
+
+    it('keeps the method out of an edit’s update request, so ITX keeps the stored one', async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(rankedVote()));
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      const fixture = await createComponent();
+
+      fixture.componentInstance.onSaveAsDraft();
+
+      expect(voteServiceMock.updateVote).toHaveBeenCalledTimes(1);
+      const request = voteServiceMock.updateVote.mock.calls[0][1];
+      expect('poll_type' in request).toBe(false);
+      expect(request.poll_questions.map((question: { type: string }) => question.type)).toEqual(['multiple_choice']);
+    });
+
+    it.each([
+      ['2 eligible voters', () => of(members(2)), false, 'loaded'],
+      ['3 eligible voters', () => of(members(3)), true, 'loaded'],
+      ['a failed member fetch', () => throwError(() => new Error('503')), true, 'error'],
+    ])('Step 1 with %s: valid = %s', async (_label, response, valid, status) => {
+      getCommitteeMembers.mockImplementation(response);
+      const fixture = await createFilled();
+
+      expect(fixture.componentInstance.eligibleVoterCountState().status).toBe(status);
+      expect(fixture.componentInstance.isCurrentStepValid()).toBe(valid);
+      expect(fixture.componentInstance.canGoNext()).toBe(valid);
+    });
+
+    it('counts every member of a group without voting enabled, as ITX does', async () => {
+      getCommitteeDetail.mockReturnValue(of({ uid: COMMITTEE_UID, enable_voting: false }));
+      getCommitteeMembers.mockReturnValue(of(members(3, CommitteeMemberVotingStatus.NONE)));
+      const fixture = await createFilled();
+
+      expect(fixture.componentInstance.eligibleVoterCountState()).toEqual({ status: 'loaded', count: 3 });
+      expect(fixture.componentInstance.canGoNext()).toBe(true);
+    });
+
+    it('blocks Next while the count is loading', async () => {
+      getCommitteeMembers.mockReturnValue(new Subject<CommitteeMember[]>().asObservable());
+      const fixture = await createFilled();
+
+      expect(fixture.componentInstance.eligibleVoterCountState().status).toBe('loading');
+      expect(fixture.componentInstance.canGoNext()).toBe(false);
+    });
+
+    it('never fetches members for a plurality vote', async () => {
+      const fixture = await createFilled(PollType.GENERIC);
+
+      expect(getCommitteeMembers).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.eligibleVoterCountState().status).toBe('idle');
+      expect(fixture.componentInstance.canGoNext()).toBe(true);
+    });
+
+    it('refuses to open below the minimum but still saves a draft', async () => {
+      getCommitteeMembers.mockReturnValue(of(members(2)));
+      const fixture = await createFilled();
+
+      fixture.componentInstance.onSubmit();
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+      expect(capturedConfirmation).toBeNull();
+
+      fixture.componentInstance.onSaveAsDraft();
+      expect(voteServiceMock.createVote).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.createVote.mock.calls[0][0]).toMatchObject({ poll_type: PollType.CONDORCET_IRV });
+    });
   });
 });

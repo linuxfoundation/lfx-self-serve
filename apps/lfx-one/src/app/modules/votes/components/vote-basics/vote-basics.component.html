@@ -113,6 +113,35 @@
             <p class="text-xs text-gray-400">Defines who within the selected {{ committeeLabel.singular | lowercase }} will be eligible to vote.</p>
           </div>
 
+          <!-- Voting Method — chosen in the Create Vote dropdown, changeable until the vote is created -->
+          <div class="flex flex-col gap-1">
+            <label for="vote-method" class="text-sm font-medium text-gray-700"> Voting Method <span class="text-red-500">*</span> </label>
+            <lfx-select
+              styleClass="w-full"
+              appendTo="body"
+              inputId="vote-method"
+              [form]="form()"
+              control="poll_type"
+              [options]="methodOptions"
+              optionLabel="label"
+              optionValue="value"
+              data-testid="vote-method-select">
+            </lfx-select>
+            <p class="text-xs text-gray-400" data-testid="vote-method-description">{{ selectedMethodDescription() }}</p>
+            @if (isEditMode()) {
+              <p class="text-xs text-gray-400" data-testid="vote-method-locked">The voting method can't be changed after the vote is created.</p>
+            }
+            @if (minVotersWarning(); as warning) {
+              <lfx-message severity="warn" icon="fa-light fa-triangle-exclamation" [text]="warning" data-testid="vote-basics-min-voters-warning"></lfx-message>
+            } @else if (eligibleVoterCountState().status === 'error') {
+              <lfx-message
+                severity="info"
+                icon="fa-light fa-circle-info"
+                text="We couldn't check how many people are eligible to vote."
+                data-testid="vote-basics-min-voters-unchecked"></lfx-message>
+            }
+          </div>
+
           <!-- Close Date -->
           <div class="flex flex-col gap-1">
             <label for="close-date" class="text-sm font-medium text-gray-700"> Close Date <span class="text-red-500">*</span> </label>

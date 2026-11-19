@@ -20,6 +20,7 @@ import type {
   PollAnswer,
   PollCommentResponse,
   PollCommentResult,
+  PollQuestion,
   PollQuestionResult,
   RankedQuestionView,
   UserChoice,
@@ -31,6 +32,7 @@ import type {
   VoterResultsState,
   VoteVoter,
 } from '../interfaces/poll.interface';
+import type { CommitteeMember } from '../interfaces/member.interface';
 import { getUserTimezone } from './date-time.utils';
 import {
   buildCreateVoteRequest,
@@ -52,6 +54,7 @@ import {
   computeParticipationSegments,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
+  countEligibleVoters,
   countVoteParticipationByStatus,
   countVoteVotersByStatus,
   getRecentCommentResponses,
@@ -69,6 +72,7 @@ import {
   matchesMyVotesQuickFilter,
   matchesVoteVoterChoice,
   mergeCommentResults,
+  parseVoteMethodParam,
   partitionVoteSummaryRecipients,
   rankedAnswerChoices,
   resolveVoterResultsState,
@@ -86,6 +90,7 @@ function formValue(overrides: Partial<VoteFormValue> = {}): VoteFormValue {
     description: 'Pick the next board members',
     committee: { uid: 'committee-uid', name: 'Board' },
     eligible_participants: 'voting_rep',
+    poll_type: PollType.GENERIC,
     close_date: new Date('2025-06-01T00:00:00Z'),
     close_time: '11:59 PM',
     timezone: 'UTC',
@@ -350,6 +355,119 @@ for (const [name, build] of draftVoteRequestBuilders) {
   });
 }
 
+// Voting method (#2921): ITX rejects any non-multiple_choice question on a ranked poll, on create and
+// update alike, and keeps the stored method whenever poll_type is absent on update.
+describe('voting method in the request builders (#2921)', () => {
+  const rankedForm = (overrides: Partial<VoteFormValue> = {}): VoteFormValue =>
+    formValue({
+      poll_type: PollType.CONDORCET_IRV,
+      questions: [
+        { question: 'Who should chair?', response_type: 'single', options: ['Alice', 'Bob', 'Carol'] },
+        { question: 'Which venue?', response_type: 'multiple', options: ['North', 'South'] },
+      ],
+      ...overrides,
+    });
+
+  it.each([
+    ['buildCreateVoteRequest', buildCreateVoteRequest],
+    ['buildDraftVoteRequest', buildDraftVoteRequest],
+  ] as const)('%s sends poll_type', (_name, build) => {
+    expect(build(rankedForm(), 'project-uid').poll_type).toBe(PollType.CONDORCET_IRV);
+    expect(build(formValue(), 'project-uid').poll_type).toBe(PollType.GENERIC);
+  });
+
+  it.each([
+    ['buildUpdateVoteRequest', buildUpdateVoteRequest],
+    ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
+  ] as const)('%s never sends poll_type, so the stored method is kept', (_name, build) => {
+    expect('poll_type' in build(rankedForm(), 'project-uid')).toBe(false);
+    expect('poll_type' in build(formValue(), 'project-uid')).toBe(false);
+  });
+
+  it.each(voteRequestBuilders)('%s sends every Condorcet IRV question as multiple_choice', (_name, build) => {
+    const request = build(rankedForm(), 'project-uid');
+
+    expect(request.poll_questions?.map((question) => question.type)).toEqual(['multiple_choice', 'multiple_choice']);
+  });
+
+  it.each(voteRequestBuilders)('%s keeps plurality response types unchanged', (_name, build) => {
+    const request = build(
+      formValue({
+        questions: [
+          { question: 'Single?', response_type: 'single', options: ['Yes', 'No'] },
+          { question: 'Multiple?', response_type: 'multiple', options: ['A', 'B'] },
+        ],
+      }),
+      'project-uid'
+    );
+
+    expect(request.poll_questions?.map((question) => question.type)).toEqual(['single_choice', 'multiple_choice']);
+  });
+
+  it.each([
+    ['buildDraftVoteRequest', buildDraftVoteRequest],
+    ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
+  ] as const)('%s pads a partial ranked question as multiple_choice', (_name, build) => {
+    const request = build(rankedForm({ questions: [{ question: '', response_type: 'single', options: ['Only one', ''] }] }), 'project-uid');
+
+    expect(request.poll_questions).toEqual([
+      { prompt: 'Untitled question', type: 'multiple_choice', choices: [{ choice_text: 'Only one' }, { choice_text: 'Option 1' }] },
+    ]);
+  });
+
+  it.each([
+    ['buildDraftVoteRequest', buildDraftVoteRequest],
+    ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
+  ] as const)('%s sends a multiple_choice placeholder for an empty ranked draft', (_name, build) => {
+    expect(build(rankedForm({ questions: [] }), 'project-uid').poll_questions).toEqual([
+      { prompt: 'Untitled question', type: 'multiple_choice', choices: [{ choice_text: 'Option 1' }, { choice_text: 'Option 2' }] },
+    ]);
+    expect(build(formValue({ questions: [] }), 'project-uid').poll_questions?.[0]?.type).toBe('single_choice');
+  });
+});
+
+describe('countEligibleVoters (#2921)', () => {
+  const member = (status: CommitteeMemberVotingStatus | null): CommitteeMember =>
+    ({ uid: `member-${status}`, voting: status ? { status } : null }) as CommitteeMember;
+  const members = [
+    member(CommitteeMemberVotingStatus.VOTING_REP),
+    member(CommitteeMemberVotingStatus.VOTING_REP),
+    member(CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP),
+    member(CommitteeMemberVotingStatus.OBSERVER),
+    member(CommitteeMemberVotingStatus.EMERITUS),
+    member(CommitteeMemberVotingStatus.NONE),
+    member(null),
+  ];
+
+  it.each([
+    ['voting_rep', 2],
+    ['voting_rep,alternate_voting_rep', 3],
+    ['all', 5],
+  ])('counts members matching %s', (eligibility, expected) => {
+    expect(countEligibleVoters(members, eligibility, true)).toBe(expected);
+  });
+
+  it('counts every member when the group has voting disabled, matching ITX', () => {
+    expect(countEligibleVoters(members, 'voting_rep', false)).toBe(members.length);
+  });
+
+  it('returns 0 for an empty group', () => {
+    expect(countEligibleVoters([], 'all', true)).toBe(0);
+  });
+});
+
+describe('parseVoteMethodParam (#2921)', () => {
+  it.each([
+    ['generic', PollType.GENERIC],
+    ['condorcet_irv', PollType.CONDORCET_IRV],
+    ['meek_stv', PollType.GENERIC],
+    ['bogus', PollType.GENERIC],
+    [null, PollType.GENERIC],
+  ])('%s -> %s', (value, expected) => {
+    expect(parseVoteMethodParam(value)).toBe(expected);
+  });
+});
+
 describe('mapVoteToFormValue', () => {
   /** Minimal Vote fixture — the mapper only reads the fields set here. */
   function vote(overrides: Partial<Vote> = {}): Vote {
@@ -365,6 +483,26 @@ describe('mapVoteToFormValue', () => {
 
   it('round-trips allow_abstain: true into the form value', () => {
     expect(mapVoteToFormValue(vote({ allow_abstain: true })).allow_abstain).toBe(true);
+  });
+
+  it('hydrates poll_type, defaulting to plurality when the vote has none (#2921)', () => {
+    expect(mapVoteToFormValue(vote({ poll_type: PollType.CONDORCET_IRV })).poll_type).toBe(PollType.CONDORCET_IRV);
+    expect(mapVoteToFormValue(vote({ poll_type: undefined })).poll_type).toBe(PollType.GENERIC);
+  });
+
+  it("drops a ranked draft's multiple_choice placeholder on re-open (#2921)", () => {
+    const placeholder: PollQuestion = {
+      question_id: 'q1',
+      prompt: 'Untitled question',
+      type: 'multiple_choice',
+      choices: [
+        { choice_id: 'c1', choice_text: 'Option 1' },
+        { choice_id: 'c2', choice_text: 'Option 2' },
+      ],
+    };
+
+    expect(mapVoteToFormValue(vote({ poll_type: PollType.CONDORCET_IRV, poll_questions: [placeholder] })).questions).toEqual([]);
+    expect(mapVoteToFormValue(vote({ poll_type: PollType.GENERIC, poll_questions: [placeholder] })).questions).toHaveLength(1);
   });
 
   it('maps allow_abstain: false explicitly', () => {

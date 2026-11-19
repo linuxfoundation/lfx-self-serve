@@ -4,6 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { PollType } from '@lfx-one/shared/enums';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteReviewComponent } from './vote-review.component';
@@ -184,5 +185,60 @@ describe('VoteReviewComponent — allow vote change row (#4723)', () => {
     const row = await render(allowVoteChange);
 
     expect(row?.textContent?.trim()).toBe(label);
+  });
+});
+
+describe('VoteReviewComponent — voting method (#2921)', () => {
+  let fixture: ComponentFixture<VoteReviewComponent>;
+
+  const element = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  async function render(pollType: PollType, disabled = false): Promise<void> {
+    const pollTypeControl = new FormControl(pollType);
+    if (disabled) {
+      pollTypeControl.disable();
+    }
+    const form = new FormGroup({
+      title: new FormControl('Chair election'),
+      description: new FormControl(''),
+      timezone: new FormControl('UTC'),
+      poll_type: pollTypeControl,
+      allow_abstain: new FormControl(false),
+      allow_vote_change: new FormControl(true),
+      questions: new FormArray([
+        new FormGroup({
+          question: new FormControl('Who should chair the board?'),
+          response_type: new FormControl('single'),
+          options: new FormArray([new FormControl('Alice'), new FormControl('Bob')]),
+        }),
+      ]),
+      commentPrompts: new FormArray([]),
+    });
+    fixture = TestBed.createComponent(VoteReviewComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ imports: [VoteReviewComponent], providers: [provideNoopAnimations()] });
+  });
+
+  afterEach(() => fixture?.destroy());
+
+  it.each([
+    [PollType.GENERIC, 'Plurality', 'Single selection (radio buttons)'],
+    [PollType.CONDORCET_IRV, 'Condorcet IRV', 'Ranked'],
+  ])('shows %s as "%s" with response type "%s"', async (pollType, methodLabel, responseLabel) => {
+    await render(pollType);
+
+    expect(element('vote-review-method')?.textContent?.trim()).toBe(methodLabel);
+    expect(element('vote-review-question-1')?.textContent).toContain(responseLabel);
+  });
+
+  it('shows the locked method of a vote being edited', async () => {
+    await render(PollType.CONDORCET_IRV, true);
+
+    expect(element('vote-review-method')?.textContent?.trim()).toBe('Condorcet IRV');
   });
 });

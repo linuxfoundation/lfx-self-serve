@@ -19,12 +19,17 @@
         <lfx-button
           tableActions
           label="Create Vote"
-          icon="fa-light fa-check-to-slot"
+          icon="fa-light fa-chevron-down"
+          iconPos="right"
           severity="info"
           size="small"
+          ariaHaspopup="menu"
+          [ariaExpanded]="createMenu.isOpen()"
           [loading]="creating()"
-          (onClick)="onCreateVote()"
-          data-testid="committee-votes-create-btn"></lfx-button>
+          (onClick)="createMenu.toggle($event)"
+          data-testid="committee-votes-create-btn">
+          <i class="fa-light fa-check-to-slot" aria-hidden="true"></i>
+        </lfx-button>
       }
     </lfx-votes-table>
   } @else {
@@ -32,12 +37,17 @@
       <div class="flex items-center justify-end">
         <lfx-button
           label="Create Vote"
-          icon="fa-light fa-check-to-slot"
+          icon="fa-light fa-chevron-down"
+          iconPos="right"
           severity="info"
           size="small"
+          ariaHaspopup="menu"
+          [ariaExpanded]="createMenu.isOpen()"
           [loading]="creating()"
-          (onClick)="onCreateVote()"
-          data-testid="committee-votes-empty-create-btn"></lfx-button>
+          (onClick)="createMenu.toggle($event)"
+          data-testid="committee-votes-empty-create-btn">
+          <i class="fa-light fa-check-to-slot" aria-hidden="true"></i>
+        </lfx-button>
       </div>
     }
     <lfx-card>
@@ -48,4 +58,8 @@
       </div>
     </lfx-card>
   }
+  <!-- One dropdown for both Create Vote buttons, only one of which is ever rendered. Mounted outside
+       their `@if` blocks so both can reference `#createMenu`; it renders nothing until toggled, and
+       the panel is teleported to `body`, so where it sits here doesn't affect its position. -->
+  <lfx-vote-create-menu #createMenu (methodSelected)="onCreateVote($event)" />
 </div>

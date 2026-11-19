@@ -14,6 +14,7 @@ import {
 } from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import {
+  VOTE_METHOD_OPTIONS,
   VOTE_PARTICIPATION_STATUS_FILTER_LABELS,
   VOTE_VOTER_MAX_CHOICE_CHIPS,
   VOTE_VOTER_NOT_VOTED_LABELS,
@@ -23,7 +24,7 @@ import {
   VOTES_STATS_WINDOW_DAYS,
 } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus, VoteVoterStatus } from '../enums/poll.enum';
+import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, VoteVoterStatus } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
@@ -31,6 +32,7 @@ import { splitIntoParagraphs, truncateToUtf16Units } from './string.utils';
 import { isRankedPollType, votePermalinkPath } from './vote-results.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
+import type { CommitteeMember } from '../interfaces/member.interface';
 import type {
   CommentPromptFormValue,
   CommentResponseView,
@@ -154,6 +156,30 @@ export function mapEligibilityToFilters(eligibility: string): string[] {
 }
 
 /**
+ * Counts the group members a vote would go to, mirroring ITX's recipient resolution when a vote opens
+ * @description With voting enabled on the group, only members whose voting status is in the vote's
+ * eligibility filters receive it; with voting disabled, ITX ignores the filters and sends it to every member.
+ * @param members - The group's members
+ * @param eligibility - The form's eligible_participants value
+ * @param votingEnabled - Whether the group has voting enabled
+ * @returns Number of members the vote would be sent to
+ */
+export function countEligibleVoters(members: CommitteeMember[], eligibility: string, votingEnabled: boolean): number {
+  if (!votingEnabled) return members.length;
+  const filters = mapEligibilityToFilters(eligibility);
+  return members.filter((member) => !!member.voting?.status && filters.includes(member.voting.status)).length;
+}
+
+/**
+ * Reads a `?poll_type=` query param into a voting method the create form offers
+ * @param value - Raw query-param value
+ * @returns The method when it is one of {@link VOTE_METHOD_OPTIONS}, otherwise plurality
+ */
+export function parseVoteMethodParam(value: string | null): PollType {
+  return VOTE_METHOD_OPTIONS.find((option) => option.value === value)?.value ?? PollType.GENERIC;
+}
+
+/**
  * Maps API committee_filters back to the form's eligible_participants value
  * @param filters - Array of committee filter strings from the API (title-case format)
  * @returns Form eligibility value ('voting_rep', 'voting_rep,alternate_voting_rep', or 'all')
@@ -177,8 +203,8 @@ export function mapFiltersToEligibility(filters: string[] | undefined): string {
 }
 
 // Exact match only — user content identical to our placeholder is treated as empty on re-open.
-function isDraftPlaceholderPollQuestion(question: PollQuestion): boolean {
-  const placeholder = DRAFT_VOTE_PLACEHOLDER_QUESTION;
+function isDraftPlaceholderPollQuestion(question: PollQuestion, pollType: PollType): boolean {
+  const placeholder = draftPlaceholderQuestion(pollType);
   if (question.prompt.trim() !== placeholder.prompt || question.type !== placeholder.type) {
     return false;
   }
@@ -222,19 +248,22 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
   // Legacy votes carry no stored zone — hydrate in Pacific, the canonical reading of their end_time.
   const zone = vote.end_time_timezone || LEGACY_VOTE_TIMEZONE;
   const endDate = vote.end_time ? new Date(vote.end_time) : null;
+  const pollType = vote.poll_type || PollType.GENERIC;
 
   return {
     title: vote.name,
     description: vote.description || '',
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
+    // Votes created before LFX One offered a method choice carry no poll_type — they are plurality votes.
+    poll_type: pollType,
     close_date: endDate ? toZonedDateCarrier(endDate, zone) : null,
     close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : VOTE_DEFAULT_CLOSE_TIME,
     timezone: zone,
     allow_abstain: vote.allow_abstain ?? false,
     // Legacy votes predate the setting and behave as "allowed" (#4723).
     allow_vote_change: vote.allow_vote_change ?? true,
-    questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
+    questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question, pollType)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
   };
 }
@@ -341,15 +370,27 @@ export function getRecentCommentResponses(commentResults: PollCommentResult[], l
   }));
 }
 
+/** API question type for a form question — ranked votes always send `multiple_choice`, which ITX requires of every ranked question. */
+function resolveQuestionApiType(question: QuestionFormValue, pollType: PollType): CreatePollQuestion['type'] {
+  if (isRankedPollType(pollType)) return 'multiple_choice';
+  return question.response_type === 'single' ? 'single_choice' : 'multiple_choice';
+}
+
+/** The draft placeholder question for a voting method — a ranked vote's placeholder must be `multiple_choice` too. */
+function draftPlaceholderQuestion(pollType: PollType): CreatePollQuestion {
+  return isRankedPollType(pollType) ? { ...DRAFT_VOTE_PLACEHOLDER_QUESTION, type: 'multiple_choice' } : DRAFT_VOTE_PLACEHOLDER_QUESTION;
+}
+
 /**
  * Maps form question to API poll question format
  * @param question - The question form value
+ * @param pollType - The vote's voting method; ranked methods force `multiple_choice`
  * @returns CreatePollQuestion for the API request
  */
-export function mapQuestionToApiFormat(question: QuestionFormValue): CreatePollQuestion {
+export function mapQuestionToApiFormat(question: QuestionFormValue, pollType: PollType = PollType.GENERIC): CreatePollQuestion {
   return {
     prompt: question.question.trim(),
-    type: question.response_type === 'single' ? 'single_choice' : 'multiple_choice',
+    type: resolveQuestionApiType(question, pollType),
     choices: question.options
       .map((option) => option.trim())
       .filter((option) => option !== '')
@@ -435,7 +476,7 @@ function hasDraftQuestionInput(question: QuestionFormValue): boolean {
 }
 
 /** Preserves in-progress draft work by padding missing prompt/options instead of dropping partial questions. */
-function normalizeDraftQuestion(question: QuestionFormValue): CreatePollQuestion {
+function normalizeDraftQuestion(question: QuestionFormValue, pollType: PollType): CreatePollQuestion {
   const trimmedPrompt = question.question?.trim() ?? '';
   const nonEmptyOptions = (question.options ?? []).map((option) => option?.trim() ?? '').filter((option) => option !== '');
   const paddedOptions = [...nonEmptyOptions];
@@ -447,13 +488,19 @@ function normalizeDraftQuestion(question: QuestionFormValue): CreatePollQuestion
 
   return {
     prompt: trimmedPrompt.length > 0 ? trimmedPrompt : DRAFT_VOTE_PLACEHOLDER_QUESTION.prompt,
-    type: question.response_type === 'single' ? 'single_choice' : 'multiple_choice',
+    type: resolveQuestionApiType(question, pollType),
     choices: paddedOptions.map((option) => ({ choice_text: option })),
   };
 }
 
-function prepareDraftQuestions(questions: QuestionFormValue[]): CreatePollQuestion[] {
-  return questions.filter(hasDraftQuestionInput).map(normalizeDraftQuestion);
+function prepareDraftQuestions(questions: QuestionFormValue[], pollType: PollType): CreatePollQuestion[] {
+  return questions.filter(hasDraftQuestionInput).map((question) => normalizeDraftQuestion(question, pollType));
+}
+
+/** Draft poll_questions: the prepared questions, else the method's placeholder so the upstream-required list is never empty. */
+function resolveDraftQuestions(formValue: VoteFormValue): CreatePollQuestion[] {
+  const preparedQuestions = prepareDraftQuestions(formValue.questions, formValue.poll_type);
+  return preparedQuestions.length > 0 ? preparedQuestions : [draftPlaceholderQuestion(formValue.poll_type)];
 }
 
 /** Draft end_time: the combined deadline when date+time combine cleanly, else the default-duration fallback — never an empty required field. */
@@ -496,16 +543,14 @@ export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: str
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
     allow_vote_change: formValue.allow_vote_change,
-    poll_questions: formValue.questions.map(mapQuestionToApiFormat),
+    poll_type: formValue.poll_type,
+    poll_questions: formValue.questions.map((question) => mapQuestionToApiFormat(question, formValue.poll_type)),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
 
 /** Fills upstream-required fields with sensible defaults so a partial form can be saved as a draft. */
 export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: string): CreateVoteRequest {
-  const preparedQuestions = prepareDraftQuestions(formValue.questions);
-  const poll_questions: CreatePollQuestion[] = preparedQuestions.length > 0 ? preparedQuestions : [DRAFT_VOTE_PLACEHOLDER_QUESTION];
-
   return {
     name: formValue.title.trim(),
     description: normalizeDescription(formValue.description),
@@ -516,13 +561,16 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
     allow_vote_change: formValue.allow_vote_change,
-    poll_questions,
+    poll_type: formValue.poll_type,
+    poll_questions: resolveDraftQuestions(formValue),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
 
 /**
  * Builds an UpdateVoteRequest from form values
+ * @description Never sends `poll_type`: ITX keeps the stored method when it is absent, while an explicit
+ * value would replace a draft's method — omitting it is what locks the method once the vote exists.
  * @param formValue - The vote form values
  * @param projectUid - The project UID from context
  * @returns UpdateVoteRequest for the PUT API endpoint
@@ -538,16 +586,13 @@ export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: str
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
     allow_vote_change: formValue.allow_vote_change,
-    poll_questions: formValue.questions.map(mapQuestionToApiFormat),
+    poll_questions: formValue.questions.map((question) => mapQuestionToApiFormat(question, formValue.poll_type)),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
 
-/** Update-mode counterpart to buildDraftVoteRequest — fills upstream-required fields when the user clears them while editing an existing draft. */
+/** Update-mode counterpart to buildDraftVoteRequest — fills upstream-required fields when the user clears them while editing an existing draft. Like buildUpdateVoteRequest, never sends `poll_type`. */
 export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid: string): UpdateVoteRequest {
-  const preparedQuestions = prepareDraftQuestions(formValue.questions);
-  const poll_questions: CreatePollQuestion[] = preparedQuestions.length > 0 ? preparedQuestions : [DRAFT_VOTE_PLACEHOLDER_QUESTION];
-
   return {
     name: formValue.title.trim(),
     description: normalizeDescription(formValue.description),
@@ -558,7 +603,7 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
     allow_vote_change: formValue.allow_vote_change,
-    poll_questions,
+    poll_questions: resolveDraftQuestions(formValue),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
