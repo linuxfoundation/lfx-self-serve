@@ -1132,6 +1132,13 @@ export class CampaignsComponent {
   protected readonly briefCampaignsTwitterCreateEnabled = signal<boolean | null>(null);
   /** Whether a Meta create carries the Instagram id and EU DSA disclosures — `CampaignListResult.metaInstagramDsaEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInstagramDsaEnabled = signal<boolean | null>(null);
+  /** Meta audience targeting (#5905) — `CampaignListResult.metaAudienceTargetingEnabled`, and whether THIS caller may pick custom audiences (`metaCustomAudiencesEnabled`), read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaAudienceTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaCustomAudiencesEnabled = signal<boolean | null>(null);
+  /** The Meta call to action, conversion event and optimization goal (#5934), one capability each, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaCallToActionEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaConversionEventEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaOptimizationGoalEnabled = signal<boolean | null>(null);
   /** Whether the Implement tab searches Google's geo target table — `CampaignListResult.googleGeoSearchEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsGoogleGeoSearchEnabled = signal<boolean | null>(null);
 
@@ -3106,6 +3113,11 @@ export class CampaignsComponent {
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
         this.briefCampaignsTwitterCreateEnabled.set(null);
         this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+        this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
+        this.briefCampaignsMetaCallToActionEnabled.set(null);
+        this.briefCampaignsMetaConversionEventEnabled.set(null);
+        this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
+        this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsGoogleConversionActionsEnabled.set(null);
         this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -5928,6 +5940,11 @@ export class CampaignsComponent {
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
           this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
           this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
+          this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
+          this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
+          this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
+          this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
+          this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
           this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
@@ -5966,6 +5983,11 @@ export class CampaignsComponent {
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
           this.briefCampaignsTwitterCreateEnabled.set(null);
           this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+          this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
+          this.briefCampaignsMetaCallToActionEnabled.set(null);
+          this.briefCampaignsMetaConversionEventEnabled.set(null);
+          this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
+          this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsGoogleConversionActionsEnabled.set(null);
           this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6049,6 +6071,11 @@ export class CampaignsComponent {
       this.briefCampaignsMicrosoftScheduleEnabled.set(null);
       this.briefCampaignsTwitterCreateEnabled.set(null);
       this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+      this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
+      this.briefCampaignsMetaCallToActionEnabled.set(null);
+      this.briefCampaignsMetaConversionEventEnabled.set(null);
+      this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
+      this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
       this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
       this.briefCampaignsGoogleConversionActionsEnabled.set(null);
       this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6102,6 +6129,11 @@ export class CampaignsComponent {
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
             this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
             this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
+            this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
+            this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
+            this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
+            this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
+            this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
             this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
@@ -6138,6 +6170,11 @@ export class CampaignsComponent {
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);
             this.briefCampaignsTwitterCreateEnabled.set(null);
             this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+            this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
+            this.briefCampaignsMetaCallToActionEnabled.set(null);
+            this.briefCampaignsMetaConversionEventEnabled.set(null);
+            this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
+            this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsGoogleConversionActionsEnabled.set(null);
             this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);

@@ -86,6 +86,18 @@ describe('embedded personal data in free text', () => {
     expect(scrubFreeText('contact ada@acme.example, thanks')).toBe('contact , thanks');
   });
 
+  it('scrubs an address embedded in a URL path or followed by a colon, which are not git remotes', () => {
+    expect(scrubFreeText('https://portal.acme.example/users/ada@acme.example/profile')).toBe('https://portal.acme.example/users//profile');
+    expect(scrubFreeText('contact ada@acme.example:please')).toBe('contact :please');
+    expect(scrubFreeText('owner@acme.example/readme')).toBe('/readme');
+  });
+
+  it('keeps only a git-user remote, in the scp and ssh URL forms', () => {
+    expect(scrubFreeText('git@git.example.com:acme-org/repo.git')).toBe('git@git.example.com:acme-org/repo.git');
+    expect(scrubFreeText('ssh://git@git.example.com/acme-org/repo.git')).toBe('ssh://git@git.example.com/acme-org/repo.git');
+    expect(scrubFreeText('ada@git.example.com:acme-org/repo.git')).toBe(':acme-org/repo.git');
+  });
+
   it('keeps whole-value git remotes and version specs through stripPersonalFields', () => {
     const input = {
       remote: 'git@git.example.com:acme-org/repo.git',

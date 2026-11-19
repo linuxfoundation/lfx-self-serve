@@ -4,7 +4,7 @@ description: How to find, edit, delete, vote on, and send reminders for votes in
 audience: [all]
 product_area: Votes
 tags: [votes, manage, drafts, cast, results, reminders, mailing-list, copy-link]
-last_updated: 2026-11-12
+last_updated: 2026-11-17
 intercom_collection: Votes
 ---
 
@@ -66,6 +66,8 @@ You vote from the **Me** lens, where **Votes** lists the votes you are invited t
 3. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
 4. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
 5. Select **Submit Vote**. If the vote doesn't allow changes, a notice above the button says **Once you submit, your vote can't be changed.**
+
+If you are the last invited member who hasn't responded, submitting ends the vote. Before your first ballot is recorded, a **Submitting will end this vote** dialog asks you to confirm. Select **Submit and end vote** to submit your ballot and end the vote, or **Go back** to return to your ballot without submitting. You can't change your choices, comments or abstention afterward. The dialog appears whether or not the vote allows changes. It works the same in the ballot drawer, in Pending Actions on your dashboard, and on a personalized ballot link. Changing a ballot you already submitted never shows it. If the check can't be completed, your ballot is submitted without the dialog.
 
 After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. In the **Me** lens, **Review** opens the same drawer with your recorded choices, rankings, abstention and comments. When changes are allowed, edit your response and select **Update Vote** to resubmit it, or use your personalized ballot link. When changes are not allowed, the drawer stays read-only and says **Your vote is final and can't be changed.** The **Your ballot** section on the voter view of the vote's page shows what is recorded without offering ballot changes. Results stay hidden until the vote closes.
 

@@ -77,7 +77,7 @@
       <lfx-ui-menu-item
         icon="fa-light fa-paper-plane"
         [disabled]="!!ownActions()?.resending()"
-        (triggered)="ownActions()?.resendInvite()"
+        (triggered)="confirmResend()"
         data-testid="meeting-details-menu-resend"
         >Resend Invite</lfx-ui-menu-item
       >

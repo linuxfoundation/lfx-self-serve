@@ -294,7 +294,7 @@ describe('OrgMembershipsComponent', () => {
       expect(cell(SUBSIDIARY_ORG)).toBe('Subsidiary Co');
     });
 
-    it('groups the rows by foundation, one header per foundation and one line per organization under it', async () => {
+    it('lists one row per organization and foundation, naming the foundation on every row, with no foundation heading rows', async () => {
       const row = membershipRow(3);
       const lfn = { ...row, foundationId: 'lfn', foundationName: 'LF Networking', foundationSlug: 'lfn' };
       const response: OrgActiveMembershipsResponse = {
@@ -309,11 +309,15 @@ describe('OrgMembershipsComponent', () => {
       await settleActiveFetch(fixture);
 
       const rows = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="memberships-active-table"] tbody tr') as NodeListOf<HTMLElement>);
-      const shape = rows.map((tr) => tr.getAttribute('data-testid') ?? tr.querySelector('[data-testid^="memberships-active-company-"]')?.textContent?.trim());
-      expect(shape).toEqual(['memberships-active-group-cncf', 'Parent Co', 'Subsidiary Co', 'memberships-active-group-lfn', 'Parent Co']);
-      expect(fixture.nativeElement.querySelector('[data-testid="memberships-active-group-cncf"]')?.textContent).toContain(
-        'Cloud Native Computing Foundation (CNCF)'
-      );
+      const shape = rows.map((tr) => [
+        tr.querySelector('[data-testid^="memberships-active-foundation-"] .font-medium')?.textContent?.trim(),
+        tr.querySelector('[data-testid^="memberships-active-company-"]')?.textContent?.trim(),
+      ]);
+      expect(shape).toEqual([
+        ['Cloud Native Computing Foundation (CNCF)', 'Parent Co'],
+        ['Cloud Native Computing Foundation (CNCF)', 'Subsidiary Co'],
+        ['LF Networking', 'Parent Co'],
+      ]);
     });
 
     it('lists each organization’s expired membership as its own row, a foundation another organization still holds included', async () => {
@@ -428,14 +432,14 @@ describe('OrgMembershipsComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="memberships-page-title"]')?.textContent).toContain('Membership — All Parent Co Organizations');
     });
 
-    it('shows the server’s cards for the filtered rows, labelled as foundations and memberships', async () => {
+    it('shows the server’s cards for the filtered rows, labelled as memberships', async () => {
       const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
       await settleActiveFetch(fixture);
 
       const stat = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"] p`)?.textContent?.trim();
       const text = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.textContent?.trim();
       expect(stat('memberships-stat-active')).toBe('2');
-      expect(text('memberships-stat-active-label')).toBe('Foundations with Membership');
+      expect(text('memberships-stat-active-label')).toBe('Active Memberships');
       expect(stat('memberships-stat-renewing')).toBe('1');
       expect(text('memberships-stat-renewing-label')).toBe('Memberships Renewing Within 90 Days');
       expect(stat('memberships-stat-governance')).toBe('5');
@@ -582,7 +586,7 @@ describe('OrgMembershipsComponent', () => {
 
       expect(has(fixture, 'memberships-active-company-header')).toBe(false);
       expect(has(fixture, 'memberships-company-filter')).toBe(false);
-      expect(has(fixture, 'memberships-active-group-cncf')).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid^="memberships-active-foundation-"]')).toBeNull();
       expect(has(fixture, 'memberships-tab-discover')).toBe(true);
       const text = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.textContent?.trim();
       expect(text('memberships-stat-active-label')).toBe('Active Memberships');

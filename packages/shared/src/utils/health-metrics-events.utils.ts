@@ -8,6 +8,8 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_HOME_CODE,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
@@ -39,14 +41,13 @@ import { HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH, HEALTH_METRICS_NON_M
 import { HEALTH_METRICS_TABLE_DASH } from '../constants/health-metrics-table.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { buildHealthMetricsColumnChart, formatHealthMetricsChartCompact } from './health-metrics-column-chart.utils';
+import { formatHealthMetricsCountryFlag } from './health-metrics-world-map.utils';
 import { formatCurrency } from './number.utils';
 
 import type {
   HealthMetricsEventsAtAGlance,
-  HealthMetricsEventsAtAGlanceDelta,
   HealthMetricsEventsAtAGlancePeriod,
   HealthMetricsEventsAtAGlanceRowView,
-  HealthMetricsEventsAtAGlanceStatView,
   HealthMetricsEventsAtAGlanceView,
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
@@ -74,8 +75,6 @@ import type {
   HealthMetricsEventsRegistrationsGrowthYear,
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSpeakers,
-  HealthMetricsEventsRankedRowInput,
-  HealthMetricsEventsRankedRowView,
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersProposalRowView,
   HealthMetricsEventsSpeakersView,
@@ -609,45 +608,75 @@ export function buildHealthMetricsEventsSponsorshipView(
   };
 }
 
-/** The section for one period; a period with no country registrations reads as not available, never as zero countries. */
+/**
+ * One period's geographic distribution: countries represented with its change, the top country and the share from outside
+ * the US, every country for the map, and the top few. Shares divide by registrations with a known country.
+ */
 export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEventsGeography, range: HealthMetricsRange): HealthMetricsEventsGeographyView {
   const period = geography.periods.find((candidate) => candidate.range === range) ?? null;
-  const topCountries = period?.topCountries ?? [];
-  const measured = topCountries.length > 0;
-  const countries = measured ? (period?.countries ?? null) : null;
+  const ranked = period?.registrationsByCountry ?? [];
+  const measured = ranked.length > 0;
+  const total = ranked.reduce((sum, country) => sum + country.registrations, 0);
+  const share = (registrations: number): number => (total > 0 ? (registrations / total) * 100 : 0);
+  const top = ranked[0] ?? null;
+  const unitedStates = ranked
+    .filter((country) => country.code === HEALTH_METRICS_EVENTS_GEOGRAPHY_HOME_CODE)
+    .reduce((sum, country) => sum + country.registrations, 0);
   const changes = measured ? (period?.changes ?? null) : null;
 
   return {
     foundationMeasured: geography.periods.length > 0,
     measured,
-    countriesLabel: formatGeographyCountriesLabel(countries),
-    headline: {
-      key: 'countries',
-      label: 'Countries represented',
-      value: formatAtAGlanceCount(countries),
-      ...(changes ? formatAtAGlanceDelta(changes.countries, 'pct') : { delta: null, deltaDirection: 'neutral' }),
-    },
-    topCountries: buildRankedRows(topCountries.map((country) => ({ key: country.country, label: country.country, value: country.registrations }))),
+    metrics: [
+      {
+        key: 'countries',
+        label: 'Countries represented',
+        value: formatDashCount(measured ? (period?.countries ?? null) : null),
+        ...(changes ? metricTrend(changes.countries) : {}),
+      },
+      {
+        key: 'top',
+        label: 'Top country',
+        value: top?.country ?? HEALTH_METRICS_TABLE_DASH,
+        ...(top
+          ? {
+              description: `${formatHealthMetricsEventsCount(top.registrations)} ${top.registrations === 1 ? 'registration' : 'registrations'} · ${formatGeographyShare(share(top.registrations))}`,
+            }
+          : {}),
+      },
+      {
+        key: 'outside-us',
+        label: 'Outside the US',
+        value: measured ? formatGeographyShare(share(total - unitedStates)) : HEALTH_METRICS_TABLE_DASH,
+        ...(measured ? { description: 'of registrations' } : {}),
+      },
+    ],
+    countries: ranked.map((country) => ({
+      code: country.code,
+      name: country.country,
+      value: country.registrations,
+      valueLabel: `${formatHealthMetricsEventsCount(country.registrations)} · ${formatGeographyShare(share(country.registrations))}`,
+    })),
+    topCountries: ranked.slice(0, HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES).map((country) => ({
+      key: country.code ?? country.country,
+      flag: formatHealthMetricsCountryFlag(country.code),
+      name: country.country,
+      registrationsLabel: formatHealthMetricsEventsCount(country.registrations),
+      pctLabel: formatGeographyShare(share(country.registrations)),
+    })),
   };
 }
 
-function formatAtAGlanceCount(value: number | null | undefined): string {
-  return value === null || value === undefined ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : value.toLocaleString('en-US');
+/** A share as a whole percent, or one decimal under 1% that never rounds to zero ("0.1%" to "0.9%"), so a small country never reads 0%. */
+function formatGeographyShare(pct: number): string {
+  if (pct <= 0 || pct >= 1) return `${Math.round(pct)}%`;
+
+  const tenths = Math.max(0.1, Math.round(pct * 10) / 10);
+  return tenths >= 1 ? '1%' : `${tenths.toFixed(1)}%`;
 }
 
 function formatShowUpRate(period: HealthMetricsEventsAtAGlancePeriod | null): string {
   return period?.showUpRate === null || period?.showUpRate === undefined ? HEALTH_METRICS_TABLE_DASH : `${Math.round(period.showUpRate * 100)}%`;
-}
-
-/** A change as a whole percent (`−25%`) or, for a rate, points at one decimal (`+2.2 pp`); the sign follows the rounded value. */
-function formatAtAGlanceDelta(fraction: number | null, unit: 'pct' | 'pp'): HealthMetricsEventsAtAGlanceDelta {
-  if (fraction === null) return { delta: HEALTH_METRICS_EVENTS_NOT_AVAILABLE, deltaDirection: 'neutral' };
-
-  const rounded = unit === 'pct' ? Math.round(fraction * 100) : Number((fraction * 100).toFixed(1));
-  const magnitude = unit === 'pct' ? `${Math.abs(rounded)}%` : `${Math.abs(rounded).toFixed(1)} pp`;
-  if (rounded === 0) return { delta: magnitude, deltaDirection: 'neutral' };
-
-  return { delta: `${rounded > 0 ? '+' : '−'}${magnitude}`, deltaDirection: rounded > 0 ? 'up' : 'down' };
 }
 
 function formatRevenueGoalSuffix(goal: number | null, withheld: boolean): string {
@@ -808,18 +837,6 @@ function resolveProgressRatio(event: HealthMetricsEventsForecastEvent): number |
   if (!hasHealthMetricsEventsGoal(event.goal) || event.registrationsNow === null) return null;
 
   return event.registrationsNow / event.goal;
-}
-
-/** Empty when unmeasured, since the section then renders no pill. */
-function formatGeographyCountriesLabel(value: number | null): string {
-  if (value === null) return '';
-
-  return `${value.toLocaleString('en-US')} ${value === 1 ? 'country' : 'countries'}`;
-}
-
-/** Ranked-list rows, name and value only; an unmeasured value reads as not available. */
-function buildRankedRows(items: HealthMetricsEventsRankedRowInput[]): HealthMetricsEventsRankedRowView[] {
-  return items.map((item) => ({ key: item.key, label: item.label, valueLabel: formatAtAGlanceCount(item.value) }));
 }
 
 /** "View all {N} proposals" from the period's total; an unmeasured total drops the count rather than read as zero. */

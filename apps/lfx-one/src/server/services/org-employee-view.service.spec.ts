@@ -7,7 +7,9 @@ import type { RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken } = vi.hoisted(() => ({
+const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken, pinned, valkeyState } = vi.hoisted(() => ({
+  pinned: new Map<string, unknown>(),
+  valkeyState: { enabled: true, writeFails: false, readFails: false, raceWinner: null as string | null },
   generateM2MToken: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'employee'),
   resolveVerifiedUserEmails: vi.fn(),
@@ -16,52 +18,82 @@ const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken } = vi
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername() }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 vi.mock('../helpers/user-emails.helper', () => ({ resolveVerifiedUserEmails }));
+vi.mock('./valkey.service', () => ({
+  buildPerUserOrgKey: (namespace: string, username: string, id: string) => `${namespace}:${username}:${id}`,
+  valkeyService: {
+    isEnabled: () => valkeyState.enabled,
+    getJsonStrict: async (key: string) => {
+      if (valkeyState.readFails) return { status: 'fault' };
+      return pinned.has(key) ? { status: 'hit', value: pinned.get(key) } : { status: 'miss' };
+    },
+    setJsonIfAbsent: async (key: string, value: unknown) => {
+      if (!valkeyState.enabled || valkeyState.writeFails) return 'fault';
+      if (valkeyState.raceWinner) {
+        // Another request pinned first, between this one's read and write.
+        pinned.set(key, { orgUid: valkeyState.raceWinner });
+        return 'exists';
+      }
+      if (pinned.has(key)) return 'exists';
+      pinned.set(key, value);
+      return 'set';
+    },
+    setJson: async (key: string, value: unknown) => {
+      if (!valkeyState.enabled || valkeyState.writeFails) return false;
+      pinned.set(key, value);
+      return true;
+    },
+  },
+}));
 vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 
-const { OrgEmployeeViewService, emailBelongsToCompanyDomain, normalizeCompanyDomain } = await import('./org-employee-view.service');
-const { MicroserviceError } = await import('../errors');
+const { OrgEmployeeViewService, normalizeCompanyName } = await import('./org-employee-view.service');
 
 const ORG_UID = '0016100000ACMEAAA1';
-const CDEV_ORG = '0b7d6b1e-6a2f-4a1f-9c66-9d9a0f0d1234';
+const UID_B = '0016100000ZETAAAA1';
+const OTHER_UID = '0016100000OTHERAAA1';
+
+/** Lets the fire-and-forget sole-pin reconcile finish. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 const req = (): Request => ({ path: '/api/orgs/x/lens/overview' }) as unknown as Request;
 
-function experience(organizationId: string | undefined, endDate?: string) {
-  return [{ id: 'we-1', organization: 'Acme Motors', organizationId, jobTitle: 'Engineer', startDate: 'Jan 2024', endDate, source: 'cdp-enriched' as const }];
+interface Doc {
+  name?: string;
+  slug?: string;
+  primary_domain?: string;
+  domain_aliases?: string[];
+  is_member?: boolean;
+}
+const acme: Doc = { name: 'Acme Motors', primary_domain: 'acme-motors.example' };
+const zeta: Doc = { name: 'Zeta Holdings', primary_domain: 'zeta-holdings.example' };
+
+/** A work-history entry: present unless `endDate` is given. No crowd.dev organization id is involved. */
+function job(organization: string, startDate = 'Jan 2024', endDate?: string) {
+  return { id: `we-${organization}`, organization, jobTitle: 'Engineer', startDate, endDate, source: 'manual' as const };
+}
+
+function page(entries: [string, Doc][]) {
+  return { resources: entries.map(([uid, data]) => ({ id: `b2b_org:${uid}`, type: 'b2b_org', data })) };
 }
 
 interface Setup {
   experiences?: unknown;
-  account?: unknown;
-  org?: unknown;
+  orgs?: [string, Doc][] | Error;
   emails?: string[] | Error;
   auditor?: boolean | Error;
+  activity?: Map<string, number>;
 }
 
 function build(opts: Setup = {}) {
+  const orgs = opts.orgs ?? [[ORG_UID, acme]];
   const cdp = {
     getWorkExperiencesForKnownUser: vi
       .fn()
-      .mockImplementation(() => (opts.experiences instanceof Error ? Promise.reject(opts.experiences) : Promise.resolve(opts.experiences ?? []))),
-  };
-  const organizations = {
-    getOrgLensAccountContextByCdevOrgId: vi
-      .fn()
       .mockImplementation(() =>
-        opts.account instanceof Error
-          ? Promise.reject(opts.account)
-          : Promise.resolve(opts.account === undefined ? { accountId: ORG_UID, accountName: 'Acme Motors', isMember: true } : opts.account)
+        opts.experiences instanceof Error ? Promise.reject(opts.experiences) : Promise.resolve(opts.experiences ?? [job('Acme Motors')])
       ),
   };
-  const proxy = {
-    proxyRequest: vi
-      .fn()
-      .mockImplementation(() =>
-        opts.org instanceof Error
-          ? Promise.reject(opts.org)
-          : Promise.resolve(opts.org ?? { uid: ORG_UID, name: 'Acme Motors', primary_domain: 'acme-motors.example' })
-      ),
-  };
+  const proxy = { proxyRequest: vi.fn().mockImplementation(() => (orgs instanceof Error ? Promise.reject(orgs) : Promise.resolve(page(orgs)))) };
   resolveVerifiedUserEmails.mockImplementation(() =>
     opts.emails instanceof Error ? Promise.reject(opts.emails) : Promise.resolve(opts.emails ?? ['dev@acme-motors.example'])
   );
@@ -70,235 +102,546 @@ function build(opts: Setup = {}) {
       .fn()
       .mockImplementation(() => (opts.auditor instanceof Error ? Promise.reject(opts.auditor) : Promise.resolve(opts.auditor ?? false))),
   };
+  const engagement = { getLastActivityByAccount: vi.fn().mockResolvedValue(opts.activity ?? new Map<string, number>()) };
   const svc = new OrgEmployeeViewService({
     cdp: cdp as never,
-    organizations: organizations as never,
     emailVerification: {} as never,
     proxy: proxy as never,
     accessCheck: accessCheck as never,
+    engagement: engagement as never,
   });
-  return { svc, cdp, organizations, proxy, accessCheck };
+  return { svc, cdp, proxy, accessCheck, engagement };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pinned.clear();
+  OrgEmployeeViewService.clearCache();
+  valkeyState.enabled = true;
+  valkeyState.writeFails = false;
+  valkeyState.readFails = false;
+  valkeyState.raceWinner = null;
   getEffectiveUsername.mockReturnValue('employee');
   generateM2MToken.mockResolvedValue('m2m-token');
 });
 
+describe('normalizeCompanyName', () => {
+  it.each([
+    ['The Linux Foundation', 'linux foundation'],
+    ['Linux Foundation', 'linux foundation'],
+    ['Acme Motors, Inc.', 'acme motors'],
+    ['ACME  Motors LLC', 'acme motors'],
+    ['Zürich & Sons Ltd', 'zurich and sons'],
+    ['Inc', 'inc'],
+    ['', ''],
+  ])('%s -> %s', (input, expected) => {
+    expect(normalizeCompanyName(input)).toBe(expected);
+  });
+
+  it('handles null and undefined', () => {
+    expect(normalizeCompanyName(null)).toBe('');
+    expect(normalizeCompanyName(undefined)).toBe('');
+  });
+});
+
 describe('OrgEmployeeViewService.resolve', () => {
-  it('admits a current employee of an active member with a verified email on the company domain', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG) });
+  it('admits a present employer whose company the verified email names, with nothing read from crowd.dev', async () => {
+    const { svc } = build();
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: true, org: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null } });
   });
 
-  it('names the company from the affiliation when no uid is asked for', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG) });
+  it('names the company when no uid is asked for', async () => {
+    const { svc } = build();
 
     await expect(svc.resolve(req(), null)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
   });
 
-  it('denies a caller with no employer', async () => {
-    const { svc, organizations } = build({ experiences: [] });
+  it('matches the work-history employer name to the company name loosely', async () => {
+    const { svc } = build({ experiences: [job('the ACME motors, inc.')] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('denies a caller with no work history', async () => {
+    const { svc, proxy } = build({ experiences: [] });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-employer' });
-    expect(organizations.getOrgLensAccountContextByCdevOrgId).not.toHaveBeenCalled();
-  });
-
-  it('denies a caller whose only employment has ended', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG, 'Dec 2025') });
-
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-employer' });
-  });
-
-  it('denies an employer the account-grain mapping does not list, rather than guessing membership', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG), account: null });
-
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'employer-unresolvable' });
-  });
-
-  it('denies a non-member company', async () => {
-    const { svc, proxy } = build({ experiences: experience(CDEV_ORG), account: { accountId: ORG_UID, accountName: 'Acme Motors', isMember: false } });
-
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'not-member' });
     expect(proxy.proxyRequest).not.toHaveBeenCalled();
   });
 
-  it('denies a company other than the one the affiliation resolves to, so editing the URL opens nothing', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG) });
+  it('denies a caller whose only matching job has ended', async () => {
+    const { svc } = build({ experiences: [job('Acme Motors', 'Jan 2020', 'Dec 2025')] });
 
-    await expect(svc.resolve(req(), '0016100000OTHERAAA1')).resolves.toEqual({ eligible: false, reason: 'other-company' });
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-employer' });
   });
 
-  it('denies a caller with no verified email at all', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG), emails: [] });
+  it('denies when no present employer names the company the email points to', async () => {
+    const { svc } = build({ experiences: [job('Elsewhere Corp')] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'employer-mismatch' });
+  });
+
+  it('denies a caller with no verified email, without asking the query service', async () => {
+    const { svc, proxy } = build({ emails: [] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('never treats a personal mailbox provider as an employer', async () => {
+    const { svc, proxy } = build({ emails: [`dev@${'gmail'}.com`] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('denies when the email matches no active-member company', async () => {
+    const { svc } = build({ orgs: [] });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
   });
 
-  it('denies a caller whose verified email is on another company domain', async () => {
-    const { svc } = build({
-      experiences: experience(CDEV_ORG),
-      emails: ['dev@example.com', 'dev@notacme-motors.example', 'dev@acme-motors.example.evil.test'],
-    });
-
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
-  });
-
-  it('denies, rather than admits, when the company has no domain on record', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG), org: { uid: ORG_UID, name: 'Acme Motors' } });
-
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'company-domains-unknown' });
-  });
-
-  it('accepts a subdomain of the company domain', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG), emails: ['Dev@Eng.Acme-Motors.Example'] });
-
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
-  });
-
-  it('matches a registered domain alias, and an alias-only company still has domains', async () => {
-    const { svc } = build({
-      experiences: experience(CDEV_ORG),
-      org: { uid: ORG_UID, name: 'Acme Motors', primary_domain: 'acme-motors.example', domain_aliases: ['Acme-Group.example', 'bad host'] },
-      emails: ['dev@eng.acme-group.example'],
-    });
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
-
-    const aliasOnly = build({
-      experiences: experience(CDEV_ORG),
-      org: { uid: ORG_UID, name: 'Acme Motors', domain_aliases: ['acme-group.example'] },
-      emails: ['dev@acme-group.example'],
-    });
-    await expect(aliasOnly.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
-  });
-
-  it('still excludes the website host when aliases exist', async () => {
-    const { svc } = build({
-      experiences: experience(CDEV_ORG),
-      org: {
-        uid: ORG_UID,
-        name: 'Acme Motors',
-        primary_domain: 'acme-motors.example',
-        domain_aliases: ['acme-group.example'],
-        website: 'https://social.example/acme',
-      },
-      emails: ['dev@social.example'],
-    });
-
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
-  });
-
-  it('does not take a domain from the website: only primary_domain counts', async () => {
-    const { svc } = build({
-      experiences: experience(CDEV_ORG),
-      org: { uid: ORG_UID, name: 'Acme Motors', website: 'https://www.acme-motors.example/about' },
-      emails: ['dev@acme-motors.example'],
-    });
-
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'company-domains-unknown' });
-  });
-
-  it('reads the company record with the BFF machine token, not the caller token', async () => {
-    const { svc, proxy } = build({ experiences: experience(CDEV_ORG) });
+  it('asks only for active-member companies matching the address domains', async () => {
+    const { svc, proxy } = build({ emails: ['dev@eng.acme-motors.example'] });
 
     await svc.resolve(req(), ORG_UID);
 
-    expect(proxy.proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/b2b_orgs/${ORG_UID}`, 'GET', undefined, undefined, undefined, {
-      bearerToken: 'm2m-token',
+    expect(proxy.proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      expect.objectContaining({
+        type: 'b2b_org',
+        tags_all: ['is_member:true'],
+        filters_or: [
+          'primary_domain:eng.acme-motors.example',
+          'domain_aliases:eng.acme-motors.example',
+          'primary_domain:acme-motors.example',
+          'domain_aliases:acme-motors.example',
+        ],
+      }),
+      undefined,
+      undefined,
+      { bearerToken: 'm2m-token' }
+    );
+  });
+
+  it('re-checks every returned record, and ignores one the index marks as a non-member', async () => {
+    const unrelated = build({ orgs: [[ORG_UID, { name: 'Acme Motors', primary_domain: 'unrelated.example' }]] });
+    await expect(unrelated.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+
+    pinned.clear();
+    const lapsed = build({ orgs: [[ORG_UID, { ...acme, is_member: false }]] });
+    await expect(lapsed.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+  });
+
+  it('matches any registered domain (primary or Salesforce alias) of the company', async () => {
+    const { svc } = build({
+      orgs: [[ORG_UID, { name: 'Acme Motors', primary_domain: 'acme-motors.example', domain_aliases: ['Acme-Group.example', 'bad host'] }]],
+      emails: ['dev@eng.acme-group.example'],
     });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('denies a company other than the one the work history and email name, so editing the URL opens nothing', async () => {
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), OTHER_UID)).resolves.toEqual({ eligible: false, reason: 'other-company' });
   });
 
   it('reports the company slug so a slug address can resolve', async () => {
-    const { svc } = build({
-      experiences: experience(CDEV_ORG),
-      org: { uid: ORG_UID, name: 'Acme Motors', primary_domain: 'acme-motors.example', slug: 'Acme-Motors' },
-    });
+    const { svc } = build({ orgs: [[ORG_UID, { ...acme, slug: 'Acme-Motors' }]] });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgSlug: 'acme-motors' } });
   });
 
-  it('rejects, and does not cache a denial, when the token endpoint answers 404', async () => {
-    const notFound = new MicroserviceError('token endpoint 404', 404, 'M2M_TOKEN_ERROR', { operation: 'generate_m2m_token' });
-    generateM2MToken.mockRejectedValueOnce(notFound);
-    const { svc, proxy } = build({ experiences: experience(CDEV_ORG) });
+  it('reads companies with the BFF machine token and the work history without creating a CDP member', async () => {
+    const { svc, proxy, cdp } = build();
 
-    await expect(svc.resolve(req(), ORG_UID)).rejects.toBe(notFound);
-    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+    await svc.resolve(req(), ORG_UID);
 
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
-  });
-
-  it('still treats a 404 from the company record itself as no domain on record', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG), org: new MicroserviceError('missing', 404, 'NOT_FOUND') });
-
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'company-domains-unknown' });
-  });
-
-  it('rejects when the machine token cannot be minted', async () => {
-    generateM2MToken.mockRejectedValueOnce(new Error('auth0 down'));
-    const { svc } = build({ experiences: experience(CDEV_ORG) });
-
-    await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
+    expect(proxy.proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+    expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledWith(expect.anything(), 'employee');
   });
 
   it.each([
     ['the work history', { experiences: new Error('cdp down') }],
-    ['the membership lookup', { experiences: experience(CDEV_ORG), account: new Error('snowflake down') }],
-    ['the company record', { experiences: experience(CDEV_ORG), org: new MicroserviceError('boom', 502, 'UPSTREAM') }],
-    ['the verified email lookup', { experiences: experience(CDEV_ORG), emails: new Error('auth-service down') }],
+    ['the verified email lookup', { emails: new Error('auth-service down') }],
+    ['the company lookup', { orgs: new Error('query-service down') }],
   ])('rejects, never denies, when %s fails', async (_label, setup) => {
     const { svc } = build(setup as Setup);
 
     await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
   });
 
-  it('does not keep a rejected lookup, so the next request retries', async () => {
-    const { svc, cdp } = build({ experiences: new Error('cdp down') });
-    await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
+  it('rejects, and does not keep a denial, when the machine token cannot be minted', async () => {
+    generateM2MToken.mockRejectedValueOnce(new Error('auth0 down'));
+    const { svc } = build();
 
-    cdp.getWorkExperiencesForKnownUser.mockResolvedValue(experience(CDEV_ORG));
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
   });
 
-  it('shares one lookup between the parallel calls of one page', async () => {
-    const { svc, cdp } = build({ experiences: experience(CDEV_ORG) });
+  it('shares ONE lookup between the specific-company and unscoped calls of one page', async () => {
+    const { svc, cdp } = build();
 
-    await Promise.all([svc.resolve(req(), ORG_UID), svc.resolve(req(), ORG_UID), svc.resolve(req(), ORG_UID)]);
+    await Promise.all([svc.resolve(req(), ORG_UID), svc.resolve(req(), null), svc.resolveReduced(req()), svc.resolve(req(), OTHER_UID)]);
 
     expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(1);
+    expect(resolveVerifiedUserEmails).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one lookup across separately constructed services, as the gate, controller, navigation and resolver each build their own', async () => {
+    const a = build();
+    const b = build();
+
+    await Promise.all([a.svc.resolve(req(), ORG_UID), b.svc.resolve(req(), null)]);
+
+    expect(a.cdp.getWorkExperiencesForKnownUser.mock.calls.length + b.cdp.getWorkExperiencesForKnownUser.mock.calls.length).toBe(1);
   });
 
   it('resolves for the effective user, never the impersonating admin', async () => {
     getEffectiveUsername.mockReturnValue('impersonated-user');
-    const { svc, cdp } = build({ experiences: experience(CDEV_ORG) });
+    const { svc, cdp } = build();
 
     await svc.resolve(req(), ORG_UID);
 
     expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledWith(expect.anything(), 'impersonated-user');
-    // `resolveVerifiedUserEmails` is itself impersonation-aware and is read strictly, so an outage is never a "no".
     expect(resolveVerifiedUserEmails).toHaveBeenCalledWith(expect.anything(), expect.anything(), { strict: true });
   });
 
   it('denies a request with no effective username', async () => {
     getEffectiveUsername.mockReturnValue(null as never);
-    const { svc } = build({ experiences: experience(CDEV_ORG) });
+    const { svc } = build();
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: false });
   });
 });
 
+describe('OrgEmployeeViewService with several qualifying companies', () => {
+  const both: [string, Doc][] = [
+    [ORG_UID, acme],
+    [UID_B, zeta],
+  ];
+  const emails = ['dev@acme-motors.example', 'dev@zeta-holdings.example'];
+
+  it('chooses the company with the most recent engagement and cuts the other off', async () => {
+    const { svc } = build({
+      orgs: both,
+      emails,
+      experiences: [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')],
+      activity: new Map([
+        [ORG_UID, Date.parse('2026-11-01')],
+        [UID_B, Date.parse('2026-06-01')],
+      ]),
+    });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    await expect(svc.resolve(req(), UID_B)).resolves.toEqual({ eligible: false, reason: 'other-company' });
+    await expect(svc.resolve(req(), null)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+  });
+
+  it('falls back to the most recent start date when there is no engagement data', async () => {
+    const { svc } = build({ orgs: both, emails, experiences: [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Mar 2025')] });
+
+    await expect(svc.resolve(req(), null)).resolves.toMatchObject({ eligible: true, org: { orgUid: UID_B } });
+  });
+
+  it('considers only companies the work history names: the one with a present entry wins even if the other is newer', async () => {
+    const { svc } = build({ orgs: both, emails, experiences: [job('Acme Motors', 'Jan 2020')] });
+
+    await expect(svc.resolve(req(), null)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    await expect(svc.resolve(req(), UID_B)).resolves.toEqual({ eligible: false, reason: 'other-company' });
+  });
+
+  it('pins the choice: later activity elsewhere does not move it while employers and emails are unchanged', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    const first = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 2000],
+        [UID_B, 1000],
+      ]),
+    });
+    await expect(first.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
+
+    const later = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 1000],
+        [UID_B, 9000],
+      ]),
+    });
+    await expect(later.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    expect(later.engagement.getLastActivityByAccount).not.toHaveBeenCalled();
+  });
+
+  it('re-chooses when a verified email changes', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    const first = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 2000],
+        [UID_B, 1000],
+      ]),
+    });
+    await first.svc.resolve(req(), null);
+
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
+
+    const changed = build({
+      orgs: both,
+      emails: [...emails, 'dev2@zeta-holdings.example'],
+      experiences,
+      activity: new Map([
+        [ORG_UID, 1000],
+        [UID_B, 9000],
+      ]),
+    });
+    await expect(changed.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+  });
+
+  it('re-chooses when the work history changes', async () => {
+    const first = build({
+      orgs: both,
+      emails,
+      experiences: [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')],
+      activity: new Map([
+        [ORG_UID, 2000],
+        [UID_B, 1000],
+      ]),
+    });
+    await first.svc.resolve(req(), null);
+
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
+
+    const changed = build({
+      orgs: both,
+      emails,
+      experiences: [job('Zeta Holdings', 'Jan 2025'), job('Acme Motors', 'Jan 2024'), job('Side Project Ltd')],
+      activity: new Map([
+        [ORG_UID, 1000],
+        [UID_B, 9000],
+      ]),
+    });
+    await expect(changed.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+  });
+
+  it('rejects with a 503, and never chooses an unpinned company, when the pin cannot be stored', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    valkeyState.writeFails = true;
+    const failing = build({ orgs: both, emails, experiences });
+    await expect(failing.svc.resolve(req(), null)).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+
+    valkeyState.writeFails = false;
+    valkeyState.enabled = false;
+    const disabled = build({ orgs: both, emails, experiences });
+    await expect(disabled.svc.resolve(req(), null)).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it('treats a failed pin READ as unavailable, not as no pin, and leaves the stored pin untouched', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    const first = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 2000],
+        [UID_B, 1000],
+      ]),
+    });
+    await expect(first.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+
+    valkeyState.readFails = true;
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
+    const blip = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 1000],
+        [UID_B, 9000],
+      ]),
+    });
+    await expect(blip.svc.resolve(req(), null)).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+    expect(blip.engagement.getLastActivityByAccount).not.toHaveBeenCalled();
+
+    valkeyState.readFails = false;
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
+    const after = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 1000],
+        [UID_B, 9000],
+      ]),
+    });
+    await expect(after.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+  });
+
+  it('answers with the stored winner when another request pinned first, so concurrent cold requests cannot admit two companies', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    valkeyState.raceWinner = UID_B;
+    const { svc } = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 9000],
+        [UID_B, 1000],
+      ]),
+    });
+
+    // This request ranks Acme first, but Zeta was pinned a moment earlier: Zeta is the answer.
+    await expect(svc.resolve(req(), null)).resolves.toMatchObject({ eligible: true, org: { orgUid: UID_B } });
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'other-company' });
+  });
+
+  it('gives every pin operation the fail-closed budget, not the 250 ms cache budget', async () => {
+    const { valkeyService } = await import('./valkey.service');
+    const getSpy = vi.spyOn(valkeyService, 'getJsonStrict');
+    const setSpy = vi.spyOn(valkeyService, 'setJsonIfAbsent');
+    const { svc } = build({ orgs: both, emails, experiences: [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')] });
+
+    await svc.resolve(req(), null);
+
+    expect(getSpy).toHaveBeenCalledWith(expect.any(String), expect.any(Function), 3000);
+    expect(setSpy).toHaveBeenCalledWith(expect.any(String), expect.any(Object), expect.any(Number), 3000);
+  });
+
+  it('records a sole company, so a second one qualifying later (same employers and emails) does not displace it', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    const alone = build({ orgs: [[ORG_UID, acme]], emails, experiences });
+    await expect(alone.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    await settle();
+
+    // Zeta becomes a member: the fingerprint is unchanged, and Zeta now leads on both start date and activity.
+    OrgEmployeeViewService.clearCache();
+    const both2 = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 1000],
+        [UID_B, 9000],
+      ]),
+    });
+    await expect(both2.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    expect(both2.engagement.getLastActivityByAccount).not.toHaveBeenCalled();
+  });
+
+  it('does not wait for the pin store when there is a sole company', async () => {
+    const { valkeyService } = await import('./valkey.service');
+    const hang = vi.spyOn(valkeyService, 'getJsonStrict').mockImplementation(() => new Promise(() => undefined));
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    hang.mockRestore();
+  });
+
+  it('follows the sole company through a two, one, two transition, so an obsolete pin cannot come back', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    const activity = (acmeAt: number, zetaAt: number) =>
+      new Map([
+        [ORG_UID, acmeAt],
+        [UID_B, zetaAt],
+      ]);
+    const two = build({ orgs: both, emails, experiences, activity: activity(9000, 1000) });
+    await expect(two.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+
+    // Acme lapses: Zeta is the sole company and is recorded over the Acme pin.
+    OrgEmployeeViewService.clearCache();
+    const one = build({ orgs: [[UID_B, zeta]], emails, experiences });
+    await expect(one.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+    await settle();
+
+    // Acme returns: the pin is Zeta, not the old Acme pin.
+    OrgEmployeeViewService.clearCache();
+    const again = build({ orgs: both, emails, experiences, activity: activity(9000, 1000) });
+    await expect(again.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+  });
+
+  it('answers a single qualifying company even when the pin store is unavailable', async () => {
+    valkeyState.enabled = false;
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('replaces a pin that no longer qualifies and persists the replacement, so later activity cannot move it again', async () => {
+    const third: [string, Doc][] = [...both, [OTHER_UID, { name: 'Other Works', primary_domain: 'other-works.example' }]];
+    const threeEmails = [...emails, 'dev@other-works.example'];
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025'), job('Other Works', 'Jan 2023')];
+    const first = build({
+      orgs: third,
+      emails: threeEmails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 3000],
+        [UID_B, 2000],
+        [OTHER_UID, 1000],
+      ]),
+    });
+    await expect(first.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+
+    // Acme stops being a member (same fingerprint: same employers and emails). The replacement is ranked once and stored.
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
+    const second = build({
+      orgs: [third[1], third[2]],
+      emails: threeEmails,
+      experiences,
+      activity: new Map([
+        [UID_B, 2000],
+        [OTHER_UID, 1000],
+      ]),
+    });
+    await expect(second.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
+
+    const later = build({
+      orgs: [third[1], third[2]],
+      emails: threeEmails,
+      experiences,
+      activity: new Map([
+        [UID_B, 1000],
+        [OTHER_UID, 9000],
+      ]),
+    });
+    await expect(later.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+    expect(later.engagement.getLastActivityByAccount).not.toHaveBeenCalled();
+  });
+
+  it('counts two entries naming the same company once', async () => {
+    const { svc, engagement } = build({ experiences: [job('Acme Motors', 'Jan 2024'), job('The Acme Motors Inc', 'Jan 2025')] });
+
+    await expect(svc.resolve(req(), null)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    expect(engagement.getLastActivityByAccount).not.toHaveBeenCalled();
+  });
+});
+
 describe('OrgEmployeeViewService.resolveReduced', () => {
   it('reports the company for a caller who is employee-only', async () => {
-    const { svc, accessCheck } = build({ experiences: experience(CDEV_ORG) });
+    const { svc, accessCheck } = build();
 
     await expect(svc.resolveReduced(req())).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
     expect(accessCheck.checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: ORG_UID, access: 'auditor' });
   });
 
   it('does not publish an employee-only flag for a caller who also holds the auditor entitlement (they resolve full)', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG), auditor: true });
+    const { svc } = build({ auditor: true });
 
     await expect(svc.resolveReduced(req())).resolves.toEqual({
       eligible: false,
@@ -308,7 +651,7 @@ describe('OrgEmployeeViewService.resolveReduced', () => {
   });
 
   it('rejects, never publishes, when the authorizer cannot answer', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG), auditor: new Error('authorizer down') });
+    const { svc } = build({ auditor: new Error('authorizer down') });
 
     await expect(svc.resolveReduced(req())).rejects.toBeInstanceOf(Error);
   });
@@ -335,85 +678,55 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
     staffCheck: 'ok',
     ...overrides,
   });
-  const member = { hasEmployer: true, employerIsMember: true, lookup: 'ok' as const };
 
   beforeEach(() => {
     process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'] = 'true';
   });
 
-  it('reports the company for a grant-less employee of a member', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG) });
+  it('reports the company for a grant-less employee', async () => {
+    const { svc } = build();
 
-    await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({
+    await expect(svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({
       employeeView: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null },
     });
   });
 
-  it.each([
-    ['a grant holder', grants({ writers: [ORG_UID] }), member],
-    ['LF staff', grants({ isStaff: true }), member],
-    ['a partial roster', grants({ lookupOutcome: 'partial' }), member],
-    ['a non-member employer', grants(), { hasEmployer: true, employerIsMember: false, lookup: 'ok' as const }],
-    ['an unanswered affiliation', grants(), { hasEmployer: true, employerIsMember: false, lookup: 'failed' as const }],
-  ])('asks nothing for %s', async (_label, g, affiliation) => {
-    const { svc, cdp } = build({ experiences: experience(CDEV_ORG) });
+  it('needs no affiliation verdict, so a contractor takes the same path', async () => {
+    const { svc } = build();
 
-    await expect(svc.getRoleGrantEmployeeView(req(), g, affiliation)).resolves.toEqual({});
+    await expect(svc.getRoleGrantEmployeeView(req(), grants({ isContractor: true }))).resolves.toMatchObject({ employeeView: { orgUid: ORG_UID } });
+  });
+
+  it.each([
+    ['a grant holder', grants({ writers: [ORG_UID] })],
+    ['LF staff', grants({ isStaff: true })],
+    ['a partial roster', grants({ lookupOutcome: 'partial' })],
+  ])('asks nothing for %s', async (_label, g) => {
+    const { svc, cdp } = build();
+
+    await expect(svc.getRoleGrantEmployeeView(req(), g)).resolves.toEqual({});
     expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
   });
 
   it('publishes the full-access company, not an employee view, for a caller who also holds the auditor entitlement', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG), auditor: true });
+    const { svc } = build({ auditor: true });
 
-    await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({ fullAccessOrgUid: ORG_UID });
+    await expect(svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({ fullAccessOrgUid: ORG_UID });
   });
 
-  it('lets a grant-less contractor, who has no affiliation verdict, reach the strict lookup', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG) });
+  it('answers nothing, not an error, when the lookup fails or the caller does not qualify', async () => {
+    const failing = build({ experiences: new Error('cdp down') });
+    await expect(failing.svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({});
 
-    await expect(svc.getRoleGrantEmployeeView(req(), grants({ isContractor: true }), undefined)).resolves.toEqual({
-      employeeView: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null },
-    });
-  });
-
-  it('still requires a member verdict from a non-contractor, and a contractor must still qualify', async () => {
-    const { svc, cdp } = build({ experiences: [] });
-
-    await expect(svc.getRoleGrantEmployeeView(req(), grants(), undefined)).resolves.toEqual({});
-    expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
-    await expect(svc.getRoleGrantEmployeeView(req(), grants({ isContractor: true }), undefined)).resolves.toEqual({});
-    expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(1);
-  });
-
-  it('answers nothing, not an error, when the lookup fails', async () => {
-    const { svc } = build({ experiences: new Error('cdp down') });
-
-    await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({});
+    const none = build({ experiences: [] });
+    await expect(none.svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({});
   });
 
   it('is a no-op with the flag off', async () => {
     process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'] = '';
-    const { svc, cdp } = build({ experiences: experience(CDEV_ORG) });
+    const { svc, cdp } = build();
 
-    await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({});
+    await expect(svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({});
     expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
-  });
-});
-
-describe('domain helpers', () => {
-  it('normalizes a domain or URL to a bare host', () => {
-    expect(normalizeCompanyDomain('https://www.Acme-Motors.example/careers')).toBe('acme-motors.example');
-    expect(normalizeCompanyDomain('acme-motors.example/about')).toBe('acme-motors.example');
-    expect(normalizeCompanyDomain('not a host')).toBeNull();
-    expect(normalizeCompanyDomain('')).toBeNull();
-    expect(normalizeCompanyDomain(null)).toBeNull();
-  });
-
-  it('matches on a whole label boundary only', () => {
-    expect(emailBelongsToCompanyDomain('a@acme-motors.example', ['acme-motors.example'])).toBe(true);
-    expect(emailBelongsToCompanyDomain('a@eng.acme-motors.example', ['acme-motors.example'])).toBe(true);
-    expect(emailBelongsToCompanyDomain('a@notacme-motors.example', ['acme-motors.example'])).toBe(false);
-    expect(emailBelongsToCompanyDomain('a@acme-motors.example.evil.test', ['acme-motors.example'])).toBe(false);
-    expect(emailBelongsToCompanyDomain('no-at-sign', ['acme-motors.example'])).toBe(false);
   });
 });
