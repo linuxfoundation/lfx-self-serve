@@ -266,7 +266,7 @@ function orgLensPageRoutes(): Routes {
       path: 'profile',
       data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your company.', icon: 'fa-light fa-file' },
       // Single-organization by definition, so the roll-up redirects to its own home page (#4415, #4133).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       loadComponent: loadOrgProfilePage,
     },
   ]);
