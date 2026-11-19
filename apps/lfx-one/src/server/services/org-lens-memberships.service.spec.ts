@@ -218,7 +218,7 @@ describe('OrgLensMembershipsService — family roll-up', () => {
       expect(cacheKeys).toEqual(['memberships-active-family:v3']);
     });
 
-    it('lists one row per organization and foundation, each naming its organization, and counts each foundation once on the Active card', async () => {
+    it('lists one row per organization and foundation, each naming its organization, and counts each row on the Active card', async () => {
       tables.active = [
         active(PARENT, 'cncf', { IS_RENEWING_WITHIN_90_DAYS: true }),
         active(SUBSIDIARY, 'cncf', { BOARD_MEMBER_SEAT_COUNT: 0 }),
@@ -233,16 +233,16 @@ describe('OrgLensMembershipsService — family roll-up', () => {
         ['cncf', SUBSIDIARY_ORG],
         ['lfn', SUBSIDIARY_ORG],
       ]);
-      expect(response.summary).toEqual({ activeMemberships: 2, renewingWithin90Days: 1, governanceRoles: 3 + 2 + 3 });
+      expect(response.summary).toEqual({ activeMemberships: 3, renewingWithin90Days: 1, governanceRoles: 3 + 2 + 3 });
       expect(response.organizations).toEqual([SUBSIDIARY_ORG, PARENT_ORG]);
     });
 
-    it('counts each organization’s renewing membership, so two organizations renewing at one foundation count twice', async () => {
+    it('counts each organization’s membership, so two organizations active and renewing at one foundation count twice on both cards', async () => {
       tables.active = [active(PARENT, 'cncf', { IS_RENEWING_WITHIN_90_DAYS: true }), active(SUBSIDIARY, 'cncf', { IS_RENEWING_WITHIN_90_DAYS: true })];
 
       const response = await new OrgLensMembershipsService().getFamilyActiveMemberships(scope());
 
-      expect(response.summary.activeMemberships).toBe(1);
+      expect(response.summary.activeMemberships).toBe(2);
       expect(response.summary.renewingWithin90Days).toBe(2);
     });
 
@@ -298,6 +298,7 @@ describe('OrgLensMembershipsService — family roll-up', () => {
       const service = new OrgLensMembershipsService();
 
       const family = await service.getFamilyActiveMemberships(scope());
+      expect(family.summary.activeMemberships).toBe(family.memberships.length);
       expect(family.summary.governanceRoles).toBe(9);
 
       const subsidiary = await service.getFamilyActiveMemberships(scope(), { company: SUBSIDIARY });
@@ -306,7 +307,7 @@ describe('OrgLensMembershipsService — family roll-up', () => {
 
       const gold = await service.getFamilyActiveMemberships(scope(), { tier: 'Gold Membership', search: 'cn' });
       expect(gold.memberships.map((m) => m.organization?.accountId)).toEqual([PARENT, SUBSIDIARY]);
-      expect(gold.summary).toEqual({ activeMemberships: 1, renewingWithin90Days: 1, governanceRoles: 6 });
+      expect(gold.summary).toEqual({ activeMemberships: 2, renewingWithin90Days: 1, governanceRoles: 6 });
       expect(gold.organizations).toHaveLength(2);
     });
 
