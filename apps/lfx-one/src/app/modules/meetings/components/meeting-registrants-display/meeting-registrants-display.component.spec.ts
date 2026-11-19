@@ -904,6 +904,40 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     expect(delta).toHaveBeenLastCalledWith(0);
   });
 
+  it.each([
+    { uid: '', fetched: false },
+    { uid: '', fetched: true },
+    { uid: 'optimistic-rejoin', fetched: false },
+    { uid: 'optimistic-rejoin', fetched: true },
+  ])('keeps a re-invitation while a known deleted row remains indexed: %j', async ({ uid, fetched }) => {
+    const old = { ...listed(SELF_GUEST.email), uid: 'deleted-self' };
+    const rejoined = { ...old, uid };
+    const indexed = { ...old, uid: 'new-self' };
+    const options = fetched ? { fetched: of([old]) } : { registrants: [old] };
+    const { fixture } = await mount(options);
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['deleted-self']);
+    fixture.componentRef.setInput('confirmedRegistrants', [rejoined]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([rejoined]);
+
+    const refresh = async (rows: MeetingRegistrant[]): Promise<void> => {
+      if (fetched) {
+        vi.mocked(TestBed.inject(MeetingService).getMeetingRegistrants).mockReturnValueOnce(of(rows));
+        fixture.componentRef.setInput('visible', false);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.componentRef.setInput('visible', true);
+      } else fixture.componentRef.setInput('initialRegistrants', rows);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+    await refresh([old, indexed]);
+    expect(fixture.componentInstance.registrants()).toEqual([indexed]);
+    await refresh([old]);
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+  });
+
   it.each(['saved-self', '', 'optimistic-self'])('does not resurrect a parent-saved row after indexing acknowledges it then drops it: %j', async (uid) => {
     const saved = { ...listed(SELF_GUEST.email), uid };
     const { fixture } = await mount();

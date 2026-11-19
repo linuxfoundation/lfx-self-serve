@@ -374,8 +374,10 @@ export class MeetingRegistrantsDisplayComponent {
     toObservable(
       computed(() => {
         const self = this.selfGuest();
+        const removed = new Set([...this.deletedRegistrantUids(), ...this.confirmedRemovedRegistrantIds()]);
+        const fetched = this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.internalRegistrants();
         return {
-          fetched: this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.internalRegistrants(),
+          fetched: fetched.filter((row) => !removed.has(row.uid)),
           confirmed: this.confirmedRegistrants(),
           self,
           selfRemoved: !!self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id),
@@ -392,7 +394,10 @@ export class MeetingRegistrantsDisplayComponent {
         this.optimisticRegistrants.update((rows) => {
           if (selfRemoved && self) {
             const removedUids = [...fetched, ...rows].filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
-            this.deletedRegistrantUids.update((known) => new Set([...known, ...removedUids]));
+            this.deletedRegistrantUids.update((known) => {
+              const added = removedUids.filter((uid) => !known.has(uid));
+              return added.length ? new Set([...known, ...added]) : known;
+            });
           }
           const retained = rows.filter((row) => !(selfRemoved && self && isMeetingSelfGuestListed(self, [row])));
           const indexed = fetched.filter((row) => !this.deletedRegistrantUids().has(row.uid));

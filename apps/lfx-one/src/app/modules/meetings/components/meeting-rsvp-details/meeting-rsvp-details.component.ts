@@ -121,10 +121,11 @@ export class MeetingRsvpDetailsComponent {
 
   public constructor() {
     toObservable(
-      computed(() => ({
-        roster: this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants,
-        confirmed: this.confirmedRegistrants(),
-      }))
+      computed(() => {
+        const removed = new Set(this.confirmedRemovedRegistrantIds());
+        const roster = this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
+        return { roster: roster.filter((row) => !removed.has(row.uid)), confirmed: this.confirmedRegistrants() };
+      })
     )
       .pipe(takeUntilDestroyed())
       .subscribe(({ roster, confirmed }) => {

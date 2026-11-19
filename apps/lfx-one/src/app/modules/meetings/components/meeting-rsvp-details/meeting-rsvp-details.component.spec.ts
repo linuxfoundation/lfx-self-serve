@@ -109,6 +109,38 @@ describe('MeetingRsvpDetailsComponent', () => {
     expect(fixture.componentInstance.meetingRegistrantCount()).toBe(11);
   });
 
+  it.each([
+    { uid: '', supplied: true },
+    { uid: '', supplied: false },
+    { uid: 'optimistic-rejoin', supplied: true },
+    { uid: 'optimistic-rejoin', supplied: false },
+  ])('does not acknowledge a re-invitation against a known deleted row: %j', async ({ uid, supplied }) => {
+    const old = buildRegistrant({ uid: 'deleted-self', email: 'self@example.com' });
+    const rejoined = { ...old, uid };
+    const indexed = { ...old, uid: 'new-self' };
+    const roster$ = new BehaviorSubject<MeetingRegistrant[]>([old]);
+    getMeetingRegistrants.mockReturnValue(roster$);
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting());
+    if (supplied) fixture.componentRef.setInput('initialRegistrants', [old]);
+    await fixture.whenStable();
+
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['deleted-self']);
+    fixture.componentRef.setInput('confirmedRegistrants', [rejoined]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([rejoined]);
+
+    if (supplied) fixture.componentRef.setInput('initialRegistrants', [old, indexed]);
+    else roster$.next([old, indexed]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([indexed]);
+    if (supplied) fixture.componentRef.setInput('initialRegistrants', [old]);
+    else roster$.next([old]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+    roster$.complete();
+  });
+
   it.each(['', 'optimistic-self'])('retires a fallback confirmation after its indexed row appears then disappears: %j', async (uid) => {
     const fallback = buildRegistrant({ uid, email: 'self@example.com' });
     const indexed = { ...fallback, uid: 'indexed-self', email: ' SELF@example.com ' };
