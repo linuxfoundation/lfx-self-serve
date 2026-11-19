@@ -379,12 +379,15 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
       await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
     });
 
-    it('does not switch the caller away from a selection query-service does not show when the employee check fails', async () => {
+    it('answers a retriable 503, never a 409, rather than switch the caller away from a selection query-service does not show when the employee check fails', async () => {
       resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
       // prefer = B: not readable (the lookup by uid finds nothing), so it may be the employee company that could not be checked.
       proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }])).mockResolvedValueOnce(page([]));
 
-      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_B)).resolves.toMatchObject({ outcome: 'ambiguous' });
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_B)).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'ROLE_GRANTS_UNAVAILABLE',
+      });
     });
 
     it('keeps the readable company on a failed check when the caller\u2019s selection is itself readable', async () => {

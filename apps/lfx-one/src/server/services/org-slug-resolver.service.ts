@@ -128,8 +128,9 @@ export class OrgSlugResolverService {
     if (cached.outcome === 'hit') {
       if (failed && prefer && prefer !== cached.org.uid && !(await this.lookupByUid(req, prefer))) {
         // The employee check could not answer, and the caller's current selection is a company query-service does not show them: it
-        // may be the all employee view company sharing this slug. Do not switch them to the readable one on a guess.
-        return { outcome: 'ambiguous', cache };
+        // may be the all employee view company sharing this slug. Do not switch them to the readable one on a guess: answer a retriable
+        // 503 (not a 409 the client would keep as "not found" for the page's lifetime).
+        throw this.employeeViewUnavailable(undefined);
       }
       if (!employee || employee.orgUid === cached.org.uid) return { ...cached, cache };
       if (prefer === employee.orgUid) return { outcome: 'hit', org: this.toEmployeeResolution(employee), cache };
@@ -184,6 +185,15 @@ export class OrgSlugResolverService {
     }
   }
 
+  /** The structured retriable 503 for an employee-view lookup that could not answer, so the client retries instead of caching "not found". */
+  private employeeViewUnavailable(cause: unknown): MicroserviceError {
+    return new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
+      operation: 'resolve_employee_view_org',
+      service: 'org_slug_resolver_service',
+      originalError: cause instanceof Error ? cause : undefined,
+    });
+  }
+
   private toEmployeeResolution(employee: OrgLensEmployeeViewGrant): OrgResolveResponse {
     return { uid: employee.orgUid, slug: employee.orgSlug ?? null, name: employee.orgName, employeeView: true };
   }
@@ -224,11 +234,7 @@ export class OrgSlugResolverService {
       return claOnly;
     }
     if (employeeViewError !== undefined) {
-      throw new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
-        operation: 'resolve_employee_view_org',
-        service: 'org_slug_resolver_service',
-        originalError: employeeViewError instanceof Error ? employeeViewError : undefined,
-      });
+      throw this.employeeViewUnavailable(employeeViewError);
     }
     return null;
   }
