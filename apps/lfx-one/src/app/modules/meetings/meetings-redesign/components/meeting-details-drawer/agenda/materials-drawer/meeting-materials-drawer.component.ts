@@ -85,8 +85,8 @@ export class MeetingMaterialsDrawerComponent {
   protected readonly pendingDeletions = signal<ReadonlySet<string>>(new Set());
   /** Scope changes staged on existing attachments, only where they differ from the saved scope. */
   protected readonly pendingScopes = signal<ReadonlyMap<string, AttachmentScope>>(new Map());
-  /** Scope of the files and links added now; the whole series unless "This occurrence" is picked. */
-  protected readonly newItemScope = signal<AttachmentScope>('series');
+  /** Scope of the files and links added now; this occurrence unless "All occurrences" is picked (#5912). */
+  protected readonly newItemScope = signal<AttachmentScope>('occurrence');
   protected readonly newLinkTitle = signal('');
   protected readonly newLinkUrl = signal('');
 

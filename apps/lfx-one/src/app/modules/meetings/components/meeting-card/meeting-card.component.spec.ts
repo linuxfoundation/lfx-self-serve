@@ -660,6 +660,71 @@ describe('MeetingCardComponent — remove myself', () => {
     rsvpButtons = undefined;
   });
 
+  it.each([false, true])('restores invitation controls after drawer self-add, previously removed: %s', async (previouslyRemoved) => {
+    if (previouslyRemoved) removedIds.set(new Set(['meeting-1']));
+    const component = await mount({ ...INVITEE, invited: false, organizer: true, my_registrant_ids: [] });
+    const meetings = TestBed.inject(MeetingService);
+    expect(component.effectivelyInvited()).toBe(false);
+    vi.mocked(meetings.getMeeting).mockClear();
+    const users = TestBed.inject(UserService);
+    const refresh = vi.spyOn(users, 'refreshUserMeetings');
+    const cachedFeed = users.getUserMeetings();
+    cachedFeed.subscribe();
+    const http = vi.mocked(TestBed.inject(HttpClient).get);
+    http.mockClear();
+
+    component.onSelfAdded('meeting-1');
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.effectivelyInvited()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.canResendInvite()).toBe(true);
+    expect(removedIds().has('meeting-1')).toBe(false);
+    expect(meetings.getMeeting).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
+    expect(http).not.toHaveBeenCalled();
+    const freshFeed = users.getUserMeetings();
+    expect(freshFeed).not.toBe(cachedFeed);
+    freshFeed.subscribe();
+    expect(http).toHaveBeenCalledExactlyOnceWith('/api/user/meetings', { params: undefined });
+    expect(component.additionalRegistrantsCount()).toBe(0);
+  });
+
+  it('ignores drawer self-add events belonging to another meeting', async () => {
+    const component = await mount({ ...INVITEE, invited: false, organizer: true, my_registrant_ids: [] });
+    const meetings = TestBed.inject(MeetingService);
+    vi.mocked(meetings.getMeeting).mockClear();
+    const refresh = vi.spyOn(TestBed.inject(UserService), 'refreshUserMeetings');
+    component.onSelfAdded('another-meeting');
+    expect(component.effectivelyInvited()).toBe(false);
+    expect(meetings.getMeeting).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('reconciles drawer self-row deletion, another registration remains: %s', async (remaining) => {
+    const component = await mount({ ...INVITEE, invited: false, organizer: true, my_registrant_ids: [] });
+    component.onSelfAdded('meeting-1');
+    const users = TestBed.inject(UserService);
+    const clear = vi.spyOn(users, 'clearConfirmedMeetingRsvps');
+    const result = { meeting_id: 'meeting-1', removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: remaining ? ['self-survivor'] : [] };
+    component.onSelfRemoved(result);
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(remaining);
+    expect(component.canLeaveMeeting()).toBe(remaining);
+    expect(component.canResendInvite()).toBe(remaining);
+    expect(removedIds().has('meeting-1')).toBe(!remaining);
+    expect(clear).toHaveBeenCalledWith('meeting-1', expect.any(String), result);
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+  });
+
+  it('ignores self-row deletion from another meeting', async () => {
+    const component = await mount();
+    const clear = vi.spyOn(TestBed.inject(UserService), 'clearConfirmedMeetingRsvps');
+    component.onSelfRemoved({ meeting_id: 'another-meeting', removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: [] });
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(clear).not.toHaveBeenCalled();
+  });
+
   it.each([{ sub: 'synthetic-other', username: 'synthetic-viewer' }, null])(
     "removes the previous viewer's card-local confirmations from an organizer overview after identity changes to %s",
     async (nextUser) => {
@@ -797,6 +862,14 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.canLeaveMeeting()).toBe(false);
   });
 
+  it('escapes the title, since PrimeNG renders the message as HTML', async () => {
+    const component = await mount({ ...INVITEE, title: 'TSC <EU/APAC> & sync' } as Meeting);
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain('"TSC &lt;EU/APAC&gt; &amp; sync"');
+  });
+
   it('says the removal covers every occurrence', async () => {
     const component = await mount();
 
@@ -869,15 +942,46 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.canResendInvite()).toBe(false);
   });
 
-  it('resends without asking for confirmation and tells the viewer it was sent', async () => {
+  it('asks for confirmation before resending, and sends nothing until it is accepted', async () => {
     const component = await mount();
 
-    component.resendInvite();
+    component.confirmResendInvite();
 
-    expect(confirm).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ header: 'Resend Your Invitation', message: expect.stringContaining('Resend your invitation to'), acceptLabel: 'Resend' })
+    );
+    expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+  });
+
+  it('resends once the confirmation is accepted and tells the viewer it was sent', async () => {
+    const component = await mount();
+
+    component.confirmResendInvite();
+    confirm.mock.calls[0][0].accept();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
     expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', undefined);
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
     expect(component.resendingInvite()).toBe(false);
+  });
+
+  it('sends nothing when the confirmation is cancelled or dismissed', async () => {
+    const component = await mount();
+
+    component.confirmResendInvite();
+    confirm.mock.calls[0][0].reject?.();
+
+    expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+    expect(toastAdd).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Remove Yourself confirmation for Remove Myself', async () => {
+    const component = await mount();
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].header).toBe('Remove Yourself');
   });
 
   it('resends for the occurrence the card is showing, so the matching registration is chosen', async () => {
@@ -885,7 +989,8 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount({ ...INVITEE, occurrences: [{ occurrence_id: 'occ-next', start_time: nextStart, duration: 60 }] } as Meeting);
 
     expect(component.currentOccurrence()?.occurrence_id).toBe('occ-next');
-    component.resendInvite();
+    component.confirmResendInvite();
+    confirm.mock.calls[0][0].accept();
 
     expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-next');
   });
@@ -909,7 +1014,8 @@ describe('MeetingCardComponent — remove myself', () => {
     // The series' own pick is the earlier occurrence; the card shows the pinned one, and that is what must be sent.
     expect(component.currentOccurrence()?.occurrence_id).toBe('occ-next');
     expect(component.occurrence()?.occurrence_id).toBe('occ-pinned');
-    component.resendInvite();
+    component.confirmResendInvite();
+    confirm.mock.calls[0][0].accept();
 
     expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-pinned');
   });
@@ -942,9 +1048,12 @@ describe('MeetingCardComponent — remove myself', () => {
     resendMyMeetingInvitation.mockReturnValue(pending$);
     const component = await mount();
 
-    component.resendInvite();
-    component.resendInvite();
+    component.confirmResendInvite();
+    confirm.mock.calls[0][0].accept();
+    component.confirmResendInvite();
 
+    // A second click while the first send is in flight opens no second dialog and sends nothing more.
+    expect(confirm).toHaveBeenCalledTimes(1);
     expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
     expect(component.resendingInvite()).toBe(true);
     pending$.next({ message: 'ok' });
@@ -958,7 +1067,8 @@ describe('MeetingCardComponent — remove myself', () => {
     );
     const component = await mount();
 
-    component.resendInvite();
+    component.confirmResendInvite();
+    confirm.mock.calls[0][0].accept();
 
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Unable to determine your identity') }));
     expect(component.resendingInvite()).toBe(false);
@@ -968,7 +1078,8 @@ describe('MeetingCardComponent — remove myself', () => {
     resendMyMeetingInvitation.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: { code: 'ERROR', error: 'upstream detail' } })));
     const component = await mount();
 
-    component.resendInvite();
+    component.confirmResendInvite();
+    confirm.mock.calls[0][0].accept();
 
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to resend the invitation. Please try again.' }));
     expect(component.resendingInvite()).toBe(false);

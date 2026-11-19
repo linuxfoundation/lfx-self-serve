@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
-import { isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { VoteDescriptionPipe } from '../../pipes/vote-description.pipe';
@@ -22,6 +22,7 @@ import {
   VOTE_COMMENT_RESPONSE_MAX_LENGTH,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+  VOTE_LAST_VOTER_CONFIRMATION,
 } from '@lfx-one/shared/constants';
 import {
   CommentResponseFormData,
@@ -53,12 +54,29 @@ import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, map, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
+import {
+  catchError,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  finalize,
+  fromEvent,
+  map,
+  merge,
+  of,
+  startWith,
+  Subject,
+  switchMap,
+  take,
+  takeUntil,
+  tap,
+} from 'rxjs';
 
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 
@@ -71,6 +89,7 @@ import { ExternalLinksDirective } from '@shared/directives/external-links.direct
     VoteDescriptionPipe,
     SkeletonModule,
     CheckboxModule,
+    ConfirmDialogModule,
     DragDropModule,
     TooltipModule,
     ReactiveFormsModule,
@@ -85,6 +104,8 @@ import { ExternalLinksDirective } from '@shared/directives/external-links.direct
     LongTimezonePipe,
     VoteDeadlinePipe,
   ],
+  // Scoped so the last-voter dialog (#4726) never renders through a host's own <p-confirmDialog>.
+  providers: [ConfirmationService],
   templateUrl: './vote-cast-drawer.component.html',
   styleUrl: './vote-cast-drawer.component.scss',
 })
@@ -93,8 +114,10 @@ export class VoteCastDrawerComponent {
   private readonly voteService = inject(VoteService);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
@@ -128,6 +151,8 @@ export class VoteCastDrawerComponent {
   private lastBuiltPollType: PollType | null = null;
   // Key of the recorded ballot last displayed; cleared on close so a reopen reloads it.
   private appliedPrefillKey: string | null = null;
+  // Invalidates captured first-ballot callbacks when the drawer session changes or the dialog settles.
+  private submissionGeneration = 0;
 
   // === Shared Observables ===
   // Emits on drawer dismissal (close button OR ESC OR overlay click — all flip visible to false).
@@ -239,15 +264,15 @@ export class VoteCastDrawerComponent {
       this.bumpFormVersion();
     });
 
-    // Drawer dismissal (close button / ESC / overlay click) — cancel any in-flight submit and reset transient state.
-    toObservable(this.visible)
-      .pipe(
-        filter((v) => !v),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(() => {
-        if (this.submitting()) this.cancelSubmit$.next();
+    // A persistent drawer's selection/mode changes end the previous submit session, including its body-appended dialog.
+    toObservable(computed(() => [this.visible(), this.voteId(), this.readOnly(), this.changeMode()] as const))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(([visible]) => {
+        this.submissionGeneration++;
+        this.confirmationService.close();
+        this.cancelSubmit$.next();
         this.submitting.set(false);
+        if (visible) return;
         this.appliedPrefillKey = null;
         // Reset abstain so reopening starts fresh — letting valueChanges fire keeps form.enable + abstain signal in sync.
         if (this.abstainControl.value) this.abstainControl.setValue(false);
@@ -256,6 +281,10 @@ export class VoteCastDrawerComponent {
           control.reset('');
         }
       });
+    this.destroyRef.onDestroy(() => {
+      this.submissionGeneration++;
+      this.confirmationService.close();
+    });
   }
 
   // === Protected Methods ===
@@ -332,39 +361,60 @@ export class VoteCastDrawerComponent {
       return;
     }
 
+    const generation = ++this.submissionGeneration;
+    const isCurrentSubmission = () =>
+      !this.destroyRef.destroyed &&
+      generation === this.submissionGeneration &&
+      this.visible() &&
+      this.voteId() === vote.uid &&
+      !this.changeMode() &&
+      !this.ballotReadOnly() &&
+      !this.impersonating();
+
+    // A first ballot re-checks at submit time whether it would end the vote (#4726); the read fails open to false.
     this.voteService
-      .submitMyResponse(vote.uid, {
-        abstain: isAbstain,
-        userVoteContent,
-        commentResponses,
-      })
-      .pipe(
-        takeUntil(this.cancelSubmit$),
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.submitting.set(false))
-      )
-      .subscribe({
-        next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Vote submitted',
-            detail: `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
-            life: 3000,
+      .getMyWouldEndVote(vote.uid)
+      .pipe(takeUntil(this.cancelSubmit$), takeUntilDestroyed(this.destroyRef))
+      .subscribe((wouldEndVote) => {
+        if (!isCurrentSubmission()) return;
+        if (!wouldEndVote) {
+          this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses);
+          return;
+        }
+        // The drawer's own document Escape listener would close the drawer too, clearing the ballot: while the dialog is
+        // open, take Escape in the capture phase, before both listeners, and treat it as Go back.
+        const settled$ = new Subject<void>();
+        const settle = () => {
+          this.submissionGeneration++;
+          settled$.next();
+        };
+        fromEvent<KeyboardEvent>(this.document, 'keydown', { capture: true })
+          .pipe(
+            filter((event) => event.key === 'Escape'),
+            take(1),
+            takeUntil(merge(settled$, this.cancelSubmit$)),
+            takeUntilDestroyed(this.destroyRef)
+          )
+          .subscribe((event) => {
+            if (!isCurrentSubmission()) return;
+            settle();
+            event.stopPropagation();
+            this.confirmationService.close();
+            this.submitting.set(false);
           });
-          this.voteSubmitted.emit(vote.uid);
-          this.visible.set(false);
-        },
-        error: (err: unknown) => {
-          const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
-          this.messageService.add({
-            severity: 'error',
-            summary: isInvitationMissing ? 'Unable to find your invitation' : 'Unable to submit vote',
-            detail: isInvitationMissing
-              ? 'We could not find your vote invitation for this ballot. Please refresh and try again.'
-              : 'Something went wrong submitting your ballot. Please try again.',
-            life: 5000,
-          });
-        },
+        this.confirmationService.confirm({
+          ...VOTE_LAST_VOTER_CONFIRMATION,
+          accept: () => {
+            if (!isCurrentSubmission()) return;
+            settle();
+            this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses);
+          },
+          reject: () => {
+            if (!isCurrentSubmission()) return;
+            settle();
+            this.submitting.set(false);
+          },
+        });
       });
   }
 
@@ -677,6 +727,49 @@ export class VoteCastDrawerComponent {
       this.commentForm.get(promptId)?.setValue(text, { emitEvent: false });
     }
     this.bumpFormVersion();
+  }
+
+  /** Submits a first ballot (POST); called directly or once the voter confirms the last-voter dialog (#4726). */
+  private submitFirstBallot(
+    vote: Vote,
+    isAbstain: boolean,
+    userVoteContent: VoteAnswerInput[] | undefined,
+    commentResponses: CommentResponseInput[] | undefined
+  ): void {
+    this.voteService
+      .submitMyResponse(vote.uid, {
+        abstain: isAbstain,
+        userVoteContent,
+        commentResponses,
+      })
+      .pipe(
+        takeUntil(this.cancelSubmit$),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.submitting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Vote submitted',
+            detail: `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
+            life: 3000,
+          });
+          this.voteSubmitted.emit(vote.uid);
+          this.visible.set(false);
+        },
+        error: (err: unknown) => {
+          const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
+          this.messageService.add({
+            severity: 'error',
+            summary: isInvitationMissing ? 'Unable to find your invitation' : 'Unable to submit vote',
+            detail: isInvitationMissing
+              ? 'We could not find your vote invitation for this ballot. Please refresh and try again.'
+              : 'Something went wrong submitting your ballot. Please try again.',
+            life: 5000,
+          });
+        },
+      });
   }
 
   /** Saves a changed ballot (#4723). Comments are always sent so a cleared comment replaces the stored one. */

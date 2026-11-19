@@ -8,6 +8,7 @@ import {
   CreateVoteResponseRequest,
   EnableVoteRequest,
   ExtendVoteRequest,
+  MyVoteWouldEndVote,
   SendVoteReminderRequest,
   UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
@@ -584,6 +585,30 @@ export class VoteController {
 
       logger.success(req, 'get_my_vote_ballot', startTime, { vote_uid: uid, found: true });
       res.json(ballot);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /votes/:uid/my-response/would-end-vote — whether the caller's first submission would end the vote (#4726). */
+  public async getMyWouldEndVote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_would_end_vote', { vote_uid: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_my_would_end_vote',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      const wouldEndVote = await this.voteService.getMyWouldEndVote(req, uid);
+
+      logger.success(req, 'get_my_would_end_vote', startTime, { vote_uid: uid, would_end_vote: wouldEndVote });
+      res.json({ would_end_vote: wouldEndVote } satisfies MyVoteWouldEndVote);
     } catch (error) {
       next(error);
     }
