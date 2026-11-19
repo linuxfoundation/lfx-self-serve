@@ -250,7 +250,7 @@ export class OrgEmployeeViewService {
   }
 
   private async compute(req: Request, username: string): Promise<EmployeeViewOutcome> {
-    const experiences = await this.cdp.getWorkExperiencesForKnownUser(req, username);
+    const experiences = await this.cdp.getWorkExperiencesAsProfile(req, username);
     // Only present employment (no end date): a past job never admits someone who has left the company.
     const present = experiences.filter((entry) => !entry.endDate && normalizeCompanyName(entry.organization));
     if (present.length === 0) return { denial: 'no-employer' };
