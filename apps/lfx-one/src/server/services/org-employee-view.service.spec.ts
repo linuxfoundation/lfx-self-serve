@@ -188,6 +188,22 @@ describe('OrgEmployeeViewService.resolve', () => {
     );
   });
 
+  it('asks in batches and drops no candidate domain when the caller has many addresses', async () => {
+    const many = Array.from({ length: 25 }, (_v, i) => `dev@corp-${i}.example`);
+    const { svc, proxy } = build({ emails: [...many, 'dev@acme-motors.example'] });
+    proxy.proxyRequest.mockImplementation((_r: unknown, _s: string, _p: string, _m: string, params: { filters_or: string[] }) =>
+      Promise.resolve(params.filters_or.includes('primary_domain:acme-motors.example') ? page([[ORG_UID, acme]]) : page([]))
+    );
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    // 26 candidate domains in batches of 20, every one asked about.
+    expect(proxy.proxyRequest).toHaveBeenCalledTimes(2);
+    const asked = proxy.proxyRequest.mock.calls
+      .flatMap((call) => (call[4] as { filters_or: string[] }).filters_or)
+      .filter((f: string) => f.startsWith('primary_domain:'));
+    expect(asked).toHaveLength(26);
+  });
+
   it('re-checks every returned record, and ignores one the index marks as a non-member', async () => {
     const unrelated = build({ orgs: [[ORG_UID, { name: 'Acme Motors', primary_domain: 'unrelated.example' }]] });
     await expect(unrelated.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });

@@ -28,7 +28,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS = 60 * 1000;
 /** Upper bound on cached employee-view verdicts per server process. */
 export const ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES = 1000;
 
-/** Most candidate company domains one lookup sends to the query service (a person's verified addresses, each with its parent domains). */
+/** Most candidate company domains one query-service request carries; a person with more are asked in several requests, never truncated. */
 export const ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS = 20;
 
 /**

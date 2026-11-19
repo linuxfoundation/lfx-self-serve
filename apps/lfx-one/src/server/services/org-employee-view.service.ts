@@ -278,7 +278,7 @@ export class OrgEmployeeViewService {
           return domain && !isPersonalEmailDomain(domain) ? candidateMemberDomains(domain) : [];
         })
       ),
-    ].slice(0, ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS);
+    ];
     if (candidates.length === 0) {
       logger.debug(req, OPERATION, 'Caller has no verified company email', {});
       return [];
@@ -299,31 +299,39 @@ export class OrgEmployeeViewService {
   private async findMemberCompanies(req: Request, domains: string[]): Promise<OrgLensEmployeeViewGrant[]> {
     // Minted OUTSIDE the lookup: a token failure must reject, never read as "no company matches" and be cached as a denial.
     const bearerToken = await generateM2MToken(req);
-    const filtersOr = domains.flatMap((domain) => [`primary_domain:${domain}`, `domain_aliases:${domain}`]);
-    const docs = await fetchAllQueryResources<B2bOrgIndexedDoc>(
-      req,
-      (pageToken) =>
-        this.proxy
-          .proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(
-            req,
-            'LFX_V2_SERVICE',
-            '/query/resources',
-            'GET',
-            { type: 'b2b_org', tags_all: ['is_member:true'], filters_or: filtersOr, page_size: 50, ...(pageToken && { page_token: pageToken }) },
-            undefined,
-            undefined,
-            { bearerToken }
-          )
-          // The canonical account id lives on the query-service wrapper (`resource.id`, `b2b_org:<sfid>`), which flattening drops.
-          .then((page) => ({
-            ...page,
-            resources: (page?.resources ?? []).map((resource) => ({
-              ...resource,
-              data: { ...resource.data, uid: bareUid(resource.id) || resource.data?.uid },
-            })),
-          })),
-      { failOnPartial: true }
-    );
+    // Asked in batches so no candidate domain is ever dropped: truncating would turn a user with many addresses into a cached false denial.
+    const docs: B2bOrgIndexedDoc[] = [];
+    for (let start = 0; start < domains.length; start += ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS) {
+      const filtersOr = domains
+        .slice(start, start + ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS)
+        .flatMap((domain) => [`primary_domain:${domain}`, `domain_aliases:${domain}`]);
+      docs.push(
+        ...(await fetchAllQueryResources<B2bOrgIndexedDoc>(
+          req,
+          (pageToken) =>
+            this.proxy
+              .proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(
+                req,
+                'LFX_V2_SERVICE',
+                '/query/resources',
+                'GET',
+                { type: 'b2b_org', tags_all: ['is_member:true'], filters_or: filtersOr, page_size: 50, ...(pageToken && { page_token: pageToken }) },
+                undefined,
+                undefined,
+                { bearerToken }
+              )
+              // The canonical account id lives on the query-service wrapper (`resource.id`, `b2b_org:<sfid>`), which flattening drops.
+              .then((page) => ({
+                ...page,
+                resources: (page?.resources ?? []).map((resource) => ({
+                  ...resource,
+                  data: { ...resource.data, uid: bareUid(resource.id) || resource.data?.uid },
+                })),
+              })),
+          { failOnPartial: true }
+        ))
+      );
+    }
 
     const wanted = new Set(domains);
     const companies = new Map<string, OrgLensEmployeeViewGrant>();
