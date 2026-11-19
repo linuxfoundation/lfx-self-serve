@@ -1145,25 +1145,40 @@ export class HealthMetricsEventsService {
     // Only a code that can key a country is kept, before either fold, so a placeholder code never merges two countries or
     // outranks a real one. The list comes from constants, never from the request, so interpolating it is safe.
     const codes = [...HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES].map((code) => `'${code}'`).join(', ');
+    // A spelling's registrations across every period, so a group is labelled by its most common spelling.
+    const total = (source: string) => columns.map((column) => `COALESCE(${source}${column}, 0)`).join(' + ');
+    // A name read as words: underscores as spaces, runs of whitespace as one, case ignored.
+    const nameKey = "LOWER(REGEXP_REPLACE(REPLACE(TRIM(country), '_', ' '), '[[:space:]]+', ' '))";
     const sql = `
-      WITH by_name AS (
+      WITH spellings AS (
         SELECT
           NULLIF(TRIM(country), '') AS country,
+          ${nameKey} AS name_key,
           MAX(CASE WHEN UPPER(TRIM(country_code)) IN (${codes}) THEN UPPER(TRIM(country_code)) END) AS country_code,
           ${sums('')}
         FROM ${REGISTRATION_COUNTRY_VIEW}
         WHERE project_id = ?
           AND NULLIF(TRIM(country), '') IS NOT NULL
-        GROUP BY NULLIF(TRIM(country), '')
+        GROUP BY NULLIF(TRIM(country), ''), ${nameKey}
+      ),
+      -- Spellings that read as the same words fold first, taking any code one of them carries, so "united_kingdom" with
+      -- no code joins "United Kingdom" under GB.
+      by_name AS (
+        SELECT
+          name_key,
+          MAX(country_code) AS country_code,
+          MAX_BY(country, ${total('')}) AS country,
+          ${sums('spellings.')}
+        FROM spellings
+        GROUP BY name_key
       )
       SELECT
         MAX(country_code) AS country_code,
-        MAX(country) AS country,
+        MAX_BY(country, ${total('')}) AS country,
         ${sums('by_name.')}
       FROM by_name
-      -- A name with no code folds by its words, so "united_kingdom" and "United Kingdom" are one row; the label comes from
-      -- the code, or from the name read as words, never from whichever spelling sorts last.
-      GROUP BY COALESCE(country_code, LOWER(REPLACE(country, '_', ' ')))
+      -- Names under one code fold into one row; a code names its country, and a name with no code keeps its most common spelling.
+      GROUP BY COALESCE(country_code, name_key)
     `;
 
     const result = await executeSnowflakeViewRead<GeographyCountryRow>(this.snowflakeService, req, sql, [foundationId], {

@@ -1724,8 +1724,14 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(kept).not.toContain("'UK'");
     expect(kept).not.toContain("'ZZ'");
     expect(countrySql).toContain("GROUP BY NULLIF(TRIM(country), '')");
-    // A name with no code folds by its words, so its spellings are one row.
-    expect(countrySql).toContain("GROUP BY COALESCE(country_code, LOWER(REPLACE(country, '_', ' ')))");
+    // Spellings fold by their words first, taking any code one carries, then by code; each group keeps its most common spelling.
+    const nameKey = "LOWER(REGEXP_REPLACE(REPLACE(TRIM(country), '_', ' '), '[[:space:]]+', ' '))";
+    expect(countrySql).toContain(`${nameKey} AS name_key`);
+    expect(countrySql).toMatch(/by_name AS \(\s+SELECT\s+name_key,\s+MAX\(country_code\) AS country_code,\s+MAX_BY\(country, COALESCE\(registration_count_/);
+    expect(countrySql).toContain('COALESCE(registration_count_ytd, 0)');
+    expect(countrySql).toContain('GROUP BY name_key');
+    expect(countrySql).toContain('GROUP BY COALESCE(country_code, name_key)');
+    expect(countrySql).not.toContain('MAX(country) AS country');
     for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
       expect(scopeSql).toContain(`countries_count_${suffix}`);
       expect(countrySql).toContain(`SUM(registration_count_${suffix}) AS registration_count_${suffix}`);
