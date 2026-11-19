@@ -1009,8 +1009,6 @@ export const META_AD_OPTION_FIELDS: readonly MetaAdOptionField[] = [
 export const META_LEAD_FORM_ID_PATTERN = /^[0-9]{1,20}$/;
 /** The only buttons campaign-service accepts on a lead form create, a subset of `META_CALL_TO_ACTIONS`. */
 export const META_LEAD_FORM_CALL_TO_ACTIONS = ['LEARN_MORE', 'SIGN_UP', 'APPLY_NOW', 'SUBSCRIBE', 'DOWNLOAD'] as const;
-/** The only form status a create accepts; the read lists every status. */
-export const META_LEAD_FORM_ACTIVE_STATUS = 'ACTIVE';
 
 /**
  * The countries for which Meta requires the EU Digital Services Act disclosures
