@@ -204,9 +204,11 @@ describe('CommitteeMemberImportService', () => {
     expect(service.getRun('group-a')).toBeUndefined();
   });
 
-  it('sends no later chunk after the root injector is destroyed mid-run', () => {
+  it('unsubscribes the in-flight chunk and sends nothing later when the root injector is destroyed', () => {
     service.start(input('group-a', readyRows(30)));
+    expect(pending[0].response.observed).toBe(true);
     TestBed.resetTestingModule();
+    expect(pending[0].response.observed).toBe(false);
 
     respond(0);
     expect(pending).toHaveLength(1);

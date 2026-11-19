@@ -55,6 +55,7 @@ import { UserService } from './user.service';
 export class CommitteeMemberImportService {
   private readonly committeeService = inject(CommitteeService);
   private readonly userService = inject(UserService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly runs = signal(new Map<string, MemberImportRun>());
   /** Ends a run's current pause early, keyed by run ID so a replacement run never receives a stale stop. */
   private readonly stopRequests = new Map<string, Subject<void>>();
@@ -68,7 +69,7 @@ export class CommitteeMemberImportService {
     toObservable(this.viewerSubject)
       .pipe(takeUntilDestroyed())
       .subscribe((owner) => this.synchronizeOwner(owner));
-    inject(DestroyRef).onDestroy(() => this.discardAll());
+    this.destroyRef.onDestroy(() => this.discardAll());
   }
 
   /** A different observed subject cannot read the previous subject's runs, even before the cleanup subscription runs. */
@@ -203,7 +204,10 @@ export class CommitteeMemberImportService {
     this.setRetryDeadline(ref, 0);
 
     from(chunks)
-      .pipe(concatMap((chunk) => this.submitChunk(ref, chunk, skipNotification)))
+      .pipe(
+        concatMap((chunk) => this.submitChunk(ref, chunk, skipNotification)),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         complete: () => {
           const run = this.currentRun(ref);
