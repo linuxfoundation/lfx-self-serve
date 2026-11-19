@@ -36,6 +36,8 @@ import {
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   MAX_SPONSORS,
+  META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE,
+  META_LEAD_FORMS_RESTRICTED_CODE,
 } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
@@ -2602,6 +2604,90 @@ describe('CampaignController.createCampaign cutover', () => {
     ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
       expect(await sendWith(extra)).toBeNull();
       expect(refusedField()).toBe(field);
+    });
+  });
+
+  /**
+   * The Meta Instant Form of a `leads` create (#5940): refused with a 400 while its flag is off (never
+   * dropped), checked by the tab's own rules, answered on `global_marketing_ops`, and sent trimmed.
+   */
+  describe('meta lead form', () => {
+    async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        objective: 'leads',
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusal = (): unknown => vi.mocked(next).mock.calls[0]?.[0];
+
+    beforeEach(() => {
+      isServerFeatureEnabled.mockImplementation(() => true);
+    });
+
+    it('refuses a form with a 400 while Meta lead forms are off, rather than creating a traffic campaign', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceMetaLeadForms);
+
+      expect(await sendWith({ leadFormId: '1234567890123456' })).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe('metaConfig.leadFormId');
+      expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    });
+
+    it('refuses another spelling of the key with a 400 whatever the flag, since campaign-service reads keys ignoring case', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceMetaLeadForms);
+
+      expect(await sendWith({ LeadFormId: '1234567890123456' })).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe('metaConfig.leadFormId');
+      expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    });
+
+    it('forwards the checked id trimmed, and sends nothing for "Not set"', async () => {
+      vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(true);
+      expect(await sendWith({ leadFormId: ' 1234567890123456 ', callToAction: 'sign_up' })).toMatchObject({
+        leadFormId: '1234567890123456',
+        callToAction: 'SIGN_UP',
+      });
+      expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
+      createCampaigns.mockClear();
+      expect(await sendWith({ leadFormId: '' })).not.toHaveProperty('leadFormId');
+    });
+
+    it.each([
+      ['an id that is not digits', { leadFormId: 'form-1' }, 'metaConfig.leadFormId'],
+      ['a form off leads', { leadFormId: '1', objective: 'traffic' }, 'metaConfig.leadFormId'],
+      ['a form with manual bidding', { leadFormId: '1', bidding: { strategy: 'manual', bidAmount: 1 } }, 'metaConfig.leadFormId'],
+      ['a call to action a form cannot carry', { leadFormId: '1', callToAction: 'BUY_TICKETS' }, 'metaConfig.callToAction'],
+    ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
+      expect(await sendWith(extra)).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe(field);
+    });
+
+    it('refuses a caller without global_marketing_ops with the coded 403, creating nothing', async () => {
+      vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(false);
+
+      expect(await sendWith({ leadFormId: '1234567890123456' })).toBeNull();
+      expect(refusal()).toMatchObject({ code: META_LEAD_FORMS_RESTRICTED_CODE });
+    });
+
+    it('answers a check that cannot be made with the coded 503, creating nothing', async () => {
+      vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access check unavailable'));
+
+      expect(await sendWith({ leadFormId: '1234567890123456' })).toBeNull();
+      expect(refusal()).toMatchObject({ code: META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE });
     });
   });
 
@@ -11214,6 +11300,8 @@ describe('CampaignController.listBriefCampaigns', () => {
         googlePerformanceMaxAudienceSignalEnabled: conversions,
         // Meta custom audiences (#5905) on the same relation; every flag is on here.
         metaCustomAudiencesEnabled: conversions,
+        // Meta lead forms (#5940) on the same relation.
+        metaLeadFormsEnabled: conversions,
       })
     );
   });
@@ -11234,6 +11322,7 @@ describe('CampaignController.listBriefCampaigns', () => {
         googleDisplayAudiencesEnabled: null,
         googlePerformanceMaxAudienceSignalEnabled: null,
         metaCustomAudiencesEnabled: null,
+        metaLeadFormsEnabled: null,
       })
     );
   });
@@ -11245,7 +11334,12 @@ describe('CampaignController.listBriefCampaigns', () => {
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ googleAudienceSegmentsEnabled: false, googleConversionActionsEnabled: false, metaCustomAudiencesEnabled: false })
+      expect.objectContaining({
+        googleAudienceSegmentsEnabled: false,
+        googleConversionActionsEnabled: false,
+        metaCustomAudiencesEnabled: false,
+        metaLeadFormsEnabled: false,
+      })
     );
     expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
     expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();

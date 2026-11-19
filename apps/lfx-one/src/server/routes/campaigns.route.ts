@@ -16,6 +16,7 @@ import {
   requireGoogleMonitorAccess,
   requireGoogleUserListsAccess,
   requireMetaCustomAudiencesAccess,
+  requireMetaLeadFormsAccess,
 } from '../middleware/require-marketing-access.middleware';
 
 /**
@@ -100,6 +101,12 @@ router.get('/google/audiences', requireGoogleAudiencesAccess, (req, res, next) =
 // 404 while Meta audience targeting is off. Ahead of `router.use(requireCampaignManager)` for the same
 // reason as the Google lists above.
 router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res, next) => campaignController.getMetaCustomAudiences(req, res, next));
+
+// The Instant Forms of the Facebook Page a Meta create uses, for the Implement tab's lead form picker (#5940).
+// A project without its own connection uses the shared LF Page, which holds every foundation's forms: answered
+// only to `global_marketing_ops` on the project, as campaign-service answers. 404 while Meta lead forms are off.
+// Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/meta/lead-forms', requireMetaLeadFormsAccess, (req, res, next) => campaignController.getMetaLeadForms(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its

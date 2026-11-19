@@ -2401,6 +2401,13 @@ export interface MetaCampaignCreateRequest {
   conversionEvent?: string;
   /** The ad set optimization goal of a `traffic` create, one of `META_OPTIMIZATION_GOALS`; absent is LINK_CLICKS. Same gate, on `metaOptimizationGoalEnabled`. */
   optimizationGoal?: string;
+  /**
+   * An existing Instant Form on the connection's Page (#5940; campaign-service #550), for the `leads` objective
+   * only: campaign-service then creates a lead ad (OUTCOME_LEADS) instead of a website-traffic campaign. Sent
+   * ONLY when `CampaignListResult.metaLeadFormsEnabled` is an explicit yes; the create route refuses it with a
+   * 400 while the capability is off, and with a 403 for a caller without `global_marketing_ops`.
+   */
+  leadFormId?: string;
 }
 
 /** The three optional Meta ad choices of #5934, each a `metaConfig` key of its own. */
@@ -2501,6 +2508,20 @@ export interface MetaCustomAudiencesResult {
   accountId: string;
   audiences: MetaCustomAudienceOption[];
   truncated: boolean;
+}
+
+/** One Instant Form of the Page a Meta create uses (#5940). Only an ACTIVE form passes a create. */
+export interface MetaLeadFormOption {
+  id: string;
+  name: string;
+  /** Meta's status, verbatim (ACTIVE, ARCHIVED, DELETED, DRAFT, ...). */
+  status: string;
+}
+
+/** The lead form read: the Facebook Page the forms were read from, and its forms sorted by name. */
+export interface MetaLeadFormsResult {
+  pageId: string;
+  forms: MetaLeadFormOption[];
 }
 
 /** Where the Meta custom-audience picker stands; `unavailable` carries the sentence the typed boxes are offered with. */
@@ -5507,6 +5528,20 @@ export interface CampaignServiceMetaCustomAudiences {
   truncated: boolean;
 }
 
+/** One element of campaign-service's `meta-lead-forms` read. */
+export interface CampaignServiceMetaLeadForm {
+  id: string;
+  name: string;
+  status: string;
+}
+
+/** campaign-service `GET /projects/{project_id}/meta-ads/lead-forms` (`global_marketing_ops` on the project): every form of the Page, at most 1000. */
+export interface CampaignServiceMetaLeadForms {
+  page_id: string;
+  forms: CampaignServiceMetaLeadForm[];
+  form_count: number;
+}
+
 /** campaign-service `GET /projects/{project_id}/google-ads/user-lists` (`global_marketing_ops` on the project; linuxfoundation/lfx-v2-campaign-service#508). */
 export interface CampaignServiceGoogleAdsUserLists {
   account_id: string;
@@ -7187,6 +7222,14 @@ export interface CampaignListResult {
   metaCallToActionEnabled?: boolean;
   metaConversionEventEnabled?: boolean;
   metaOptimizationGoalEnabled?: boolean;
+  /**
+   * Whether THIS caller may offer the `leads` objective with an Instant Form, through
+   * `GET /api/campaigns/meta/lead-forms`, and send `metaConfig.leadFormId` (#5940): `cutoverOwnsCreate()` AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS` AND `global_marketing_ops` on the listed project, the relation
+   * campaign-service checks (a project without its own connection uses the shared LF Page). `null` when that
+   * check cannot be made. Optional, so a BFF that predates it reads as unanswered.
+   */
+  metaLeadFormsEnabled?: boolean | null;
   /**
    * Whether THIS caller may send Google audience segments (`audienceSegments` or
    * `campaignAudienceSegments`) on a create.

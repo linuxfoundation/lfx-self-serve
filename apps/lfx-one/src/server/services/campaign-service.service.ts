@@ -87,6 +87,7 @@ import type {
   CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
   CampaignServiceMetaCustomAudiences,
+  CampaignServiceMetaLeadForms,
   CampaignServiceLinkedInAdsCreateAccount,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
@@ -825,6 +826,15 @@ export function canSetMetaConversionEvent(): boolean {
 }
 export function canSetMetaOptimizationGoal(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaOptimizationGoal);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.leadFormId`, and whether `GET /api/campaigns/meta/lead-forms`
+ * answers (#5940). Needs the campaign-service create path AND the lead-form flag: the legacy creator never
+ * reads the form. Whether the caller may use forms (`global_marketing_ops`) the controller decides per request.
+ */
+export function canSetMetaLeadForm(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaLeadForms);
 }
 
 /**
@@ -3633,6 +3643,27 @@ export class CampaignServiceClient {
       `/projects/${encodePathSegment(projectSlug)}/meta-ads/custom-audiences`,
       'GET',
       q === undefined ? undefined : { q }
+    );
+  }
+
+  /**
+   * The Instant Forms of the Facebook Page a Meta create for this project uses (`list-meta-lead-forms`,
+   * linuxfoundation/lfx-v2-campaign-service#550), for the Implement tab's lead form picker (#5940). Every
+   * status is listed, sorted by name. Upstream answers it on `global_marketing_ops` of the path project, the
+   * relation the BFF checks first. Failures are left to the caller.
+   */
+  public async listMetaLeadForms(req: Request, projectSlug: string): Promise<CampaignServiceMetaLeadForms> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A lead form read requires the project it belongs to.', {
+        operation: 'list_meta_lead_forms',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaLeadForms>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/lead-forms`,
+      'GET'
     );
   }
 

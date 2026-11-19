@@ -436,6 +436,21 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaOptimizationGoal = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL',
 
   /**
+   * Open the Meta lead form read (`GET /api/campaigns/meta/lead-forms`) and accept `metaConfig.leadFormId` on
+   * create (#5940). The Implement tab offers `leads` with a form picker once the UI change lands; until then
+   * this flag opens the server half only. Only a caller holding
+   * `global_marketing_ops` on the project may read the forms or send one: a project without its own Meta
+   * connection uses the shared LF Page, which holds every foundation's forms.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with its own
+   * `META_LEAD_FORMS_ENABLED` on, since campaign-service refuses `leadFormId` and the read with a 400 otherwise.
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default), `leads` stays
+   * hidden, the read answers 404 and the create route refuses a `leadFormId` with a 400. A request field and a
+   * read only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaLeadForms = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *
