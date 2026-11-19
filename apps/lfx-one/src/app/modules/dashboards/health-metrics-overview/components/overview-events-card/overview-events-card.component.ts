@@ -97,8 +97,8 @@ export class OverviewEventsCardComponent {
     if (!data) return null;
     return buildHealthMetricsOverviewEventsView(data.glance, data.sponsorship, data.events, this.chrome.selectedRange());
   });
-  /** One page again whenever the list itself changes: a new period or a new foundation's read. */
-  protected readonly showAll = linkedSignal({ source: this.view, computation: () => false });
+  /** One page again whenever the list changes (a new period or foundation's read) or its sort does. */
+  protected readonly showAll = linkedSignal({ source: () => ({ view: this.view(), sort: this.sorting.sort() }), computation: () => false });
   /** A sort covers the whole list, so the first page shows the first rows of the sorted list. */
   protected readonly visibleRows = computed<HealthMetricsOverviewEventRowView[]>(() => {
     const rows = sortHealthMetricsRows(this.view()?.rows ?? [], this.sorting.sort(), healthMetricsOverviewEventsSortValue);

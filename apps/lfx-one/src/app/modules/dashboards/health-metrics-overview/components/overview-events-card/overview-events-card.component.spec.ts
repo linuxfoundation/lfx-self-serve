@@ -183,6 +183,12 @@ describe('OverviewEventsCardComponent', () => {
       query('overview-events-view-all')?.click();
       fixture.detectChanges();
       expect(rows().at(-1)?.getAttribute('data-testid')).toBe('overview-events-row-u0');
+
+      // A new sort starts again on the first five.
+      talks.click();
+      fixture.detectChanges();
+      expect(rows()).toHaveLength(5);
+      expect(text('overview-events-view-all')).toBe('View all (7)');
     } finally {
       EVENTS.upcoming.splice(0, EVENTS.upcoming.length, ...original);
     }
