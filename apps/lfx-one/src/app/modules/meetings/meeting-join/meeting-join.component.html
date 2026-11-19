@@ -510,7 +510,7 @@
                       size="small"
                       severity="secondary"
                       [loading]="resendingInvite()"
-                      (onClick)="resendInvite()"
+                      (onClick)="confirmResendInvite()"
                       data-testid="resend-invite-organizer-button">
                     </lfx-button>
                   }
@@ -548,7 +548,7 @@
                           size="small"
                           severity="secondary"
                           [loading]="resendingInvite()"
-                          (onClick)="resendInvite()"
+                          (onClick)="confirmResendInvite()"
                           data-testid="resend-invite-button">
                         </lfx-button>
                       }
@@ -978,7 +978,10 @@
           [myMeetingRegistrants]="true"
           [initialRegistrants]="registrants()"
           [initialRegistrantsLoading]="registrantsLoading()"
+          [initialRegistrantsFailed]="registrantsLoadFailed()"
           [visible]="showRegistrants()"
+          (selfAdded)="onSelfAdded($event.meeting_id)"
+          (selfRemoved)="onSelfRemoved($event)"
           (refreshRequested)="onRegistrantsRefreshRequested($event)">
         </lfx-meeting-registrants-display>
       </p-drawer>
@@ -1006,13 +1009,14 @@
           [primaryAction]="stickyBarAction()"
           [resending]="resendingInvite()"
           [suppressed]="stickyBarSuppressed()"
-          (resendInvite)="resendInvite()"
+          (resendInvite)="confirmResendInvite()"
           (subscribeCalendar)="onSubscribeCalendar()" />
       }
     </div>
   } @else {
-    <!-- Skeleton shown only for client-side navigations with no SSR-transferred state (GH-2041) —
-         the seeded first paint in `MeetingPageDataService.load()` means this never flashes on a fresh load. -->
+    <!-- Skeleton shown for client-side navigations with no SSR-transferred state (GH-2041), and on a fresh load whose
+         server fetch failed: the server renders it and the browser keeps it until its own fetch settles (#5907).
+         A successful server load seeds the first paint in `MeetingPageDataService.load()`, so it never flashes then. -->
     <div class="bg-gray-50 min-h-screen" role="status" aria-live="polite" data-testid="meeting-join-skeleton">
       <span class="sr-only">Loading meeting details…</span>
       <div class="container mx-auto py-6 px-8">

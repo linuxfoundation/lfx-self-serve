@@ -95,6 +95,12 @@ export class MeetingDetailsHeaderComponent {
   }
 
   /** The menu item goes away with the menu, so the confirmation hands focus back to ⋯ instead. */
+  protected confirmResend(): void {
+    this.moreButton()?.focus();
+    this.ownActions()?.confirmResend();
+  }
+
+  /** The menu item goes away with the menu, so the confirmation hands focus back to ⋯ instead. */
   protected confirmRemove(): void {
     this.moreButton()?.focus();
     this.ownActions()?.confirmRemove();
