@@ -1356,6 +1356,91 @@ describe('ImportMembersDialogComponent', () => {
       expect(dialogRef.close).toHaveBeenCalledWith({ added: 30, conflicts: 0, baselineMemberCount: 0 });
     });
 
+    it('unlocks notifications when a retry settles before phase emissions observe it', async () => {
+      await upload('email\nada@example.com');
+      component.startImport();
+      failBulk(0, 403);
+      await render();
+      expect(component.form.controls.send_notification.enabled).toBe(true);
+
+      component.retryFailed();
+      expect(component.form.controls.send_notification.disabled).toBe(true);
+      failBulk(1, 403);
+      await render();
+
+      expect(component.phase()).toBe('results');
+      expect(component.form.controls.send_notification.enabled).toBe(true);
+      query('import-members-send-notification')?.querySelector('input')?.click();
+      component.retryFailed();
+      expect(pending[2].options).toEqual({ skipNotification: false });
+    });
+
+    it('unlocks notifications when an attached run settles before its first emission', async () => {
+      await upload('email\nada@example.com');
+      component.form.controls.send_notification.setValue(true);
+      component.startImport();
+      fixture.destroy();
+
+      // Attach while the stopped run still awaits its in-flight batch; do not flush effects yet.
+      fixture = TestBed.createComponent(ImportMembersDialogComponent);
+      component = fixture.componentInstance;
+      expect(component.form.controls.send_notification.disabled).toBe(true);
+      respond(0);
+      await render();
+
+      expect(component.phase()).toBe('results');
+      expect(component.form.controls.send_notification.enabled).toBe(true);
+      expect(component.form.controls.send_notification.value).toBe(true);
+      expect(pending).toHaveLength(1);
+    });
+
+    it.each([false, true])('preserves results and blocks writes during Close with reopened run %s', async (reopened) => {
+      await upload('email\nada@example.com\ngrace@example.com');
+      component.startImport();
+      component.stopImport();
+      respond(0, { 1: { status: 'failed', reason: 'temporary', retryable: true } });
+      await render();
+      if (reopened) {
+        fixture.destroy();
+        await createDialog();
+      }
+      expect(component.canRetry()).toBe(true);
+      const results = component.rows();
+      component.close();
+      await render();
+
+      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)).toBeUndefined();
+      expect(component.phase()).toBe('results');
+      expect(component.rows()).toEqual(results);
+      expect(query('import-members-summary')).not.toBeNull();
+      expect(query('import-members-guidance')).toBeNull();
+      expect(component.canImport()).toBe(false);
+      expect(component.canRetry()).toBe(false);
+      expect(component.canChooseFile()).toBe(false);
+      component.startImport();
+      component.retryFailed();
+      await upload('email\nother@example.com');
+      component.close();
+      expect(pending).toHaveLength(1);
+      expect(component.form.controls.send_notification.disabled).toBe(true);
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith({ added: 1, conflicts: 0, uncertain: true, baselineMemberCount: 0 });
+    });
+
+    it('discards the closing snapshot when the observed user changes', async () => {
+      await upload('email\nada@example.com');
+      component.startImport();
+      respond(0);
+      component.close();
+      user.set({ sub: 'synthetic-replacement' });
+
+      expect(component.rows()).toEqual([]);
+      await render();
+      expect(component.rows()).toEqual([]);
+      expect(component.fileName()).toBeNull();
+      expect(component.canImport()).toBe(false);
+      expect(pending).toHaveLength(1);
+    });
+
     it('dismisses the settled run on Close so the next import of the group starts fresh', async () => {
       await upload('email\nada@example.com');
       component.startImport();

@@ -133,9 +133,12 @@ export class ImportMembersDialogComponent {
   /** Local file selection and preview; replaced by the run's projection once an import starts. */
   private readonly previewPhase = signal<'select' | 'preview'>('select');
   private readonly previewRows = signal<MemberImportRow[]>([]);
+  private readonly closing = signal(false);
+  /** Keep the final projection until the closing view is destroyed, after the service run is dismissed. */
+  private readonly closingRun = signal<MemberImportRun | undefined>(undefined);
 
   /** This subject's retained run for the pinned group; wizard collection never starts or shows one. */
-  private readonly run: Signal<MemberImportRun | undefined> = computed(() => (this.collectOnly ? undefined : this.importService.getRun(this.committeeUid)));
+  private readonly run: Signal<MemberImportRun | undefined> = this.initRun();
   public readonly phase: Signal<MemberImportDialogPhase> = this.initPhase();
   public readonly rows: Signal<MemberImportRow[]> = computed(() => this.run()?.rows ?? this.previewRows());
   /** Set when auth/not-found, the pause cap, an excessive server cooldown or Stop import ends the run. */
@@ -153,7 +156,7 @@ export class ImportMembersDialogComponent {
   /** Distinguishes the manager's Stop action from fatal errors and automatic recovery limits. */
   private readonly manualStopRequested = computed(() => !!this.run()?.manualStopRequested);
 
-  public readonly busy = computed(() => this.reading() || this.phase() === 'importing');
+  public readonly busy = computed(() => this.closing() || this.reading() || this.phase() === 'importing');
   public readonly readyCount = computed(() => this.countRows('ready'));
   public readonly invalidCount = computed(() => this.countRows('invalid'));
   public readonly skippedCount = computed(() => this.countRows('skipped'));
@@ -168,8 +171,10 @@ export class ImportMembersDialogComponent {
   public readonly stopping = computed(() => this.phase() === 'importing' && !this.paused() && this.manualStopRequested());
   public readonly conflictCount = computed(() => this.rows().filter((row) => row.conflict).length);
   public readonly cleanupWarningCount = computed(() => this.rows().filter((row) => row.cleanupWarning).length);
-  public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0 && this.importService.viewerSubject() === this.viewerSubject);
-  public readonly canRetry = computed(() => this.phase() === 'results' && this.retryableCount() > 0);
+  public readonly canImport = computed(
+    () => !this.closing() && this.phase() === 'preview' && this.readyCount() > 0 && this.importService.viewerSubject() === this.viewerSubject
+  );
+  public readonly canRetry = computed(() => !this.closing() && this.phase() === 'results' && this.retryableCount() > 0);
   public readonly retryDeadlineLabel = computed(() => {
     if (!this.canRetry() || this.retryNotBefore() === 0) {
       return null;
@@ -192,6 +197,7 @@ export class ImportMembersDialogComponent {
   public constructor() {
     this.initStatusFilterReset();
     this.initTablePageBounds();
+    this.initRunNotification();
     this.initRunTransitions();
     this.initSubjectChange();
     // Until the dependent hide/reopen issue (#5731), a torn-down view schedules no later chunk or retry.
@@ -266,7 +272,7 @@ export class ImportMembersDialogComponent {
   }
 
   public removeRow(rowNumber: number): void {
-    if (this.phase() !== 'preview') {
+    if (this.closing() || this.phase() !== 'preview') {
       return;
     }
     // Removing the retained occurrence releases the next duplicate, keeping original source row numbers.
@@ -294,6 +300,8 @@ export class ImportMembersDialogComponent {
           .filter(Boolean);
         return [{ ...row.payload, createOptions: { skipNotification: !this.form.controls.send_notification.value }, pendingInviteUids }];
       });
+      this.closing.set(true);
+      this.form.controls.send_notification.disable();
       this.dialogRef.close(members);
       return;
     }
@@ -336,6 +344,8 @@ export class ImportMembersDialogComponent {
     if (this.busy()) {
       return;
     }
+    this.closing.set(true);
+    this.form.controls.send_notification.disable();
     if (this.collectOnly) {
       this.dialogRef.close();
       return;
@@ -347,6 +357,9 @@ export class ImportMembersDialogComponent {
       ...(this.rows().some((row) => row.uncertain) ? { uncertain: true } : {}),
       ...(run ? { baselineMemberCount: run.baselineMemberCount } : {}),
     };
+    this.closingRun.set(run);
+    this.previewRows.set([]);
+    this.previewPhase.set('select');
     this.dialogRef.close(result);
     // The result above is captured; the settled run no longer blocks the next import into this group.
     this.importService.dismiss(this.committeeUid);
@@ -361,6 +374,13 @@ export class ImportMembersDialogComponent {
       }
     }
     return byEmail;
+  }
+
+  private initRun(): Signal<MemberImportRun | undefined> {
+    return computed(() => {
+      if (this.collectOnly || this.importService.viewerSubject() !== this.viewerSubject) return undefined;
+      return this.closingRun() ?? this.importService.getRun(this.committeeUid);
+    });
   }
 
   private initPhase(): Signal<MemberImportDialogPhase> {
@@ -439,11 +459,8 @@ export class ImportMembersDialogComponent {
       });
   }
 
-  /**
-   * Locks the notification choice while a run writes, including one this dialog attached to, and
-   * moves focus to the outcome once a run settles.
-   */
-  private initRunTransitions(): void {
+  /** Synchronize the lock from snapshots, even if a fast attempt never emits an importing phase. */
+  private initRunNotification(): void {
     const run = this.run();
     if (run) {
       this.form.controls.send_notification.setValue(!run.skipNotification);
@@ -451,14 +468,24 @@ export class ImportMembersDialogComponent {
     if (run?.status === 'importing') {
       this.form.controls.send_notification.disable();
     }
+    toObservable(this.run)
+      .pipe(takeUntilDestroyed())
+      .subscribe((current) => {
+        if (this.closing() || current?.status === 'importing') {
+          this.form.controls.send_notification.disable();
+        } else {
+          this.form.controls.send_notification.enable();
+        }
+      });
+  }
+
+  /** Move focus only on a phase transition, independently of notification-control synchronization. */
+  private initRunTransitions(): void {
     toObservable(this.phase)
       .pipe(pairwise(), takeUntilDestroyed())
       .subscribe(([previous, current]) => {
         if (current === 'results' && previous !== 'results') {
-          this.form.controls.send_notification.enable();
           this.focusResultSummary();
-        } else if (current === 'importing') {
-          this.form.controls.send_notification.disable();
         }
       });
   }
@@ -472,6 +499,7 @@ export class ImportMembersDialogComponent {
       .pipe(takeUntilDestroyed())
       .subscribe((subject) => {
         if (subject === this.viewerSubject) return;
+        this.closingRun.set(undefined);
         this.previewRows.set([]);
         this.previewPhase.set('select');
         this.fileName.set(null);

@@ -67,6 +67,8 @@ Runs belong to the observed `UserService.user` `sub`. Reads, newly scheduled chu
 
 The dialog's visible flow is unchanged for now. Close stays disabled while rows are being written. After a run settles, Close returns the cumulative result with the run's `baselineMemberCount` and dismisses that run; the Members tab polls the roster from that baseline, so a reopened run's additions are never counted twice. Reopening Import Members for a group with a retained run shows it instead of resubmitting. Until hide/reopen controls land (#5731), destroying the dialog stops its active run after the in-flight batch, so no later chunk or retry is scheduled. Wizard (collect-only) imports never start a run; they still save through Done or Update Group.
 
+Notification-control locking follows every run snapshot, including the first one, rather than relying on observing an intermediate importing phase; phase transitions separately manage result focus. On Close, the dialog locks further actions and keeps an owner-checked final snapshot until its view is destroyed, while immediately dismissing the service run and clearing the consumed preview. Closing therefore cannot expose the original ready rows or start another write; the next dialog can start a fresh import.
+
 ## 👤 User State Management
 
 ### UserService Pattern
