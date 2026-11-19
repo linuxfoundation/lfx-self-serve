@@ -352,8 +352,8 @@ export class OrgEmployeeViewService {
    * made once per change of employer or verified email, never re-derived from activity on a later load.
    *
    * The stored pin is authoritative: it is read back as long as that company still qualifies, and each read refreshes its
-   * 30-day lifetime. A pin that no longer qualifies is replaced, and the replacement is persisted. When the pin cannot be
-   * stored (the cache is disabled or the write fails) the lookup REJECTS (a retriable 503) rather than answering with a
+   * 30-day lifetime. A read that FAULTS (timeout, connection error) is not a missing pin and is treated like a failed write. A pin that no longer qualifies is replaced, and the replacement is persisted. When the pin cannot be
+   * read or stored (the cache is disabled, or a read or the write fails) the lookup REJECTS (a retriable 503) rather than answering with a
    * choice that the next request could contradict, which would let two companies be admitted in turn.
    */
   private async chooseEmployer(req: Request, username: string, qualifying: QualifyingEmployer[], fingerprint: string): Promise<QualifyingEmployer> {
@@ -363,8 +363,10 @@ export class OrgEmployeeViewService {
     if (!key || !valkeyService.isEnabled()) throw this.pinUnavailable();
 
     const accept = (value: unknown): boolean => !!value && typeof value === 'object' && typeof (value as { orgUid?: unknown }).orgUid === 'string';
-    const stored = await valkeyService.getJson<{ orgUid: string }>(key, accept);
-    const kept = stored ? qualifying.find((entry) => entry.org.orgUid === stored.orgUid) : undefined;
+    // A read FAULT is not "no pin": re-ranking on a blip would overwrite the stored company with whichever one currently leads.
+    const read = await valkeyService.getJsonStrict<{ orgUid: string }>(key, accept);
+    if (read.status === 'fault') throw this.pinUnavailable();
+    const kept = read.status === 'hit' ? qualifying.find((entry) => entry.org.orgUid === read.value.orgUid) : undefined;
     if (kept) {
       // Sliding lifetime, best effort: a failed refresh only leaves the remaining time as it was.
       void valkeyService.setJson(key, { orgUid: kept.org.orgUid }, VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS);

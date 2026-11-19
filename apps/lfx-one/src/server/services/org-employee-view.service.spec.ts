@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken, pinned, valkeyState } = vi.hoisted(() => ({
   pinned: new Map<string, unknown>(),
-  valkeyState: { enabled: true, writeFails: false },
+  valkeyState: { enabled: true, writeFails: false, readFails: false },
   generateM2MToken: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'employee'),
   resolveVerifiedUserEmails: vi.fn(),
@@ -22,7 +22,10 @@ vi.mock('./valkey.service', () => ({
   buildPerUserOrgKey: (namespace: string, username: string, id: string) => `${namespace}:${username}:${id}`,
   valkeyService: {
     isEnabled: () => valkeyState.enabled,
-    getJson: async (key: string) => (pinned.has(key) ? pinned.get(key) : null),
+    getJsonStrict: async (key: string) => {
+      if (valkeyState.readFails) return { status: 'fault' };
+      return pinned.has(key) ? { status: 'hit', value: pinned.get(key) } : { status: 'miss' };
+    },
     setJson: async (key: string, value: unknown) => {
       if (!valkeyState.enabled || valkeyState.writeFails) return false;
       pinned.set(key, value);
@@ -40,7 +43,13 @@ const OTHER_UID = '0016100000OTHERAAA1';
 
 const req = (): Request => ({ path: '/api/orgs/x/lens/overview' }) as unknown as Request;
 
-type Doc = { name?: string; slug?: string; primary_domain?: string; domain_aliases?: string[]; is_member?: boolean };
+interface Doc {
+  name?: string;
+  slug?: string;
+  primary_domain?: string;
+  domain_aliases?: string[];
+  is_member?: boolean;
+}
 const acme: Doc = { name: 'Acme Motors', primary_domain: 'acme-motors.example' };
 const zeta: Doc = { name: 'Zeta Holdings', primary_domain: 'zeta-holdings.example' };
 
@@ -49,13 +58,13 @@ function job(organization: string, startDate = 'Jan 2024', endDate?: string) {
   return { id: `we-${organization}`, organization, jobTitle: 'Engineer', startDate, endDate, source: 'manual' as const };
 }
 
-function page(entries: Array<[string, Doc]>) {
+function page(entries: [string, Doc][]) {
   return { resources: entries.map(([uid, data]) => ({ id: `b2b_org:${uid}`, type: 'b2b_org', data })) };
 }
 
 interface Setup {
   experiences?: unknown;
-  orgs?: Array<[string, Doc]> | Error;
+  orgs?: [string, Doc][] | Error;
   emails?: string[] | Error;
   auditor?: boolean | Error;
   activity?: Map<string, number>;
@@ -95,6 +104,7 @@ beforeEach(() => {
   pinned.clear();
   valkeyState.enabled = true;
   valkeyState.writeFails = false;
+  valkeyState.readFails = false;
   getEffectiveUsername.mockReturnValue('employee');
   generateM2MToken.mockResolvedValue('m2m-token');
 });
@@ -287,7 +297,7 @@ describe('OrgEmployeeViewService.resolve', () => {
 });
 
 describe('OrgEmployeeViewService with several qualifying companies', () => {
-  const both: Array<[string, Doc]> = [
+  const both: [string, Doc][] = [
     [ORG_UID, acme],
     [UID_B, zeta],
   ];
@@ -409,6 +419,45 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     await expect(disabled.svc.resolve(req(), null)).rejects.toMatchObject({ statusCode: 503 });
   });
 
+  it('treats a failed pin READ as unavailable, not as no pin, and leaves the stored pin untouched', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    const first = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 2000],
+        [UID_B, 1000],
+      ]),
+    });
+    await expect(first.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+
+    valkeyState.readFails = true;
+    const blip = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 1000],
+        [UID_B, 9000],
+      ]),
+    });
+    await expect(blip.svc.resolve(req(), null)).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+    expect(blip.engagement.getLastActivityByAccount).not.toHaveBeenCalled();
+
+    valkeyState.readFails = false;
+    const after = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 1000],
+        [UID_B, 9000],
+      ]),
+    });
+    await expect(after.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+  });
+
   it('does not need the pin store for a single qualifying company', async () => {
     valkeyState.enabled = false;
     const { svc } = build();
@@ -417,7 +466,7 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
   });
 
   it('replaces a pin that no longer qualifies and persists the replacement, so later activity cannot move it again', async () => {
-    const third: Array<[string, Doc]> = [...both, [OTHER_UID, { name: 'Other Works', primary_domain: 'other-works.example' }]];
+    const third: [string, Doc][] = [...both, [OTHER_UID, { name: 'Other Works', primary_domain: 'other-works.example' }]];
     const threeEmails = [...emails, 'dev@other-works.example'];
     const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025'), job('Other Works', 'Jan 2023')];
     const first = build({

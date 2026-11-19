@@ -252,6 +252,38 @@ describe('ValkeyService — getdelJson (#1938)', () => {
   });
 });
 
+describe('ValkeyService — getJsonStrict', () => {
+  beforeEach(() => {
+    vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
+    getMock.mockReset();
+    ValkeyService.resetInstance();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns a hit with the parsed value, a miss for an absent key, and a miss for a value failing the shape check', async () => {
+    getMock.mockResolvedValueOnce(JSON.stringify({ orgUid: 'a' }));
+    await expect(ValkeyService.getInstance().getJsonStrict<{ orgUid: string }>('some:key')).resolves.toEqual({ status: 'hit', value: { orgUid: 'a' } });
+
+    getMock.mockResolvedValueOnce(null);
+    await expect(ValkeyService.getInstance().getJsonStrict('some:key')).resolves.toEqual({ status: 'miss' });
+
+    getMock.mockResolvedValueOnce(JSON.stringify({ unexpected: true }));
+    await expect(ValkeyService.getInstance().getJsonStrict('some:key', (value): value is never => false)).resolves.toEqual({ status: 'miss' });
+  });
+
+  it('reports a read error as a fault, never as a miss, and is a fault when disabled', async () => {
+    getMock.mockRejectedValue(new Error('connection reset'));
+    await expect(ValkeyService.getInstance().getJsonStrict('some:key')).resolves.toEqual({ status: 'fault' });
+
+    vi.stubEnv('VALKEY_URL', '');
+    ValkeyService.resetInstance();
+    await expect(ValkeyService.getInstance().getJsonStrict('some:key')).resolves.toEqual({ status: 'fault' });
+  });
+});
+
 describe('buildAuthStateCacheKey (#1938)', () => {
   beforeEach(() => {
     vi.stubEnv('VALKEY_KEY_NAMESPACE', '');

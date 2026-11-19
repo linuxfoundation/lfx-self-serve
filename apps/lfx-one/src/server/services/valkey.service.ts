@@ -85,6 +85,26 @@ export class ValkeyService implements CachePort {
   }
 
   /**
+   * `getJson` that reports a read FAULT (timeout, connection error) as `fault` instead of folding it into `miss`. For a caller
+   * whose answer must not be re-derived on a blip (a stored decision that a fresh computation could contradict), where treating
+   * "could not read" as "nothing stored" would silently replace the stored value.
+   */
+  public async getJsonStrict<T>(key: string, accept?: (value: unknown) => boolean, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<GetDelResult<T>> {
+    if (!this.client) return { status: 'fault' };
+    try {
+      const raw = (await this.withTimeout(
+        this.runWhenConnected(() => this.client!.get(key), timeoutMs),
+        timeoutMs
+      )) as string | null;
+      const value = this.parseCachedJson<T>(raw, key, 'valkey_get_strict', accept);
+      return value === null ? { status: 'miss' } : { status: 'hit', value };
+    } catch (err) {
+      logger.warning(undefined, 'valkey_get_strict', 'Cache read failed', { err, cache_key: ValkeyService.redactKey(key) });
+      return { status: 'fault' };
+    }
+  }
+
+  /**
    * Atomic read-and-delete (`GETDEL`) — the single-use counterpart to `getJson`. A plain `getJson`
    * followed by `del` is two round trips: two concurrent callers can both `GET` the same key before
    * either `DEL` lands, so both see it as valid. `GETDEL` closes that window server-side. Requires
