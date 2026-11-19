@@ -14,6 +14,8 @@ import {
   COMMITTEE_LABEL,
   GROUPS_VIEW_MODE_STORAGE_KEY,
   JOIN_MODE_LABELS,
+  MEMBER_IMPORT_RECONCILE_INTERVAL_MS,
+  MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS,
   WG_ENGAGEMENT_METRICS_FLAG,
 } from '@lfx-one/shared/constants';
 import {
@@ -31,6 +33,7 @@ import {
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import { buildEngagementStatCards, getGroupBehavioralClass, getGroupCommands, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { InvitationService } from '@services/invitation.service';
@@ -44,10 +47,13 @@ import {
   combineLatest,
   debounceTime,
   distinctUntilChanged,
+  EMPTY,
   exhaustMap,
   filter,
   finalize,
+  first,
   map,
+  Observable,
   of,
   startWith,
   switchMap,
@@ -87,6 +93,7 @@ export class CommitteeDashboardComponent {
   // Inject services
   private readonly projectContextService = inject(ProjectContextService);
   private readonly committeeService = inject(CommitteeService);
+  private readonly importService = inject(CommitteeMemberImportService);
   private readonly personaService = inject(PersonaService);
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
@@ -264,6 +271,8 @@ export class CommitteeDashboardComponent {
     // restoring a 'card' view here would render a different template branch than the SSR HTML
     // on the client's first pass, tripping Angular's hydration mismatch detection (NG0500).
     afterNextRender(() => this.restoreViewMode());
+
+    this.initImportReconciliation();
   }
 
   /**
@@ -433,6 +442,72 @@ export class CommitteeDashboardComponent {
     this.searchForm?.get('foundationFilter')?.setValue(null, { emitEvent: false });
     this.searchForm?.get('projectFilter')?.setValue(null, { emitEvent: false });
     this.searchForm?.get('joinModeFilter')?.setValue(null);
+  }
+
+  /**
+   * A settled CSV import (#5731) refreshes the shown list once, then refetches until indexed member totals
+   * reach each run's retained target (its pre-import roster plus confirmed additions) or the attempts run
+   * out, then refreshes again. One loop serves every grouped table; a newer settlement restarts it with all
+   * pending targets. A subject, lens or project change, or leaving the page, cancels it. API totals are never
+   * raised optimistically, and a target that other membership changes make unreachable just ends at the bound.
+   */
+  private initImportReconciliation(): void {
+    const scope = computed(() => `${this.importService.viewerSubject() ?? ''}|${this.lensService.activeLens()}|${this.project()?.uid ?? ''}`);
+    const targets = new Map<string, number>();
+    toObservable(scope)
+      .pipe(
+        switchMap(() => {
+          targets.clear();
+          return this.importService.settlements$.pipe(
+            filter(({ summary }) => summary.added > 0 || summary.unknown > 0),
+            filter(({ summary }) => this.shownCommittees().some((committee) => committee.uid === summary.committeeUid)),
+            tap(({ summary }) => targets.set(summary.committeeUid, summary.reconciliationTarget)),
+            switchMap(() => this.reconcileImportedTotals(targets))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
+  }
+
+  private reconcileImportedTotals(targets: Map<string, number>): Observable<void> {
+    const reached = (committees: readonly Committee[]): boolean =>
+      [...targets].every(([uid, target]) => (committees.find((committee) => committee.uid === uid)?.total_members ?? -1) >= target);
+    const shownAlreadyReached = reached(this.shownCommittees());
+    this.refreshShownCommittees();
+    if (shownAlreadyReached) {
+      targets.clear();
+      return EMPTY;
+    }
+    return timer(MEMBER_IMPORT_RECONCILE_INTERVAL_MS, MEMBER_IMPORT_RECONCILE_INTERVAL_MS).pipe(
+      take(MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS),
+      exhaustMap(() => this.fetchShownCommittees().pipe(catchError(() => of(null)))),
+      first((committees) => committees !== null && reached(committees), null),
+      map(() => {
+        targets.clear();
+        this.refreshShownCommittees();
+      })
+    );
+  }
+
+  private shownCommittees(): readonly Committee[] {
+    return this.isMeLens() ? this.myCommittees() : this.committees();
+  }
+
+  private fetchShownCommittees(): Observable<readonly Committee[]> {
+    if (this.isMeLens()) {
+      return this.committeeService.getMyCommittees();
+    }
+    const projectUid = this.project()?.uid;
+    return projectUid ? this.committeeService.getCommitteesByProjectOrThrow(projectUid) : of([]);
+  }
+
+  private refreshShownCommittees(): void {
+    if (this.isMeLens()) {
+      this.reloadMyCommittees();
+    } else {
+      this.refreshCommittees();
+    }
   }
 
   private initializeMyCommittees(): Signal<MyCommittee[]> {

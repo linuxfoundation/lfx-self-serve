@@ -2,13 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 // Service-owned CSV member import runs (#5730), exercised without the import dialog. The dialog suite
-// keeps the full chunk/pause/stop/cleanup matrix; this suite covers ownership and lifetime.
+// keeps the full chunk/pause/stop/cleanup matrix; this suite covers ownership, lifetime and the
+// background-run surfaces: summaries, once-per-attempt settlements, revocation and the leave warning (#5731).
 // All people and domains are synthetic.
 
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { CommitteeMemberBulkCreateResult, CreateCommitteeMemberRequest, MemberImportRow, MemberImportRunInput } from '@lfx-one/shared/interfaces';
+import {
+  CommitteeMemberBulkCreateResult,
+  CreateCommitteeMemberRequest,
+  MemberImportRow,
+  MemberImportRunInput,
+  MemberImportSettlement,
+} from '@lfx-one/shared/interfaces';
+import { MessageService } from 'primeng/api';
 import { Observable, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,6 +57,7 @@ describe('CommitteeMemberImportService', () => {
   let revokes: Subject<void>[];
   let committeeService: { bulkCreateCommitteeMembers: ReturnType<typeof vi.fn>; revokeCommitteeInvite: ReturnType<typeof vi.fn> };
   let service: CommitteeMemberImportService;
+  let toast: ReturnType<typeof vi.fn>;
 
   /** Answers bulk call `call`: every row added unless its index is listed as missing from the response. */
   function respond(call: number, missing: number[] = []): void {
@@ -82,10 +91,12 @@ describe('CommitteeMemberImportService', () => {
         return response;
       }),
     };
+    toast = vi.fn();
     TestBed.configureTestingModule({
       providers: [
         { provide: UserService, useValue: { user } },
         { provide: CommitteeService, useValue: committeeService },
+        { provide: MessageService, useValue: { add: toast } },
       ],
     });
     service = TestBed.inject(CommitteeMemberImportService);
@@ -229,5 +240,169 @@ describe('CommitteeMemberImportService', () => {
     });
     expect(revokes).toHaveLength(5);
     expect(service.getRun('group-a')).toBeUndefined();
+  });
+
+  describe('background surfaces (#5731)', () => {
+    let settled: MemberImportSettlement[];
+
+    beforeEach(() => {
+      settled = [];
+      service.settlements$.subscribe((settlement) => settled.push(settlement));
+    });
+
+    it('projects counts-only summaries through importing, paused, stopping and settled', () => {
+      vi.useFakeTimers();
+      service.start(input('group-a', readyRows(30)));
+      expect(service.getSummary('group-a')).toMatchObject({ phase: 'importing', batchTotal: 30, batchSettled: 0, added: 0, committeeName: 'Group group-a' });
+      expect(service.getSummary('group-a')).not.toHaveProperty('rows');
+
+      pending[0].response.error(new HttpErrorResponse({ status: 429, headers: new HttpHeaders({ 'Retry-After': '5' }) }));
+      expect(service.getSummary('group-a')?.phase).toBe('paused');
+      vi.advanceTimersByTime(5_000);
+      expect(service.getSummary('group-a')?.phase).toBe('importing');
+
+      service.stop('group-a');
+      expect(service.getSummary('group-a')?.phase).toBe('stopping');
+      respond(1);
+      expect(service.getSummary('group-a')).toMatchObject({ phase: 'settled', added: 25, notSubmitted: 5, retryable: 5, reconciliationTarget: 35 });
+    });
+
+    it('announces each settled attempt exactly once with its identity and retained target', () => {
+      vi.useFakeTimers();
+      service.start(input('group-a', readyRows(3)));
+      respond(0, [2]);
+      service.stop('group-a');
+      expect(settled.map(({ key }) => key)).toEqual(['member-import-1:1']);
+      expect(settled[0].summary).toMatchObject({ phase: 'settled', added: 2, unknown: 1, baselineMemberCount: 10, reconciliationTarget: 12 });
+
+      service.retry('group-a');
+      respond(1);
+      expect(settled.map(({ key }) => key)).toEqual(['member-import-1:1', 'member-import-1:2']);
+      expect(settled[1].summary).toMatchObject({ added: 3, reconciliationTarget: 13 });
+      expect(toast).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      [
+        'clean',
+        (): void => respond(0),
+        { severity: 'success', summary: 'Import Complete', detail: '2 members added to Group group-a. New members may take a moment to appear.' },
+      ],
+      [
+        'partial',
+        (): void => {
+          pending[0].response.next({
+            results: [
+              { index: 0, email: 'person0@example.com', status: 'added', retryable: false, member_uid: 'member-0' },
+              { index: 1, email: 'person1@example.com', status: 'failed', reason: 'invalid', retryable: false, message: 'Rejected.' },
+            ],
+            added: 1,
+            skipped: 0,
+            failed: 1,
+          });
+          pending[0].response.complete();
+        },
+        {
+          severity: 'warn',
+          summary: 'Import Partly Complete',
+          detail: expect.stringContaining('Import into Group group-a finished: 1 member added, 1 not added.'),
+        },
+      ],
+      [
+        'stopped',
+        (): void => {
+          pending[0].response.error(new HttpErrorResponse({ status: 403 }));
+        },
+        {
+          severity: 'warn',
+          summary: 'Import Stopped',
+          detail: expect.stringContaining('Import into Group group-a stopped: 0 members added, 2 not yet submitted.'),
+        },
+      ],
+      [
+        'rejected',
+        (): void => {
+          pending[0].response.error(new HttpErrorResponse({ status: 400 }));
+        },
+        { severity: 'warn', summary: 'Import Partly Complete', detail: expect.stringContaining('0 members added, 2 not added') },
+      ],
+    ] as const)('names the group and distinguishes a %s outcome in one root toast', (_label, finish, notice) => {
+      service.start(input('group-a', readyRows(2)));
+      finish();
+
+      expect(toast).toHaveBeenCalledExactlyOnceWith({ ...notice, life: 8000 });
+      expect(settled).toHaveLength(1);
+    });
+
+    it('reports an unknown outcome distinctly', () => {
+      vi.useFakeTimers();
+      service.start(input('group-a', readyRows(2)));
+      respond(0, [1]);
+      service.stop('group-a');
+
+      expect(toast).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          severity: 'warn',
+          summary: 'Import Outcome Unknown',
+          detail: expect.stringContaining('1 member added, 1 with an unknown outcome'),
+        })
+      );
+    });
+
+    it('keeps a settled report until it is explicitly dismissed', () => {
+      service.start(input('group-a', readyRows(1)));
+      respond(0);
+      expect(service.getSummary('group-a')?.phase).toBe('settled');
+      expect(service.getSummary('group-a')?.phase).toBe('settled');
+
+      service.dismiss('group-a');
+      expect(service.getSummary('group-a')).toBeUndefined();
+      expect(service.summaries().size).toBe(0);
+    });
+
+    it('revokes a run on lost access: no later chunk, no settlement and no retained details', () => {
+      service.start(input('group-a', readyRows(30)));
+      service.revoke('group-a');
+      expect(service.getRun('group-a')).toBeUndefined();
+
+      respond(0);
+      expect(pending).toHaveLength(1);
+      expect(settled).toHaveLength(0);
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it("never exposes or announces another subject's run", () => {
+      service.start(input('group-a', readyRows(1)));
+      user.set({ sub: 'synthetic-replacement' });
+      expect(service.summaries().size).toBe(0);
+      respond(0);
+      expect(settled).toHaveLength(0);
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('installs the leave warning only while a run is writing', () => {
+      const add = vi.spyOn(window, 'addEventListener');
+      const remove = vi.spyOn(window, 'removeEventListener');
+      const beforeUnload = (spy: typeof add): unknown[][] => spy.mock.calls.filter(([type]) => type === 'beforeunload');
+
+      service.start(input('group-a', readyRows(1)));
+      TestBed.tick();
+      expect(beforeUnload(add)).toHaveLength(1);
+      const handler = beforeUnload(add)[0][1] as (event: BeforeUnloadEvent) => void;
+      const event = { preventDefault: vi.fn(), returnValue: undefined } as unknown as BeforeUnloadEvent;
+      handler(event);
+      expect(event.preventDefault).toHaveBeenCalled();
+
+      respond(0);
+      TestBed.tick();
+      expect(beforeUnload(remove)).toEqual([['beforeunload', handler]]);
+
+      service.dismiss('group-a');
+      service.start(input('group-a', readyRows(1, 5)));
+      TestBed.tick();
+      expect(beforeUnload(add)).toHaveLength(2);
+      switchUser('synthetic-replacement');
+      expect(beforeUnload(remove)).toHaveLength(2);
+    });
   });
 });

@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, DestroyRef, inject, Injectable, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
   COMMITTEE_INVITE_CONCURRENCY,
@@ -11,14 +12,24 @@ import {
   MEMBER_IMPORT_MAX_PAUSES,
   MEMBER_IMPORT_RETRY_AFTER_MAX_MS,
 } from '@lfx-one/shared/constants';
-import { CommitteeMemberBulkCreateResult, MemberImportRow, MemberImportRun, MemberImportRunInput, MemberImportRunRef } from '@lfx-one/shared/interfaces';
+import {
+  CommitteeMemberBulkCreateResult,
+  MemberImportRow,
+  MemberImportRun,
+  MemberImportRunInput,
+  MemberImportRunRef,
+  MemberImportRunSummary,
+  MemberImportSettlement,
+} from '@lfx-one/shared/interfaces';
 import { classifyMemberImportBulkResult, getMemberImportRetryDelayMs, isMemberImportRowRetryable } from '@lfx-one/shared/utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { MessageService } from 'primeng/api';
 import {
   catchError,
   concat,
   concatMap,
   defer,
+  distinctUntilChanged,
   EMPTY,
   from,
   ignoreElements,
@@ -48,15 +59,24 @@ import { UserService } from './user.service';
  * in-flight chunk settle, because a cancelled request may still have been committed upstream.
  *
  * At most one run is retained per group for the signed-in subject, in memory only. Its subscriptions,
- * stop requests and timers belong to this service, never to a view. A different observed subject can
- * neither read nor extend another subject's run: its state is discarded and no further request is scheduled.
+ * stop requests and timers belong to this service, never to a view, so closing the dialog or navigating
+ * within the tab only detaches a view (#5731). A different observed subject can neither read nor extend
+ * another subject's run: its state is discarded and no further request is scheduled.
+ *
+ * Each settled attempt is announced once: `settlements$` lets mounted hosts refresh their counts, and a
+ * root toast names the group and its outcome. A settled report stays until it is explicitly dismissed.
+ * While any run is writing, a best-effort browser leave warning is installed; it is not recovery.
  */
 @Injectable({ providedIn: 'root' })
 export class CommitteeMemberImportService {
   private readonly committeeService = inject(CommitteeService);
   private readonly userService = inject(UserService);
+  private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly runs = signal(new Map<string, MemberImportRun>());
+  private readonly settlementEvents = new Subject<MemberImportSettlement>();
   /** Ends a run's current pause early, keyed by run ID so a replacement run never receives a stale stop. */
   private readonly stopRequests = new Map<string, Subject<void>>();
   private readonly retryDeadlineTimers = new Map<string, Subscription>();
@@ -64,12 +84,20 @@ export class CommitteeMemberImportService {
   private runSequence = 0;
 
   public readonly viewerSubject = computed(() => this.userService.user()?.sub ?? null);
+  /** Counts-only projections of this subject's retained runs, by group UID. */
+  public readonly summaries: Signal<ReadonlyMap<string, MemberImportRunSummary>> = this.initSummaries();
+  /** Emits once per settled attempt, only while its subject is still the observed subject. */
+  public readonly settlements$: Observable<MemberImportSettlement> = this.settlementEvents.asObservable();
 
   public constructor() {
     toObservable(this.viewerSubject)
       .pipe(takeUntilDestroyed())
       .subscribe((owner) => this.synchronizeOwner(owner));
-    this.destroyRef.onDestroy(() => this.discardAll());
+    this.initLeaveWarning();
+    this.destroyRef.onDestroy(() => {
+      this.discardAll();
+      this.settlementEvents.complete();
+    });
   }
 
   /** A different observed subject cannot read the previous subject's runs, even before the cleanup subscription runs. */
@@ -136,6 +164,10 @@ export class CommitteeMemberImportService {
     this.stopRequests.get(run.runId)?.next();
   }
 
+  public getSummary(committeeUid: string): MemberImportRunSummary | undefined {
+    return this.summaries().get(committeeUid);
+  }
+
   /** Only a settled run can be dismissed; an active run must not become a second import of the same rows. */
   public dismiss(committeeUid: string): void {
     const run = this.getRun(committeeUid);
@@ -146,6 +178,120 @@ export class CommitteeMemberImportService {
       next.delete(committeeUid);
       return next;
     });
+  }
+
+  /**
+   * Definitive loss of manager access or of the group itself: schedules no further request and discards the
+   * retained details so they cannot be shown. Requests already sent may still commit upstream.
+   */
+  public revoke(committeeUid: string): void {
+    const run = this.getRun(committeeUid);
+    if (!run) return;
+    this.retireRun(run.runId);
+    this.runs.update((runs) => {
+      const next = new Map(runs);
+      next.delete(committeeUid);
+      return next;
+    });
+  }
+
+  private initSummaries(): Signal<ReadonlyMap<string, MemberImportRunSummary>> {
+    return computed(() => {
+      const owner = this.viewerSubject();
+      const summaries = new Map<string, MemberImportRunSummary>();
+      if (!owner) return summaries;
+      for (const run of this.runs().values()) {
+        if (run.ownerSubject === owner) summaries.set(run.committeeUid, this.toSummary(run));
+      }
+      return summaries;
+    });
+  }
+
+  /** Best-effort only: browsers may ignore it, and nothing keeps processing after the tab is gone. */
+  private initLeaveWarning(): void {
+    const view = this.document.defaultView;
+    if (!isPlatformBrowser(this.platformId) || !view) return;
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+      // Some browsers still require a return value to show the prompt.
+      event.returnValue = '';
+    };
+    const active = computed(() => [...this.summaries().values()].some((summary) => summary.phase !== 'settled'));
+    toObservable(active)
+      .pipe(distinctUntilChanged(), takeUntilDestroyed())
+      .subscribe((importing) => {
+        if (importing) {
+          view.addEventListener('beforeunload', warn);
+        } else {
+          view.removeEventListener('beforeunload', warn);
+        }
+      });
+    this.destroyRef.onDestroy(() => view.removeEventListener('beforeunload', warn));
+  }
+
+  private toSummary(run: MemberImportRun): MemberImportRunSummary {
+    const count = (status: MemberImportRow['status']): number => run.rows.filter((row) => row.status === status).length;
+    return {
+      committeeUid: run.committeeUid,
+      committeeName: run.committeeName,
+      runId: run.runId,
+      attempt: run.attempt,
+      phase: this.runPhase(run),
+      batchTotal: run.batchTotal,
+      batchSettled: run.batchSettled,
+      added: count('added'),
+      failed: count('failed'),
+      unknown: count('unknown'),
+      notSubmitted: count('not_submitted'),
+      retryable: run.rows.filter(isMemberImportRowRetryable).length,
+      stopReason: run.stopReason,
+      manualStopRequested: run.manualStopRequested,
+      baselineMemberCount: run.baselineMemberCount,
+      reconciliationTarget: run.reconciliationTarget,
+    };
+  }
+
+  private runPhase(run: MemberImportRun): MemberImportRunSummary['phase'] {
+    if (run.status === 'settled') return 'settled';
+    if (run.resumeAt !== null) return 'paused';
+    return run.manualStopRequested ? 'stopping' : 'importing';
+  }
+
+  /** Announces a settled attempt once: hosts reconcile counts, and the toast never opens a view or navigates. */
+  private announceSettlement(ref: MemberImportRunRef): void {
+    const run = this.currentRun(ref);
+    if (!run || run.status !== 'settled') return;
+    const summary = this.toSummary(run);
+    this.settlementEvents.next({ key: `${run.runId}:${run.attempt}`, summary });
+    this.messageService.add({ ...this.settlementNotice(summary), life: 8000 });
+  }
+
+  private settlementNotice(summary: MemberImportRunSummary): { severity: 'success' | 'warn'; summary: string; detail: string } {
+    const group = summary.committeeName;
+    const added = `${summary.added} ${summary.added === 1 ? 'member' : 'members'} added`;
+    const report = "Open the report from the group's Members tab.";
+    if (summary.unknown > 0) {
+      return {
+        severity: 'warn',
+        summary: 'Import Outcome Unknown',
+        detail: `Import into ${group} finished: ${added}, ${summary.unknown} with an unknown outcome. ${report}`,
+      };
+    }
+    if (summary.stopReason) {
+      return {
+        severity: 'warn',
+        summary: 'Import Stopped',
+        detail: `Import into ${group} stopped: ${added}, ${summary.notSubmitted} not yet submitted. ${report}`,
+      };
+    }
+    if (summary.failed > 0 || summary.notSubmitted > 0) {
+      return {
+        severity: 'warn',
+        summary: 'Import Partly Complete',
+        detail: `Import into ${group} finished: ${added}, ${summary.failed + summary.notSubmitted} not added. ${report}`,
+      };
+    }
+    return { severity: 'success', summary: 'Import Complete', detail: `${added} to ${group}. New members may take a moment to appear.` };
   }
 
   private synchronizeOwner(owner: string | null): void {
@@ -217,6 +363,7 @@ export class CommitteeMemberImportService {
           const unsettled = run.rows.filter((row) => row.status === 'waiting' || row.status === 'importing');
           this.markUnsubmitted(ref, unsettled, 'The import stopped.');
           this.updateRun(ref, (current) => ({ ...current, resumeAt: null, status: 'settled' }));
+          this.announceSettlement(ref);
         },
       });
   }
