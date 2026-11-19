@@ -38,6 +38,8 @@ export interface OrgItem {
   employeeView?: boolean;
   /** True for a company the caller reads at full width only through the authorizer (`b2b_org#auditor`, no roster grant) and who would otherwise also qualify as an employee. Never CLA-only. Absent means false. */
   fullAccess?: boolean;
+  familyRootUid?: string;
+  familyRootName?: string | null;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -161,6 +163,14 @@ export interface OrgRollUpSelectorRow {
   subtitle: string;
   organizationCount: number;
   isSelected: boolean;
+}
+
+export interface OrgRelatedCompanyRow {
+  org: OrgRollUpSetOrg;
+  isSelected: boolean;
+  roleLabel: string;
+  roleIcon: string;
+  roleTooltip: string;
 }
 
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */

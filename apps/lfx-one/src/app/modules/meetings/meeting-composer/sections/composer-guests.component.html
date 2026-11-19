@@ -96,21 +96,33 @@
           </span>
         }
       </div>
-      @if (guestCount() > 0) {
-        <div class="w-full sm:w-56">
-          <label for="composer-guests-filter" class="sr-only">Filter invited people</label>
-          <lfx-input-text
-            [form]="guestFilterForm"
-            control="query"
-            inputId="composer-guests-filter"
-            type="search"
+      <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+        @if (canAddSelf()) {
+          <lfx-button
+            label="Add myself"
+            icon="fa-light fa-plus"
             size="small"
-            icon="fa-light fa-magnifying-glass"
-            placeholder="Search people..."
-            styleClass="w-full"
-            dataTest="composer-guests-filter" />
-        </div>
-      }
+            severity="info"
+            [text]="true"
+            data-testid="composer-guest-add-self"
+            (onClick)="onAddSelf()" />
+        }
+        @if (guestCount() > 0) {
+          <div class="w-full sm:w-56">
+            <label for="composer-guests-filter" class="sr-only">Filter invited people</label>
+            <lfx-input-text
+              [form]="guestFilterForm"
+              control="query"
+              inputId="composer-guests-filter"
+              type="search"
+              size="small"
+              icon="fa-light fa-magnifying-glass"
+              placeholder="Search people..."
+              styleClass="w-full"
+              dataTest="composer-guests-filter" />
+          </div>
+        }
+      </div>
     </div>
 
     @if (undoBatch()) {

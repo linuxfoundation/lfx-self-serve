@@ -156,6 +156,7 @@ describe('MeetingDetailsDrawerComponent', () => {
             attachmentScopeOverrides: signal(new Map()),
             // Upcoming guests stay loading, so tests set the hosts and count themselves.
             getMyMeetingRegistrants: () => NEVER,
+            resendMyMeetingInvitation: vi.fn(() => of({ message: 'ok' })),
           },
         },
         { provide: CommitteeService, useValue: { getCommitteeMembers: () => of([]) } },
@@ -428,6 +429,27 @@ describe('MeetingDetailsDrawerComponent', () => {
       await settle();
       expect(focusMore).toHaveBeenCalled();
       expect(document.querySelector('[data-testid="meeting-details-remove-dialog"]')).not.toBeNull();
+    });
+
+    it('on phones, asks before the menu Resend Invite sends anything, returning focus to ⋯', async () => {
+      phone = true;
+      await render(row(MEETING));
+      fixture.detectChanges();
+      await settle();
+      const send = vi.mocked(TestBed.inject(MeetingService).resendMyMeetingInvitation);
+
+      await click('meeting-details-more');
+      const focusMore = vi.spyOn(fixture.debugElement.query(By.css('[data-testid="meeting-details-more"]')).componentInstance, 'focus');
+      (TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="meeting-details-menu-resend"]') as HTMLElement).click();
+      await settle();
+
+      expect(focusMore).toHaveBeenCalled();
+      expect(document.querySelector('[data-testid="meeting-details-resend-dialog"]')).not.toBeNull();
+      expect(send).not.toHaveBeenCalled();
+      (document.querySelector('[data-testid="meeting-details-resend-confirm"] button') as HTMLButtonElement).click();
+      await settle();
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('[data-testid="meeting-details-resend-dialog"]')).toBeNull();
     });
 
     it('offers Edit Meeting to an organizer, handing it the drawer to close', async () => {

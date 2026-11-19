@@ -17,11 +17,14 @@ vi.mock('./org-employee-view.service', () => ({
 vi.mock('@lfx-one/shared/constants', () => ({
   ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP: 5,
   ORG_CATALOGUE_SEARCH_MIN_CHARS: 2,
+  ORG_LENS_ROLLUP_ENABLED_FLAG: 'org-lens-rollup-enabled',
 }));
 
-const { proxyRequest, getAccessAwareOrgs, getEffectiveUsername, listClaOnlyOrgs } = vi.hoisted(() => ({
+const { proxyRequest, getAccessAwareOrgs, resolveFamilyRoots, isFlagEnabled, getEffectiveUsername, listClaOnlyOrgs } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getAccessAwareOrgs: vi.fn(),
+  resolveFamilyRoots: vi.fn(),
+  isFlagEnabled: vi.fn(),
   getEffectiveUsername: vi.fn(),
   listClaOnlyOrgs: vi.fn(),
 }));
@@ -35,8 +38,10 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+    public resolveFamilyRoots = resolveFamilyRoots;
   },
 }));
+vi.mock('./launchdarkly-server.service', () => ({ LaunchDarklyServerService: { getInstance: () => ({ isFlagEnabled }) } }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 // The real predicate is pinned in org-cla-only-orgs.service.spec.ts; the service's own imports reach
 // the Angular-bearing shared barrel, so it cannot be loaded here.
@@ -65,7 +70,7 @@ beforeEach(() => {
   // be answered to the next test's first request.
   vi.resetAllMocks();
   delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
-  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-employer' });
+  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
   getEffectiveUsername.mockReturnValue('staffer');
   // The defining staff shape: the catalogue is the only source of rows.
   getAccessAwareOrgs.mockResolvedValue({
@@ -75,6 +80,90 @@ beforeEach(() => {
     loadedAt: 'now',
     username: 'staffer',
     isStaff: true,
+  });
+  isFlagEnabled.mockResolvedValue(false);
+  resolveFamilyRoots.mockResolvedValue(new Map());
+});
+
+describe('OrgNavigationService — family roll-up labels on a staff search (#5942)', () => {
+  const ROOT = { rootUid: 'top', rootName: 'Top Co', rootLogoUrl: null };
+
+  beforeEach(() => {
+    isFlagEnabled.mockResolvedValue(true);
+  });
+
+  it('labels a family company with its top account and leaves a standalone company unlabelled', async () => {
+    proxyRequest.mockResolvedValue(cataloguePage(['child', 'solo'], null));
+    resolveFamilyRoots.mockResolvedValue(new Map([['child', ROOT]]));
+
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+
+    expect(isFlagEnabled).toHaveBeenCalledWith(req, 'org-lens-rollup-enabled', false);
+    expect(response.items.find((item) => item.uid === 'child')).toMatchObject({ familyRootUid: 'top', familyRootName: 'Top Co' });
+    expect(response.items.find((item) => item.uid === 'solo')).not.toHaveProperty('familyRootUid');
+  });
+
+  it('hands the climb the indexed record of every row shown, assigned rows included', async () => {
+    getAccessAwareOrgs.mockResolvedValue({
+      resolved: new Map([['owned', { roleSource: 'direct-writer' }]]),
+      orgDocByUid: new Map([['owned', { name: 'Owned Org', parent_uid: 'top' }]]),
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: 'staffer',
+      isStaff: true,
+    });
+    proxyRequest.mockResolvedValue(cataloguePage(['found'], null));
+
+    await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+
+    const docs = resolveFamilyRoots.mock.calls[0][1] as Map<string, unknown>;
+    expect([...docs.keys()].sort()).toEqual(['found', 'owned']);
+    expect(docs.get('owned')).toMatchObject({ parent_uid: 'top' });
+  });
+
+  it('labels nothing and skips the climb while the roll-up flag is off for the caller', async () => {
+    isFlagEnabled.mockResolvedValue(false);
+    proxyRequest.mockResolvedValue(cataloguePage(['child'], null));
+
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+
+    expect(resolveFamilyRoots).not.toHaveBeenCalled();
+    expect(response.items[0]).not.toHaveProperty('familyRootUid');
+  });
+
+  it('still answers the search, unlabelled, when the climb fails', async () => {
+    proxyRequest.mockResolvedValue(cataloguePage(['child'], null));
+    resolveFamilyRoots.mockRejectedValue(new Error('query-service down'));
+
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+
+    expect(response.upstream_failed).toBe(false);
+    expect(response.items.map((item) => item.uid)).toEqual(['child']);
+    expect(response.items[0]).not.toHaveProperty('familyRootUid');
+  });
+
+  it('labels nothing for a caller who is not staff, who has no catalogue search', async () => {
+    getAccessAwareOrgs.mockResolvedValue({
+      resolved: new Map([['owned', { roleSource: 'direct-writer' }]]),
+      orgDocByUid: new Map([['owned', { name: 'Owned Org', parent_uid: 'top' }]]),
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: 'member',
+      isStaff: false,
+      staffCheck: 'ok',
+    });
+
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'own' });
+
+    expect(isFlagEnabled).not.toHaveBeenCalled();
+    expect(resolveFamilyRoots).not.toHaveBeenCalled();
+    expect(response.items[0]).not.toHaveProperty('familyRootUid');
+  });
+
+  it('does not evaluate the flag for an unsearched list', async () => {
+    await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(isFlagEnabled).not.toHaveBeenCalled();
   });
 });
 
