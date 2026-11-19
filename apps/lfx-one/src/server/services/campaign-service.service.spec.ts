@@ -6389,6 +6389,28 @@ describe('CampaignServiceClient.listMetaCustomAudiences', () => {
   });
 });
 
+describe('CampaignServiceClient.listMetaLeadForms', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's lead form read, the project encoded", async () => {
+    const forms = { page_id: '104000000000001', forms: [], form_count: 0 };
+    proxyRequest.mockResolvedValueOnce(forms);
+
+    expect(await new CampaignServiceClient().listMetaLeadForms(req, 'lf/ai')).toBe(forms);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/meta-ads/lead-forms', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listMetaLeadForms(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
 describe('CampaignServiceClient.listGoogleAdsAudiences', () => {
   beforeEach(() => {
     vi.clearAllMocks();

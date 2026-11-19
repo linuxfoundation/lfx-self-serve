@@ -61,6 +61,7 @@ import {
   metaTargetingNamesCustomAudiences,
 } from '@lfx-one/shared/utils/campaign-meta-audience-targeting.utils';
 import { compactMetaAdOptions, metaAdOptionOffMessage, metaAdOptionsRefusal, metaConfigRecord } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
+import { metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
 import {
   googleDemandGenAudienceCarried,
   googleDemandGenAudiencesRefusal,
@@ -148,6 +149,7 @@ import type {
   MetaAdOptions,
   MetaAudienceTargeting,
   MetaCustomAudiencesResult,
+  MetaLeadFormsResult,
 } from '@lfx-one/shared/interfaces';
 import {
   EMAIL_SECONDARY_LINK_LIMIT,
@@ -342,6 +344,12 @@ import {
   META_AUDIENCE_TARGETING_OFF_MESSAGE,
   META_AD_OPTION_FIELDS,
   META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE,
+  META_LEAD_FORM_ID_PATTERN,
+  META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE,
+  META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE,
+  META_LEAD_FORMS_OFF_MESSAGE,
+  META_LEAD_FORMS_RESTRICTED_CODE,
+  META_LEAD_FORMS_RESTRICTED_MESSAGE,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
@@ -387,6 +395,7 @@ import {
   canSetMetaAudienceTargeting,
   canSetMetaCallToAction,
   canSetMetaConversionEvent,
+  canSetMetaLeadForm,
   canSetMetaOptimizationGoal,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -1286,7 +1295,9 @@ export class CampaignController {
       const metaTargeting = await this.metaTargetingToForward(req, projectSlug, body);
       // The Meta call to action, conversion event and optimization goal (#5934). See `metaAdOptionsToForward`.
       const metaAdOptions = this.metaAdOptionsToForward(body);
-      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions);
+      // The Meta Instant Form of a `leads` create (#5940), or none. See `metaLeadFormToForward`.
+      const metaLeadFormIdToSend = await this.metaLeadFormToForward(req, projectSlug, body);
+      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions, metaLeadFormIdToSend);
 
       // The channel the Google config resolved to, read ONCE for every channel fence below rather
       // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever
@@ -3668,8 +3679,9 @@ export class CampaignController {
       const segmentsDeployed = canCreateWithAudienceSegments();
       const conversionsDeployed = canCreateWithGoogleCriteria();
       const metaTargetingDeployed = canSetMetaAudienceTargeting();
+      const metaLeadFormsDeployed = canSetMetaLeadForm();
       const marketingOps =
-        segmentsDeployed || conversionsDeployed || metaTargetingDeployed
+        segmentsDeployed || conversionsDeployed || metaTargetingDeployed || metaLeadFormsDeployed
           ? await this.googleMarketingOpsAccess(req, projectSlug, 'list_brief_campaigns', 'Google marketing-ops capabilities')
           : 'denied';
       let googleAudienceSegmentsEnabled: boolean | null = false;
@@ -3698,9 +3710,16 @@ export class CampaignController {
       if (metaTargetingDeployed) {
         metaCustomAudiencesEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
       }
+      // The Meta lead forms (#5940) on the deployment test and the same relation, which campaign-service checks
+      // before it lists them and before it creates with one (#550).
+      let metaLeadFormsEnabled: boolean | null = false;
+      if (metaLeadFormsDeployed) {
+        metaLeadFormsEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
+      }
       const result: CampaignListResult = {
         ...listed,
         metaCustomAudiencesEnabled,
+        metaLeadFormsEnabled,
         googleAudienceSegmentsEnabled,
         googleConversionActionsEnabled,
         googleDemandGenAudienceEnabled,
@@ -4581,6 +4600,74 @@ export class CampaignController {
         truncated: payload.truncated === true,
       };
       logger.success(req, operation, startTime, { count: result.userLists.length, truncated: result.truncated });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The Instant Forms of the Facebook Page a Meta create for this project uses, for the Implement tab's lead
+   * form picker (#5940), camel-cased. A project without its own connection uses the shared LF Page, which holds
+   * every foundation's forms, so it is answered on the relation campaign-service checks first:
+   * `global_marketing_ops` on the project — a coded 403 when refused, a coded 503 when the check cannot be made,
+   * both before any upstream call. Registered ahead of the blanket `requireCampaignManager`, behind its own
+   * `requireMetaLeadFormsAccess`. 404 while Meta lead forms are off. Every status is listed; only ACTIVE passes a
+   * create, which the tab shows.
+   */
+  public async getMetaLeadForms(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'meta_lead_forms';
+    if (!canSetMetaLeadForm()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the Meta lead form read');
+    if (access !== 'granted') {
+      next(
+        access === 'denied'
+          ? new AuthorizationError(META_LEAD_FORMS_RESTRICTED_MESSAGE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              code: META_LEAD_FORMS_RESTRICTED_CODE,
+            })
+          : new MicroserviceError(META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE, 503, META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              clientMessage: META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE,
+            })
+      );
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const payload = await this.campaignServiceClient.listMetaLeadForms(req, projectSlug);
+      // `forms` is required upstream; reading its absence as an empty list would say the Page has none.
+      if (!Array.isArray(payload?.forms)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Meta lead form read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: MetaLeadFormsResult = {
+        pageId: typeof payload.page_id === 'string' ? payload.page_id : '',
+        // A row whose id is not one `leadFormId` accepts cannot be sent, so it is dropped rather than offered;
+        // a repeated id is offered once.
+        forms: payload.forms
+          .filter((f, i, all) => typeof f?.id === 'string' && META_LEAD_FORM_ID_PATTERN.test(f.id) && all.findIndex((other) => other?.id === f.id) === i)
+          .map((f) => ({
+            id: f.id,
+            name: typeof f.name === 'string' && f.name.trim() !== '' ? f.name : f.id,
+            status: typeof f.status === 'string' ? f.status.toUpperCase() : '',
+          })),
+      };
+      logger.success(req, operation, startTime, { count: result.forms.length });
       res.json(result);
     } catch (error) {
       next(error);
@@ -6960,7 +7047,8 @@ export class CampaignController {
     body: CampaignCreateRequest,
     linkedInAdAccountId: string | null = null,
     metaTargeting: MetaAudienceTargeting | null = null,
-    metaAdOptions: MetaAdOptions = {}
+    metaAdOptions: MetaAdOptions = {},
+    metaLeadFormIdToSend: string | null = null
   ): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
@@ -6972,7 +7060,7 @@ export class CampaignController {
     if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
 
-    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions);
+    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
     const microsoftConfig = this.buildMicrosoftConfig(body);
@@ -9502,19 +9590,22 @@ export class CampaignController {
    *
    * The request's own `targeting` is never forwarded: only the block `metaTargetingToForward` checked and
    * compacted (#5905), and otherwise nothing. Likewise the call to action, conversion event and
-   * optimization goal: only what `metaAdOptionsToForward` checked (#5934).
+   * optimization goal: only what `metaAdOptionsToForward` checked (#5934), and the lead form: only the id
+   * `metaLeadFormToForward` checked (#5940).
    */
   private buildMetaConfig(
     body: CampaignCreateRequest,
     targeting: MetaAudienceTargeting | null = null,
-    adOptions: MetaAdOptions = {}
+    adOptions: MetaAdOptions = {},
+    leadFormId: string | null = null
   ): Record<string, unknown> | null {
     if (!body?.metaConfig) return null;
 
     const { budgetUsd, ...rest } = body.metaConfig;
     delete rest.targeting;
+    delete rest.leadFormId;
     for (const { key } of META_AD_OPTION_FIELDS) delete rest[key];
-    return { ...rest, budget: budgetUsd, ...(targeting ? { targeting } : {}), ...adOptions };
+    return { ...rest, budget: budgetUsd, ...(targeting ? { targeting } : {}), ...adOptions, ...(leadFormId !== null ? { leadFormId } : {}) };
   }
 
   /**
@@ -9547,6 +9638,52 @@ export class CampaignController {
       throw ServiceValidationError.forField(refusal.field, refusal.message, { operation, service: 'campaign_controller' });
     }
     return compactMetaAdOptions(meta);
+  }
+
+  /**
+   * The `metaConfig.leadFormId` a create sends (#5940), or `null` to send none.
+   *
+   * - a form present (anything but absent or null) while lead forms are off (`canSetMetaLeadForm`): 400, never a
+   *   silent drop. Dropping it would create a website-traffic campaign where the operator chose a lead ad;
+   * - a form that breaks campaign-service's rules (`metaLeadFormRefusal`: the id shape, the `leads` objective,
+   *   no manual bidding, a call to action a form can carry): 400 naming the field;
+   * - a form from a caller without `global_marketing_ops` on the project: 403; a check that cannot be made: 503.
+   *   A project without its own Meta connection uses the shared LF Page, which holds every foundation's forms,
+   *   and campaign-service checks the same relation (lfx-v2-campaign-service#550);
+   * - otherwise the trimmed id, or `null` for a blank "Not set".
+   */
+  private async metaLeadFormToForward(req: Request, projectSlug: string, body: CampaignCreateRequest): Promise<string | null> {
+    const operation = 'campaign_create';
+    const meta = metaConfigRecord(body?.metaConfig);
+    const raw = meta?.['leadFormId'];
+    if (raw === undefined || raw === null) return null;
+    if (!canSetMetaLeadForm()) {
+      throw ServiceValidationError.forField('metaConfig.leadFormId', META_LEAD_FORMS_OFF_MESSAGE, { operation, service: 'campaign_controller' });
+    }
+    const manualBidding = (meta?.['bidding'] as { strategy?: unknown } | undefined)?.strategy === 'manual';
+    const refusal = metaLeadFormRefusal(meta, manualBidding);
+    if (refusal !== null) {
+      throw ServiceValidationError.forField(refusal.field, refusal.message, { operation, service: 'campaign_controller' });
+    }
+    const id = metaLeadFormId(meta);
+    if (id === null) return null;
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the Meta lead form');
+    if (access === 'denied') {
+      throw new AuthorizationError(META_LEAD_FORMS_RESTRICTED_MESSAGE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        code: META_LEAD_FORMS_RESTRICTED_CODE,
+      });
+    }
+    if (access === 'unverified') {
+      throw new MicroserviceError(META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE, 503, META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE, {
+        operation,
+        service: 'campaign_controller',
+        clientMessage: META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE,
+      });
+    }
+    return id;
   }
 
   /**

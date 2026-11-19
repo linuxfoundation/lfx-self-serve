@@ -978,8 +978,8 @@ export const DEFAULT_META_AUDIENCE_TARGETING: Readonly<MetaAudienceTargetingDraf
 /**
  * The Meta call to action, conversion event and optimization goal (#5934), as campaign-service v1.0.38
  * accepts them in `metaConfig` (`docs/api-catalog.md`, MetaConfig; linuxfoundation/lfx-v2-campaign-service#550).
- * Each list starts with campaign-service's default. The call to action fits every objective this app sends
- * (it never sends a lead form `leadFormId`, the one case campaign-service refuses it in).
+ * Each list starts with campaign-service's default. With a lead form (`leadFormId`, #5940) only
+ * `META_LEAD_FORM_CALL_TO_ACTIONS` may be sent.
  */
 export const META_CALL_TO_ACTIONS = [
   'LEARN_MORE',
@@ -1000,6 +1000,17 @@ export const META_AD_OPTION_FIELDS: readonly MetaAdOptionField[] = [
   { key: 'conversionEvent', label: 'Conversion event', values: META_CONVERSION_EVENTS, objectives: ['conversions'] },
   { key: 'optimizationGoal', label: 'Optimization goal', values: META_OPTIMIZATION_GOALS, objectives: ['traffic'] },
 ];
+
+/**
+ * Meta Instant Forms (lead forms) on the `leads` objective (#5940), as campaign-service v1.0.38 accepts
+ * `metaConfig.leadFormId` (`docs/api-catalog.md`, MetaConfig; linuxfoundation/lfx-v2-campaign-service#550):
+ * a numeric string of at most 20 digits, the id of an existing form on the connection's Page.
+ */
+export const META_LEAD_FORM_ID_PATTERN = /^[0-9]{1,20}$/;
+/** The only buttons campaign-service accepts on a lead form create, a subset of `META_CALL_TO_ACTIONS`. */
+export const META_LEAD_FORM_CALL_TO_ACTIONS = ['LEARN_MORE', 'SIGN_UP', 'APPLY_NOW', 'SUBSCRIBE', 'DOWNLOAD'] as const;
+/** The only form status a create accepts; the read lists every status. */
+export const META_LEAD_FORM_ACTIVE_STATUS = 'ACTIVE';
 
 /**
  * The countries for which Meta requires the EU Digital Services Act disclosures
@@ -1643,6 +1654,19 @@ export const META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE =
 /** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
 export const META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE';
 export const META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Meta custom audiences could not be verified. Try again in a few minutes.';
+/** The 400 a create gets for `metaConfig.leadFormId` while Meta lead forms are off on this deployment (#5940). */
+export const META_LEAD_FORMS_OFF_MESSAGE = 'Meta lead forms are not available on this deployment. Reload the page, then create again without one.';
+/**
+ * The error `code` (HTTP 403) of a Meta lead form read, or a create naming a form, refused because the caller
+ * does not hold `global_marketing_ops` on the project: a project without its own Meta connection uses the
+ * shared LF Page, which holds every foundation's forms, so campaign-service answers both on that relation.
+ */
+export const META_LEAD_FORMS_RESTRICTED_CODE = 'META_LEAD_FORMS_RESTRICTED';
+export const META_LEAD_FORMS_RESTRICTED_MESSAGE =
+  'Meta lead forms can only be used by the LF marketing team, because every foundation shares one Facebook Page.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE = 'META_LEAD_FORMS_ACCESS_UNAVAILABLE';
+export const META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Meta lead forms could not be verified. Try again in a few minutes.';
 /** The error `code` (HTTP 503) of a user list read refused because the caller's access could not be verified. */
 export const GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE';
 /** The user-facing message of that refusal. Nothing was read. */

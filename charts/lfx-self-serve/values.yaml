@@ -805,6 +805,24 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL:
     value:
 
+  # Offer the Meta `leads` objective with an existing Instant Form on the Implement tab (#5940), sent as
+  # `metaConfig.leadFormId` and picked from `GET /api/campaigns/meta/lead-forms`. campaign-service then
+  # creates a lead ad (OUTCOME_LEADS) instead of a website-traffic campaign. Forms are made in Meta Ads
+  # Manager; LFX never creates one.
+  #
+  # A CAPABILITY flag of the Bidding kind. REQUIRES campaign-service v1.0.38 DEPLOYED with
+  # META_LEAD_FORMS_ENABLED="true": campaign-service refuses the read and `leadFormId` with a 400 otherwise.
+  # It also needs the create pipeline (CREATE, BRIEFS, JOBS) on. Only `global_marketing_ops` may read the
+  # forms or send one (403 otherwise, 503 when that cannot be checked): a project without its own Meta
+  # connection uses the shared LF Page, which holds every foundation's forms.
+  #
+  # Off (the default), `leads` stays hidden, the read answers 404 and the create route refuses a
+  # `leadFormId` with a 400, so a tab opened while the flag was on must reload. Turning it back off strands
+  # nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same accepted values as
+  # the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS:
+    value:
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the
