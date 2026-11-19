@@ -55,7 +55,14 @@
         <tr>
           <th scope="col">Event</th>
           <!-- Exact px: the design's minmax(200px, 240px) column. -->
-          <th scope="col" class="w-[240px] min-w-[200px]">Registrations</th>
+          <th scope="col" class="w-[240px] min-w-[200px]">
+            <span class="inline-flex items-center gap-[6px]"
+              >Registrations
+              <lfx-health-metrics-info-tip
+                text="The registration goal and attendance numbers are visible only to LF staff."
+                testId="events-registration-forecast-goal-tip" />
+            </span>
+          </th>
         </tr>
       </ng-template>
 

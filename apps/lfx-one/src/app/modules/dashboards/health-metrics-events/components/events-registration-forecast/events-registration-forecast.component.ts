@@ -24,6 +24,7 @@ import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsEventTrendComponent } from '../../../components/health-metrics-event-trend/health-metrics-event-trend.component';
 import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
+import { HealthMetricsInfoTipComponent } from '../../../components/health-metrics-info-tip/health-metrics-info-tip.component';
 import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsProgressCellComponent } from '../../../components/health-metrics-progress-cell/health-metrics-progress-cell.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -53,6 +54,7 @@ import type {
     HealthMetricsCellComponent,
     HealthMetricsEventTrendComponent,
     HealthMetricsFootnoteComponent,
+    HealthMetricsInfoTipComponent,
     HealthMetricsMetricsRowComponent,
     HealthMetricsProgressCellComponent,
     Skeleton,
