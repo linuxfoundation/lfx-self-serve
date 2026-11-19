@@ -13,6 +13,7 @@ import {
   OrgLensLookupOutcome,
   OrgLensStaffCheck,
   OrgRollUpFamily,
+  OrgRollUpSetOrg,
 } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
@@ -576,6 +577,7 @@ describe('AccountContextService — family roll-up', () => {
     loading: WritableSignal<boolean>;
     staffAnchor: WritableSignal<string | null>;
     setStaffAnchor: ReturnType<typeof vi.fn>;
+    orgsByUid: WritableSignal<Map<string, OrgRollUpSetOrg>>;
   };
   /** The `org-lens-rollup-enabled` gate — on and settled unless a test says otherwise. */
   let rollUpFlag: { enabled: WritableSignal<boolean>; unsettled: WritableSignal<boolean> };
@@ -633,6 +635,7 @@ describe('AccountContextService — family roll-up', () => {
       loading: signal(false),
       staffAnchor: signal<string | null>(null),
       setStaffAnchor: vi.fn((uid: string | null) => serverFamilies.staffAnchor.set(uid)),
+      orgsByUid: signal(new Map<string, OrgRollUpSetOrg>()),
     };
     rollUpFlag = { enabled: signal(true), unsettled: signal(false) };
     TestBed.configureTestingModule({
@@ -822,6 +825,96 @@ describe('AccountContextService — family roll-up', () => {
       serverAnswer.set([{ rootUid: OTHER, name: 'Other', orgUids: [OTHER] }]);
 
       expect(service.eligibleRollUpFamilies()).toEqual([]);
+    });
+
+    describe('related companies (#5942)', () => {
+      const org = (uid: string, name: string): OrgRollUpSetOrg => ({ uid, accountId: uid, name, logoUrl: null });
+      const relatedUids = (): string[] => service.relatedCompanies().map((company) => company.uid);
+
+      beforeEach(() => {
+        serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_B, UID_A] }]);
+        serverFamilies.orgsByUid.set(
+          new Map([
+            [UID_A, org(UID_A, 'Zulu Holdings')],
+            [UID_B, org(UID_B, 'Bravo')],
+          ])
+        );
+      });
+
+      it('lists every company in the selected company’s family, top account first', () => {
+        service.setAccount(seedB);
+        TestBed.tick();
+
+        expect(relatedUids()).toEqual([UID_A, UID_B]);
+      });
+
+      it('lists the family while its roll-up is selected', () => {
+        service.setAccount(seedB);
+        TestBed.tick();
+        expect(service.selectRollUp(ROOT)).toBe(true);
+        TestBed.tick();
+
+        expect(relatedUids()).toEqual([UID_A, UID_B]);
+      });
+
+      it('lists nothing for a standalone company', () => {
+        service.setAccount(otherCo);
+        TestBed.tick();
+        serverAnswer.set([{ rootUid: OTHER, name: 'Other', orgUids: [OTHER] }]);
+
+        expect(relatedUids()).toEqual([]);
+      });
+
+      it('lists nothing while the answer for a newly selected company is still owed, then that company’s family', () => {
+        const OTHER_SUB = '0014100000MgsSSSSS';
+        serverAnswer.set([
+          { rootUid: ROOT, name: 'Alpha', orgUids: [UID_B, UID_A] },
+          { rootUid: OTHER, name: 'Other', orgUids: [OTHER, OTHER_SUB] },
+        ]);
+        serverFamilies.orgsByUid.update((orgs) => new Map([...orgs, [OTHER, org(OTHER, 'Other')], [OTHER_SUB, org(OTHER_SUB, 'Other Sub')]]));
+        service.setAccount(seedB);
+        TestBed.tick();
+        serverFamilies.setStaffAnchor.mockImplementation((uid: string | null) => {
+          serverFamilies.staffAnchor.set(uid);
+          serverFamilies.unsettled.set(true);
+        });
+
+        service.setAccount(otherCo);
+        TestBed.tick();
+        expect(relatedUids()).toEqual([]);
+
+        serverFamilies.unsettled.set(false);
+        expect(relatedUids()).toEqual([OTHER, OTHER_SUB]);
+      });
+
+      it('lists nothing for a caller who is not staff', () => {
+        grants.isStaff.set(false);
+        grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
+        service.setAccount(seedB);
+        TestBed.tick();
+
+        expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+        expect(relatedUids()).toEqual([]);
+      });
+    });
+
+    it('labels a roll-up picked from search with the family name it was offered under, until its family lands', () => {
+      serverAnswer.set([]);
+      TestBed.tick();
+
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true, name: 'Alpha Group' })).toBe(true);
+
+      expect(service.selectedAccount().accountName).toContain('Alpha Group');
+    });
+
+    it('keeps that label when the path guard re-admits the same roll-up without a name', () => {
+      serverAnswer.set([]);
+      TestBed.tick();
+      service.selectRollUp(ROOT, { admitWhilePending: true, name: 'Alpha Group' });
+
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+
+      expect(service.selectedAccount().accountName).toContain('Alpha Group');
     });
 
     describe('when the anchor moves, the families stay unsettled until its answer lands', () => {
