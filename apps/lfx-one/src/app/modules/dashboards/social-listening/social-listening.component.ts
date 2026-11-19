@@ -392,6 +392,8 @@ export class SocialListeningComponent {
   public readonly activeViewName: Signal<string | null> = this.initActiveViewName();
 
   public constructor() {
+    this.socialListeningService.trackGroupGrant();
+
     // Relative timestamps refresh on a shared tick — browser-only (setInterval), one interval
     // for the whole page instead of PCC's per-card intervals.
     if (isPlatformBrowser(this.platformId)) {

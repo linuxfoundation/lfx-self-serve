@@ -29,6 +29,7 @@ describe('SocialListeningService group grant', () => {
       ],
     });
     service = TestBed.inject(SocialListeningService);
+    TestBed.runInInjectionContext(() => service.trackGroupGrant());
     service.groupGrant.set({ foundation: foundationA, foundationSfid: 'a-sfid' });
     TestBed.tick();
   });
@@ -74,6 +75,17 @@ describe('SocialListeningService group grant', () => {
 
     expect(getAccess).toHaveBeenLastCalledWith('c');
     expect(service.foundationSfid()).toBe('c-sfid');
+  });
+
+  it('restores the grant when returning to its foundation after a denied one', () => {
+    vi.spyOn(service, 'getAccess').mockReturnValue(of({ canView: false, reason: 'none' }));
+
+    selectedFoundation.set(foundationB);
+    TestBed.tick();
+    selectedFoundation.set(foundationA);
+    TestBed.tick();
+
+    expect(service.foundationSfid()).toBe('a-sfid');
   });
 
   it('does not probe for a user without a group grant', () => {

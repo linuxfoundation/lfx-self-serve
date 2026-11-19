@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { catchError, EMPTY, map, Observable, of, switchMap } from 'rxjs';
 
 import { ProjectContextService } from './project-context.service';
@@ -55,16 +55,21 @@ export class SocialListeningService {
     return this.projectContextService.selectedFoundationSfid() ?? fallback;
   });
 
-  public constructor() {
-    // A same-lens foundation switch keeps the page mounted without rerunning the guard, so a group member's
-    // grant is re-probed here for the new foundation; switchMap drops an answer for a foundation already left.
-    // A denial keeps the previous grant: it only applies to its own foundation, and keeping it lets later switches re-probe.
+  /**
+   * Keeps a group member's grant in step with the selected foundation while the page is open: a same-lens
+   * foundation switch keeps the page mounted without rerunning the guard, so the grant is re-probed here, and
+   * switchMap drops an answer for a foundation already left. A denial keeps the previous grant: it only
+   * applies to its own foundation, and keeping it lets later switches (including back to it) still work.
+   * Call from the page's injection context; it stops when the page is destroyed.
+   */
+  public trackGroupGrant(): void {
     toObservable(this.projectContextService.selectedFoundation)
       .pipe(
         switchMap((foundation) => {
           const grant = this.groupGrant();
           return grant && foundation?.slug && grant.foundation.uid !== foundation.uid ? this.getAccess(foundation.slug) : EMPTY;
-        })
+        }),
+        takeUntilDestroyed()
       )
       .subscribe((access) => {
         if (access.canView && access.foundation) {
