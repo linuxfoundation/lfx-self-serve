@@ -189,12 +189,12 @@ jobs:
         run: yarn workspace ${{ matrix.workspace }} ${{ matrix.command }}
 
   frontend-tests:
-    name: Frontend Tests (${{ matrix.shard }}/24)
+    name: Frontend Tests (${{ matrix.shard }}/30)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
 
     steps:
       - name: Checkout code
@@ -220,7 +220,7 @@ jobs:
 
       - name: Run frontend shard
         working-directory: apps/lfx-one
-        run: node scripts/run-app-test-shard.mjs ${{ matrix.shard }}/24
+        run: node scripts/run-app-test-shard.mjs ${{ matrix.shard }}/30
 
   quality-checks:
     # Preserve the existing check context, and never turn a skipped/cancelled dependency green.

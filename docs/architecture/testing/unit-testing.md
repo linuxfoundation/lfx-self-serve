@@ -56,7 +56,7 @@ independently, so a failure in one does not prevent the others from reporting:
   E2E collection (no browser execution).
 - `build`: the full `yarn build`.
 - `unit-tests`: a server/shared matrix with `fail-fast: false`.
-- `frontend-tests`: an app-spec matrix of shards 1–24, also with `fail-fast: false`. Each shard
+- `frontend-tests`: an app-spec matrix of shards 1–30, also with `fail-fast: false`. Each shard
   builds the shared package and runs `docs:build` before executing its app specs.
 
 The final `quality-checks` job retains the check name **Code Quality Checks**. It runs with
@@ -106,7 +106,7 @@ Angular test configuration's include/exclude discovery contract that the runner 
 
 A spec file is the smallest unit a shard can hold, and one file runs serially on one worker, so a
 single long file sets the floor for its shard no matter how many shards exist. Keep each app spec
-under about 60 seconds of CI test time; split a longer one by top-level `describe` into
+under about 45 seconds of CI test time; split a longer one by top-level `describe` into
 `<name>.component.<group>.spec.ts` files, with shared setup in a `<name>.spec-helper.ts` beside
 them. When a spec is added, split, or grows past a few seconds, refresh its entry in
 `scripts/frontend-test-durations.json` from a recent CI run so the plan stays balanced.
