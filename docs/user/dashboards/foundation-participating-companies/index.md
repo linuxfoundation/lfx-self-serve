@@ -1,7 +1,7 @@
 ---
 title: Foundation Participating Companies
 description: See which companies contribute across a foundation's projects, split by foundation membership, with per-project breakdowns and CSV export.
-audience: [executive-director, lf-staff]
+audience: [executive-director]
 product_area: Dashboards
 tags: [dashboard, foundation, participating-companies, contributors, members]
 last_updated: 2026-11-19
