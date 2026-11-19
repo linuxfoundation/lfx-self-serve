@@ -22,6 +22,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
+import { VoteCreateMenuComponent } from '../components/vote-create-menu/vote-create-menu.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 import { VotesDashboardComponent } from './votes-dashboard.component';
 
@@ -833,12 +834,24 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(cta.urlTree?.toString()).toBe('/votes/create');
     });
 
+    it('toggles the Create Vote dropdown from the header trigger (#2921)', async () => {
+      canWrite.set(true);
+      await freshDashboard('project');
+      const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
+      const toggle = vi.spyOn(menu, 'toggle').mockImplementation(() => undefined);
+
+      element('votes-create-button')!.querySelector('button')!.click();
+
+      expect(toggle).toHaveBeenCalledTimes(1);
+    });
+
     it('opens the create form with the method chosen in the Create Vote dropdown (#2921)', async () => {
       canWrite.set(true);
       await freshDashboard('project');
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
 
-      dashboard['onCreateVoteMethod'](PollType.CONDORCET_IRV);
+      menu.methodSelected.emit(PollType.CONDORCET_IRV);
 
       expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], { queryParams: { poll_type: 'condorcet_irv' } });
     });

@@ -1202,6 +1202,19 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.canGoNext()).toBe(valid);
     });
 
+    it('logs a failed count before falling back to the non-blocking error state', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getCommitteeMembers.mockReturnValue(throwError(() => new Error('503')));
+      const fixture = await createFilled();
+
+      expect(fixture.componentInstance.eligibleVoterCountState()).toEqual({ status: 'error', count: null });
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to count eligible voters for a Condorcet IRV group',
+        expect.objectContaining({ committeeUid: COMMITTEE_UID, message: '503' })
+      );
+      consoleError.mockRestore();
+    });
+
     it('counts every member of a group without voting enabled, as ITX does', async () => {
       getCommitteeDetail.mockReturnValue(of({ uid: COMMITTEE_UID, enable_voting: false }));
       getCommitteeMembers.mockReturnValue(of(members(3, CommitteeMemberVotingStatus.NONE)));

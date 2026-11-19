@@ -721,7 +721,10 @@ export class VoteManageComponent {
                 )
               )
             ),
-            catchError(() => of<VoteEligibleVoterCountState>({ status: 'error', count: null })),
+            catchError((error) => {
+              console.error('Failed to count eligible voters for a Condorcet IRV group', { committeeUid: uid, status: error?.status, message: error?.message });
+              return of<VoteEligibleVoterCountState>({ status: 'error', count: null });
+            }),
             startWith<VoteEligibleVoterCountState>({ status: 'loading', count: null })
           );
         })
@@ -1213,9 +1216,11 @@ export class VoteManageComponent {
         // Same for the method lock: an edit whose vote loaded first would otherwise come out editable.
         this.applyMethodLock();
         if (!vote) return;
-        // Cloning only represents a generic, non-anonymous ballot — prefilling from a ranked-choice or
-        // pseudo-anonymous source would silently submit a plain plurality vote in its place. Updates are only permitted while a vote is disabled, so
-        // once a published election has ballots coming in a silently-wrong clone can't be corrected.
+        // The form can't represent an instant-runoff or Meek STV method, or pseudo-anonymity, so prefilling
+        // from such a source would silently submit a different kind of vote in its place. Condorcet IRV is
+        // representable, but its clones stay blocked until ranked cloning is verified end to end. Updates are
+        // only permitted while a vote is disabled, so once a published election has ballots coming in a
+        // silently-wrong clone can't be corrected.
         if (isRankedPollType(vote.poll_type) || vote.pseudo_anonymity) {
           this.messageService.add({
             severity: 'warn',

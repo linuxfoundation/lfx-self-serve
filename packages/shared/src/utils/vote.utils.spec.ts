@@ -427,8 +427,18 @@ describe('voting method in the request builders (#2921)', () => {
 });
 
 describe('countEligibleVoters (#2921)', () => {
-  const member = (status: CommitteeMemberVotingStatus | null): CommitteeMember =>
-    ({ uid: `member-${status}`, voting: status ? { status } : null }) as CommitteeMember;
+  /** Typed builder, no cast: a new required `CommitteeMember` field fails the spec type-check here. */
+  const member = (status: CommitteeMemberVotingStatus | null): CommitteeMember => ({
+    uid: `member-${status}`,
+    committee_uid: 'committee-uid',
+    committee_name: 'Synthetic Group',
+    email: 'member@example.com',
+    first_name: 'Synthetic',
+    last_name: 'Member',
+    voting: status ? { status } : null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  });
   const members = [
     member(CommitteeMemberVotingStatus.VOTING_REP),
     member(CommitteeMemberVotingStatus.VOTING_REP),
