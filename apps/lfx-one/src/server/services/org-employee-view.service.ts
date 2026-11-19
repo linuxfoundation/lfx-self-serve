@@ -98,8 +98,9 @@ type EmployeeViewOutcome = { chosen: QualifyingEmployer } | { denial: OrgEmploye
  *
  * To see a company's all employee view, a user must:
  *   1. list the company as a PRESENT employer in their work history: an entry with no end date whose employer name matches the
- *      company's name (see {@link normalizeCompanyName}). Nothing from crowd.dev is required: no crowd.dev organization id and no
- *      crowd.dev-to-account mapping. The work history is read through the same call the profile's Work history tab uses;
+ *      company's name (see {@link normalizeCompanyName}). Work history is read from the user's CDP profile, the list the
+ *      profile's Work history tab shows (every LFX profile has a CDP profile). Only the entry's employer name and end date are used: no
+ *      crowd.dev organization id and no crowd.dev-to-account mapping. The read never creates a CDP member;
  *   2. hold a VERIFIED email on one of that company's domains (member-service `primary_domain` or one of its registered
  *      `domain_aliases`, the Salesforce domain list; a personal mailbox domain never counts), the company being an active LF member.
  *
