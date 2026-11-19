@@ -1618,7 +1618,7 @@ describe('MeetingController', () => {
     it('adds the viewer RSVP and organizer summaries when included, without forwarding include upstream', async () => {
       const res = buildRes();
 
-      await controller.getMeetings(buildReq({ query: { include: 'viewer_rsvp,attendance', project_uid: 'p1' } }), res, next);
+      await controller.getMeetings(buildReq({ query: { include: 'viewer_rsvp, attendance', project_uid: 'p1' } }), res, next);
 
       expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { project_uid: 'p1' }, 'v1_meeting', true);
       const rows = [{ id: 'meeting-a', organizer: true, invited: true, invited_via_committee: false }];

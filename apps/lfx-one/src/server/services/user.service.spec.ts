@@ -618,6 +618,61 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
   });
 });
 
+describe('UserService.attachViewerRsvps', () => {
+  const req = {} as unknown as Request;
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const projectRows = (): Meeting[] =>
+    [
+      { id: 'meeting-1', start_time: tomorrow, duration: 60 },
+      { id: 'meeting-2', start_time: tomorrow, duration: 60 },
+    ] as unknown as Meeting[];
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset().mockResolvedValue('testuser');
+    getEffectiveEmail.mockReset().mockReturnValue('viewer@example.com');
+  });
+
+  it('sets the viewer answer on registered rows and confirms empty values on the rest', async () => {
+    const rsvp: Partial<MeetingRsvp> = { id: 'rsvp-1', meeting_id: 'meeting-1', registrant_id: 'reg-1', response_type: 'accepted', scope: 'all' };
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'v1_meeting_registrant') return queryPage([{ uid: 'reg-1', meeting_id: 'meeting-1' }]);
+      if (params?.type === 'v1_meeting_rsvp') return queryPage([rsvp]);
+      return queryPage([]);
+    });
+    const rows = projectRows();
+
+    await new UserService().attachViewerRsvps(req, rows, 'get_meetings');
+
+    expect(rows.map((m) => [m.my_rsvp?.id ?? m.my_rsvp, m.my_registrant_ids, m.my_rsvps?.length])).toEqual([
+      ['rsvp-1', ['reg-1'], 1],
+      [null, [], 0],
+    ]);
+  });
+
+  it('leaves the fields undefined and makes no request without a viewer identity', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    getEffectiveEmail.mockReturnValue(null);
+    const rows = projectRows();
+
+    await new UserService().attachViewerRsvps(req, rows, 'get_meetings');
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(rows[0]).not.toHaveProperty('my_rsvp');
+  });
+
+  it('leaves the fields undefined when the lookup fails', async () => {
+    proxyRequest.mockRejectedValue(new Error('upstream down'));
+    const rows = projectRows();
+
+    const committeeIds = await new UserService().attachViewerRsvps(req, rows, 'get_meetings');
+
+    expect(committeeIds.size).toBe(0);
+    expect(rows[0].my_rsvp).toBeUndefined();
+    expect(rows[0].my_registrant_ids).toBeUndefined();
+  });
+});
+
 describe('UserService.getUserMeetings my_rsvp enrichment', () => {
   const req = {} as unknown as Request;
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();

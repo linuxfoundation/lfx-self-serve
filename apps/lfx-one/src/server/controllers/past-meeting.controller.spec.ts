@@ -237,7 +237,7 @@ describe('PastMeetingController.getPastMeetings — meetings home include', () =
   it('adds artifacts and organizer attendance when both are included, without forwarding include upstream', async () => {
     const res = buildRes();
 
-    await controller.getPastMeetings(listReq({ include: 'artifacts,attendance', name: 'weekly' }), res, vi.fn());
+    await controller.getPastMeetings(listReq({ include: 'artifacts, attendance', name: 'weekly' }), res, vi.fn());
 
     expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { name: 'weekly' }, 'v1_past_meeting');
     expect(attachArtifactsMock).toHaveBeenCalledWith(expect.anything(), meetings);

@@ -96,7 +96,7 @@ export class MeetingController {
 
     try {
       const userEmail = getEffectiveEmail(req) || '';
-      const include = (getStringQueryParam(req, 'include') ?? '').split(',');
+      const include = (getStringQueryParam(req, 'include') ?? '').split(',').map((value) => value.trim());
       // Strip controller-only params: `skip_registrants` is a legacy client flag and `include` is read here, neither is valid upstream.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { skip_registrants: _skipRegistrants, include: _include, ...meetingQuery } = req.query as Record<string, any>;

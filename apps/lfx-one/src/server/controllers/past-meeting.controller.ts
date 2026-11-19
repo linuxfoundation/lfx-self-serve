@@ -66,7 +66,7 @@ export class PastMeetingController {
     try {
       // Controller-only flag: keep it out of the params forwarded to the query service.
       const { include_viewer_attendance: includeViewerAttendance, include: includeParam, ...upstreamQuery } = req.query as Record<string, any>;
-      const include = typeof includeParam === 'string' ? includeParam.split(',') : [];
+      const include = typeof includeParam === 'string' ? includeParam.split(',').map((value) => value.trim()) : [];
 
       const { data: meetings, page_token } = (await this.meetingService.getMeetings(req, upstreamQuery, 'v1_past_meeting')) as {
         data: PastMeeting[];
