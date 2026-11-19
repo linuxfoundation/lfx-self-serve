@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   DEFAULT_GOOGLE_DAILY_BUDGET_USD,

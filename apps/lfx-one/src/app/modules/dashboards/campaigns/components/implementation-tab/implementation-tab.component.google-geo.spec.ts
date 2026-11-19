@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { GOOGLE_ADS_MAX_GEO_TARGETS, GOOGLE_ADS_MAX_PROXIMITY_TARGETS } from '@lfx-one/shared/constants';
 import type { CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
