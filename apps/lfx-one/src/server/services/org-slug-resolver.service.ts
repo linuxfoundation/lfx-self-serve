@@ -157,7 +157,7 @@ export class OrgSlugResolverService {
     let employeeViewError: unknown;
     if (isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
       try {
-        const verdict = await this.employeeView.resolveReduced(req, matches);
+        const verdict = await this.employeeView.resolveReduced(req);
         if (verdict.eligible && matches(verdict.org)) {
           return { uid: verdict.org.orgUid, slug: verdict.org.orgSlug ?? null, name: verdict.org.orgName, employeeView: true };
         }

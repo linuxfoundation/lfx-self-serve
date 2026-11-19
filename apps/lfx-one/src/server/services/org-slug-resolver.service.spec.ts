@@ -336,33 +336,6 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
     expect(cachePredicates().storable({ outcome: 'hit', org: { uid: UID_A, slug: null, name: 'x', employeeView: true } })).toBe(true);
   });
 
-  describe('with several matching companies', () => {
-    const second = { orgUid: UID_B, orgName: 'Zeta Holdings', orgSlug: 'zeta-holdings' };
-
-    // The service picks the preferred company from the caller's full set, as the real one does.
-    beforeEach(() => {
-      proxyRequest.mockResolvedValue(page([]));
-      resolveEmployeeView.mockImplementation(async (_req: unknown, prefer?: (org: typeof second) => boolean) => {
-        const org = [eligible.org, second].find((company) => !prefer || prefer(company));
-        return org ? { eligible: true, org } : { eligible: false, reason: 'other-company' };
-      });
-    });
-
-    it('resolves the SFID of a second matching company', async () => {
-      await expect(new OrgSlugResolverService().resolveSegment(req, UID_B)).resolves.toMatchObject({
-        outcome: 'hit',
-        org: { uid: UID_B, slug: 'zeta-holdings', name: 'Zeta Holdings', employeeView: true },
-      });
-    });
-
-    it('resolves the slug of a second matching company', async () => {
-      await expect(new OrgSlugResolverService().resolveSegment(req, 'zeta-holdings')).resolves.toMatchObject({
-        outcome: 'hit',
-        org: { uid: UID_B, employeeView: true },
-      });
-    });
-  });
-
   it('is a miss for a slug or SFID that is not the caller’s employee company', async () => {
     proxyRequest.mockResolvedValue(page([]));
     resolveEmployeeView.mockResolvedValue(eligible);

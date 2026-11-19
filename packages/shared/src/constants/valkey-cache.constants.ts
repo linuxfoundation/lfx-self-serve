@@ -14,6 +14,12 @@ export const VALKEY_CACHE = {
 
   ORG_FAMILY_NAMESPACE: 'org-family:v1',
 
+  /** Epic #5845 — the one employer an all-employee-view user is pinned to when several qualify, keyed by a fingerprint of their present employers and verified emails so a change of either recomputes it. */
+  ORG_EMPLOYEE_VIEW_EMPLOYER_NAMESPACE: 'org-ev-employer:v1',
+
+  /** How long a pinned employer is kept; the fingerprint, not the clock, is what invalidates it. */
+  ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS: 30 * 24 * 60 * 60,
+
   /** Domain + schema-version segment for the per-org Snowflake-backed Org Lens cache (shared across callers). */
   ORG_LENS_SNOWFLAKE_NAMESPACE: 'org-lens-sf:v1',
 
