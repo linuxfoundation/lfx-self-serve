@@ -24,6 +24,7 @@ import {
   getMemberImportFieldGuide,
   getMemberImportRetryDelayMs,
   getMemberImportTemplateHeaders,
+  isMemberImportRowRetryable,
   parseMemberImportCsv,
   prepareMemberImportRows,
   validateMemberImportRow,
@@ -712,6 +713,33 @@ describe('classifyMemberImportBulkResult', () => {
     const patch = classifyMemberImportBulkResult(result({ status: 'failed', reason: 'not_attempted', retryable: true }), { ...row, uncertain: true });
     expect(patch.status).toBe('waiting');
     expect(patch).not.toHaveProperty('uncertain');
+  });
+});
+
+describe('isMemberImportRowRetryable', () => {
+  const row = (patch: Partial<MemberImportRow>): MemberImportRow => ({
+    rowNumber: 1,
+    email: 'ada@example.com',
+    normalizedEmail: 'ada@example.com',
+    cells: { email: 'ada@example.com' },
+    status: 'ready',
+    issues: [],
+    payload: { email: 'ada@example.com' },
+    ...patch,
+  });
+
+  it('retries unsent rows and unresolved or retryable failures', () => {
+    expect(isMemberImportRowRetryable(row({ status: 'not_submitted' }))).toBe(true);
+    expect(isMemberImportRowRetryable(row({ status: 'unknown', uncertain: true }))).toBe(true);
+    expect(isMemberImportRowRetryable(row({ status: 'failed' }))).toBe(true);
+  });
+
+  it('never retries settled outcomes or rows that cannot succeed unchanged', () => {
+    for (const status of ['ready', 'invalid', 'skipped', 'importing', 'added', 'waiting'] as const) {
+      expect(isMemberImportRowRetryable(row({ status }))).toBe(false);
+    }
+    expect(isMemberImportRowRetryable(row({ status: 'failed', retryable: false }))).toBe(false);
+    expect(isMemberImportRowRetryable(row({ status: 'unknown', retryable: false }))).toBe(false);
   });
 });
 

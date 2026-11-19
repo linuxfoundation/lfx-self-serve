@@ -809,7 +809,8 @@ export class CommitteeMembersComponent implements OnInit {
       }
       if (result.added > 0) {
         this.refreshMembers();
-        this.pollUntilMemberAdded(countBeforeImport, result.added);
+        // A reopened run's additions may already be in countBeforeImport; its own baseline never counts them twice.
+        this.pollUntilMemberAdded(result.baselineMemberCount ?? countBeforeImport, result.added);
       } else if (result.conflicts > 0 || result.uncertain) {
         this.refreshMembers();
       }

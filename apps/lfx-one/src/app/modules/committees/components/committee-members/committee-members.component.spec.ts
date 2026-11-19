@@ -207,6 +207,20 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(refreshes).toBe(2);
     });
 
+    it("polls from a reopened run's own baseline when the fresh roster already includes its additions", () => {
+      vi.useFakeTimers();
+      const roster = [...MEMBERS, { uid: 'member-2' }, { uid: 'member-3' }] as CommitteeMember[];
+      committeeService.getCommitteeMembers.mockReturnValue(of(roster));
+      component.openImportMembersDialog();
+      dialogClose.next({ added: 2, conflicts: 0, baselineMemberCount: 1 } satisfies MemberImportDialogResult);
+
+      vi.advanceTimersByTime(400);
+      // 1 member before the run + 2 added = 3, already present: one poll confirms it instead of six.
+      expect(refreshes).toBe(2);
+      vi.advanceTimersByTime(3000);
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(2);
+    });
+
     it('refreshes without polling after a conflict-only result', () => {
       vi.useFakeTimers();
       component.openImportMembersDialog();

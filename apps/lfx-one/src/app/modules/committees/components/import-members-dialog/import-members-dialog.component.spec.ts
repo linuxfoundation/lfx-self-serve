@@ -6,6 +6,7 @@
 
 import { HttpErrorResponse, HttpHeaders, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MEMBER_IMPORT_BULK_CHUNK_SIZE } from '@lfx-one/shared/constants';
@@ -18,7 +19,9 @@ import {
   CreateCommitteeMemberRequest,
   MemberImportDialogData,
 } from '@lfx-one/shared/interfaces';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
+import { UserService } from '@services/user.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Observable, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,6 +53,7 @@ describe('ImportMembersDialogComponent', () => {
   };
   let revokeResponses: Subject<void>[];
   let dialogRef: { close: ReturnType<typeof vi.fn> };
+  let user: WritableSignal<{ sub: string } | null>;
 
   async function setup(
     committee: Committee = OPEN_GROUP,
@@ -76,6 +80,7 @@ describe('ImportMembersDialogComponent', () => {
       createCommitteeInvite: vi.fn(),
     };
     dialogRef = { close: vi.fn() };
+    user = signal<{ sub: string } | null>({ sub: 'synthetic-manager' });
     const data: MemberImportDialogData = {
       committee,
       existingMembers: existingMembers as CommitteeMember[],
@@ -93,8 +98,14 @@ describe('ImportMembersDialogComponent', () => {
         { provide: DynamicDialogConfig, useValue: { data } },
         { provide: DynamicDialogRef, useValue: dialogRef },
         { provide: CommitteeService, useValue: committeeService },
+        { provide: UserService, useValue: { user } },
       ],
     }).compileComponents();
+    await createDialog();
+  }
+
+  /** Opens another dialog instance on the same root injector, as reopening Import Members does. */
+  async function createDialog(): Promise<void> {
     fixture = TestBed.createComponent(ImportMembersDialogComponent);
     component = fixture.componentInstance;
     await fixture.whenStable();
@@ -433,6 +444,7 @@ describe('ImportMembersDialogComponent', () => {
       expectNothingWritten();
       expect(committeeService.revokeCommitteeInvite).not.toHaveBeenCalled();
       expect(committeeService.createCommitteeInvite).not.toHaveBeenCalled();
+      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)).toBeUndefined();
     });
 
     it.each([false, true])('collects notification opt-in %s and only matching pending invitation IDs without writes', async (notify) => {
@@ -760,7 +772,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.phase()).toBe('results');
       expect(component.addedCount()).toBe(30);
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 30, conflicts: 0 });
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 30, conflicts: 0, baselineMemberCount: 0 });
     });
 
     it('shows an inline spinner and only confirmed processed rows until results arrive', async () => {
@@ -912,7 +924,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('import-members-stop-btn')).toBeNull();
       expect(query('import-members-retry-btn')?.textContent).toContain('Retry 35');
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 25, conflicts: 0 });
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 25, conflicts: 0, baselineMemberCount: 0 });
     });
 
     it('clears the manual stopping state before retrying unsent rows', async () => {
@@ -996,7 +1008,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('import-members-retry-help')).not.toBeNull();
       expect(component.canRetry()).toBe(false);
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 1, conflicts: 1 });
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 1, conflicts: 1, baselineMemberCount: 0 });
     });
 
     it('pauses for Retry-After on a 429, then resubmits the throttled chunk', async () => {
@@ -1120,8 +1132,6 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.retryableCount()).toBe(1);
       expect(query('filter-pill-unknown')?.textContent).toContain('Outcome unknown (1)');
       expect(query('filter-pill-not_submitted')).toBeNull();
-      component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true });
       expect(query('import-members-retry-btn')?.textContent).toContain('Retry 1');
       expect(query('import-members-stop-reason')?.textContent).toContain('Automatic recovery has stopped');
       expect(query('import-members-row-2')?.textContent).toContain('outcome of an earlier attempt is unknown');
@@ -1130,6 +1140,9 @@ describe('ImportMembersDialogComponent', () => {
       component.retryFailed();
       expect(pending).toHaveLength(5);
       expect(component.pauseCount()).toBe(0);
+      failBulk(4, 403);
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true, baselineMemberCount: 0 });
     });
 
     it('stops during a pause without sending anything else', async () => {
@@ -1174,7 +1187,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('filter-pill-unknown')?.textContent).toContain('Outcome unknown (25)');
       expect(query('filter-pill-not_submitted')?.textContent).toContain('Not yet submitted (5)');
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true });
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true, baselineMemberCount: 0 });
       vi.advanceTimersByTime(120_000);
       expect(pending).toHaveLength(1);
     });
@@ -1230,7 +1243,7 @@ describe('ImportMembersDialogComponent', () => {
       failBulk(1, 403);
       expect(component.rows()[0]).toMatchObject({ status: 'unknown', uncertain: true });
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true });
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true, baselineMemberCount: 0 });
     });
 
     it.each([
@@ -1289,12 +1302,180 @@ describe('ImportMembersDialogComponent', () => {
       vi.useFakeTimers();
       component.startImport();
       failBulk(0, 429, { 'Retry-After': '5' });
-      const deadline = component.retryNotBefore();
+      expect(component.retryNotBefore()).toBeGreaterThan(0);
       fixture.destroy();
 
       vi.advanceTimersByTime(120_000);
       expect(pending).toHaveLength(1);
-      expect(component.retryNotBefore()).toBe(deadline);
+      const run = TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid);
+      expect(run).toMatchObject({ status: 'settled', stopReason: 'You stopped the import.' });
+      expect(run?.rows[0].status).toBe('not_submitted');
+    });
+
+    it('lets the in-flight batch settle but sends no later chunk after the dialog is destroyed', async () => {
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      fixture.destroy();
+
+      respond(0);
+      expect(pending).toHaveLength(1);
+      const run = TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid);
+      expect(run?.status).toBe('settled');
+      expect(run?.rows.filter((row) => row.status === 'added')).toHaveLength(25);
+      expect(run?.rows.filter((row) => row.status === 'not_submitted')).toHaveLength(5);
+    });
+
+    it('shows a retained run when reopened instead of resubmitting it', async () => {
+      await upload(`email\n${emails(30)}`);
+      component.form.controls.send_notification.setValue(true);
+      component.startImport();
+      fixture.destroy();
+      respond(0);
+
+      // The host reopens with a fresh roster that already includes the run's own additions.
+      const config = TestBed.inject(DynamicDialogConfig);
+      config.data = {
+        ...config.data,
+        existingMembers: emails(25)
+          .split('\n')
+          .map((email) => ({ email }) as CommitteeMember),
+      };
+      await createDialog();
+      expect(component.phase()).toBe('results');
+      expect(component.addedCount()).toBe(25);
+      expect(component.notSubmittedCount()).toBe(5);
+      expect(component.form.controls.send_notification.value).toBe(true);
+      expect(component.canChooseFile()).toBe(false);
+      expect(pending).toHaveLength(1);
+
+      component.retryFailed();
+      expect(sentEmails(1)).toEqual(emails(5, 25).split('\n'));
+      expect(pending[1].options).toEqual({ skipNotification: false });
+      respond(1);
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 30, conflicts: 0, baselineMemberCount: 0 });
+    });
+
+    it('unlocks notifications when a retry settles before phase emissions observe it', async () => {
+      await upload('email\nada@example.com');
+      component.startImport();
+      failBulk(0, 403);
+      await render();
+      expect(component.form.controls.send_notification.enabled).toBe(true);
+
+      component.retryFailed();
+      expect(component.form.controls.send_notification.disabled).toBe(true);
+      failBulk(1, 403);
+      await render();
+
+      expect(component.phase()).toBe('results');
+      expect(component.form.controls.send_notification.enabled).toBe(true);
+      query('import-members-send-notification')?.querySelector('input')?.click();
+      component.retryFailed();
+      expect(pending[2].options).toEqual({ skipNotification: false });
+    });
+
+    it('unlocks notifications when an attached run settles before its first emission', async () => {
+      await upload('email\nada@example.com');
+      component.form.controls.send_notification.setValue(true);
+      component.startImport();
+      fixture.destroy();
+
+      // Attach while the stopped run still awaits its in-flight batch; do not flush effects yet.
+      fixture = TestBed.createComponent(ImportMembersDialogComponent);
+      component = fixture.componentInstance;
+      expect(component.form.controls.send_notification.disabled).toBe(true);
+      respond(0);
+      await render();
+
+      expect(component.phase()).toBe('results');
+      expect(component.form.controls.send_notification.enabled).toBe(true);
+      expect(component.form.controls.send_notification.value).toBe(true);
+      expect(pending).toHaveLength(1);
+    });
+
+    it.each([false, true])('preserves results and blocks writes during Close with reopened run %s', async (reopened) => {
+      await upload('email\nada@example.com\ngrace@example.com');
+      component.startImport();
+      component.stopImport();
+      respond(0, { 1: { status: 'failed', reason: 'temporary', retryable: true } });
+      await render();
+      if (reopened) {
+        fixture.destroy();
+        await createDialog();
+      }
+      expect(component.canRetry()).toBe(true);
+      const results = component.rows();
+      component.close();
+      await render();
+
+      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)).toBeUndefined();
+      expect(component.phase()).toBe('results');
+      expect(component.rows()).toEqual(results);
+      expect(query('import-members-summary')).not.toBeNull();
+      expect(query('import-members-guidance')).toBeNull();
+      expect(component.canImport()).toBe(false);
+      expect(component.canRetry()).toBe(false);
+      expect(component.canChooseFile()).toBe(false);
+      component.startImport();
+      component.retryFailed();
+      await upload('email\nother@example.com');
+      component.close();
+      expect(pending).toHaveLength(1);
+      expect(component.form.controls.send_notification.disabled).toBe(true);
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith({ added: 1, conflicts: 0, uncertain: true, baselineMemberCount: 0 });
+    });
+
+    it('discards the closing snapshot when the observed user changes', async () => {
+      await upload('email\nada@example.com');
+      component.startImport();
+      respond(0);
+      component.close();
+      user.set({ sub: 'synthetic-replacement' });
+
+      expect(component.rows()).toEqual([]);
+      await render();
+      expect(component.rows()).toEqual([]);
+      expect(component.fileName()).toBeNull();
+      expect(component.canImport()).toBe(false);
+      expect(pending).toHaveLength(1);
+    });
+
+    it('dismisses the settled run on Close so the next import of the group starts fresh', async () => {
+      await upload('email\nada@example.com');
+      component.startImport();
+      respond(0);
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 1, conflicts: 0, baselineMemberCount: 0 });
+      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)).toBeUndefined();
+
+      fixture.destroy();
+      await createDialog();
+      expect(component.phase()).toBe('select');
+      await upload('email\ngrace@example.com');
+      component.startImport();
+      expect(sentEmails(1)).toEqual(['grace@example.com']);
+      respond(1);
+      component.close();
+      expect(dialogRef.close).toHaveBeenLastCalledWith({ added: 1, conflicts: 0, baselineMemberCount: 0 });
+    });
+
+    it('closes without a result and resubmits nothing when the observed user changes', async () => {
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      user.set({ sub: 'synthetic-replacement' });
+      // The previous subject's preview cannot be started again, even before the dialog reacts.
+      expect(component.canImport()).toBe(false);
+      component.startImport();
+      expect(pending).toHaveLength(1);
+
+      TestBed.tick();
+      await fixture.whenStable();
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
+      expect(component.rows()).toEqual([]);
+      expect(component.fileName()).toBeNull();
+      respond(0);
+      expect(pending).toHaveLength(1);
     });
   });
 
@@ -1347,7 +1528,7 @@ describe('ImportMembersDialogComponent', () => {
         expect(component.phase()).toBe('results');
         expect(component.addedCount()).toBe(0);
         component.close();
-        expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 1 });
+        expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 1, baselineMemberCount: 0 });
       }
     );
 

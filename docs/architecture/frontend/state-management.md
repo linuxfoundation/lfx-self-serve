@@ -59,6 +59,16 @@ The summary preview and send routes set `Cache-Control: private, no-store` befor
 
 The client waits at most `VOTE_SUMMARY_SEND_TIMEOUT_MS` (five minutes) for the POST. Deadline expiry settles the retained attempt as an error and shows review-based Unconfirmed results, unlocking dismissal without retrying the write. It does not prove that server-side email sending has stopped; reopening before explicit dismissal restores those same results and duplicate-send warnings.
 
+### Committee member import run lifetime
+
+`CommitteeMemberImportService` (root-scoped) owns each confirmed Members-tab CSV import following the same pattern. CSV reading, preview validation, table filters, downloads and focus stay in `ImportMembersDialogComponent`; once the user confirms, the service runs the existing synchronous bulk route chunk by chunk, with the pause, retry, stop and pending-invitation cleanup rules, and retains one immutable `MemberImportRun` snapshot (`@lfx-one/shared/interfaces`) per group. The dialog only projects that snapshot. Its chunk subscriptions, per-run stop subjects and cooldown timers belong to the service, never to a view's `DestroyRef`. `start` is refused while a run is retained for the same group, `retry` resubmits only unsent and still-retryable rows of that run, and only a settled run can be dismissed. Each run keeps `baselineMemberCount` from the pre-import roster and `reconciliationTarget` (baseline plus every confirmed addition across attempts); retries never rebase the baseline.
+
+Runs belong to the observed `UserService.user` `sub`. Reads, newly scheduled chunks, resumed pauses, invitation cleanup and late responses all check the run ID and subject synchronously. An observed identity change discards every run, ends pauses and retires cooldown timers, and an open import dialog closes without a result. A request that was already sent may still commit upstream; the change only prevents later writes and stops the late response being recorded. Rows, file names and reports stay in memory only; a reload discards them.
+
+The dialog's visible flow is unchanged for now. Close stays disabled while rows are being written. After a run settles, Close returns the cumulative result with the run's `baselineMemberCount` and dismisses that run; the Members tab polls the roster from that baseline, so a reopened run's additions are never counted twice. Reopening Import Members for a group with a retained run shows it instead of resubmitting. Until hide/reopen controls land (#5731), destroying the dialog stops its active run after the in-flight batch, so no later chunk or retry is scheduled. Wizard (collect-only) imports never start a run; they still save through Done or Update Group.
+
+Notification-control locking follows every run snapshot, including the first one, rather than relying on observing an intermediate importing phase; phase transitions separately manage result focus. On Close, the dialog locks further actions and keeps an owner-checked final snapshot until its view is destroyed, while immediately dismissing the service run and clearing the consumed preview. Closing therefore cannot expose the original ready rows or start another write; the next dialog can start a fresh import.
+
 ## 👤 User State Management
 
 ### UserService Pattern
