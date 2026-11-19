@@ -40,6 +40,7 @@ import {
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
 
+import { healthMetricsTrimSql } from '../helpers/health-metrics-sort.helper';
 import { HealthMetricsEventsService, isSupportedEventsRange } from './health-metrics-events.service';
 
 import type { HealthMetricsEventsOrganizationsQuery, HealthMetricsEventsSpeakerProposalsQuery } from '@lfx-one/shared/interfaces';
@@ -1317,7 +1318,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const [sql] = execute.mock.calls[0];
     const order = 'NULLIF(sponsorship_revenue, 0) DESC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC';
     expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY ${order}) AS page_position`);
-    expect(sql).toMatch(new RegExp(`ORDER BY ${order.replace(/[()]/g, '\\$&')}\\s+LIMIT`));
+    // The page cut follows the same order as its row positions.
+    expect((sql as string).replace(/\s+/g, ' ')).toContain(`ORDER BY ${order} LIMIT`);
     expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
 
     execute.mockClear();
@@ -1479,6 +1481,12 @@ describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
     expect(sql).toContain("'en-ci-ai') ASC NULLS LAST, TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC");
     expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
     expect(binds).toEqual(['acme']);
+
+    // The speaker's job title is blank after the same trim the cell uses, so a whitespace-only one falls to the session title.
+    execute.mockClear();
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'speaker', direction: 'asc' } });
+    expect(pageCall()[0]).toContain(`COALESCE(NULLIF(${healthMetricsTrimSql('job_title')}, ''), session_title)`);
+    expect(healthMetricsTrimSql('job_title')).toContain('\\u00a0');
 
     execute.mockClear();
     await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'company', direction: 'desc' } });

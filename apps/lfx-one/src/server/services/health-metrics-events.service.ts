@@ -31,7 +31,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
-import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql } from '../helpers/health-metrics-sort.helper';
+import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql, healthMetricsTrimSql } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -1614,7 +1614,7 @@ function speakerProposalSortColumns(): Record<HealthMetricsEventsSpeakerProposal
     .join(' ');
   return {
     // The speaker reads as the job title, or the session title without one.
-    speaker: { expression: "COALESCE(NULLIF(TRIM(job_title), ''), session_title)", kind: 'text' },
+    speaker: { expression: `COALESCE(NULLIF(${healthMetricsTrimSql('job_title')}, ''), session_title)`, kind: 'text' },
     company: {
       expression: `CASE WHEN is_unaffiliated_proposal = TRUE THEN ${quote(HEALTH_METRICS_EVENTS_SPEAKERS_INDIVIDUAL)} ELSE account_name END`,
       kind: 'text',
