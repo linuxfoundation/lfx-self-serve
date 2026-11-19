@@ -149,6 +149,51 @@ describe('OverviewEventsCardComponent', () => {
     expect(query('overview-events-view-all')).toBeNull();
   });
 
+  it('opens on no sorted column, and sorts the whole list before showing its first five', async () => {
+    const original = [...EVENTS.upcoming];
+    EVENTS.upcoming[6] = event('u6', { registrations: 999 });
+    EVENTS.upcoming[0] = event('u0', { acceptedTalks: 0, totalProposals: 0 });
+    EVENTS.upcoming[1] = event('u1', { acceptedTalks: 3 });
+    try {
+      await render();
+      const sortHeader = (key: string): HTMLElement => query(`overview-events-sort-${key}`) as HTMLElement;
+
+      expect(['event', 'registrations', 'talks'].map((key) => sortHeader(key).parentElement?.getAttribute('aria-sort'))).toEqual(['none', 'none', 'none']);
+      expect(rows()[0].getAttribute('data-testid')).toBe('overview-events-row-u0');
+
+      // The design's order inside the header: label, its tip, then the arrow.
+      const registrations = sortHeader('registrations');
+      expect([...registrations.children].map((child) => child.tagName.toLowerCase())).toEqual(['button', 'lfx-overview-info-tip', 'button']);
+
+      (registrations.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(rows()).toHaveLength(5);
+      expect(rows()[0].getAttribute('data-testid')).toBe('overview-events-row-u6');
+      expect(registrations.parentElement?.getAttribute('aria-sort')).toBe('descending');
+
+      // An event with no proposals shows its note, not 0, so it sorts last in both directions.
+      const talks = sortHeader('talks').querySelector('button') as HTMLButtonElement;
+      talks.click();
+      fixture.detectChanges();
+      expect(rows()[0].getAttribute('data-testid')).toBe('overview-events-row-u1');
+      talks.click();
+      fixture.detectChanges();
+      expect(sortHeader('talks').parentElement?.getAttribute('aria-sort')).toBe('ascending');
+      expect(rows()[0].getAttribute('data-testid')).not.toBe('overview-events-row-u0');
+      query('overview-events-view-all')?.click();
+      fixture.detectChanges();
+      expect(rows().at(-1)?.getAttribute('data-testid')).toBe('overview-events-row-u0');
+
+      // A new sort starts again on the first five.
+      talks.click();
+      fixture.detectChanges();
+      expect(rows()).toHaveLength(5);
+      expect(text('overview-events-view-all')).toBe('View all (7)');
+    } finally {
+      EVENTS.upcoming.splice(0, EVENTS.upcoming.length, ...original);
+    }
+  });
+
   function squashed(testId: string): string {
     return query(testId)?.textContent?.replace(/\s+/g, '') ?? '';
   }

@@ -47,12 +47,16 @@ import type {
 import type { HealthMetricsBlankCopy, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsEventTrendEvent,
+  HealthMetricsOverviewBalanceRowView,
+  HealthMetricsOverviewBalanceSortKey,
   HealthMetricsOverviewBalanceView,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardRowView,
   HealthMetricsOverviewBoardSortKey,
   HealthMetricsOverviewBoardView,
   HealthMetricsOverviewChurn,
+  HealthMetricsOverviewChurnSortKey,
+  HealthMetricsOverviewChurnTierView,
   HealthMetricsOverviewChurnView,
   HealthMetricsOverviewCode,
   HealthMetricsOverviewCodeView,
@@ -62,15 +66,16 @@ import type {
   HealthMetricsOverviewEmptyStateCopy,
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
-  HealthMetricsOverviewEventDialogBadgeView,
   HealthMetricsOverviewEventDialogBadgesView,
+  HealthMetricsOverviewEventDialogBadgeView,
   HealthMetricsOverviewEventGaugeView,
-  HealthMetricsOverviewEventTalksView,
-  HealthMetricsOverviewEventStatus,
   HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
   HealthMetricsOverviewEvents,
+  HealthMetricsOverviewEventsSortKey,
+  HealthMetricsOverviewEventStatus,
   HealthMetricsOverviewEventsView,
+  HealthMetricsOverviewEventTalksView,
   HealthMetricsOverviewGaugeCapView,
   HealthMetricsOverviewKpiStripLayout,
   HealthMetricsOverviewKpiView,
@@ -249,13 +254,18 @@ export function buildHealthMetricsOverviewChurnView(churn: HealthMetricsOverview
             : `${formatCount(totals.membershipsLostPriorYear)} last year`,
       },
     ],
-    tiers: (period?.tiers ?? []).map((tier) => ({
+    tiers: (period?.tiers ?? []).map((tier, index, tiers) => ({
       key: tier.tier,
       label: tier.label,
       rateLabel: formatRatePct(tier.churnRatePct),
       rateWidthPct: clampPct(tier.churnRatePct ?? 0),
       lostLabel: formatCount(tier.membershipsLost),
       valueLabel: formatMoneyCompact(tier.valueLostUsd),
+      // The view lists tiers highest rank first.
+      tierRank: tiers.length - index,
+      churnRatePct: tier.churnRatePct,
+      membershipsLost: tier.membershipsLost,
+      valueLostUsd: tier.valueLostUsd,
     })),
     overallPct: clampPct(rate ?? 0),
     overallLabel: `Overall churn ${formatRatePct(rate)}`,
@@ -288,6 +298,8 @@ export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOver
         widthPct: share(balance.highRiskSharePct, high),
         membersLabel: formatCount(balance.highRiskMembers),
         amountLabel: formatMoney(balance.highRiskUsd),
+        members: balance.highRiskMembers,
+        amountUsd: balance.highRiskUsd,
       },
       {
         key: 'medium',
@@ -297,6 +309,8 @@ export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOver
         widthPct: share(balance.mediumRiskSharePct, medium),
         membersLabel: formatCount(balance.mediumRiskMembers),
         amountLabel: formatMoney(balance.mediumRiskUsd),
+        members: balance.mediumRiskMembers,
+        amountUsd: balance.mediumRiskUsd,
       },
     ],
   };
@@ -471,6 +485,7 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
       widthPct: clampPct(share * 100),
       barClass: attendanceFill(share),
       lastAttendedLabel: member.lastAttendedDate ? formatIsoDateLabel(member.lastAttendedDate) : NOT_AVAILABLE,
+      lastAttendedDate: member.lastAttendedDate,
     });
   }
 
@@ -496,9 +511,45 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
   };
 }
 
-/** A board row's sort value for a column: the name, or the attendance share. */
+/** A board row's sort value: the name, the company ("—" sorts last), the attendance share or the last meeting's date. */
 export function healthMetricsOverviewBoardSortValue(row: HealthMetricsOverviewBoardRowView, key: HealthMetricsOverviewBoardSortKey): HealthMetricsSortValue {
-  return key === 'name' ? row.name : row.attendance;
+  const values: Record<HealthMetricsOverviewBoardSortKey, HealthMetricsSortValue> = {
+    name: row.name,
+    org: row.organization,
+    att: row.attendance,
+    last: row.lastAttendedDate,
+  };
+  return values[key];
+}
+
+/** A churn tier's sort value; Tier follows the view's rank. */
+export function healthMetricsOverviewChurnSortValue(row: HealthMetricsOverviewChurnTierView, key: HealthMetricsOverviewChurnSortKey): HealthMetricsSortValue {
+  const values: Record<HealthMetricsOverviewChurnSortKey, HealthMetricsSortValue> = {
+    tier: row.tierRank,
+    rate: row.churnRatePct,
+    lost: row.membershipsLost,
+    value: row.valueLostUsd,
+  };
+  return values[key];
+}
+
+/** A balance band's sort value; Risk sorts by its label. */
+export function healthMetricsOverviewBalanceSortValue(
+  row: HealthMetricsOverviewBalanceRowView,
+  key: HealthMetricsOverviewBalanceSortKey
+): HealthMetricsSortValue {
+  const values: Record<HealthMetricsOverviewBalanceSortKey, HealthMetricsSortValue> = { risk: row.label, members: row.members, amount: row.amountUsd };
+  return values[key];
+}
+
+/** An event row's sort value: its name, its registrations or its accepted speaking proposals. */
+export function healthMetricsOverviewEventsSortValue(row: HealthMetricsOverviewEventRowView, key: HealthMetricsOverviewEventsSortKey): HealthMetricsSortValue {
+  const values: Record<HealthMetricsOverviewEventsSortKey, HealthMetricsSortValue> = {
+    event: row.name,
+    registrations: row.registrationsCount,
+    talks: row.acceptedTalks,
+  };
+  return values[key];
 }
 
 /** The default order: lowest attendance first, then the name and the row key, which a sort keeps for its ties. */
@@ -1207,6 +1258,9 @@ function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
     isPast,
     registrations: buildRegistrationsBar(event, isPast),
     talks: buildTalksBar(event, isPast),
+    registrationsCount: event.registrations,
+    // An event with no proposals shows its call-for-proposals note, not a count, so it sorts as empty.
+    acceptedTalks: (event.totalProposals ?? 0) > 0 ? (event.acceptedTalks ?? 0) : null,
   };
 }
 

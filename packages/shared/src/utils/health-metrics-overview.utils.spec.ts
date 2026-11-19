@@ -36,7 +36,9 @@ import {
   buildHealthMetricsOverviewTrendMeta,
   buildHealthMetricsOverviewTrendView,
   buildHealthMetricsYtdRangeLabel,
+  healthMetricsOverviewBalanceSortValue,
   healthMetricsOverviewBoardSortValue,
+  healthMetricsOverviewChurnSortValue,
   toHealthMetricsOverviewKpiStripLayout,
   toHealthMetricsOverviewPastYear,
   toHealthMetricsOverviewRange,
@@ -1030,6 +1032,17 @@ describe('buildHealthMetricsOverviewBoardView', () => {
     expect(sorted('att', 'desc')).toEqual(['Pat Doe', 'Alex Moe', 'Sam Roe']);
   });
 
+  it('sorts by company and by last attended, with no company or no meeting last', () => {
+    const { rows } = buildHealthMetricsOverviewBoardView(board, 'YTD');
+    const sorted = (key: 'org' | 'last', direction: 'asc' | 'desc'): string[] =>
+      sortHealthMetricsRows(rows, { key, direction }, healthMetricsOverviewBoardSortValue).map((row) => row.name);
+
+    expect(sorted('org', 'desc').at(-1)).toBe('Sam Roe');
+    expect(sorted('last', 'desc')[0]).toBe('Pat Doe');
+    // Both empty dates go last, in the default order between them.
+    expect(sorted('last', 'asc')).toEqual(['Pat Doe', 'Sam Roe', 'Alex Moe']);
+  });
+
   it('is empty for a period with no board meetings', () => {
     expect(buildHealthMetricsOverviewBoardView(board, 'COMPLETED_YEAR_3').isEmpty).toBe(true);
   });
@@ -1470,5 +1483,45 @@ describe('buildHealthMetricsOverviewScrollFadeMask', () => {
     expect(buildHealthMetricsOverviewScrollFadeMask(false, true)).toBe(
       'linear-gradient(to bottom, transparent 0, black 0px, black calc(100% - 32px), transparent 100%)'
     );
+  });
+});
+
+describe('Overview churn and balance sort values', () => {
+  it("ranks churn tiers by the view's order and reads each band's raw figures", () => {
+    const churn = buildHealthMetricsOverviewChurnView(
+      {
+        periods: {
+          YTD: {
+            totals: null,
+            tiers: [
+              { tier: 'a', label: 'Platinum', churnRatePct: 8, membershipsLost: 1, valueLostUsd: 480000 },
+              { tier: 'b', label: 'Premier', churnRatePct: 2, membershipsLost: 3, valueLostUsd: null },
+            ],
+          },
+          COMPLETED_YEAR: { totals: null, tiers: [] },
+          COMPLETED_YEAR_2: { totals: null, tiers: [] },
+          COMPLETED_YEAR_3: { totals: null, tiers: [] },
+        },
+      },
+      'YTD'
+    );
+    expect(churn.tiers.map((tier) => healthMetricsOverviewChurnSortValue(tier, 'tier'))).toEqual([2, 1]);
+    expect(churn.tiers.map((tier) => healthMetricsOverviewChurnSortValue(tier, 'value'))).toEqual([480000, null]);
+
+    const balance = buildHealthMetricsOverviewBalanceView({
+      measured: true,
+      outstandingUsd: 32000,
+      overdueMembers: 3,
+      highRiskUsd: 10000,
+      highRiskMembers: 1,
+      highRiskSharePct: null,
+      mediumRiskUsd: 22000,
+      mediumRiskMembers: 2,
+      mediumRiskSharePct: null,
+    });
+    expect(balance.rows.map((row) => [healthMetricsOverviewBalanceSortValue(row, 'risk'), healthMetricsOverviewBalanceSortValue(row, 'amount')])).toEqual([
+      ['High risk', 10000],
+      ['Medium risk', 22000],
+    ]);
   });
 });

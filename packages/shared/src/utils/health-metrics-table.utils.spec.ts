@@ -87,6 +87,7 @@ describe('health metrics table sorting', () => {
   it('ranks tiers Diamond down to Non-member, any other named tier just above Non-member, and no tier as empty', () => {
     const tiers = ['Diamond', 'Platinum', 'Gold', 'Silver', 'Associate', 'End User Supporter', 'Premier', 'Non-Member'];
     expect(tiers.map(healthMetricsTierSortRank)).toEqual([7, 6, 5, 4, 3, 2, 1, 0]);
+    expect(healthMetricsTierSortRank('\u00a0—\u00a0')).toBeNull();
     expect([healthMetricsTierSortRank('non member'), healthMetricsTierSortRank(''), healthMetricsTierSortRank(' — '), healthMetricsTierSortRank(null)]).toEqual(
       [0, null, null, null]
     );
@@ -106,6 +107,7 @@ describe('health metrics table sorting', () => {
     expect(order(['2026-01-05', '2025-12-31'], 'desc')).toEqual(['2026-01-05', '2025-12-31']);
     expect(order(['Item 2', 'item 10', 'Éclair', 'Eagle'], 'asc')).toEqual(['Eagle', 'Éclair', 'item 10', 'Item 2']);
     expect(order(['  Zebra', 'Alpha\t'], 'asc')).toEqual(['Alpha\t', '  Zebra']);
+    expect(order(['\u00a0', 'Beta', '\u00a0—\u00a0'], 'desc')).toEqual(['Beta', '\u00a0', '\u00a0—\u00a0']);
     expect(order([0, HEALTH_METRICS_SORT_DORMANT_VALUE, 12], 'asc')).toEqual([HEALTH_METRICS_SORT_DORMANT_VALUE, 0, 12]);
   });
 
