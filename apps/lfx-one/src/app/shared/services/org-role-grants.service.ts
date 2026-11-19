@@ -141,6 +141,11 @@ export class OrgRoleGrantsService {
 
   /** Records an address's or selector row's employee-view answer for `uid`; a later non-employee answer clears it. */
   public noteEmployeeViewAddressed(uid: string, employeeView: boolean): void {
+    // A positive employee-only answer supersedes every earlier full-access note for that company (the role-grants one and the addressed one).
+    if (employeeView) {
+      if (this.fullAccessOrgUidInternal() === uid) this.fullAccessOrgUidInternal.set(null);
+      this.noteFullAccessAddressed(uid, false);
+    }
     const current = this.addressedEmployeeViewUidsInternal();
     if (current.has(uid) === employeeView) return;
     const next = new Set(current);

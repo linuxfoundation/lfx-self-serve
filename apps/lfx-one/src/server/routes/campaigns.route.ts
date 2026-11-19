@@ -15,6 +15,7 @@ import {
   requireGoogleConversionActionsAccess,
   requireGoogleMonitorAccess,
   requireGoogleUserListsAccess,
+  requireMetaCustomAudiencesAccess,
 } from '../middleware/require-marketing-access.middleware';
 
 /**
@@ -92,6 +93,13 @@ router.get('/google/user-lists', requireGoogleUserListsAccess, (req, res, next) 
 // for the same reason as the two lists above: an access-check outage must reach the controller's coded
 // 503, not that guard's uncoded 403.
 router.get('/google/audiences', requireGoogleAudiencesAccess, (req, res, next) => campaignController.getGoogleAdsAudiences(req, res, next));
+
+// The custom audiences on the Meta ad account a create uses, for the Implement tab's Meta audience
+// targeting (#5905). The ad account is shared, so the list names every foundation's audiences: answered
+// only to `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#550).
+// 404 while Meta audience targeting is off. Ahead of `router.use(requireCampaignManager)` for the same
+// reason as the Google lists above.
+router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res, next) => campaignController.getMetaCustomAudiences(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its

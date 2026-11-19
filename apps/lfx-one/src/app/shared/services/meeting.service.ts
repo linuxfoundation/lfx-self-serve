@@ -894,6 +894,12 @@ export class MeetingService {
       ...(registrant.job_title ? { job_title: registrant.job_title } : {}),
       ...(registrant.org_name ? { org_name: registrant.org_name } : {}),
       ...(registrant.committee_uid ? { committee_uid: registrant.committee_uid } : {}),
+      // Only the guest added through "Add myself" carries its LFID and avatar: they come from the
+      // signed-in user's own profile, so they are known to belong to that address. Every other guest
+      // keeps the body it always had — group members carry a `username` too, and forwarding it
+      // would change what ITX links them to.
+      ...(registrant.selfAdded && registrant.username ? { username: registrant.username } : {}),
+      ...(registrant.selfAdded && registrant.avatar_url ? { avatar_url: registrant.avatar_url } : {}),
     };
   }
 

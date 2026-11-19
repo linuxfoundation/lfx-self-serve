@@ -46,6 +46,7 @@ import {
   MeetingRegistrant,
   MeetingRemovalSource,
   MeetingRsvp,
+  MeetingSelfRegistrationRemovalEvent,
   OccurrenceNavItem,
   resolveOccurrenceRecurrence,
   PastMeetingAttachment,
@@ -63,6 +64,7 @@ import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
   canScopeAttachmentToOccurrence,
+  escapeHtml,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
   getMeetingSelfRemovalMessage,
@@ -395,6 +397,8 @@ export class MeetingJoinComponent implements OnInit {
   // skeleton on first paint instead of a premature "0 of 0" — cleared once the initial fetch
   // resolves, including the early-return branches that never issue a request (GH-1731).
   protected registrantsLoading: WritableSignal<boolean> = signal(true);
+  // A stale or empty fallback is not a confirmed roster for duplicate-sensitive guest actions.
+  protected readonly registrantsLoadFailed: WritableSignal<boolean> = signal(false);
   // Re-fires the registrants fetch (e.g. after a guest is added from the drawer).
   private registrantsRefresh$ = new BehaviorSubject<void>(undefined);
   // Snapshot of the roster size immediately before a refresh was requested — lets the refetch
@@ -845,10 +849,49 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
+  /** Counts/roster refresh separately through refreshRequested; self-add also restores invitation controls. */
+  public onSelfAdded(meetingId: string): void {
+    if (this.meeting()?.id !== meetingId) return;
+    this.optimisticInvited.set(true);
+    this.meetingService.clearRemovedRegistration(meetingId);
+    this.userService.refreshUserMeetings(false);
+    this.pageData.refresh();
+  }
+
+  public onSelfRemoved(result: MeetingSelfRegistrationRemovalEvent): void {
+    const meetingId = result.meeting_id;
+    if (this.meeting()?.id !== meetingId) return;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+    const stillInvited = result.remaining_registrant_ids.length > 0;
+    this.optimisticInvited.set(stillInvited);
+    if (stillInvited) {
+      this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
+      const occurrenceId = resolveRsvpOccurrenceId(this.meeting(), { occurrence: this.currentOccurrence() });
+      const current = this.currentUserRsvp();
+      const candidates = [...this.userService.confirmedMeetingRsvps(meetingId), ...(current ? [current] : [])].filter(
+        (rsvp) =>
+          !result.removed_registrant_ids.includes(rsvp.registrant_id) &&
+          this.userService.isMeetingRsvpCurrent(rsvp, this.meeting()) &&
+          (!this.meeting().recurrence || !!occurrenceId || rsvp.scope === 'all')
+      );
+      this.rsvpUpdateTrigger$.next(selectApplicableRsvp(occurrenceId, candidates));
+    } else {
+      this.rsvpUpdateTrigger$.next(null);
+      this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
+    }
+    this.userService.refreshUserMeetings(false);
+    this.pageData.refresh();
+  }
+
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting()?.invited_via_committee, organizer: this.meeting()?.organizer }),
+      // PrimeNG renders a confirmation message as HTML, so the title is escaped.
+      message: getMeetingSelfRemovalMessage(escapeHtml(this.meetingTitle()), {
+        viaCommittee: this.meeting()?.invited_via_committee,
+        organizer: this.meeting()?.organizer,
+      }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -858,8 +901,9 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  public resendInvite(): void {
-    this.inviteResend.resendOwn(this.meeting().id, this.currentOccurrence()?.occurrence_id);
+  /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
+  public confirmResendInvite(): void {
+    this.inviteResend.confirmAndResendOwn(this.confirmationService, this.meeting().id, this.currentOccurrence()?.occurrence_id, this.meetingTitle());
   }
 
   /** Sets foundation context via ProjectContextService and opens /foundation/overview in a new tab. */
@@ -1704,9 +1748,11 @@ export class MeetingJoinComponent implements OnInit {
             // No fetch will happen on this branch (unauthenticated, not allowed to see the guests, or
             // a past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
             this.registrantsLoading.set(false);
+            this.registrantsLoadFailed.set(false);
             return of([] as MeetingRegistrant[]);
           }
           this.registrantsLoading.set(true);
+          this.registrantsLoadFailed.set(false);
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
           const allDatesOnly = isMeetingInviteResponsesEnabled(meeting) && !!meeting.recurrence && !occurrenceId;
           return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId, false, allDatesOnly).pipe(
@@ -1723,6 +1769,7 @@ export class MeetingJoinComponent implements OnInit {
               this.registrantsRosterKey.set(this.buildRegistrantsRosterKey(meeting.id, occurrenceId));
             }),
             catchError((error) => {
+              this.registrantsLoadFailed.set(true);
               // A failed refetch for the SAME meeting+occurrence must not reach reconcileOptimisticPad
               // as an empty list — that would look like "the roster shrank to zero" and zero out a
               // pending pad for guests that were actually added. But if the last successful fetch

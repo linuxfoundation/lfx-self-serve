@@ -76,6 +76,16 @@ describe('CdpService.getWorkExperiencesForKnownUser', () => {
     expect(urls.some((url) => url.endsWith(CDP_CONFIG.ENDPOINTS.CREATE_MEMBER))).toBe(false);
   });
 
+  it('rejects when the token endpoint answers 404, instead of reading it as "no work history"', async () => {
+    vi.stubEnv('CDP_ACCESS_TOKEN', '');
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'not found' }, 404));
+
+    await expect(new CdpService().getWorkExperiencesForKnownUser(undefined, LFID)).rejects.toMatchObject({ statusCode: 404, code: 'CDP_TOKEN_ERROR' });
+
+    expect(requestedUrls(fetchMock)).toHaveLength(1);
+    expect(requestedUrls(fetchMock)[0]).toContain('/oauth/token');
+  });
+
   it('treats a 2xx resolve carrying no memberId as "no work history", not an outage', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({}));
 

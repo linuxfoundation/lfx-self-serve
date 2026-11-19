@@ -12,10 +12,15 @@ const normalizeKey = (key: string): string => key.toLowerCase().replace(/[_-]/g,
 
 const PERSONAL_FIELD_KEYS: ReadonlySet<string> = new Set(ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS.map(normalizeKey));
 
-// A real address (ASCII local part, so unspaced CJK text before it is never swallowed; the host may be Unicode or punycode): a plain local part, a dotted host and an alphabetic or punycode TLD. It must not run on into a path or a word, so
-// technical identifiers survive: a git SSH remote (`git@github.com:org/repo.git`), a version spec (`pkg@1.2.3`).
-const EMBEDDED_EMAIL =
-  /[A-Za-z0-9._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_]|[:/][\p{L}\p{N}_~])/gu;
+// A real address (ASCII local part, so unspaced CJK text before it is never swallowed; the host may be Unicode or punycode): a plain local part, a dotted host and an alphabetic or punycode TLD. It must not run on into a word,
+// so a version spec (`pkg@1.2.3`) survives. A git SSH remote (`git@github.com:org/repo.git`) is the one address-shaped
+// token kept on purpose, and only by {@link isGitRemote}: an address followed by a path or a colon is otherwise still an address.
+const EMBEDDED_EMAIL = /[A-Za-z0-9._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_])/gu;
+
+/** A recognized git remote: the user is exactly `git` and a path follows (`git@host:org/repo.git`, `ssh://git@host/org/repo.git`). */
+function isGitRemote(match: string, following: string): boolean {
+  return match.slice(0, match.indexOf('@')).toLowerCase() === 'git' && /^[:/][\p{L}\p{N}_~]/u.test(following);
+}
 
 /** A whole value that is an address, by the same rule as {@link EMBEDDED_EMAIL}: `git@git.example.com:org/repo.git` and `pkg@1.2.3` are not. */
 const EMAIL_SHAPE = /^[A-Za-z0-9._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})$/u;
@@ -29,7 +34,11 @@ const PERSONAL_URL = /(?:mailto:\S+|https?:\/\/(?:[\w-]+\.)?(?:linkedin\.com\/(?
  * {@link stripPersonalFields} for whole payloads, which applies this to every string value.
  */
 export function scrubFreeText(text: string): string {
-  return text.replace(PERSONAL_URL, '').replace(EMBEDDED_EMAIL, '');
+  return text
+    .replace(PERSONAL_URL, '')
+    .replace(EMBEDDED_EMAIL, (match, offset: number, whole: string) =>
+      isGitRemote(match, whole.slice(offset + match.length, offset + match.length + 2)) ? match : ''
+    );
 }
 
 /**
