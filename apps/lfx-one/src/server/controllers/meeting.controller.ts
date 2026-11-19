@@ -111,6 +111,7 @@ export class MeetingController {
         stripHostKey(meeting);
         return meeting;
       });
+      // shortcut: each page re-walks the viewer's registrations and RSVPs. revisit: when a client pages viewer_rsvp past one page.
       if (include.includes(MEETINGS_INCLUDE_VIEWER_RSVP)) await this.userService.attachViewerRsvps(req, result, 'get_meetings');
       if (include.includes(USER_MEETINGS_INCLUDE_ATTENDANCE)) result = await attachMeetingRsvpSummaries(req, result);
 
