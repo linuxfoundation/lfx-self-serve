@@ -1,14 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { createHash } from 'node:crypto';
-
 import {
   ORG_AFFILIATION_LOOKUP_TIMEOUT_MS,
   ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES,
   ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS,
   ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS,
-  VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
   B2bOrgIndexedDoc,
@@ -22,7 +19,6 @@ import type {
 import { candidateMemberDomains, emailDomain, isPersonalEmailDomain, normalizeDomain } from '@lfx-one/shared/utils/email-domain.utils';
 import type { Request } from 'express';
 
-import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
@@ -34,8 +30,6 @@ import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { claOnlyEntryApplies } from './org-cla-only-orgs.service';
-import { OrgEmployeeViewEngagementService } from './org-employee-view-engagement.service';
-import { buildPerUserOrgKey, valkeyService } from './valkey.service';
 
 const OPERATION = 'resolve_org_lens_employee_view';
 
@@ -83,64 +77,59 @@ export function normalizeCompanyName(name: string | null | undefined): string {
   return words.join(' ');
 }
 
-/** One company that passed every check: an active LF member, with a verified email on its domain and a present work-history entry naming it. */
-interface QualifyingEmployer {
-  org: OrgLensEmployeeViewGrant;
-  /** Most recent start date (ms) among the entries naming it; 0 when it cannot be parsed. */
-  startedAt: number;
-}
-
-/** The caller's single answer, held per caller: the company they are pinned to, or why there is none. */
-type EmployeeViewOutcome = { chosen: QualifyingEmployer } | { denial: OrgEmployeeViewDenial };
+/** The caller's single answer, held per caller: the company they are granted, or why there is none. */
+type EmployeeViewOutcome = { chosen: OrgLensEmployeeViewGrant } | { denial: OrgEmployeeViewDenial };
 
 /**
  * Epic #5845 — decides whether a caller may open the all employee view of a company.
  *
- * To see a company's all employee view, a user must:
- *   1. list the company as a PRESENT employer in their work history: an entry with no end date whose employer name matches the
- *      company's name (see {@link normalizeCompanyName}). Nothing from crowd.dev is required: no crowd.dev organization id and no
- *      crowd.dev-to-account mapping. The work history is read through the same call the profile's Work history tab uses;
- *   2. hold a VERIFIED email on one of that company's domains (member-service `primary_domain` or one of its registered
- *      `domain_aliases`, the Salesforce domain list; a personal mailbox domain never counts), the company being an active LF member.
+ * To see a company's all employee view, a user must have BOTH:
+ *   1. a VALIDATED email on one of the company's domains (member-service `primary_domain` or one of its registered
+ *      `domain_aliases`, the Salesforce domain list; a personal mailbox domain never counts), the company being an active LF member;
+ *   2. that company as a PRESENT employer in their individual work history (the list on the profile's Work history tab): an entry
+ *      with no end date whose employer name matches the company's name (see {@link normalizeCompanyName}).
  *
- * The company is found from the verified email (query service `b2b_org` tagged `is_member:true`, matched on those domains),
- * then confirmed against the present work-history entries; the URL never names it.
+ * When more than one company meets both, the one whose present entry has the MOST RECENT START DATE is granted and the others are
+ * cut off, so an all employee view user reaches exactly one company. (Admins who hold a grant never reach this.)
  *
- * An all employee view user reaches ONE company at a time. When several qualify, the one with the most recent engagement (code
- * activity today) is chosen, falling back to the most recent work-history start date, and the others are cut off. The choice is
- * made once and pinned per (user, fingerprint of present employers + verified emails): it is recomputed only when an employer or a
- * verified email changes, never on a schedule or on new activity. (Admins who hold a grant never reach this.)
+ * Only the work-history entry's employer NAME, END DATE and START DATE are used: no CDP organization id or mapping, no CDP engagement
+ * data, and the read never creates a CDP member. Planned, not in this release: (a) when the individual profile has a concept of a
+ * PRIMARY employer (written through to CDP), it becomes a third requirement; (b) once an email validation has a freshness concept, the
+ * view can expand to several companies.
+ *
+ * The company is found from the validated email (query service `b2b_org` tagged `is_member:true`, matched on those domains), then
+ * confirmed against the work history; the URL never names it.
  *
  * "Could not check" is different from "checked and no": a work-history, query-service, token or email-lookup failure REJECTS (the
- * gate answers 503 `ROLE_GRANTS_UNAVAILABLE`), so an outage never reads as "you are not an employee". Only a clean negative
- * resolves `eligible: false`. The engagement lookup alone is fail-soft, because the start-date fallback is a defined rule.
+ * gate answers 503 `ROLE_GRANTS_UNAVAILABLE`), so an outage never reads as "you are not an employee". Only a clean negative resolves
+ * `eligible: false`.
  *
- * The outcome is held for {@link ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS} per CALLER (not per requested company), so the role-grants,
- * selector and read-gate calls of one page share a single lookup; a rejected lookup is never kept.
+ * The outcome is held for {@link ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS} per CALLER (not per requested company), in a cache shared by
+ * every instance, so the role-grants, selector, read-gate and slug-resolver calls of one page share a single lookup; a rejected
+ * lookup is never kept. The choice is recomputed from the current work history and emails on each lookup, so changing an employer or
+ * a validated email changes the answer at the next check.
  */
 export class OrgEmployeeViewService {
-  private readonly cdp: CdpService;
-  private readonly emailVerification: EmailVerificationService;
-  private readonly proxy: MicroserviceProxyService;
-  private readonly accessCheck: AccessCheckService;
-  private readonly engagement: OrgEmployeeViewEngagementService;
   /** Shared by every instance: the read gate, identity controller, navigation service and slug resolver each construct their own service, and one page's calls must share a single lookup. */
   private static readonly cache = new Map<string, { expiresAt: number; outcome: Promise<EmployeeViewOutcome> }>();
 
+  private readonly workHistory: CdpService;
+  private readonly emailVerification: EmailVerificationService;
+  private readonly proxy: MicroserviceProxyService;
+  private readonly accessCheck: AccessCheckService;
+
   public constructor(
     deps: {
-      cdp?: CdpService;
+      workHistory?: CdpService;
       emailVerification?: EmailVerificationService;
       proxy?: MicroserviceProxyService;
       accessCheck?: AccessCheckService;
-      engagement?: OrgEmployeeViewEngagementService;
     } = {}
   ) {
-    this.cdp = deps.cdp ?? new CdpService();
+    this.workHistory = deps.workHistory ?? new CdpService();
     this.emailVerification = deps.emailVerification ?? new EmailVerificationService();
     this.proxy = deps.proxy ?? new MicroserviceProxyService();
     this.accessCheck = deps.accessCheck ?? new AccessCheckService();
-    this.engagement = deps.engagement ?? new OrgEmployeeViewEngagementService();
   }
 
   /** Drops every held outcome (tests). */
@@ -180,7 +169,7 @@ export class OrgEmployeeViewService {
       return { eligible: false, reason: result.denial };
     }
     // One company at a time: a request for any other company the caller also qualifies for is cut off.
-    return orgUid && result.chosen.org.orgUid !== orgUid ? { eligible: false, reason: 'other-company' } : { eligible: true, org: result.chosen.org };
+    return orgUid && result.chosen.orgUid !== orgUid ? { eligible: false, reason: 'other-company' } : { eligible: true, org: result.chosen };
   }
 
   /**
@@ -250,29 +239,31 @@ export class OrgEmployeeViewService {
   }
 
   private async compute(req: Request, username: string): Promise<EmployeeViewOutcome> {
-    const experiences = await this.cdp.getWorkExperiencesForKnownUser(req, username);
+    const experiences = await this.workHistory.getWorkExperiencesForKnownUser(req, username);
     // Only present employment (no end date): a past job never admits someone who has left the company.
-    const present = experiences.filter((entry) => !entry.endDate && normalizeCompanyName(entry.organization));
-    if (present.length === 0) return { denial: 'no-employer' };
+    const startedAtByName = new Map<string, number>();
+    for (const entry of experiences) {
+      const name = normalizeCompanyName(entry.organization);
+      if (entry.endDate || !name) continue;
+      const startedAt = Date.parse(`1 ${entry.startDate ?? ''}`) || Date.parse(entry.startDate ?? '') || 0;
+      startedAtByName.set(name, Math.max(startedAtByName.get(name) ?? 0, startedAt));
+    }
+    if (startedAtByName.size === 0) return { denial: 'no-employer' };
 
     const emails = await this.getVerifiedEmails(req);
     const companies = await this.findEmailCompanies(req, emails);
     if (companies.length === 0) return { denial: 'no-verified-company-email' };
 
-    // A company qualifies when a present entry names it. Two entries naming the same company count once, by the latest start.
-    const startedAtByName = new Map<string, number>();
-    for (const entry of present) {
-      const name = normalizeCompanyName(entry.organization);
-      const startedAt = Date.parse(`1 ${entry.startDate ?? ''}`) || Date.parse(entry.startDate ?? '') || 0;
-      startedAtByName.set(name, Math.max(startedAtByName.get(name) ?? 0, startedAt));
-    }
-    const qualifying: QualifyingEmployer[] = companies.flatMap((org) => {
+    // A company qualifies when a present entry names it. The companies are already in a stable order (name, then uid), and the sort
+    // is stable, so a tie on start date resolves to the first.
+    const qualifying = companies.flatMap((org) => {
       const startedAt = startedAtByName.get(normalizeCompanyName(org.orgName));
       return startedAt === undefined ? [] : [{ org, startedAt }];
     });
     if (qualifying.length === 0) return { denial: 'employer-mismatch' };
 
-    return { chosen: await this.chooseEmployer(req, username, qualifying, this.fingerprint([...startedAtByName.keys()], emails)) };
+    // One company at a time: the present employer with the most recent start date; every other qualifying company is cut off.
+    return { chosen: [...qualifying].sort((a, b) => b.startedAt - a.startedAt)[0].org };
   }
 
   private async findEmailCompanies(req: Request, emails: string[]): Promise<OrgLensEmployeeViewGrant[]> {
@@ -340,107 +331,6 @@ export class OrgEmployeeViewService {
       companies.set(doc.uid, { orgUid: doc.uid, orgName: doc.name ?? '', orgSlug: doc.slug?.trim().toLowerCase() || null });
     }
     return [...companies.values()].sort((a, b) => a.orgName.localeCompare(b.orgName) || a.orgUid.localeCompare(b.orgUid));
-  }
-
-  /** What identifies "the same situation": the present employers and the verified emails. A change of either recomputes the pinned choice. */
-  private fingerprint(employerNames: string[], emails: string[]): string {
-    const employers = [...employerNames].sort().join(',');
-    const addresses = emails
-      .map((email) => email.trim().toLowerCase())
-      .sort()
-      .join(',');
-    return createHash('sha256').update(`${employers}|${addresses}`).digest('hex').slice(0, 32);
-  }
-
-  /**
-   * The single employer an all employee view user is pinned to. With one qualifying employer that is it. With several, the
-   * most recent engagement wins, then the most recent start date, and the choice is STORED under the fingerprint: it is
-   * made once per change of employer or verified email, never re-derived from activity on a later load.
-   *
-   * The stored pin is authoritative (kept for a year, refreshed on every read; a first choice is written atomically and every contender then answers with the stored winner): it is read back as long as that company still qualifies, and each read refreshes its
-   * 30-day lifetime. A read that FAULTS (timeout, connection error) is not a missing pin and is treated like a failed write. A pin that no longer qualifies is replaced, and the replacement is persisted. When the pin cannot be
-   * read or stored (the cache is disabled, or a read or the write fails) the lookup REJECTS (a retriable 503) rather than answering with a
-   * choice that the next request could contradict, which would let two companies be admitted in turn.
-   */
-  private async chooseEmployer(req: Request, username: string, qualifying: QualifyingEmployer[], fingerprint: string): Promise<QualifyingEmployer> {
-    if (qualifying.length === 1) {
-      // Not awaited: with one candidate nothing can contradict the answer, and a slow or down cache must not delay it past the role-grants budget.
-      void this.reconcileSolePin(username, qualifying[0], fingerprint).catch(() => undefined);
-      return qualifying[0];
-    }
-
-    const key = buildPerUserOrgKey(VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_NAMESPACE, username, fingerprint);
-    if (!key || !valkeyService.isEnabled()) throw this.pinUnavailable();
-
-    const accept = (value: unknown): boolean => !!value && typeof value === 'object' && typeof (value as { orgUid?: unknown }).orgUid === 'string';
-    const ttl = VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS;
-    // Fail-closed, so the larger session-store budget: a cold TLS handshake must be able to finish, or a pin that IS stored would read as unavailable.
-    const pinTimeoutMs = VALKEY_CACHE.SESSION_OP_TIMEOUT_MS;
-    // A read FAULT is not "no pin": re-ranking on a blip would overwrite the stored company with whichever one currently leads.
-    const readPin = async (): Promise<{ orgUid: string } | null> => {
-      const read = await valkeyService.getJsonStrict<{ orgUid: string }>(key, accept, pinTimeoutMs);
-      if (read.status === 'fault') throw this.pinUnavailable();
-      return read.status === 'hit' ? read.value : null;
-    };
-    const winner = (pin: { orgUid: string } | null): QualifyingEmployer | undefined =>
-      pin ? qualifying.find((entry) => entry.org.orgUid === pin.orgUid) : undefined;
-
-    const stored = await readPin();
-    const kept = winner(stored);
-    if (kept) {
-      // Sliding lifetime, best effort: a failed refresh only leaves the remaining time as it was.
-      void valkeyService.setJson(key, { orgUid: kept.org.orgUid }, ttl, pinTimeoutMs);
-      return kept;
-    }
-
-    const chosen = await this.rank(req, username, qualifying);
-    if (stored) {
-      // The pinned company no longer qualifies: persist the replacement so it, too, stays put.
-      if (!(await valkeyService.setJson(key, { orgUid: chosen.org.orgUid }, ttl, pinTimeoutMs))) throw this.pinUnavailable();
-    } else {
-      // First choice: establish it ATOMICALLY so concurrent cold requests cannot each pin a different company.
-      const written = await valkeyService.setJsonIfAbsent(key, { orgUid: chosen.org.orgUid }, ttl, pinTimeoutMs);
-      if (written === 'fault') throw this.pinUnavailable();
-    }
-    // Every contender answers with whatever is stored, so the one that lost the race uses the winner, not its own ranking.
-    return winner(await readPin()) ?? chosen;
-  }
-
-  /**
-   * Keeps the stored pin in step with a SOLE qualifying company, best effort and in the background: with one candidate there is nothing
-   * to contradict, so an unavailable or slow store never delays or blocks the answer. Recording it matters later: if a second company then qualifies for the same
-   * employers and verified emails (it became a member, say), the first one stays put instead of being re-ranked away, and a
-   * pin left over from an earlier two-company period cannot regain authority on a later one-to-two transition.
-   */
-  private async reconcileSolePin(username: string, sole: QualifyingEmployer, fingerprint: string): Promise<void> {
-    const key = buildPerUserOrgKey(VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_NAMESPACE, username, fingerprint);
-    if (!key || !valkeyService.isEnabled()) return;
-    const ttl = VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS;
-    const timeoutMs = VALKEY_CACHE.SESSION_OP_TIMEOUT_MS;
-    const accept = (value: unknown): boolean => !!value && typeof value === 'object' && typeof (value as { orgUid?: unknown }).orgUid === 'string';
-    const read = await valkeyService.getJsonStrict<{ orgUid: string }>(key, accept, timeoutMs);
-    if (read.status === 'fault') return;
-    const value = { orgUid: sole.org.orgUid };
-    if (read.status === 'miss') await valkeyService.setJsonIfAbsent(key, value, ttl, timeoutMs);
-    else await valkeyService.setJson(key, value, ttl, timeoutMs);
-  }
-
-  private pinUnavailable(): MicroserviceError {
-    return new MicroserviceError('Unable to record the employer for the all employee view right now', 503, 'ROLE_GRANTS_UNAVAILABLE', {
-      operation: OPERATION,
-      service: 'org_employee_view_service',
-    });
-  }
-
-  private async rank(req: Request, username: string, qualifying: QualifyingEmployer[]): Promise<QualifyingEmployer> {
-    const activity = await this.engagement.getLastActivityByAccount(
-      req,
-      username,
-      qualifying.map((entry) => entry.org.orgUid)
-    );
-    return [...qualifying].sort(
-      (a, b) => (activity.get(b.org.orgUid) ?? 0) - (activity.get(a.org.orgUid) ?? 0) || b.startedAt - a.startedAt || a.org.orgUid.localeCompare(b.org.orgUid)
-    )[0];
   }
 
   /** Verified addresses only, read strictly so a failed lookup is an outage rather than the single session email. */
