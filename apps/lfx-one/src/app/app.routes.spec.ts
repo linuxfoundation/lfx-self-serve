@@ -414,3 +414,32 @@ describe('Company Lens Memberships routes (#5855)', () => {
     expect(await verdictFor(path, url, false)).toBe(true);
   });
 });
+
+// #5856 — the People page is hidden in the all employee view (epic #5845): its route redirects to Overview there.
+describe('Company Lens People route (all employee view)', () => {
+  it('is guarded so the employee view redirects to Overview, and the full view opens it', async () => {
+    // The page route itself, not its roll-up stand-in (same path, match guards only), on the legacy mount.
+    const org = shellRoute.children!.find((route) => route.path === ORG_LENS_URL_ROOT)!;
+    const peopleRoute = org.children!.find((route) => route.path === 'people' && !!route.loadComponent);
+    expect(peopleRoute?.canActivate).toHaveLength(1);
+
+    const isEmployeeView = signal(true);
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+      ],
+    });
+    const router = TestBed.inject(Router);
+    const verdict = async (): Promise<unknown> =>
+      TestBed.runInInjectionContext(() =>
+        (peopleRoute?.canActivate?.[0] as CanActivateFn)({} as ActivatedRouteSnapshot, { url: '/company/acme-inc/people' } as RouterStateSnapshot)
+      );
+
+    expect(router.serializeUrl((await verdict()) as UrlTree)).toBe('/company/acme-inc/overview');
+
+    isEmployeeView.set(false);
+    expect(await verdict()).toBe(true);
+  });
+});

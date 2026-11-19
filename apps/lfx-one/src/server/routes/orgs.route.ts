@@ -99,6 +99,12 @@ function buildOrgsRouter(): Router {
   // param `:accountId`; the prefix match still binds it as `orgUid`, and both carry the same SFID.
   router.use('/:orgUid/lens', (req, res, next) => requireOrgLensAccess(req, res, next));
 
+  // #5856 — the People page is hidden in the all employee view (epic #5845). Mounted on each prefix, not per route, so every
+  // tab, drawer, export and write behind it (and any route added later) answers 403 there. Full view and LF staff pass untouched.
+  // `/lens/people/*` serves all five tabs and the person drawers; `/lens/access/*` is the Company Lens Access tab.
+  router.use('/:orgUid/lens/people', blockEmployeeView);
+  router.use('/:orgUid/lens/access', blockEmployeeView);
+
   // #2961 — the gate above is the whole check; this only reports that it passed (204), so the page can
   // ask "may this caller read this organization?" with the server's own answer.
   router.get('/:orgUid/lens/read-check', (req, res) => orgLensAccessController.readCheck(req, res));

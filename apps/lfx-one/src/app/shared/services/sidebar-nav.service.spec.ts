@@ -617,6 +617,25 @@ describe('SidebarNavService', () => {
     expect(labels(sectionItems(items, 'Company Engagement'))).toContain('People');
   });
 
+  // #5856 — the People page is hidden in the all employee view (epic #5845): no left-nav link, and the Company Engagement
+  // section keeps its other pages. The full view is unchanged.
+  it('drops the People nav item in the all employee view only', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000Te2ovAAB');
+    const service = TestBed.inject(SidebarNavService);
+
+    expect(labels(sectionItems(service.sidebarItems(), 'Company Engagement'))).toContain('People');
+
+    (TestBed.inject(OrgRoleGrantsService) as unknown as { employeeViewOrgUids: { set(uids: ReadonlySet<string>): void } }).employeeViewOrgUids.set(
+      new Set(['0014100000Te2ovAAB'])
+    );
+    const items = service.sidebarItems();
+
+    expect(findByLink(items, '/company/people')).toBeUndefined();
+    expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain('People');
+    expect(labels(items)).toContain('Dashboard');
+  });
+
   // EasyCLA is single-company for the same reason as Profile: a corporate CLA belongs to one
   // company, so `/company/family-{id}/easycla` could only error (#4415, Copilot).
   it('drops EasyCLA in roll-up mode', () => {
