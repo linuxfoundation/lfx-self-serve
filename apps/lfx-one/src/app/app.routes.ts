@@ -45,6 +45,7 @@ import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavai
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
+import { orgLensFullViewOnlyGuard } from './shared/guards/org-lens-full-view-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
@@ -149,11 +150,13 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'memberships',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: { lens: 'org', title: 'Memberships', description: 'Active memberships and tier history.', icon: 'fa-light fa-display' },
       loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
     },
     {
       path: 'memberships/:foundationSlug',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: {
         lens: 'org',
         title: 'Membership Detail',
