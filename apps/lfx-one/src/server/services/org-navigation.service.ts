@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP, ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP, ORG_CATALOGUE_SEARCH_MIN_CHARS, ORG_LENS_ROLLUP_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import {
   B2bOrgIndexedDoc,
   GetOrgItemsParams,
+  OrgFamilyRoot,
   OrgItem,
   OrgItemsQuery,
   OrgItemsResponse,
@@ -16,6 +17,7 @@ import { Request } from 'express';
 
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { claOnlyEntryApplies, claOnlyListApplies, ClaOnlyOrg, OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
@@ -106,11 +108,14 @@ export class OrgNavigationService {
 
     const catalogueResult = catalogueTerm
       ? await this.fetchCatalogueMatches(req, catalogueTerm, pageToken, items)
-      : { items: [] as OrgItem[], nextPageToken: null, failed: false };
+      : { items: [] as OrgItem[], docByUid: new Map<string, B2bOrgIndexedDoc>(), nextPageToken: null, failed: false };
     const nextPageToken = catalogueResult.nextPageToken;
     const discoveredItems = pinnedDiscovered
       ? [pinnedDiscovered, ...catalogueResult.items.filter((item) => item.uid !== pinnedDiscovered.uid)]
       : catalogueResult.items;
+    const shownItems = catalogueTerm
+      ? await this.labelFamilyRoots(req, [...assignedItems, ...discoveredItems], new Map([...access.orgDocByUid, ...catalogueResult.docByUid]))
+      : [...assignedItems, ...discoveredItems];
 
     logger.debug(req, 'build_org_items', 'Built access-aware org items', {
       item_count: assignedItems.length + discoveredItems.length,
@@ -121,7 +126,7 @@ export class OrgNavigationService {
     });
 
     return {
-      items: [...assignedItems, ...discoveredItems],
+      items: shownItems,
       next_page_token: nextPageToken,
       // A failed catalogue search is reported rather than folded into an empty result: for a staff
       // caller with nothing assigned the two are indistinguishable in the list, and "no organizations
@@ -276,7 +281,7 @@ export class OrgNavigationService {
     term: string,
     pageToken: string | undefined,
     assignedItems: OrgItem[]
-  ): Promise<{ items: OrgItem[]; nextPageToken: string | null; failed: boolean }> {
+  ): Promise<{ items: OrgItem[]; docByUid: Map<string, B2bOrgIndexedDoc>; nextPageToken: string | null; failed: boolean }> {
     // Deduped against the caller's whole assigned universe, not just the rows on this page, so a
     // catalogue hit can never mask the role they hold — including on continuation pages, where the
     // assigned rows are absent from the response but still theirs.
@@ -292,19 +297,21 @@ export class OrgNavigationService {
         response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
       } catch (error) {
         logger.warning(req, 'get_org_items', 'Catalogue search failed; returning assigned rows only', { err: error });
-        return { items: [], nextPageToken: null, failed: true };
+        return { items: [], docByUid: new Map(), nextPageToken: null, failed: true };
       }
 
       const discovered: OrgItem[] = [];
+      const docByUid = new Map<string, B2bOrgIndexedDoc>();
       for (const resource of response?.resources ?? []) {
         const uid = this.extractUid(resource.id);
         if (!uid || !resource.data || assignedUids.has(uid)) continue;
         discovered.push(this.toDiscoveredItem(uid, resource.data));
+        docByUid.set(uid, resource.data);
       }
 
       const next = response?.page_token ?? null;
       if (discovered.length > 0 || next === null) {
-        return { items: this.applyPrefixRank(discovered, term), nextPageToken: next, failed: false };
+        return { items: this.applyPrefixRank(discovered, term), docByUid, nextPageToken: next, failed: false };
       }
 
       token = next;
@@ -316,7 +323,31 @@ export class OrgNavigationService {
     logger.warning(req, 'get_org_items', 'Catalogue skip-ahead cap reached; all pages held only assigned rows', {
       skipped_pages: ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP,
     });
-    return { items: [], nextPageToken: token ?? null, failed: false };
+    return { items: [], docByUid: new Map(), nextPageToken: token ?? null, failed: false };
+  }
+
+  private async labelFamilyRoots(req: Request, items: OrgItem[], docByUid: ReadonlyMap<string, B2bOrgIndexedDoc>): Promise<OrgItem[]> {
+    if (items.length === 0 || !(await LaunchDarklyServerService.getInstance().isFlagEnabled(req, ORG_LENS_ROLLUP_ENABLED_FLAG, false))) {
+      return items;
+    }
+
+    const shownDocs = new Map<string, B2bOrgIndexedDoc>();
+    for (const item of items) {
+      const doc = docByUid.get(item.uid);
+      if (doc) shownDocs.set(item.uid, doc);
+    }
+
+    let roots: Map<string, OrgFamilyRoot>;
+    try {
+      roots = await this.orgRoleGrants.resolveFamilyRoots(req, shownDocs);
+    } catch (error) {
+      logger.warning(req, 'get_org_items', 'Family top-account lookup failed; returning search rows without roll-up options', { err: error });
+      return items;
+    }
+    return items.map((item) => {
+      const root = roots.get(item.uid);
+      return root ? { ...item, familyRootUid: root.rootUid, familyRootName: root.rootName } : item;
+    });
   }
 
   /**

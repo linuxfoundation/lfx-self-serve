@@ -121,6 +121,29 @@ describe('MeetingService registrant payload mapping', () => {
       expect(body).not.toHaveProperty('committee_uid');
     });
 
+    it('forwards the LFID and avatar of the guest added through "Add myself" (#5798)', () => {
+      const self = registrant({
+        type: 'direct',
+        committee_uid: null,
+        username: 'dreyes',
+        avatar_url: 'https://avatars.acme-motors.example/dreyes.png',
+        selfAdded: true,
+      });
+
+      const body = service.stripMetadata(MEETING_UID, self);
+
+      expect(body.username).toBe('dreyes');
+      expect(body.avatar_url).toBe('https://avatars.acme-motors.example/dreyes.png');
+      expect(body).not.toHaveProperty('selfAdded');
+    });
+
+    it('keeps the LFID and avatar off every other guest, including a group member with a username', () => {
+      const body = service.stripMetadata(MEETING_UID, registrant({ username: 'dreyes', avatar_url: 'https://avatars.acme-motors.example/dreyes.png' }));
+
+      expect(body).not.toHaveProperty('username');
+      expect(body).not.toHaveProperty('avatar_url');
+    });
+
     it('drops the response-only committee enrichment rather than echoing it back', () => {
       const body = service.stripMetadata(
         MEETING_UID,

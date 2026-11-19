@@ -597,8 +597,8 @@ export interface HealthMetricsOverviewNewsletterView {
   mostEngaging: { name: string; rateLabel: string } | null;
 }
 
-/** How the board table is sorted; the design opens on the lowest attendance first. */
-export type HealthMetricsOverviewBoardSort = 'att-asc' | 'att-desc' | 'name-asc' | 'name-desc';
+/** The board table's sortable columns: the member's name and their attendance. */
+export type HealthMetricsOverviewBoardSortKey = 'name' | 'att';
 
 export interface HealthMetricsOverviewBoardRowView {
   key: string;

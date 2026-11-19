@@ -247,4 +247,15 @@ describe('OrgRoleGrantsService addressed full access', () => {
 
     expect(service.fullAccessOrgUids().has(UID)).toBe(true);
   });
+
+  it('clears both full-access sources when a selector or resolver answer later marks the company employee-only (#5845)', async () => {
+    await answer({ ...grants, fullAccessOrgUid: UID });
+    service.noteFullAccessAddressed(UID, true);
+    expect(service.fullAccessOrgUids().has(UID)).toBe(true);
+
+    service.noteEmployeeViewAddressed(UID, true);
+
+    expect(service.fullAccessOrgUids().has(UID)).toBe(false);
+    expect(service.employeeViewOrgUids().has(UID)).toBe(true);
+  });
 });

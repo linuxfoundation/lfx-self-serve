@@ -9,10 +9,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { VOTE_LAST_VOTER_CONFIRMATION } from '@lfx-one/shared/constants';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { MyVoteBallot, Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { MessageService } from 'primeng/api';
+import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -62,7 +63,8 @@ async function setup(getVoteImpl: ReturnType<typeof vi.fn>, voteServiceOverrides
     providers: [
       provideNoopAnimations(),
       provideRouter([]),
-      { provide: VoteService, useValue: { getVote, ...voteServiceOverrides } },
+      // The last-voter check (#4726) defaults to "not the last voter" so first submissions go straight through.
+      { provide: VoteService, useValue: { getVote, getMyWouldEndVote: vi.fn().mockReturnValue(of(false)), ...voteServiceOverrides } },
       { provide: MessageService, useValue: { add: vi.fn() } },
       { provide: UserService, useValue: { impersonating } },
     ],
@@ -1502,5 +1504,264 @@ describe('VoteCastDrawerComponent — mobile layout (#4148)', () => {
     expect(description.className).toContain('max-sm:overflow-y-auto');
     expect(description.getAttribute('tabindex')).toBe('0');
     expect(description.getAttribute('role')).toBe('region');
+  });
+});
+
+describe('VoteCastDrawerComponent — last-voter confirmation (#4726)', () => {
+  async function openAndAnswer(overrides: Record<string, unknown>, inputs: { changeMode?: boolean; vote?: Vote } = {}): Promise<ConfirmationService> {
+    await setup(vi.fn().mockReturnValue(of(inputs.vote ?? VOTE)), overrides);
+    if (inputs.changeMode) fixture.componentRef.setInput('changeMode', true);
+    await openWithoutListVote();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    (fixture.componentInstance.form.get('q1') as unknown as FormControl<string | null>).setValue('c1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    // The drawer's own scoped instance, not a host's.
+    return fixture.debugElement.injector.get(ConfirmationService);
+  }
+
+  function lastConfirmation(confirm: ReturnType<typeof vi.spyOn>): Confirmation {
+    return confirm.mock.calls.at(-1)?.[0] as Confirmation;
+  }
+
+  it('asks before submitting when this ballot would end the vote, and submits nothing until accepted', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const getMyWouldEndVote = vi.fn().mockReturnValue(of(true));
+    const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+
+    expect(getMyWouldEndVote).toHaveBeenCalledWith(VOTE.uid);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(lastConfirmation(confirm)).toMatchObject(VOTE_LAST_VOTER_CONFIRMATION);
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['submitting']()).toBe(true);
+  });
+
+  it('renders the dialog copy from the shared constant', async () => {
+    await openAndAnswer({ getMyWouldEndVote: vi.fn().mockReturnValue(of(true)), submitMyResponse: vi.fn() });
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.acceptLabel);
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.rejectLabel);
+  });
+
+  it('submits the ballot once the voter accepts', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    lastConfirmation(confirm).accept?.();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).toHaveBeenCalledOnce();
+    expect(submitMyResponse).toHaveBeenCalledWith(VOTE.uid, expect.objectContaining({ abstain: false }));
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+  });
+
+  it('goes back without submitting and releases the submit button when the voter rejects', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    lastConfirmation(confirm).reject?.();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+    expect(fixture.componentInstance.form.get('q1')?.value).toBe('c1');
+  });
+
+  it('Escape on the dialog goes back to the ballot without closing the drawer or clearing it', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    fixture.componentInstance.abstainControl.setValue(true);
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.visible()).toBe(true);
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+    expect(fixture.componentInstance.abstainControl.value).toBe(true);
+    expect(document.body.textContent).not.toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+  });
+
+  it('lets Escape close the drawer again once the voter has gone back', async () => {
+    const confirmationService = await openAndAnswer({ submitMyResponse: vi.fn(), getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    lastConfirmation(confirm).reject?.();
+    await fixture.whenStable();
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.visible()).toBe(false);
+  });
+
+  it('closes the confirmation on host dismissal and rejects stale acceptance before and after reopening', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    const staleConfirmation = lastConfirmation(confirm);
+    fixture.componentRef.setInput('visible', false);
+    // Reject even before the visibility subscription runs.
+    staleConfirmation.accept?.();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(document.body.textContent).not.toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+    expect(submitMyResponse).not.toHaveBeenCalled();
+
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    staleConfirmation.accept?.();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+    await fixture.whenStable();
+    expect(fixture.componentInstance.visible()).toBe(false);
+  });
+
+  it('invalidates the confirmation when the selected vote changes, even before the selection subscription runs', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    const staleConfirmation = lastConfirmation(confirm);
+
+    fixture.componentRef.setInput('voteId', 'vote-2');
+    staleConfirmation.accept?.();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+    expect(document.body.textContent).not.toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+  });
+
+  it('cancels the advisory read when the selected vote changes', async () => {
+    const pending = new Subject<boolean>();
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(pending) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    fixture.componentInstance['onSubmit']();
+    fixture.componentRef.setInput('voteId', 'vote-2');
+    await fixture.whenStable();
+    pending.next(true);
+    pending.complete();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+  });
+
+  it('does not let a rejected confirmation accept or reset a later confirmation', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    fixture.componentInstance['onSubmit']();
+    const staleConfirmation = lastConfirmation(confirm);
+    staleConfirmation.reject?.();
+    fixture.componentInstance['onSubmit']();
+
+    staleConfirmation.reject?.();
+    staleConfirmation.accept?.();
+    expect(fixture.componentInstance['submitting']()).toBe(true);
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    lastConfirmation(confirm).accept?.();
+    expect(submitMyResponse).toHaveBeenCalledOnce();
+  });
+
+  it('closes and invalidates the confirmation when destroyed', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    const close = vi.spyOn(confirmationService, 'close');
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    const staleConfirmation = lastConfirmation(confirm);
+
+    fixture.destroy();
+    staleConfirmation.accept?.();
+
+    expect(close).toHaveBeenCalled();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+  });
+
+  it('submits straight away without the dialog when this ballot would not end the vote', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(false)) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(submitMyResponse).toHaveBeenCalledOnce();
+  });
+
+  it('never checks when changing a submitted ballot', async () => {
+    const getMyWouldEndVote = vi.fn().mockReturnValue(of(true));
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const BALLOT: MyVoteBallot = {
+      vote_response_uid: 'vr-1',
+      vote_uid: VOTE.uid,
+      abstained: false,
+      poll_answers: [
+        { question_id: 'q1', prompt: '', type: 'single_choice', user_choice: [{ choice_id: 'c2', choice_text: 'Reject' }], ranked_user_choice: [] },
+      ],
+      comment_responses: [],
+      can_change_vote: true,
+    };
+    const confirmationService = await openAndAnswer(
+      { getMyWouldEndVote, updateMyResponse, getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)) },
+      { changeMode: true }
+    );
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+
+    expect(getMyWouldEndVote).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(updateMyResponse).toHaveBeenCalledOnce();
+  });
+
+  it('still asks on a vote that makes submitted ballots final (AC-4)', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const confirmationService = await openAndAnswer(
+      { submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) },
+      { vote: { ...VOTE, allow_vote_change: false } as Vote }
+    );
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(submitMyResponse).not.toHaveBeenCalled();
   });
 });

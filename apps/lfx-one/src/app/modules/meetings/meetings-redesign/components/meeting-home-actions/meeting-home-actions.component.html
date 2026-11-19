@@ -18,7 +18,7 @@
     }
     <lfx-ui-menu-item icon="fa-light fa-link" (triggered)="copyLink()" data-testid="meetings-home-row-actions-copy-link">Copy Link</lfx-ui-menu-item>
     @if (canResend()) {
-      <lfx-ui-menu-item icon="fa-light fa-paper-plane" (triggered)="resendInvite()" data-testid="meetings-home-row-actions-resend"
+      <lfx-ui-menu-item icon="fa-light fa-paper-plane" (triggered)="confirmResend()" data-testid="meetings-home-row-actions-resend"
         >Resend Invite</lfx-ui-menu-item
       >
     }
@@ -62,6 +62,30 @@
         (click)="remove()"
         data-testid="meetings-home-row-actions-remove-confirm"
         >Remove Me</lfx-ui-button
+      >
+    </ng-container>
+  </lfx-ui-modal>
+</ng-template>
+
+<ng-template #resendDialog let-ref="dialogRef">
+  <lfx-ui-modal heading="Resend Your Invitation" data-testid="meetings-home-row-actions-resend-dialog">
+    <lfx-meeting-dialog-context [row]="row()" data-testid="meetings-home-row-actions-resend-info" />
+    <!-- Below the meeting, like the Remove Yourself dialog; the subtitle id makes the question the alertdialog's description. -->
+    <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+    <p [id]="ref.id + '-subtitle'" class="text-[14px] leading-[1.6] text-gray-700" data-testid="meetings-home-row-actions-resend-message">
+      {{ resendQuestion() }}
+    </p>
+    <ng-container modalActions>
+      <lfx-ui-button data-autofocus variant="secondary" [disabled]="resending()" (click)="ref.close()" data-testid="meetings-home-row-actions-resend-cancel"
+        >Cancel</lfx-ui-button
+      >
+      <lfx-ui-button
+        variant="primary"
+        icon="fa-light fa-paper-plane"
+        [loading]="resending()"
+        (click)="resend()"
+        data-testid="meetings-home-row-actions-resend-confirm"
+        >Resend</lfx-ui-button
       >
     </ng-container>
   </lfx-ui-modal>
