@@ -3,7 +3,8 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
-import { catchError, map, Observable, of } from 'rxjs';
+import { toObservable } from '@angular/core/rxjs-interop';
+import { catchError, EMPTY, map, Observable, of, switchMap } from 'rxjs';
 
 import { ProjectContextService } from './project-context.service';
 
@@ -53,6 +54,21 @@ export class SocialListeningService {
     const fallback = grant && grant.foundation.uid === this.projectContextService.selectedFoundation()?.uid ? grant.foundationSfid : null;
     return this.projectContextService.selectedFoundationSfid() ?? fallback;
   });
+
+  public constructor() {
+    // A same-lens foundation switch keeps the page mounted without rerunning the guard, so a group member's
+    // grant is re-probed here for the new foundation; switchMap drops an answer for a foundation already left.
+    toObservable(this.projectContextService.selectedFoundation)
+      .pipe(
+        switchMap((foundation) => {
+          const grant = this.groupGrant();
+          return grant && foundation?.slug && grant.foundation.uid !== foundation.uid ? this.getAccess(foundation.slug) : EMPTY;
+        })
+      )
+      .subscribe((access) => {
+        this.groupGrant.set(access.canView && access.foundation ? { foundation: access.foundation, foundationSfid: access.foundationSfid ?? null } : null);
+      });
+  }
 
   /** Whether the current user can view Social Listening for `foundationSlug`; any failure reads as no access. */
   public getAccess(foundationSlug: string): Observable<SocialListeningAccessResponse> {

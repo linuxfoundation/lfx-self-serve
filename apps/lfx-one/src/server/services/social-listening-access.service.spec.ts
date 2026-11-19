@@ -159,6 +159,14 @@ describe('SocialListeningAccessService.getAccess', () => {
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual(GROUP_MEMBER);
   });
 
+  it('grants without remembering when the Salesforce ID lookup failed, so the next probe retries it', async () => {
+    getProjectSfidByUid.mockResolvedValueOnce(null);
+
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ ...GROUP_MEMBER, foundationSfid: null });
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual(GROUP_MEMBER);
+    expect(getProjectSfidByUid).toHaveBeenCalledTimes(2);
+  });
+
   describe('cache expiry', () => {
     afterEach(() => {
       vi.useRealTimers();

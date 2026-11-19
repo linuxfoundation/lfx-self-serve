@@ -80,7 +80,10 @@ export class SocialListeningAccessService {
               foundationSfid: await this.projectService.getProjectSfidByUid(req, project.uid),
             }
           : null;
-        this.remember(cacheKey, grant);
+        // A grant whose Salesforce ID lookup failed (transient NATS error) is not remembered, so the next probe retries it.
+        if (!grant || grant.foundationSfid) {
+          this.remember(cacheKey, grant);
+        }
         return grant;
       } catch (error) {
         logger.warning(req, 'social_listening_group_access', 'Group access lookup failed, denying', {
