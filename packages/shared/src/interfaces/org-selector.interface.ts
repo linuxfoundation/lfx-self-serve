@@ -32,6 +32,15 @@ export interface OrgItem {
   slug?: string | null;
   /** True for an org the caller reaches only as its CLA Manager (see `OrgResolveResponse.claOnly`). Absent means false. */
   claOnly?: boolean;
+  /**
+   * Top account of the row's company family, set only on an LF staff search row (with the
+   * `org-lens-rollup-enabled` flag on) for a company in a family of two or more. A label for the
+   * switcher's roll-up option, never an authorization: opening the roll-up rebuilds and checks the
+   * family on the server. Absent when the company is standalone or its top account could not be found.
+   */
+  familyRootUid?: string;
+  /** Display name of `familyRootUid`; null when the index has none. Absent whenever `familyRootUid` is. */
+  familyRootName?: string | null;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */

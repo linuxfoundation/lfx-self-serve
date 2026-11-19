@@ -1407,6 +1407,87 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
         expect([...store.keys()].some((key) => key.includes(':org-family:'))).toBe(false);
       });
     });
+
+    describe('family top accounts for search rows (#5942)', () => {
+      function docsFor(uids: string[], docs: Record<string, Doc> = FAMILY_DOCS): Map<string, Doc> {
+        return new Map(uids.map((uid) => [uid, { uid, ...docs[uid] }]));
+      }
+
+      function lookedUp(): string[][] {
+        return orgWalkCalls().map((call) => ((call[4] as { tags?: string[] }).tags ?? []).map((tag) => tag.slice('b2b_org_uid:'.length)));
+      }
+
+      it('answers every company in a multi-company family with its top account and leaves a standalone company out', async () => {
+        seedFamilies();
+
+        const roots = await new OrgRoleGrantsService().resolveFamilyRoots(req, docsFor(['leaf', 'aunt', 'top', 'other-sub', 'solo']));
+
+        expect(Object.fromEntries(roots)).toEqual({
+          leaf: { rootUid: 'top', rootName: 'Top Co', rootLogoUrl: null },
+          aunt: { rootUid: 'top', rootName: 'Top Co', rootLogoUrl: null },
+          top: { rootUid: 'top', rootName: 'Top Co', rootLogoUrl: null },
+          'other-sub': { rootUid: 'other', rootName: 'Other Group', rootLogoUrl: null },
+        });
+      });
+
+      it('looks up each missing parent once per level, across every company', async () => {
+        seedFamilies();
+
+        await new OrgRoleGrantsService().resolveFamilyRoots(req, docsFor(['leaf', 'aunt', 'other-sub']));
+
+        expect(lookedUp().map((uids) => [...uids].sort())).toEqual([['mid', 'other', 'top']]);
+      });
+
+      it('asks nothing when no company on the page has a parent', async () => {
+        seedFamilies();
+
+        const roots = await new OrgRoleGrantsService().resolveFamilyRoots(req, docsFor(['top', 'solo']));
+
+        expect([...roots.keys()]).toEqual(['top']);
+        expect(proxyRequest).not.toHaveBeenCalled();
+      });
+
+      it('leaves out a company whose parent the index does not hold, rather than making the child the top', async () => {
+        seedFamilies([], { missingDocs: ['mid'] });
+
+        const roots = await new OrgRoleGrantsService().resolveFamilyRoots(req, docsFor(['leaf', 'aunt']));
+
+        expect([...roots.keys()]).toEqual(['aunt']);
+      });
+
+      it('leaves out a company whose climb reaches the cap', async () => {
+        const chain: Record<string, Doc> = {
+          'c-1': { name: 'C1', parent_uid: 'c-2' },
+          'c-2': { name: 'C2', parent_uid: 'c-3' },
+          'c-3': { name: 'C3', parent_uid: 'c-4' },
+          'c-4': { name: 'C4', parent_uid: 'c-5' },
+          'c-5': { name: 'C5', is_parent: true },
+        };
+        seedHierarchy({ grants: [], docs: chain });
+
+        const roots = await new OrgRoleGrantsService().resolveFamilyRoots(req, docsFor(['c-1', 'c-3'], chain));
+
+        expect(Object.fromEntries(roots)).toEqual({ 'c-3': { rootUid: 'c-5', rootName: 'C5', rootLogoUrl: null } });
+      });
+
+      it('names the smallest id in a parent cycle as the top account, as the staff family does', async () => {
+        const cycle: Record<string, Doc> = {
+          'cy-b': { name: 'Cycle B', parent_uid: 'cy-a' },
+          'cy-a': { name: 'Cycle A', parent_uid: 'cy-b' },
+        };
+        seedHierarchy({ grants: [], docs: cycle });
+
+        const roots = await new OrgRoleGrantsService().resolveFamilyRoots(req, docsFor(['cy-b'], cycle));
+
+        expect(roots.get('cy-b')?.rootUid).toBe('cy-a');
+      });
+
+      it('throws when a level cannot be looked up at all', async () => {
+        proxyRequest.mockRejectedValue(new Error('query-service down'));
+
+        await expect(new OrgRoleGrantsService().resolveFamilyRoots(req, docsFor(['leaf']))).rejects.toThrow();
+      });
+    });
   });
 });
 
