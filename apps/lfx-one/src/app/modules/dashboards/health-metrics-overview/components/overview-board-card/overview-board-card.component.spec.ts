@@ -108,6 +108,28 @@ describe('OverviewBoardCardComponent', () => {
     expect(query('overview-board-sort-attended')?.parentElement?.getAttribute('aria-sort')).toBe('none');
   });
 
+  it('sorts by company A to Z and by last attended newest first on their first click', async () => {
+    BOARD.members[0] = { ...BOARD.members[0], organization: 'Zeta Labs', lastAttendedDate: '2026-03-01' };
+    BOARD.members[2] = { ...BOARD.members[2], lastAttendedDate: '2026-05-01' };
+    try {
+      await render();
+
+      sortButton('overview-board-sort-company')?.click();
+      fixture.detectChanges();
+      expect(names()).toEqual(['Sam Roe', 'Alex Moe', 'Pat Doe']);
+      expect(query('overview-board-sort-company')?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
+
+      sortButton('overview-board-sort-last-attended')?.click();
+      fixture.detectChanges();
+      // Sam has never attended, so his empty date stays last.
+      expect(names()).toEqual(['Alex Moe', 'Pat Doe', 'Sam Roe']);
+      expect(query('overview-board-sort-last-attended')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+    } finally {
+      BOARD.members[0] = member('k1', 'Pat Doe', 3);
+      BOARD.members[2] = member('k3', 'Alex Moe', 1);
+    }
+  });
+
   it('returns to the lowest attendance first when the foundation changes', async () => {
     await render();
 

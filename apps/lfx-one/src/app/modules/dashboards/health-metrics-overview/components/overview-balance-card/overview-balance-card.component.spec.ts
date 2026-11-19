@@ -63,6 +63,29 @@ describe('OverviewBalanceCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="overview-balance-explore"]').getAttribute('href')).toContain('/members#risk');
   });
 
+  it('heads the first column Risk and opens on the largest amount, keeping the bar in risk order', async () => {
+    await render({ ...BALANCE, highRiskUsd: 10000, mediumRiskUsd: 22000 });
+    const rows = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[role="row"][data-testid^="overview-balance-"]')].map(
+        (row: Element) => row.getAttribute('data-testid') ?? ''
+      );
+    const header = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="overview-balance-sort-${key}"]`);
+
+    expect(header('risk').textContent?.trim()).toBe('Risk');
+    expect(header('risk').closest('[role="columnheader"]')?.querySelector('.sr-only')).toBeNull();
+    expect(header('amount').parentElement?.getAttribute('aria-sort')).toBe('descending');
+    expect(rows()).toEqual(['overview-balance-medium', 'overview-balance-high']);
+    expect([...fixture.nativeElement.querySelectorAll('[data-testid="overview-balance-bar"] span')].map((bar: Element) => bar.className)).toEqual([
+      expect.stringContaining('bg-'),
+      expect.stringContaining('bg-'),
+    ]);
+
+    (header('risk').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(rows()).toEqual(['overview-balance-high', 'overview-balance-medium']);
+    expect(header('risk').parentElement?.getAttribute('aria-sort')).toBe('ascending');
+  });
+
   it('reads as good news when nothing is overdue', async () => {
     await render({ ...BALANCE, outstandingUsd: 0 });
 

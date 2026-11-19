@@ -370,7 +370,15 @@ export interface HealthMetricsOverviewChurnTierView {
   rateWidthPct: number;
   lostLabel: string;
   valueLabel: string;
+  /** The tier's place in the view's rank, highest first, so a Tier sort follows the view rather than a client list. */
+  tierRank: number;
+  churnRatePct: number | null;
+  membershipsLost: number | null;
+  valueLostUsd: number | null;
 }
+
+/** The churn table's sortable columns. */
+export type HealthMetricsOverviewChurnSortKey = 'tier' | 'rate' | 'lost' | 'value';
 
 export interface HealthMetricsOverviewChurnView {
   isEmpty: boolean;
@@ -389,7 +397,12 @@ export interface HealthMetricsOverviewBalanceRowView {
   widthPct: number;
   membersLabel: string;
   amountLabel: string;
+  members: number | null;
+  amountUsd: number | null;
 }
+
+/** The balance table's sortable columns. */
+export type HealthMetricsOverviewBalanceSortKey = 'risk' | 'members' | 'amount';
 
 export interface HealthMetricsOverviewBalanceView {
   isEmpty: boolean;
@@ -456,7 +469,13 @@ export interface HealthMetricsOverviewEventRowView {
   isPast: boolean;
   registrations: HealthMetricsOverviewEventRegistrationsView;
   talks: HealthMetricsOverviewEventTalksView;
+  /** Raw counts for sorting; `null` is unmeasured. */
+  registrationsCount: number | null;
+  acceptedTalks: number | null;
 }
+
+/** The events table's sortable columns; the actions column does not sort. */
+export type HealthMetricsOverviewEventsSortKey = 'event' | 'registrations' | 'talks';
 
 /** The period's events, split into held and upcoming for the stacked bar. */
 export interface HealthMetricsOverviewEventsTotalView {
@@ -597,8 +616,8 @@ export interface HealthMetricsOverviewNewsletterView {
   mostEngaging: { name: string; rateLabel: string } | null;
 }
 
-/** The board table's sortable columns: the member's name and their attendance. */
-export type HealthMetricsOverviewBoardSortKey = 'name' | 'att';
+/** The board table's sortable columns: name, company, attendance and the last meeting attended. */
+export type HealthMetricsOverviewBoardSortKey = 'name' | 'org' | 'att' | 'last';
 
 export interface HealthMetricsOverviewBoardRowView {
   key: string;
@@ -615,6 +634,8 @@ export interface HealthMetricsOverviewBoardRowView {
   widthPct: number;
   barClass: string;
   lastAttendedLabel: string;
+  /** `YYYY-MM-DD`, for sorting; `null` when never attended. */
+  lastAttendedDate: string | null;
 }
 
 export interface HealthMetricsOverviewBoardView {

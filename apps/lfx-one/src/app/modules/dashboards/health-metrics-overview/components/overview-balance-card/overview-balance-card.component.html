@@ -30,11 +30,25 @@
 
     <div class="flex flex-col" role="table" aria-label="Outstanding balance by risk">
       <div class="grid grid-cols-[1fr_auto_auto] gap-[14px] border-b border-gray-200 pb-[6px] text-[12px] text-gray-500" role="row">
-        <span role="columnheader"><span class="sr-only">Risk</span></span>
-        <span class="text-right" role="columnheader">Members</span>
-        <span class="w-[96px] text-right" role="columnheader">Amount</span>
+        <span role="columnheader" [attr.aria-sort]="table.headers().risk.ariaSort">
+          <lfx-health-metrics-th label="Risk" [sort]="table.headers().risk.state" (sorted)="table.toggle('risk')" data-testid="overview-balance-sort-risk" />
+        </span>
+        <span class="text-right" role="columnheader" [attr.aria-sort]="table.headers().members.ariaSort">
+          <lfx-health-metrics-th
+            label="Members"
+            [sort]="table.headers().members.state"
+            (sorted)="table.toggle('members')"
+            data-testid="overview-balance-sort-members" />
+        </span>
+        <span class="w-[96px] text-right" role="columnheader" [attr.aria-sort]="table.headers().amount.ariaSort">
+          <lfx-health-metrics-th
+            label="Amount"
+            [sort]="table.headers().amount.state"
+            (sorted)="table.toggle('amount')"
+            data-testid="overview-balance-sort-amount" />
+        </span>
       </div>
-      @for (row of view.rows; track row.key) {
+      @for (row of rows(); track row.key) {
         <div
           class="grid grid-cols-[1fr_auto_auto] items-center gap-[14px] border-b border-gray-100 py-[9px] text-[13px]"
           role="row"
