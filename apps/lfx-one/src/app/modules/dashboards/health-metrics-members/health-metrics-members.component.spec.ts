@@ -31,15 +31,13 @@ class GrowthStubComponent {
 /** Stands in for Membership breakdown by tier, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-members-breakdown', template: '<div data-testid="members-breakdown-stub"></div>' })
 class BreakdownStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
-/** Stands in for the members directory; the test drives its count and settle. */
+/** Stands in for the members directory; the test drives its settle. */
 @Component({ selector: 'lfx-members-directory', template: '<div data-testid="members-directory-stub"></div>' })
 class DirectoryStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -66,10 +64,9 @@ class ChurnStubComponent {
   public readonly reading = output<void>();
 }
 
-/** Stands in for the renewals section; the test drives its count and settle. */
+/** Stands in for the renewals section; the test drives its settle. */
 @Component({ selector: 'lfx-members-renewals', template: '<div data-testid="members-renewals-stub"></div>' })
 class RenewalsStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -177,14 +174,14 @@ describe('HealthMetricsMembersComponent', () => {
     });
   });
 
-  it('lists every section in the sub-nav, with no badge and the Engagement note', async () => {
+  it('lists every section in the sub-nav, with no note before a read', async () => {
     await setup();
     const nav = fixture.nativeElement.querySelector('[data-testid="members-sub-nav"]');
 
     for (const section of HEALTH_METRICS_MEMBERS_SECTIONS) {
       expect(fixture.nativeElement.querySelector(`[data-testid="members-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
-    expect(nav.textContent).not.toMatch(/\d/);
+    expect(nav.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   function stub<T>(type: new (...args: never[]) => T): T {
@@ -258,45 +255,6 @@ describe('HealthMetricsMembersComponent', () => {
 
     expect(scrollIntoView).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-churn');
-  });
-
-  it("badges the breakdown with the selected year's members once it reports them", async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-breakdown"]').textContent;
-
-    stub(BreakdownStubComponent).countChange.emit(2630);
-    await flush();
-    expect(item()).toContain('2,630');
-
-    stub(BreakdownStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
-  });
-
-  it('badges All members with the directory count once it reports one', async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-list"]').textContent;
-
-    stub(DirectoryStubComponent).countChange.emit(725);
-    await flush();
-    expect(item()).toContain('725');
-
-    stub(DirectoryStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
-  });
-
-  it('badges Renewals with the renewals due once it reports them', async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-renewals"]').textContent;
-
-    stub(RenewalsStubComponent).countChange.emit(61);
-    await flush();
-    expect(item()).toContain('61');
-
-    stub(RenewalsStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
   });
 
   it('notes At-risk & balance with the at-risk summary once it reports one', async () => {

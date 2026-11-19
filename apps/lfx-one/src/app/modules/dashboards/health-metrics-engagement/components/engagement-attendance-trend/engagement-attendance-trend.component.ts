@@ -3,44 +3,49 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ChartComponent } from '@components/chart/chart.component';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED, HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE, lfxColors } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEngagementAttendanceTrendPoints, buildHealthMetricsEngagementAttendanceTrendSummary } from '@lfx-one/shared/utils';
+import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED } from '@lfx-one/shared/constants';
+import { buildHealthMetricsEngagementAttendanceTrendView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
+import { UiNoteComponent } from '@shared/uikit/note/note.component';
+import { Skeleton } from 'primeng/skeleton';
+import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
-import type { ChartData, ChartOptions } from 'chart.js';
+import { HealthMetricsLineChartComponent } from '../../../components/health-metrics-line-chart/health-metrics-line-chart.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
+import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
+
 import type {
   HealthMetricsEngagementAttendanceTrend,
-  HealthMetricsEngagementAttendanceTrendPointView,
   HealthMetricsEngagementAttendanceTrendQuery,
-  HealthMetricsEngagementAttendanceTrendSummaryView,
+  HealthMetricsEngagementAttendanceTrendView,
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#trend` — all-meeting attendance over the trailing twelve months, from the view's monthly grain.
- * It ignores the period pill: the window always ends with this month.
+ * `#trend` — all-meeting attendance by month for the selected year: January to the month in progress in year to
+ * date, else January to December. One read holds every month the view has; the period pill cuts it client-side.
  */
 @Component({
   selector: 'lfx-engagement-attendance-trend',
-  imports: [ChartComponent, EmptyStateComponent, SkeletonModule],
+  imports: [EmptyStateComponent, HealthMetricsLineChartComponent, HealthMetricsMetricsRowComponent, Skeleton, UiNoteComponent],
   templateUrl: './engagement-attendance-trend.component.html',
 })
 export class EngagementAttendanceTrendComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
-  public readonly settled = output<boolean>();
+  /**
+   * Fires once the section settles, `true` when the period has nothing to show, `null` when its card says why it cannot
+   * chart (January, a year the view lacks, too few rated months); its height changes, moving every anchor below.
+   */
+  public readonly settled = output<boolean | null>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
-  protected readonly minMeetings = HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE;
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a foundation without meetings, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
@@ -51,43 +56,16 @@ export class EngagementAttendanceTrendComponent {
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
   }));
   protected readonly response: Signal<HealthMetricsEngagementAttendanceTrend> = this.initResponse();
+  protected readonly view: Signal<HealthMetricsEngagementAttendanceTrendView> = computed(() => this.buildView(this.response()));
 
-  protected readonly points: Signal<HealthMetricsEngagementAttendanceTrendPointView[]> = computed(() =>
-    buildHealthMetricsEngagementAttendanceTrendPoints(this.response().months, this.today())
-  );
-  protected readonly summary: Signal<HealthMetricsEngagementAttendanceTrendSummaryView> = computed(() =>
-    buildHealthMetricsEngagementAttendanceTrendSummary(this.response().months, this.today())
-  );
-  /** No attendance was recorded in the window; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.summary().state === 'empty');
-  protected readonly chartData: Signal<ChartData<'line'>> = computed(() => this.buildChart(this.points()));
-  protected readonly chartLabel = computed(
-    () => `All-meeting attendance over the last ${this.points().length} months, oldest first. The following table lists the same values.`
-  );
-  protected readonly chartOptions: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        enabled: true,
-        callbacks: {
-          title: (items) => this.points()[items[0]?.dataIndex ?? -1]?.monthLabel ?? '',
-          label: (item) => this.tooltipLabel(item.dataIndex),
-        },
-      },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: lfxColors.gray[500], font: { size: 10 } } },
-      y: {
-        min: 0,
-        max: 100,
-        grid: { color: lfxColors.gray[200] },
-        border: { display: false },
-        ticks: { stepSize: 25, color: lfxColors.gray[500], font: { size: 10 }, callback: (value) => `${value}%` },
-      },
-    },
-  };
+  public constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      // The year is cut from the loaded months, so a pill change re-settles off the same response.
+      toObservable(this.chrome.selectedRange)
+        .pipe(skip(1), takeUntilDestroyed())
+        .subscribe(() => this.onRangeChange());
+    }
+  }
 
   private initResponse(): Signal<HealthMetricsEngagementAttendanceTrend> {
     if (!isPlatformBrowser(this.platformId)) {
@@ -119,13 +97,13 @@ export class EngagementAttendanceTrendComponent {
               return of(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
             }),
             tap((response) => {
-              // The response's window rolls with the run date, so the in-progress month is judged now.
+              // The month in progress is judged as of this read.
               this.today.set(new Date());
               this.loading.set(!foundationSeen);
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
               if (foundationSeen) {
-                this.settled.emit(!this.loadFailed() && buildHealthMetricsEngagementAttendanceTrendSummary(response.months, this.today()).state === 'empty');
+                this.settled.emit(this.loadFailed() ? false : this.verdict(this.buildView(response)));
               }
             })
           )
@@ -135,30 +113,24 @@ export class EngagementAttendanceTrendComponent {
     );
   }
 
-  /** One blue line that gaps on unrated months; the month in progress is dashed and hollow. */
-  private buildChart(points: HealthMetricsEngagementAttendanceTrendPointView[]): ChartData<'line'> {
-    const line = lfxColors.blue[500];
-    return {
-      labels: points.map((point) => point.label),
-      datasets: [
-        {
-          label: 'Attendance',
-          data: points.map((point) => point.rate),
-          borderColor: line,
-          borderWidth: 2.5,
-          pointBorderColor: line,
-          pointBorderWidth: 2,
-          pointBackgroundColor: points.map((point) => (point.isInProgress ? lfxColors.white : line)),
-          pointRadius: 3.5,
-          spanGaps: false,
-          segment: { borderDash: (context) => (points[context.p1DataIndex]?.isInProgress ? [4, 3] : undefined) },
-        },
-      ],
-    };
+  private buildView(response: HealthMetricsEngagementAttendanceTrend): HealthMetricsEngagementAttendanceTrendView {
+    const range = this.chrome.selectedRange();
+    // Year to date on the same UTC clock that judges the month in progress; a past year is its pill's own.
+    const year = range === 'YTD' ? this.today().getUTCFullYear() : (this.chrome.periods.find((period) => period.range === range)?.year ?? 0);
+    return buildHealthMetricsEngagementAttendanceTrendView(response.months, range, year, this.today());
   }
 
-  private tooltipLabel(index: number): string {
-    const point = this.points()[index];
-    return point ? `Attendance ${point.rateLabel} · ${point.meetingsLabel}` : '';
+  /** Re-settles the re-cut year; a failed or unread scope has nothing to re-settle. */
+  private onRangeChange(): void {
+    // A read in flight still holds the previous foundation's payload, and its own settle is still to come.
+    if (this.loadFailed() || this.loading()) return;
+
+    this.settled.emit(this.verdict(this.view()));
+  }
+
+  /** Empty only with nothing recorded; a card that says why it cannot chart yet gives the shell no verdict. */
+  private verdict(view: HealthMetricsEngagementAttendanceTrendView): boolean | null {
+    if (view.state === 'january' || view.state === 'unavailable' || view.state === 'insufficient') return null;
+    return view.state === 'empty';
   }
 }

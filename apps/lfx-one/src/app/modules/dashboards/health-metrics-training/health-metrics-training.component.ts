@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, signal } from '@angular/core';
+import { Component } from '@angular/core';
 import {
   HEALTH_METRICS_TRAINING_BLANK,
   HEALTH_METRICS_TRAINING_DATA_SECTIONS,
@@ -31,7 +31,5 @@ export class HealthMetricsTrainingComponent {
   protected readonly idPrefix = HEALTH_METRICS_TRAINING_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_TRAINING_DATA_SECTIONS;
   protected readonly blank = HEALTH_METRICS_TRAINING_BLANK;
-  /** Courses ever enrolled in, for the sub-nav badge; `null` until the section reports one. */
-  protected readonly coursesCount = signal<number | null>(null);
-  protected readonly subNavItems = computed<HealthMetricsTrainingSubNavItem[]>(() => buildHealthMetricsTrainingSubNavItems({ courses: this.coursesCount() }));
+  protected readonly subNavItems: HealthMetricsTrainingSubNavItem[] = buildHealthMetricsTrainingSubNavItems();
 }

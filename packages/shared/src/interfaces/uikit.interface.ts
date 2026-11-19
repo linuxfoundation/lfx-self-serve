@@ -15,6 +15,8 @@ export interface UiTabItem {
   countLabel?: string;
   /** Font Awesome class string for an icon before the label, 14px (13px in small default tabs), for example `fa-brands fa-github`. */
   icon?: string;
+  /** Colour role of a 7px dot before the label, such as a group type's colour. Also shown in the collapsed select. */
+  dotTone?: UiTone;
   /** Greys the tab out and blocks selection. Arrow keys, Home and End still move focus onto it so its reason tooltip opens; it stays out of the initial tab stop. */
   disabled?: boolean;
   /** Tooltip explaining why a disabled tab is unavailable. Shown on hover; ignored while the tab is enabled. */
@@ -70,6 +72,28 @@ export interface UiAvatarItem {
   src?: string;
   /** Colour role that tints the initials circle, to tell people apart in dense lists. */
   tone?: UiAvatarTone;
+}
+
+/** Shape of a uikit avatar: `circle` for people, `rounded` for entities, `logo` for the bordered company logo box. */
+export type UiAvatarShape = 'circle' | 'rounded' | 'logo';
+
+/** Weight of a uikit avatar's initials. */
+export type UiAvatarInitialsWeight = 'medium' | 'semibold';
+
+/** One numbered page button of a uikit pagination. */
+export interface UiPaginationPage {
+  /** Zero-based page index. */
+  index: number;
+  /** The one-based number shown on the button. */
+  label: string;
+  /** Accessible name, such as `Page 3`. */
+  ariaLabel: string;
+  /** A round button for up to three digits; a pill for longer page numbers. */
+  round: boolean;
+  /** Secondary for the current page, tertiary for the others. */
+  variant: UiButtonVariant;
+  /** `page` on the current page, for `aria-current`. */
+  ariaCurrent: 'page' | null;
 }
 
 /** A status pinned to the top right of a uikit avatar, such as an RSVP answer or attendance. */

@@ -490,6 +490,13 @@
   </div>
 }
 
+<!--
+  The review step's saved-brief live region, mounted for the whole tab and empty until the review
+  step (#5551). A live region created already holding its text is often not read out, and the offer is
+  usually found before Generate, so it must exist first and then have its contents change.
+-->
+<div role="status" aria-live="polite" class="sr-only" data-testid="planning-review-saved-brief-live">{{ reviewSavedBriefAnnouncement() }}</div>
+
 <!-- Review Step -->
 @if (step() === 'review') {
   <div class="flex flex-col gap-4" data-testid="planning-review-step">
@@ -588,12 +595,8 @@
       save is keyed on. The input step's banner is gone with that step, so its actions are offered here
       too. Only when the offer is stored under the generated slug and is not this session's own
       (`savedBriefBlocksSave`) does it say the generated brief can't be saved over it; no other offer stops
-      the save.
-      The live region stays outside the @if, as on the input step, so a brief found here is announced.
+      the save. Its live region sits above this step's @if: see there.
     -->
-    <div role="status" aria-live="polite" class="sr-only" data-testid="planning-review-saved-brief-live">
-      {{ editingExistingBrief() ? '' : savedBriefAnnouncement() }}
-    </div>
     @if (!editingExistingBrief() && savedBrief(); as saved) {
       <div class="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2" data-testid="planning-review-saved-brief">
         <i class="fa-light fa-rotate-left mt-0.5 text-blue-600" aria-hidden="true"></i>

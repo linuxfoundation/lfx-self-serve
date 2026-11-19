@@ -4,7 +4,7 @@ description: Browse and manage project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, files, governance, project]
-last_updated: 2026-11-09
+last_updated: 2026-11-11
 intercom_collection: Documents
 ---
 
@@ -18,7 +18,7 @@ The Documents section lets you browse and manage documents associated with your 
 - Filter documents by source and search by name, group, or meeting
 - Open folders and move between them with the breadcrumb
 - Download files, open links, play meeting recordings, and preview meeting summaries
-- With write access, upload files, create folders, and add links
+- With write access, upload files, create folders, add links, and delete a project's own files, links, and empty folders, and a group's own files and links
 
 ## Navigation
 
@@ -28,7 +28,7 @@ Use the tabs above the list to narrow it by source: **All**, **Project**, **Grou
 
 In the **Group / Meeting** column, select a name to open its details page: a group's name opens the group, a mailing list's name opens the list, and the title of a recording, transcript, or summary opens that past meeting's details. Names that are only the project's own name, such as on project files and meeting attachments, are plain text. On a group's own **Documents** tab, that group's name is plain text.
 
-The Documents section is available only in the project and foundation lenses. The old Me-lens **My Documents** page has been removed, and an old `/documents` link opens Documents for your active project or foundation. If you are in the Me or Organization lens, it opens that lens's home page instead.
+The Documents section is available only in the project and foundation lenses. The old Me-lens **My Documents** page has been removed, and an old `/documents` link opens Documents for your active project or foundation. If you are in the Me or Company lens, it opens that lens's home page instead.
 
 ## Where documents come from
 

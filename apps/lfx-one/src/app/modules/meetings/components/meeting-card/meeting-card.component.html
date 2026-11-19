@@ -139,6 +139,15 @@
       }
     </div>
 
+    <!-- Owning project, when the meeting rolls up from a sub-project -->
+    @if (subProjectName(); as projectName) {
+      <div class="flex items-start gap-1.5 mb-2 min-w-0 text-xs text-gray-600" data-testid="meeting-project">
+        <i class="fa-light fa-folder-tree text-gray-400 shrink-0 mt-0.5" aria-hidden="true"></i>
+        <span class="sr-only">Project:</span>
+        <span class="min-w-0 break-words" data-testid="meeting-project-name">{{ projectName }}</span>
+      </div>
+    }
+
     <!-- Associated Group(s) -->
     @if (groupLinks().length > 0) {
       <div class="flex items-start gap-1.5 mb-2 min-w-0 text-xs text-gray-600" data-testid="meeting-groups">
@@ -539,7 +548,7 @@
                 severity="secondary"
                 data-testid="resend-invite-button"
                 [loading]="resendingInvite()"
-                (onClick)="resendInvite()">
+                (onClick)="confirmResendInvite()">
               </lfx-button>
             }
             @if (canLeaveMeeting()) {
@@ -600,6 +609,8 @@
           [occurrence]="occurrence()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
+          (selfAdded)="onSelfAdded($event.meeting_id)"
+          (selfRemoved)="onSelfRemoved($event)"
           (resolvedHostsChange)="drawerHosts.set($event)">
         </lfx-meeting-registrants-display>
       </p-drawer>

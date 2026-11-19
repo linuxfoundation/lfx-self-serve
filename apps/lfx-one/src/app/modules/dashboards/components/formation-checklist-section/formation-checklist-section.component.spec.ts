@@ -128,6 +128,10 @@ describe('FormationChecklistSectionComponent', () => {
     response: FormationChecklistResponse,
     options: {
       projectSlug?: string;
+      /** Sets the `heading` input; omitted keeps the component default. */
+      heading?: string;
+      /** Sets the `stage` input (the detail page passes its project's stage). */
+      stage?: string;
       /** Overrides what the checklist read returns — e.g. a `throwError` for the failure branch. */
       fetchResult?: Observable<FormationChecklistResponse>;
       /** `null` leaves the component with no slug at all (neither input nor context). */
@@ -165,6 +169,12 @@ describe('FormationChecklistSectionComponent', () => {
     fixture = TestBed.createComponent(FormationChecklistSectionComponent);
     if (options.projectSlug !== undefined) {
       fixture.componentRef.setInput('projectSlug', options.projectSlug);
+    }
+    if (options.stage !== undefined) {
+      fixture.componentRef.setInput('stage', options.stage);
+    }
+    if (options.heading !== undefined) {
+      fixture.componentRef.setInput('heading', options.heading);
     }
     if (options.onResponseLoaded) {
       fixture.componentInstance.responseLoaded.subscribe(options.onResponseLoaded);
@@ -404,6 +414,21 @@ describe('FormationChecklistSectionComponent', () => {
       });
     }
 
+    // #5635 follow-up: Disengaged already is a formation stage, so "items start when the project moves into a formation stage" would be wrong for it.
+    it('explains a disengaged project with nothing to track, and keeps the existing copy for Draft and when no stage is given', async () => {
+      const copy = (): string | undefined => byTestId('formation-checklist-empty-no-checklist')?.textContent ?? undefined;
+
+      await render(buildResponse('live', 'live'), { projectSlug: 'other-project', fetchResult: failWith(404), stage: 'Formation - Disengaged' });
+      expect(copy()).toContain('This project is disengaged.');
+      expect(copy()).not.toContain('start when the project moves');
+
+      await render(buildResponse('live', 'live'), { projectSlug: 'other-project', fetchResult: failWith(404), stage: 'Prospect' });
+      expect(copy()).toContain('Formation items start when the project moves into a formation stage.');
+
+      await render(buildResponse('live', 'live'), { fetchResult: failWith(404) });
+      expect(copy()).toContain('Formation items start when the project moves into a formation stage.');
+    });
+
     it('keeps the retryable error state for a 500', async () => {
       await render(buildResponse('live', 'live'), { fetchResult: failWith(500) });
 
@@ -580,6 +605,37 @@ describe('FormationChecklistSectionComponent', () => {
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
       expect(replaceStateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // #5635: the heading is an input (default unchanged for /project/formation) and the shared state
+  // copy is neutral, so the foundation drill-down never shows "checklist" wording.
+  describe('heading and neutral copy (#5635)', () => {
+    const headingText = (): string | undefined => fixture.nativeElement.querySelector('h2')?.textContent?.trim();
+
+    it('defaults the heading to "Formation Checklist" (the /project/formation host)', async () => {
+      await render(buildResponse('live', 'live'));
+
+      expect(headingText()).toBe('Formation Checklist');
+    });
+
+    it('renders the heading passed by the host', async () => {
+      await render(buildResponse('live', 'live'), { heading: 'Formation items' });
+
+      expect(headingText()).toBe('Formation items');
+    });
+
+    const states: [string, FormationChecklistResponse | null, Observable<FormationChecklistResponse> | undefined][] = [
+      ['error', null, throwError(() => new HttpErrorResponse({ status: 500, statusText: 'x' }))],
+      ['no-checklist', null, throwError(() => new HttpErrorResponse({ status: 404, statusText: 'x' }))],
+      ['no-template', { ...buildResponse('live', 'live'), template: null }, undefined],
+      ['no-items', { ...buildResponse('live', 'live'), items: [] }, undefined],
+    ];
+
+    it.each(states)('renders no "checklist" wording in the %s state when the host passes a neutral heading', async (_state, response, fetchResult) => {
+      await render(response ?? buildResponse('live', 'live'), { heading: 'Formation items', fetchResult });
+
+      expect(fixture.nativeElement.textContent).not.toMatch(/checklist/i);
     });
   });
 });

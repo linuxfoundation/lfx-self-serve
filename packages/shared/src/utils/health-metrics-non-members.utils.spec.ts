@@ -58,17 +58,11 @@ const PERSON: HealthMetricsNonMembersPerson = {
 };
 
 describe('buildHealthMetricsNonMembersSubNavItems', () => {
-  it('lists every section in render order, with its label', () => {
+  it('lists every section in render order, with its label and no note', () => {
     const items = buildHealthMetricsNonMembersSubNavItems();
 
     expect(items.map((item) => item.key)).toEqual(HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => section.key));
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => section.label));
-  });
-
-  it('badges only the sections given a count', () => {
-    const items = buildHealthMetricsNonMembersSubNavItems({ orgs: 412 });
-
-    expect(items.map((item) => item.count)).toEqual([412, null, null]);
     expect(items.every((item) => item.note === '')).toBe(true);
   });
 });
@@ -118,15 +112,15 @@ describe('buildHealthMetricsNonMembersOrgRows', () => {
 
 describe('buildHealthMetricsNonMembersOrgsSummary', () => {
   it('counts the organizations and the new ones', () => {
-    expect(buildHealthMetricsNonMembersOrgsSummary(1412, 37)).toBe('1,412 organizations · 37 new this period');
-    expect(buildHealthMetricsNonMembersOrgsSummary(1, 0)).toBe('1 organization · 0 new this period');
+    expect(buildHealthMetricsNonMembersOrgsSummary(1412, 37)).toBe('1,412 companies · 37 new this period');
+    expect(buildHealthMetricsNonMembersOrgsSummary(1, 0)).toBe('1 company · 0 new this period');
   });
 });
 
 describe('buildHealthMetricsNonMembersOrgsLowConfidence', () => {
   it('flags fewer than five active organizations, singular for one', () => {
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(4)).toBe('Only 4 active organizations — too early to rank by fit.');
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(1)).toBe('Only 1 active organization — too early to rank by fit.');
+    expect(buildHealthMetricsNonMembersOrgsLowConfidence(4)).toBe('Only 4 active companies — too early to rank by fit.');
+    expect(buildHealthMetricsNonMembersOrgsLowConfidence(1)).toBe('Only 1 active company — too early to rank by fit.');
   });
 
   it('stays quiet at the threshold and above, and with no active organization', () => {
@@ -175,23 +169,18 @@ describe('buildHealthMetricsNonMembersPeopleCountLabel', () => {
 });
 
 describe('buildHealthMetricsNonMembersConversionView', () => {
-  it('qualifies the estimate, counts the side stats and names the tier in the footnote', () => {
+  it('qualifies the estimate and counts the side stats', () => {
     const view = buildHealthMetricsNonMembersConversionView(CONVERSION);
 
     expect(view).toMatchObject({
       measured: true,
-      summary: '412 organizations tracked',
+      summary: '412 companies tracked',
       pipelineValue: '$50K',
       pipelineLabel: 'Estimated pipeline',
       hasEstimate: true,
     });
-    expect(view.footnote).toEqual([
-      { text: 'Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only. The ' },
-      { text: 'fit score', bold: true },
-      { text: ' is a model change, sequenced after the matching fix.' },
-    ]);
     expect(view.side).toEqual([
-      { key: 'high-fit', label: 'High-fit organizations', value: '2' },
+      { key: 'high-fit', label: 'High-fit companies', value: '2' },
       { key: 'new', label: 'New this period', value: '37' },
     ]);
   });
@@ -209,11 +198,6 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
     expect(view.pipelineValue).toBe('—');
     expect(view.pipelineLabel).toBe('Estimated pipeline · not enough data');
     expect(view.hasEstimate).toBe(false);
-    expect(view.footnote).toEqual([
-      { text: 'Estimated pipeline multiplies high-fit organizations by an entry-tier fee and is indicative only. The ' },
-      { text: 'fit score', bold: true },
-      { text: ' is a model change, sequenced after the matching fix.' },
-    ]);
   });
 
   it('renders a NULL count as not available but keeps a real zero', () => {
@@ -225,7 +209,7 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
       warmest: [{ accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: null, contributions: null }],
     });
 
-    expect(view.summary).toBe('Organizations tracked not available');
+    expect(view.summary).toBe('Companies tracked not available');
     expect(view.side.map((stat) => stat.value)).toEqual(['0', 'not available']);
     expect(view.warmest).toEqual([{ accountId: '0014100000AcmeAAAA', label: 'Acme Motors · not available', valueLabel: 'not available' }]);
   });

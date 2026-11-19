@@ -49,6 +49,7 @@ describe('ProgramDetailComponent', () => {
     },
     tabCounts: { currentMentees: 2, pastMentees: null, mentors: 0, terms: 1 },
     terms: [{ id: 'trm_fall26', name: 'Fall 2026', status: 'open' }],
+    submitter: { name: 'Jane Doe', email: 'jane.doe@example.org', avatarUrl: null },
   });
 
   const menteesPage = (): MentorshipAdminMenteesResponse => ({

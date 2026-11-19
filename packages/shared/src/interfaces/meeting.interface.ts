@@ -315,13 +315,11 @@ export interface Meeting {
    * Share the guest list with guests in LFX. Calendar invites never list other guests, whatever
    * this is set to — each guest's invite names only the recipient. Board meetings can never
    * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
-   * write. A restricted meeting keeps any explicit `true` the BFF receives from a caller allowed to
-   * edit it — in practice only the meeting v2 composer (`allowRestricted`) sends one, since the pre-v2
-   * wizard locks the control off — and any other write is forced off. In LFX it also decides whether an invitee who is not an organizer can see
-   * the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]` to them when it is
-   * off — and always for Board and restricted meetings, whose lists stay hidden in LFX even when a
-   * restricted meeting opted in, so that opt-in currently has no effect a guest can see — and the meeting card and
-   * meeting page hide their guest lists to match.
+   * write. A restricted (invite-only) meeting can opt in like any other (#5438), and a write that omits
+   * the field keeps the stored value. In LFX it also decides whether an invitee who is not an
+   * organizer can see the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]`
+   * to them when it is off, and always for Board meetings, whatever they store; the meeting card,
+   * meeting page and details drawer hide their guest lists to match.
    * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
    * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
    * them instead, so meetings already held keep their attendance (#2827).
@@ -718,6 +716,15 @@ export interface MeetingRegistrationRemovalResult {
   remaining_rsvps?: MeetingRsvp[];
 }
 
+/** A confirmed organizer-side self-row delete, reconciled against the drawer's complete roster. */
+export interface MeetingSelfRegistrationRemovalEvent {
+  meeting_id: string;
+  /** IDs successfully deleted through the organizer's guest drawer. */
+  removed_registrant_ids: string[];
+  /** Other matching registrations in the complete roster; these were not necessarily deletion attempts. */
+  remaining_registrant_ids: string[];
+}
+
 /**
  * Registrants matched by the signed-in user's other verified emails.
  */
@@ -869,6 +876,34 @@ export interface MeetingRegistrantWithState extends MeetingRegistrant {
   tempId?: string;
   /** RSVP response status for this registrant */
   rsvpStatus?: RsvpResponse;
+  /** Added through "Add myself"; the only guest whose LFID and avatar go on the create body */
+  selfAdded?: boolean;
+}
+
+/**
+ * The signed-in user as a meeting guest, for the guest editors' "Add myself" action
+ * @description Built by `buildMeetingSelfGuest` from the session claims, the combined profile, the
+ * meeting-invite email preference and the current employer. `email` is the address the invite goes
+ * to; `matchEmails` holds the addresses those lookups returned, which `isMeetingSelfGuestListed`
+ * checks together with `username` to hide the action once the user is on the list.
+ */
+export interface MeetingSelfGuest {
+  /** Invite address: the meeting-invite preference, else the profile's primary email, else the session email */
+  email: string;
+  /** First name, or `''` when no source has one */
+  first_name: string;
+  /** Last name, or `''` when no source has one */
+  last_name: string;
+  /** Job title from the profile metadata */
+  job_title: string | null;
+  /** Current employer, else the profile's organization */
+  org_name: string | null;
+  /** LFID */
+  username: string | null;
+  /** Avatar URL */
+  avatar_url: string | null;
+  /** The user's emails the lookups returned (invite, primary, session), lower-cased and de-duplicated */
+  matchEmails: string[];
 }
 
 /**
@@ -1566,8 +1601,7 @@ export interface MeetingDeleteTypeResult {
   deleteType: MeetingDeleteType;
   /**
    * The occurrence picked in the dialog's picker.
-   * @description Set for `'occurrence'` while `meeting-v2-enabled` is on. The pre-v2 dialog has no picker and
-   * omits it, so the caller cancels the occurrence it opened the dialog on — never assume it is populated.
+   * @description Set for `'occurrence'`; omitted for `'series'`.
    */
   occurrenceId?: string;
 }
@@ -2047,6 +2081,16 @@ export interface PublicMeetingResponse {
   can_join: boolean;
 }
 
+/** What the redesigned `/meetings/:id` page shows: a state of its own, the details, or a hand-off to the legacy page. */
+export type MeetingPageView = 'loading' | 'error' | 'details' | 'fallback';
+
+/** Which `/meetings/:id` page the server rendered, handed to the browser so hydration picks the same one. */
+export interface MeetingPageRedesignDecision {
+  /** The `:id` route param the decision was made for. */
+  id: string;
+  enabled: boolean;
+}
+
 /**
  * SSR-serialized state for the meeting join page (GH-2041), following the same TransferState
  * pattern as {@link PublicProfilePageState}: seeds the client's first paint from the server's
@@ -2056,9 +2100,10 @@ export interface PublicMeetingResponse {
  * are carried alongside `meeting` because `MeetingJoinComponent.initializeMeeting()` sets them as
  * side effects of the same fetch — seeding the meeting alone would lose the past-meeting/full-access
  * branch on hydration.
- * `meeting` is `null` and `meetingLoadFailed` is `true` for the terminal, non-navigating error
- * branch (a 5xx/network failure) — without seeding that branch too, the client would hydrate
- * `meetingLoadFailed` back to `false` and tear down the SSR-rendered error view.
+ * `meeting` is `null` and `meetingLoadFailed` is `true` when the server's fetch failed without a
+ * not-found redirect (a 5xx/network failure). The server renders the loading skeleton rather than an
+ * error, and the client hydrates to that same skeleton while its own fetch retries; the error view
+ * appears only if the client's attempts fail too (#5907).
  */
 export interface MeetingJoinPageState {
   meeting: (Meeting & { project: PublicMeetingProject }) | null;
@@ -2356,8 +2401,8 @@ export interface MeetingComposerEditScope {
 export interface ShowMeetingAttendeesLockOptions {
   /**
    * Let restricted (invite-only) meetings opt in — only board meetings lock.
-   * @description Meeting v2 composer only (`meeting-v2-enabled`). Everything else — the pre-v2 wizard and
-   * every read of a stored meeting — keeps the default rule, so existing meetings are unaffected.
+   * @description Meeting composer only. Every read of a stored meeting keeps the default rule, so
+   * existing meetings are unaffected.
    */
   allowRestricted?: boolean;
 }
@@ -2441,3 +2486,75 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/**
+ * Options for a project-scoped meetings query.
+ * @description With `includeSubProjects`, a foundation or parent project's meetings also include
+ * those of every project beneath it (GH-5566); the server resolves the tree under the caller's own
+ * access. Off by default, so callers that need one project's meetings only are unaffected.
+ * `pageSize` asks for larger pages, for feeds that walk every page (the dashboard calendar and stat
+ * tiles), so a rolled-up foundation does not hit their page cap.
+ */
+export interface MeetingProjectQueryOptions {
+  includeSubProjects?: boolean;
+  pageSize?: number;
+  /** With `includeSubProjects`: limit the roll-up to these project UIDs (each must be in the tree). */
+  projectUids?: string[];
+  /** With `includeSubProjects` and no `projectUids`: only the root's own meetings, the dashboard's default view. */
+  rootOnly?: boolean;
+  /** With `includeSubProjects`: only meetings of this group (committee UID). */
+  committeeUid?: string | null;
+  /** With `includeSubProjects`: only meetings of groups with this category. */
+  groupType?: string | null;
+}
+
+/**
+ * Filters a roll-up meetings query narrows its project tree by (GH-5566).
+ * @description Parsed server-side from `project_uids`, `committee_uid` and `group_type`; all combine.
+ */
+export interface MeetingRollupFilters {
+  projectUids?: string[];
+  committeeUid?: string;
+  groupType?: string;
+}
+
+/** A project offered by the roll-up Project filter. */
+export interface MeetingRollupProjectOption {
+  uid: string;
+  name: string;
+  slug: string;
+}
+
+/** A group offered by the roll-up Group filter; `category` also feeds the Group type filter. */
+export interface MeetingRollupGroupOption {
+  uid: string;
+  name: string;
+  category: string | null;
+  project_uid: string;
+}
+
+/** Options for the roll-up filters of a foundation or parent project's meetings list. */
+export interface MeetingRollupFilterOptions {
+  projects: MeetingRollupProjectOption[];
+  groups: MeetingRollupGroupOption[];
+  /**
+   * Whether `projects` lists the whole tree: the walk missed no branch and every resolved project's details
+   * loaded. Only then does checking every listed project mean "all projects"; otherwise it stays a subset.
+   */
+  complete: boolean;
+}
+
+/**
+ * A user's saved project selection for one roll-up root (GH-5566).
+ * @description `null` when nothing is saved, so the page shows only the root's own meetings; an empty
+ * list is a saved choice of all projects.
+ */
+export interface MeetingRollupProjectsPreference {
+  project_uids: string[] | null;
+}
+
+/** Saves a user's project selection for one roll-up root; an empty list records all projects. */
+export interface MeetingRollupProjectsPreferenceRequest {
+  root_project_uid: string;
+  project_uids: string[];
+}

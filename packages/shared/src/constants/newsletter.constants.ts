@@ -146,3 +146,9 @@ export const NEWSLETTER_DATE_TIME_ZONE = 'America/Los_Angeles';
 // as the email approaches that limit and shows the limit once it is reached.
 export const NEWSLETTER_GMAIL_WARN_BYTES = 90 * 1024;
 export const NEWSLETTER_BODY_HTML_MAX_BYTES = 100_000;
+
+/** How often the manage page checks a processing audience snapshot (#4352). */
+export const NEWSLETTER_AUDIENCE_POLL_MS = 2000;
+
+/** How many status checks the manage page makes before it reports a slow audience: 300 x 2s is 10 minutes. */
+export const NEWSLETTER_AUDIENCE_POLL_MAX = 300;

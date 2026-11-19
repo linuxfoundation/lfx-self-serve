@@ -7,7 +7,7 @@ import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
-const PEOPLE_BOARD_URL = '/org/people?tab=board';
+const PEOPLE_BOARD_URL = '/company/people?tab=board';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
@@ -403,7 +403,7 @@ test.describe('Org People → Board tab', () => {
     await openDrawer();
     await expect(page.getByTestId('person-detail-drawer-email-0')).toHaveText(JORDAN_COMPANY_EMAIL);
 
-    // 2. Resolved EMPTY → "No … email on file"; only this state may make that claim.
+    // 2. Resolved EMPTY → "No verified company email associated with this LF profile"; only this state may make that claim.
     await stubCompanyEmails((route) => route.fulfill({ status: 200, contentType: 'application/json', body: resolved([]) }));
     await openDrawer();
     await expect(page.getByTestId('person-detail-drawer-email-none')).toBeVisible();

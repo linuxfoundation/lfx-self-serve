@@ -21,6 +21,8 @@ const meta: Meta<UiAvatarComponent> = {
     size: 32,
     tone: 'neutral',
     shape: 'circle',
+    initialsSize: null,
+    initialsWeight: 'medium',
     placeholder: false,
     decorative: false,
     stacked: false,
@@ -59,6 +61,10 @@ export const Tints: Story = {
 export const GitProvider: Story = { args: { name: 'octocat', badgeIcon: 'fa-brands fa-github', size: 48 } };
 export const Status: Story = { args: { status: { icon: 'fa-solid fa-check', tone: 'accent', label: 'RSVP: Yes' } } };
 export const Entity: Story = { args: { name: 'CNCF', icon: 'fa-light fa-cube', shape: 'rounded' } };
+/** Company logo box beside a company name in a table: the image is contained; without one, the first letter. */
+export const Logo: Story = { args: { name: 'Acme Motors', shape: 'logo', size: 24, decorative: true } };
+/** The 32px person avatar of a dense table: 11px semibold initials. */
+export const TablePerson: Story = { args: { initialsSize: 11, initialsWeight: 'semibold', decorative: true } };
 export const Placeholder: Story = { args: { placeholder: true } };
 export const Decorative: Story = { args: { decorative: true } };
 export const BlankName: Story = { args: { name: '' } };

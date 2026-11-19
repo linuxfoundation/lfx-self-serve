@@ -795,6 +795,15 @@ export class CommitteeMembersComponent implements OnInit {
       data,
     });
     dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MemberImportDialogResult | undefined) => {
+      // Confirm additions even if the page moved to another group; the toast names the imported group.
+      if (result && result.added > 0) {
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Members Added',
+          detail: `${result.added} ${result.added === 1 ? 'member' : 'members'} added to ${data.committee.name}. New members may take a moment to appear.`,
+          life: 6000,
+        });
+      }
       if (!result || this.committee()?.uid !== committeeUid) {
         return;
       }
@@ -1097,7 +1106,7 @@ export class CommitteeMembersComponent implements OnInit {
         }
       });
 
-      const options: { label: string; value: string | null }[] = [{ label: 'All Organizations', value: null }];
+      const options: { label: string; value: string | null }[] = [{ label: 'All Companies', value: null }];
       Array.from(orgSet)
         .sort()
         .forEach((org) => {

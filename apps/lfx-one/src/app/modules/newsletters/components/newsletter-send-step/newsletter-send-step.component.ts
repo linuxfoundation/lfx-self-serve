@@ -44,6 +44,8 @@ export class NewsletterSendStepComponent {
   public readonly edReplyEmail = input<string>('');
   public readonly edEmail = input<string>('');
   public readonly canSend = input<boolean>(false);
+  // The draft's recipient list is still being prepared, so Send and Schedule are waiting (#4352).
+  public readonly audiencePreparing = input<boolean>(false);
   public readonly liveSendLocked = input<boolean>(false);
   public readonly sending = input<boolean>(false);
   public readonly canSendTest = input<boolean>(false);

@@ -159,7 +159,7 @@ export const PROJECT_APPLICATION_FIELD_LABELS: Record<string, string> = {
   project_repository_url: 'Repository location',
   project_website: 'Website',
   trademark_status: 'Is the name or logo a registered trademark?',
-  contributing_organization: 'Assigning organization',
+  contributing_organization: 'Assigning company',
   legal_contact_email: 'Legal contact',
   formation_list: 'Additional formation contact emails',
   license: 'Code license',
@@ -176,7 +176,7 @@ export const PROJECT_APPLICATION_FIELD_LABELS: Record<string, string> = {
 /** Detail-view grouping — mirrors the intake form's section cards. */
 export const PROJECT_APPLICATION_SECTIONS: ProjectApplicationSectionConfig[] = [
   { title: 'Project', keys: ['project_name', 'project_repository_url', 'project_website', 'trademark_status'] },
-  { title: 'Contributing organization', keys: ['contributing_organization', 'legal_contact_email', 'formation_list'] },
+  { title: 'Contributing company', keys: ['contributing_organization', 'legal_contact_email', 'formation_list'] },
   { title: 'Governance and licensing', keys: ['license', 'chat_platform', 'mission_statement', 'agreement_type', 'is_spec_project'] },
   { title: 'About the project', keys: ['description'] },
 ];
@@ -273,7 +273,7 @@ export const MY_FORMATIONS_PAGE_TAB_OPTIONS: FilterPillOption[] = [
   { id: PROJECT_APPLICATION_TABS.proposals, label: 'Submitted proposals' },
 ];
 
-/** Page-level tabs on the foundation Formations queue (The Linux Foundation + formation team only). */
+/** Page-level tabs on the foundation Formations queue (The Linux Foundation only). Pipeline shows to the formation team and LF staff; Project proposals only to the formation team. */
 export const FORMATIONS_QUEUE_PAGE_TAB_OPTIONS: FilterPillOption[] = [
   { id: FORMATION_PIPELINE_TAB_ID, label: 'Pipeline' },
   { id: PROJECT_APPLICATION_TABS.formations, label: 'Formations' },

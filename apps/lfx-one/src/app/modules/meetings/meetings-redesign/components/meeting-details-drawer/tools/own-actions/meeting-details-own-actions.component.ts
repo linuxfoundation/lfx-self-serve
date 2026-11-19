@@ -4,7 +4,7 @@
 import { DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal, TemplateRef, viewChild } from '@angular/core';
 import { PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
-import { getMeetingSelfRemovalNotes, getMeetingSelfRemovalQuestion } from '@lfx-one/shared/utils';
+import { getMeetingOwnResendQuestion, getMeetingSelfRemovalNotes, getMeetingSelfRemovalQuestion } from '@lfx-one/shared/utils';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -31,6 +31,7 @@ export class MeetingDetailsOwnActionsComponent {
   private readonly toast = inject(UiToastService);
   private readonly context = inject(MeetingDetailsContext);
   private readonly removeDialog = viewChild.required<TemplateRef<unknown>>('removeDialog');
+  private readonly resendDialog = viewChild.required<TemplateRef<unknown>>('resendDialog');
   private dialogRef: DialogRef | null = null;
 
   protected readonly removing = signal(false);
@@ -43,12 +44,14 @@ export class MeetingDetailsOwnActionsComponent {
   /** A resend goes to the viewer's own registrant row, so one must exist (legacy `canResendInvite`). */
   public readonly canResend: Signal<boolean> = computed(() => this.canRemove() && this.hasOwnRegistration());
   protected readonly removalQuestion: Signal<string> = computed(() => getMeetingSelfRemovalQuestion(this.context.shownRow().title));
+  protected readonly resendQuestion: Signal<string> = computed(() => getMeetingOwnResendQuestion(this.context.shownRow().title));
   protected readonly removalNotes: Signal<string[]> = computed(() =>
     getMeetingSelfRemovalNotes({ viaCommittee: this.context.meeting().invited_via_committee, organizer: this.context.organizer() })
   );
 
   private readonly hasOwnRegistration: Signal<boolean> = computed(() => {
     const registrantIds = this.context.meeting().my_registrant_ids;
+    if (this.context.listedSelfRegistrantUids().length > 0) return true;
     return registrantIds ? registrantIds.length > 0 : this.context.invited();
   });
 
@@ -56,14 +59,13 @@ export class MeetingDetailsOwnActionsComponent {
     inject(DestroyRef).onDestroy(() => this.dialogRef?.close());
   }
 
-  public resendInvite(): void {
-    this.inviteResend
-      .resendOwn$(this.context.meeting().id, this.context.shownRow().occurrenceId)
-      .pipe(take(1))
-      .subscribe({
-        next: () => this.toast.show({ variant: 'dark', message: 'Meeting invitation sent' }),
-        error: (error: unknown) => this.showError('Error', this.inviteResend.describeOwnResendFailure(error)),
-      });
+  public confirmResend(): void {
+    // Nothing closes the dialog while the send runs, since closing would not stop it.
+    this.dialogRef = this.modal.open(
+      this.resendDialog(),
+      { role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' },
+      { closePredicate: () => !this.resending() }
+    );
   }
 
   public confirmRemove(): void {
@@ -73,6 +75,22 @@ export class MeetingDetailsOwnActionsComponent {
       { role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' },
       { closePredicate: () => !this.removing() }
     );
+  }
+
+  protected resend(): void {
+    // A second click can land before the button renders as loading.
+    if (this.resending()) return;
+    const ref = this.dialogRef;
+    this.inviteResend
+      .resendOwn$(this.context.meeting().id, this.context.shownRow().occurrenceId)
+      .pipe(
+        take(1),
+        finalize(() => ref?.close())
+      )
+      .subscribe({
+        next: () => this.toast.show({ variant: 'dark', message: 'Meeting invitation sent' }),
+        error: (error: unknown) => this.showError('Error', this.inviteResend.describeOwnResendFailure(error)),
+      });
   }
 
   protected remove(): void {

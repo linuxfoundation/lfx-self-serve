@@ -348,7 +348,7 @@ describe('HealthMetricsTrainingService.getCourses', () => {
     await expect(new HealthMetricsTrainingService().getCourses(req, QUERY)).resolves.toEqual({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 
-  it('keeps the badge count off the page rows', async () => {
+  it('keeps the scope count off the page rows', async () => {
     execute.mockResolvedValue({ rows: [] });
 
     await new HealthMetricsTrainingService().getCourses(req, QUERY);

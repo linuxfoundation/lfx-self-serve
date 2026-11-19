@@ -11,6 +11,8 @@ import {
   MEETING_REMOVAL_SOURCE_HEADER,
   MEETING_REMOVAL_SOURCES,
   MIN_CUSTOM_DURATION,
+  MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME,
+  MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
@@ -32,6 +34,7 @@ import {
   UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
+  MeetingRollupProjectsPreference,
 } from '@lfx-one/shared/interfaces';
 import { codePointLength, isMeetingAttendeeListShared, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -45,6 +48,8 @@ import {
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
+import { parseRollupProjectsPreference, readRollupProjectsPreferenceRequest, setRollupProjectsPreference } from '../helpers/meeting-rollup-preference.helper';
+import { readRollupRootUid } from '../helpers/meeting-rollup.helper';
 import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
@@ -52,8 +57,9 @@ import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
+import { UserPreferenceService } from '../services/user-preference.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -65,6 +71,7 @@ export class MeetingController {
   private committeeService: CommitteeService = new CommitteeService();
   private natsService: NatsService = new NatsService();
   private userService: UserService = new UserService();
+  private userPreferenceService: UserPreferenceService = new UserPreferenceService();
 
   /**
    * GET /meetings
@@ -106,6 +113,97 @@ export class MeetingController {
       });
 
       res.json({ data: result, page_token });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/rollup-filters?root_project_uid=
+   *
+   * Options for the roll-up filters on a foundation or parent project's meetings list (GH-5566): the
+   * projects in the tree and their groups, as the caller can see them.
+   */
+  public async getRollupFilterOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_meeting_rollup_filters', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      const rootUid = readRollupRootUid({ root_project_uid: req.query['root_project_uid'] }, 'get_meeting_rollup_filters');
+      if (!rootUid) {
+        throw ServiceValidationError.forField('root_project_uid', 'root_project_uid is required', { operation: 'get_meeting_rollup_filters' });
+      }
+
+      const options = await this.meetingService.getRollupFilterOptions(req, rootUid);
+
+      logger.success(req, 'get_meeting_rollup_filters', startTime, {
+        project_count: options.projects.length,
+        group_count: options.groups.length,
+      });
+
+      res.json(options);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/rollup-projects?root_project_uid=
+   *
+   * The signed-in user's saved project selection for a roll-up root (GH-5566). `project_uids` is `null`
+   * when nothing is saved (the page then shows only the root's own meetings). During impersonation the
+   * preference would resolve the impersonator's profile, so nothing is reported as saved.
+   */
+  public async getRollupProjectsPreference(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_meeting_rollup_projects_preference';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const rootUid = readRollupRootUid({ root_project_uid: req.query['root_project_uid'] }, operation);
+      if (!rootUid) {
+        throw ServiceValidationError.forField('root_project_uid', 'root_project_uid is required', { operation });
+      }
+
+      let projectUids: string[] | null = null;
+      if (!isImpersonating(req)) {
+        const raw = await this.userPreferenceService.getPreference(req, MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME, MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME);
+        projectUids = parseRollupProjectsPreference(raw)[rootUid] ?? null;
+      }
+
+      logger.success(req, operation, startTime, { saved: projectUids !== null, project_count: projectUids?.length ?? 0 });
+
+      const response: MeetingRollupProjectsPreference = { project_uids: projectUids };
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /meetings/rollup-projects — saves the signed-in user's project selection for one roll-up root.
+   * Body: `{ root_project_uid, project_uids }`; an empty list records a choice of all projects.
+   */
+  public async saveRollupProjectsPreference(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'save_meeting_rollup_projects_preference';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const request = readRollupProjectsPreferenceRequest(req.body, operation);
+      const raw = await this.userPreferenceService.getPreference(req, MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME, MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME);
+      const map = setRollupProjectsPreference(parseRollupProjectsPreference(raw), request.root_project_uid, request.project_uids);
+      await this.userPreferenceService.upsertPreference(
+        req,
+        MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME,
+        MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME,
+        JSON.stringify(map)
+      );
+
+      logger.success(req, operation, startTime, { project_count: request.project_uids.length, root_count: Object.keys(map).length });
+
+      const response: MeetingRollupProjectsPreference = { project_uids: request.project_uids };
+      res.json(response);
     } catch (error) {
       next(error);
     }
@@ -608,7 +706,7 @@ export class MeetingController {
    * GET /meetings/:uid/my-meeting-registrants
    * Retrieves registrants for a meeting when the authenticated user is one of its registrants or
    * organizers. A registrant who is not an organizer gets `[]` unless `show_meeting_attendees` is on
-   * and the meeting is neither Board nor restricted.
+   * and the meeting is not Board (`isMeetingAttendeeListShared`; restricted meetings share once opted in).
    * `preview=true` serves avatar previews: it tolerates a partial roster and skips committee enrichment.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -765,14 +863,22 @@ export class MeetingController {
       // `getMeetingRegistrants` — group attribution is decoration, and `resolveV2ToV1CommitteeMappings`
       // goes over NATS, so a transient committee-service problem shouldn't cost the caller the guest
       // list. The interface docstring on `MeetingRegistrant.committee_uid` promises this on both paths.
+      //
+      // Organizers only. Group attribution says which committee each guest sits on, with their role
+      // and voting status, which is committee membership rather than the guest list, so a guest of a
+      // meeting that shares its list gets the plain roster — the rule `getMeetingRegistrants` applies
+      // through `assertCommitteeAttributionAllowed`. `meeting.organizer` is that same organizer check,
+      // already resolved server-side by the access-checked meeting fetch above.
       let enrichedRegistrants: MeetingRegistrant[] = registrants;
-      try {
-        enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants, m2mToken);
-      } catch (error) {
-        logger.warning(req, 'get_my_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
-          meeting_id: uid,
-          err: error,
-        });
+      if (meeting.organizer) {
+        try {
+          enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants, m2mToken);
+        } catch (error) {
+          logger.warning(req, 'get_my_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
+            meeting_id: uid,
+            err: error,
+          });
+        }
       }
 
       logger.success(req, 'get_my_meeting_registrants', startTime, {
@@ -890,9 +996,10 @@ export class MeetingController {
       }
 
       // Group-added guests arrive carrying the v2 committee UID the picker works in; upstream
-      // stores a v1 SFID and derives `type: 'committee'` from it. The meeting is loaded first so a
-      // UID that isn't one of this meeting's own committees can be stripped before it's resolved —
-      // the client is the only source of that field, and nothing downstream re-checks it.
+      // owns the v2→v1 translation internally and derives `type: 'committee'` from the field once
+      // translated. The meeting is loaded first so a UID that isn't one of this meeting's own
+      // committees can be stripped — the client is the only source of that field, and nothing
+      // downstream re-checks it.
       const hasCommitteeAttribution = registrantData.some((registrant: CreateMeetingRegistrantRequest) => !!registrant.committee_uid);
       const allowedCommitteeUids = hasCommitteeAttribution ? await this.getMeetingCommitteeUids(req, uid) : new Set<string>();
       const resolvedRegistrants = await this.resolveRegistrantCommitteeUids(req, registrantData, allowedCommitteeUids);
@@ -2433,15 +2540,31 @@ export class MeetingController {
   }
 
   /**
-   * Rewrites each registrant's `committee_uid` from the v2 UID the client works in to the v1 SFID
-   * upstream stores. Upstream derives `type: 'committee'` from that field, so dropping it (as the
-   * BFF used to) silently persists a group-added guest as `direct` and loses attribution.
+   * Validates each registrant's `committee_uid` against the meeting's own committees, confirms
+   * upstream can actually attribute a guest to it, and forwards the v2 UID the client (and the rest
+   * of this BFF) works in — unchanged.
    *
-   * An unresolvable UID is stripped rather than forwarded — a v2 UID upstream would be stored as a
-   * bogus committee reference, which is worse than the guest landing as `direct`. Stripped means the
-   * key is deleted, not nulled: upstream's `CreateItxRegistrantRequestBody` declares `committee_uid`
-   * as a non-nullable optional `string`, so an explicit `null` is off-contract even though omission
-   * is fine. A `null` arriving from the client is dropped for the same reason.
+   * This used to *also* resolve the v2 UID to upstream's v1 SFID and substitute it before
+   * forwarding, on the theory that upstream only understands v1. It doesn't need the substitution:
+   * `lfx-v2-meeting-service` (`internal/service/itx/registrant_service.go::CreateRegistrant`/
+   * `UpdateRegistrant`) already calls `mapCommitteeFieldV2ToV1` on whatever `committee_uid` it
+   * receives, and translates the response's `committee_uid` back to v2 before returning it.
+   * Substituting the v1 SFID here too was a double translation: this function would resolve a v2
+   * UID to the correct v1 SFID, and upstream's own resolver would then try to resolve that SFID
+   * *again*, treating it as if it were still v2 — a lookup that can never succeed, since the
+   * `committee.uid.<v2>` mapping namespace has no entry keyed by a v1 value. That surfaced in
+   * production as `invalid ID: mapping not found for committee.uid.<v1_sfid>`
+   * (lfx-self-serve-ops#1514).
+   *
+   * The resolution step itself still runs and is still load-bearing: it is what tells apart a
+   * committee upstream can actually attribute this guest to from one it cannot, which checking
+   * `allowedV2Uids` alone cannot, now that the map's resolved values are no longer the thing
+   * forwarded. An unresolvable UID is stripped rather than forwarded — upstream would derive
+   * `type: 'committee'` from a v2 UID its own translation can never resolve either, which is worse
+   * than the guest landing as `direct`. Stripped means the key is deleted, not nulled: upstream's
+   * `CreateItxRegistrantRequestBody` declares `committee_uid` as a non-nullable optional `string`,
+   * so an explicit `null` is off-contract even though omission is fine. A `null` arriving from the
+   * client is dropped for the same reason.
    *
    * "Unresolvable" means *confirmed* unresolvable — the lookup answered, and this committee has no v1
    * counterpart. An allowlisted UID the lookup could not answer for (a NATS timeout, an `error:`
@@ -2455,12 +2578,10 @@ export class MeetingController {
    *
    * `allowedV2Uids` is the meeting's own `committees[].uid` set, and a UID outside it is stripped
    * before any lookup. Without that gate the resolver would happily resolve any committee UID the
-   * caller cared to send — `resolveCommitteeV2UidsToV1Ids` goes over NATS with the BFF's own
+   * caller cared to send — `resolveCommitteeV2UidMappings` goes over NATS with the BFF's own
    * credentials and applies no authorization of its own — and upstream derives `type: 'committee'`
-   * from whatever SFID it receives. That would let a meeting editor attribute a guest to a committee
-   * the meeting has nothing to do with, inflating `committee_members_count` against it. Such a row
-   * would also read back unenriched, since `enrichCommitteeRegistrants` only maps the meeting's own
-   * committees, leaking the raw v1 SFID to the client.
+   * from whatever UID it receives once translated. That would let a meeting editor attribute a guest
+   * to a committee the meeting has nothing to do with, inflating `committee_members_count` against it.
    */
   private async resolveRegistrantCommitteeUids(
     req: Request,
@@ -2512,10 +2633,11 @@ export class MeetingController {
     }
 
     return registrants.map((registrant) => {
-      const v1Sfid = registrant.committee_uid && allowedV2Uids.has(registrant.committee_uid) ? v2ToV1Map.get(registrant.committee_uid) : undefined;
+      const isResolvable = !!registrant.committee_uid && allowedV2Uids.has(registrant.committee_uid) && v2ToV1Map.has(registrant.committee_uid);
 
-      if (v1Sfid) {
-        return { ...registrant, committee_uid: v1Sfid };
+      if (isResolvable) {
+        // Forward the v2 UID unchanged — upstream owns the v2→v1 translation itself.
+        return registrant;
       }
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-strip: the key is deleted, not read

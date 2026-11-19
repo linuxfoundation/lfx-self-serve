@@ -2,33 +2,30 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import {
-  HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEARCH_DEBOUNCE_MS,
-  HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED,
   HEALTH_METRICS_EVENTS_QUERY_PARAMS,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEventsOrganizationRowView, formatHealthMetricsEventsOrganizationsCountLabel } from '@lfx-one/shared/utils';
+import { buildHealthMetricsEventsOrganizationRowView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
+import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
+import { catchError, debounce, distinctUntilChanged, map, of, skip, switchMap, tap, timer } from 'rxjs';
 
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
-  FilterPillOption,
   HealthMetricsEventsOrganizationRowView,
   HealthMetricsEventsOrganizations,
   HealthMetricsEventsOrganizationsQuery,
@@ -37,12 +34,12 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#orgs` — every organization active at the foundation's events in the period, ranked by registrations.
- * Paged, filtered and searched server-side: the view's `sort_rank_<period>` only holds across the full set.
+ * `#orgs` — every company active at the foundation's events in the period, ranked by registrations. Paged, cut and
+ * searched server-side: the view's `sort_rank_<period>` only holds across the full set.
  */
 @Component({
   selector: 'lfx-events-organizations',
-  imports: [EmptyStateComponent, FilterPillsComponent, InputTextComponent, RouterLink, TableComponent],
+  imports: [EmptyStateComponent, HealthMetricsCellComponent, RouterLink, TableComponent, UiPaginationComponent, UiSearchInputComponent],
   templateUrl: './events-organizations.component.html',
 })
 export class EventsOrganizationsComponent {
@@ -53,39 +50,34 @@ export class EventsOrganizationsComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Every active organization in the period, for the sub-nav badge; `null` while a read is pending or failed. */
-  public readonly countChange = output<number | null>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  /** The header's membership switch lives in the page's section controls, so the page owns the cut. */
+  public readonly segment = model<HealthMetricsEventsOrganizationsSegment>('all');
+
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
-  protected readonly searchForm = new FormGroup({ search: new FormControl<string>(this.parseInitialSearch(), { nonNullable: true }) });
-
-  protected readonly segmentOptions: FilterPillOption[] = [...HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS];
-  protected readonly barClass = HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS;
-  protected readonly segment = signal<HealthMetricsEventsOrganizationsSegment>(
-    this.toSegment(this.initialParams.get(HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgSegment))
-  );
-  protected readonly size = signal<number>(HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE);
+  protected readonly size = HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE;
+  protected readonly searchText = signal<string>(this.normalizeSearch(this.initialParams.get(HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgSearch) ?? ''));
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
 
-  // Debounced so a keystroke does not fire a warehouse read; trimmed so padding cannot re-read the same cut.
+  // Typing is debounced so a keystroke does not fire a warehouse read; a cleared search applies at once, so a reset never lags.
   protected readonly search: Signal<string> = toSignal(
-    this.searchForm.controls.search.valueChanges.pipe(
-      debounceTime(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEARCH_DEBOUNCE_MS),
-      map((value) => this.normalizeSearch(value))
+    toObservable(this.searchText).pipe(
+      map((value) => this.normalizeSearch(value)),
+      debounce((term) => (term ? timer(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEARCH_DEBOUNCE_MS) : of(0)))
     ),
-    { initialValue: this.parseInitialSearch() }
+    { initialValue: this.searchText() }
   );
-  /** Any change to the cut restarts paging, since a page from a wider cut can sit past the end of a narrower one. */
+  /** Zero-based, as the pager counts. Any change to the cut restarts paging, since a wider cut's page can sit past a narrower one's end. */
   protected readonly page = linkedSignal<string, number>({
     source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.range()}|${this.segment()}|${this.search()}`),
-    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
+    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 0),
   });
 
   protected readonly query: Signal<HealthMetricsEventsOrganizationsQuery> = this.initQuery();
@@ -95,11 +87,8 @@ export class EventsOrganizationsComponent {
     this.response().rows.map(buildHealthMetricsEventsOrganizationRowView)
   );
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly scopeTotal = computed(() => this.response().scopeTotal);
-  /** No organization was active at the period's events; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.scopeTotal());
-  protected readonly first = computed(() => (this.page() - 1) * this.size());
-  protected readonly countLabel = computed(() => formatHealthMetricsEventsOrganizationsCountLabel(this.totalRecords()));
+  /** No company was active at the period's events; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.response().scopeTotal);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -114,18 +103,14 @@ export class EventsOrganizationsComponent {
     }
   }
 
-  protected onSegmentChange(id: string): void {
-    this.segment.set(this.toSegment(id));
-  }
-
   protected openOrganization(view: HealthMetricsEventsOrganizationRowView): void {
     void this.router.navigate(view.link.commands, { fragment: view.link.fragment, queryParams: view.link.queryParams, queryParamsHandling: 'merge' });
   }
 
-  protected onTablePage(event: { first?: number; rows?: number }): void {
-    const rows = event.rows ?? this.size();
-    this.size.set(rows);
-    this.page.set(Math.floor((event.first ?? 0) / rows) + 1);
+  /** Clears the search and the header switch together, as the empty state offers. */
+  protected onResetFilters(): void {
+    this.searchText.set('');
+    this.segment.set('all');
   }
 
   private initQuery(): Signal<HealthMetricsEventsOrganizationsQuery> {
@@ -134,8 +119,8 @@ export class EventsOrganizationsComponent {
       range: this.range(),
       segment: this.segment(),
       search: this.search(),
-      offset: (this.page() - 1) * this.size(),
-      pageSize: this.size(),
+      offset: this.page() * this.size,
+      pageSize: this.size,
     }));
   }
 
@@ -155,7 +140,6 @@ export class EventsOrganizationsComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.countChange.emit(null);
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight read.
@@ -167,11 +151,10 @@ export class EventsOrganizationsComponent {
               return of(HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED);
             }),
             tap((response) => {
-              // A clamped page fires a follow-up read, so this one neither settles nor reports a count.
+              // A clamped page fires a follow-up read, so this one does not settle.
               if (this.clampPage(response.totalRecords)) return;
 
               this.loading.set(!foundationSeen);
-              this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (foundationSeen) this.settled.emit(!this.loadFailed() && !response.scopeTotal);
             })
@@ -197,7 +180,8 @@ export class EventsOrganizationsComponent {
       queryParams: {
         [HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgSegment]: query.segment === 'all' ? null : query.segment,
         [HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgSearch]: query.search || null,
-        [HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgPage]: page > 1 ? page : null,
+        // The URL counts pages from 1.
+        [HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgPage]: page > 0 ? page + 1 : null,
       },
       queryParamsHandling: 'merge',
       preserveFragment: true,
@@ -210,7 +194,7 @@ export class EventsOrganizationsComponent {
    * the last page with rows, writing it back since the clamp can precede the sync's first emission.
    */
   private clampPage(totalRecords: number): boolean {
-    const lastPage = Math.max(1, Math.ceil(totalRecords / this.size()));
+    const lastPage = Math.max(0, Math.ceil(totalRecords / this.size) - 1);
     if (totalRecords === 0 || this.page() <= lastPage) return false;
 
     this.page.set(lastPage);
@@ -218,20 +202,13 @@ export class EventsOrganizationsComponent {
     return true;
   }
 
-  private parseInitialSearch(): string {
-    return this.normalizeSearch(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgSearch) ?? '');
-  }
-
+  /** The URL's 1-based page as the pager's 0-based one. */
   private parseInitialPage(): number {
     const page = Number(this.initialParams.get(HEALTH_METRICS_EVENTS_QUERY_PARAMS.orgPage));
-    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+    return Number.isFinite(page) && page > 1 ? Math.floor(page) - 1 : 0;
   }
 
   private normalizeSearch(value: string): string {
     return value.trim().slice(0, HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH);
-  }
-
-  private toSegment(id: string | null): HealthMetricsEventsOrganizationsSegment {
-    return HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.find((option) => option.id === id)?.id ?? 'all';
   }
 }

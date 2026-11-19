@@ -101,6 +101,7 @@ import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { ResourceNotFoundError } from '../errors';
 import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
+import { getPastMeetingTranscriptUrl } from '@lfx-one/shared/utils';
 
 const req = {} as unknown as Request;
 const human = (id: string): MeetingUserInfo => ({ name: `User ${id}`, username: `user${id}`, email: `${id}@example.com` });
@@ -1481,6 +1482,18 @@ describe('MeetingService.canViewMeetingRoster', () => {
     expect(byEmail).not.toHaveBeenCalled();
   });
 
+  // #5438: an invite-only meeting shares its guests once its organizer opts in, and not before.
+  it.each([
+    [true, true],
+    [false, false],
+  ])('lets an invitee of a restricted meeting see the guests only when shared (shared: %s)', async (shared, expected) => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, restricted: true, show_meeting_attendees: shared } as unknown as Meeting);
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-self' } as MeetingRegistrant]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(expected);
+  });
+
   it('matches an invitee by username when they have no email, the rule the invited flag uses', async () => {
     vi.mocked(getEffectiveEmail).mockReturnValue(undefined as unknown as string);
     vi.mocked(getUsernameFromAuth).mockResolvedValue('ada');
@@ -2517,11 +2530,23 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     expect(payload.show_meeting_attendees).toBe(true);
   });
 
-  it('still forces show_meeting_attendees off on a restricted meeting saved without an explicit opt-in', async () => {
+  // #5438: the stored value is the organizer's choice on an invite-only meeting, so a partial update
+  // must not silently clear it.
+  it("keeps a restricted meeting's stored choice when the update makes none", async () => {
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });
     proxyRequestWithResponse.mockResolvedValueOnce({});
 
     await service.updateMeeting(req, 'meeting-1', { ...baseUpdateWithoutChoice });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBeUndefined();
+  });
+
+  it('forwards an explicit false on a restricted meeting', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, restricted: true, show_meeting_attendees: false });
 
     const payload = proxyRequestWithResponse.mock.calls[0][5];
     expect(payload.show_meeting_attendees).toBe(false);
@@ -2756,5 +2781,32 @@ describe('MeetingService.getCommitteeNameMap', () => {
     const names = await service.getCommitteeNameMap(req, [{ id: 'm1', committees: [{ uid: 'c1' }] }] as Meeting[]);
 
     expect(names.size).toBe(0);
+  });
+});
+
+describe('MeetingService.getPastMeetingTranscriptContent', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset().mockResolvedValue({ resources: [{ data: { recording_files: [] } }] });
+    vi.mocked(getPastMeetingTranscriptUrl).mockReturnValue('https://files.example.com/transcript');
+    service = new MeetingService();
+  });
+
+  const respond = (body: string, contentType = 'text/vtt'): void => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(body, { headers: { 'content-type': contentType } }));
+  };
+
+  it('returns WebVTT content, including one with a leading byte order mark', async () => {
+    respond('WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.000\nAda: Hi');
+    await expect(service.getPastMeetingTranscriptContent(req, 'past-1')).resolves.toEqual({ content: expect.stringContaining('Ada: Hi') });
+
+    respond('\uFEFFWEBVTT\n');
+    await expect(service.getPastMeetingTranscriptContent(req, 'past-1')).resolves.toEqual({ content: '\uFEFFWEBVTT\n' });
+  });
+
+  it('returns null for an HTML page served in place of the file', async () => {
+    respond('<!doctype html><html><body>Sign in</body></html>', 'text/html');
+    await expect(service.getPastMeetingTranscriptContent(req, 'past-1')).resolves.toBeNull();
   });
 });

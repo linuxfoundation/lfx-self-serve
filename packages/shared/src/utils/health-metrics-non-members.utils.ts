@@ -17,17 +17,14 @@ import type {
   HealthMetricsNonMembersOrgRowView,
   HealthMetricsNonMembersPerson,
   HealthMetricsNonMembersPersonRowView,
-  HealthMetricsNonMembersSectionKey,
   HealthMetricsNonMembersSubNavItem,
   HealthMetricsNonMembersWarmOrg,
   HealthMetricsNonMembersWarmOrgRowView,
 } from '../interfaces/health-metrics-non-members.interface';
 
-/** Sub-nav items for the Non-Members tab; a section without a count carries no badge. */
-export function buildHealthMetricsNonMembersSubNavItems(
-  counts: Partial<Record<HealthMetricsNonMembersSectionKey, number | null>> = {}
-): HealthMetricsNonMembersSubNavItem[] {
-  return HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: counts[section.key] ?? null, note: '' }));
+/** Sub-nav items for the Non-Members tab; no section here carries a note. */
+export function buildHealthMetricsNonMembersSubNavItems(): HealthMetricsNonMembersSubNavItem[] {
+  return HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '' }));
 }
 
 /** Company participation rows. A zero or NULL count renders a dash. */
@@ -46,13 +43,13 @@ export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMember
 
 /** The unfiltered count line: "412 organizations · 37 new this period". */
 export function buildHealthMetricsNonMembersOrgsSummary(scopeTotal: number, newCount: number): string {
-  return `${pluralize(scopeTotal, 'organization')} · ${newCount.toLocaleString('en-US')} new this period`;
+  return `${pluralize(scopeTotal, 'company', 'companies')} · ${newCount.toLocaleString('en-US')} new this period`;
 }
 
 /** The amber chip when too few organizations are active to rank by fit; `null` at or above the threshold, or with none. */
 export function buildHealthMetricsNonMembersOrgsLowConfidence(scopeTotal: number): string | null {
   if (scopeTotal <= 0 || scopeTotal >= HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD) return null;
-  return `Only ${pluralize(scopeTotal, 'active organization')} — too early to rank by fit.`;
+  return `Only ${pluralize(scopeTotal, 'active company', 'active companies')} — too early to rank by fit.`;
 }
 
 /** People rows. A person with no matched organization, or no attended date, renders a dash. */
@@ -77,26 +74,20 @@ export function buildHealthMetricsNonMembersPeopleCountLabel(count: number | nul
 export function buildHealthMetricsNonMembersConversionView(conversion: HealthMetricsNonMembersConversion): HealthMetricsNonMembersConversionView {
   const pipeline = conversion.estimatedPipelineUsd;
   const hasEstimate = pipeline !== null;
-  const tier = conversion.entryTierName?.trim();
   return {
     measured: conversion.measured,
     summary:
       conversion.organizationsTracked === null
-        ? `Organizations tracked ${HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE}`
-        : `${pluralize(conversion.organizationsTracked, 'organization')} tracked`,
+        ? `Companies tracked ${HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE}`
+        : `${pluralize(conversion.organizationsTracked, 'company', 'companies')} tracked`,
     pipelineValue: hasEstimate ? formatCurrency(pipeline) : '—',
     pipelineLabel: hasEstimate ? 'Estimated pipeline' : 'Estimated pipeline · not enough data',
     hasEstimate,
     side: [
-      { key: 'high-fit', label: 'High-fit organizations', value: formatStat(conversion.highFitCount) },
+      { key: 'high-fit', label: 'High-fit companies', value: formatStat(conversion.highFitCount) },
       { key: 'new', label: 'New this period', value: formatStat(conversion.newCount) },
     ],
     warmest: buildWarmestRows(conversion.warmest),
-    footnote: [
-      { text: `Estimated pipeline multiplies high-fit organizations by ${tier ? `the ${tier}` : 'an entry-tier'} fee and is indicative only. The ` },
-      { text: 'fit score', bold: true },
-      { text: ' is a model change, sequenced after the matching fix.' },
-    ],
   };
 }
 
@@ -104,8 +95,8 @@ function formatCount(value: number | null): string {
   return value === null || value <= 0 ? '—' : Math.round(value).toLocaleString('en-US');
 }
 
-function pluralize(count: number, noun: string): string {
-  return `${count.toLocaleString('en-US')} ${count === 1 ? noun : `${noun}s`}`;
+function pluralize(count: number, noun: string, plural = `${noun}s`): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? noun : plural}`;
 }
 
 // Name and value only, as the design's ranked list; a NULL count reads as not available.

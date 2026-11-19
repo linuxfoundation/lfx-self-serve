@@ -72,6 +72,11 @@ export interface BackendAttribution {
   logo_url?: string;
 }
 
+/** Response from GET /crowdfunding/initiatives/slug-to-uid/{slug} (404 when no initiative has that slug). */
+export interface BackendSlugToUid {
+  uid: string;
+}
+
 export interface BackendCrowdfundingResponse {
   data: BackendInitiative[];
   meta: { total: number; limit: number; offset: number };

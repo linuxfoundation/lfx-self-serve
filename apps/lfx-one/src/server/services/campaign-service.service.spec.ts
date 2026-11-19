@@ -4803,6 +4803,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
+      linkedInTargetingEditEnabled: false,
+      linkedInAccountSelectionEnabled: false,
+      linkedInDailyCapEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -4811,6 +4814,10 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // OFF with every flag off: X create needs the create cutover AND its own flag.
       twitterCreateEnabled: false,
       metaInstagramDsaEnabled: false,
+      metaAudienceTargetingEnabled: false,
+      metaCallToActionEnabled: false,
+      metaConversionEventEnabled: false,
+      metaOptimizationGoalEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -4997,6 +5004,52 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       expect(result.metaInstagramDsaEnabled).toBe(expected);
       // Its own key, not the Microsoft schedule one: that flag is off in every row.
       expect(result.microsoftScheduleEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  // Meta audience targeting (#5905) needs the create cutover AND its own flag, as the Instagram/DSA one does.
+  it.each([
+    [{ cutover: true, targeting: true }, true],
+    [{ cutover: true, targeting: false }, false],
+    [{ cutover: false, targeting: true }, false],
+  ])('reports the meta audience targeting capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceMetaAudienceTargeting
+        ? flags.targeting
+        : flags.cutover && flag !== ServerFeatureFlag.CampaignServiceMetaInstagramDsa
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.metaAudienceTargetingEnabled).toBe(expected);
+      expect(result.metaInstagramDsaEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  // The Meta ad choices (#5934) need the create cutover AND each its own flag.
+  it.each([
+    [{ cutover: true, own: true }, true],
+    [{ cutover: true, own: false }, false],
+    [{ cutover: false, own: true }, false],
+  ])('reports each meta ad choice capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
+    const own = [
+      ServerFeatureFlag.CampaignServiceMetaCallToAction,
+      ServerFeatureFlag.CampaignServiceMetaConversionEvent,
+      ServerFeatureFlag.CampaignServiceMetaOptimizationGoal,
+    ];
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (own.includes(flag as ServerFeatureFlag) ? flags.own : flags.cutover));
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect([result.metaCallToActionEnabled, result.metaConversionEventEnabled, result.metaOptimizationGoalEnabled]).toEqual([expected, expected, expected]);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -5258,6 +5311,82 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The LinkedIn targeting-edit capability (#5546): the cutover alone. The legacy creator reads the
+   * ConfigMap and never the edit, and no asset flag has anything to do with it.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, others: false }, true],
+    [{ create: false, briefs: true, jobs: true, others: true }, false],
+    [{ create: true, briefs: false, jobs: true, others: true }, false],
+    [{ create: true, briefs: true, jobs: false, others: true }, false],
+  ])('reports the LinkedIn targeting-edit capability from the cutover alone (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      return flags.others;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInTargetingEditEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** The LinkedIn account-selection capability (#5809): the cutover AND its own flag, and not any sibling's. */
+  it.each([
+    [{ cutover: true, selection: true, others: false }, true],
+    [{ cutover: true, selection: false, others: true }, false],
+    [{ cutover: false, selection: true, others: true }, false],
+  ])('reports the LinkedIn account-selection capability from the cutover and its own flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (
+        flag === ServerFeatureFlag.CampaignServiceCreate ||
+        flag === ServerFeatureFlag.CampaignServiceBriefs ||
+        flag === ServerFeatureFlag.CampaignServiceJobs
+      )
+        return flags.cutover;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAccountSelection) return flags.selection;
+      return flags.others;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInAccountSelectionEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, others: false }, true],
+    [{ create: false, briefs: true, jobs: true, others: true }, false],
+  ])('reports the LinkedIn daily-cap capability from the cutover alone (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      return flags.others;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInDailyCapEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The Microsoft upload capability: the cutover AND its own flag, and not any sibling's. */
   it.each([
     [{ create: true, briefs: true, jobs: true, microsoft: true, others: false }, true],
@@ -5328,6 +5457,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
+      linkedInTargetingEditEnabled: false,
+      linkedInAccountSelectionEnabled: false,
+      linkedInDailyCapEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5336,6 +5468,10 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // OFF with every flag off: X create needs the create cutover AND its own flag.
       twitterCreateEnabled: false,
       metaInstagramDsaEnabled: false,
+      metaAudienceTargetingEnabled: false,
+      metaCallToActionEnabled: false,
+      metaConversionEventEnabled: false,
+      metaOptimizationGoalEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -6000,6 +6136,32 @@ describe('CampaignServiceClient account monitors', () => {
     expect(proxyRequest.mock.calls[0]).toHaveLength(5);
   });
 
+  it('omits account_id for a Google Ads monitor read with no account, so campaign-service picks it (#5622)', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getGoogleAdsAccountMonitor(req, 'tlf', undefined, 30);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-google-ads/account-monitor', 'GET', { days: 30 });
+  });
+
+  it('omits account_id for a LinkedIn monitor read with no account, so campaign-service picks it (#5889)', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'tlf', undefined, 30);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-linkedin-ads/account-monitor', 'GET', { days: 30 });
+  });
+
+  it.each(['getMetaAdsAccountMonitor', 'getRedditAdsAccountMonitor', 'getMicrosoftAdsAccountMonitor', 'getTwitterAdsAccountMonitor'] as const)(
+    '%s refuses a read with no account, which campaign-service requires, without calling the proxy',
+    async (method) => {
+      const caught = await new CampaignServiceClient()[method](req, 'tlf', undefined as unknown as string, 30).catch((e: unknown) => e);
+
+      expect((caught as ServiceValidationError).validationErrors[0].field).toBe('accountKey');
+      expect(proxyRequest).not.toHaveBeenCalled();
+    }
+  );
+
   it('encodes the project as a path segment', async () => {
     proxyRequest.mockResolvedValueOnce(monitor);
 
@@ -6193,6 +6355,37 @@ describe('CampaignServiceClient.listGoogleAdsUserLists', () => {
     proxyRequest.mockRejectedValueOnce(upstream);
 
     await expect(new CampaignServiceClient().listGoogleAdsUserLists(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.listMetaCustomAudiences', () => {
+  const audiences = { account_id: 'act_100000001', audiences: [], audience_count: 0, truncated: false };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's custom-audience read, the project encoded, with no query", async () => {
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    expect(await new CampaignServiceClient().listMetaCustomAudiences(req, 'lf/ai')).toBe(audiences);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/meta-ads/custom-audiences', 'GET', undefined);
+  });
+
+  it('passes a search as q', async () => {
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    await new CampaignServiceClient().listMetaCustomAudiences(req, 'cncf', 'KubeCon');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/meta-ads/custom-audiences', 'GET', { q: 'KubeCon' });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listMetaCustomAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 });
 

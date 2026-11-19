@@ -28,8 +28,8 @@ export class UiDrawerService {
   /** Opens the drawer and returns its `DialogRef`; `ref.closed` emits the result once the exit animation ends. */
   public open<R = unknown, D = unknown, C = unknown>(content: ComponentType<C> | TemplateRef<C>, config: UiDrawerConfig<D> = {}): DialogRef<R, C> {
     const context = new UiDrawerContext(config.side, config.width, config.size, config.bare);
-    // Floats 8px from the top, bottom and anchored edge of the window.
-    const edge = this.overlay.position().global().top('8px');
+    // Floats 8px from the top, bottom and anchored edge of the window, below the impersonation banner when it shows.
+    const edge = this.overlay.position().global().top('calc(8px + var(--lfx-banner-height, 0px))');
     let leaving = false;
     let exited = false;
     // Filled once `modal.open` returns; the predicate can run before that if the content closes itself while it is created.
@@ -40,7 +40,7 @@ export class UiDrawerService {
       { ...config, role: 'dialog', closeOnEscape: false, closeOnBackdropClick: false },
       {
         positionStrategy: context.side === 'left' ? edge.left('8px') : edge.right('8px'),
-        height: 'calc(100% - 16px)',
+        height: 'calc(100% - 16px - var(--lfx-banner-height, 0px))',
         maxWidth: 'calc(100vw - 16px)',
         providers: [{ provide: UiDrawerContext, useValue: context }],
         // Runs on every `ref.close()`: the first call plays the exit animation and closes again once it ends, with the same result.
@@ -73,6 +73,8 @@ export class UiDrawerService {
     );
 
     opened.ref = ref;
+    // The scrim leaves the banner uncovered, so Stop Impersonating stays clickable.
+    ref.overlayRef.backdropElement?.style.setProperty('top', 'var(--lfx-banner-height, 0px)');
 
     let asking = false;
     context.requestClose = () => {

@@ -4,9 +4,10 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingHomeAttendance, MeetingReconcileDialogData, PastMeetingParticipant, PastMeetingSummary } from '@lfx-one/shared/interfaces';
-import { getPastMeetingAttendance, isHostKeyVisible, isPastMeetingCalendarRow } from '@lfx-one/shared/utils';
+import { getPastMeetingAttendance, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCalendarRow } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
@@ -15,19 +16,20 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { catchError, distinctUntilChanged, of, startWith, switchMap, take } from 'rxjs';
 
 import { MeetingsHomeDialogsService } from '../../../services/meetings-home-dialogs.service';
-import { MeetingsHomeStore } from '../../../services/meetings-home.store';
 import { MeetingAttendeeGridComponent } from '../../meeting-attendee-grid/meeting-attendee-grid.component';
 import { MeetingHomeAttendanceComponent } from '../../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsHostKeyComponent } from './host-key/meeting-details-host-key.component';
 import { MeetingDetailsReconcileDialogComponent } from '../reconcile/meeting-details-reconcile-dialog.component';
 import { MeetingDetailsArtifactsService } from './meeting-details-artifacts.service';
 import { MeetingDetailsRsvpComponent } from './rsvp/meeting-details-rsvp.component';
 
 /**
- * Right column of the meeting details drawer under the schedule: host controls, the organizer's RSVP counts, attendance,
+ * Right column of the meeting details drawer under the schedule: host controls, the RSVP counts, attendance,
  * the organizer's Reconcile Attendance, the recording, AI summary and transcript, and the private-meeting notice.
- * @description Follows the legacy meeting page's gates and copy.
+ * @description Follows the legacy meeting page's gates and copy. On a page the private notice sits with the agenda, and a
+ * signed-out visitor of an ended date is asked to sign in.
  */
 @Component({
   selector: 'lfx-meeting-details-tools',
@@ -50,12 +52,18 @@ export class MeetingDetailsToolsComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly dialogs = inject(MeetingsHomeDialogsService);
   private readonly modal = inject(UiModalService);
-  private readonly store = inject(MeetingsHomeStore);
+  private readonly source = inject(MeetingDetailsSource);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly context = inject(MeetingDetailsContext);
   protected readonly artifactsService = inject(MeetingDetailsArtifactsService);
+  /** Outside a drawer, where the agenda slot carries the private notice. */
+  protected readonly page = !inject(UiDrawerContext, { optional: true });
 
   protected readonly ended: Signal<boolean> = computed(() => this.context.state() === 'ended');
+  /** Organizers always; guests read-only when the meeting shares its guest list and takes RSVPs. */
+  protected readonly showRsvp: Signal<boolean> = computed(
+    () => !this.ended() && (this.context.organizer() || (this.context.canViewGuests() && isMeetingInviteResponsesEnabled(this.context.meeting())))
+  );
   /** The BFF sends the key only to its audience inside its window, so nothing else gates it. */
   protected readonly hostKey: Signal<string | null> = computed(() => {
     const meeting = this.context.meeting();
@@ -81,7 +89,7 @@ export class MeetingDetailsToolsComponent {
     const onChange = (change: PastMeetingSummary): void => {
       this.artifactsService.summary.set(change);
       // The home list behind the drawer shows the same summary.
-      this.store.applySummaryChange(pastMeetingId, change);
+      this.source.applySummaryChange(pastMeetingId, change);
     };
     this.dialogs.openSummary(row, summary, onChange, { origin: 'drawer', showPending: true });
   }
@@ -103,7 +111,7 @@ export class MeetingDetailsToolsComponent {
   }
 
   private initParticipants(): Signal<PastMeetingParticipant[] | null | undefined> {
-    const id = computed(() => (this.context.fullAccess() ? this.context.pastMeetingId() : null));
+    const id = computed(() => (this.context.signedInAccess() ? this.context.pastMeetingId() : null));
     const version$ = toObservable(this.context.participantsVersion);
     const participants$ = toObservable(id).pipe(
       distinctUntilChanged(),

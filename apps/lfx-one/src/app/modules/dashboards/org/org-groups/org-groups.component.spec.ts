@@ -36,6 +36,7 @@ interface Rendered {
   fixture: ComponentFixture<OrgGroupsComponent>;
   navigate: ReturnType<typeof vi.fn>;
   selectedAccount: WritableSignal<Account>;
+  personDrawerClose: ReturnType<typeof vi.fn>;
 }
 
 // <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
@@ -128,10 +129,14 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
 
   const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true) as unknown as ReturnType<typeof vi.fn>;
 
+  // The same stub instance the providers array above registers via useValue — retrieved through DI
+  // rather than kept from a local variable, so this stays correct if the registration is refactored.
+  const personDrawerClose = (TestBed.inject(PersonDetailDrawerService) as unknown as ReturnType<typeof personDrawerStub>).close;
+
   const fixture = TestBed.createComponent(OrgGroupsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, navigate, selectedAccount };
+  return { fixture, navigate, selectedAccount, personDrawerClose };
 }
 
 function emptyGroupsResponse(): OrgLensGroupsResponse {
@@ -564,6 +569,21 @@ describe('OrgGroupsComponent', () => {
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
   });
 
+  // PersonDetailDrawerService is root-scoped and keeps its own active context across an org switch —
+  // closing only the seat-holders drawer (the test above) leaves the stacked person-detail drawer, if
+  // it was open, still showing the previous org's person. Doesn't open the stacked drawer for real
+  // (covered by group-seat-holders-drawer.component.spec.ts); asserts the org-switch subscription
+  // calls close() unconditionally, and not on first load (the skip(1) guard).
+  it('closes the stacked person-detail drawer when the selected org switches, not on first load', async () => {
+    const { fixture, selectedAccount, personDrawerClose } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+    expect(personDrawerClose).not.toHaveBeenCalled();
+
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2', slug: 'vendor-corp' });
+    await flushFilterChange(fixture);
+
+    expect(personDrawerClose).toHaveBeenCalledTimes(1);
+  });
+
   // WCAG 2.5.3 Label in Name: the trigger's only visible text is the seat count, so its accessible
   // name must include that number, not just the group name — otherwise a screen-reader user loses
   // the count entirely and a voice-control user can't target the button by its visible label.
@@ -737,7 +757,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     expect(rowAriaLabel()).toBe('WG Identity & Trust, Working Groups, 1 seat');
   });
 
-  it('renders the foundation name as a link to /org/{org}/memberships/<slug> when project_slug is present', async () => {
+  it('renders the foundation name as a link to /company/{org}/memberships/<slug> when project_slug is present', async () => {
     await renderRow({
       groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],
       total_groups: 1,
@@ -746,11 +766,11 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
 
     const link = projectLineElement();
     expect(link?.tagName).toBe('A');
-    // Not /org/projects/:slug — that route is Snowflake/CDP-scoped to sub-project activity rows
+    // Not /company/projects/:slug — that route is Snowflake/CDP-scoped to sub-project activity rows
     // and 404s for a foundation-level slug (verified live against uepf and cncf).
-    // /org/{org}/memberships/:slug is the same convention org-memberships.component.html itself uses;
+    // /company/{org}/memberships/:slug is the same convention org-memberships.component.html itself uses;
     // the organization segment comes from the selection (spec 050 US2).
-    expect(link?.getAttribute('href')).toBe('/org/acme/memberships/uepf');
+    expect(link?.getAttribute('href')).toBe('/company/acme/memberships/uepf');
     expect(link?.getAttribute('aria-label')).toBe('View Ultra Ethernet Consortium Fund membership details');
   });
 
@@ -782,7 +802,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     await fixture.whenStable();
 
     expect(navigateSpy).toHaveBeenCalledTimes(1);
-    expect(navigateSpy.mock.calls[0][0].toString()).toBe('/org/acme/memberships/uepf');
+    expect(navigateSpy.mock.calls[0][0].toString()).toBe('/company/acme/memberships/uepf');
   });
 
   // jsdom does no layout or hit-testing, so this asserts the row anchor's own target — not that

@@ -9,6 +9,7 @@ import {
   DOCUMENT_LABEL,
   FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
+  FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
@@ -88,6 +89,7 @@ export class SidebarNavService {
    * is the checklist plus Meetings, Mailing Lists and Groups (#2754, #3059).
    */
   private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
+  private readonly isFoundationParticipatingOrgsEnabled = this.featureFlagService.getBooleanFlag(FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG, false);
 
   /**
    * True when the user has non-marketing foundation access (board role, root-writer, LF-staff, or
@@ -132,6 +134,29 @@ export class SidebarNavService {
    * one of their groups on it has the setting on (lfx-self-serve-ops#387).
    */
   private readonly canGroupMemberViewSocialListening: Signal<boolean> = this.initCanGroupMemberViewSocialListening();
+
+  /**
+   * Mirrors the BFF gate for the project Participating companies page so the entry is hidden, not a dead end: LF staff,
+   * or an executive director with a scoped project that is the active project or its direct parent (the parent comes from the stored selection, else the fetched record for that same project). The BFF stays
+   * authoritative (it walks the full ancestry), so a deeper-nested project an ED directs is hidden here rather than shown.
+   */
+  private readonly canSeeParticipatingOrgs: Signal<boolean> = computed(() => {
+    if (this.personaService.isLFStaff()) return true;
+    if (this.personaService.currentPersona() !== 'executive-director') return false;
+    // The project slot, which is what the project-lens menu shows (a Projects preview reads the same slot). `menuContext()`
+    // follows the route's lens instead, so it can point at the foundation while the project items are still on screen.
+    const project = this.projectContextService.selectedProject();
+    if (!project) return false;
+    // The stored selection often carries no parent_uid; the fetched record does, but only trust it for this same project
+    // (it can describe the previous project, or the foundation under a preview, while a switch is in flight).
+    const fetched = this.projectContextService.menuProject();
+    const parentUid = project.parent_uid || (fetched && fetched.uid === project.uid ? fetched.parent_uid : undefined);
+    const scoped = this.personaService.personaProjects()['executive-director'] ?? [];
+    return scoped.some(
+      (scope) =>
+        scope.projectUid === project.uid || (!!parentUid && scope.projectUid === parentUid) || scope.projectSlug.toLowerCase() === project.slug.toLowerCase()
+    );
+  });
 
   /** In flight while the foundation-lens auditor/root-writer probe (`foundationAuditorBootstrap`) runs. */
   private readonly foundationAuditorProbePending = signal(false);
@@ -237,8 +262,10 @@ export class SidebarNavService {
         const writerItems = this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem, ...mentorshipItems] : [];
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
         const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
-        // Participating Organizations (#2091) is shown to every project-lens viewer — the BFF enforces project `viewer`.
-        const items = [...coreItems, this.projectParticipatingOrgsNavItem, ...writerItems, ...mktgOsItems, this.projectGovernanceSection];
+        // Participating companies (#2091) is shown only to callers the BFF will serve: LF staff, or an executive
+        // director whose scoped foundations cover the active project (see `canSeeParticipatingOrgs`).
+        const participatingOrgsItems = this.canSeeParticipatingOrgs() ? [this.projectParticipatingOrgsNavItem] : [];
+        const items = [...coreItems, ...participatingOrgsItems, ...writerItems, ...mktgOsItems, this.projectGovernanceSection];
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -674,6 +701,16 @@ export class SidebarNavService {
           testId: 'sidebar-metrics-social-listening',
         });
 
+        // Dark-launched (#5697): the page reads live PROJECT_PARTICIPATING_ORGS figures from the warehouse, so the flag is the only gate before it is generally available.
+        if (this.isFoundationParticipatingOrgsEnabled()) {
+          metricsItems.push({
+            label: 'Participating companies',
+            icon: 'fa-light fa-building',
+            routerLink: '/foundation/participating-orgs',
+            testId: 'sidebar-metrics-participating-companies',
+          });
+        }
+
         items.push({
           label: 'Metrics',
           isSection: true,
@@ -831,7 +868,7 @@ export class SidebarNavService {
 
   // --- Project — Participating Organizations (#2091) ---
   private readonly projectParticipatingOrgsNavItem: SidebarMenuItem = {
-    label: 'Participating organizations',
+    label: 'Participating companies',
     icon: 'fa-light fa-building',
     routerLink: '/project/participating-orgs',
     testId: 'sidebar-project-participating-orgs',
@@ -986,7 +1023,7 @@ export class SidebarNavService {
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
       {
-        label: 'Organization Engagement',
+        label: 'Company Engagement',
         isSection: true,
         expanded: true,
         items: [
@@ -1024,14 +1061,14 @@ export class SidebarNavService {
       //
       // Profile is dropped in roll-up mode. It is single-org by definition (#4125) and will never
       // gain a combined rendering, and `orgLensPath` prefixes every item with the selected segment
-      // — so the link read `/org/family-{id}/profile`, where the page asks for
+      // — so the link read `/company/family-{id}/profile`, where the page asks for
       // `/api/orgs/uid/family-{id}`, the SFID validator refuses the roll-up key and the caller lands on an error page (#4415, Copilot).
       // `withEasyclaNavItem` already handles Profile being absent.
       ...(this.accountContext.isRollUp()
         ? []
         : [
             {
-              label: 'Organization Profile',
+              label: 'Company Profile',
               icon: 'fa-light fa-memo',
               routerLink: org('profile'),
               dividerBefore: true,

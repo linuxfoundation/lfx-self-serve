@@ -2411,6 +2411,124 @@ describe('VoteService', () => {
         vote_creation_time: undefined,
       });
     });
+
+    it.each([true, false])('passes through can_change_vote: %s from the upstream ballot (#4723)', async (canChangeVote) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue({ ...detail, can_change_vote: canChangeVote });
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toMatchObject({ can_change_vote: canChangeVote });
+    });
+
+    it('omits can_change_vote when upstream omits it or sends a non-boolean (#4723)', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValueOnce(detail).mockResolvedValueOnce({ ...detail, can_change_vote: 'yes' });
+
+      expect(await service.getMyVoteBallot(req, VOTE_UID)).not.toHaveProperty('can_change_vote');
+      expect(await service.getMyVoteBallot(req, VOTE_UID)).not.toHaveProperty('can_change_vote');
+    });
+  });
+
+  describe('getMyWouldEndVote (#4726)', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000f401';
+    const OWN_ROW_UID = 'vr000000-0000-0000-0000-00000000f401';
+    const pendingRow = (overrides: Partial<MyVoteResponse> = {}): MyVoteResponse => ({
+      uid: OWN_ROW_UID,
+      vote_uid: VOTE_UID,
+      vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE,
+      voter_removed: false,
+      ...overrides,
+    });
+    const detail = (overrides: Record<string, unknown> = {}) => ({ vote_response_uid: OWN_ROW_UID, vote_uid: VOTE_UID, ...overrides });
+
+    it.each([
+      ['no row', null],
+      ['a removed row', pendingRow({ voter_removed: true })],
+      ['a responded row', pendingRow({ vote_status: IndexedVoteResponseStatus.RESPONDED })],
+    ])('answers false without reading upstream for %s', async (_label, row) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row);
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).resolves.toBe(false);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it("reads only the identity-matched pending row and returns upstream's true", async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(pendingRow());
+      proxyRequest.mockResolvedValue(detail({ would_end_vote: true }));
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).resolves.toBe(true);
+      expect(service.getMyVoteResponse).toHaveBeenCalledWith(req, VOTE_UID);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/vote_responses/${OWN_ROW_UID}`, 'GET');
+    });
+
+    it.each([
+      ['false', detail({ would_end_vote: false })],
+      ['missing (older voting service)', detail()],
+      ['a non-boolean', detail({ would_end_vote: 'true' })],
+      ['an empty body', null],
+    ])('answers false when upstream would_end_vote is %s', async (_label, body) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(pendingRow());
+      proxyRequest.mockResolvedValue(body);
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).resolves.toBe(false);
+    });
+
+    it('answers false and warns when upstream returns a response for a different vote', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(pendingRow());
+      proxyRequest.mockResolvedValue(detail({ vote_uid: 'v0000000-0000-0000-0000-00000000f499', would_end_vote: true }));
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).resolves.toBe(false);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'get_my_would_end_vote', expect.any(String), expect.objectContaining({ vote_uid: VOTE_UID }));
+    });
+
+    it('rejects when the upstream read fails', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(pendingRow());
+      proxyRequest.mockRejectedValue(new Error('synthetic upstream failure'));
+
+      await expect(service.getMyWouldEndVote(req, VOTE_UID)).rejects.toThrow('synthetic upstream failure');
+    });
+  });
+
+  describe('updateMyVoteResponse (#4723)', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000e401';
+    const OWN_ROW_UID = 'vr000000-0000-0000-0000-00000000e401';
+    const payload = { abstain: false, user_vote_content: [{ question_id: 'q-1', choice_ids: ['c-yes'] }], comment_responses: [] };
+    const ownRow = (overrides: Partial<MyVoteResponse> = {}): MyVoteResponse => ({
+      uid: OWN_ROW_UID,
+      vote_uid: VOTE_UID,
+      vote_status: IndexedVoteResponseStatus.RESPONDED,
+      voter_removed: false,
+      ...overrides,
+    });
+
+    it.each([
+      ['no row', null],
+      ['a removed row', ownRow({ voter_removed: true })],
+      ['an awaiting row', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE })],
+    ])('returns 404 without calling upstream for %s', async (_label, row) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row);
+
+      await expect(service.updateMyVoteResponse(req, VOTE_UID, payload)).rejects.toMatchObject({ statusCode: 404 });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it("PUTs to the caller's own row uid with the user token", async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue(undefined);
+
+      await service.updateMyVoteResponse(req, VOTE_UID, payload);
+
+      expect(service.getMyVoteResponse).toHaveBeenCalledWith(req, VOTE_UID);
+      expect(proxyRequest).toHaveBeenCalledExactlyOnceWith(req, 'LFX_V2_SERVICE', `/vote_responses/${OWN_ROW_UID}`, 'PUT', undefined, payload);
+    });
+
+    it('propagates an upstream 409 when the vote makes ballots final', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      const conflict = new MicroserviceError('this poll does not allow changing a submitted vote', 409, 'CONFLICT', {});
+      proxyRequest.mockRejectedValue(conflict);
+
+      await expect(service.updateMyVoteResponse(req, VOTE_UID, payload)).rejects.toBe(conflict);
+    });
   });
 
   describe('getVoteReminderRecipients (#3769)', () => {

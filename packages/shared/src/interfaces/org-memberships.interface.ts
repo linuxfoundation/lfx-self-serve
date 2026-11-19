@@ -3,6 +3,11 @@
 
 import type { OrgLensFoundationProject } from './org-lens.interface';
 
+export interface OrgLensRowOrganization {
+  accountId: string;
+  name: string;
+}
+
 export interface OrgMembershipsSummary {
   activeMemberships: number;
   renewingWithin90Days: number;
@@ -24,12 +29,14 @@ export interface OrgActiveMembership {
   boardMembers: number;
   committeeMembers: number;
   orgProjects: number;
+  organization?: OrgLensRowOrganization;
 }
 
 export interface OrgActiveMembershipsResponse {
   accountId: string;
   summary: OrgMembershipsSummary;
   memberships: OrgActiveMembership[];
+  organizations?: OrgLensRowOrganization[];
 }
 
 /**
@@ -59,11 +66,15 @@ export interface OrgExpiredMembership {
   tierEndDate: string | null;
   expirationDate: string | null;
   actionType: 'renew' | 'contact';
+  organization?: OrgLensRowOrganization;
+  /** Roll-up only: the other organizations in the family that hold an active membership at this foundation. */
+  activeSiblings?: OrgLensRowOrganization[];
 }
 
 export interface OrgExpiredMembershipsResponse {
   accountId: string;
   memberships: OrgExpiredMembership[];
+  organizations?: OrgLensRowOrganization[];
 }
 
 export interface OrgDiscoverOpportunity {
@@ -422,6 +433,8 @@ export interface ActiveMembershipRow extends OrgActiveMembership {
   initials: string;
   tierRange: string;
   memberSinceFormatted: string;
+  membershipLink: string[] | null;
+  companyLinkLabel: string | null;
 }
 
 export interface ExpiredMembershipRow extends OrgExpiredMembership {
@@ -431,6 +444,9 @@ export interface ExpiredMembershipRow extends OrgExpiredMembership {
   tierStartFormatted: string;
   tierEndFormatted: string;
   renewUrl: string;
+  activeSiblingsLabel: string | null;
+  /** Roll-up only: pre-fills the Contact Us chat with the row's company and foundation. */
+  supportMessage: string | undefined;
 }
 
 export interface DiscoverOpportunityRow extends OrgDiscoverOpportunity {

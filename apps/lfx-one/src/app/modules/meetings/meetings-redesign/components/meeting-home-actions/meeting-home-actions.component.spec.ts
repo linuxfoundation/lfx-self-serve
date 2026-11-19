@@ -13,7 +13,7 @@ import { MeetingSelfRemovalService } from '@services/meeting-self-removal.servic
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, Subject, throwError } from 'rxjs';
+import { defer, finalize, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
@@ -79,6 +79,22 @@ describe('MeetingHomeActionsComponent', () => {
     await openMenu();
     find(testId)?.click();
     await settle();
+  };
+  const confirmResend = async (): Promise<void> => {
+    await choose('meetings-home-row-actions-resend');
+    find('meetings-home-row-actions-resend-confirm')?.querySelector('button')?.click();
+    await settle();
+  };
+  /** A send that stays in flight until the returned subject settles, tracked the way the real service tracks it. */
+  const pendingResend = (): Subject<{ message: string }> => {
+    const send$ = new Subject<{ message: string }>();
+    resendOwn$.mockImplementation(() =>
+      defer(() => {
+        resending.set(true);
+        return send$.pipe(finalize(() => resending.set(false)));
+      })
+    );
+    return send$;
   };
   const confirmRemoval = async (): Promise<void> => {
     await choose('meetings-home-row-actions-remove');
@@ -253,18 +269,77 @@ describe('MeetingHomeActionsComponent', () => {
   });
 
   describe('Resend Invite', () => {
-    it("resends for the row's occurrence and confirms with a dark toast", async () => {
+    it('asks first in an alertdialog with the meeting and the resend question, and sends nothing yet', async () => {
       await render(row(INVITEE));
       await choose('meetings-home-row-actions-resend');
 
+      const dialog = overlay.querySelector('[role="alertdialog"]');
+      expect(dialog).not.toBeNull();
+      expect(find('meetings-home-row-actions-resend-dialog')?.textContent).toContain('Resend Your Invitation');
+      expect(find('meetings-home-row-actions-resend-info')?.textContent).toContain('Synthetic sync');
+      const message = find('meetings-home-row-actions-resend-message');
+      expect(dialog?.getAttribute('aria-describedby')).toBe(message?.id);
+      expect(message?.textContent?.trim()).toBe("Resend your invitation to “Synthetic sync”? We'll email it to your own address again.");
+      expect(find('meetings-home-row-actions-resend-cancel')?.textContent?.trim()).toBe('Cancel');
+      expect(find('meetings-home-row-actions-resend-confirm')?.textContent?.trim()).toBe('Resend');
+      expect(resendOwn$).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing on Cancel', async () => {
+      await render(row(INVITEE));
+      await choose('meetings-home-row-actions-resend');
+      find('meetings-home-row-actions-resend-cancel')?.querySelector('button')?.click();
+      await settle();
+
+      expect(resendOwn$).not.toHaveBeenCalled();
+      expect(toastShow).not.toHaveBeenCalled();
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+    });
+
+    it("resends for the row's occurrence once confirmed, closes the dialog and confirms with a dark toast", async () => {
+      await render(row(INVITEE));
+      await confirmResend();
+
+      expect(resendOwn$).toHaveBeenCalledTimes(1);
       expect(resendOwn$).toHaveBeenCalledWith('synthetic-meeting', 'synthetic-occurrence');
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
       expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting invitation sent' });
     });
 
-    it('reports a failed resend', async () => {
-      resendOwn$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    it('keeps the dialog open, busy and undismissable until the send settles', async () => {
+      const send$ = pendingResend();
+      await render(row(INVITEE));
+      await confirmResend();
+
+      expect(find('meetings-home-row-actions-resend-confirm')?.querySelector('button')?.getAttribute('aria-busy')).toBe('true');
+      find('meetings-home-row-actions-resend-cancel')?.querySelector('button')?.click();
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+      await settle();
+      expect(overlay.querySelector('[role="alertdialog"]')).not.toBeNull();
+      send$.next({ message: 'ok' });
+      send$.complete();
+      await settle();
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+    });
+
+    it('sends one resend for a double click on Resend', async () => {
+      pendingResend();
       await render(row(INVITEE));
       await choose('meetings-home-row-actions-resend');
+      const confirm = find('meetings-home-row-actions-resend-confirm')?.querySelector('button');
+      confirm?.click();
+      confirm?.click();
+      await settle();
+
+      expect(resendOwn$).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a failed resend and closes the dialog', async () => {
+      resendOwn$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      await render(row(INVITEE));
+      await confirmResend();
+
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
 
       expect(toastShow).toHaveBeenCalledWith(
         expect.objectContaining({ variant: 'error', message: 'Error', description: 'Unable to resend the invitation. Please try again.' })

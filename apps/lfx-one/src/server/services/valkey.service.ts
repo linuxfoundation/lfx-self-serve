@@ -3,7 +3,7 @@
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { CacheCodec, CachePort, GetDelResult, LockAcquireResult } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
+import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils/org-selector.utils';
 import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
 
@@ -668,6 +668,12 @@ export function buildMeetingInviteLockCacheKey(username: string): string | null 
   return `${keyPrefix()}:${VALKEY_CACHE.MEETING_INVITE_LOCK_NAMESPACE}:${username}`;
 }
 
+/** Per-login mentorship user refresh marker key; null when the login id isn't filter-safe, so the caller falls back to its per-replica marker. */
+export function buildMentorshipUserSyncKey(loginId: string): string | null {
+  if (!isFilterSafeIdentifier(loginId)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.MENTORSHIP_USER_SYNC_NAMESPACE}:${loginId}`;
+}
+
 /**
  * Per-committee-member v1-id-mapping bridge cache key (LFXV2-1705); null (fail-closed → skip cache,
  * still attempt NATS) when the member uid isn't filter-safe, so it can't corrupt the `:`-delimited
@@ -735,13 +741,13 @@ export function withSocialListeningCache<T>(
 }
 
 /**
- * Per-project Participating Organizations cache key (#2091): the query's discriminator is sha256-hashed
- * so a search value can't corrupt the key; null (fail-closed → direct fetch) for an unsafe slug.
+ * Participating-orgs cache key for the given namespace (project page #2091, Foundation Lens #5697): the discriminator is
+ * sha256-hashed so a search value can't corrupt the key; null (fail-closed → direct fetch) for an unsafe slug.
  */
-function buildProjectParticipatingOrgsCacheKey(projectSlug: string, resource: string, discriminator: readonly (string | number)[]): string | null {
-  if (!isFilterSafeIdentifier(projectSlug)) return null;
+function buildParticipatingOrgsCacheKey(namespace: string, slug: string, resource: string, discriminator: readonly (string | number)[]): string | null {
+  if (!isFilterSafeIdentifier(slug)) return null;
   const digest = createHash('sha256').update(JSON.stringify(discriminator)).digest('hex').slice(0, 16);
-  return `${keyPrefix()}:${VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_NAMESPACE}:${projectSlug}:${resource}:${digest}`;
+  return `${keyPrefix()}:${namespace}:${slug}:${resource}:${digest}`;
 }
 
 /** Read-through helper for the per-project Participating Organizations namespace; a null key (unsafe slug) fetches directly. */
@@ -753,7 +759,27 @@ export function withProjectParticipatingOrgsCache<T>(
   accept: (value: unknown) => boolean
 ): Promise<T> {
   return valkeyService.withCache(
-    buildProjectParticipatingOrgsCacheKey(projectSlug, resource, discriminator),
+    buildParticipatingOrgsCacheKey(VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_NAMESPACE, projectSlug, resource, discriminator),
+    VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_TTL_SECONDS,
+    fetcher,
+    accept
+  );
+}
+
+/**
+ * Read-through helper for the Foundation Lens participating-companies reads (the roster and the project lines). They have their
+ * own namespace so `MAX_VALUE_BYTES_BY_NAMESPACE` can size them (a roster, or the lines of a flagship project, is larger than
+ * the 1 MiB default at the largest foundations) without raising the cap for the per-project entries.
+ */
+export function withFoundationParticipatingOrgsCache<T>(
+  foundationSlug: string,
+  resource: string,
+  discriminator: readonly (string | number)[],
+  fetcher: () => Promise<T>,
+  accept: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(
+    buildParticipatingOrgsCacheKey(VALKEY_CACHE.FOUNDATION_PARTICIPATING_ORGS_NAMESPACE, foundationSlug, resource, discriminator),
     VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_TTL_SECONDS,
     fetcher,
     accept

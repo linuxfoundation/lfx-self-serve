@@ -10,7 +10,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { catchError, combineLatest, finalize, of, skip, switchMap } from 'rxjs';
 
-import type { OrgEventSpeakersResponse, OrgEventSpeakerVm } from '@lfx-one/shared/interfaces';
+import type { OrgEventSpeakerVm } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
@@ -33,6 +33,7 @@ export class EventSpeakersDrawerComponent {
 
   protected readonly searchTerm = signal('');
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
 
   private readonly speakersData = this.initSpeakersData();
@@ -53,11 +54,14 @@ export class EventSpeakersDrawerComponent {
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);
           this.searchTerm.set('');
+          this.loadFailed.set(false);
           this.loading.set(true);
           return this.eventsService.getEventSpeakers(accountId, currentEventId).pipe(
-            catchError(() =>
-              of({ eventId: currentEventId, eventName: this.eventName(), acceptedCount: 0, submittedCount: 0, data: [] } as OrgEventSpeakersResponse)
-            ),
+            catchError((error: unknown) => {
+              console.error('Failed to load event speakers', error);
+              this.loadFailed.set(true);
+              return of(null);
+            }),
             finalize(() => this.loading.set(false))
           );
         })

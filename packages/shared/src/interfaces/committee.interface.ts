@@ -8,6 +8,7 @@ import type { BadgeSeverity, TagSeverity } from './components.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
 import type { MeetingAttachment } from './meeting-attachment.interface';
 import type { UserSearchResult } from './search.interface';
+import type { UiTone } from './uikit.interface';
 
 /** Outcome of checking committee-scoped write access in candidate order. */
 export interface CommitteeWriterProbeResult {
@@ -70,6 +71,72 @@ export type OversightSubType = 'governance' | 'advisory';
  * - other:                  Catch-all for uncategorized groups; minimal generic dashboard
  */
 export type GroupBehavioralClass = 'governing-board' | 'oversight-committee' | 'working-group' | 'special-interest-group' | 'ambassador-program' | 'other';
+
+/** Type tab on the redesigned Groups page: every group, or one behavioral class. */
+export type GroupsHomeTab = GroupBehavioralClass | 'all';
+
+/** Applied filters on the redesigned Groups page. */
+export interface GroupsHomeFilters {
+  /** A foundation's or project's uid; a foundation also matches its projects' groups. */
+  scope: string | null;
+  voting: 'enabled' | 'disabled' | null;
+}
+
+/** Groups with voting enabled and disabled, for the Voting capability filter options. */
+export interface GroupsHomeVotingCounts {
+  enabled: number;
+  disabled: number;
+}
+
+/** An applied filter shown as a removable chip on the redesigned Groups page. */
+export interface GroupsHomeFilterChip {
+  key: keyof GroupsHomeFilters;
+  /** Filter name with its colon, e.g. "Project:". */
+  prefix: string;
+  label: string;
+}
+
+/** One figure in the redesigned Groups page metrics row. */
+export interface GroupsHomeMetric {
+  label: string;
+  /** Font Awesome class string. */
+  icon: string;
+  /** Formatted value, or `—` when unknown. */
+  value: string;
+  /** Note under the value, such as how fresh it is, "Sample data", or that it covers only some groups. */
+  subLine?: string;
+}
+
+/** One row of the redesigned Groups page table: the group plus what its cells show. */
+export interface GroupsTableRow extends Record<string, unknown> {
+  uid: string;
+  group: MyCommittee;
+  /** The group's own type, such as "Technical Advisory Committee"; the class label when it has none. */
+  typeLabel: string;
+  typeIcon: string;
+  typeTone: UiTone;
+  /** The viewer's role, `Member` when they have none. */
+  role: string;
+  members: string;
+  commands: string[];
+  queryParams: Record<string, string> | null;
+}
+
+/** A group's mailing list or chat channel, shown as an icon button on its card or table row. */
+export interface GroupChannel {
+  kind: 'mailing-list' | 'slack' | 'discord' | 'chat';
+  /** Font Awesome class string. */
+  icon: string;
+  /** Tooltip: `Slack`, `Discord`, `Chat`, or the mailing list's name or address. */
+  tooltip: string;
+  ariaLabel: string;
+  /** Chat URL, `mailto:` address, or the in-app mailing list page. */
+  href: string;
+  /** Chat links open in a new tab; mail and in-app links don't. */
+  newTab: boolean;
+  /** Router target of an in-app mailing list page, so a plain click navigates in the app; `null` otherwise. */
+  link: CommitteeMailingListLink | null;
+}
 
 /** Display metadata for a behavioral class — used by filter chips and badges. */
 export interface BehavioralClassDisplayConfig {
@@ -186,6 +253,8 @@ export interface PendingInvitation {
   committee_name: string;
   /** Project display name — enriched (optional) */
   project_name?: string | null;
+  /** Project logo URL — enriched (optional) */
+  project_logo_url?: string | null;
   /** Owning project slug — enriched (optional); drives the `?project=` query param on the invitation's view link (GH-1566). */
   project_slug?: string | null;
   /** Whether the owning project is a foundation — enriched (optional); drives the `/foundation` vs `/project` tier prefix on the view link. Null/absent means tier unknown → callers keep the flat `/groups/:uid` fallback (GH-1566). */
@@ -387,6 +456,10 @@ export interface GroupLinkState {
   backLabel: string;
   backPath: string;
   fromMeLens: boolean;
+  /** Slug of the foundation or project the list was scoped to, restored as `?project=` on Back. A rolled-up sub-project's group switches the selected project, so without it Back would land on the sub-project's list. */
+  backProject?: string;
+  /** Lens the list was on, restored with `backProject`: the sub-project's group page may have moved the viewer to the project lens, which would otherwise put a foundation in the project slot. */
+  backLens?: 'foundation' | 'project';
 }
 
 /**
@@ -478,6 +551,8 @@ export interface Committee {
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */
   parent_project_uid?: string;
+  /** Project logo URL (populated from project data) */
+  project_logo_url?: string;
   /** Foundation name this committee belongs to (populated from project hierarchy) */
   foundation_name?: string;
   /** Calendar visibility settings */
@@ -665,6 +740,24 @@ export interface PendingInvitationRowVm extends PendingInvitation {
   viewCommands: string[];
   /** `?project=` for the view link — present only when the invitation carries a `project_slug`. */
   viewQueryParams: { project: string } | null;
+}
+
+/** The Undo a Groups page drawer repeats from its toast, which the drawer's focus trap keeps out of keyboard reach. */
+export interface GroupsHomeUndo {
+  /** Accessible name of the drawer's Undo button, naming what it restores. */
+  ariaLabel: string;
+  run: () => void;
+}
+
+/** One row of the Invitations drawer on the redesigned Groups page. */
+export interface GroupInvitationItem {
+  invitation: PendingInvitation;
+  /** Font Awesome class string of the group's type. */
+  typeIcon: string;
+  /** The group's own type, such as "Technical Advisory Committee"; the class label when it has none. */
+  typeLabel: string;
+  /** "Invited by {name} · Expires {date}", or "You've been invited" without an inviter. */
+  detail: string;
 }
 
 /**
@@ -1283,6 +1376,20 @@ export interface MailingListPickerDialogResult {
    * empty when the sync feature flag is off, same fallback contract as `syncModes`.
    */
   committeeRoleFilters: Map<string, string[]>;
+}
+
+/**
+ * Per-mailing-list sync-direction conflict state within MailingListPickerDialogComponent (#5786),
+ * matching the backend's asymmetric CheckSyncModeConflict rule: a sibling running Mailing List →
+ * Committee locks a list out of both auto directions, while a sibling running Committee → Mailing
+ * List only locks out Mailing List → Committee (multiple Committee → Mailing List lists are
+ * allowed per committee).
+ */
+export interface MailingListDirectionConflict {
+  /** uid of the sibling list currently running Mailing List → Committee, if any. */
+  mlToCUid: string | null;
+  /** uid of a sibling list currently running Committee → Mailing List, if any. */
+  cToMlUid: string | null;
 }
 
 export interface MailingListSyncPreviewDialogData {

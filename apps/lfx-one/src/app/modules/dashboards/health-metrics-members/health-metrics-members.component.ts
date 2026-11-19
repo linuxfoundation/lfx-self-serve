@@ -48,15 +48,9 @@ export class HealthMetricsMembersComponent {
   protected readonly idPrefix = HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_MEMBERS_DATA_SECTIONS;
   protected readonly blank = HEALTH_METRICS_MEMBERS_BLANK;
-  protected readonly breakdownCount = signal<number | null>(null);
-  protected readonly listCount = signal<number | null>(null);
   protected readonly riskNote = signal<string>('');
-  protected readonly renewalsCount = signal<number | null>(null);
   protected readonly boardNote = signal<string>('');
   protected readonly subNavItems = computed<HealthMetricsMembersSubNavItem[]>(() =>
-    buildHealthMetricsMembersSubNavItems(
-      { breakdown: this.breakdownCount(), list: this.listCount(), renewals: this.renewalsCount() },
-      { risk: this.riskNote(), board: this.boardNote() }
-    )
+    buildHealthMetricsMembersSubNavItems({ risk: this.riskNote(), board: this.boardNote() })
   );
 }

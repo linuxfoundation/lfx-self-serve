@@ -8,6 +8,9 @@ import {
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
@@ -42,6 +45,7 @@ import {
 import type {
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEventsOrganizationsSegment,
+  HealthMetricsEventsSpeakersStatusGroup,
   HealthMetricsMembersAtRiskFilter,
   HealthMetricsMembersBoardCohort,
   HealthMetricsMembersNpsCategory,
@@ -86,6 +90,9 @@ const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAG
 
 /** Membership segments the Events organizations table accepts. */
 const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.map((option) => option.id));
+
+/** Status groups the All speaker proposals drawer filters by. */
+const EVENTS_SPEAKER_PROPOSAL_STATUSES: ReadonlySet<string> = new Set(Object.keys(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS));
 const TRAINING_COURSES_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.map((option) => option.id));
 
 /** NPS categories the Members directory filter accepts. */
@@ -4085,7 +4092,7 @@ export class AnalyticsController {
 
       const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_events_organizations');
       if (!isSupportedEventsRange(range)) {
-        throw ServiceValidationError.forField('range', 'Organizations at events have no data for this range', { operation: 'get_events_organizations' });
+        throw ServiceValidationError.forField('range', 'Companies at events have no data for this range', { operation: 'get_events_organizations' });
       }
 
       const segment = getStringQueryParam(req, 'segment') || 'all';
@@ -4118,6 +4125,60 @@ export class AnalyticsController {
         has_search: search.length > 0,
         total_records: response.totalRecords,
         scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-speaker-proposals` — one page of a period's proposals, cut by event and status. */
+  public async getEventsSpeakerProposals(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_speaker_proposals');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_speaker_proposals');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_events_speaker_proposals');
+      if (!isSupportedEventsRange(range)) {
+        throw ServiceValidationError.forField('range', 'Speaker proposals have no data for this range', { operation: 'get_events_speaker_proposals' });
+      }
+
+      const eventId = getStringQueryParam(req, 'eventId') ?? '';
+      if (eventId && !EVENT_ID_PATTERN.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', { operation: 'get_events_speaker_proposals' });
+      }
+
+      const status = getStringQueryParam(req, 'status') ?? '';
+      if (status && !EVENTS_SPEAKER_PROPOSAL_STATUSES.has(status)) {
+        throw ServiceValidationError.forField('status', `Invalid status value. Allowed: ${[...EVENTS_SPEAKER_PROPOSAL_STATUSES].join(', ')}`, {
+          operation: 'get_events_speaker_proposals',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsEventsService.getSpeakerProposalsPage(req, {
+        foundationSlug,
+        range,
+        eventId,
+        status: status ? (status as HealthMetricsEventsSpeakersStatusGroup) : null,
+        offset,
+        pageSize,
+        includeEvents: getStringQueryParam(req, 'includeEvents') === 'true',
+      });
+
+      logger.success(req, 'get_events_speaker_proposals', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        event_id: eventId || undefined,
+        status: status || undefined,
+        offset,
+        total_records: response.totalRecords,
       });
 
       res.json(response);

@@ -1,17 +1,27 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, DefaultUrlSerializer, provideRouter, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
 import { ButtonComponent } from '@components/button/button.component';
-import type { Lens, Meeting, MeetingDashboardView, MeetingResponseFilter, PastMeeting, ProjectContext, User } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
+import type {
+  Lens,
+  Meeting,
+  MeetingDashboardView,
+  MeetingResponseFilter,
+  MeetingRollupFilterOptions,
+  PaginatedResponse,
+  PastMeeting,
+  ProjectContext,
+  User,
+} from '@lfx-one/shared/interfaces';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -19,7 +29,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, of } from 'rxjs';
+import { EMPTY, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsDashboardComponent } from './meetings-dashboard.component';
@@ -33,6 +43,9 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
   let lens: WritableSignal<Lens>;
   let context: WritableSignal<ProjectContext | null>;
   const route = { snapshot: { queryParamMap: convertToParamMap({}) } };
+  const serializer = new DefaultUrlSerializer();
+  // The live address the dashboard rewrites; `ProjectContextService` may have moved `?project=` past the Router.
+  const location = { path: vi.fn(() => '/project/meetings?project=scope'), replaceState: vi.fn() };
   const flush = (): void => TestBed.tick();
   const ids = (component: MeetingsDashboardComponent): string[] => component.filteredMeetings().map((m) => m.id);
   const row = (id: string, extra: Partial<Meeting> = {}): Meeting =>
@@ -101,11 +114,22 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         { provide: LensService, useValue: { activeLens: lens } },
         { provide: ProjectContextService, useValue: { activeContext: context, canWrite: signal(true), canWriteMeetings: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true), hasBoardRole: signal(true), hasProjectRole: signal(true) } },
-        { provide: Router, useValue: { navigate: vi.fn() } },
+        {
+          provide: Router,
+          useValue: {
+            navigate: vi.fn(),
+            getCurrentNavigation: () => null,
+            parseUrl: (url: string) => serializer.parse(url),
+            serializeUrl: (tree: ReturnType<DefaultUrlSerializer['parse']>) => serializer.serialize(tree),
+          },
+        },
         { provide: ActivatedRoute, useValue: route },
+        { provide: Location, useValue: location },
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     });
+    location.replaceState.mockClear();
+    location.path.mockReturnValue('/project/meetings?project=scope');
     users = TestBed.inject(UserService);
     users.user.set({ username: 'alias', 'https://sso.linuxfoundation.org/claims/username': 'viewer' } as User);
     users.authenticated.set(true);
@@ -116,6 +140,21 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     vi.spyOn(meetings, 'getPastMeetingsByProjectPaginated').mockReturnValue(of({ data: [], page_token: undefined }));
     vi.spyOn(meetings, 'getMeetingsCountByProject').mockReturnValue(of(0));
     vi.spyOn(meetings, 'getPastMeetingsCountByProject').mockReturnValue(of(0));
+    vi.spyOn(meetings, 'getRollupProjectsPreference').mockReturnValue(of(null));
+    vi.spyOn(meetings, 'saveRollupProjectsPreference').mockReturnValue(of(true));
+    vi.spyOn(meetings, 'getRollupFilterOptions').mockReturnValue(
+      of({
+        projects: [
+          { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+          { uid: 'child', name: 'Child project', slug: 'child' },
+        ],
+        groups: [
+          { uid: 'board', name: 'Board', category: 'Board', project_uid: 'scope' },
+          { uid: 'wg', name: 'Working group', category: 'Working Group', project_uid: 'child' },
+        ],
+        complete: true,
+      })
+    );
     composer = TestBed.inject(MeetingComposerService);
     http = TestBed.inject(HttpTestingController);
     flush();
@@ -842,6 +881,503 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     personalSubscription.unsubscribe();
   });
 
+  describe('roll-up filters', () => {
+    const openScope = (component: MeetingsDashboardComponent): void => {
+      context.set({ uid: 'scope', name: 'Synthetic scope' } as ProjectContext);
+      lens.set('foundation');
+      flush();
+      expect(component).toBeTruthy();
+    };
+
+    it('seeds the filters and view from the URL and sends them with every roll-up fetch', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ projects: 'child', group: 'wg', group_type: 'Working Group', type: 'Technical', view: 'calendar' });
+      const component = mount();
+      openScope(component);
+
+      const expected = { includeSubProjects: true, projectUids: ['child'], committeeUid: 'wg', groupType: 'Working Group' };
+      expect(component.meetingTypeFilter()).toBe('Technical');
+      expect(component.isCalendarView()).toBe(true);
+      expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, ['meeting_type:Technical'], expected);
+      expect(meetings.getPastMeetingsCountByProject).toHaveBeenCalledWith('scope', expected);
+      expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, undefined, { ...expected, pageSize: 1000 });
+    });
+
+    it('counts upcoming meetings from the loaded meetings, including a series that started in the past', () => {
+      const series = {
+        uid: 'series',
+        id: 'series',
+        start_time: '2020-01-01T12:00:00Z',
+        duration: 30,
+        recurrence: { type: 1, repeat_interval: 1 },
+        occurrences: [{ occurrence_id: '1', start_time: '2099-01-01T12:00:00Z', duration: 30 }],
+      } as unknown as Meeting;
+      const ended = { uid: 'ended', id: 'ended', start_time: '2020-01-01T12:00:00Z', duration: 30, recurrence: null } as unknown as Meeting;
+      vi.mocked(meetings.getMeetingsByProjectPaginated).mockReturnValue(of({ data: [series, ended], page_token: undefined }));
+      const component = mount();
+      openScope(component);
+
+      expect(component['fpUpcomingCount']()).toBe(1);
+      expect(component['fpRecurringCount']()).toBe(1);
+    });
+
+    it('drops a meeting type the URL names that does not exist', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ type: 'Nonsense' });
+      const component = mount();
+
+      expect(component.meetingTypeFilter()).toBeNull();
+    });
+
+    it('writes filter changes to the live URL, keeping the project it already carries', () => {
+      const component = mount();
+      openScope(component);
+      location.path.mockReturnValue('/project/meetings?project=current&group=stale#top');
+
+      component.onRollupProjectsFilterChange(['child']);
+      component.onGroupTypeFilterChange('Working Group');
+      flush();
+
+      expect(location.replaceState).toHaveBeenLastCalledWith('/project/meetings?project=current&projects=child&group_type=Working%20Group#top');
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+    });
+
+    it('keeps every listed project as a subset when the options do not list the whole tree', () => {
+      vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+        of({
+          projects: [
+            { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+            { uid: 'child', name: 'Child project', slug: 'child' },
+          ],
+          groups: [],
+          complete: false,
+        })
+      );
+      const component = mount();
+      openScope(component);
+
+      component.onRollupProjectsFilterChange(['scope', 'child']);
+      flush();
+
+      expect(meetings.getMeetingsByProjectPaginated).toHaveBeenLastCalledWith('scope', undefined, undefined, undefined, undefined, {
+        includeSubProjects: true,
+        projectUids: ['scope', 'child'],
+        pageSize: 1000,
+      });
+    });
+
+    it('treats every project selected as the whole roll-up, while keeping the selection shown', () => {
+      const component = mount();
+      openScope(component);
+
+      component.onRollupProjectsFilterChange(['scope', 'child']);
+      flush();
+
+      expect(component.rollupProjectsFilter()).toEqual(['scope', 'child']);
+      expect(meetings.getMeetingsByProjectPaginated).toHaveBeenLastCalledWith('scope', undefined, undefined, undefined, undefined, {
+        includeSubProjects: true,
+        pageSize: 1000,
+      });
+    });
+
+    it('drops a Load More page that returns after the query changed', () => {
+      const component = mount();
+      openScope(component);
+      const late = new Subject<PaginatedResponse<Meeting>>();
+      vi.mocked(meetings.getMeetingsByProjectPaginated).mockImplementation((_uid, _sort, token) =>
+        token ? late : of({ data: [row('fresh')], page_token: 'next' })
+      );
+      component.refreshMeetings(false);
+      flush();
+      component.loadMore();
+
+      component.onGroupTypeFilterChange('Board');
+      flush();
+      late.next({ data: [row('stale')], page_token: 'stale-cursor' });
+      late.complete();
+      flush();
+
+      expect(ids(component)).toEqual(['fresh']);
+      expect(component.hasMore()).toBe(true);
+    });
+
+    it('drops a Load More failure that returns after the query changed, keeping the new cursor', () => {
+      const component = mount();
+      openScope(component);
+      const late = new Subject<PaginatedResponse<Meeting>>();
+      vi.mocked(meetings.getMeetingsByProjectPaginated).mockImplementation((_uid, _sort, token) =>
+        token ? late : of({ data: [row('fresh')], page_token: 'next' })
+      );
+      component.refreshMeetings(false);
+      flush();
+      component.loadMore();
+
+      component.onGroupTypeFilterChange('Board');
+      flush();
+      late.error(new Error('late failure'));
+      flush();
+
+      expect(ids(component)).toEqual(['fresh']);
+      expect(component.hasMore()).toBe(true);
+    });
+
+    it('offers only the groups and group types of the selected projects and type, and clears a group they no longer offer', () => {
+      const component = mount();
+      openScope(component);
+      // The default shows only the root's own meetings, so only its own groups are offered.
+      expect(component.groupOptions().map((o) => o.label)).toEqual(['Board']);
+      expect(component.groupTypeOptions().map((o) => o.value)).toEqual(['Board']);
+
+      component.onRollupProjectsFilterChange(['scope', 'child']);
+      flush();
+      expect(component.groupOptions().map((o) => o.label)).toEqual(['Board', 'Working group (Child project)']);
+      expect(component.groupTypeOptions().map((o) => o.value)).toEqual(['Board', 'Working Group']);
+
+      component.groupFilter.set('board');
+      component.onRollupProjectsFilterChange(['child']);
+      flush();
+
+      expect(component.groupOptions().map((o) => o.value)).toEqual(['wg']);
+      expect(component.groupTypeOptions().map((o) => o.value)).toEqual(['Working Group']);
+      expect(component.groupFilter()).toBeNull();
+
+      component.groupFilter.set('wg');
+      component.onRollupProjectsFilterChange([]);
+      component.onGroupTypeFilterChange('Board');
+      flush();
+      expect(component.groupOptions().map((o) => o.value)).toEqual(['board']);
+      expect(component.groupFilter()).toBeNull();
+    });
+
+    describe('default and saved project selection', () => {
+      const lastOptions = (): unknown => vi.mocked(meetings.getMeetingsByProjectPaginated).mock.calls.at(-1)?.[5];
+
+      it("shows only the root's own meetings by default, with no projects param", () => {
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual([]);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, rootOnly: true, pageSize: 1000 });
+        expect(location.replaceState).not.toHaveBeenCalledWith(expect.stringContaining('projects='));
+      });
+
+      it('applies the saved selection once the options load', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of(['child', 'gone']));
+        const component = mount();
+        openScope(component);
+
+        expect(meetings.getRollupProjectsPreference).toHaveBeenCalledWith('scope');
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, projectUids: ['child'], pageSize: 1000 });
+      });
+
+      it('checks every project for a saved choice of all projects', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of([]));
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual(['scope', 'child']);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
+      });
+
+      it('keeps a choice made earlier this session when returning to its root before the save lands', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of(null));
+        const component = mount();
+        openScope(component);
+        component.onRollupProjectsFilterChange(['child']);
+
+        context.set({ uid: 'other', name: 'Other scope' } as ProjectContext);
+        flush();
+        context.set({ uid: 'scope', name: 'Synthetic scope' } as ProjectContext);
+        flush();
+
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+        expect(meetings.getRollupProjectsPreference).not.toHaveBeenLastCalledWith('scope');
+      });
+
+      it("seeds a child root only from its own options, not the parent's that contain it", () => {
+        const childOptions = new Subject<MeetingRollupFilterOptions>();
+        vi.mocked(meetings.getRollupFilterOptions).mockImplementation((root) =>
+          root === 'child'
+            ? childOptions
+            : of({
+                projects: [
+                  { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+                  { uid: 'child', name: 'Child project', slug: 'child' },
+                  { uid: 'sibling', name: 'Sibling', slug: 'sibling' },
+                ],
+                groups: [],
+                complete: true,
+              })
+        );
+        vi.mocked(meetings.getRollupProjectsPreference).mockImplementation((root) => of(root === 'child' ? ['child', 'sibling'] : null));
+        const component = mount();
+        openScope(component);
+
+        context.set({ uid: 'child', name: 'Child project' } as ProjectContext);
+        flush();
+        expect(component.rollupProjectsFilter()).toEqual([]);
+
+        childOptions.next({
+          projects: [
+            { uid: 'child', name: 'Child project', slug: 'child' },
+            { uid: 'grandchild', name: 'Grandchild', slug: 'grandchild' },
+          ],
+          groups: [],
+          complete: true,
+        });
+        flush();
+        expect(component.rollupProjectsFilter()).toEqual([]);
+      });
+
+      it('keeps a saved project the options do not list when the list is incomplete', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of(['child', 'missing-branch']));
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+          of({
+            projects: [
+              { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+              { uid: 'child', name: 'Child project', slug: 'child' },
+            ],
+            groups: [],
+            complete: false,
+          })
+        );
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual(['child', 'missing-branch']);
+      });
+
+      it('applies a saved choice from an incomplete list that lacks the root itself', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of(['child']));
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+          of({ projects: [{ uid: 'child', name: 'Child project', slug: 'child' }], groups: [], complete: false })
+        );
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+      });
+
+      it('saves Show all projects as all projects even from an incomplete list', () => {
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+          of({
+            projects: [
+              { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+              { uid: 'child', name: 'Child project', slug: 'child' },
+            ],
+            groups: [],
+            complete: false,
+          })
+        );
+        const component = mount();
+        openScope(component);
+
+        component.showAllRollupProjects();
+        vi.advanceTimersByTime(600);
+        flush();
+
+        expect(meetings.saveRollupProjectsPreference).toHaveBeenLastCalledWith('scope', []);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
+      });
+
+      it('rolls up a selection of up to the roll-up project limit', () => {
+        const many = Array.from({ length: 123 }, (_, i) => `p${i}`);
+        route.snapshot.queryParamMap = convertToParamMap({ projects: many.join(',') });
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+          of({
+            projects: [{ uid: 'scope', name: 'Synthetic scope', slug: 'scope' }, ...many.map((uid) => ({ uid, name: uid, slug: uid }))],
+            groups: [],
+            complete: true,
+          })
+        );
+        const component = mount();
+        openScope(component);
+
+        expect(lastOptions()).toEqual({ includeSubProjects: true, projectUids: many, pageSize: 1000 });
+      });
+
+      it('shows the root only for a selection larger than the roll-up project limit', () => {
+        const many = Array.from({ length: 151 }, (_, i) => `p${i}`);
+        route.snapshot.queryParamMap = convertToParamMap({ projects: many.join(',') });
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+          of({
+            projects: [{ uid: 'scope', name: 'Synthetic scope', slug: 'scope' }, ...many.map((uid) => ({ uid, name: uid, slug: uid }))],
+            groups: [
+              { uid: 'board', name: 'Board', category: 'Board', project_uid: 'scope' },
+              { uid: 'wg', name: 'Working group', category: 'Working Group', project_uid: 'p1' },
+            ],
+            complete: true,
+          })
+        );
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toHaveLength(151);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, rootOnly: true, pageSize: 1000 });
+        // The groups follow the root-only fallback, so every offered group can match.
+        expect(component['groupOptions']().map((option: { value: string }) => option.value)).toEqual(['board']);
+        expect(component['groupTypeOptions']().map((option: { value: string }) => option.value)).toEqual(['Board']);
+      });
+
+      it('lets a link with projects win over the saved choice', () => {
+        route.snapshot.queryParamMap = convertToParamMap({ projects: 'child' });
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of([]));
+        const component = mount();
+        openScope(component);
+
+        expect(meetings.getRollupProjectsPreference).not.toHaveBeenCalled();
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+      });
+
+      it('keeps a change the user made before a late saved choice arrives', () => {
+        const saved = new Subject<string[] | null>();
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(saved);
+        const component = mount();
+        openScope(component);
+
+        component.onRollupProjectsFilterChange(['child']);
+        saved.next([]);
+        saved.complete();
+        flush();
+
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+      });
+
+      it('re-seeds from the new root when the foundation or project changes', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockImplementation((root) => of(root === 'scope' ? ['child'] : null));
+        const component = mount();
+        openScope(component);
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+
+        context.set({ uid: 'other', name: 'Other scope' } as ProjectContext);
+        flush();
+
+        expect(meetings.getRollupProjectsPreference).toHaveBeenLastCalledWith('other');
+        expect(component.rollupProjectsFilter()).toEqual([]);
+      });
+
+      it('checks every project for a link to all projects, without reading the saved choice', () => {
+        route.snapshot.queryParamMap = convertToParamMap({ projects: 'all' });
+        const component = mount();
+        openScope(component);
+
+        expect(meetings.getRollupProjectsPreference).not.toHaveBeenCalled();
+        expect(component.rollupProjectsFilter()).toEqual(['scope', 'child']);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
+      });
+
+      it('covers every project for a link to all projects even when the options fail to load', () => {
+        route.snapshot.queryParamMap = convertToParamMap({ projects: 'all' });
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(of({ projects: [], groups: [], complete: false }));
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual([]);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
+      });
+
+      it('drops a linked group outside the seeded scope instead of matching nothing', () => {
+        route.snapshot.queryParamMap = convertToParamMap({ group: 'wg', group_type: 'Working Group' });
+        const component = mount();
+        openScope(component);
+
+        expect(component.groupFilter()).toBeNull();
+        expect(component.groupTypeFilter()).toBeNull();
+      });
+
+      it('points an empty default view to the sub-projects, and Show all projects checks them all', () => {
+        const component = mount();
+        openScope(component);
+        const hint = (): boolean => (component as unknown as { showRootOnlyHint: () => boolean }).showRootOnlyHint();
+        expect(hint()).toBe(true);
+
+        component.showAllRollupProjects();
+        flush();
+
+        expect(component.rollupProjectsFilter()).toEqual(['scope', 'child']);
+        expect(hint()).toBe(false);
+
+        component.onRollupProjectsFilterChange(['scope']);
+        flush();
+        expect(hint()).toBe(true);
+      });
+
+      it('saves a change for the root after a pause, and Reset filters saves the default', () => {
+        const component = mount();
+        openScope(component);
+
+        component.onRollupProjectsFilterChange(['child']);
+        vi.advanceTimersByTime(600);
+        expect(meetings.saveRollupProjectsPreference).toHaveBeenLastCalledWith('scope', ['child']);
+
+        component.onRollupProjectsFilterChange(['scope', 'child']);
+        vi.advanceTimersByTime(600);
+        expect(meetings.saveRollupProjectsPreference).toHaveBeenLastCalledWith('scope', []);
+
+        component.resetFilters();
+        vi.advanceTimersByTime(600);
+        expect(meetings.saveRollupProjectsPreference).toHaveBeenLastCalledWith('scope', ['scope']);
+        expect(component.rollupProjectsFilter()).toEqual([]);
+      });
+    });
+
+    it('drops a linked group or group type the loaded options do not offer', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ projects: 'scope', group: 'wg', group_type: 'Working Group' });
+      const component = mount();
+      openScope(component);
+
+      expect(component.groupFilter()).toBeNull();
+      expect(component.groupTypeFilter()).toBeNull();
+    });
+
+    it('keeps a linked group the options do not list when the list is incomplete', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ group: 'missing-branch-group' });
+      vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+        of({ projects: [{ uid: 'scope', name: 'Synthetic scope', slug: 'scope' }], groups: [], complete: false })
+      );
+      const component = mount();
+      openScope(component);
+
+      expect(component.groupFilter()).toBe('missing-branch-group');
+    });
+
+    it('keeps a linked group the loaded options offer', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ projects: 'all', group: 'wg', group_type: 'Working Group' });
+      const component = mount();
+      openScope(component);
+
+      expect(component.groupFilter()).toBe('wg');
+      expect(component.groupTypeFilter()).toBe('Working Group');
+    });
+
+    it('clears the roll-up filters on the Me lens, which has no controls for them', () => {
+      const component = mount();
+      openScope(component);
+      component.onRollupProjectsFilterChange(['child']);
+      component.groupFilter.set('wg');
+
+      lens.set('me');
+      flush();
+      for (const request of http.match('/api/user/meetings')) request.flush([]);
+      flush();
+
+      expect(component.rollupProjectsFilter()).toEqual([]);
+      expect(component.groupFilter()).toBeNull();
+    });
+
+    it('clears the roll-up filters when the foundation or project changes', () => {
+      const component = mount();
+      openScope(component);
+      component.onRollupProjectsFilterChange(['child']);
+      component.onGroupTypeFilterChange('Working Group');
+
+      context.set({ uid: 'other', name: 'Other scope' } as ProjectContext);
+      flush();
+
+      expect(component.rollupProjectsFilter()).toEqual([]);
+      expect(component.groupTypeFilter()).toBeNull();
+    });
+  });
+
   it.each([
     ['pending', 'foundation'],
     ['organizer', 'foundation'],
@@ -865,7 +1401,10 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     component.loadMore();
     expect(ids(component)).toEqual(['scoped-first', 'scoped-second']);
     expect(component.hasMore()).toBe(false);
-    expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, 'next', undefined, undefined);
+    expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, 'next', undefined, undefined, {
+      includeSubProjects: true,
+      rootOnly: true,
+    });
     component.viewMode.set('calendar');
     flush();
     expect(component.isCalendarView()).toBe(true);
@@ -879,7 +1418,10 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     vi.mocked(meetings.getPastMeetingsByProjectPaginated).mockReturnValue(of({ data: [past] }));
     select(component, 'past');
     expect(ids(component)).toEqual(['past-other']);
-    expect(meetings.getPastMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, true);
+    expect(meetings.getPastMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, true, {
+      includeSubProjects: true,
+      rootOnly: true,
+    });
     lens.set('me');
     flush();
     http.expectOne('/api/user/past-meetings').flush([past]);
@@ -890,18 +1432,13 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
 });
 
 /**
- * Covers the Create Meeting button's two shapes across `MEETING_V2_ENABLED_FLAG`.
+ * Covers the Create Meeting button in the dashboard header.
  *
- * This is the busiest of the seven entry points and the one a targeted user is most likely to reach
- * first, so both shapes are asserted on a real render rather than on the flag read. The point of the
- * flag-off case is that the button is not merely present but still *navigates*: the pre-v2 create
- * page is a route, and a button that only toggles an absent dropdown would look identical in a
- * screenshot while doing nothing at all.
+ * This is the busiest of the create entry points, so the button is asserted on a real render: it
+ * has to announce and open the type picker rather than navigate, and mount exactly one dropdown
+ * beside it.
  */
-describe('MeetingsDashboardComponent — create button per flag', () => {
-  /** `MEETING_V2_ENABLED_FLAG`. Stated per test: the real service answers `false` in a TestBed. */
-  let meetingsV2Enabled: WritableSignal<boolean>;
-
+describe('MeetingsDashboardComponent — create button', () => {
   async function mount(): Promise<import('@angular/core/testing').ComponentFixture<MeetingsDashboardComponent>> {
     TestBed.configureTestingModule({
       providers: [
@@ -941,7 +1478,6 @@ describe('MeetingsDashboardComponent — create button per flag', () => {
         },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
         { provide: DialogService, useValue: { open: vi.fn() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
       ],
     });
     // A no-op override on the dashboard itself, and it is load-bearing. Its template defers the
@@ -960,43 +1496,21 @@ describe('MeetingsDashboardComponent — create button per flag', () => {
     return fixture;
   }
 
-  beforeEach(() => {
-    meetingsV2Enabled = signal(false);
-  });
-
-  it('renders a navigating Create Meeting button while the flag is off', async () => {
+  it('renders the Create Meeting button as a dropdown trigger', async () => {
     const fixture = await mount();
 
     const button = fixture.debugElement.query(By.css('[data-testid="meeting-create-button"]')).componentInstance as ButtonComponent;
 
-    expect(button.routerLink()).toEqual(['/meetings', 'create']);
-    expect(button.ariaHaspopup()).toBeUndefined();
-    // Absent, not hidden: an untargeted user should not mount the composer's create menu at all.
-    expect(fixture.debugElement.query(By.directive(MeetingCreateMenuComponent))).toBeNull();
-  });
-
-  it('renders the same button as a dropdown trigger once the flag is on', async () => {
-    meetingsV2Enabled.set(true);
-    const fixture = await mount();
-
-    const button = fixture.debugElement.query(By.css('[data-testid="meeting-create-button"]')).componentInstance as ButtonComponent;
-
-    // `menu`, and no `routerLink`: this branch opens the type picker over the list, and a router
+    // `menu`, and no `routerLink`: the button opens the type picker over the list, and a router
     // link here would put a destination in the status bar that the click never goes to.
     expect(button.ariaHaspopup()).toBe('menu');
     expect(button.routerLink()).toBeUndefined();
     expect(fixture.debugElement.query(By.directive(MeetingCreateMenuComponent))).not.toBeNull();
   });
 
-  it('keeps the button findable by the same test id on both branches', async () => {
-    const off = await mount();
-    expect(off.nativeElement.querySelectorAll('[data-testid="meeting-create-button"]')).toHaveLength(1);
+  it('renders a single trigger under the create-button test id', async () => {
+    const fixture = await mount();
 
-    TestBed.resetTestingModule();
-    meetingsV2Enabled.set(true);
-    const on = await mount();
-
-    // One trigger either way: consumers use the same test id regardless of the flag.
-    expect(on.nativeElement.querySelectorAll('[data-testid="meeting-create-button"]')).toHaveLength(1);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="meeting-create-button"]')).toHaveLength(1);
   });
 });

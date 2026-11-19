@@ -1,23 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
   COMMITTEE_INVITE_CONCURRENCY,
   MEMBER_IMPORT_BULK_CHUNK_SIZE,
   MEMBER_IMPORT_FATAL_HTTP_STATUSES,
+  MEMBER_IMPORT_INVALID_ROWS_FILENAME,
   MEMBER_IMPORT_MAX_FILE_BYTES,
   MEMBER_IMPORT_MAX_PAUSES,
   MEMBER_IMPORT_MAX_RECORDS,
+  MEMBER_IMPORT_PAGE_SIZE,
   MEMBER_IMPORT_RETRY_AFTER_MAX_MS,
   MEMBER_IMPORT_STATUS_DISPLAY,
   MEMBER_IMPORT_TEMPLATE_FILENAME,
@@ -25,18 +28,24 @@ import {
 import {
   CommitteeInvite,
   CommitteeMemberBulkCreateResult,
+  FilterPillColor,
+  FilterPillOption,
   MemberImportDialogData,
   MemberImportDialogPhase,
   MemberImportDialogResult,
   MemberImportFieldGuide,
   MemberImportGroupRules,
   MemberImportRow,
+  MemberImportRowStatus,
   MemberImportRowView,
+  MemberImportStatusFilter,
   StagedCommitteeMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildMemberImportInvalidRowsCsv,
   classifyMemberImportBulkResult,
   committeeRequiresOrganization,
+  decodeMemberImportFile,
   downloadCsv,
   getMemberImportFieldGuide,
   getMemberImportRetryDelayMs,
@@ -45,9 +54,11 @@ import {
   prepareMemberImportRows,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { FileSelectEvent } from 'primeng/fileupload';
+import { TablePageEvent } from 'primeng/table';
 import {
   catchError,
   concat,
@@ -79,14 +90,24 @@ import {
  * and resubmit only the affected rows, at most MEMBER_IMPORT_MAX_PAUSES times; resubmitting is safe
  * because upstream reports a row that was already written as an existing member. Each row keeps its
  * own outcome; Retry resubmits rows that were not sent and failures that can still succeed, and
- * Close returns confirmed counts and any unresolved attempt so the roster refreshes. Never resolves
- * organizations, creates invitations, or changes permissions.
+ * Close returns confirmed counts and any unresolved attempt so the roster refreshes. An inline spinner
+ * shows activity throughout the run, including automatic recovery; processed counts come only from results.
+ * Never resolves organizations, creates invitations, or changes permissions.
  * In collect-only mode, confirmation returns validated member requests to the create or edit wizard
  * instead of writing them; the wizard saves them with Done or Update Group.
  */
 @Component({
   selector: 'lfx-import-members-dialog',
-  imports: [DatePipe, ReactiveFormsModule, ButtonComponent, CheckboxComponent, FileUploadComponent, TableComponent, TagComponent],
+  imports: [
+    ReactiveFormsModule,
+    ButtonComponent,
+    CheckboxComponent,
+    FileUploadComponent,
+    FilterPillsComponent,
+    TableComponent,
+    TagComponent,
+    UiSpinnerComponent,
+  ],
   templateUrl: './import-members-dialog.component.html',
   styleUrl: './import-members-dialog.component.scss',
 })
@@ -125,6 +146,8 @@ export class ImportMembersDialogComponent {
   public phase = signal<MemberImportDialogPhase>('select');
   public fileName = signal<string | null>(null);
   public fileErrors = signal<string[]>([]);
+  /** Non-blocking notes about how the chosen file was read (encoding fallback, ignored columns). */
+  public fileNotices = signal<string[]>([]);
   public reading = signal(false);
   public rows = signal<MemberImportRow[]>([]);
   /** Set when auth/not-found, the pause cap, an excessive server cooldown or Stop import ends the run. */
@@ -133,13 +156,17 @@ export class ImportMembersDialogComponent {
   public batchSettled = signal(0);
   /** Epoch ms when a paused run resumes automatically; null while not paused. */
   public resumeAt = signal<number | null>(null);
-  /** Length of the current pause, rounded up to whole seconds, for the paused notice. */
-  public resumeInSeconds = signal(0);
   /** Automatic pauses taken by the current run (at most MEMBER_IMPORT_MAX_PAUSES). */
   public pauseCount = signal(0);
   /** Minimum server deadline, retained even if automatic recovery or a pause is stopped. */
   public retryNotBefore = signal(0);
-  public readonly maxPauses = MEMBER_IMPORT_MAX_PAUSES;
+  public readonly tablePageSize = MEMBER_IMPORT_PAGE_SIZE;
+  /** Status chosen in the table's filter pills; see activeStatusFilter for the one applied. */
+  public statusFilter = signal<MemberImportStatusFilter>('all');
+  /** Index of the first table row shown, so a filter change can return to page 1. */
+  public tableFirst = signal(0);
+  /** Distinguishes the manager's Stop action from fatal errors and automatic recovery limits. */
+  private readonly manualStopRequested = signal(false);
   /** Ends the current pause early; in-flight requests are never cancelled. */
   private readonly stopRequested = new Subject<void>();
   private retryDeadlineTimer?: Subscription;
@@ -155,9 +182,11 @@ export class ImportMembersDialogComponent {
   public readonly notSubmittedCount = computed(() => this.countRows('not_submitted'));
   public readonly retryableCount = computed(() => this.rows().filter((row) => this.isRetryable(row)).length);
   public readonly paused = computed(() => this.resumeAt() !== null);
+  /** The manager requested a stop outside a pause; the in-flight batch settles before the run ends. */
+  public readonly stopping = computed(() => this.phase() === 'importing' && !this.paused() && this.manualStopRequested());
   public readonly conflictCount = computed(() => this.rows().filter((row) => row.conflict).length);
   public readonly cleanupWarningCount = computed(() => this.rows().filter((row) => row.cleanupWarning).length);
-  public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0 && this.invalidCount() === 0);
+  public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0);
   public readonly canRetry = computed(() => this.phase() === 'results' && this.retryableCount() > 0);
   public readonly retryDeadlineLabel = computed(() => {
     if (!this.canRetry() || this.retryNotBefore() === 0) {
@@ -170,14 +199,41 @@ export class ImportMembersDialogComponent {
   });
   public readonly canChooseFile = computed(() => (this.phase() === 'select' || this.phase() === 'preview') && !this.busy());
   public readonly closeLabel = computed(() => (this.phase() === 'results' ? 'Close' : 'Cancel'));
+  public readonly submitLabel: Signal<string> = this.initSubmitLabel();
   public readonly rowViews: Signal<MemberImportRowView[]> = this.initRowViews();
+  /** The selected status, or `all` once no row has it (e.g. the last invalid row was removed or Ready rows were sent). */
+  public readonly activeStatusFilter: Signal<MemberImportStatusFilter> = this.initActiveStatusFilter();
+  public readonly statusFilterOptions: Signal<FilterPillOption[]> = this.initStatusFilterOptions();
+  public readonly filteredRowViews: Signal<MemberImportRowView[]> = this.initFilteredRowViews();
   public readonly statusMessage: Signal<string> = this.initStatusMessage();
+
+  public constructor() {
+    this.initStatusFilterReset();
+    this.initTablePageBounds();
+  }
 
   public downloadTemplate(): void {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
     downloadCsv(MEMBER_IMPORT_TEMPLATE_FILENAME, [getMemberImportTemplateHeaders(this.rules)]);
+  }
+
+  /** Invalid rows with their original values and problems, to fix and import again. */
+  public downloadInvalidRows(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    downloadCsv(MEMBER_IMPORT_INVALID_ROWS_FILENAME, buildMemberImportInvalidRowsCsv(this.rows(), this.rules));
+  }
+
+  public onStatusFilterChange(filter: string): void {
+    this.statusFilter.set(filter as MemberImportStatusFilter);
+    this.tableFirst.set(0);
+  }
+
+  public onTablePage(event: TablePageEvent): void {
+    this.tableFirst.set(event.first);
   }
 
   public onFileSelect(event: FileSelectEvent): void {
@@ -188,7 +244,10 @@ export class ImportMembersDialogComponent {
 
     this.fileName.set(file.name);
     this.rows.set([]);
+    this.fileNotices.set([]);
     this.phase.set('select');
+    this.statusFilter.set('all');
+    this.tableFirst.set(0);
 
     if (!file.name.toLowerCase().endsWith('.csv')) {
       this.fileErrors.set(['Choose a .csv file. Save spreadsheets as "CSV UTF-8 (comma delimited)".']);
@@ -203,8 +262,16 @@ export class ImportMembersDialogComponent {
     this.reading.set(true);
     file
       .arrayBuffer()
-      .then((buffer) => this.applyFileText(new TextDecoder('utf-8', { fatal: true }).decode(buffer)))
-      .catch(() => this.fileErrors.set(['The file could not be read as UTF-8 text. Save it as "CSV UTF-8" and choose it again.']))
+      .then((buffer) => {
+        const { text, encoding } = decodeMemberImportFile(buffer);
+        if (encoding === 'windows-1252') {
+          this.fileNotices.set([
+            "This file wasn't saved as UTF-8, so it was read as Windows (Western European) text. Check that names with accents look right before adding.",
+          ]);
+        }
+        this.applyFileText(text);
+      })
+      .catch(() => this.fileErrors.set(['The file could not be read. Choose it again.']))
       .finally(() => this.reading.set(false));
   }
 
@@ -250,11 +317,15 @@ export class ImportMembersDialogComponent {
     this.submitRows(this.rows().filter((row) => this.isRetryable(row)));
   }
 
-  /** Ends a pause without losing unknown outcomes; genuinely unsent rows remain Not yet submitted. */
+  /**
+   * Ends the run after the in-flight batch settles, or ends a pause immediately, without losing
+   * unknown outcomes; genuinely unsent rows remain Not yet submitted.
+   */
   public stopImport(): void {
-    if (!this.paused()) {
+    if (this.phase() !== 'importing' || this.stopReason()) {
       return;
     }
+    this.manualStopRequested.set(true);
     this.stopReason.set('You stopped the import.');
     this.stopRequested.next();
   }
@@ -304,16 +375,76 @@ export class ImportMembersDialogComponent {
     );
   }
 
+  private initSubmitLabel(): Signal<string> {
+    return computed(() => {
+      const verb = this.collectOnly ? 'Import' : 'Add';
+      const ready = this.readyCount();
+      const skip = this.invalidCount() > 0 ? ` (skip ${this.invalidCount()} invalid)` : '';
+      return `${verb} ${ready} ${ready === 1 ? 'member' : 'members'}${skip}`;
+    });
+  }
+
+  private initActiveStatusFilter(): Signal<MemberImportStatusFilter> {
+    return computed(() => {
+      const filter = this.statusFilter();
+      return filter === 'all' || this.rows().some((row) => row.status === filter) ? filter : 'all';
+    });
+  }
+
+  /** `All` plus one pill per status present, in lifecycle order, each labelled with its row count. */
+  private initStatusFilterOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const statuses = Object.keys(MEMBER_IMPORT_STATUS_DISPLAY) as MemberImportRowStatus[];
+      const options = statuses.flatMap((status): FilterPillOption[] => {
+        const count = this.countRows(status);
+        if (count === 0) {
+          return [];
+        }
+        const { label, severity } = MEMBER_IMPORT_STATUS_DISPLAY[status];
+        return [{ id: status, label: `${label} (${count})`, color: this.statusFilterColor(severity) }];
+      });
+      return [{ id: 'all', label: `All (${this.rows().length})` }, ...options];
+    });
+  }
+
+  private initFilteredRowViews(): Signal<MemberImportRowView[]> {
+    return computed(() => {
+      const filter = this.activeStatusFilter();
+      return filter === 'all' ? this.rowViews() : this.rowViews().filter((view) => view.row.status === filter);
+    });
+  }
+
+  /** Keep All selected after a disappearing status triggers the fallback. */
+  private initStatusFilterReset(): void {
+    toObservable(this.activeStatusFilter)
+      .pipe(takeUntilDestroyed())
+      .subscribe((filter) => {
+        if (filter === 'all' && this.statusFilter() !== 'all') this.statusFilter.set('all');
+      });
+  }
+
+  /** Preserve valid pages, but keep live status-filter results within the current page bounds. */
+  private initTablePageBounds(): void {
+    toObservable(this.filteredRowViews)
+      .pipe(takeUntilDestroyed())
+      .subscribe((rows) => {
+        const lastPageFirst = Math.max(0, Math.ceil(rows.length / this.tablePageSize) - 1) * this.tablePageSize;
+        if (this.tableFirst() > lastPageFirst) this.tableFirst.set(lastPageFirst);
+      });
+  }
+
   private initStatusMessage(): Signal<string> {
     return computed(() => {
       switch (this.phase()) {
-        case 'preview':
-          return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.`;
+        case 'preview': {
+          const notices = this.fileNotices().length > 0 ? ` ${this.fileNotices().join(' ')}` : '';
+          return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.${notices}`;
+        }
         case 'importing':
-          if (this.paused()) {
-            return `Paused: ${this.resumeInSeconds()}-second recovery pause (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}). The import will resume automatically.`;
+          if (this.stopping()) {
+            return `Stopping after the current batch: ${this.batchSettled()} of ${this.batchTotal()} processed.`;
           }
-          return `Adding members: ${this.batchSettled()} of ${this.batchTotal()} done.`;
+          return `Importing members: ${this.batchSettled()} of ${this.batchTotal()} processed.`;
         case 'results': {
           const notSubmitted = this.notSubmittedCount() > 0 ? `, ${this.notSubmittedCount()} not yet submitted` : '';
           const unknown = this.unknownCount() > 0 ? `, ${this.unknownCount()} outcome unknown` : '';
@@ -325,11 +456,25 @@ export class ImportMembersDialogComponent {
     });
   }
 
+  /** Problem statuses read red and added rows green; the rest keep the default pill style. */
+  private statusFilterColor(severity: MemberImportRowView['statusSeverity']): FilterPillColor | undefined {
+    if (severity === 'danger') {
+      return 'red';
+    }
+    if (severity === 'success') {
+      return 'green';
+    }
+    return undefined;
+  }
+
   private applyFileText(text: string): void {
     const parsed = parseMemberImportCsv(text, this.rules);
     if (parsed.errors.length > 0) {
       this.fileErrors.set(parsed.errors);
       return;
+    }
+    if (parsed.ignoredColumns.length > 0) {
+      this.fileNotices.update((notices) => [...notices, `Ignored columns: ${parsed.ignoredColumns.join(', ')}. The import doesn't use them.`]);
     }
     this.rows.set(prepareMemberImportRows(parsed.records, this.rules, this.existingMemberEmails));
     this.phase.set('preview');
@@ -358,6 +503,7 @@ export class ImportMembersDialogComponent {
         targets.has(row.rowNumber) ? { ...row, status: row.uncertain ? 'unknown' : 'not_submitted', reason: undefined, retryable: undefined } : row
       )
     );
+    this.manualStopRequested.set(false);
     this.stopReason.set(null);
     this.pauseCount.set(0);
     this.resumeAt.set(null);
@@ -482,7 +628,7 @@ export class ImportMembersDialogComponent {
     }
     if (httpError && MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(status)) {
       const reason = this.failureReason(httpError);
-      this.stopReason.set(this.stopReason() ?? reason);
+      this.stopForFatalError(httpError, reason);
       this.markUnsubmitted(rows, reason);
       return EMPTY;
     }
@@ -539,7 +685,6 @@ export class ImportMembersDialogComponent {
 
       this.patchRows(rows, { status: 'waiting' });
       this.pauseCount.update((count) => count + 1);
-      this.resumeInSeconds.set(Math.ceil(delay / 1000));
       this.resumeAt.set(Date.now() + delay);
 
       return race(
@@ -594,9 +739,10 @@ export class ImportMembersDialogComponent {
     );
   }
 
-  /** Share stop handling across creation and cleanup without changing an already-added row's outcome. */
+  /** Fatal guidance overrides a manual stop without replacing an earlier fatal reason or an added row's outcome. */
   private stopForFatalError(err: HttpErrorResponse, reason: string): void {
-    if (MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(err.status) && !this.stopReason()) {
+    if (MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(err.status) && (!this.stopReason() || this.manualStopRequested())) {
+      this.manualStopRequested.set(false);
       this.stopReason.set(reason);
     }
   }

@@ -42,6 +42,7 @@ test.describe('Program review — Robust Tests', () => {
       await expect(summary).toBeAttached({ timeout: PROGRAM_REVIEW_LOAD_TIMEOUT });
       await expect(summary.getByTestId('mentorship-program-review-title')).toBeAttached();
       await expect(summary.getByTestId('mentorship-program-review-status')).toBeAttached();
+      await expect(summary.getByTestId('mentorship-program-meta').getByTestId('mentorship-program-meta-admin')).toBeAttached();
 
       const details = root.getByTestId('mentorship-program-review-details');
       await expect(details.getByTestId('mentorship-program-review-description')).toBeAttached();

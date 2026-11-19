@@ -61,9 +61,9 @@ describe('OverviewKpiStripComponent', () => {
     expect(item('k1')).toContain('border-l');
   });
 
-  it('stacks a narrow strip in one column, a top rule between items and no side dividers', async () => {
+  it('stacks a strip too narrow for two per row, a top rule between items and no side dividers', async () => {
     await render(3);
-    const strip = resize(400);
+    const strip = resize(250);
 
     expect(strip.getAttribute('data-layout')).toBe('stack');
     expect(strip.style.gridTemplateColumns).toBe('minmax(0, 1fr)');
@@ -80,6 +80,20 @@ describe('OverviewKpiStripComponent', () => {
     expect(item('k2')).not.toContain('border-l');
     expect(item('k2')).toContain('border-t');
     expect(item('k3')).toContain('border-l');
+    expect(item('k3')).not.toContain('col-span-full');
+  });
+
+  it('puts three items two per row, the odd last one spanning the row', async () => {
+    await render(3);
+    const strip = resize(400);
+
+    expect(strip.getAttribute('data-layout')).toBe('grid');
+    expect(strip.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))');
+    expect(item('k1')).toContain('border-l');
+    expect(item('k1')).toContain('max-[640px]:pl-[16px]');
+    expect(item('k2')).toContain('border-t');
+    expect(item('k2')).toContain('col-span-full');
+    expect(item('k1')).not.toContain('col-span-full');
   });
 
   it('draws a change as the design does: an arrow, the deeper shade and the screen-reader direction', async () => {
@@ -91,5 +105,16 @@ describe('OverviewKpiStripComponent', () => {
     expect(delta.className).toContain('text-red-700');
     expect(item('k1')).toContain('gap-[2px]');
     expect(item('k1')).toContain('pl-[20px]');
+    expect(fixture.nativeElement.querySelector('[data-testid="strip-k1-delta-suffix"]')).toBeNull();
+  });
+
+  it('mutes the context after a change, keeping its leading space', async () => {
+    await render([{ ...kpi('k0'), delta: { label: '39%', direction: 'up', good: true, suffix: ' since Jan' } }]);
+    const suffix: HTMLElement = fixture.nativeElement.querySelector('[data-testid="strip-k0-delta-suffix"]');
+
+    expect(suffix.textContent).toBe(' since Jan');
+    expect(suffix.className).toContain('text-gray-400');
+    expect(suffix.className).toContain('font-normal');
+    expect(suffix.className).toContain('whitespace-pre');
   });
 });

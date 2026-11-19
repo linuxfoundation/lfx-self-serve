@@ -26,6 +26,7 @@ async function render(
     summaryFails = false,
     listMode = 'ok' as 'ok' | 'pending' | 'error',
     foundations = [{ id: 'foundation-a', name: 'Foundation A' }],
+    foundationsFail = false,
   } = {}
 ) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
@@ -37,7 +38,7 @@ async function render(
       if (listMode === 'error') return throwError(() => new Error('list down'));
       return of(EMPTY_ORG_EVENTS_RESPONSE);
     }),
-    getOrgEventFoundations: vi.fn(() => of({ data: foundations })),
+    getOrgEventFoundations: vi.fn(() => (foundationsFail ? throwError(() => new Error('foundations down')) : of({ data: foundations }))),
   };
 
   await TestBed.configureTestingModule({
@@ -182,7 +183,48 @@ describe('OrgEventsDashboardComponent', () => {
     expect(component.filterForm.controls.foundation.value).toBe('');
   });
 
-  it('keeps a picked foundation when the options come back empty (an upstream failure proves nothing)', async () => {
+  it('says the event counts could not load instead of showing numbers when the summary read fails', async () => {
+    const { el } = await render(null, { summaryFails: true });
+
+    expect(el.querySelector('[data-testid="org-events-stat-error"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-events-stat-upcoming"]')?.textContent).not.toMatch(/\d/);
+  });
+
+  it('shows a load error with Retry, not the empty state, when the list read fails, and Retry reads again', async () => {
+    const { el, eventsService, fixture } = await render(null, { listMode: 'error' });
+
+    expect(el.querySelector('[data-testid="org-events-load-error"]')).not.toBeNull();
+    expect(el.textContent).not.toContain('No upcoming events');
+    const listCalls = eventsService.getOrgEvents.mock.calls.length;
+    const summaryCalls = eventsService.getOrgEventsSummary.mock.calls.length;
+    const foundationCalls = eventsService.getOrgEventFoundations.mock.calls.length;
+
+    (el.querySelector('[data-testid="org-events-retry"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(eventsService.getOrgEvents.mock.calls.length).toBe(listCalls + 1);
+    expect(eventsService.getOrgEventsSummary.mock.calls.length).toBe(summaryCalls + 1);
+    expect(eventsService.getOrgEventFoundations.mock.calls.length).toBe(foundationCalls + 1);
+  });
+
+  it('keeps the empty state when the organization has no events', async () => {
+    const { el } = await render(null);
+
+    expect(el.querySelector('[data-testid="org-events-load-error"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-events-stat-error"]')).toBeNull();
+    expect(el.textContent).toContain('No upcoming events');
+  });
+
+  it('keeps a picked foundation and offers All Foundations when the options read fails', async () => {
+    const { component } = await render(null, { query: { foundation: 'foundation-a' }, foundationsFail: true });
+
+    expect(component.filterForm.controls.foundation.value).toBe('foundation-a');
+    expect(component.foundationOptions()).toEqual([{ label: 'All Foundations', value: '' }]);
+  });
+
+  it('keeps a picked foundation when the options come back empty', async () => {
     const { component, eventsService } = await render(null, { query: { foundation: 'foundation-a' }, foundations: [] });
 
     expect(component.filterForm.controls.foundation.value).toBe('foundation-a');

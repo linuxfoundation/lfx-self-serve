@@ -43,7 +43,7 @@
           <!-- Empty template -->
           <ng-template #empty>
             <div class="p-3 text-center">
-              <p class="text-sm text-gray-600">No organizations found</p>
+              <p class="text-sm text-gray-600">No companies found</p>
             </div>
           </ng-template>
 
@@ -77,7 +77,7 @@
             }
           }
           <div class="min-w-0 flex-1">
-            <lfx-input-text [form]="form()" [control]="nameControl()!" placeholder="Enter organization name" styleClass="w-full" size="small" />
+            <lfx-input-text [form]="form()" [control]="nameControl()!" placeholder="Enter company name" styleClass="w-full" size="small" />
           </div>
         </div>
       }
@@ -86,7 +86,7 @@
         @let ctrl = form().get(domainControl()!);
         <div class="flex flex-col gap-1">
           <label [for]="domainControl()! + '-input'" class="block text-sm font-medium text-gray-700">
-            Organization Website
+            Company Website
             @if (domainRequired()) {
               <span class="text-red-500"> *</span>
             }
@@ -99,7 +99,7 @@
             styleClass="w-full"
             size="small" />
           @if ((ctrl?.errors?.['required'] || ctrl?.errors?.['trimmedRequired']) && ctrl?.touched) {
-            <p class="text-xs text-red-600">Website is required for new organizations</p>
+            <p class="text-xs text-red-600">Website is required for new companies</p>
           }
           @if (ctrl?.errors?.['httpsUrl'] && ctrl?.touched) {
             <p class="text-xs text-red-600">Website must be a valid https:// URL</p>

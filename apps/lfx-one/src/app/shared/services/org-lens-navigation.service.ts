@@ -4,10 +4,13 @@
 import { inject, Injectable } from '@angular/core';
 import { ActivatedRouteSnapshot, Router, UrlTree } from '@angular/router';
 import {
+  ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_LENS_PAGE_SEGMENTS,
+  ORG_LENS_ROLL_UP_HOME_PAGE,
   ORG_LENS_SWITCH_PARAMS_RESET,
+  ORG_LENS_URL_ROOT,
   ORG_NOT_FOUND_SEGMENTS,
   ORG_SEGMENT_PARAM,
 } from '@lfx-one/shared/constants';
@@ -15,6 +18,9 @@ import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
 import { orgRollUpSegment } from '@lfx-one/shared/utils';
 
 import { AccountContextService } from './account-context.service';
+
+/** Router-command root of every Company Lens address (`/company`); the segment itself is `ORG_LENS_URL_ROOT`. */
+const ORG_LENS_ROOT_LINK = `/${ORG_LENS_URL_ROOT}`;
 
 /**
  * Builds Org Lens addresses that carry the selected organization and keeps the address in step
@@ -54,11 +60,16 @@ export class OrgLensNavigationService {
   public orgLensLink(page: string, ...rest: (string | number)[]): string[] {
     const segment = this.accountContext.selectedUrlSegment();
     const tail = rest.map(String);
-    return segment ? ['/org', segment, page, ...tail] : ['/org', page, ...tail];
+    return segment ? [ORG_LENS_ROOT_LINK, segment, page, ...tail] : [ORG_LENS_ROOT_LINK, page, ...tail];
+  }
+
+  /** Org Lens's home page for the current selection: a family roll-up's is Memberships (#4133), an organization's its overview. */
+  public orgLensHomePage(): string {
+    return this.accountContext.isRollUp() ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview';
   }
 
   /**
-   * Router commands for Org Lens's landing page, its overview: addressed like `orgLensLink` — the menu's Dashboard link —
+   * Router commands for Org Lens's landing page, `orgLensHomePage`: addressed like `orgLensLink` — the menu's links —
    * once the selection is known to be readable, i.e. pinned by an address or by the org list, or carrying the index slug.
    * A uid-only stub restored from the cookie and not yet confirmed lands on the legacy form instead: the org list then
    * writes it into the address, or re-defaults when the organization is no longer readable, where a resolver miss on the
@@ -66,7 +77,8 @@ export class OrgLensNavigationService {
    */
   public orgLensLandingLink(): string[] {
     const confirmed = this.accountContext.isAddressedSelection() || !!this.accountContext.selectedAccount().slug;
-    return confirmed ? this.orgLensLink('overview') : ['/org', 'overview'];
+    const home = this.orgLensHomePage();
+    return confirmed ? this.orgLensLink(home) : [ORG_LENS_ROOT_LINK, home];
   }
 
   /** `orgLensLink` as a single path string, for string-typed `routerLink`s (sidebar items). */
@@ -75,11 +87,12 @@ export class OrgLensNavigationService {
   }
 
   /**
-   * Land on a family roll-up's home page, `/org/family-{rootUid}/overview` (#4133).
+   * Land on a family roll-up's home page, `/org/family-{rootUid}/memberships` (#4133).
    *
    * Not `navigateToSelectedOrg('switch')`, which keeps the current page: the roll-up does not
    * render every Org Lens page — Org Profile is single-org by definition (#4125) — so a switch from
-   * `/org/acme/profile` would otherwise address `/org/family-…/profile`. Pushed, not replaced, so Back
+   * `/org/acme/profile` would otherwise address `/org/family-…/profile`, and most other pages show only
+   * the roll-up-unavailable state until they learn the roll-up. Pushed, not replaced, so Back
    * returns to the organization and page the pick was made from, matching a switch between
    * organizations (US2 scenario 3).
    *
@@ -93,8 +106,8 @@ export class OrgLensNavigationService {
   public navigateToRollUpHome(rootUid: string): void {
     const segments = this.currentPrimarySegments();
     const namesNoOrganization =
-      segments[0] === 'org' && (segments.length === 1 || ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) && !this.isNotFoundAddress(segments);
-    void this.router.navigate(['/org', orgRollUpSegment(rootUid), 'overview'], namesNoOrganization ? { replaceUrl: true } : {});
+      segments[0] === ORG_LENS_URL_ROOT && (segments.length === 1 || ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) && !this.isNotFoundAddress(segments);
+    void this.router.navigate([ORG_LENS_ROOT_LINK, orgRollUpSegment(rootUid), ORG_LENS_ROLL_UP_HOME_PAGE], namesNoOrganization ? { replaceUrl: true } : {});
   }
 
   /** `isNotFoundAddress` for the router's current address — the one page a same-organization pick may still leave. */
@@ -110,7 +123,7 @@ export class OrgLensNavigationService {
    */
   public isOnAddressedPage(): boolean {
     const segments = this.currentPrimarySegments();
-    return segments[0] === 'org' && !!segments[1] && ORG_LENS_PAGE_SEGMENTS[segments[1]] !== true && !this.isNotFoundAddress(segments);
+    return segments[0] === ORG_LENS_URL_ROOT && !!segments[1] && ORG_LENS_PAGE_SEGMENTS[segments[1]] !== true && !this.isNotFoundAddress(segments);
   }
 
   /**
@@ -147,7 +160,11 @@ export class OrgLensNavigationService {
     // alone, and only for the automatic default: a plain leftover `/org/easycla` visit is inserted
     // like any other legacy page, and the viewer's own switch may re-address either. New returns
     // carry the organization in the path and are address-adopted, so they never reach a default.
-    if (intent === 'default' && segments[1] === 'easycla' && tree.queryParamMap.has(ORG_EASYCLA_RETURN_ORG_PARAM)) {
+    if (
+      intent === 'default' &&
+      segments[1] === 'easycla' &&
+      (tree.queryParamMap.has(ORG_EASYCLA_RETURN_ORG_PARAM) || tree.queryParamMap.has(ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM))
+    ) {
       return;
     }
     // A switch off *any* EasyCLA address must not carry a signing return with it. On the legacy
@@ -203,7 +220,7 @@ export class OrgLensNavigationService {
       ...(intent === 'switch' ? ORG_LENS_SWITCH_PARAMS_RESET : {}),
       ...(leavingEasycla ? ORG_EASYCLA_RETURN_PARAMS_RESET : {}),
     };
-    void this.router.navigate(['/org', segment, ...child], {
+    void this.router.navigate([ORG_LENS_ROOT_LINK, segment, ...child], {
       replaceUrl: intent === 'default' || canonicalizes,
       preserveFragment: true,
       ...(Object.keys(queryParams).length ? { queryParamsHandling: 'merge', queryParams } : { queryParamsHandling: 'preserve' }),
@@ -229,7 +246,7 @@ export class OrgLensNavigationService {
 
   /** An Org Lens address this service may rewrite: anything under `/org` (EasyCLA included since lfx-self-serve#2743). */
   private isRewritableOrgAddress(segments: readonly string[]): boolean {
-    return segments[0] === 'org';
+    return segments[0] === ORG_LENS_URL_ROOT;
   }
 
   /** Path segments of the current primary outlet (`/org/acme-inc/projects` → `['org', 'acme-inc', 'projects']`). */

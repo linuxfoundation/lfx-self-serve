@@ -24,6 +24,7 @@ import {
   EMAIL_RESEND_SUPPORT_MESSAGE,
   EMAIL_RESEND_SUPPORT_THRESHOLD,
   EMAIL_RESEND_SUPPORT_TITLE,
+  EMAIL_VERIFICATION_CODE_INSTRUCTIONS,
   INSIGHTS_PUBLIC_API_FLAG,
   PROFILE_EMAILS_PATH,
 } from '@lfx-one/shared/constants';
@@ -136,6 +137,7 @@ export class AccountSettingsComponent {
   public linkedConflict = signal(false);
   public readonly linkedSupportTitle = EMAIL_LINKED_SUPPORT_TITLE;
   public readonly linkedSupportDetail = EMAIL_ALREADY_LINKED_MESSAGE;
+  public readonly verificationInstructions = EMAIL_VERIFICATION_CODE_INSTRUCTIONS;
   public readonly linkedSupportMessage = computed(() => buildLinkedEmailSupportMessage(this.pendingEmail()));
 
   // Add email form (step 1: enter email)

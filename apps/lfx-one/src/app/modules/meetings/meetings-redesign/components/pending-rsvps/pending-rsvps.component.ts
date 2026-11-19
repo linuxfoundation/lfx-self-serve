@@ -120,7 +120,7 @@ export class PendingRsvpsComponent {
     if (!ref || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     // Opens once this drawer has slid out and handed focus back, so the details drawer returns focus to the Pending RSVPs button.
-    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.details.open(row, 'pending_rsvps'));
+    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.details.open(row, 'pending_rsvps', { tab: 'guests' }));
     ref.close();
   }
 

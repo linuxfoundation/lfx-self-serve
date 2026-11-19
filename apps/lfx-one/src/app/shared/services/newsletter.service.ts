@@ -4,12 +4,6 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
-  NewsletterGuestAccessRequest,
-  NewsletterGuestInviteInfo,
-  NewsletterGuestInviteRequest,
-  NewsletterGuestIssue,
-  NewsletterGuestIssueResponse,
-  NewsletterSharePreview,
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
   GenerateNewsletterResponse,
@@ -17,8 +11,14 @@ import {
   MyNewslettersApiResponse,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterAudience,
   NewsletterCancelScheduleResult,
   NewsletterGroupJoinStatus,
+  NewsletterGuestAccessRequest,
+  NewsletterGuestInviteInfo,
+  NewsletterGuestInviteRequest,
+  NewsletterGuestIssue,
+  NewsletterGuestIssueResponse,
   NewsletterInviteResult,
   NewsletterJoinResult,
   NewsletterListParams,
@@ -34,11 +34,13 @@ import {
   NewsletterRecipientsResponse,
   NewsletterRenderPreviewPayload,
   NewsletterRenderPreviewResponse,
+  NewsletterResolveAudiencePayload,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterSharePreview,
   NewsletterStatusCounts,
-  SocialShareChannel,
   NewsletterTestSendPayload,
+  SocialShareChannel,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { NEWSLETTER_PUBLICATION_MAX_PAGES } from '@lfx-one/shared/constants';
@@ -65,6 +67,15 @@ export class NewsletterService {
 
   public getRecipientCount(projectUid: string, payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientCount> {
     return this.http.post<NewsletterRecipientCount>(`/api/projects/${this.enc(projectUid)}/newsletters/recipient-count`, payload).pipe(take(1));
+  }
+
+  /** Start the background read of a draft's committees into its audience snapshot (#4352). */
+  public resolveAudience(projectUid: string, newsletterUid: string, payload: NewsletterResolveAudiencePayload): Observable<NewsletterAudience> {
+    return this.http.post<NewsletterAudience>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/audience`, payload).pipe(take(1));
+  }
+
+  public getAudience(projectUid: string, newsletterUid: string): Observable<NewsletterAudience> {
+    return this.http.get<NewsletterAudience>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/audience`).pipe(take(1));
   }
 
   public getRecipients(projectUid: string, payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientsResponse> {

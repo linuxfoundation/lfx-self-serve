@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AuditUserProfile, DocumentKind, ProjectDocumentSource } from './project.interface';
+import { AuditUserProfile, DocumentKind, ProjectDocumentSource, ProjectDocumentType } from './project.interface';
 
 /** Source type for My Documents page */
 export type MyDocumentSource = 'link' | 'meeting' | 'file' | 'recording' | 'transcript' | 'summary' | 'mailing_list' | 'committee' | 'project';
@@ -17,7 +17,10 @@ export interface CommitteeLinkQueryResult {
   committee_uid?: string;
 }
 
-/** Raw shape returned by query service for `committee_document` resource type — indexed by committee_uid only */
+/**
+ * Raw shape returned by query service for `committee_document` resource type. It is tagged with `committee_uid` (there is
+ * no `project_uid` tag) and, when the file is in a folder, `folder_uid` — the tag the folder-empty check filters on.
+ */
 export interface CommitteeDocumentQueryResult {
   uid: string;
   name: string;
@@ -163,6 +166,12 @@ export interface MyDocumentItem {
   projectDocumentSource?: ProjectDocumentSource;
   /** What the document is (file, link, recording, ...) — drives the label next to the name. Unset for folders. */
   documentKind?: DocumentKind;
+  /**
+   * Set by a page on the rows it can manage through its own group or project API, to the type to send
+   * (`folder`, `link` or `file`). Unset on rows it can't (meetings, mailing lists, another entity's
+   * documents), so the table offers no row actions for them.
+   */
+  manageableType?: ProjectDocumentType;
 }
 
 /** Where a document row's group, meeting or mailing list name opens. */

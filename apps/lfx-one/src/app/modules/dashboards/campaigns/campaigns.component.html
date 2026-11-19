@@ -1951,12 +1951,22 @@
               [metaAssetUploadEnabled]="briefCampaignsMetaAssetUploadEnabled()"
               [googleAssetUploadEnabled]="briefCampaignsGoogleAssetUploadEnabled()"
               [linkedInAssetUploadEnabled]="briefCampaignsLinkedInAssetUploadEnabled()"
+              [linkedInTargetingEditEnabled]="briefCampaignsLinkedInTargetingEditEnabled()"
+              [linkedInAccountSelectionEnabled]="briefCampaignsLinkedInAccountSelectionEnabled()"
+              [linkedInDailyCapEnabled]="briefCampaignsLinkedInDailyCapEnabled()"
               [microsoftAssetUploadEnabled]="briefCampaignsMicrosoftAssetUploadEnabled()"
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
               [microsoftScheduleEnabled]="briefCampaignsMicrosoftScheduleEnabled()"
               [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
               [twitterDraft]="carriedTwitterDraft()"
               [metaInstagramDsaEnabled]="briefCampaignsMetaInstagramDsaEnabled()"
+              [metaAudienceTargetingEnabled]="briefCampaignsMetaAudienceTargetingEnabled()"
+              [metaCustomAudiencesEnabled]="briefCampaignsMetaCustomAudiencesEnabled()"
+              [metaAdOptionsEnabled]="{
+                callToAction: briefCampaignsMetaCallToActionEnabled(),
+                conversionEvent: briefCampaignsMetaConversionEventEnabled(),
+                optimizationGoal: briefCampaignsMetaOptimizationGoalEnabled(),
+              }"
               [googleAudienceSegmentsEnabled]="briefCampaignsGoogleAudienceSegmentsEnabled()"
               [googleConversionActionsEnabled]="briefCampaignsGoogleConversionActionsEnabled()"
               [googleDemandGenAudienceEnabled]="briefCampaignsGoogleDemandGenAudienceEnabled()"

@@ -20,7 +20,7 @@ describe('OrgRoiModelOverviewComponent', () => {
 
   it('states the privacy commitment the page makes about investment', () => {
     const investment = text('org-roi-model-overview-investment');
-    expect(investment).toContain('same for every organization');
+    expect(investment).toContain('same for every company');
     expect(investment).toContain('No salary, payroll, or invoice data is used.');
   });
 

@@ -750,6 +750,20 @@ export class PlanningTabComponent implements OnInit {
   protected readonly savedBriefWarningBlocksSave = computed(
     () => this.savedBrief() === null && this.savedBriefWarning() !== null && this.storedBriefBlocksSave()
   );
+  /**
+   * The review step's announcement: what its banner says, no more and no less, and nothing before
+   * the review step (#5551). With a brief to offer, the banner shows the offer, says the generated
+   * brief can't be saved over it when that blocks the save (`savedBriefBlocksSave`), and shows any
+   * warning. With none, it shows the warning only when the unreadable brief blocks the save
+   * (`savedBriefWarningBlocksSave`), so one stored under another edition is not announced either.
+   */
+  protected readonly reviewSavedBriefAnnouncement = computed(() => {
+    // Silent off the review step, where its region stays mounted (see the template), and while editing a saved brief.
+    if (this.step() !== 'review' || this.editingExistingBrief()) return '';
+    if (this.savedBrief() === null) return this.savedBriefWarningBlocksSave() ? (this.savedBriefWarning() ?? '') : '';
+    const announcement = this.savedBriefAnnouncement();
+    return this.savedBriefBlocksSave() ? `${announcement} The generated brief can't be saved over it as it is.` : announcement;
+  });
 
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
   private savedBriefId: string | null = null;

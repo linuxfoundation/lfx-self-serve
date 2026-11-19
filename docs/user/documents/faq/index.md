@@ -4,7 +4,7 @@ description: Frequently asked questions about project documents in LFX Self Serv
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, faq]
-last_updated: 2026-10-28
+last_updated: 2026-11-11
 intercom_collection: Documents
 ---
 
@@ -35,6 +35,10 @@ Open **Groups** in the left navigation, select the group, and open its **Documen
 ## Can I organize documents into folders?
 
 Yes, with write access, for project documents and for a group's documents. Select **New Folder**, name it, then choose that folder when you upload files or add links. Select a folder in the list to open it, and use the breadcrumb to go back. Meeting materials, recordings, transcripts, summaries, and mailing-list files can't be put in folders. A group's folders appear on the group's own page, while the project page lists the group's files and links without them.
+
+## Can I delete a document?
+
+Yes, with write access, for a project's own files, links, and folders and for a group's own files and links on its **Documents** tab. Select **More actions** (three dots) on the row, then **Delete**, and confirm. Deleting can't be undone. A project folder can only be deleted when it's empty: if it still has files or links in it, LFX tells you to delete what's inside first. Deleting a group's folders isn't available yet. Meeting, recording, mailing-list, and (on the project page) group documents can't be deleted here. See [Manage Documents](../manage-documents/#delete-documents).
 
 ## Can I add a link instead of a file?
 

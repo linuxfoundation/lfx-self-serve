@@ -44,6 +44,12 @@ export const FORMATION_RECORD_SELECTABLE_STAGES: readonly ProjectStage[] = [
   ProjectStage.Archived,
 ];
 
+/**
+ * The PCC test projects (lfx-pcc helper.ts). They behave as foundations by name (`computeIsFoundation`) and are left out
+ * of the formation Pipeline with everything under them (#5619). Exact names, as stored.
+ */
+export const TEST_PROJECT_NAMES: readonly string[] = ['Test Project Group IT', 'Test Project IT'];
+
 /** Stages whose selection needs a confirmation step stating the checklist effect (D5). */
 export const FORMATION_RECORD_CONFIRM_STAGES: readonly ProjectStage[] = [ProjectStage.Active, ProjectStage.Archived, ProjectStage.FormationDisengaged];
 
@@ -84,7 +90,7 @@ export const FORMATION_RECORD_CONFLICT_CODE = 'FORMATION_RECORD_CONFLICT';
 export const FORMATION_RECORD_DISSOLUTION_DATE_REQUIRED_CODE = 'DISSOLUTION_DATE_REQUIRED';
 
 /** Success toast copy, including the propagation note from #5134: the checklist is updated asynchronously by formation-service. */
-export const FORMATION_RECORD_SUCCESS_MESSAGE = 'Updated. The checklist may take a minute to reflect the new stage.';
+export const FORMATION_RECORD_SUCCESS_MESSAGE = 'Updated. The formation items may take a minute to reflect the new stage.';
 
 /** User-facing copy per outcome, exactly as the #5134 error table. */
 export const FORMATION_RECORD_ERROR_MESSAGES = {

@@ -262,6 +262,15 @@ export const VOTE_LINK_NOT_AWAITING_RESPONSE = 'not awaiting response';
 /** Upstream 400 message (lowercased substring) when an update hits a ballot with no response yet: switch to first submission. */
 export const VOTE_LINK_NOT_RESPONDED = 'not responded';
 
+/** Upstream 409 message (lowercased substring) when a ballot update hits a vote that makes submitted ballots final (#4723). */
+export const VOTE_CHANGE_NOT_ALLOWED = 'does not allow changing a submitted vote';
+
+/** Pre-submit notice on every first-submit surface when the vote makes submitted ballots final (#4723). */
+export const VOTE_BALLOT_FINAL_NOTICE = "Once you submit, your vote can't be changed.";
+
+/** Shown in place of a change action once a ballot on a vote that disallows changes is submitted (#4723). */
+export const VOTE_BALLOT_FINAL_STATE = "Your vote is final and can't be changed.";
+
 /** Close-vote confirmation (presenter and votes-table row menu): one copy so the two entry points never drift. */
 export const VOTE_CLOSE_CONFIRMATION = {
   header: 'Close vote',
@@ -269,5 +278,16 @@ export const VOTE_CLOSE_CONFIRMATION = {
   acceptLabel: 'Close vote',
   rejectLabel: 'Cancel',
   acceptButtonStyleClass: 'p-button-danger p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;
+
+/** Last-voter confirmation (#4726) on every first-submit surface: one copy so the cast drawer, inline ballot and vote link never drift. */
+export const VOTE_LAST_VOTER_CONFIRMATION = {
+  header: 'Submitting will end this vote',
+  message: "You're the last member to respond, so submitting now ends the vote. You won't be able to change your choices, comments, or abstention afterward.",
+  acceptLabel: 'Submit and end vote',
+  rejectLabel: 'Go back',
+  defaultFocus: 'reject',
+  acceptButtonStyleClass: 'p-button-sm',
   rejectButtonStyleClass: 'p-button-outlined p-button-sm',
 } as const;

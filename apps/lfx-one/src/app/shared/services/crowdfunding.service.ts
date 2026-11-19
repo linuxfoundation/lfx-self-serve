@@ -69,10 +69,16 @@ export class CrowdfundingService {
     );
   }
 
-  public getInitiativeBySlug(slug: string): Observable<InitiativeDetail | null> {
-    return this.http
-      .get<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}`)
-      .pipe(catchError(this.handleCfError(null, 'getInitiativeBySlug')));
+  /** Rethrows so the page can show not-found (404), no access (403) or unavailable; logs only the unexpected failures. */
+  public getInitiativeBySlug(slug: string): Observable<InitiativeDetail> {
+    return this.http.get<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}`).pipe(
+      catchError((err: HttpErrorResponse) => {
+        if (err.status !== 404 && err.status !== 403) {
+          console.error('[CrowdfundingService] getInitiativeBySlug failed', err);
+        }
+        return throwError(() => err);
+      })
+    );
   }
 
   public getMyPaymentMethod(): Observable<PaymentMethod | null> {

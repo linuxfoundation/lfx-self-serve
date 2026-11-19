@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter, RouterLink } from '@angular/router';
+import { DocumentsTableComponent } from '@components/documents-table/documents-table.component';
+import { DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
 import { MyDocumentItem, Project, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
 import { compareDocumentsByRecency } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
@@ -12,7 +15,9 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { of } from 'rxjs';
+import { MessageService } from 'primeng/api';
+import { of, throwError } from 'rxjs';
+import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DocumentsDashboardComponent } from './documents-dashboard.component';
@@ -24,6 +29,9 @@ describe('DocumentsDashboardComponent', () => {
   let routeLens: WritableSignal<string | null>;
   let projectDocuments: ProjectDocument[];
   let legacyDocuments: MyDocumentItem[];
+  let messageService: { add: Mock };
+  let getProjectDocuments: Mock;
+  let deleteProjectDocument: Mock;
   /**
    * The context's resolved project. `canUpload` requires its uid to match `activeContext`'s uid,
    * so the default agrees with the rendered project and only the staleness test drives them apart
@@ -42,6 +50,9 @@ describe('DocumentsDashboardComponent', () => {
     routeLens = signal<string | null>('project');
     projectDocuments = [];
     legacyDocuments = [];
+    messageService = { add: vi.fn() };
+    getProjectDocuments = vi.fn(() => of(projectDocuments));
+    deleteProjectDocument = vi.fn(() => of(undefined));
   });
 
   async function render(): Promise<void> {
@@ -50,7 +61,8 @@ describe('DocumentsDashboardComponent', () => {
       providers: [
         provideRouter([]),
         { provide: DocumentService, useValue: { getMyDocuments: vi.fn(() => of(legacyDocuments)) } },
-        { provide: ProjectService, useValue: { getProjectDocuments: vi.fn(() => of(projectDocuments)) } },
+        { provide: ProjectService, useValue: { getProjectDocuments, deleteProjectDocument } },
+        { provide: MessageService, useValue: messageService },
         {
           provide: ProjectContextService,
           useValue: { activeContext, canWrite, activeProject, activeRouteLensKind: routeLens },
@@ -288,5 +300,99 @@ describe('DocumentsDashboardComponent', () => {
       legacyDocument('missing-a', '', { name: 'A' }),
     ];
     expect(documents.sort(compareDocumentsByRecency).map((doc) => doc.id)).toEqual(['alpha', 'same-a', 'same-b', 'epoch', 'invalid', 'missing-a', 'missing-z']);
+  });
+
+  describe('deleting project documents', () => {
+    const tableInstance = (): DocumentsTableComponent => fixture.debugElement.query(By.directive(DocumentsTableComponent)).componentInstance;
+    const rowFor = (id: string): MyDocumentItem => fixture.componentInstance['filteredDocuments']().find((doc) => doc.id === id)!;
+
+    beforeEach(() => {
+      projectDocuments = [
+        document('own-link', '2026-10-01'),
+        document('own-folder', '2026-09-01', { type: 'folder' }),
+        document('meeting-file', '2026-08-01', { type: 'file', document_source: 'meeting' }),
+        document('group-link', '2026-07-01', { document_source: 'committee' }),
+      ];
+    });
+
+    it('offers row actions only on the project’s own folders, links and files', async () => {
+      await render();
+
+      expect(rowFor('project_link:own-link').manageableType).toBe('link');
+      expect(rowFor('project_folder:own-folder').manageableType).toBe('folder');
+      expect(rowFor('project_file:meeting-file').manageableType).toBeUndefined();
+      expect(rowFor('project_link:group-link').manageableType).toBeUndefined();
+    });
+
+    it('turns row management on for a writer and off for a read-only viewer', async () => {
+      await render();
+      expect(tableInstance().canManage()).toBe(true);
+
+      TestBed.resetTestingModule();
+      canWrite.set(false);
+      activeProject.set({ uid: 'project-1', writer: false } as Project);
+      await render();
+      expect(tableInstance().canManage()).toBe(false);
+    });
+
+    it('deletes the confirmed row through the project API, says so, and reloads the list', async () => {
+      await render();
+      expect(getProjectDocuments).toHaveBeenCalledTimes(1);
+
+      tableInstance().documentDelete.emit(rowFor('project_link:own-link'));
+      await fixture.whenStable();
+
+      expect(deleteProjectDocument).toHaveBeenCalledWith('project-1', 'own-link', 'link');
+      expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Deleted' }));
+      expect(getProjectDocuments).toHaveBeenCalledTimes(2);
+    });
+
+    it('shows the server’s reason and keeps the list as it was when the delete fails', async () => {
+      deleteProjectDocument.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 409, error: { error: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE, code: 'FOLDER_NOT_EMPTY' } }))
+      );
+      await render();
+
+      tableInstance().documentDelete.emit(rowFor('project_folder:own-folder'));
+      await fixture.whenStable();
+
+      expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE }));
+      expect(getProjectDocuments).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a deleted row hidden when the reload straight after still returns it', async () => {
+      // getProjectDocuments keeps answering with the deleted link, as the index can for a moment after the delete.
+      await render();
+      expect(visibleIds()).toContain('project_link:own-link');
+
+      tableInstance().documentDelete.emit(rowFor('project_link:own-link'));
+      await fixture.whenStable();
+
+      expect(getProjectDocuments).toHaveBeenCalledTimes(2);
+      expect(visibleIds()).not.toContain('project_link:own-link');
+    });
+
+    it('updates a folder’s count when its last document is deleted and the reload still returns it', async () => {
+      projectDocuments = [document('folder', '', { type: 'folder' }), document('inside', '2026-10-01', { parent_uid: 'folder' })];
+      await render();
+      expect(rowFor('project_folder:folder').childCount).toBe(1);
+
+      fixture.componentInstance['onFolderOpen'](rowFor('project_folder:folder'));
+      await fixture.whenStable();
+      tableInstance().documentDelete.emit(rowFor('project_link:inside'));
+      fixture.componentInstance['onBreadcrumbHome']();
+      await fixture.whenStable();
+
+      expect(rowFor('project_folder:folder')?.childCount).toBe(0);
+    });
+
+    it('ignores a row the page cannot manage', async () => {
+      await render();
+
+      tableInstance().documentDelete.emit(rowFor('project_link:group-link'));
+      await fixture.whenStable();
+
+      expect(deleteProjectDocument).not.toHaveBeenCalled();
+    });
   });
 });

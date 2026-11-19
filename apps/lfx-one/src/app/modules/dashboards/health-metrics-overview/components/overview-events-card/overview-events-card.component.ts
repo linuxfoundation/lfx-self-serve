@@ -59,9 +59,12 @@ export class OverviewEventsCardComponent {
   protected readonly legend = HEALTH_METRICS_OVERVIEW_EVENT_LEGEND;
   protected readonly pastClass = HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue;
   protected readonly upcomingHatch = HEALTH_METRICS_OVERVIEW_UPCOMING_HATCH;
-  /** The design's columns at each table width: three below 912px, the actions from 912px, wider data columns from 1000px. */
+  /**
+   * The design's columns at each table width: two stacked halves up to 560px, three columns from 561px, the actions from
+   * 912px, wider data columns from 1000px. The plugin has no max-width variant, so the narrowest layout is the default.
+   */
   protected readonly gridClasses =
-    'grid grid-cols-[minmax(0,1fr)_minmax(150px,170px)_minmax(170px,200px)] gap-x-[24px] @[912px]/evtbl:grid-cols-[minmax(260px,1fr)_minmax(150px,170px)_minmax(170px,200px)_260px] @[1000px]/evtbl:grid-cols-[minmax(240px,1fr)_minmax(170px,210px)_minmax(170px,210px)_260px] @[1000px]/evtbl:gap-x-[40px]';
+    'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-[12px] gap-y-[10px] @[561px]/evtbl:grid-cols-[minmax(0,1fr)_minmax(150px,170px)_minmax(170px,200px)] @[561px]/evtbl:gap-x-[24px] @[561px]/evtbl:gap-y-0 @[912px]/evtbl:grid-cols-[minmax(260px,1fr)_minmax(150px,170px)_minmax(170px,200px)_260px] @[1000px]/evtbl:grid-cols-[minmax(240px,1fr)_minmax(170px,210px)_minmax(170px,210px)_260px] @[1000px]/evtbl:gap-x-[40px]';
   /** "Trend" below 961px of table, "Registration trend" from it; only one of the pair shows. */
   protected readonly actionPairs = [
     { key: 'trend-short', label: 'Trend', class: 'inline-flex @[961px]/evtbl:hidden' },
@@ -117,7 +120,9 @@ export class OverviewEventsCardComponent {
       position: 'top',
       // The design's inset from the top, and a height that leaves the same below.
       style: { marginTop: 'min(48px, 6vh)', maxHeight: 'calc(100vh - 2 * min(48px, 6vh))' },
-      contentStyle: { padding: '22px' },
+      // The phone inset lives on this class in the global styles; the content is a column the dialog body scrolls inside.
+      styleClass: 'hm-event-dialog',
+      contentStyle: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: '0', padding: '0', overflow: 'hidden' },
       modal: true,
       draggable: false,
       resizable: false,

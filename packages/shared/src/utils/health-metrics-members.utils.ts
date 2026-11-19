@@ -84,17 +84,9 @@ import type {
   HealthMetricsMembersTierYear,
 } from '../interfaces/health-metrics-members.interface';
 
-/** Sub-nav items for the Members tab; a section badges only once it reports a count, and notes only once it reports a note. */
-export function buildHealthMetricsMembersSubNavItems(
-  counts: Partial<Record<HealthMetricsMembersSectionKey, number | null>> = {},
-  notes: Partial<Record<HealthMetricsMembersSectionKey, string>> = {}
-): HealthMetricsMembersSubNavItem[] {
-  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({
-    key: section.key,
-    label: section.label,
-    count: counts[section.key] ?? null,
-    note: notes[section.key] ?? '',
-  }));
+/** Sub-nav items for the Members tab; a section notes only once it reports a note. */
+export function buildHealthMetricsMembersSubNavItems(notes: Partial<Record<HealthMetricsMembersSectionKey, string>> = {}): HealthMetricsMembersSubNavItem[] {
+  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: notes[section.key] ?? '' }));
 }
 
 /** The Members sections, with the running year in any copy that names it. */
@@ -104,12 +96,12 @@ export function buildHealthMetricsMembersSections(year: number): HealthMetricsL2
 
 /**
  * `#breakdown` — members per tier at each year's end, from the first year shown to the running one, as PCC tables it:
- * every tier with a member in a year shown, in rank order, then the totals. Only the sub-nav count follows the period.
+ * every tier with a member in a year shown, in rank order, then the totals. Nothing here follows the period.
  */
-export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembersTiers, range: HealthMetricsRange): HealthMetricsMembersBreakdownView {
+export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembersTiers): HealthMetricsMembersBreakdownView {
   const currentYear = getYearForRange('YTD');
   const rows = tiers.rows.filter((row) => row.year >= HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR && row.year <= currentYear);
-  if (rows.length === 0) return { measured: false, columns: [], rows: [], count: null };
+  if (rows.length === 0) return { measured: false, columns: [], rows: [] };
 
   const firstYear = Math.min(...rows.map((row) => row.year));
   const years = Array.from({ length: currentYear - firstYear + 1 }, (_, index) => firstYear + index);
@@ -136,7 +128,6 @@ export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembe
       { key: 'members', label: 'Total members', kind: 'total', icon: null, striped: false, cells: totals.map((total) => formatCount(total)) },
       { key: 'revenue', label: 'Total revenue', kind: 'total', icon: null, striped: false, cells: revenue.map((value) => formatUsd(value)) },
     ],
-    count: totals[years.indexOf(getYearForRange(range))] ?? null,
   };
 }
 

@@ -4,7 +4,7 @@ description: How to find meetings, filter by your RSVP, and subscribe to a proje
 audience: [all]
 product_area: Meetings
 tags: [meetings, dashboard, filters, rsvp, calendar, subscribe, upcoming, past]
-last_updated: 2026-11-10
+last_updated: 2026-11-17
 intercom_collection: Meetings
 ---
 
@@ -15,8 +15,8 @@ The **Meetings** page is where you see the meetings you're invited to, organize,
 Select **Meetings** from the left navigation. What you see depends on your lens:
 
 - **Me lens** (your personal view): meetings across all of your projects. There's no way to create a meeting here. If no upcoming meetings are listed, you'll see "No upcoming meetings — Meetings from your committees and projects will appear here."
-- **Foundation or Project lens**: the foundation's or project's meetings. This is where **Create Meeting** appears, if you have write access. If none are scheduled, you'll see "No meetings yet — Schedule a meeting to get started."
-- **Org lens**: a meeting analytics view for the organization. It has no **Create Meeting** button.
+- **Foundation or Project lens**: the foundation's or project's own meetings. To add the meetings of projects beneath it, such as a foundation's sub-projects, pick them in the project filter (see [Search and filter](#search-and-filter)). You only see the sub-project meetings you have access to. This is where **Create Meeting** appears, if you have write access. If none are scheduled, you'll see "No meetings yet — Schedule a meeting to get started."
+- **Company lens**: a meeting analytics view for the company. It has no **Create Meeting** button.
 
 The Me, Foundation, and Project lenses share the same dashboard, scoped differently.
 
@@ -28,25 +28,38 @@ The tiles at the top of the page summarize the tab you're on:
 
 - **Me lens, Upcoming**: **Meetings in the Next 7 Days**, which counts each upcoming date, including dates you declined, and **Needs response**. Selecting **Needs response** opens the response queue and clears other filters, so they can't hide a meeting that needs your answer.
 - **Me lens, Past**: **Past This Month** and **Recordings Available** from the past 30 days.
-- **Foundation or Project lens**: **Upcoming Meetings**, **Recurring Series**, **Past Meetings**, and **Recordings Available** from the past 30 days.
+- **Foundation or Project lens**: **Upcoming Meetings**, **Recurring Series**, **Past Meetings**, and **Recordings Available** from the past 30 days. They count the projects you have picked. **Upcoming Meetings** includes every recurring series that still has a session ahead.
 
 ## List and Calendar views
 
-In the Foundation or Project lens, you can switch between **List** and **Calendar**. The calendar opens on a month grid, with a **Week** view you can switch to, and you can select a meeting to open it. In the list, select **Load More** to see more meetings.
+In the Foundation or Project lens, you can switch between **List** and **Calendar**. The calendar opens on a month grid, with a **Week** view you can switch to, and you can select a meeting to open it. A sub-project's meeting shows its project name before the title, so you can spot overlapping meetings across a foundation. In the list, select **Load More** to see more meetings.
 
 Two buttons also help you share a project's meetings:
 
 - **Public Calendar** opens the project's public meeting calendar. It's read-only and anyone can use it, so it's a good link to share. If a website shows it inside a frame, the cookie banner doesn't appear inside the frame and LFX collects no analytics there.
 - **Subscribe** adds the meetings to your own calendar. See [Subscribe to a calendar](#subscribe-to-a-calendar).
 
+The public calendar and the subscription cover the selected foundation or project only, not its sub-projects.
+
 ## Search and filter
 
 Use the controls above the list to narrow it:
 
 - **Search meetings...** finds meetings by name.
-- **Select Type** limits the list to one meeting type.
+- **All Types** limits the list to one meeting type.
 - In the Me lens, you can also filter by foundation or project.
+- In the Foundation or Project lens, you can also choose which of its projects' meetings to show:
+  - The project filter starts on the foundation or project alone, shown as, for example, **FINOS only**. Pick one or more projects to show theirs instead, such as the foundation and a few of its sub-projects, or select all of them. It appears when there are sub-projects. A very large foundation, with more than 150 projects, can show at most 150 projects at a time: picking more, or all of them, shows the foundation's own meetings only.
+  - Your project choice is remembered for you, for each foundation or project, the next time you open its meetings. It doesn't change what other people see.
+  - If the foundation or project has no meetings of its own, the page says so and offers **Show all projects**, which selects every project.
+  - **All groups** limits the list to one group. A group from a sub-project shows that project's name in brackets.
+  - **All group types** limits the list to groups of one type, such as Board or Working Group.
+  - The lists offer only what fits your other choices: picking projects narrows the groups and group types, and picking a group type narrows the groups.
 - **Reset filters** clears every filter you've set, without changing the **Upcoming** or **Past** tab.
+
+The filters combine, and they apply to both the list and the calendar. In the Foundation or Project lens, the page address keeps your filters and your **List** or **Calendar** choice, so you can bookmark a filtered view or share its link. A link's project choice applies when someone opens it, instead of their own remembered choice. A link shows each person only the meetings they have access to.
+
+**Reset filters** also returns the project filter to the foundation or project alone.
 
 Your search and meeting type stay selected when you switch between **Upcoming** and **Past**. Your foundation or project, response, and organizer choices reset when you switch.
 
@@ -74,6 +87,7 @@ Declining doesn't remove a meeting from **All meetings**. To hide meetings you d
 
 Each meeting appears as a card with its date, time, and details.
 
+- **Project.** In the Foundation or Project lens, a meeting that belongs to a sub-project shows that project's name under the title.
 - **Group.** When the meeting belongs to one or more groups, their names appear under the title. Select a group's name to open its details page. On a group's own **Meetings** tab, that group's name is plain text.
 - **Respond.** When a meeting collects RSVPs, the card shows **Yes**, **Maybe**, and **No** controls. For a recurring meeting, you choose whether your answer applies to **This date only**, **All dates**, or **This date and all following dates**. See [Join a Meeting](../join-meeting/).
 - **Materials.** The card lists the meeting's files and links. Organizers see **Edit materials**. See [Meeting Materials](../meeting-materials/).

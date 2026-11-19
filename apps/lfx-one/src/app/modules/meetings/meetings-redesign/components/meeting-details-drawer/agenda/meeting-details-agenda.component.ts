@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DialogRef } from '@angular/cdk/dialog';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, linkedSignal, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -29,6 +28,7 @@ import { MeetingService } from '@services/meeting.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiShowMoreComponent } from '@shared/uikit/show-more/show-more.component';
@@ -39,6 +39,7 @@ import { catchError, distinctUntilChanged, Observable, of, startWith, switchMap,
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingMaterialsDrawerComponent } from './materials-drawer/meeting-materials-drawer.component';
 
 /**
@@ -68,7 +69,7 @@ export class MeetingDetailsAgendaComponent {
   private readonly context = inject(MeetingDetailsContext);
   private readonly meetingService = inject(MeetingService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly dialogRef = inject(DialogRef, { optional: true });
+  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
   private readonly drawerService = inject(UiDrawerService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -91,6 +92,16 @@ export class MeetingDetailsAgendaComponent {
     return isPastMeetingCalendarRow(meeting) ? meeting.meeting_id : meeting.id;
   });
   protected readonly fullAccess: Signal<boolean> = this.context.fullAccess;
+  protected readonly signedIn: Signal<boolean> = this.context.signedIn;
+  /** On a page, a viewer without full access gets the private notice here; the drawer keeps it in its side column. */
+  protected readonly page = !inject(UiDrawerContext, { optional: true });
+  protected readonly privateNotice: Signal<string> = computed(() => {
+    const lead = 'Meeting details, recordings, and summaries are only available to meeting participants and committee members.';
+    if (this.signedIn()) return `${lead} If you believe you should have access, please contact the meeting organizer.`;
+    return this.context.state() === 'ended'
+      ? `${lead} Sign in if you believe you should have access.`
+      : `${lead} Sign in or join as a guest below if you have the meeting password.`;
+  });
   protected readonly agenda: Signal<string> = computed(() => (this.context.occurrence()?.description || this.context.meeting().description || '').trim());
   // Upcoming dates of the series are editable; past materials and rows that hold a past record are not.
   protected readonly canEdit: Signal<boolean> = computed(
@@ -130,8 +141,12 @@ export class MeetingDetailsAgendaComponent {
     });
   }
 
+  protected signIn(): void {
+    this.context.signIn();
+  }
+
   protected edit(): void {
-    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.dialogRef);
+    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.hostRef);
   }
 
   /** Opens the series in the composer, or Manage Materials over this drawer for an ended date's past record. */
@@ -145,7 +160,7 @@ export class MeetingDetailsAgendaComponent {
       this.openMaterialsDrawer({ pastMeetingId, pastChanges: this.pastChanges(), occurrence: null, canScopeToOccurrence: false, onChanged });
       return;
     }
-    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.dialogRef, true);
+    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.hostRef, true);
   }
 
   protected download(attachment: MeetingAttachment | PastMeetingAttachment): void {
@@ -171,8 +186,8 @@ export class MeetingDetailsAgendaComponent {
 
   private initAttachments(): Signal<(MeetingAttachment | PastMeetingAttachment)[] | null> {
     // Keyed on the resource only, so the fresh detail replacing the row data does not refetch.
-    // Without full access nothing shows, so nothing is fetched.
-    const source = computed(() => (this.context.fullAccess() ? (this.context.pastMeetingId() ?? `meeting:${this.seriesId()}`) : null));
+    // Without full access, or signed out, no materials show, so nothing is fetched.
+    const source = computed(() => (this.context.signedInAccess() ? (this.context.pastMeetingId() ?? `meeting:${this.seriesId()}`) : null));
     const loaded$ = toObservable(source).pipe(
       distinctUntilChanged(),
       tap(() => this.pastChanges.set({ deletedUids: [], addedAttachments: [] })),

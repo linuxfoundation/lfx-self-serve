@@ -44,6 +44,7 @@ Each transaction is a row in the table with these columns:
 The Transactions tab doesn't offer receipt or invoice downloads.
 
 - **Training, certification, bundle, and subscription purchases** — contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) and include the order ID from the transaction row.
+- **Individual Supporter memberships** — Individual Supporter purchases are paid by credit card at checkout, so we don’t issue separate invoices for them. A receipt is emailed to you automatically when the payment goes through, and it serves as your proof of payment.
 - **Event registrations** — open your registration confirmation email and download the invoice receipt PDF from the **Payment Information** section. Turn off any pop-up blockers first, or the PDF won't download. If you can't find your confirmation email, contact LFX support.
 - **Other purchases** — contact LFX support.
 
@@ -57,22 +58,22 @@ If you have no transactions, the page shows the message "No transactions found. 
 
 ## Your company's activity
 
-Organization-level financial commitments — including annual membership dues — are separate from your personal transaction history. To view your company's membership status and fees, go to the **Memberships** section in Org Lens (route: `/org/memberships`).
+Company-level financial commitments — including annual membership dues — are separate from your personal transaction history. To view your company's membership status and fees, go to the **Memberships** section in Company Lens (route: `/company/memberships`).
 
 ### What you can see in Memberships
 
-- Your organization's current membership tier and status
+- Your company's current membership tier and status
 - Membership renewal dates and upcoming payment information
 - A record of your company's membership commitments to the Linux Foundation
 
-For other organization-level financial activity, see the related Org Lens pages:
+For other company-level financial activity, see the related Company Lens pages:
 
-- **Event sponsorships** — visible on the [Events](../../events/) page in Org Lens (`/org/events`)
-- **Corporate training packages** — visible on the [Training & Certification](../../trainings/) page in Org Lens (`/org/training`)
+- **Event sponsorships** — visible on the [Events](../../events/) page in Company Lens (`/company/events`)
+- **Corporate training packages** — visible on the [Training & Certification](../../trainings/) page in Company Lens (`/company/training`)
 
 ### Who can access this
 
-Viewing your organization's membership information in Org Lens requires **admin access** to your organization in LFX. If you are not yet an admin, another admin at your organization can invite you to accept an admin role.
+Viewing your company's membership information in Company Lens requires **admin access** to your company in LFX. If you are not yet an admin, another admin at your company can invite you to accept an admin role.
 
 ## Related sections
 

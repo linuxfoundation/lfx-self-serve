@@ -2,25 +2,26 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
-import { DialogRef } from '@angular/cdk/dialog';
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { Meeting, MeetingDetailsState, MeetingHomeRow, MeetingRegistrant, MeetingRsvp, PastMeetingSummary } from '@lfx-one/shared/interfaces';
-import { hasMeetingFullAccess } from '@lfx-one/shared/utils';
+import { canViewMeetingGuests, hasMeetingFullAccess } from '@lfx-one/shared/utils';
+import { MeetingType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDialogsService } from '../../../services/meetings-home-dialogs.service';
-import { MeetingsHomeStore } from '../../../services/meetings-home.store';
 import { MeetingAttendeeGridComponent } from '../../meeting-attendee-grid/meeting-attendee-grid.component';
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsReconcileDialogComponent } from '../reconcile/meeting-details-reconcile-dialog.component';
 import { MeetingDetailsArtifactsService } from './meeting-details-artifacts.service';
 import { MeetingDetailsToolsComponent } from './meeting-details-tools.component';
@@ -52,6 +53,7 @@ describe('MeetingDetailsToolsComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsToolsComponent>;
   let meeting: WritableSignal<Meeting>;
   let state: WritableSignal<MeetingDetailsState>;
+  let signedIn: WritableSignal<boolean>;
   let pastMeetingId: WritableSignal<string | null>;
   let tab: WritableSignal<string>;
   let canViewGuests: WritableSignal<boolean>;
@@ -95,6 +97,7 @@ describe('MeetingDetailsToolsComponent', () => {
   beforeEach(() => {
     meeting = signal(MEETING);
     state = signal<MeetingDetailsState>('far');
+    signedIn = signal(true);
     pastMeetingId = signal<string | null>(null);
     canViewGuests = signal(true);
     tab = signal('agenda');
@@ -103,6 +106,7 @@ describe('MeetingDetailsToolsComponent', () => {
     removedUids = signal(new Set<string>());
     meetingService = {
       getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+      getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
       getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
       getPastMeetingRecording: vi.fn().mockReturnValue(of({ sessions: [{ total_size: 1, share_url: 'https://zoom.example/rec' }] })),
       getPastMeetingTranscript: vi.fn().mockReturnValue(of({ recording_files: [{ file_type: 'TRANSCRIPT', download_url: 'https://zoom.example/vtt' }] })),
@@ -137,12 +141,16 @@ describe('MeetingDetailsToolsComponent', () => {
       state,
       organizer: computed(() => meeting().organizer === true),
       fullAccess: computed(() => hasMeetingFullAccess(meeting(), { organizer: meeting().organizer === true, member: !!meeting().invited })),
+      signedIn,
+      signIn: vi.fn(),
+      signedInAccess: computed(() => signedIn() && hasMeetingFullAccess(meeting(), { organizer: meeting().organizer === true, member: !!meeting().invited })),
       pastMeetingId,
       tab,
       canViewGuests,
       participantsVersion,
       refreshParticipants,
       removedRegistrantUids: removedUids,
+      savedRsvps: confirmed,
     };
 
     TestBed.configureTestingModule({
@@ -153,18 +161,19 @@ describe('MeetingDetailsToolsComponent', () => {
         {
           provide: UserService,
           useValue: {
+            authenticated: signal(true),
             viewerUsername: signal('synthetic-viewer'),
             user: signal({ email: 'viewer@acme.example' }),
             confirmedMeetingRsvps: () => confirmed(),
           },
         },
-        { provide: DialogRef, useValue: { closed, close: closeDialog } },
         { provide: Clipboard, useValue: { copy } },
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: MeetingsHomeEditService, useValue: { edit } },
-        { provide: MeetingsHomeStore, useValue: { applySummaryChange } },
+        { provide: MeetingDetailsSource, useValue: { applySummaryChange, hostRef: { closed, close: closeDialog } } },
         { provide: MeetingsHomeDialogsService, useValue: { openSummary, openTranscript, openRecording, copyRecordingLink } },
         { provide: UiModalService, useValue: { open: modalOpen } },
+        { provide: UiDrawerContext, useValue: {} },
       ],
     });
   });
@@ -241,6 +250,16 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-rsvp-grid')?.querySelectorAll('lfx-ui-avatar').length).toBe(2);
     });
 
+    it('keeps the counts and Invite people when the meeting keeps its guests private', async () => {
+      canViewGuests.set(true);
+      meetingService['getMeetingRegistrants'].mockReturnValue(of([registrant('reg-a', 'accepted')]));
+      await render({ organizer: true, show_meeting_attendees: false });
+
+      expect(text('meetings-home-attendance-label')).toBe('1 of 1 attending · 100%');
+      expect(find('meeting-details-invite')).not.toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
     it('offers no Invite people without a project, as Edit Meeting', async () => {
       meetingService['getMeetingRegistrants'].mockReturnValue(of([registrant('reg-a', 'accepted')]));
       await render({ organizer: true, project_slug: undefined });
@@ -255,6 +274,82 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-rsvp')).toBeNull();
       expect(find('meeting-details-invite')).not.toBeNull();
       expect(fixture.nativeElement.textContent).not.toMatch(/\d+ invited/);
+    });
+  });
+
+  describe('guest, upcoming', () => {
+    // The drawer's guest-list rule, as the context computes it.
+    const renderGuest = async (overrides: Partial<Meeting>): Promise<void> => {
+      const shown = { ...MEETING, ...overrides };
+      canViewGuests.set(canViewMeetingGuests(shown, { organizer: false, invited: !!shown.invited }));
+      await render(overrides);
+    };
+
+    it('shows the counts read-only when the meeting shares its guests', async () => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(
+        of([registrant('reg-a', 'accepted'), registrant('reg-b', 'tentative'), registrant('reg-c', null)])
+      );
+      await renderGuest({ show_meeting_attendees: true });
+
+      expect(meetingService['getMyMeetingRegistrants']).toHaveBeenLastCalledWith('synthetic-meeting', true, undefined, false, false);
+      expect(meetingService['getMeetingRegistrants']).not.toHaveBeenCalled();
+      expect(text('meetings-home-attendance-label')).toBe('1 of 3 attending · 33%');
+      expect(find('meeting-details-rsvp-grid')?.querySelectorAll('lfx-ui-avatar').length).toBe(3);
+      expect(find('meeting-details-invite')).toBeNull();
+    });
+
+    it('hides the counts when the meeting keeps its guests private', async () => {
+      await renderGuest({ show_meeting_attendees: false });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(find('meeting-details-rsvp-loading')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it('hides the counts on a board meeting, where sharing is locked off', async () => {
+      await renderGuest({ show_meeting_attendees: true, meeting_type: MeetingType.BOARD });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    // #5438: an invite-only meeting can opt in from the composer, so its guests see the counts.
+    it('shows the counts on a restricted meeting that shares its guests', async () => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([registrant('reg-a', 'accepted')]));
+      await renderGuest({ show_meeting_attendees: true, restricted: true });
+
+      expect(meetingService['getMyMeetingRegistrants']).toHaveBeenCalled();
+      expect(find('meeting-details-rsvp')).not.toBeNull();
+    });
+
+    it('hides the counts once the date has ended', async () => {
+      canViewGuests.set(true);
+      await render({ show_meeting_attendees: true }, 'ended');
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it('shows no lone divider when the shared roster is empty', async () => {
+      await renderGuest({ show_meeting_attendees: true });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[aria-hidden="true"].h-px')).toBeNull();
+    });
+
+    it('hides the counts from a viewer who is not invited', async () => {
+      await renderGuest({ show_meeting_attendees: true, invited: false });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it('hides the counts when the meeting takes no RSVPs', async () => {
+      await renderGuest({ show_meeting_attendees: true, is_invite_responses_enabled: false });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(find('meeting-details-invite')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
     });
   });
 
@@ -391,6 +486,22 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-tools-card')).toBeNull();
       expect(text('meeting-details-private')).toContain('This is a private meeting');
       expect(meetingService['getPastMeetingSummary']).not.toHaveBeenCalled();
+    });
+
+    it('asks a signed-out visitor to sign in instead of loading tools', async () => {
+      signedIn.set(false);
+      await render({}, 'ended');
+
+      expect(find('meeting-details-tools-card')).toBeNull();
+      expect(text('meeting-details-sign-in-past')).toContain('Sign in to view meeting details');
+      expect(meetingService['getPastMeetingSummary']).not.toHaveBeenCalled();
+    });
+
+    it('leaves the private notice to the agenda on a page', async () => {
+      TestBed.overrideProvider(UiDrawerContext, { useValue: null });
+      await render({ invited: false }, 'ended');
+
+      expect(find('meeting-details-private')).toBeNull();
     });
   });
 });

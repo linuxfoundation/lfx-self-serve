@@ -44,7 +44,7 @@ export const MEETING_INVITE_PRIMARY_SENTINEL = 'primary';
  * Bound to both `aria-label` and `pTooltip` so accessibility and visible copy can't drift apart.
  */
 export const ORGANIZATION_INFO_TOOLTIP =
-  'Organizations in this list come from Work Experience. Add one there to choose a new organization. An existing saved organization may still appear.';
+  'Companies in this list come from Work Experience. Add one there to choose a new company. An existing saved company may still appear.';
 
 /**
  * Profile tab configuration
@@ -223,7 +223,8 @@ export const LFX_ONE_WORK_EXPERIENCE_SOURCE = 'lfxOne';
  * "another account", since the upstream conflict alone does not prove that. Keeps the "already linked" marker the dialogs' support-link classifier
  * (`isIdentityAlreadyLinkedError`) matches.
  */
-export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to an LFX account. Contact support if you need help.';
+export const EMAIL_ALREADY_LINKED_MESSAGE =
+  'You’ve verified this email address, but it’s already linked to an LFX account. Contact support for help with next steps.';
 
 /** Successful no-op status: the proven address is already connected to the caller's own account. */
 export const EMAIL_ALREADY_CONNECTED_STATUS: EmailVerificationStatus = 'already_connected';
@@ -272,8 +273,11 @@ export const EMAIL_LINKED_SUPPORT_TITLE = 'Email already linked';
 export const EMAIL_CALLBACK_RETRY_MESSAGE =
   'Email verification did not finish. Return to Email Settings or Identities and request a new verification code to try again.';
 
+/** Code entry proves inbox ownership before the separate account-linking check. */
+export const EMAIL_VERIFICATION_CODE_INSTRUCTIONS = 'Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.';
+
 /** Enumeration-safe response shared by accepted and already-linked send-code requests. */
-export const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your account, a verification code has been sent.';
+export const EMAIL_VERIFICATION_SENT_MESSAGE = `Check your email for a 6-digit verification code. ${EMAIL_VERIFICATION_CODE_INSTRUCTIONS}`;
 
 /** Resends allowed on the code step before Resend is replaced by a Contact support action. */
 export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
@@ -321,6 +325,7 @@ export const PROFILE_SETTINGS_PATH = '/profile/settings';
 export const PROFILE_EMAIL_PATH = '/profile/email';
 export const PROFILE_EMAILS_PATH = '/profile/emails';
 export const PROFILE_PASSWORD_PATH = '/profile/password';
+export const PROFILE_DEVELOPER_SETTINGS_PATH = '/profile/developer-settings';
 
 /**
  * AccountSettingsComponent's TOC section ids, doubling as the DOM element ids the deep-link

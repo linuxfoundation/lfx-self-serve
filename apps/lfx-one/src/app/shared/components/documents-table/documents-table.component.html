@@ -15,7 +15,7 @@
   [attr.data-testid]="testIdPrefix() + '-table'">
   <ng-template #header>
     <tr>
-      <th [class]="showFoundation() ? 'w-[28%]' : 'w-[40%]'">Name</th>
+      <th [class]="nameColumnClass()">Name</th>
       @if (showFoundation()) {
         <th class="w-[17%]">Foundation</th>
       }
@@ -23,7 +23,7 @@
       <th class="w-[10%]">Source</th>
       <th class="w-[12%]">Shared By</th>
       <th class="w-[11%]">Date</th>
-      <th class="w-[5%]">Actions</th>
+      <th [class]="actionsColumnClass()">Actions</th>
     </tr>
   </ng-template>
 
@@ -276,6 +276,27 @@
               tooltipPosition="top">
             </lfx-button>
           }
+          @if (canManage() && doc.manageableType) {
+            <lfx-menu
+              #manageMenu
+              [model]="manageMenus().get(doc.id)"
+              [popup]="true"
+              appendTo="body"
+              (onShow)="onManageMenuShow(doc.id)"
+              (onHide)="onManageMenuHide(doc.id)" />
+            <lfx-button
+              icon="fa-light fa-ellipsis-vertical"
+              severity="secondary"
+              size="small"
+              [text]="true"
+              [rounded]="true"
+              ariaLabel="More actions"
+              ariaHaspopup="menu"
+              [ariaExpanded]="openMenuRowId() === doc.id"
+              (onClick)="toggleManageMenu($event, manageMenu)"
+              [attr.data-testid]="testIdPrefix() + '-actions-' + doc.id">
+            </lfx-button>
+          }
         </div>
       </td>
     </tr>
@@ -290,3 +311,5 @@
     </tr>
   </ng-template>
 </lfx-table>
+
+<p-confirmDialog />

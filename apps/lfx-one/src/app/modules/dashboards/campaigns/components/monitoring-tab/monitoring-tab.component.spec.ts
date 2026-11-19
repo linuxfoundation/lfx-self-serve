@@ -376,6 +376,54 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
       );
     });
 
+    const setMonitor = (extra: Record<string, unknown>, campaigns: unknown[] = [{ ...base, fetchFailed: false, conversionsMeasured: true }]): void => {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns,
+        accountTotals: { budgetDay: 100, impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, conversionsMeasured: true },
+        actionItems: [],
+        ...extra,
+      });
+      fixture.detectChanges();
+    };
+    const accountNote = (): string | null => fixture.nativeElement.querySelector('[data-testid="google-recorded-account-note"]')?.textContent?.trim() ?? null;
+
+    it('names the account campaign-service read when the project has no connection of its own (#5622)', () => {
+      setMonitor({ accountId: '8666746580', googleAccountOrigin: 'recorded_campaigns' });
+      expect(accountNote()).toBe(
+        "Read from Google Ads account 8666746580, the account this project's campaigns were created under. This project has no Google Ads account bound of its own."
+      );
+    });
+
+    it("shows no account note when the account is the project's own connection", () => {
+      setMonitor({ accountId: '8666746580', googleAccountOrigin: 'connection' });
+      expect(accountNote()).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis"]')).not.toBeNull();
+    });
+
+    it("shows the read's own explanation in the empty state when it gave one (#5622)", () => {
+      setMonitor(
+        {
+          googleAccountOrigin: 'recorded_campaigns',
+          message: 'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.',
+        },
+        []
+      );
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-empty-message"]')?.textContent?.trim()).toBe(
+        'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.'
+      );
+    });
+
+    it('keeps the default empty-state text when the read gave no explanation', () => {
+      setMonitor({}, []);
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-empty-message"]')?.textContent?.trim()).toBe(
+        'No active campaigns found for the selected date range.'
+      );
+    });
+
     it('keeps the dollar sign and no currency note on the legacy read', () => {
       renderRow({});
       expect(fixture.nativeElement.querySelector('[data-testid="google-currency-note"]')).toBeNull();
@@ -1860,6 +1908,120 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(el('reddit-error')?.getAttribute('role')).toBe('alert');
       expect(live()).toBe('');
+    });
+  });
+
+  /**
+   * A project with no connection of its own on LinkedIn, Reddit or Meta (#5889): the BFF reports the
+   * panel as read through the LF system account, the tab reads it with no account, and the panel shows
+   * the account campaign-service read, or that nothing is recorded yet, never "ask an administrator".
+   */
+  describe('reads through the LF system account (#5889)', () => {
+    const systemPanel = (campaigns: Record<string, unknown>[], accountId: string | null, platform: string): Record<string, unknown> => ({
+      accountLabel: 'LF',
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns,
+      accountTotals: { spend: 10, impressions: 100, clicks: 5, conversions: 1, campaignCount: campaigns.length },
+      actionItems: [],
+      systemAccountRead: {
+        accountId,
+        emptyMessage: `No ${platform} campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.`,
+      },
+    });
+    const row = {
+      campaignId: '1',
+      campaignName: 'NA | KubeCon | Feed',
+      eventName: 'KubeCon',
+      creatives: [],
+      status: 'ACTIVE',
+      totalBudget: 1000,
+      dailyBudget: 0,
+      spend: 10,
+      impressions: 100,
+      clicks: 5,
+      ctr: 5,
+      conversions: 1,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      startDate: '2026-09-01',
+      endDate: '',
+    };
+    const systemAccount: MonitorConnectionAccount = { state: 'system_account', accountId: null, label: null, fallbackFrom: 'no_connection' };
+    const refused = (): HttpErrorResponse => new HttpErrorResponse({ status: 404, error: { error: 'refused', upstreamCode: 'system_account_refused' } });
+
+    it.each([
+      ['linkedin', 'getLinkedInMonitorData', 'LinkedIn Ads', '512345678'],
+      ['reddit', 'getRedditMonitorData', 'Reddit Ads', 't2_lfsystem'],
+      ['meta', 'getMetaMonitorData', 'Meta Ads', 'act_100000000000001'],
+    ])('reads the %s panel with no account and names the account campaign-service read', async (platform, method, label, accountId) => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, [platform]: systemAccount } });
+      service[method].mockReturnValue(of(systemPanel([row], accountId, label)));
+      select(platform);
+
+      expect(service[method]).toHaveBeenCalledWith('cncf', null, 30, 'connection');
+      expect(el(`${platform}-connection-notice`)).toBeNull();
+      expect(el(`${platform}-account-select`)).toBeNull();
+      expect(text(`${platform}-system-account-note`)).toBe(
+        `Read from ${label} account ${accountId} through the LF system account. This project has no ${label} account bound of its own, so only the campaigns created for it are shown.`
+      );
+    });
+
+    it('shows that no campaigns are recorded yet, with no account to name, instead of asking an administrator', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: systemAccount } });
+      service['getLinkedInMonitorData'].mockReturnValue(of(systemPanel([], null, 'LinkedIn Ads')));
+      select('linkedin');
+
+      expect(text('linkedin-empty')).toBe(
+        'No LinkedIn Ads campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.'
+      );
+      expect(el('linkedin-system-account-note')).toBeNull();
+      expect(el('linkedin-connection-notice')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('Ask an LFX administrator');
+    });
+
+    it("keeps the usual empty state and no note on a read through the project's own connection", async () => {
+      await setup(allConnected);
+      service['getRedditMonitorData'].mockReturnValue(of({ ...systemPanel([], null, 'Reddit Ads'), systemAccountRead: undefined }));
+      select('reddit');
+
+      expect(text('reddit-empty')).toBe('No active Reddit campaigns found for this account.');
+      expect(el('reddit-system-account-note')).toBeNull();
+    });
+
+    /** campaign-service could not read through the system account: the notice the project's own state calls for stands. */
+    it('shows the "no connection" notice when campaign-service refuses the system-account read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, meta: systemAccount } });
+      service['getMetaMonitorData'].mockReturnValue(throwError(refused));
+      select('meta');
+
+      expect(el('meta-connection-notice')?.getAttribute('data-state')).toBe('no_connection');
+      expect(el('meta-error')).toBeNull();
+
+      // A later read that succeeds clears it.
+      service['getMetaMonitorData'].mockReturnValue(of(systemPanel([row], 'act_100000000000001', 'Meta Ads')));
+      (el('meta-refresh') as HTMLButtonElement | null)?.click();
+      fixture.detectChanges();
+      expect(el('meta-connection-notice')).toBeNull();
+    });
+
+    it('shows the "choose the ad account" notice for a refused read on a connection with no account bound', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: { ...systemAccount, fallbackFrom: 'no_account' } } });
+      service['getLinkedInMonitorData'].mockReturnValue(throwError(refused));
+      select('linkedin');
+
+      expect(el('linkedin-connection-notice')?.getAttribute('data-state')).toBe('no_account');
+      expect(text('linkedin-connection-notice-message')).toContain('choose the ad account on the connection');
+      expect(el('linkedin-error')).toBeNull();
+    });
+
+    it('shows any other failure as the retryable error', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, reddit: systemAccount } });
+      service['getRedditMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'down' } })));
+      select('reddit');
+
+      expect(el('reddit-error')).not.toBeNull();
+      expect(el('reddit-connection-notice')).toBeNull();
     });
   });
 

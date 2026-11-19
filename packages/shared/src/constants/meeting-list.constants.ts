@@ -121,3 +121,31 @@ export const MEETING_DETAILS_OVERLAY_ID = 'meeting-details-drawer';
 
 /** Analytics event sent when the meeting details drawer opens, in place of a meeting page view. */
 export const MEETING_DETAILS_OPENED_EVENT = 'Meeting Details Opened';
+
+/**
+ * Most projects a meetings roll-up filter may name (GH-5566); the server rejects more. Selecting every
+ * project sends no subset at all, so only a hand-picked partial selection of a very large tree can reach it.
+ */
+export const MEETING_ROLLUP_MAX_PROJECTS = 200;
+
+/**
+ * Most projects a meetings roll-up sends to query-service in one `filters_or` request (GH-5807). Measured in
+ * production: 150 projects work, 200 fail. A larger scope falls back to the root project's own meetings, so a
+ * selection of 151 to MEETING_ROLLUP_MAX_PROJECTS projects is accepted but shows the root only.
+ */
+export const MEETING_ROLLUP_QUERY_MAX_PROJECTS = 150;
+
+/** User-service preference app name for the meetings roll-up project selection (GH-5566). */
+export const MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME = 'LFXOne';
+
+/** User-service preference name: a JSON map of roll-up root project UID to the project UIDs the user selected under it. */
+export const MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME = 'MeetingsRollupProjects';
+
+/** Most roll-up roots the preference remembers; the least recently saved root is dropped first. */
+export const MEETING_ROLLUP_PROJECTS_PREFERENCE_MAX_ROOTS = 25;
+
+/** Largest stored preference value; least recently saved roots are dropped until it fits. Same budget as favorite projects. */
+export const MEETING_ROLLUP_PROJECTS_PREFERENCE_VALUE_MAX_LENGTH = 16_000;
+
+/** `projects` URL value (and saved-choice marker) for every project of a meetings roll-up; the root alone is the default. */
+export const MEETING_ROLLUP_ALL_PROJECTS = 'all';

@@ -11,8 +11,9 @@ import { formationPipelineService } from '../services/formation-pipeline.service
 import { logger } from '../services/logger.service';
 
 /**
- * `GET /api/formations/pipeline` (#5475) — every non-Active project by stage, for the formation team. Guarded by
- * `team:formation` membership inside the service (before any upstream read), not by `requireAuditor`. `stage` repeats;
+ * `GET /api/formations/pipeline` (#5475) — every non-Active project by stage, for the formation team; LF staff get the same view
+ * without Draft and Confidential projects (#5544). Guarded by `team:formation` / `team:lf-staff` membership inside the service
+ * (before any upstream read), not by `requireAuditor`. `stage` repeats;
  * absent, it is every pipeline stage.
  */
 export const getFormationPipeline = async (req: Request, res: Response, next: NextFunction) => {
@@ -43,7 +44,7 @@ export const getFormationPipeline = async (req: Request, res: Response, next: Ne
   try {
     const result = await formationPipelineService.getPipeline(req, { stages, foundationUid, search: rawSearch?.trim() || undefined });
     res.set('Cache-Control', 'private, no-store');
-    logger.success(req, operation, startTime, { row_count: result.rows.length, total: result.counts.total });
+    logger.success(req, operation, startTime, { row_count: result.rows.length, total: result.counts.total, viewer: result.viewer });
     return res.json(result);
   } catch (error) {
     return next(error);

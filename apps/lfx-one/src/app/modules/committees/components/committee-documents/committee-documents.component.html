@@ -78,7 +78,9 @@
       [loading]="isLoading()"
       [showFoundation]="false"
       [currentGroupUid]="committee().uid"
+      [canManage]="canEdit()"
       (folderOpen)="onFolderOpen($event)"
+      (documentDelete)="onDocumentDelete($event)"
       testIdPrefix="committee-documents"
       [emptyMessage]="currentFolder() ? 'This folder is empty' : 'No documents found for this group'">
     </lfx-documents-table>

@@ -3,9 +3,15 @@
 
 <div class="flex flex-col gap-6" data-testid="newsletter-send-step">
   <div>
-    <h2 class="text-base font-semibold text-gray-900">Ready to send</h2>
+    <h2 class="text-base font-semibold text-gray-900">{{ audiencePreparing() ? 'Preparing to send' : 'Ready to send' }}</h2>
     <p class="text-sm text-gray-500 mt-1">Send yourself a test first if you want to double-check formatting, then send to your audience when you're ready.</p>
   </div>
+
+  @if (audiencePreparing()) {
+    <div class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800" data-testid="newsletter-send-step-audience-preparing">
+      Preparing the recipient list. Send and Schedule are available once it's ready, which can take a minute for a large group.
+    </div>
+  }
 
   <div class="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="newsletter-send-step-summary">
     <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">

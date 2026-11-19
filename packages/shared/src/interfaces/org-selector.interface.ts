@@ -32,6 +32,8 @@ export interface OrgItem {
   slug?: string | null;
   /** True for an org the caller reaches only as its CLA Manager (see `OrgResolveResponse.claOnly`). Absent means false. */
   claOnly?: boolean;
+  familyRootUid?: string;
+  familyRootName?: string | null;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -53,6 +55,12 @@ export interface OrgItemsResponse {
   upstream_failed: boolean;
   /** Optional total when upstream returns it cheaply; clients tolerate null. */
   total?: number | null;
+  /**
+   * M3 — the caller's CLA-only organizations are not on this page and should be fetched with
+   * `cla_only=1`, then listed after the held rows. Set on a first page for a non-staff caller who
+   * holds at least one grant and whose roster answered; absent otherwise.
+   */
+  cla_only_deferred?: boolean;
 }
 
 /** BFF → query-service shape built by `OrgNavigationService.buildQuery`. */
@@ -76,6 +84,8 @@ export interface GetOrgItemsParams {
   name?: string;
   /** Pin a uid at the top of the first page when it falls outside the natural results. Mutually exclusive with `pageToken`. */
   selectedUid?: string;
+  /** M3 — answer only the caller's CLA-only organizations, unfiltered and alphabetical. Mutually exclusive with `pageToken`. */
+  claOnly?: boolean;
 }
 
 /** A switcher row plus the section heading it introduces, if any. A heading is carried by the first row of its group so an empty group cannot leave a stray heading behind. */
@@ -125,6 +135,18 @@ export interface OrgRollUpSetResponse {
   lookupOutcome: OrgLensLookupOutcome;
 }
 
+export interface OrgLensRollUpScope {
+  rollUpKey: string;
+  rootUid: string;
+  members: OrgRollUpSetOrg[];
+  complete: boolean;
+}
+
+export interface OrgStaffRollUpFamily {
+  family: OrgRollUpSetFamily;
+  complete: boolean;
+}
+
 /** Where the caller's families stand: `pending` until the roll-up set first answers, `server` once it has (successfully or not). */
 export type OrgRollUpFamiliesSource = 'pending' | 'server';
 
@@ -135,6 +157,14 @@ export interface OrgRollUpSelectorRow {
   subtitle: string;
   organizationCount: number;
   isSelected: boolean;
+}
+
+export interface OrgRelatedCompanyRow {
+  org: OrgRollUpSetOrg;
+  isSelected: boolean;
+  roleLabel: string;
+  roleIcon: string;
+  roleTooltip: string;
 }
 
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */
@@ -345,6 +375,12 @@ export interface OrgListPage {
   nextPageToken: string | null;
   upstreamFailed: boolean;
   reset: boolean;
+  /** The search term the page was fetched with. */
+  term?: string;
+  /** The response's `cla_only_deferred`: the caller's CLA-only rows arrive from a separate request. */
+  claOnlyDeferred?: boolean;
+  /** The `selected_uid` a first page was fetched with, or `null` (always `null` on next pages). */
+  pinnedUid?: string | null;
 }
 
 /** Carries dispatch generation so stale responses can be filtered out of the merged stream (FR-011 race-guard). */

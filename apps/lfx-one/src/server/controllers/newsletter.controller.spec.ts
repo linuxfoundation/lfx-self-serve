@@ -19,7 +19,13 @@ const {
   recordPageView,
   testSend,
   renderPreview,
+  resolveAudience,
+  getAudience,
+  recipientCount,
 } = vi.hoisted(() => ({
+  resolveAudience: vi.fn(),
+  getAudience: vi.fn(),
+  recipientCount: vi.fn(),
   recordShare: vi.fn(),
   recordPageView: vi.fn(),
   testSend: vi.fn(),
@@ -75,6 +81,9 @@ vi.mock('../services/newsletter.service', () => ({
     public recordPageView = recordPageView;
     public testSend = testSend;
     public renderPreview = renderPreview;
+    public resolveAudience = resolveAudience;
+    public getAudience = getAudience;
+    public recipientCount = recipientCount;
   },
 }));
 vi.mock('../services/ai.service', () => ({ AiService: class {} }));
@@ -854,5 +863,87 @@ describe('NewsletterController live-send lock', () => {
     expect(next).not.toHaveBeenCalled();
     expect(sendNewsletter).toHaveBeenCalledWith(req, 'p1', 'n1', 3);
     expect(res.json).toHaveBeenCalled();
+  });
+});
+
+describe('NewsletterController audience (#4352)', () => {
+  const PROJECT = '11111111-1111-1111-1111-111111111111';
+  const NEWSLETTER = '22222222-2222-2222-2222-222222222222';
+  const params = { projectUid: PROJECT, newsletterUid: NEWSLETTER };
+  const audience = { status: 'processing', recipient_count: 0, skipped_no_email: 0, committee_uids: ['c-1'], requested_at: '2026-11-11T00:00:00Z' };
+
+  it('starts the audience with the saved committees and passes refresh through', async () => {
+    resolveAudience.mockResolvedValue(audience);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().resolveAudience({ params, body: { committee_uids: ['c-1'], refresh: true }, path: '/x' } as any, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(resolveAudience).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER, { committee_uids: ['c-1'], refresh: true });
+    expect(res.json).toHaveBeenCalledWith(audience);
+  });
+
+  it('sends refresh false unless it is exactly true', async () => {
+    resolveAudience.mockResolvedValue(audience);
+
+    await new NewsletterController().resolveAudience({ params, body: { committee_uids: ['c-1'], refresh: 'yes' }, path: '/x' } as any, buildRes(), vi.fn());
+
+    expect(resolveAudience).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER, { committee_uids: ['c-1'], refresh: false });
+  });
+
+  it('refuses a resolve without committees', async () => {
+    const next = vi.fn();
+
+    await new NewsletterController().resolveAudience({ params, body: { committee_uids: [] }, path: '/x' } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(resolveAudience).not.toHaveBeenCalled();
+  });
+
+  it('returns the audience status', async () => {
+    getAudience.mockResolvedValue({ ...audience, status: 'ready', recipient_count: 17064 });
+    const res = buildRes();
+
+    await new NewsletterController().getAudience({ params, path: '/x' } as any, res, vi.fn());
+
+    expect(getAudience).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'ready', recipient_count: 17064 }));
+  });
+
+  it('passes newsletter_uid through on the recipient count', async () => {
+    recipientCount.mockResolvedValue({ count: 3 });
+
+    await new NewsletterController().getRecipientCount(
+      { params: { projectUid: PROJECT }, body: { committee_uids: ['c-1'], newsletter_uid: NEWSLETTER }, path: '/x' } as any,
+      buildRes(),
+      vi.fn()
+    );
+
+    expect(recipientCount).toHaveBeenCalledWith(expect.anything(), PROJECT, { committee_uids: ['c-1'], newsletter_uid: NEWSLETTER });
+  });
+
+  it('refuses a recipient count whose newsletter_uid is not a UUID', async () => {
+    const next = vi.fn();
+
+    await new NewsletterController().getRecipientCount(
+      { params: { projectUid: PROJECT }, body: { committee_uids: ['c-1'], newsletter_uid: 'not-a-uuid' }, path: '/x' } as any,
+      buildRes(),
+      next
+    );
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(recipientCount).not.toHaveBeenCalled();
+  });
+});
+
+describe('MicroserviceError audience_not_ready (#4352)', () => {
+  it('forwards the upstream audience_status so the client knows whether to start or wait', () => {
+    const err = new MicroserviceError('audience not ready', 409, 'CONFLICT', {
+      service: 'newsletter_service',
+      errorBody: { error: 'audience_not_ready', message: 'audience not ready', audience_status: 'stale' },
+    } as any);
+
+    expect(err.toResponse()).toMatchObject({ upstreamCode: 'audience_not_ready', audienceStatus: 'stale' });
   });
 });

@@ -98,8 +98,11 @@ import {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
+  MetaCustomAudiencesResult,
   LinkedInAccount,
+  LinkedInCreateAccountResult,
   LinkedInMonitorResponse,
+  LinkedInTargetingProfileConfig,
   ListAudiencesResult,
   MetaAccountOption,
   MetaMonitorResponse,
@@ -647,14 +650,42 @@ export class CampaignService {
     return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { project: projectSlug } });
   }
 
+  /**
+   * The LinkedIn ad account a create for the project uses and, for a caller holding `global_marketing_ops`,
+   * the other accounts it may choose (#5809). 404 unless account selection is on. A failure is logged and rethrown,
+   * so the caller decides the fallback.
+   */
+  public getLinkedInCreateAccount(projectSlug: string): Observable<LinkedInCreateAccountResult> {
+    return this.http.get<LinkedInCreateAccountResult>('/api/campaigns/linkedin/create-account', { params: { project: projectSlug } }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load the LinkedIn ad account:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** The configured LinkedIn targeting profiles and the facet URNs each one targets (#5546). */
+  public getLinkedInTargetingProfiles(projectSlug: string): Observable<LinkedInTargetingProfileConfig[]> {
+    return this.http.get<LinkedInTargetingProfileConfig[]>('/api/campaigns/linkedin/targeting-profiles', { params: { project: projectSlug } }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load the LinkedIn targeting profiles:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * `accountKey` null reads the panel through the LF system account (#5889): the BFF picks the
+   * account, so none is sent. The same holds for the Reddit and Meta reads below.
+   */
   public getLinkedInMonitorData(
     projectSlug: string,
-    accountKey: string,
+    accountKey: string | null,
     days: number = 30,
     accountSource: MonitorAccountSource | null = null
   ): Observable<LinkedInMonitorResponse> {
     return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
-      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
     });
   }
 
@@ -664,12 +695,12 @@ export class CampaignService {
 
   public getRedditMonitorData(
     projectSlug: string,
-    accountKey: string,
+    accountKey: string | null,
     days: number = 30,
     accountSource: MonitorAccountSource | null = null
   ): Observable<RedditMonitorResponse> {
     return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
-      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
     });
   }
 
@@ -724,6 +755,15 @@ export class CampaignService {
   }
 
   /**
+   * The custom audiences on the Meta ad account a create for this project uses, for the Implement tab's
+   * Meta audience targeting (#5905). A coded 403 without `global_marketing_ops` on the project, a coded
+   * 503 when that check cannot be made, and a 404 while Meta audience targeting is off.
+   */
+  public getMetaCustomAudiences(projectSlug: string): Observable<MetaCustomAudiencesResult> {
+    return this.http.get<MetaCustomAudiencesResult>('/api/campaigns/meta/custom-audiences', { params: { project: projectSlug } });
+  }
+
+  /**
    * Whether X creation is open on this deployment, with no brief — the Plan picker's answer before
    * one exists. `project` is not read by the answer, which is deployment-wide; it is what lets the
    * campaign-manager guard authorise a project-scoped caller, which refuses an unscoped request.
@@ -763,12 +803,12 @@ export class CampaignService {
 
   public getMetaMonitorData(
     projectSlug: string,
-    accountKey: string,
+    accountKey: string | null,
     days: number = 30,
     accountSource: MonitorAccountSource | null = null
   ): Observable<MetaMonitorResponse> {
     return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
-      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
     });
   }
 

@@ -157,6 +157,7 @@ import {
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
   toMentorshipEnrollCreateRequest,
+  toMentorshipHttpUrl,
   toMentorshipUtcEndOfDayInstant,
   toMentorshipUtcInstant,
   buildMentorshipGraduateTaskWarning,
@@ -417,6 +418,16 @@ describe('mentorship URL and logo helpers', () => {
     expect(isMentorshipLogoFileName('logo.PNG')).toBe(true);
     expect(isMentorshipLogoFileName('notes.pdf')).toBe(false);
   });
+
+  it('gives a link without a scheme https://, and leaves the rest as typed', () => {
+    expect(toMentorshipHttpUrl(' github.com/org/repo ')).toBe('https://github.com/org/repo');
+    expect(toMentorshipHttpUrl('www.example.org')).toBe('https://www.example.org');
+    expect(toMentorshipHttpUrl('http://example.org/path')).toBe('http://example.org/path');
+    expect(toMentorshipHttpUrl('  ')).toBe('');
+    // Not links the form accepts: left for isMentorshipHttpUrl to refuse, never turned into https://rocket.
+    expect(toMentorshipHttpUrl(' rocket ')).toBe('rocket');
+    expect(toMentorshipHttpUrl('ftp://example.com')).toBe('ftp://example.com');
+  });
 });
 
 describe('getMentorshipEnrollLogoError', () => {
@@ -490,6 +501,19 @@ describe('toMentorshipEnrollCreateRequest', () => {
       codeOfConductUrl: 'https://rocket.example/coc',
       ciiProjectId: '1234',
       termsAccepted: true,
+    });
+  });
+
+  it('sends a link typed without a scheme as an https:// URL, the only form upstream takes (lfx-mentorship#456)', () => {
+    const request = toMentorshipEnrollCreateRequest(
+      validForm({ repositoryUrl: ' github.com/acme/rocket ', websiteUrl: 'rocket.example', codeOfConductUrl: 'rocket.example/coc' }),
+      project
+    );
+
+    expect(request).toMatchObject({
+      repositoryUrl: 'https://github.com/acme/rocket',
+      websiteUrl: 'https://rocket.example',
+      codeOfConductUrl: 'https://rocket.example/coc',
     });
   });
 
@@ -861,6 +885,16 @@ describe('toMentorshipEnrollUpdateRequest', () => {
 
     expect({ ...toMentorshipEnrollUpdateRequest(form, project, new Map()), termsAccepted: true }).toEqual(created);
     expect(created.industry).toBe('Go, Rust');
+  });
+
+  it('sends a stored link without a scheme as an https:// URL, so a migrated program can be saved', () => {
+    const form = Object.assign(filled(), { repositoryUrl: 'github.com/org/repo', websiteUrl: 'example.org', codeOfConductUrl: 'example.org/coc' });
+
+    expect(toMentorshipEnrollUpdateRequest(form, project, new Map())).toMatchObject({
+      repositoryUrl: 'https://github.com/org/repo',
+      websiteUrl: 'https://example.org',
+      codeOfConductUrl: 'https://example.org/coc',
+    });
   });
 
   /** A saved term upstream holds with a mid-month start and end, as the wizard keeps it. */

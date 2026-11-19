@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES, MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX } from '@lfx-one/shared/constants';
+import { ALLOWED_FILE_TYPES, COMMITTEE_DOCUMENT_DELETE_TYPES, MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -12,11 +12,12 @@ import {
   CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   CreateCommitteeJoinApplicationRequest,
+  ProjectDocumentType,
   ApproveCommitteeJoinApplicationRequest,
   RejectCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { canViewCommitteeRoster, isFileTypeAllowed, isSafeUploadFileName } from '@lfx-one/shared/utils';
+import { canViewCommitteeRoster, isFileTypeAllowed, isSafeUploadFileName, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -902,7 +903,7 @@ export class CommitteeController {
         // is explicitly true; null/undefined (pre-v1.1 invites) defers to upstream.
         if (pendingInvite.organization_required === true && !hasOrg) {
           next(
-            ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
+            ServiceValidationError.forField('organization.name', 'Company is required for this group', {
               operation: 'accept_committee_invite',
               service: 'committee_controller',
               path: req.path,
@@ -1333,12 +1334,12 @@ export class CommitteeController {
   }
 
   /**
-   * DELETE /committees/:id/documents/:documentId?type=folder|link
+   * DELETE /committees/:id/documents/:documentId?type=link|file
    */
   public async deleteCommitteeDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id, documentId } = req.params;
     const documentType = req.query['type'] as string;
-    const validDeleteTypes = ['link', 'folder'];
+    const validDeleteTypes: readonly string[] = COMMITTEE_DOCUMENT_DELETE_TYPES;
     const startTime = logger.startOperation(req, 'delete_committee_document', {
       committee_id: id,
       document_id: documentId,
@@ -1380,7 +1381,7 @@ export class CommitteeController {
         return;
       }
 
-      await this.committeeService.deleteCommitteeDocument(req, id, documentId, documentType);
+      await this.committeeService.deleteCommitteeDocument(req, id, documentId, documentType as ProjectDocumentType);
 
       logger.success(req, 'delete_committee_document', startTime, {
         committee_id: id,
@@ -1616,6 +1617,42 @@ export class CommitteeController {
       const application = await this.committeeService.rejectApplication(req, id, applicationId, body);
 
       logger.success(req, 'reject_committee_application', startTime, {
+        committee_id: id,
+        application_id: applicationId,
+      });
+      res.json(application);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/applications/:applicationId/withdraw
+   * Withdraws the caller's own pending application; upstream answers 403 for anyone but the applicant.
+   */
+  public async withdrawApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, applicationId } = req.params;
+    const startTime = logger.startOperation(req, 'withdraw_committee_application', {
+      committee_id: id,
+      application_id: applicationId,
+    });
+
+    try {
+      // Both go into the upstream path, which only takes UUIDs.
+      if (!isUuid(id ?? '') || !isUuid(applicationId ?? '')) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID and application ID must be UUIDs', {
+            operation: 'withdraw_committee_application',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const application = await this.committeeService.withdrawApplication(req, id, applicationId);
+
+      logger.success(req, 'withdraw_committee_application', startTime, {
         committee_id: id,
         application_id: applicationId,
       });

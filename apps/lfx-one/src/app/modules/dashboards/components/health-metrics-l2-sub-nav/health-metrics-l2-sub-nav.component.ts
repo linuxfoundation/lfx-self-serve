@@ -1,18 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, NgClass } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { Component, ElementRef, inject, input, output, signal } from '@angular/core';
 
 import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
  * Section nav for a Health Metrics Level 2 tab (the design's `.hmn`), right of the sections. Purely
- * presentational — the shell owns scroll-spy and scrolling; this emits the picked section and renders the badges.
+ * presentational — the shell owns scroll-spy and scrolling; this emits the picked section and renders the notes.
  */
 @Component({
   selector: 'lfx-health-metrics-l2-sub-nav',
-  imports: [DecimalPipe, NgClass],
+  imports: [NgClass],
   templateUrl: './health-metrics-l2-sub-nav.component.html',
   styleUrl: './health-metrics-l2-sub-nav.component.scss',
   // The host is the flex item, so it is what sticks; a sticky child would have no room to travel in it.

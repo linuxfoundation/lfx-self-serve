@@ -391,7 +391,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   const joinableOccurrence = activeOccurrences.find((occurrence) => {
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   });
@@ -666,7 +666,7 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
     const now = new Date();
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   }
@@ -679,7 +679,7 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
   const now = new Date();
   const startTime = new Date(meeting.start_time);
   const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + 40 * 60000); // 40 minutes after end
+  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
 
   return now >= earliestJoinTime && now <= latestJoinTime;
 }
@@ -696,12 +696,11 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
  */
 export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence): boolean {
   const now = new Date();
-  const buffer = 40 * 60000; // 40 minutes in milliseconds
 
   // For recurring meetings with occurrence
   if (occurrence) {
     const startTime = new Date(occurrence.start_time);
-    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + buffer);
+    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
     return now > endTime;
   }
 
@@ -711,7 +710,7 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   }
 
   const startTime = new Date(meeting.start_time);
-  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
+  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
   return now > endTime;
 }
 
@@ -1859,4 +1858,9 @@ export function getMeetingSelfRemovalNotes(options: { viaCommittee?: boolean; or
   if (options.organizer) notes.push('You will still be an organizer of this meeting.');
   if (options.viaCommittee) notes.push("You stay in the committee, but it won't invite you to this meeting again.");
   return notes;
+}
+
+/** The question of the Resend Your Invitation dialog shown before an invitee resends their own invite, with curly quotes. */
+export function getMeetingOwnResendQuestion(title: string): string {
+  return `Resend your invitation to “${title}”? We'll email it to your own address again.`;
 }

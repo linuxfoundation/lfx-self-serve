@@ -18,11 +18,6 @@ const NO_ORGS: ReadonlySet<string> = new Set();
 export class OrgClaOnlyAccessService {
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
 
-  /**
-   * Organizations an address resolved as CLA-only (`OrgResolveResponse.claOnly`). Kept apart from
-   * `claOnlyOrgUids`: a caller with an Org Lens grant elsewhere reaches these by direct link only, so
-   * they shape that organization's pages but never add it to the selector.
-   */
   private readonly addressedClaOnlyUids: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(NO_ORGS);
 
   /** Selector entries. */
@@ -33,10 +28,10 @@ export class OrgClaOnlyAccessService {
 
   public isClaOnly(uid: string | null | undefined): boolean {
     if (!uid) return false;
-    if (this.claOnlyOrgUids().has(uid)) return true;
     // A grant that arrived after the address was resolved wins: the selected organization skips the
     // resolver on later navigations, so nothing else would clear the note.
-    return this.addressedClaOnlyUids().has(uid) && !this.holdsOrgLensAccess(uid);
+    if (this.holdsOrgLensAccess(uid)) return false;
+    return this.claOnlyOrgUids().has(uid) || this.addressedClaOnlyUids().has(uid);
   }
 
   /** Records the resolver's answer for an addressed organization; a later non-CLA-only answer clears it. */

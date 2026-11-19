@@ -21,6 +21,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
 import {
+  NAVBAR_ORG_CLA_ONLY_ROLE,
   NAVBAR_ORG_ROLE_DIRECT_SUFFIX,
   NAVBAR_ORG_ROLE_TOOLTIPS,
   NAVBAR_ORG_ROLE_UNKNOWN_SOURCE,
@@ -29,11 +30,22 @@ import {
   ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
   ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
 } from '@lfx-one/shared/constants';
-import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgRollUpFamily, OrgRollUpSelectorRow, OrgSelectorRow } from '@lfx-one/shared/interfaces';
+import {
+  Account,
+  ContextSelectorVariant,
+  DisplayOrgItem,
+  OrgItem,
+  OrgRelatedCompanyRow,
+  OrgRollUpFamily,
+  OrgRollUpSelectorRow,
+  OrgRollUpSetOrg,
+  OrgSelectorRow,
+} from '@lfx-one/shared/interfaces';
 import { orgRollUpAccount, resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { ElementIdService } from '@services/element-id.service';
 import { LensService } from '@services/lens.service';
+import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -59,6 +71,7 @@ export class OrgSelectorComponent {
   private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
@@ -109,8 +122,10 @@ export class OrgSelectorComponent {
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
 
-  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Organization');
+  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Company');
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
+
+  private readonly searchRollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => this.initSearchRollUpRows());
 
   /**
    * The family roll-up entries (#4132) — one per Salesforce family the caller holds two or more
@@ -121,33 +136,7 @@ export class OrgSelectorComponent {
    * Not grants: they carry no persona badge and no `(Original)` / `(Inherited)` suffix, and they
    * leave the labelling on the real rows untouched.
    */
-  protected readonly rollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => {
-    const selectedRootUid = this.accountContextService.selectedRollUpRootUid();
-    const rows = this.accountContextService.eligibleRollUpFamilies().map((family: OrgRollUpFamily) => ({
-      rootUid: family.rootUid,
-      name: orgRollUpAccount(family.rootUid, family.name).accountName,
-      subtitle: `Combined view of related organizations · ${organizationCountLabel(family.orgUids.length)}`,
-      organizationCount: family.orgUids.length,
-      isSelected: family.rootUid === selectedRootUid,
-    }));
-    // The selected roll-up keeps its row even while its family is not offered: the trigger already
-    // shows a cookie-restored roll-up before the grants and families settle (and again while they
-    // reload after Retry), and in the conglomerate case the count sits at 1 through that window.
-    // Without the row the panel offered only organizations, so picking one silently left roll-up
-    // mode (#4415, Cursor).
-    if (selectedRootUid && !rows.some((row) => row.rootUid === selectedRootUid)) {
-      const family = this.accountContextService.selectedRollUpFamily();
-      const count = family?.orgUids.length ?? 0;
-      rows.unshift({
-        rootUid: selectedRootUid,
-        name: orgRollUpAccount(selectedRootUid, family?.name ?? null).accountName,
-        subtitle: count > 0 ? `Combined view of related organizations · ${organizationCountLabel(count)}` : 'Combined view of related organizations',
-        organizationCount: count,
-        isSelected: true,
-      });
-    }
-    return rows;
-  });
+  protected readonly rollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => this.initRollUpRows());
   protected readonly showRollUpRow: Signal<boolean> = computed(() => this.rollUpRows().length > 0);
   protected readonly isRollUpSelected: Signal<boolean> = this.accountContextService.isRollUp;
   /**
@@ -199,9 +188,19 @@ export class OrgSelectorComponent {
       this.orgRoleGrantsService.inheritedAuditorSet()
     );
   });
-  protected readonly selectedRoleLabel: Signal<string> = computed(() => this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation()));
-  protected readonly selectedRoleIcon: Signal<string> = computed(() => this.personaToIcon(this.selectedRolePersona()));
+  // Read from the access service, not `items()`: a search drops the selected row from the list.
+  private readonly selectedClaOnly: Signal<boolean> = computed(() => {
+    const uid = this.selectedAccountUid();
+    return !!uid && !this.selectedRolePersona() && this.claOnlyAccess.isClaOnly(uid);
+  });
+  protected readonly selectedRoleLabel: Signal<string> = computed(() =>
+    this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.label : this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation())
+  );
+  protected readonly selectedRoleIcon: Signal<string> = computed(() =>
+    this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.icon : this.personaToIcon(this.selectedRolePersona())
+  );
   protected readonly selectedRoleTooltip: Signal<string> = computed(() => {
+    if (this.selectedClaOnly()) return NAVBAR_ORG_CLA_ONLY_ROLE.tooltip;
     const uid = this.selectedAccountUid();
     const persona = this.selectedRolePersona();
     if (!uid || !persona) return '';
@@ -228,7 +227,10 @@ export class OrgSelectorComponent {
     // inherited grants — one org-items row, two or more organizations — would get the static card
     // and no way to open the panel the roll-up lives in (#4132).
     if (this.showRollUpRow()) return false;
-    if (this.isStaff() || this.loading() || this.hasMore() || this.listIncomplete() || items.length !== 1) return false;
+    // CLA-only rows still on their way count as loading: they can add a row to switch to.
+    if (this.isStaff() || this.loading() || this.orgNavigationService.claOnlyPending() || this.hasMore() || this.listIncomplete() || items.length !== 1) {
+      return false;
+    }
     // The one row must be the selection: a deep-linked selection outside the list still needs the
     // panel to switch back, and the not-found dead end recovers through picking the selected row.
     return items[0].uid === this.selectedAccountUid() && !this.onNotFound();
@@ -243,6 +245,7 @@ export class OrgSelectorComponent {
 
   /** Navbar card tooltip: what the role lets the user do, in plain language (rather than repeating the label). */
   protected readonly navbarRoleTooltip: Signal<string> = computed(() => {
+    if (this.selectedClaOnly()) return NAVBAR_ORG_CLA_ONLY_ROLE.tooltip;
     const uid = this.selectedAccountUid();
     const persona = this.selectedRolePersona();
     if (!uid || !persona) return '';
@@ -265,6 +268,15 @@ export class OrgSelectorComponent {
       // Prefer the BFF-attached `parentName` on the item (D-006 in-memory join) — fall back to the
       // signal map only if the server response somehow omitted it on a row known to be inherited.
       const parentName = item.parentName ?? parentNameByUid.get(item.uid) ?? '';
+      if (!persona && item.claOnly === true) {
+        return {
+          item,
+          isSelected: !!selectedUid && selectedUid === item.uid,
+          roleLabel: NAVBAR_ORG_CLA_ONLY_ROLE.label,
+          roleIcon: NAVBAR_ORG_CLA_ONLY_ROLE.icon,
+          roleTooltip: NAVBAR_ORG_CLA_ONLY_ROLE.tooltip,
+        };
+      }
       return {
         item,
         isSelected: !!selectedUid && selectedUid === item.uid,
@@ -311,6 +323,8 @@ export class OrgSelectorComponent {
     () => this.isStaff() && this.orgNavigationService.searchTerm()().trim().length >= ORG_CATALOGUE_SEARCH_MIN_CHARS
   );
 
+  protected readonly relatedRows: Signal<OrgRelatedCompanyRow[]> = computed(() => this.initRelatedRows());
+
   /**
    * Rows in BFF order (assigned first, then discovered), with a section heading attached to the first
    * row of each group. Sectioning turns on only during an active search, so a non-LF-team caller, an
@@ -318,27 +332,7 @@ export class OrgSelectorComponent {
    * keep today's single flat list. Attaching the heading to a row rather than rendering it from a
    * group count is what guarantees a heading can never appear above an empty group.
    */
-  protected readonly displayedRows: Signal<OrgSelectorRow[]> = computed(() => {
-    const rows = this.displayedItems();
-    const searchActive = this.searchActive();
-    const sectioned = searchActive && rows.some((row) => row.item.isAssigned === false);
-    if (!sectioned) {
-      return rows.map((display) => this.toRow(display, null, searchActive));
-    }
-
-    let assignedSeen = false;
-    let discoveredSeen = false;
-    return rows.map((display) => {
-      if (display.item.isAssigned === false) {
-        const heading = discoveredSeen ? null : 'All organizations';
-        discoveredSeen = true;
-        return this.toRow(display, heading, searchActive);
-      }
-      const heading = assignedSeen ? null : 'Your organizations';
-      assignedSeen = true;
-      return this.toRow(display, heading, searchActive);
-    });
-  });
+  protected readonly displayedRows: Signal<OrgSelectorRow[]> = computed(() => this.initDisplayedRows());
 
   protected readonly autoLoadTriggerIndex: Signal<number> = computed(() => Math.max(0, this.displayedItems().length - 8));
 
@@ -402,6 +396,12 @@ export class OrgSelectorComponent {
       this.selectRollUp(rootUid);
       return true;
     }
+    if (active.dataset['optionKind'] === 'related') {
+      const related = this.relatedRows().find((candidate) => candidate.org.uid === active.dataset['orgUid']);
+      if (!related) return false;
+      this.selectRelated(related.org);
+      return true;
+    }
     const uid = active.dataset['orgUid'];
     const row = this.displayedRows().find((candidate) => candidate.display.item.uid === uid);
     if (!row) return false;
@@ -427,10 +427,17 @@ export class OrgSelectorComponent {
       this.popoverRef()?.hide();
       return;
     }
-    if (!this.accountContextService.selectRollUp(rootUid)) {
+    const searchMatch =
+      this.searchRollUpRows().some((row) => row.rootUid === rootUid) && !this.accountContextService.canSelectRollUpFor(rootUid)
+        ? this.items().find((item) => item.familyRootUid === rootUid)
+        : undefined;
+    const admitted = searchMatch
+      ? this.accountContextService.selectRollUp(rootUid, { admitWhilePending: true, name: searchMatch.familyRootName ?? null })
+      : this.accountContextService.selectRollUp(rootUid);
+    if (!admitted) {
       return;
     }
-    // #4133: a new roll-up pick lands on the family's overview, not the page it was made from. Unlike
+    // #4133: a new roll-up pick lands on the family's Memberships page, not the page it was made from. Unlike
     // an organization switch, the roll-up does not support every page — Org Profile is single-org
     // by definition (#4125) — so carrying the current page across can land on one that has no
     // roll-up rendering at all.
@@ -441,7 +448,16 @@ export class OrgSelectorComponent {
     this.popoverRef()?.hide();
   }
 
+  protected selectRelated(org: OrgRollUpSetOrg): void {
+    const listed = this.items().find((item) => item.uid === org.uid);
+    this.selectItem(listed ?? { uid: org.uid, accountId: org.accountId, name: org.name, logoUrl: org.logoUrl, isAssigned: false });
+  }
+
   protected selectItem(item: OrgItem): void {
+    // M3: the path guard skips the resolver for the organization already selected, so this pick is the
+    // only place the row's CLA-only answer can reach the CLA-only shell. Recorded for a re-pick of the
+    // selection too, which returns below without navigating.
+    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
     // one exception is the not-found dead end, where the selection is the cookie's or a default that
@@ -470,7 +486,7 @@ export class OrgSelectorComponent {
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
       // Spec 050: URL identity for `/org/{segment}/…` — from the indexed doc, never derived here.
-      slug: item.slug ?? null,
+      slug: item.slug,
     };
     this.accountContextService.setAccount(account);
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
@@ -692,7 +708,8 @@ export class OrgSelectorComponent {
       const familiesAnswerOwed =
         this.accountContextService.rollUpFamiliesLoading() ||
         (this.accountContextService.rollUpFamiliesUnsettled() && !this.accountContextService.rollUpFamiliesIncomplete());
-      const selectedRowOwed = this.accountContextService.isRollUp() && familiesAnswerOwed;
+      // A selected CLA-only organization's row arrives with the deferred CLA-only rows, after the held list.
+      const selectedRowOwed = (this.accountContextService.isRollUp() && familiesAnswerOwed) || this.orgNavigationService.claOnlyPending();
       if (selectedIdx >= 0 || (this.orgNavigationService.loaded() && !selectedRowOwed)) {
         this.pendingInitialFocus = false;
       }
@@ -702,6 +719,95 @@ export class OrgSelectorComponent {
   private closeAndRestoreFocus(): void {
     this.popoverRef()?.hide();
     this.triggerRef()?.nativeElement.focus();
+  }
+
+  private initRollUpRows(): OrgRollUpSelectorRow[] {
+    const selectedRootUid = this.accountContextService.selectedRollUpRootUid();
+    const rows = this.accountContextService.eligibleRollUpFamilies().map((family: OrgRollUpFamily) => ({
+      rootUid: family.rootUid,
+      name: orgRollUpAccount(family.rootUid, family.name).accountName,
+      subtitle: `Combined view of related companies · ${organizationCountLabel(family.orgUids.length)}`,
+      organizationCount: family.orgUids.length,
+      isSelected: family.rootUid === selectedRootUid,
+    }));
+    // The selected roll-up keeps its row even while its family is not offered: the trigger already
+    // shows a cookie-restored roll-up before the grants and families settle (and again while they
+    // reload after Retry), and in the conglomerate case the count sits at 1 through that window.
+    // Without the row the panel offered only organizations, so picking one silently left roll-up
+    // mode (#4415, Cursor).
+    if (selectedRootUid && !rows.some((row) => row.rootUid === selectedRootUid)) {
+      const family = this.accountContextService.selectedRollUpFamily();
+      const count = family?.orgUids.length ?? 0;
+      rows.unshift({
+        rootUid: selectedRootUid,
+        name: orgRollUpAccount(selectedRootUid, family?.name ?? null).accountName,
+        subtitle: count > 0 ? `Combined view of related companies · ${organizationCountLabel(count)}` : 'Combined view of related companies',
+        organizationCount: count,
+        isSelected: true,
+      });
+    }
+    for (const row of this.searchRollUpRows()) {
+      if (!rows.some((offered) => offered.rootUid === row.rootUid)) rows.push(row);
+    }
+    return rows;
+  }
+
+  private initSearchRollUpRows(): OrgRollUpSelectorRow[] {
+    if (!this.searchActive() || !this.accountContextService.rollUpEnabled()) {
+      return [];
+    }
+    const selectedRootUid = this.accountContextService.selectedRollUpRootUid();
+    const rows: OrgRollUpSelectorRow[] = [];
+    for (const item of this.items()) {
+      if (!item.familyRootUid || rows.some((row) => row.rootUid === item.familyRootUid)) continue;
+      rows.push({
+        rootUid: item.familyRootUid,
+        name: orgRollUpAccount(item.familyRootUid, item.familyRootName).accountName,
+        subtitle: 'Combined view of related companies',
+        organizationCount: 0,
+        isSelected: item.familyRootUid === selectedRootUid,
+      });
+    }
+    return rows;
+  }
+
+  private initRelatedRows(): OrgRelatedCompanyRow[] {
+    if (this.searchActive()) return [];
+    const selectedUid = this.selectedAccountUid();
+    const displayByUid = new Map(this.displayedItems().map((display) => [display.item.uid, display]));
+    return this.accountContextService.relatedCompanies().map((org) => {
+      const display = displayByUid.get(org.uid);
+      return {
+        org,
+        isSelected: org.uid === selectedUid,
+        roleLabel: display?.roleLabel ?? '',
+        roleIcon: display?.roleIcon ?? '',
+        roleTooltip: display?.roleTooltip ?? '',
+      };
+    });
+  }
+
+  private initDisplayedRows(): OrgSelectorRow[] {
+    const relatedUids = new Set(this.relatedRows().map((row) => row.org.uid));
+    const rows = relatedUids.size === 0 ? this.displayedItems() : this.displayedItems().filter((display) => !relatedUids.has(display.item.uid));
+    const searchActive = this.searchActive();
+    const sectioned = searchActive && rows.some((row) => row.item.isAssigned === false);
+    if (!sectioned) {
+      return rows.map((display) => this.toRow(display, null, searchActive));
+    }
+
+    let assignedSeen = false;
+    let discoveredSeen = false;
+    return rows.map((display) => {
+      if (display.item.isAssigned === false) {
+        const heading = discoveredSeen ? null : 'All companies';
+        discoveredSeen = true;
+        return this.toRow(display, heading, searchActive);
+      }
+      const heading = assignedSeen ? null : 'Your companies';
+      assignedSeen = true;
+      return this.toRow(display, heading, searchActive);
+    });
   }
 
   /**
@@ -778,13 +884,13 @@ export class OrgSelectorComponent {
   private personaToLabel(persona: OrgRolePersona | null, showOriginalSuffix: boolean): string {
     switch (persona) {
       case 'direct-writer':
-        return showOriginalSuffix ? 'Org Admin Editor (Original)' : 'Org Admin Editor';
+        return showOriginalSuffix ? 'Company Admin Editor (Original)' : 'Company Admin Editor';
       case 'direct-auditor':
-        return showOriginalSuffix ? 'Org Admin Viewer (Original)' : 'Org Admin Viewer';
+        return showOriginalSuffix ? 'Company Admin Viewer (Original)' : 'Company Admin Viewer';
       case 'inherited-writer':
-        return 'Org Admin Editor (Inherited)';
+        return 'Company Admin Editor (Inherited)';
       case 'inherited-auditor':
-        return 'Org Admin Viewer (Inherited)';
+        return 'Company Admin Viewer (Inherited)';
       default:
         return '';
     }
@@ -814,5 +920,5 @@ export class OrgSelectorComponent {
 }
 
 function organizationCountLabel(count: number): string {
-  return `${count} ${count === 1 ? 'organization' : 'organizations'}`;
+  return `${count} ${count === 1 ? 'company' : 'companies'}`;
 }

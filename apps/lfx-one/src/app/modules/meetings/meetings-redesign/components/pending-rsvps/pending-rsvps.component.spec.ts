@@ -198,7 +198,7 @@ describe('PendingRsvpsComponent', () => {
     await settle();
 
     expect(click.defaultPrevented).toBe(true);
-    expect(openDetails).toHaveBeenCalledWith(row, 'pending_rsvps');
+    expect(openDetails).toHaveBeenCalledWith(row, 'pending_rsvps', { tab: 'guests' });
   });
 
   it('keeps the drawer open and leaves a modified title click to the link', async () => {

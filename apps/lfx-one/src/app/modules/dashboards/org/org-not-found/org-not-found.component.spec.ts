@@ -72,6 +72,7 @@ function setup(): Harness {
           generation: signal(0),
           firstPageLandedGeneration: signal(0),
           upstreamFailed: listFailed,
+          selectionUndecided: signal(false),
           refreshList,
         },
       },
@@ -274,6 +275,6 @@ describe('OrgNotFoundComponent.state', () => {
 
     expect(h.setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: 'legacy-uuid-1234' }));
     expect(h.navigateToSelectedOrg).not.toHaveBeenCalled();
-    expect(h.navigate).toHaveBeenCalledWith(['/org', 'overview']);
+    expect(h.navigate).toHaveBeenCalledWith(['/company', 'overview']);
   });
 });

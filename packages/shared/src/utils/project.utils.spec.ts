@@ -7,7 +7,8 @@ import { DRAFT_STAGE_SENTINEL } from '../constants/project-formation.constants';
 import { ProjectFunding } from '../enums/project-funding.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 import { Project } from '../interfaces';
-import { getFormationSubStageLabel, isFormationStage, summarizeWriterGrants } from './project.utils';
+import { computeIsFoundation, getFormationSubStageLabel, isFormationStage, isTestProjectName, summarizeWriterGrants } from './project.utils';
+import { TEST_PROJECT_NAMES } from '../constants/project-formation.constants';
 
 /** Builds a Project fixture, defaulting every field so tests set only what they assert on. */
 function project(partial: Partial<Project>): Project {
@@ -127,5 +128,21 @@ describe('getFormationSubStageLabel', () => {
     expect(getFormationSubStageLabel('toString')).toBeNull();
     expect(getFormationSubStageLabel('constructor')).toBeNull();
     expect(getFormationSubStageLabel('hasOwnProperty')).toBeNull();
+  });
+});
+
+describe('test project names (#5619)', () => {
+  it('names exactly the two IT test projects', () => {
+    expect([...TEST_PROJECT_NAMES]).toEqual(['Test Project Group IT', 'Test Project IT']);
+    expect(isTestProjectName('Test Project IT')).toBe(true);
+    expect(isTestProjectName('Test Project Group IT')).toBe(true);
+    expect(isTestProjectName('Test Project')).toBe(false);
+    expect(isTestProjectName('')).toBe(false);
+  });
+
+  it('still classifies them as foundations by name, from the one shared list', () => {
+    for (const name of TEST_PROJECT_NAMES) {
+      expect(computeIsFoundation({ name, stage: '', legal_entity_type: '', funding: undefined, funding_model: [] })).toBe(true);
+    }
   });
 });

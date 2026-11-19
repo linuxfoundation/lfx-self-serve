@@ -12,6 +12,7 @@ import { BehaviorSubject, filter, firstValueFrom, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../health-metrics-gate/health-metrics-chrome.service';
+import { HealthMetricsL2SectionControlsDirective } from './health-metrics-l2-section-controls.directive';
 import { HealthMetricsL2SectionDirective } from './health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from './health-metrics-l2-shell.component';
 
@@ -25,8 +26,7 @@ const SECTIONS: HealthMetricsL2Section[] = [
     label: 'Alpha',
     heading: 'Alpha heading',
     description: 'Alpha copy',
-    footnote: [{ text: 'Alpha caution' }],
-    footnoteCaution: true,
+    note: { tone: 'caution', parts: [{ text: 'Alpha caution' }] },
     empty: { icon: 'fa-light fa-ticket', source: 'once the foundation has an event on the calendar' },
   },
   {
@@ -34,9 +34,8 @@ const SECTIONS: HealthMetricsL2Section[] = [
     label: 'Beta',
     heading: 'Beta heading',
     description: 'Beta copy',
-    footnote: [{ text: 'Beta note' }],
-    footnoteCaution: false,
-    headingBadge: 'Provisional',
+    note: { tone: 'healthy', parts: [{ text: 'Beta note' }] },
+    provisional: true,
     empty: { icon: 'fa-light fa-ticket', source: 'once the foundation has an event on the calendar' },
   },
   {
@@ -44,13 +43,12 @@ const SECTIONS: HealthMetricsL2Section[] = [
     label: 'Gamma',
     heading: 'Gamma heading',
     description: 'Gamma copy',
-    footnote: [{ text: 'Gamma note' }],
-    footnoteCaution: false,
+    note: { tone: 'summary', parts: [{ text: 'Gamma note' }] },
     empty: { icon: 'fa-light fa-ticket', source: 'once the foundation has an event on the calendar' },
   },
 ];
 const DATA_SECTIONS = ['alpha', 'beta'];
-const ITEMS: HealthMetricsL2SubNavItem[] = SECTIONS.map((section) => ({ key: section.key, label: section.label, count: 3, note: '' }));
+const ITEMS: HealthMetricsL2SubNavItem[] = SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '2 dormant' }));
 const BLANK: HealthMetricsL2Blank = {
   icon: 'fa-light fa-ticket',
   noun: 'event',
@@ -58,6 +56,10 @@ const BLANK: HealthMetricsL2Blank = {
   reasons: ['No event has been scheduled', 'Events run under another foundation are counted there'],
   pastActivity: 'event activity',
 };
+
+// Stands in for a header control (a select, switch or toggle) a tab projects into a section's header.
+@Component({ selector: 'lfx-test-control', template: '<button type="button">Control</button>' })
+class TestControlComponent {}
 
 // Stands in for a tab's section body: the shell only reacts to what the tab relays from these.
 @Component({ selector: 'lfx-test-section', template: '<p>Section body</p>' })
@@ -81,6 +83,9 @@ const HOST_TEMPLATE = `
     testIdPrefix="test">
     <ng-template lfxHealthMetricsL2Section="alpha">
       <lfx-test-section (sectionPicked)="shell.scrollToSection($event)" (reading)="shell.sectionReading('alpha')" (settled)="shell.sectionSettled('alpha', $event)" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2SectionControls="alpha">
+      <lfx-test-control data-testid="test-alpha-control" />
     </ng-template>
     <ng-template lfxHealthMetricsL2Section="beta">
       <lfx-test-section (reading)="shell.sectionReading('beta')" (settled)="shell.sectionSettled('beta', $event)" />
@@ -237,7 +242,16 @@ describe('HealthMetricsL2ShellComponent', () => {
       ],
     })
       .overrideComponent(TestHostComponent, {
-        set: { template: HOST_TEMPLATE, imports: [HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, TestSectionComponent] },
+        set: {
+          template: HOST_TEMPLATE,
+          imports: [
+            HealthMetricsL2SectionControlsDirective,
+            HealthMetricsL2SectionDirective,
+            HealthMetricsL2ShellComponent,
+            TestControlComponent,
+            TestSectionComponent,
+          ],
+        },
       })
       .compileComponents();
 
@@ -314,25 +328,54 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(gamma.textContent).not.toContain('Section body');
   });
 
-  it('renders footnotes, marking only the cautioned one', () => {
-    expect(fixture.nativeElement.querySelector('[data-testid="test-footnote-beta"]').textContent).toContain('Beta note');
-    expect(fixture.nativeElement.querySelectorAll('.fa-triangle-exclamation')).toHaveLength(1);
-    expect(fixture.nativeElement.querySelector('[data-testid="test-footnote-alpha"] .fa-triangle-exclamation')).not.toBeNull();
+  function byTestId(testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  // The design's card header: an 18px title over a one-line 12px neutral-500 description.
+  it('titles each section at 18px over a 12px neutral-500 description', () => {
+    const header = byTestId('test-header-alpha') as HTMLElement;
+
+    expect(header.querySelector('h2')?.className).toContain('text-[18px]');
+    for (const cls of ['text-[12px]', 'leading-[16px]', 'text-gray-500']) expect(header.querySelector('p')?.className).toContain(cls);
+    expect(header.firstElementChild?.className).toContain('flex-[1_1_260px]');
   });
 
-  // A footnote explains a body, so a section still awaiting data shows neither.
-  it('hides the footnote of a section awaiting data', () => {
-    expect(fixture.nativeElement.querySelector('[data-testid="test-footnote-gamma"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="test-section-gamma"]').textContent).not.toContain('Gamma note');
+  it('projects a tab’s header controls on the right of its section’s header only', () => {
+    const controls = byTestId('test-controls-alpha') as HTMLElement;
+
+    expect(controls.parentElement).toBe(byTestId('test-header-alpha'));
+    expect(controls.querySelector('[data-testid="test-alpha-control"]')).not.toBeNull();
+    for (const cls of ['gap-[10px]', 'flex-wrap', 'max-[640px]:has-[lfx-ui-select]:w-full']) expect(controls.className).toContain(cls);
+    expect(byTestId('test-controls-beta')).toBeNull();
   });
 
-  // The design's amber pill beside a card title.
-  it('badges only the heading that carries one', () => {
-    expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.textContent?.trim()).toBe('Provisional');
-    for (const cls of ['rounded-full', 'bg-amber-50', 'text-amber-800', 'uppercase']) {
-      expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.className).toContain(cls);
-    }
-    expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-alpha"]')).toBeNull();
+  it('renders a caution as a warning note and a verdict as its labelled note', () => {
+    expect(byTestId('test-note-alpha')?.querySelector('[data-testid="health-metrics-footnote-note"]')?.className).toContain('bg-ui-warning-50');
+    expect(byTestId('test-note-beta')?.textContent).toContain('Healthy:');
+    expect(byTestId('test-note-beta')?.textContent).toContain('Beta note');
+  });
+
+  // A note explains a body, so a section still awaiting data shows neither.
+  it('hides the note of a section awaiting data', () => {
+    expect(byTestId('test-note-gamma')).toBeNull();
+    expect(byTestId('test-section-gamma')?.textContent).not.toContain('Gamma note');
+  });
+
+  // The design's Provisional badge: a small subtle warning badge with a keyboard-reachable tooltip.
+  it('badges only a provisional heading, with its tooltip', () => {
+    const badge = byTestId('test-heading-badge-beta') as HTMLElement;
+
+    expect(badge.textContent?.trim()).toBe('Provisional');
+    for (const cls of ['bg-ui-warning-100', 'text-ui-warning-700']) expect(badge.className).toContain(cls);
+    expect(badge.className).not.toContain('uppercase');
+    expect(badge.getAttribute('tabindex')).toBe('0');
+    expect(badge.getAttribute('role')).toBe('img');
+    expect(badge.getAttribute('aria-label')).toBe('Provisional');
+    // The tooltip describes the badge, so the tip is announced once, after the name.
+    const describedBy = badge.getAttribute('aria-describedby') ?? '';
+    expect(document.getElementById(describedBy)?.textContent?.trim()).toBe('Figures are preliminary and not yet reconciled with finance, so they may change.');
+    expect(byTestId('test-heading-badge-alpha')).toBeNull();
   });
 
   it('labels the sub-nav and starts with the first section active', () => {
@@ -353,8 +396,9 @@ describe('HealthMetricsL2ShellComponent', () => {
 
     const column = alpha.parentElement as HTMLElement;
 
-    // The header only sticks at `lg`, so the margin is a `lg:` utility reading the offset the column carries.
-    expect(alpha.className).toContain('lg:scroll-mt-[var(--l2-sticky-top)]');
+    // The header sticks at every width, so the margin applies at every width, reading the offset the column carries.
+    expect(alpha.className).toContain('scroll-mt-[var(--l2-sticky-top)]');
+    expect(alpha.className).not.toContain('lg:scroll-mt');
     expect(column.style.getPropertyValue('--l2-sticky-top')).toBe(`${chrome.stickyTopPx()}px`);
     expect(fixture.nativeElement.querySelector('lfx-health-metrics-l2-sub-nav').style.getPropertyValue('--hmn-top')).toBe(`${chrome.stickyTopPx() + 8}px`);
 
@@ -921,7 +965,7 @@ describe('HealthMetricsL2ShellComponent', () => {
       return fixture.debugElement.query(By.directive(HealthMetricsL2ShellComponent)).componentInstance as HealthMetricsL2ShellComponent;
     }
 
-    it('swaps a section that settled empty for the compact empty state, hiding its body, footnote and badge', async () => {
+    it('swaps a section that settled empty for the compact empty state, hiding its body, controls, note and sub-nav note', async () => {
       child('alpha').settled.emit(true);
       child('beta').settled.emit(false);
       await flush();
@@ -929,8 +973,10 @@ describe('HealthMetricsL2ShellComponent', () => {
       expect(query('test-section-empty-alpha')?.textContent).toContain('Nothing recorded yet');
       expect(query('test-section-empty-alpha')?.textContent).toContain('This fills in once the foundation has an event on the calendar.');
       expect(query('test-section-alpha')?.querySelector('lfx-test-section')?.parentElement?.className).toContain('hidden');
-      expect(query('test-footnote-alpha')).toBeNull();
-      expect(query('test-sub-nav-alpha')?.textContent).not.toContain('3');
+      expect(query('test-note-alpha')).toBeNull();
+      expect(query('test-controls-alpha')?.className).toContain('hidden');
+      expect(query('test-sub-nav-alpha-note')).toBeNull();
+      expect(query('test-sub-nav-beta-note')).not.toBeNull();
       expect(query('test-section-empty-beta')).toBeNull();
       expect(query('test-blank')).toBeNull();
     });

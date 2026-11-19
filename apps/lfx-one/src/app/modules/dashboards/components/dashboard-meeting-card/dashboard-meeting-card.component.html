@@ -206,7 +206,7 @@
           tooltipPosition="top"
           aria-label="Resend my invitation"
           [disabled]="resendingInvite()"
-          (click)="resendInvite()"
+          (click)="confirmResendInvite()"
           data-testid="dashboard-meeting-card-resend-button">
           <i class="fa-light fa-paper-plane text-xs" aria-hidden="true"></i>
         </button>
@@ -293,4 +293,7 @@
         data-testid="dashboard-meeting-card-join-button" />
     }
   </div>
+
+  <!-- Confirmation Dialog -->
+  <p-confirmDialog />
 </div>

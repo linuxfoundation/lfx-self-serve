@@ -56,6 +56,8 @@ router.delete('/opt-outs/:optOutId', blockDuringImpersonation, (req, res, next) 
 router.get('/:newsletterUid', (req, res, next) => newsletterController.getNewsletter(req, res, next));
 router.put('/:newsletterUid', blockDuringImpersonation, (req, res, next) => newsletterController.updateNewsletter(req, res, next));
 router.delete('/:newsletterUid', blockDuringImpersonation, (req, res, next) => newsletterController.deleteNewsletter(req, res, next));
+router.post('/:newsletterUid/audience', blockDuringImpersonation, (req, res, next) => newsletterController.resolveAudience(req, res, next));
+router.get('/:newsletterUid/audience', (req, res, next) => newsletterController.getAudience(req, res, next));
 router.post('/:newsletterUid/send', blockDuringImpersonation, (req, res, next) => newsletterController.sendNewsletter(req, res, next));
 router.post('/:newsletterUid/schedule', blockDuringImpersonation, (req, res, next) => newsletterController.scheduleNewsletter(req, res, next));
 router.post('/:newsletterUid/cancel-schedule', blockDuringImpersonation, (req, res, next) => newsletterController.cancelScheduleNewsletter(req, res, next));

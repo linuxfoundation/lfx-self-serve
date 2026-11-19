@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingDetailsBodyComponent } from './body/meeting-details-body.component';
 import { MeetingDetailsDrawerComponent } from './meeting-details-drawer.component';
 import { MeetingDetailsContext } from './meeting-details.context';
 import { MeetingDetailsOccurrenceNavComponent } from './occurrence-nav/meeting-details-occurrence-nav.component';
@@ -155,12 +156,14 @@ describe('MeetingDetailsDrawerComponent', () => {
             attachmentScopeOverrides: signal(new Map()),
             // Upcoming guests stay loading, so tests set the hosts and count themselves.
             getMyMeetingRegistrants: () => NEVER,
+            resendMyMeetingInvitation: vi.fn(() => of({ message: 'ok' })),
           },
         },
         { provide: CommitteeService, useValue: { getCommitteeMembers: () => of([]) } },
         {
           provide: UserService,
           useValue: {
+            authenticated: signal(true),
             viewerUsername: signal('synthetic-viewer'),
             user: signal(null),
             refreshUserMeetings,
@@ -170,7 +173,7 @@ describe('MeetingDetailsDrawerComponent', () => {
         },
       ],
     });
-    TestBed.overrideComponent(MeetingDetailsDrawerComponent, {
+    TestBed.overrideComponent(MeetingDetailsBodyComponent, {
       remove: { imports: [MeetingDetailsScheduleComponent, MeetingDetailsOccurrenceNavComponent] },
       add: { imports: [ScheduleStubComponent, OccurrenceNavStubComponent] },
     });
@@ -212,7 +215,7 @@ describe('MeetingDetailsDrawerComponent', () => {
       expect(findAll('meeting-details-feature-transcript_enabled')).toHaveLength(1);
     });
 
-    it('keeps the row data and shows an error toast when the detail fails', async () => {
+    it('shows an error with a retry instead of the row data when the detail fails', async () => {
       await render(
         row(MEETING),
         'agenda',
@@ -220,7 +223,17 @@ describe('MeetingDetailsDrawerComponent', () => {
       );
 
       expect(find('meeting-details-title')?.textContent?.trim()).toBe('Synthetic sync');
-      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'Meeting details unavailable' }));
+      expect(find('meeting-details-load-error')).not.toBeNull();
+      expect(find('meeting-details-side')).toBeNull();
+      expect(find('meeting-details-content')).toBeNull();
+      expect(toastShow).not.toHaveBeenCalled();
+
+      getMeetingDetail.mockReturnValue(of(MEETING));
+      await click('meeting-details-load-retry');
+
+      expect(getMeetingDetail).toHaveBeenCalledTimes(2);
+      expect(find('meeting-details-load-error')).toBeNull();
+      expect(find('meeting-details-side')).not.toBeNull();
     });
 
     it('closes and reloads the list when the meeting is gone or no longer visible', async () => {
@@ -416,6 +429,27 @@ describe('MeetingDetailsDrawerComponent', () => {
       await settle();
       expect(focusMore).toHaveBeenCalled();
       expect(document.querySelector('[data-testid="meeting-details-remove-dialog"]')).not.toBeNull();
+    });
+
+    it('on phones, asks before the menu Resend Invite sends anything, returning focus to ⋯', async () => {
+      phone = true;
+      await render(row(MEETING));
+      fixture.detectChanges();
+      await settle();
+      const send = vi.mocked(TestBed.inject(MeetingService).resendMyMeetingInvitation);
+
+      await click('meeting-details-more');
+      const focusMore = vi.spyOn(fixture.debugElement.query(By.css('[data-testid="meeting-details-more"]')).componentInstance, 'focus');
+      (TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="meeting-details-menu-resend"]') as HTMLElement).click();
+      await settle();
+
+      expect(focusMore).toHaveBeenCalled();
+      expect(document.querySelector('[data-testid="meeting-details-resend-dialog"]')).not.toBeNull();
+      expect(send).not.toHaveBeenCalled();
+      (document.querySelector('[data-testid="meeting-details-resend-confirm"] button') as HTMLButtonElement).click();
+      await settle();
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('[data-testid="meeting-details-resend-dialog"]')).toBeNull();
     });
 
     it('offers Edit Meeting to an organizer, handing it the drawer to close', async () => {

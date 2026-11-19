@@ -33,6 +33,10 @@ import {
   MeetingAttachmentChangeInput,
   MeetingAttachmentChangesByMeeting,
   MeetingJoinURL,
+  MeetingProjectQueryOptions,
+  MeetingRollupFilterOptions,
+  MeetingRollupProjectsPreference,
+  MeetingRollupProjectsPreferenceRequest,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
@@ -81,6 +85,8 @@ export class MeetingService {
    * still report `invited: true`.
    */
   public readonly removedRegistrationMeetingIds: Signal<ReadonlySet<string>> = this.removedRegistrationIds.asReadonly();
+  /** Registrant uids removed with each entry of {@link removedRegistrationMeetingIds}, to tell a re-invite from index lag. */
+  private readonly removedSelfRegistrantUids = new Map<string, ReadonlySet<string>>();
 
   private readonly attachmentScopeOverridesState: WritableSignal<AttachmentScopeOverrides> = signal(new Map<string, string>());
   /**
@@ -153,9 +159,9 @@ export class MeetingService {
     return this.getMeetings(params).pipe(map((response) => response.data));
   }
 
-  /** Fetches meeting count scoped to a committee. */
+  /** Fetches count of meetings scoped to a committee that haven't started yet. */
   public getMeetingsCountByCommittee(committeeId: string): Observable<number> {
-    return this.getCountByTag('/api/meetings/count', `committee_uid:${committeeId}`);
+    return this.getCountByTag('/api/meetings/count', `committee_uid:${committeeId}`, this.upcomingDateFilterParams());
   }
 
   /** Fetches upcoming meetings scoped to a committee. */
@@ -181,12 +187,57 @@ export class MeetingService {
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
 
-  public getMeetingsCountByProject(uid: string): Observable<number> {
-    return this.getCountByTag('/api/meetings/count', `project_uid:${uid}`);
+  /** Fetches count of meetings scoped to a project (and, with `includeSubProjects`, its sub-projects) that haven't started yet. */
+  public getMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
+    return this.getCount('/api/meetings/count', this.projectScopeParams(uid, options), this.upcomingDateFilterParams());
   }
 
-  public getPastMeetingsCountByProject(uid: string): Observable<number> {
-    return this.getCountByTag('/api/past-meetings/count', `project_uid:${uid}`);
+  public getPastMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
+    return this.getCount('/api/past-meetings/count', this.projectScopeParams(uid, options));
+  }
+
+  /**
+   * Options for the roll-up filters of a foundation or parent project's meetings list: the projects in
+   * its tree and their groups. An error yields no options, so the list still loads without the filters.
+   */
+  public getRollupFilterOptions(rootUid: string): Observable<MeetingRollupFilterOptions> {
+    const params = new HttpParams().set('root_project_uid', rootUid);
+    return this.http.get<MeetingRollupFilterOptions>('/api/meetings/rollup-filters', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load meeting roll-up filter options:', error);
+        return of({ projects: [], groups: [], complete: false });
+      })
+    );
+  }
+
+  /**
+   * The signed-in user's saved project selection for a roll-up root: `null` when nothing is saved (or it
+   * cannot be read), an empty list for a saved choice of all projects.
+   */
+  public getRollupProjectsPreference(rootUid: string): Observable<string[] | null> {
+    const params = new HttpParams().set('root_project_uid', rootUid);
+    return this.http.get<MeetingRollupProjectsPreference>('/api/meetings/rollup-projects', { params }).pipe(
+      map((response) => response.project_uids),
+      catchError((error) => {
+        console.error('Failed to load the saved meeting project selection:', error);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * Saves the signed-in user's project selection for a roll-up root (empty = all projects). Emits whether
+   * it was saved; a failure is logged and reported as `false` rather than thrown, so a save queue keeps going.
+   */
+  public saveRollupProjectsPreference(rootUid: string, projectUids: string[]): Observable<boolean> {
+    const body: MeetingRollupProjectsPreferenceRequest = { root_project_uid: rootUid, project_uids: projectUids };
+    return this.http.put<MeetingRollupProjectsPreference>('/api/meetings/rollup-projects', body).pipe(
+      map(() => true),
+      catchError((error) => {
+        console.error('Failed to save the meeting project selection:', error);
+        return of(false);
+      })
+    );
   }
 
   public getRecentMeetingsByProject(uid: string): Observable<Meeting[]> {
@@ -226,9 +277,10 @@ export class MeetingService {
     orderBy?: string,
     pageToken?: string,
     searchName?: string,
-    filters?: string[]
+    filters?: string[],
+    options: MeetingProjectQueryOptions = {}
   ): Observable<PaginatedResponse<Meeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`);
+    let params = this.projectScopeParams(uid, options);
     if (orderBy) {
       params = params.set('order', orderBy);
     }
@@ -251,9 +303,10 @@ export class MeetingService {
     pageToken?: string,
     searchName?: string,
     filters?: string[],
-    includeViewerAttendance = false
+    includeViewerAttendance = false,
+    options: MeetingProjectQueryOptions = {}
   ): Observable<PaginatedResponse<PastMeeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
+    let params = this.projectScopeParams(uid, options).set('sort', PAST_MEETING_SORT.NAME_DESC);
     // Opt-in: the server scans the viewer's attendance history per request, so only the visible list asks for it.
     if (includeViewerAttendance) {
       params = params.set('include_viewer_attendance', 'true');
@@ -777,10 +830,25 @@ export class MeetingService {
     );
   }
 
-  public markRegistrationRemoved(meetingUid: string): void {
+  public markRegistrationRemoved(meetingUid: string, registrantUids: readonly string[] = []): void {
+    this.rememberRemovedRegistrants(meetingUid, registrantUids);
     this.removedRegistrationIds.update((ids) => new Set(ids).add(meetingUid));
   }
 
+  /** Adds to the viewer's removed registrant uids, so a retry that finishes a partial removal still knows the earlier ones. */
+  public rememberRemovedRegistrants(meetingUid: string, registrantUids: readonly string[]): void {
+    const known = this.removedSelfRegistrantUids.get(meetingUid) ?? [];
+    this.removedSelfRegistrantUids.set(meetingUid, new Set([...known, ...registrantUids]));
+  }
+
+  /** Clears a removal once the viewer is listed under a registrant uid other than the removed ones, as after a re-invite. */
+  public clearRemovalIfReinvited(meetingUid: string, selfRegistrantUids: readonly string[]): void {
+    const removed = this.removedSelfRegistrantUids.get(meetingUid);
+    if (!removed?.size || !this.removedRegistrationIds().has(meetingUid)) return;
+    if (selfRegistrantUids.some((uid) => !removed.has(uid))) this.clearRemovedRegistration(meetingUid);
+  }
+
+  /** Lifts the active removal; the removed registrant uids stay, so a later removal still knows them. */
   public clearRemovedRegistration(meetingUid: string): void {
     this.removedRegistrationIds.update((ids) => {
       const next = new Set(ids);
@@ -826,6 +894,12 @@ export class MeetingService {
       ...(registrant.job_title ? { job_title: registrant.job_title } : {}),
       ...(registrant.org_name ? { org_name: registrant.org_name } : {}),
       ...(registrant.committee_uid ? { committee_uid: registrant.committee_uid } : {}),
+      // Only the guest added through "Add myself" carries its LFID and avatar: they come from the
+      // signed-in user's own profile, so they are known to belong to that address. Every other guest
+      // keeps the body it always had — group members carry a `username` too, and forwarding it
+      // would change what ITX links them to.
+      ...(registrant.selfAdded && registrant.username ? { username: registrant.username } : {}),
+      ...(registrant.selfAdded && registrant.avatar_url ? { avatar_url: registrant.avatar_url } : {}),
     };
   }
 
@@ -981,8 +1055,34 @@ export class MeetingService {
     }
   }
 
-  private getCountByTag(endpoint: string, tag: string): Observable<number> {
-    const params = new HttpParams().set('tags', tag);
+  /**
+   * date_field/date_from are query-service's own `/query/resources/count` params (passed through
+   * verbatim by the server), used here to exclude meetings that have already started from an
+   * "upcoming" count — otherwise the count includes every meeting ever tagged to the project/committee,
+   * regardless of how far in the past it started (see linuxfoundation/lfx-self-serve-ops#1313).
+   *
+   * date_field must be the bare field name — query-service's applyCommonFields (cmd/service/converters.go)
+   * always prepends "data." itself, so sending an already-prefixed name double-prefixes and matches nothing.
+   *
+   * Known gap: this filters on the series' root `start_time`, which for a recurring meeting is the
+   * original series start date, not the next/current occurrence `hasMeetingEnded()` (the list's own
+   * filter) checks. A recurring meeting whose series began in the past but still has future occurrences
+   * is wrongly excluded here. There's no indexed field today that cleanly supports occurrence-aware
+   * filtering on the count endpoint — tracked as linuxfoundation/lfx-self-serve-ops#1471.
+   */
+  private upcomingDateFilterParams(): Record<string, string> {
+    return { date_field: 'start_time', date_from: new Date().toISOString() };
+  }
+
+  private getCountByTag(endpoint: string, tag: string, extraParams?: Record<string, string>): Observable<number> {
+    return this.getCount(endpoint, new HttpParams().set('tags', tag), extraParams);
+  }
+
+  private getCount(endpoint: string, scopeParams: HttpParams, extraParams?: Record<string, string>): Observable<number> {
+    let params = scopeParams;
+    for (const [key, value] of Object.entries(extraParams ?? {})) {
+      params = params.set(key, value);
+    }
     return this.http.get<QueryServiceCountResponse>(endpoint, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load count from ${endpoint}:`, error);
@@ -990,6 +1090,37 @@ export class MeetingService {
       }),
       map((response) => response.count)
     );
+  }
+
+  /**
+   * Scopes a project meetings query: the project alone (`tags=project_uid:`), or, with
+   * `includeSubProjects`, the project and every project beneath it (`root_project_uid`, resolved
+   * server-side under the caller's own access) narrowed by any roll-up filters. `pageSize` is passed
+   * through as `page_size`.
+   */
+  private projectScopeParams(uid: string, options: MeetingProjectQueryOptions): HttpParams {
+    let params = options.includeSubProjects ? this.rollupFilterParams(uid, options) : new HttpParams().set('tags', `project_uid:${uid}`);
+    if (options.pageSize) {
+      params = params.set('page_size', String(options.pageSize));
+    }
+    return params;
+  }
+
+  /** `root_project_uid` plus the roll-up filters that are set (project subset, group, group type). */
+  private rollupFilterParams(uid: string, options: MeetingProjectQueryOptions): HttpParams {
+    let params = new HttpParams().set('root_project_uid', uid);
+    if (options.projectUids?.length) {
+      params = params.set('project_uids', options.projectUids.join(','));
+    } else if (options.rootOnly) {
+      params = params.set('project_uids', uid);
+    }
+    if (options.committeeUid) {
+      params = params.set('committee_uid', options.committeeUid);
+    }
+    if (options.groupType) {
+      params = params.set('group_type', options.groupType);
+    }
+    return params;
   }
 
   /**

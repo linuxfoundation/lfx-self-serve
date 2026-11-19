@@ -48,6 +48,10 @@ interface Harness {
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
+  listUpstreamFailed: WritableSignal<boolean>;
+  selectionUndecided: WritableSignal<boolean>;
+  /** `OrgNavigationService.firstPagePinnedUid` — the cookie's company the first page was fetched with. */
+  firstPagePinnedUid: WritableSignal<string | null>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
   /** What the real pipeline does when a first page lands: record its generation and clear `loading`. */
@@ -86,6 +90,9 @@ function setup(): Harness {
   const grantsLoading = signal(false);
   const listLoaded = signal(false);
   const listLoading = signal(false);
+  const listUpstreamFailed = signal(false);
+  const selectionUndecided = signal(false);
+  const firstPagePinnedUid = signal<string | null>(null);
   const listGeneration = signal(0);
   const startListFetch = (): number => {
     listGeneration.update((g) => g + 1);
@@ -141,7 +148,16 @@ function setup(): Harness {
       },
       {
         provide: OrgNavigationService,
-        useValue: { loaded: listLoaded, loading: listLoading, generation: listGeneration, firstPageLandedGeneration: firstPageLanded, refreshList },
+        useValue: {
+          loaded: listLoaded,
+          loading: listLoading,
+          upstreamFailed: listUpstreamFailed,
+          selectionUndecided,
+          firstPagePinnedUid,
+          generation: listGeneration,
+          firstPageLandedGeneration: firstPageLanded,
+          refreshList,
+        },
       },
     ],
   });
@@ -168,6 +184,9 @@ function setup(): Harness {
     refresh,
     listLoaded,
     listLoading,
+    listUpstreamFailed,
+    selectionUndecided,
+    firstPagePinnedUid,
     grantsLoading,
     refreshList,
     startListFetch,
@@ -206,6 +225,56 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBeNull();
     // FR-010: the incomplete list is the switcher's notice, not a page state.
     expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it.each([
+    ['the CLA-manager scopes read failed', (h: Harness) => h.claLookupFailed.set(true)],
+    ['a CLA-only company lookup failed', (h: Harness) => h.listUpstreamFailed.set(true)],
+  ])('raises the switcher notice for a held selection when %s', (_label, fail) => {
+    h.selectedAccount.set(account(HELD));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
+    expect(h.service.listIncomplete()).toBe(false);
+
+    fail(h);
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('leaves a staff search outage to the switcher’s own search copy', () => {
+    h.selectedAccount.set(account(HELD));
+    h.writerSet.set(new Set([HELD]));
+    h.isStaff.set(true);
+    h.listUpstreamFailed.set(true);
+
+    expect(h.service.listIncomplete()).toBe(false);
+  });
+
+  // A grant holder who switched to a CLA-only company can still be missing another one, so the notice and its Retry stay.
+  it.each([
+    ['the CLA-manager scopes read failed', (h: Harness) => h.claLookupFailed.set(true)],
+    ['a CLA-only company lookup failed', (h: Harness) => h.listUpstreamFailed.set(true)],
+  ])('raises the switcher notice on a CLA-only selection when %s', (_label, fail) => {
+    h.selectedAccount.set(account(OTHER));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
+    h.claOnlyUids.set(new Set([OTHER]));
+    expect(h.service.listIncomplete()).toBe(false);
+
+    fail(h);
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('raises no switcher notice on a selection that is neither held nor CLA-only', () => {
+    h.selectedAccount.set(account(OTHER));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
+    h.claLookupFailed.set(true);
+
+    expect(h.service.listIncomplete()).toBe(false);
   });
 
   /**
@@ -774,5 +843,104 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
     h.lookupOutcome.set('ok');
     h.staffCheck.set('failed');
     expect(h.service.pageState()).toBe('staff-check-failed');
+  });
+});
+
+describe('OrgLensEmptyStateService — a selection the CLA-only rows have not classified yet', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = setup();
+    h.hasOrgSelectorAccess.set(true);
+    h.writerSet.set(new Set([HELD]));
+    h.listLoaded.set(true);
+    h.selectionUndecided.set(true);
+    h.selectedAccount.set(account(OTHER));
+  });
+
+  it('holds the page until the rows mark the selection CLA-only, then renders it', () => {
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageReady()).toBe(false);
+    expect(h.service.pageState()).toBeNull();
+
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectionUndecided.set(false);
+
+    expect(h.service.pageReady()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('holds the page until the rows answer when the selection turns out not to be CLA-only', () => {
+    expect(h.service.pageReady()).toBe(false);
+
+    h.selectionUndecided.set(false);
+
+    expect(h.service.pageReady()).toBe(true);
+  });
+
+  it('never holds a selection the caller already holds', () => {
+    h.selectedAccount.set(account(HELD));
+
+    expect(h.service.pageReady()).toBe(true);
+  });
+
+  it('holds the page on a cookie-only pin until the rows answer, with no account selected yet (#5804)', () => {
+    h.selectedAccount.set(account(''));
+    h.firstPagePinnedUid.set(OTHER);
+
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageReady()).toBe(false);
+
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectedAccount.set(account(OTHER));
+    h.selectionUndecided.set(false);
+
+    expect(h.service.pageReady()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('does not hold the page with no account selected and no pin', () => {
+    h.selectedAccount.set(account(''));
+
+    expect(h.service.pageReady()).toBe(true);
+  });
+
+  it('shows a contractor no refusal, and asks the read gate nothing, for a company the rows then mark CLA-only', () => {
+    h.isContractor.set(true);
+    TestBed.tick();
+
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.pageState()).toBeNull();
+
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectionUndecided.set(false);
+    TestBed.tick();
+
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('asks the read gate only once the rows have answered without the selection', () => {
+    h.isContractor.set(true);
+    TestBed.tick();
+    expect(h.readCheck).not.toHaveBeenCalled();
+
+    h.selectionUndecided.set(false);
+    TestBed.tick();
+
+    expect(h.readCheck).toHaveBeenCalledWith(OTHER);
+    h.readAnswers[0].next(false);
+    expect(h.service.pageState()).toBe('contractor-no-grant');
+  });
+
+  it('holds a contractor on the skeleton before the first list page lands, and asks the read gate nothing', () => {
+    h.listLoaded.set(false);
+    h.isContractor.set(true);
+    TestBed.tick();
+
+    expect(h.service.settled()).toBe(false);
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.pageState()).toBeNull();
   });
 });

@@ -108,6 +108,14 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('type')).toBe('button');
   });
 
+  it('writes aria-current only when set, such as the current page of a pager', async () => {
+    expect(el().getAttribute('aria-current')).toBeNull();
+
+    await set('ariaCurrent', 'page');
+
+    expect(el().getAttribute('aria-current')).toBe('page');
+  });
+
   it.each([
     ['primary', 'bg-ui-accent-500'],
     ['secondary', 'bg-ui-background-100'],
@@ -315,6 +323,13 @@ describe('UiButtonComponent', () => {
     await set('disabled', true);
     expect(el().hasAttribute('href')).toBe(false);
     expect(el().getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('opens an href in the same tab when target is _self', async () => {
+    await set('href', 'mailto:dev@lists.example.org');
+    await set('target', '_self');
+    expect(el().getAttribute('target')).toBe('_self');
+    expect(el().hasAttribute('rel')).toBe(false);
   });
 
   it('pins a link label colour in every state and never underlines it', async () => {

@@ -14,7 +14,8 @@ export type OrgLensEmptyStateName =
   | 'section-empty'
   | 'section-could-not-load'
   | 'section-no-access'
-  | 'section-could-not-verify';
+  | 'section-could-not-verify'
+  | 'roll-up-unavailable';
 
 /** #2961 — the Org Lens read gate's answer for the organization a contractor has selected; `admitted` is `undefined` until it lands. */
 export interface OrgLensContractorProbe {

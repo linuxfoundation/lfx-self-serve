@@ -6,26 +6,39 @@ import {
   FORMATION_PIPELINE_STAGE_UPSTREAM,
   FORMATION_PIPELINE_STAGES,
   FORMATION_TEAM_REQUIRED_CODE,
+  LF_FOUNDATION_ROOT_SLUG,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   QUERY_SERVICE_MAX_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
 import type {
+  FormationPipelineFoundationKind,
   FormationPipelineParent,
   FormationPipelinePerson,
   FormationPipelineQuery,
   FormationPipelineResponse,
   FormationPipelineRow,
+  FormationPipelineViewer,
   QueryServiceResponse,
   UpstreamFormationQueueRow,
   UpstreamPipelineProject,
   UpstreamPipelineSettings,
   UserInfo,
 } from '@lfx-one/shared/interfaces';
-import { chunkArray, comparePipelineText, computeIsFoundation, countPipelineRows, getPipelineStageKey, matchesPipelineSearch } from '@lfx-one/shared/utils';
+import {
+  chunkArray,
+  comparePipelineText,
+  computeIsFoundation,
+  countPipelineRows,
+  getPipelineStageKey,
+  isPipelineStageVisible,
+  isTestProjectName,
+  matchesPipelineSearch,
+  normalizePipelineClassification,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AuthorizationError } from '../errors';
-import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
+import { checkFormationTeamMembership, checkLfStaffMembership } from '../helpers/formation-team.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { AccessCheckService } from './access-check.service';
@@ -35,7 +48,8 @@ import { NatsService } from './nats.service';
 
 /**
  * The formation team's project pipeline (#5475): every non-Active project by stage, read through
- * query-service. Guarded by `team:formation` membership, checked before any upstream read.
+ * query-service. Guarded by `team:formation` membership, checked before any upstream read. LF staff outside the team (#5544)
+ * get a read-only view of the same data without Draft and Confidential projects.
  */
 export class FormationPipelineService {
   private readonly microserviceProxy = new MicroserviceProxyService();
@@ -51,20 +65,20 @@ export class FormationPipelineService {
   public async getPipeline(req: Request, query: FormationPipelineQuery): Promise<FormationPipelineResponse> {
     const operation = 'get_formation_pipeline';
 
-    // The guard runs before any upstream read. checkSingleAccess fails closed.
-    if (!(await checkFormationTeamMembership(this.accessCheckService, req))) {
-      throw new AuthorizationError('Only the formation team can see the pipeline.', {
-        operation,
-        service: 'formation_pipeline',
-        code: FORMATION_TEAM_REQUIRED_CODE,
-      });
-    }
+    const viewer = await this.resolveViewer(req, operation);
 
     const rootUid = await resolveRootProjectUid(req, this.natsService);
-    const projects = await this.fetchPipelineProjects(req);
-    const parents = await this.resolveParents(req, projects, rootUid, query.foundationUid);
+    // Staff never receive Draft or Confidential projects: they are not requested, and dropped again here whatever the
+    // caller can read (a direct grant on a Draft project would otherwise let query-service return it), before anything
+    // is counted, so rows, counts, stat cards and the CSV cannot disagree.
+    const projects = (await this.fetchPipelineProjects(req, viewer)).filter((project) => this.isVisibleToViewer(project, viewer));
+    const parents = await this.resolveParents(req, projects, rootUid, viewer, query.foundationUid);
 
-    const scoped = projects.filter((project) => this.inScope(project, parents, rootUid, query) && matchesPipelineSearch(project.name, query.search));
+    // Test projects and everything under them never reach rows, counts or the CSV (#5619).
+    const scoped = projects.filter(
+      (project) =>
+        this.inScope(project, parents, rootUid, query) && !this.isTestProject(project, parents, rootUid) && matchesPipelineSearch(project.name, query.search)
+    );
     const baseRows = scoped.map((project) => this.toRow(project, parents, rootUid));
 
     // Counts ignore the stage selection, so they come before it is applied; the UI derives its own counts from the rows after its client-side search.
@@ -83,13 +97,39 @@ export class FormationPipelineService {
           executive_director: this.toPerson(settings?.executive_director),
           program_manager: this.toPerson(settings?.program_manager),
           opportunity_owner: this.toPerson(settings?.opportunity_owner),
+          formation_lead: this.toPerson(settings?.formation_lead),
           has_checklist: checklistUids.has(row.uid),
         };
       })
       .sort((a, b) => comparePipelineText(a.name, b.name));
 
-    logger.debug(req, operation, 'Built formation pipeline', { row_count: rows.length, total: counts.total, foundation_scoped: !!query.foundationUid });
-    return { rows, counts };
+    logger.debug(req, operation, 'Built formation pipeline', { row_count: rows.length, total: counts.total, foundation_scoped: !!query.foundationUid, viewer });
+    return { rows, counts, viewer };
+  }
+
+  /**
+   * Who the pipeline is built for, decided before any upstream read, both checks fail-closed. The formation team comes
+   * first, so a member who is also LF staff keeps the full view; then LF staff (`team:lf-staff`, not contractors); anyone
+   * else gets the 403 `FORMATION_TEAM_REQUIRED` without a read.
+   */
+  private async resolveViewer(req: Request, operation: string): Promise<FormationPipelineViewer> {
+    if (await checkFormationTeamMembership(this.accessCheckService, req)) {
+      return 'formation_team';
+    }
+    if (await checkLfStaffMembership(this.accessCheckService, req)) {
+      return 'staff';
+    }
+    throw new AuthorizationError('Only the formation team and LF staff can see the pipeline.', {
+      operation,
+      service: 'formation_pipeline',
+      code: FORMATION_TEAM_REQUIRED_CODE,
+    });
+  }
+
+  /** Whether the viewer may see this project's stage at all; an unrecognized stage is not a pipeline stage and is dropped by `inScope` anyway. */
+  private isVisibleToViewer(project: UpstreamPipelineProject, viewer: FormationPipelineViewer): boolean {
+    const stage = getPipelineStageKey(project.stage);
+    return !stage || isPipelineStageVisible(stage, viewer);
   }
 
   /** The three fields of a settings person the table shows; anything else query-service returned is dropped. */
@@ -100,9 +140,11 @@ export class FormationPipelineService {
     return { name: user.name ?? '', email: user.email ?? '', ...(user.username && { username: user.username }) };
   }
 
-  /** Every `type=project` document in a pipeline stage (Active is never requested). */
-  private async fetchPipelineProjects(req: Request): Promise<UpstreamPipelineProject[]> {
-    const stageFilters = FORMATION_PIPELINE_STAGES.map((stage) => `stage:${FORMATION_PIPELINE_STAGE_UPSTREAM[stage]}`);
+  /** Every `type=project` document in a pipeline stage the viewer may see (Active is never requested). */
+  private async fetchPipelineProjects(req: Request, viewer: FormationPipelineViewer): Promise<UpstreamPipelineProject[]> {
+    const stageFilters = FORMATION_PIPELINE_STAGES.filter((stage) => isPipelineStageVisible(stage, viewer)).map(
+      (stage) => `stage:${FORMATION_PIPELINE_STAGE_UPSTREAM[stage]}`
+    );
     return fetchAllQueryResources<UpstreamPipelineProject>(
       req,
       (pageToken) =>
@@ -124,14 +166,18 @@ export class FormationPipelineService {
    * the subtree filter can see through intermediate projects. The `project` document carries only its direct parent, so
    * there is no ancestor array to read instead. The depth cap bounds it.
    *
-   * A failed read fails the request. An ancestor query-service returns no document for is logged (a formation-team
-   * member holds `global_owner` on every project, so a missing one is a data problem); its rows stay in "All
-   * foundations" with no foundation and drop out only when a foundation filter is on. Reaching the depth cap is logged.
+   * A failed read fails the request. An ancestor query-service returns no document for is logged; its rows stay in "All
+   * foundations" with no foundation and drop out only when a foundation filter is on. For the formation team (who hold
+   * `global_owner` on every project) a missing ancestor is a data problem and logs a warning. For LF staff it is expected:
+   * the parent may be a Draft or Confidential project they cannot read, so it logs at debug, by count only. Nothing is read
+   * as anyone but the caller, so the hidden parent's name and uid never reach the row. The project index carries only
+   * `parent_uid`, no ancestor chain, so there is nothing else to resolve a foundation from. Reaching the depth cap is logged.
    */
   private async resolveParents(
     req: Request,
     projects: readonly UpstreamPipelineProject[],
     rootUid: string | null,
+    viewer: FormationPipelineViewer,
     foundationUid?: string
   ): Promise<Map<string, UpstreamPipelineProject>> {
     // Pipeline rows that are themselves ancestors are already in hand.
@@ -158,8 +204,17 @@ export class FormationPipelineService {
         max_depth: FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH,
       });
     }
-    for (const uid of missing) {
-      logger.warning(req, 'get_formation_pipeline', 'Parent project not returned by query-service', { parent_uid: uid, foundation_scoped: !!foundationUid });
+    if (viewer === 'staff') {
+      if (missing.size > 0) {
+        logger.debug(req, 'get_formation_pipeline', 'Parent projects not readable by the staff caller', {
+          count: missing.size,
+          foundation_scoped: !!foundationUid,
+        });
+      }
+    } else {
+      for (const uid of missing) {
+        logger.warning(req, 'get_formation_pipeline', 'Parent project not returned by query-service', { parent_uid: uid, foundation_scoped: !!foundationUid });
+      }
     }
     return known;
   }
@@ -207,6 +262,32 @@ export class FormationPipelineService {
       funding: project.funding,
       funding_model: project.funding_model ?? [],
     });
+  }
+
+  /**
+   * Whether a project is a PCC test project or sits under one: its own name, or the name of any ancestor in the chain `resolveParents` loaded.
+   * That chain stops at the first foundation (the test projects are foundations by name, so a descendant of one reaches it), so a project
+   * separated from a test project by another real foundation is not recognised. The test group's children are the test projects themselves,
+   * so that shape does not occur; climbing past every foundation would cost extra reads on every row for it.
+   */
+  private isTestProject(project: UpstreamPipelineProject, known: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): boolean {
+    if (isTestProjectName(project.name)) {
+      return true;
+    }
+    const seen = new Set<string>();
+    let uid = collapseRootParentUid(project.parent_uid || null, rootUid);
+    while (uid && !seen.has(uid)) {
+      seen.add(uid);
+      const node = known.get(uid);
+      if (!node) {
+        return false;
+      }
+      if (isTestProjectName(node.name)) {
+        return true;
+      }
+      uid = collapseRootParentUid(node.parent_uid || null, rootUid);
+    }
+    return false;
   }
 
   /** The nearest foundation ancestor of a project (never the project itself), or `null` when its chain holds none. */
@@ -277,13 +358,33 @@ export class FormationPipelineService {
     return false;
   }
 
+  /**
+   * Where the project sits by its DIRECT parent (#5619), not by `computeIsFoundation`, which formation-stage projects almost never pass:
+   * `under_lf` when the parent is The Linux Foundation, `under_foundation` for any other parent, `no_parent` when there is none (a
+   * parent that is the hidden ROOT counts as none). The parent's document comes from the chain `resolveParents` already loaded; one
+   * query-service did not return cannot be identified as The Linux Foundation, so it reads as another parent.
+   */
+  private foundationKind(
+    project: UpstreamPipelineProject,
+    known: ReadonlyMap<string, UpstreamPipelineProject>,
+    rootUid: string | null
+  ): FormationPipelineFoundationKind {
+    const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid);
+    if (!parentUid) {
+      return 'no_parent';
+    }
+    return known.get(parentUid)?.slug === LF_FOUNDATION_ROOT_SLUG ? 'under_lf' : 'under_foundation';
+  }
+
   private toRow(project: UpstreamPipelineProject, parents: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): FormationPipelineRow {
+    const parent = this.nearestFoundation(project, parents, rootUid);
     return {
       uid: project.uid,
       slug: project.slug,
       name: project.name,
       stage: getPipelineStageKey(project.stage) as FormationPipelineRow['stage'],
-      parent: this.nearestFoundation(project, parents, rootUid),
+      parent,
+      foundation_kind: this.foundationKind(project, parents, rootUid),
       announcement_date: null,
       formation_date: project.formation_date || null,
       legal_entity_name: project.legal_entity_name || null,
@@ -291,6 +392,10 @@ export class FormationPipelineService {
       executive_director: null,
       program_manager: null,
       opportunity_owner: null,
+      formation_lead: null,
+      technical_activity_type: normalizePipelineClassification(project.technical_activity_type),
+      technology: normalizePipelineClassification(project.technology),
+      industry: normalizePipelineClassification(project.industry),
       created_at: project.created_at || null,
       updated_at: project.updated_at || null,
       has_checklist: false,

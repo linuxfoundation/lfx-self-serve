@@ -154,6 +154,68 @@ describe('FormationPipelineService.getPipeline', () => {
     expect(b).toMatchObject({ announcement_date: null, executive_director: null, program_manager: null, opportunity_owner: null, has_checklist: true });
   });
 
+  // #5619 Part C: the PCC classification arrays ride on the `project` documents the pipeline already reads; no extra upstream call.
+  it('maps the classification arrays: present, empty, missing and null', async () => {
+    mockUpstream({
+      projects: [
+        project({
+          uid: 'a',
+          name: 'A',
+          technical_activity_type: ['Open Source Software', 'Open Standard / Specification'],
+          technology: ['Quantum'],
+          industry: ['Finance'],
+        }),
+        project({ uid: 'b', name: 'B', technical_activity_type: [], technology: [], industry: [] }),
+        project({ uid: 'c', name: 'C' }),
+        project({ uid: 'd', name: 'D', technical_activity_type: null, technology: null, industry: null }),
+        project({ uid: 'e', name: 'E', technology: [' Quantum ', 'Quantum', ''] }),
+      ],
+    });
+
+    const { rows } = await service.getPipeline(req, allStages);
+    const of = (uid: string) => rows.find((row) => row.uid === uid);
+
+    expect(of('a')).toMatchObject({
+      technical_activity_type: ['Open Source Software', 'Open Standard / Specification'],
+      technology: ['Quantum'],
+      industry: ['Finance'],
+    });
+    for (const uid of ['b', 'c', 'd']) {
+      expect(of(uid)).toMatchObject({ technical_activity_type: [], technology: [], industry: [] });
+    }
+    expect(of('e')?.technology).toEqual(['Quantum']);
+  });
+
+  it('makes no extra upstream read for the classification fields', async () => {
+    mockUpstream({ projects: [project({ uid: 'a', name: 'A', technology: ['Quantum'] })] });
+
+    await service.getPipeline(req, allStages);
+
+    const types = proxyRequest.mock.calls.map((call) => call[4]?.type);
+    expect(types.filter((type) => type === 'project').length).toBeGreaterThanOrEqual(1);
+    expect([...new Set(types)].sort()).toEqual(['formation', 'project', 'project_settings']);
+  });
+
+  // #5619 D8: the Formation Lead arrives on `project_settings.formation_lead`; values land once lfx-v1-sync-helper#216's backfill has run.
+  it('serves the formation lead from settings (name, email, username only), and null when empty or missing', async () => {
+    mockUpstream({
+      projects: [project({ uid: 'a', name: 'A' }), project({ uid: 'b', name: 'B' }), project({ uid: 'c', name: 'C' }), project({ uid: 'd', name: 'D' })],
+      settings: [
+        { uid: 'a', formation_lead: { name: 'Lee Lead', email: 'lee@example.com', username: 'llead', avatar: 'secret.png' } },
+        { uid: 'b', formation_lead: { name: '', email: '' } },
+        { uid: 'c' },
+      ],
+    });
+
+    const { rows } = await service.getPipeline(req, allStages);
+    const lead = (uid: string) => rows.find((row) => row.uid === uid)?.formation_lead;
+
+    expect(lead('a')).toEqual({ name: 'Lee Lead', email: 'lee@example.com', username: 'llead' });
+    expect(lead('b')).toBeNull();
+    expect(lead('c')).toBeNull();
+    expect(lead('d')).toBeNull(); // no settings document at all
+  });
+
   it('gives empty fields, not an error, when a project has no settings document', async () => {
     mockUpstream({ projects: [project({ uid: 'a' })], settings: [] });
 
@@ -394,5 +456,232 @@ describe('FormationPipelineService.getPipeline', () => {
       expect(parentRead).not.toHaveProperty('fields');
       expect(parentRead).not.toHaveProperty('select');
     });
+  });
+
+  // #5619 D6: the IT test projects and everything under them are not real pipeline projects.
+  describe('test projects', () => {
+    const TEST_GROUP = { uid: 'tg', name: 'Test Project Group IT', ...FOUNDATION_FIELDS };
+
+    it('drops a test project and its descendants from rows and counts, keeping real projects', async () => {
+      mockUpstream({
+        projects: [
+          project({ uid: 'real', name: 'Real Project', parent_uid: 'F' }),
+          project({ uid: 'self', name: 'Test Project IT', parent_uid: 'tg' }),
+          project({ uid: 'child', name: 'Ordinary Name', parent_uid: 'tg' }),
+          project({ uid: 'deep', name: 'Deeper', parent_uid: 'mid' }),
+          project({ uid: 'draft', name: 'Test Project Group IT', stage: 'Prospect', parent_uid: '' }),
+        ],
+        parents: {
+          F: { uid: 'F', name: 'Real Foundation', ...FOUNDATION_FIELDS },
+          tg: TEST_GROUP,
+          mid: { uid: 'mid', name: 'Active Middle', parent_uid: 'tg', ...PLAIN_FIELDS },
+        },
+      });
+
+      const { rows, counts } = await service.getPipeline(req, allStages);
+
+      expect(rows.map((row) => row.uid)).toEqual(['real']);
+      expect(counts).toMatchObject({ engaged: 1, prospect: 0, total: 1 });
+    });
+
+    it('keeps them out when a foundation scope is selected', async () => {
+      mockUpstream({
+        projects: [project({ uid: 'real', name: 'Real Project', parent_uid: 'F' }), project({ uid: 'self', name: 'Test Project IT', parent_uid: 'F' })],
+        parents: { F: { uid: 'F', name: 'Real Foundation', ...FOUNDATION_FIELDS } },
+      });
+
+      const { rows } = await service.getPipeline(req, { ...allStages, foundationUid: 'F' });
+
+      expect(rows.map((row) => row.uid)).toEqual(['real']);
+    });
+  });
+
+  // #5619 D7: classified by the row's DIRECT parent, never by `computeIsFoundation` (formation-stage projects almost never pass it).
+  describe('foundation kind', () => {
+    const LF = { uid: 'lf', slug: 'tlf', name: 'The Linux Foundation', ...FOUNDATION_FIELDS };
+    const FUNDED = { legal_entity_type: 'Non-profit', funding: ProjectFunding.Funded, funding_model: ['Membership'] };
+    const kindsOf = async () => Object.fromEntries((await service.getPipeline(req, allStages)).rows.map((row) => [row.uid, row.foundation_kind]));
+
+    it('calls a project directly under The Linux Foundation under_lf, including an Engaged funded foundation and a plain project', async () => {
+      mockUpstream({
+        projects: [
+          project({ uid: 'plain', name: 'Plain Under LF', parent_uid: 'lf' }),
+          project({ uid: 'fund', name: 'Engaged Fund', stage: 'Formation - Engaged', parent_uid: 'lf', ...FUNDED }),
+        ],
+        parents: { lf: LF },
+      });
+
+      expect(await kindsOf()).toEqual({ plain: 'under_lf', fund: 'under_lf' });
+    });
+
+    it('calls a project under any other parent under_foundation, whether that parent is a foundation or a plain project', async () => {
+      mockUpstream({
+        projects: [project({ uid: 'sub', name: 'Under Foundation', parent_uid: 'F' }), project({ uid: 'deep', name: 'Under Active Child', parent_uid: 'mid' })],
+        parents: {
+          F: { uid: 'F', slug: 'f', name: 'Existing Foundation', parent_uid: 'lf', ...FOUNDATION_FIELDS },
+          mid: { uid: 'mid', slug: 'mid', name: 'Active Mid', parent_uid: 'lf', ...PLAIN_FIELDS },
+          lf: LF,
+        },
+      });
+
+      expect(await kindsOf()).toEqual({ sub: 'under_foundation', deep: 'under_foundation' });
+    });
+
+    it("does not read the row's own foundation classification: a funded Engaged project under a foundation is under_foundation, not special", async () => {
+      mockUpstream({
+        projects: [project({ uid: 'fund', name: 'Funded Under Foundation', stage: 'Formation - Engaged', parent_uid: 'F', ...FUNDED })],
+        parents: { F: { uid: 'F', slug: 'f', name: 'Existing Foundation', ...FOUNDATION_FIELDS } },
+      });
+
+      expect(await kindsOf()).toEqual({ fund: 'under_foundation' });
+    });
+
+    it('calls a project with no parent, an empty parent or the hidden ROOT parent no_parent, including a root-level separate entity', async () => {
+      natsRequest.mockResolvedValue({ data: 'root-uid' });
+      mockUpstream({
+        projects: [
+          project({ uid: 'none', name: 'No Parent', parent_uid: '' }),
+          project({ uid: 'root', name: 'Under Root', parent_uid: 'root-uid' }),
+          project({ uid: 'entity', name: 'Separate Entity', stage: 'Formation - Engaged', parent_uid: 'root-uid', ...FUNDED }),
+        ],
+      });
+
+      expect(await kindsOf()).toEqual({ none: 'no_parent', root: 'no_parent', entity: 'no_parent' });
+    });
+
+    it('reads a parent query-service did not return as another parent, since it cannot be identified as The Linux Foundation', async () => {
+      mockUpstream({ projects: [project({ uid: 'orphan', name: 'Orphan', parent_uid: 'gone' })], parents: {} });
+
+      expect(await kindsOf()).toEqual({ orphan: 'under_foundation' });
+    });
+  });
+});
+
+// #5544: LF staff outside the formation team get a read-only view without Draft and Confidential projects.
+describe('FormationPipelineService.getPipeline — LF staff view (#5544)', () => {
+  let service: InstanceType<typeof FormationPipelineService>;
+  /** Answers each team check separately: which of `formation` / `lf-staff` the caller belongs to. */
+  const asMemberOf = (...teams: string[]) =>
+    checkSingleAccess.mockImplementation(
+      async (_req: unknown, resource: { resource: string; id: string }) => resource.resource === 'team' && teams.includes(resource.id)
+    );
+  const MIXED = [
+    project({ uid: 'draft', name: 'Draft One', stage: 'Prospect' }),
+    project({ uid: 'secret', name: 'Secret One', stage: 'Formation - Confidential' }),
+    project({ uid: 'live', name: 'Live One', stage: 'Formation - Engaged' }),
+    project({ uid: 'paused', name: 'Paused One', stage: 'Formation - On Hold' }),
+    project({ uid: 'gone', name: 'Gone One', stage: 'Archived' }),
+  ];
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    natsRequest.mockResolvedValue({ data: '' });
+    resetRootProjectUidCacheForTests();
+    proxyRequest.mockReset();
+    checkSingleAccess.mockReset();
+    service = new FormationPipelineService();
+  });
+
+  it('serves the formation team the full view, marked formation_team', async () => {
+    asMemberOf('formation');
+    mockUpstream({ projects: MIXED });
+
+    const result = await service.getPipeline(req, allStages);
+
+    expect(result.viewer).toBe('formation_team');
+    expect(result.rows.map((row) => row.uid).sort()).toEqual(['draft', 'gone', 'live', 'paused', 'secret']);
+    expect(result.counts).toMatchObject({ prospect: 1, confidential: 1, total: 5 });
+  });
+
+  it('keeps the full view for a formation-team member who is also LF staff, and checks the team first', async () => {
+    asMemberOf('formation', 'lf-staff');
+    mockUpstream({ projects: MIXED });
+
+    const result = await service.getPipeline(req, allStages);
+
+    expect(result.viewer).toBe('formation_team');
+    expect(result.rows).toHaveLength(5);
+    expect(checkSingleAccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves LF staff the read-only view: no Draft or Confidential in rows or counts', async () => {
+    asMemberOf('lf-staff');
+    mockUpstream({ projects: MIXED });
+
+    const result = await service.getPipeline(req, allStages);
+
+    expect(result.viewer).toBe('staff');
+    expect(result.rows.map((row) => row.uid).sort()).toEqual(['gone', 'live', 'paused']);
+    expect(result.counts).toMatchObject({ prospect: 0, confidential: 0, engaged: 1, on_hold: 1, archived: 1, total: 3 });
+    expect(JSON.stringify(result)).not.toMatch(/Draft One|Secret One/);
+  });
+
+  it('does not ask upstream for Draft or Confidential on the staff view', async () => {
+    asMemberOf('lf-staff');
+    mockUpstream({});
+
+    await service.getPipeline(req, allStages);
+
+    const params = proxyRequest.mock.calls.find((call) => call[4]?.type === 'project' && call[4].filters_or[0].startsWith('stage:'))?.[4];
+    expect(params.filters_or).not.toContain('stage:Prospect');
+    expect(params.filters_or).not.toContain('stage:Formation - Confidential');
+    expect(params.filters_or).toContain('stage:Formation - Engaged');
+  });
+
+  it('still drops a Draft project upstream returns anyway (a direct grant), and a stage query for it comes back empty', async () => {
+    asMemberOf('lf-staff');
+    // The mock ignores the stage filter, as query-service would for a caller holding a direct grant on the Draft project.
+    mockUpstream({ projects: MIXED });
+
+    const asked = await service.getPipeline(req, { stages: ['prospect', 'confidential'] });
+
+    expect(asked.rows).toEqual([]);
+    expect(asked.counts.prospect).toBe(0);
+    expect(asked.counts.confidential).toBe(0);
+    expect(asked.counts.total).toBe(3);
+  });
+
+  it('keeps a visible project whose parent is hidden from staff: no foundation, in All foundations, out of a foundation filter, debug log only', async () => {
+    asMemberOf('lf-staff');
+    // The parent is a Draft project staff cannot read: query-service returns no document for it.
+    const projects = [project({ uid: 'child', name: 'Child One', stage: 'Formation - Engaged', parent_uid: 'hidden-parent' })];
+    mockUpstream({ projects });
+    vi.mocked(logger.debug).mockClear();
+    vi.mocked(logger.warning).mockClear();
+
+    const all = await service.getPipeline(req, allStages);
+
+    expect(all.rows.map((row) => row.uid)).toEqual(['child']);
+    expect(all.rows[0].parent).toBeNull();
+    expect(all.counts.total).toBe(1);
+    expect(JSON.stringify(all)).not.toContain('hidden-parent');
+    expect(logger.warning).not.toHaveBeenCalledWith(req, 'get_formation_pipeline', expect.any(String), expect.anything());
+    expect(logger.debug).toHaveBeenCalledWith(req, 'get_formation_pipeline', expect.any(String), expect.objectContaining({ count: 1 }));
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('hidden-parent');
+
+    const scoped = await service.getPipeline(req, { ...allStages, foundationUid: 'some-foundation' });
+    expect(scoped.rows).toEqual([]);
+    expect(logger.warning).not.toHaveBeenCalledWith(req, 'get_formation_pipeline', expect.any(String), expect.anything());
+  });
+
+  it.each([
+    ['a contractor (a different team)', ['lf-contractor']],
+    ['a caller on no team', []],
+  ])('rejects %s with FORMATION_TEAM_REQUIRED and reads nothing upstream', async (_label, teams) => {
+    asMemberOf(...teams);
+
+    await expect(service.getPipeline(req, allStages)).rejects.toMatchObject({ statusCode: 403, code: 'FORMATION_TEAM_REQUIRED' });
+
+    expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'formation', access: 'member' });
+    expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'lf-staff', access: 'member' });
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(natsRequest).not.toHaveBeenCalled();
+  });
+
+  it('fails closed: an access-check outage reads as no membership', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+
+    await expect(service.getPipeline(req, allStages)).rejects.toMatchObject({ statusCode: 403 });
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

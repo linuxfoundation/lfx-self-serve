@@ -8,6 +8,7 @@ import {
   CreateNewsletterRequest,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterAudience,
   NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
@@ -18,6 +19,7 @@ import {
   NewsletterRecipientsResponse,
   NewsletterRenderPreviewPayload,
   NewsletterRenderPreviewResponse,
+  NewsletterResolveAudiencePayload,
   NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterShareRequest,
@@ -227,6 +229,31 @@ export class NewsletterServiceClient {
       'POST',
       undefined,
       payload
+    );
+  }
+
+  public async resolveAudience(
+    req: Request,
+    projectUid: string,
+    newsletterUid: string,
+    payload: NewsletterResolveAudiencePayload
+  ): Promise<NewsletterAudience> {
+    return this.microserviceProxy.proxyRequest<NewsletterAudience>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/audience`,
+      'POST',
+      undefined,
+      payload
+    );
+  }
+
+  public async getAudience(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAudience> {
+    return this.microserviceProxy.proxyRequest<NewsletterAudience>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/audience`,
+      'GET'
     );
   }
 

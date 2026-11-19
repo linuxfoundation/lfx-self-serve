@@ -365,7 +365,7 @@ export class OrgLensKeyContactsService {
   private async resolveOr404(req: Request, b2bOrgUid: string, foundationSlug: string): Promise<ResolvedMembershipContext> {
     const ctx = await this.resolver.resolveContext(req, b2bOrgUid, foundationSlug);
     if (!ctx) {
-      throw new MicroserviceError('No active membership for this organization and foundation', 404, 'NOT_FOUND', {
+      throw new MicroserviceError('No active membership for this company and foundation', 404, 'NOT_FOUND', {
         operation: 'resolve_membership_context',
         service: 'LFX_V2_SERVICE',
         path: '/query/resources',

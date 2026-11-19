@@ -11,7 +11,7 @@ import type { HealthMetricsOverviewKpiStripLayout, HealthMetricsOverviewKpiView 
 
 /**
  * The design's ruled KPI row: a 12px label (with its tooltip, where given) over a light 34px figure, an optional change
- * and a note. It measures its own width, so a narrow card stacks it, or makes four items a 2 × 2 grid.
+ * and a note. It measures its own width, so a narrow card puts two per row (an odd last item spans it) or stacks them.
  */
 @Component({
   selector: 'lfx-overview-kpi-strip',
@@ -38,7 +38,8 @@ export class OverviewKpiStripComponent {
   /** Dividers and padding per item: the design's left rule between columns, a top rule between stacked rows. */
   protected readonly itemClasses = computed(() => {
     const layout = this.layout();
-    return this.kpis().map((_, index) => itemClass(layout, index));
+    const count = this.kpis().length;
+    return this.kpis().map((_, index) => itemClass(layout, index, count));
   });
 
   public constructor() {
@@ -54,12 +55,17 @@ export class OverviewKpiStripComponent {
   }
 }
 
-function itemClass(layout: HealthMetricsOverviewKpiStripLayout, index: number): string {
+// Exact px, not rem: the design's 20px divider gap, 16px on phones in the two-per-row layout.
+function itemClass(layout: HealthMetricsOverviewKpiStripLayout, index: number, count: number): string {
   switch (layout) {
     case 'stack':
       return index === 0 ? 'pl-0' : 'border-t border-gray-200 pl-0';
     case 'grid':
-      return [index % 2 === 0 ? 'pl-0' : 'border-l border-gray-200 pl-[20px]', index >= 2 ? 'border-t border-gray-200' : ''].join(' ');
+      return [
+        index % 2 === 0 ? 'pl-0' : 'border-l border-gray-200 pl-[20px] max-[640px]:pl-[16px]',
+        index >= 2 ? 'border-t border-gray-200' : '',
+        index === count - 1 && index % 2 === 0 ? 'col-span-full' : '',
+      ].join(' ');
     default:
       return index === 0 ? 'pl-0' : 'border-l border-gray-200 pl-[20px]';
   }

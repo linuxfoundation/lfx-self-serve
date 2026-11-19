@@ -1,7 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE, QUERY_SERVICE_MAX_PAGES, RSVP_RESPONSES } from '@lfx-one/shared/constants';
+import {
+  COMPOSER_ATTENDEE_LOCK,
+  IMPORT_REGISTRANTS_MAX,
+  MEETING_ROLLUP_QUERY_MAX_PROJECTS,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
+  QUERY_SERVICE_MAX_PAGES,
+  RSVP_RESPONSES,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -24,6 +33,9 @@ import {
   MeetingRegistrant,
   MeetingRegistrantsByVerifiedEmails,
   MeetingRegistrationRemovalResult,
+  MeetingRollupFilterOptions,
+  MeetingRollupFilters,
+  MeetingRollupGroupOption,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -69,16 +81,26 @@ import {
   UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
 } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
+import {
+  buildRollupScopedQuery,
+  isRollupGroups,
+  isRollupScope,
+  narrowRollupScope,
+  readRollupFilters,
+  readRollupRootUid,
+} from '../helpers/meeting-rollup.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
+import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
 import { UserVerifiedEmailsService } from './user-verified-emails.service';
+import { withPerUserCache } from './valkey.service';
 
 /**
  * Service for handling meeting business logic with microservice proxy
@@ -112,8 +134,12 @@ export class MeetingService {
       query_params: Object.keys(query),
     });
 
+    const scopedQuery = await this.applyRollupScope(req, query, 'get_meetings');
+    if (!scopedQuery) {
+      return { data: [], page_token: undefined };
+    }
     const params = {
-      ...query,
+      ...scopedQuery,
       type: meetingType,
     };
 
@@ -192,14 +218,36 @@ export class MeetingService {
       query_params: Object.keys(query),
     });
 
+    const scopedQuery = await this.applyRollupScope(req, query, 'get_meetings_count');
+    if (!scopedQuery) {
+      return 0;
+    }
     const params = {
-      ...query,
+      ...scopedQuery,
       type: meetingType,
     };
 
     const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params);
 
     return count;
+  }
+
+  /**
+   * Options for a roll-up's filters (GH-5566): the projects in the tree under `rootUid` and their
+   * groups, both as the caller can see them, sorted by name. The group categories feed the Group type
+   * filter.
+   */
+  public async getRollupFilterOptions(req: Request, rootUid: string): Promise<MeetingRollupFilterOptions> {
+    // One walk feeds the projects, the groups and the completeness flag, so they always describe the same tree.
+    const scope = await this.resolveRollupScope(req, rootUid);
+    const { uids: scopeUids, complete: treeComplete } = scope;
+    const [projectMap, groups] = await Promise.all([this.projectService.getProjectsByIds(req, scopeUids), this.resolveRollupGroups(req, rootUid, scope)]);
+
+    const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
+    const projects = [...projectMap.values()].map((project) => ({ uid: project.uid, name: project.name, slug: project.slug })).sort(byName);
+    // The list covers the tree only if the walk was complete and every resolved project's details loaded.
+    const complete = treeComplete && scopeUids.every((uid) => projectMap.has(uid));
+    return { projects, groups: groups.filter((group) => group.name).sort(byName), complete };
   }
 
   /**
@@ -578,8 +626,8 @@ export class MeetingService {
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
     // to opt a board meeting into sharing its guest list. A restricted meeting
-    // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting v2
-    // composer sends one, since the pre-v2 wizard locks the control off — and is forced off otherwise.
+    // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting
+    // composer sends one — and is forced off otherwise.
     if (
       isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted, {
         allowRestricted: createPayload.show_meeting_attendees === true,
@@ -658,13 +706,16 @@ export class MeetingService {
     const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board meeting into sharing its guest list. A restricted meeting
-    // keeps any explicit `true` from a caller allowed to edit it (in practice only the meeting v2
-    // composer sends one; the pre-v2 wizard locks the control off) and is forced off otherwise.
-    if (isShowMeetingAttendeesLocked(meetingType, restricted, { allowRestricted: meetingData.show_meeting_attendees === true })) {
+    // to opt a board meeting into sharing its guest list. A restricted (invite-only) meeting is
+    // read and written under the same composer rule (#5438): an explicit choice is forwarded, and a
+    // body that omits the flag leaves the organizer's stored choice alone.
+    if (isShowMeetingAttendeesLocked(meetingType, restricted, COMPOSER_ATTENDEE_LOCK)) {
       updatePayload.show_meeting_attendees = false;
-    } else if (meetingData.show_meeting_attendees == null && isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted)) {
-      // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body
+    } else if (
+      meetingData.show_meeting_attendees == null &&
+      isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted, COMPOSER_ATTENDEE_LOCK)
+    ) {
+      // Unlocking a board meeting with no choice of its own. Upstream keeps whatever the body
       // omits, and a row written before the lock existed can still hold `true`, so the stale value
       // would survive the unlock and start sharing the guest list. A locked meeting never carried
       // an organizer decision to inherit — the same reading `getSavedAttendeeVisibility` gives the form.
@@ -1733,6 +1784,14 @@ export class MeetingService {
       }
 
       const content = Buffer.concat(chunks).toString('utf-8');
+      // An unauthenticated platform URL answers with an HTML page instead of the file.
+      if (!content.trimStart().startsWith('WEBVTT')) {
+        logger.warning(req, 'get_past_meeting_transcript_content', 'Transcript file is not WebVTT, returning null', {
+          past_meeting_id: pastMeetingUid,
+          content_type: response.headers.get('content-type'),
+        });
+        return null;
+      }
       return { content };
     } catch (error) {
       logger.warning(req, 'get_past_meeting_transcript_content', 'Failed to fetch transcript content, returning null', {
@@ -2538,6 +2597,171 @@ export class MeetingService {
     }
 
     return nameMap;
+  }
+
+  /**
+   * Resolves the optional `root_project_uid` roll-up (GH-5566): a foundation or parent project's
+   * meetings list also shows the meetings of every project beneath it, narrowed by the roll-up filters
+   * (`project_uids`, `committee_uid`, `group_type`). The descendant tree is walked with the caller's
+   * own token, and the meetings query runs with it too, so query-service FGA still drops any meeting
+   * the caller cannot see. A query without the param is returned as is; `null` means the filters
+   * match nothing (no selected project in the tree, or no group of that type), so the caller
+   * answers empty instead of sending an unscoped query.
+   */
+  private async applyRollupScope(req: Request, query: Record<string, any>, operation: string): Promise<Record<string, any> | null> {
+    const rootUid = readRollupRootUid(query, operation);
+    if (!rootUid) {
+      return query;
+    }
+    const filters = readRollupFilters(query, operation);
+
+    const scope = await this.resolveRollupScope(req, rootUid);
+    let scopeUids = narrowRollupScope(scope.uids, filters.projectUids);
+    if (scopeUids.length === 0) {
+      return null;
+    }
+    // One query takes at most MEETING_ROLLUP_QUERY_MAX_PROJECTS projects; past it query-service fails the request.
+    // A larger scope (a foundation such as TLF or CNCF with hundreds of projects) falls back to the root's
+    // own meetings, as before the roll-up, until the scope is paged across batches.
+    if (scopeUids.length > MEETING_ROLLUP_QUERY_MAX_PROJECTS) {
+      logger.warning(req, operation, 'Roll-up scope exceeds the roll-up project limit; showing the root project only', {
+        root_project_uid: rootUid,
+        project_count: scopeUids.length,
+        max_projects: MEETING_ROLLUP_QUERY_MAX_PROJECTS,
+      });
+      scopeUids = [rootUid];
+    }
+
+    const committeeUids = await this.resolveRollupCommitteeUids(req, rootUid, scope, scopeUids, filters);
+    if (committeeUids?.length === 0) {
+      return null;
+    }
+
+    logger.debug(req, operation, 'Scoped meetings query to project roll-up', {
+      root_project_uid: rootUid,
+      project_count: scopeUids.length,
+      committee_count: committeeUids?.length,
+    });
+
+    return buildRollupScopedQuery(query, scopeUids, committeeUids);
+  }
+
+  /**
+   * The project UIDs under a roll-up root that the caller can see, cached per user and root, so the
+   * paged calendar feeds and Load More neither re-walk the tree on every page nor replay a page cursor
+   * against a different scope. Both helpers fail closed (fetch directly, share nothing) for a blank or
+   * unsafe username, so one user's FGA-filtered tree is never served to another. `complete` is false
+   * when a child lookup failed; only a complete scope is ever cached, so a cache hit is complete.
+   */
+  private async resolveRollupScope(req: Request, rootUid: string): Promise<{ uids: string[]; complete: boolean }> {
+    const { MEETING_ROLLUP_SCOPE_NAMESPACE: namespace, MEETING_ROLLUP_SCOPE_TTL_SECONDS: ttlSeconds } = VALKEY_CACHE;
+    const username = getEffectiveUsername(req) ?? '';
+    // A failed child lookup leaves that branch out; such a scope is still served, but never cached, so
+    // the next request retries instead of hiding those meetings for the whole TTL. A flight that was
+    // superseded while it ran (`isCurrent` false) does not write either, like the other per-user caches.
+    // `complete` travels inside the flight's result, so a caller that joins someone else's walk learns
+    // it was incomplete too (and does not cache groups built from it); the cache itself keeps the UIDs.
+    return coalescePerUserOrgFetch(namespace, username, rootUid, async (isCurrent) => {
+      let complete = true;
+      const uids = await withPerUserCache(
+        namespace,
+        username,
+        rootUid,
+        ttlSeconds,
+        () => this.projectService.getFoundationProjectUids(req, rootUid, { onIncomplete: () => (complete = false) }),
+        isRollupScope,
+        () => complete && isCurrent()
+      );
+      return { uids, complete };
+    });
+  }
+
+  /**
+   * The groups in a roll-up root's tree that the caller can see, cached per user and root like the
+   * scope, so a group-type filter does not rescan every group on each list, count and calendar page.
+   * Groups of an incomplete tree are served but not cached, for the same reason as the scope.
+   */
+  private resolveRollupGroups(req: Request, rootUid: string, tree: { uids: string[]; complete: boolean }): Promise<MeetingRollupGroupOption[]> {
+    const { MEETING_ROLLUP_GROUPS_NAMESPACE: namespace, MEETING_ROLLUP_SCOPE_TTL_SECONDS: ttlSeconds } = VALKEY_CACHE;
+    const username = getEffectiveUsername(req) ?? '';
+    // Built from the caller's already-resolved tree (no second walk). Only a complete tree is shared: every
+    // complete walk yields the same tree, so joining another request's flight or reading the cache gives the
+    // groups of this tree too. An incomplete walk's groups are fetched for this caller alone, never shared
+    // or cached, so they can't reach a request whose own walk differs.
+    if (!tree.complete) {
+      return this.fetchRollupGroups(req, tree.uids);
+    }
+    return coalescePerUserOrgFetch(namespace, username, rootUid, (isCurrent) =>
+      withPerUserCache(
+        namespace,
+        username,
+        rootUid,
+        ttlSeconds,
+        () => this.fetchRollupGroups(req, tree.uids),
+        isRollupGroups,
+        () => isCurrent()
+      )
+    );
+  }
+
+  /**
+   * The group UIDs a roll-up query is limited to, or `undefined` when no group filter is set.
+   * `group_type` is resolved to the groups of that category within the scope; with `committee_uid`
+   * as well, the group must be one of them.
+   */
+  private async resolveRollupCommitteeUids(
+    req: Request,
+    rootUid: string,
+    tree: { uids: string[]; complete: boolean },
+    scopeUids: string[],
+    filters: MeetingRollupFilters
+  ): Promise<string[] | undefined> {
+    if (!filters.groupType) {
+      return filters.committeeUid ? [filters.committeeUid] : undefined;
+    }
+    const inScope = new Set(scopeUids);
+    const typed = (await this.resolveRollupGroups(req, rootUid, tree))
+      .filter((group) => inScope.has(group.project_uid) && group.category === filters.groupType)
+      .map((group) => group.uid);
+    if (filters.committeeUid) {
+      return typed.includes(filters.committeeUid) ? [filters.committeeUid] : [];
+    }
+    if (typed.length > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      logger.warning(req, 'resolve_rollup_committee_uids', 'Group type matches more groups than the OR batch size; the tag list is unbatched', {
+        count: typed.length,
+        batch_size: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+      });
+    }
+    return typed;
+  }
+
+  /** Groups (committees) in the given projects that the caller can see, batched on `filters_or`. */
+  private async fetchRollupGroups(req: Request, projectUids: string[]): Promise<MeetingRollupGroupOption[]> {
+    const batches: string[][] = [];
+    for (let i = 0; i < projectUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(projectUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+    const results = await Promise.all(
+      batches.map((batch) =>
+        fetchAllQueryResources<Committee>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'committee',
+              filters_or: batch.map((uid) => `project_uid:${uid}`),
+              page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
+    return results.flat().map((committee) => ({
+      uid: committee.uid,
+      name: committee.name?.trim() ?? '',
+      category: committee.category?.trim() || null,
+      project_uid: committee.project_uid,
+    }));
   }
 
   // `email` keeps the stored casing and term matching is case-sensitive, so also match the lowercased copy.

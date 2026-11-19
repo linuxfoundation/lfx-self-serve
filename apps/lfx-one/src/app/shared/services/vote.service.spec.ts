@@ -835,6 +835,16 @@ describe('VoteService', () => {
       });
       expect(http.put).not.toHaveBeenCalled();
     });
+
+    it('updateMyResponse PUTs the encoded my-response URL with the body as given (#4723)', () => {
+      http.put.mockReturnValue(of(undefined));
+      const body = { abstain: false, user_vote_content: answers, comment_responses: [] };
+
+      service.updateMyResponse('vote/1', body).subscribe();
+
+      expect(http.put).toHaveBeenCalledExactlyOnceWith('/api/votes/vote%2F1/my-response', body);
+      expect(http.post).not.toHaveBeenCalled();
+    });
   });
 
   describe('vote summary (#3662)', () => {
@@ -1194,6 +1204,64 @@ describe('VoteService', () => {
       expect(result).toBeNull();
       expect(warn).toHaveBeenCalledWith(expect.any(String), 503);
       warn.mockRestore();
+    });
+  });
+
+  describe('last-voter check (#4726)', () => {
+    describe('getMyWouldEndVote', () => {
+      it.each([
+        [{ would_end_vote: true }, true],
+        [{ would_end_vote: false }, false],
+        [{}, false],
+        [null, false],
+      ])('reads the encoded would-end-vote route and maps %j to %s', (body, expected) => {
+        http.get.mockReturnValue(of(body));
+        let result: boolean | undefined;
+        service.getMyWouldEndVote('a/b').subscribe((value) => (result = value));
+
+        expect(http.get).toHaveBeenCalledWith('/api/votes/a%2Fb/my-response/would-end-vote');
+        expect(result).toBe(expected);
+      });
+
+      it('fails open: emits false and logs only the status when the check fails', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        let result: boolean | undefined;
+        service.getMyWouldEndVote('vote-1').subscribe((value) => (result = value));
+
+        expect(result).toBe(false);
+        expect(warn).toHaveBeenCalledWith(expect.any(String), 500);
+        warn.mockRestore();
+      });
+    });
+
+    describe('getLinkWouldEndVote', () => {
+      const TOKEN = 'synthetic-vote-token';
+
+      it.each([
+        [{ vote_uid: 'vote-1', ballot: { vote_status: 'awaiting_response', already_voted: false, voter_removed: false, would_end_vote: true } }, true],
+        [{ vote_uid: 'vote-1', ballot: { vote_status: 'awaiting_response', already_voted: false, voter_removed: false } }, false],
+      ])('re-reads the link ballot with the token only in the body and maps %j to %s', (ballot, expected) => {
+        http.post.mockReturnValue(of(ballot));
+        let result: boolean | undefined;
+        service.getLinkWouldEndVote(TOKEN).subscribe((value) => (result = value));
+
+        expect(http.post).toHaveBeenCalledWith('/public/api/votes/link-ballot', { vote_token: TOKEN });
+        expect(http.post.mock.calls[0][0]).not.toContain(TOKEN);
+        expect(result).toBe(expected);
+      });
+
+      it('fails open: emits false and logs only the status, never the token', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        http.post.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+        let result: boolean | undefined;
+        service.getLinkWouldEndVote(TOKEN).subscribe((value) => (result = value));
+
+        expect(result).toBe(false);
+        expect(warn).toHaveBeenCalledWith(expect.any(String), 502);
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(TOKEN);
+        warn.mockRestore();
+      });
     });
   });
 });

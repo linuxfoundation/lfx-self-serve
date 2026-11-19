@@ -4,9 +4,11 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { VOTE_LAST_VOTER_CONFIRMATION } from '@lfx-one/shared/constants';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { NEVER, Observable, of, throwError } from 'rxjs';
+import { Confirmation, ConfirmationService } from 'primeng/api';
+import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteLinkBallotComponent } from './vote-link-ballot.component';
@@ -65,7 +67,11 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     getPublicProjectSummary = vi.fn(() => of(null));
     TestBed.configureTestingModule({
       imports: [VoteLinkBallotComponent],
-      providers: [provideNoopAnimations(), { provide: VoteService, useValue: { getLinkBallot, submitLinkResponse, getPublicProjectSummary } }],
+      providers: [
+        provideNoopAnimations(),
+        // The last-voter check (#4726) defaults to "not the last voter" so first submissions go straight through.
+        { provide: VoteService, useValue: { getLinkBallot, submitLinkResponse, getPublicProjectSummary, getLinkWouldEndVote: vi.fn(() => of(false)) } },
+      ],
     });
   });
 
@@ -290,16 +296,27 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(testId('vote-link-submitted')).not.toBeNull();
   });
 
-  it('switches to update mode and retries once with PUT when POST says the ballot is not awaiting a response', async () => {
-    submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not awaiting response'))).mockReturnValueOnce(of(undefined));
-    await open(of(BALLOT));
-    submit();
+  it.each([undefined, true, false])(
+    'confirms a successful POST-to-PUT retry using authoritative capability %s or the observed submission',
+    async (canChangeVote) => {
+      submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not awaiting response'))).mockReturnValueOnce(of(undefined));
+      await open(of({ ...BALLOT, ballot: { ...BALLOT.ballot, can_change_vote: canChangeVote } }));
+      submit();
+      fixture.detectChanges();
 
-    expect(submitLinkResponse).toHaveBeenCalledTimes(2);
-    expect(submitLinkResponse.mock.calls[0][1]).toBe(false);
-    expect(submitLinkResponse.mock.calls[1][1]).toBe(true);
-    expect(state()).toBe('updated');
-  });
+      expect(submitLinkResponse).toHaveBeenCalledTimes(2);
+      expect(submitLinkResponse.mock.calls[0][1]).toBe(false);
+      expect(submitLinkResponse.mock.calls[1][1]).toBe(true);
+      expect(state()).toBe('updated');
+      if (canChangeVote === false) {
+        expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('Your vote is final.');
+        expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('You can change your vote');
+      } else {
+        expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('You can change your vote');
+        expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('Your vote is final.');
+      }
+    }
+  );
 
   it('retries only once: a second not-awaiting error is surfaced, not looped', async () => {
     submitLinkResponse.mockReturnValue(throwError(() => httpError(400, 'vote is not awaiting response')));
@@ -384,6 +401,180 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(state()).toBe('ready');
   });
 
+  describe('allow vote change (#4723)', () => {
+    const VOTED = { ...BALLOT.ballot, vote_status: 'responded', already_voted: true };
+
+    it('shows a locked submitted ballot as final, with no update action or form', async () => {
+      await open(of({ ...BALLOT, allow_vote_change: false, ballot: { ...VOTED, can_change_vote: false } }));
+
+      expect(testId('vote-link-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+      expect(testId('vote-link-update-prompt')).toBeNull();
+      expect(testId('vote-link-update-button')).toBeNull();
+      expect(testId('vote-link-ballot-form')).toBeNull();
+    });
+
+    it("trusts ITX's can_change_vote: false even when the vote reports changes allowed", async () => {
+      await open(of({ ...BALLOT, allow_vote_change: true, ballot: { ...VOTED, can_change_vote: false } }));
+
+      expect(testId('vote-link-ballot-final')).not.toBeNull();
+      expect(testId('vote-link-update-prompt')).toBeNull();
+    });
+
+    it('keeps the update prompt on a vote that allows changes', async () => {
+      await open(of({ ...BALLOT, allow_vote_change: true, ballot: { ...VOTED, can_change_vote: true } }));
+
+      expect(testId('vote-link-update-prompt')).not.toBeNull();
+      expect(testId('vote-link-ballot-final')).toBeNull();
+    });
+
+    it('still offers the update when an older backend omits both can_change_vote and allow_vote_change', async () => {
+      await open(of({ ...BALLOT, ballot: VOTED }));
+
+      expect(testId('vote-link-update-prompt')).not.toBeNull();
+      expect(testId('vote-link-ballot-final')).toBeNull();
+    });
+
+    it('shows the final message and reloads the ballot when an update returns 409', async () => {
+      const locked = { ...BALLOT, allow_vote_change: false, ballot: { ...VOTED, can_change_vote: false } };
+      getLinkBallot.mockReturnValueOnce(of({ ...BALLOT, ballot: VOTED })).mockReturnValueOnce(of(locked));
+      submitLinkResponse.mockReturnValue(throwError(() => httpError(409, 'this poll does not allow changing a submitted vote')));
+      window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
+      fixture = TestBed.createComponent(VoteLinkBallotComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      testId('vote-link-update-button')?.querySelector('button')?.click();
+      fixture.detectChanges();
+      submit();
+      fixture.detectChanges();
+
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), true);
+      expect(getLinkBallot).toHaveBeenCalledTimes(2);
+      expect(state()).toBe('ready');
+      expect(testId('vote-link-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+      expect(testId('vote-link-ballot-form')).toBeNull();
+      // The final box carries the message, so it is not repeated as an inline error.
+      expect(testId('vote-link-inline-error')).toBeNull();
+    });
+
+    it.each(['pending', 'stale', 'failed'] as const)('locks a POST-to-PUT finality conflict while reload is %s', async (reloadState) => {
+      await open(of(BALLOT));
+      const reload = new Subject<VoteLinkBallot>();
+      getLinkBallot.mockReturnValue(reload);
+      submitLinkResponse
+        .mockReturnValueOnce(throwError(() => httpError(400, 'vote is not awaiting response')))
+        .mockReturnValueOnce(throwError(() => httpError(409, 'this poll does not allow changing a submitted vote')));
+
+      submit();
+      fixture.detectChanges();
+      expect(testId('vote-link-ballot-final')).not.toBeNull();
+      expect(testId('vote-link-ballot-form')).toBeNull();
+
+      if (reloadState === 'stale') {
+        reload.next({ ...BALLOT, ballot: { ...BALLOT.ballot, can_change_vote: true } });
+        reload.complete();
+      } else if (reloadState === 'failed') {
+        reload.error(httpError(500, 'server error'));
+      }
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(state()).toBe('ready');
+      expect(testId('vote-link-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+      expect(testId('vote-link-ballot-form')).toBeNull();
+      expect(testId('vote-link-update-prompt')).toBeNull();
+      expect(getLinkBallot).toHaveBeenCalledTimes(2);
+      expect(submitLinkResponse).toHaveBeenNthCalledWith(1, expect.anything(), false);
+      expect(submitLinkResponse).toHaveBeenNthCalledWith(2, expect.anything(), true);
+      submit();
+      expect(submitLinkResponse).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not flip a first submission to PUT on a locked vote; it reloads into the final state', async () => {
+      const locked = { ...BALLOT, allow_vote_change: false };
+      getLinkBallot.mockReturnValueOnce(of(locked)).mockReturnValueOnce(of({ ...locked, ballot: { ...VOTED, can_change_vote: false } }));
+      submitLinkResponse.mockReturnValue(throwError(() => httpError(400, 'vote is not awaiting response')));
+      window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
+      fixture = TestBed.createComponent(VoteLinkBallotComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      submit();
+      fixture.detectChanges();
+
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), false);
+      expect(getLinkBallot).toHaveBeenCalledTimes(2);
+      expect(testId('vote-link-ballot-final')).not.toBeNull();
+    });
+
+    it.each(['pending', 'stale', 'failed'] as const)('locks a rejected first submission on a locked vote while reload is %s', async (reloadState) => {
+      const locked = { ...BALLOT, allow_vote_change: false };
+      await open(of(locked));
+      const reload = new Subject<VoteLinkBallot>();
+      getLinkBallot.mockReturnValue(reload);
+      submitLinkResponse.mockReturnValue(throwError(() => httpError(400, 'vote is not awaiting response')));
+
+      submit();
+      fixture.detectChanges();
+      expect(testId('vote-link-ballot-final')).not.toBeNull();
+      expect(testId('vote-link-ballot-form')).toBeNull();
+      submit();
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), false);
+
+      if (reloadState === 'stale') {
+        reload.next({ ...locked, ballot: { ...locked.ballot, can_change_vote: true } });
+        reload.complete();
+      } else if (reloadState === 'failed') {
+        reload.error(httpError(500, 'server error'));
+      }
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(state()).toBe('ready');
+      expect(testId('vote-link-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+      expect(testId('vote-link-ballot-form')).toBeNull();
+      expect(testId('vote-link-update-prompt')).toBeNull();
+      expect(getLinkBallot).toHaveBeenCalledTimes(2);
+      submit();
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), false);
+    });
+
+    it('shows the pre-submit notice on a first submission of a locked vote only', async () => {
+      await open(of({ ...BALLOT, allow_vote_change: false }));
+      expect(testId('vote-link-final-notice')?.textContent).toContain("Once you submit, your vote can't be changed.");
+      fixture.destroy();
+
+      await open(of(BALLOT));
+      expect(testId('vote-link-final-notice')).toBeNull();
+    });
+
+    it.each([
+      { allowVoteChange: false, canChangeVote: true },
+      { allowVoteChange: true, canChangeVote: undefined },
+      { allowVoteChange: undefined, canChangeVote: undefined },
+    ])('keeps update confirmation revisable for $allowVoteChange/$canChangeVote', async ({ allowVoteChange, canChangeVote }) => {
+      await open(of({ ...BALLOT, allow_vote_change: allowVoteChange, ballot: { ...VOTED, can_change_vote: canChangeVote } }));
+      testId('vote-link-update-button')?.querySelector('button')?.click();
+      fixture.detectChanges();
+      submit();
+      fixture.detectChanges();
+
+      expect(state()).toBe('updated');
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), true);
+      expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('You can change your vote');
+      expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('Your vote is final.');
+    });
+
+    it('says the vote is final on the thank-you screen of a locked vote', async () => {
+      await open(of({ ...BALLOT, allow_vote_change: false }));
+      submit();
+      fixture.detectChanges();
+
+      expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('Your vote is final.');
+      expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('You can change your vote');
+    });
+  });
+
   it('sets a no-referrer meta tag while mounted', async () => {
     await open(of(BALLOT));
 
@@ -420,7 +611,13 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     submitLinkResponse = vi.fn(() => of(undefined));
     TestBed.configureTestingModule({
       imports: [VoteLinkBallotComponent],
-      providers: [provideNoopAnimations(), { provide: VoteService, useValue: { getLinkBallot: vi.fn(), submitLinkResponse, getPublicProjectSummary } }],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: VoteService,
+          useValue: { getLinkBallot: vi.fn(), submitLinkResponse, getPublicProjectSummary, getLinkWouldEndVote: vi.fn(() => of(false)) },
+        },
+      ],
     });
   });
 
@@ -544,5 +741,191 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     submit({ abstain: true });
 
     expect(text('vote-link-thank-you-abstained')).toBe('You abstained');
+  });
+});
+
+describe('VoteLinkBallotComponent last-voter confirmation (#4726)', () => {
+  let fixture: ComponentFixture<VoteLinkBallotComponent>;
+  let getLinkBallot: ReturnType<typeof vi.fn>;
+  let submitLinkResponse: ReturnType<typeof vi.fn>;
+  let getLinkWouldEndVote: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.spyOn>;
+
+  const state = () => (fixture.componentInstance as unknown as { state: () => string }).state();
+  const testId = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+  const submit = (submission = SUBMISSION) => {
+    (fixture.componentInstance as unknown as { onSubmit: (s: VoteBallotSubmission) => void }).onSubmit(submission);
+    fixture.detectChanges();
+  };
+  const submitting = () => (fixture.componentInstance as unknown as { submitting: () => boolean }).submitting();
+  const lastConfirmation = () => confirm.mock.calls.at(-1)?.[0] as Confirmation;
+
+  async function open(ballot: VoteLinkBallot, wouldEndVote: Observable<boolean>): Promise<void> {
+    getLinkBallot.mockReturnValue(of(ballot));
+    getLinkWouldEndVote.mockReturnValue(wouldEndVote);
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
+    fixture = TestBed.createComponent(VoteLinkBallotComponent);
+    // The page's own scoped instance.
+    confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    getLinkBallot = vi.fn();
+    submitLinkResponse = vi.fn(() => of(undefined));
+    getLinkWouldEndVote = vi.fn();
+    TestBed.configureTestingModule({
+      imports: [VoteLinkBallotComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { getLinkBallot, submitLinkResponse, getLinkWouldEndVote, getPublicProjectSummary: vi.fn(() => of(null)) } },
+      ],
+    });
+  });
+
+  afterEach(() => window.history.replaceState(null, '', '/'));
+
+  it('re-reads the ballot with the token and asks before a first submission that would end the vote', async () => {
+    await open(BALLOT, of(true));
+    submit();
+
+    expect(getLinkWouldEndVote).toHaveBeenCalledExactlyOnceWith(TOKEN);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(lastConfirmation()).toMatchObject(VOTE_LAST_VOTER_CONFIRMATION);
+    expect(submitLinkResponse).not.toHaveBeenCalled();
+    expect(submitting()).toBe(true);
+  });
+
+  it('goes back without submitting when the voter rejects', async () => {
+    await open(BALLOT, of(true));
+    submit();
+    lastConfirmation().reject?.();
+    fixture.detectChanges();
+
+    expect(submitLinkResponse).not.toHaveBeenCalled();
+    expect(submitting()).toBe(false);
+    expect(state()).toBe('ready');
+  });
+
+  it('POSTs once accepted, and the thank-you screen offers no change on the vote it just ended', async () => {
+    await open(BALLOT, of(true));
+    submit();
+    lastConfirmation().accept?.();
+    fixture.detectChanges();
+
+    expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith({ vote_token: TOKEN, abstain: false, user_vote_content: SUBMISSION.userVoteContent }, false);
+    expect(state()).toBe('submitted');
+    expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('You can change your vote');
+  });
+
+  it('closes the dialog when another link is opened, and its stale accept submits nothing', async () => {
+    await open(BALLOT, of(true));
+    submit();
+    const close = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'close');
+    const staleConfirmation = lastConfirmation();
+
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}-second`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    fixture.detectChanges();
+    staleConfirmation.accept?.();
+    fixture.detectChanges();
+
+    expect(close).toHaveBeenCalled();
+    expect(getLinkBallot).toHaveBeenLastCalledWith(`${TOKEN}-second`);
+    expect(submitLinkResponse).not.toHaveBeenCalled();
+    expect(state()).toBe('ready');
+    expect(submitting()).toBe(false);
+  });
+
+  it('POSTs without asking when the submission would not end the vote, and still offers a change', async () => {
+    await open(BALLOT, of(false));
+    submit();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(submitLinkResponse).toHaveBeenCalledOnce();
+    expect(state()).toBe('submitted');
+    expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('You can change your vote');
+  });
+
+  it('still asks on a vote that makes submitted ballots final (AC-4)', async () => {
+    await open({ ...BALLOT, allow_vote_change: false }, of(true));
+    submit();
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(submitLinkResponse).not.toHaveBeenCalled();
+  });
+
+  it('checks before a PUT-to-POST retry and submits only after confirmation, without allowing another retry', async () => {
+    submitLinkResponse
+      .mockReturnValueOnce(throwError(() => httpError(400, 'vote is not responded')))
+      .mockReturnValueOnce(throwError(() => httpError(400, 'vote is not awaiting response')));
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, of(true));
+    submit();
+
+    expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ vote_token: TOKEN }), true);
+    expect(getLinkWouldEndVote).toHaveBeenCalledExactlyOnceWith(TOKEN);
+    expect(lastConfirmation()).toMatchObject(VOTE_LAST_VOTER_CONFIRMATION);
+    lastConfirmation().accept?.();
+
+    expect(submitLinkResponse).toHaveBeenCalledTimes(2);
+    expect(submitLinkResponse).toHaveBeenLastCalledWith(expect.objectContaining({ vote_token: TOKEN }), false);
+    expect(submitting()).toBe(false);
+  });
+
+  it('can reject a PUT-to-POST retry without submitting a first ballot', async () => {
+    submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not responded')));
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, of(true));
+    submit();
+    lastConfirmation().reject?.();
+
+    expect(submitLinkResponse).toHaveBeenCalledOnce();
+    expect(submitting()).toBe(false);
+    expect(state()).toBe('ready');
+  });
+
+  it('does not send a retry when its confirmation belongs to a previous token', async () => {
+    submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not responded')));
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, of(true));
+    submit();
+    const staleConfirmation = lastConfirmation();
+
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}-second`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    fixture.detectChanges();
+    staleConfirmation.accept?.();
+
+    expect(submitLinkResponse).toHaveBeenCalledOnce();
+    expect(submitting()).toBe(false);
+  });
+
+  it('cancels the retry advisory read when the link token changes', async () => {
+    const pending = new Subject<boolean>();
+    submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not responded')));
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, pending);
+    submit();
+
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}-second`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    fixture.detectChanges();
+    pending.next(true);
+    pending.complete();
+
+    expect(getLinkWouldEndVote).toHaveBeenCalledExactlyOnceWith(TOKEN);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(submitLinkResponse).toHaveBeenCalledOnce();
+    expect(submitting()).toBe(false);
+  });
+
+  it('never checks when changing an already-submitted ballot', async () => {
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, of(true));
+    (fixture.componentInstance as unknown as { onStartUpdate: () => void }).onStartUpdate();
+    fixture.detectChanges();
+    submit();
+
+    expect(getLinkWouldEndVote).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ vote_token: TOKEN }), true);
   });
 });

@@ -178,12 +178,45 @@ async function stubCandidates(page: Page, status: number, body: unknown): Promis
   return { searches, urls };
 }
 
-const inviteSearch = (page: Page) => page.locator('#mentorship-mentors-invitee-input');
+/** Stubs the invite POST, recording each body the browser sent. Registered after the read stub, so it takes the POST. */
+async function stubInvites(page: Page, status = 204): Promise<unknown[]> {
+  const invites: unknown[] = [];
+  await page.route(`**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/mentors`, (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    invites.push(route.request().postDataJSON());
+    return route.fulfill({ status });
+  });
+  return invites;
+}
 
-test.describe('Admin Mentors tab — invite search', () => {
-  test('lists each candidate by name and LFID, never an email, and sends the search in the body', async ({ page }) => {
+/** Opens the Invite a mentor dialog from the Mentors tab toolbar. */
+async function openInviteDialog(page: Page) {
+  await page.getByTestId('mentorship-mentors-invite').locator('button').click();
+  const dialog = page.getByTestId('mentorship-mentors-invite-dialog');
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+const inviteSearch = (page: Page) => page.locator('#mentorship-mentors-invite-search');
+const sendButton = (page: Page) => page.getByTestId('mentorship-mentors-invite-send').locator('button');
+
+test.describe('Admin Mentors tab — invite a mentor', () => {
+  test('opens the Invite a mentor dialog from the toolbar, starting with the prompt', async ({ page }) => {
+    await open(page, newMentorStubState());
+
+    await expect(page.getByTestId('mentorship-mentors-invite')).toContainText('Invite mentor');
+    const dialog = await openInviteDialog(page);
+
+    await expect(dialog).toContainText('Search LF users, or enter an email to invite someone new.');
+    await expect(page.getByTestId('mentorship-mentors-invite-prompt')).toContainText('Start typing a name, LFID or email.');
+    await expect(sendButton(page)).toBeDisabled();
+  });
+
+  test('lists each candidate by name and LFID, never an email, and invites the picked one by LFID', async ({ page }) => {
     const stub = await stubCandidates(page, 200, { data: [{ lfid: 'test-mentor-ada', name: 'Test Mentor Ada' }] });
     await open(page, newMentorStubState());
+    const invites = await stubInvites(page);
+    const dialog = await openInviteDialog(page);
 
     await inviteSearch(page).fill('test-mentor-ada');
 
@@ -193,15 +226,19 @@ test.describe('Admin Mentors tab — invite search', () => {
     await expect(option).not.toContainText('@');
     expect(stub.searches).toEqual([{ search: 'test-mentor-ada' }]);
     expect(stub.urls.every((url) => !url.includes('search='))).toBe(true);
+    await expect(sendButton(page)).toBeDisabled();
+
+    await option.click();
+    await expect(sendButton(page)).toHaveText(/Send invite/);
+    await sendButton(page).click();
+
+    await expect(page.getByText('Invitation sent.', { exact: true })).toBeVisible();
+    expect(invites).toEqual([{ lfid: 'test-mentor-ada' }]);
+    await expect(dialog).toBeHidden();
   });
 
   for (const [label, status, body, message] of [
-    [
-      'an email with no LF account',
-      200,
-      { data: [] },
-      'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.',
-    ],
+    ['an email with no LF account', 200, { data: [] }, 'No LF account uses this email'],
     [
       'a name with no Mentorship user',
       200,
@@ -214,11 +251,78 @@ test.describe('Admin Mentors tab — invite search', () => {
     test(`shows the empty-state message for ${label}`, async ({ page }) => {
       await stubCandidates(page, status, body);
       await open(page, newMentorStubState());
+      await openInviteDialog(page);
 
       await inviteSearch(page).fill(label.startsWith('a name') ? 'Nobody Known' : 'nobody@example.invalid');
 
       await expect(page.getByTestId('mentorship-mentors-candidates-empty')).toHaveText(message);
-      await expect(page.getByTestId('mentorship-mentors-invite').locator('button')).toBeDisabled();
+      if (label.startsWith('an email')) return;
+      await expect(sendButton(page)).toBeDisabled();
     });
   }
+});
+
+test.describe('Admin Mentors tab — invite by email', () => {
+  test('offers an email with no LF account in the dialog, with the steps, and sends only the email', async ({ page }) => {
+    await stubCandidates(page, 200, { data: [] });
+    await open(page, newMentorStubState());
+    const invites = await stubInvites(page);
+    const dialog = await openInviteDialog(page);
+
+    await inviteSearch(page).fill('new.mentor@example.invalid');
+
+    const offer = page.getByTestId('mentorship-mentors-email-invite');
+    await expect(offer).toContainText('Invite new.mentor@example.invalid by email');
+    await expect(page.getByTestId('mentorship-mentors-email-invite-steps').locator('li')).toHaveText([
+      'Create an LF account with this email',
+      'Set up a mentor profile',
+      'Accept the invitation',
+    ]);
+    expect(invites).toEqual([]);
+    await expect(sendButton(page)).toHaveText(/Send email invite/);
+    await sendButton(page).click();
+
+    await expect(page.getByText('Invitation sent. They need to create an LF account with this email address to accept it.')).toBeVisible();
+    expect(invites).toEqual([{ email: 'new.mentor@example.invalid' }]);
+    await expect(dialog).toBeHidden();
+  });
+
+  test('sends the email invite with Enter', async ({ page }) => {
+    await stubCandidates(page, 200, { data: [] });
+    await open(page, newMentorStubState());
+    const invites = await stubInvites(page);
+    const dialog = await openInviteDialog(page);
+
+    await inviteSearch(page).fill('new.mentor@example.invalid');
+    await expect(page.getByTestId('mentorship-mentors-email-invite')).toBeVisible();
+    await inviteSearch(page).press('Enter');
+
+    await expect(dialog).toBeHidden();
+    expect(invites).toEqual([{ email: 'new.mentor@example.invalid' }]);
+  });
+
+  test('Cancel closes the dialog and sends nothing', async ({ page }) => {
+    await stubCandidates(page, 200, { data: [] });
+    await open(page, newMentorStubState());
+    const invites = await stubInvites(page);
+    const dialog = await openInviteDialog(page);
+
+    await inviteSearch(page).fill('new.mentor@example.invalid');
+    await expect(page.getByTestId('mentorship-mentors-email-invite')).toBeVisible();
+    await page.getByTestId('mentorship-mentors-invite-cancel').locator('button').click();
+
+    await expect(dialog).toBeHidden();
+    expect(invites).toEqual([]);
+  });
+
+  test('does not offer an email invite for a name', async ({ page }) => {
+    await stubCandidates(page, 200, { data: [] });
+    await open(page, newMentorStubState());
+    await openInviteDialog(page);
+
+    await inviteSearch(page).fill('Nobody Known');
+
+    await expect(page.getByTestId('mentorship-mentors-candidates-empty')).toBeVisible();
+    await expect(page.getByTestId('mentorship-mentors-email-invite')).toHaveCount(0);
+  });
 });

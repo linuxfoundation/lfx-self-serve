@@ -108,7 +108,7 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
       groupType: 'all',
       range: 'YTD',
       page: 1,
-      size: 25,
+      size: 10,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
   });
@@ -266,7 +266,7 @@ describe('AnalyticsController.getEngagementAttendanceTrend', () => {
     getAttendanceTrend.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
   });
 
-  // The trend always covers the last twelve months, so a range on the wire would be a param the service ignores.
+  // The client cuts the selected year from every month the view holds, so a range on the wire is a param the service ignores.
   it('takes the foundation and project only, and answers with the service response', async () => {
     const { res, next, promise } = callTrend({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
     await promise;

@@ -56,8 +56,8 @@ describe('OrgScopeSelectComponent', () => {
     expect(select().form()).toBe(form);
     expect(select().control()).toBe('orgScope');
     expect(select().options()).toEqual([
-      { label: 'Insights organization', value: 'insights' },
-      { label: 'All related organizations (4)', value: 'all' },
+      { label: 'Insights company', value: 'insights' },
+      { label: 'All related companies (4)', value: 'all' },
     ]);
   });
 
@@ -68,7 +68,7 @@ describe('OrgScopeSelectComponent', () => {
       select()
         .options()
         .map((option: { label: string }) => option.label)
-    ).toEqual(['Insights organization', 'All related organizations']);
+    ).toEqual(['Insights company', 'All related companies']);
   });
 
   it('names the Insights organization in the tooltip under insights, and says every related organization under all', async () => {

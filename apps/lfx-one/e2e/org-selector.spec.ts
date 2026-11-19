@@ -17,8 +17,8 @@
  * - S11: upstream failure surfaces the empty state — no fixture rows leak through
  * - S12: every /api/nav/org-items row carries a non-null accountId
  * - S13: Snowflake lens regression guard
- * - S14: /org/overview empty state renders without redirect
- * - S15: /org/overview no-access state renders instead of the skeleton
+ * - S14: /company/overview empty state renders without redirect
+ * - S15: /company/overview no-access state renders instead of the skeleton
  * - S17: LF-team caller with zero assigned orgs still gets the switcher, no redirect or error toast
  * - S18: catalogue search runs only at or above the two-character minimum
  * - S19: discovered rows sit under their own heading and carry a membership chip
@@ -312,11 +312,11 @@ test.describe('Org Selector — no mock fallback (S11)', () => {
   });
 });
 
-// S14 — when /api/nav/org-items returns empty, /org/overview
-// must STAY on /org/overview (not bounce back to /) and render the empty-state
+// S14 — when /api/nav/org-items returns empty, /company/overview
+// must STAY on /company/overview (not bounce back to /) and render the empty-state
 // section. Replaces the earlier "redirect-on-empty" UX with an in-page disclosure.
-test.describe('Org Selector — /org/overview empty state without redirect (S14)', () => {
-  test('S14: empty org-items keeps the user on /org/overview and renders the empty-state section', async ({ page }) => {
+test.describe('Org Selector — /company/overview empty state without redirect (S14)', () => {
+  test('S14: empty org-items keeps the user on /company/overview and renders the empty-state section', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
@@ -346,38 +346,38 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
     );
 
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
+    await page.goto('/company/overview', { waitUntil: 'domcontentloaded' });
 
-    // The page must NOT bounce back to / when the user is already inside /org/*.
+    // The page must NOT bounce back to / when the user is already inside /company/*.
     // Wait for the page to fully settle (data-loaded=true) so the empty-state — gated on `loaded` —
     // can render. This also asserts the FOEC guard: empty-state never appears mid-load.
     const root = page.getByTestId('org-overview-page');
     await expect(root).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(root).toHaveAttribute('data-loaded', 'true', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.locator('main')).toHaveCount(1);
-    expect(page.url()).toContain('/org/overview');
+    expect(page.url()).toContain('/company/overview');
     await expect(root).toHaveAttribute('data-empty', 'true');
     await expect(page.getByTestId('org-overview-empty-state')).toBeVisible();
-    await expect(page.getByTestId('org-overview-empty-title')).toHaveText('No organization selected');
+    await expect(page.getByTestId('org-overview-empty-title')).toHaveText('No company selected');
   });
 });
 
 // GH-2220 — each of the 12 templates that dropped a nested <main> must still
-// render exactly one document landmark. S14 already covers /org/overview; this
+// render exactly one document landmark. S14 already covers /company/overview; this
 // matrix walks the rest so a page-level <main> cannot come back on a route the
 // overview assertion never visits.
 const SINGLE_MAIN_ROUTES: { name: string; path: string; stayOn: RegExp; root: string }[] = [
-  { name: 'org-overview', path: '/org/overview', stayOn: /\/org\/overview/, root: 'org-overview-page' },
-  { name: 'org-people', path: '/org/people', stayOn: /\/org\/people/, root: 'org-people-page' },
-  { name: 'org-contributions', path: '/org/contributions', stayOn: /\/org\/contributions/, root: 'org-contributions-page' },
-  { name: 'org-events', path: '/org/events', stayOn: /\/org\/events/, root: 'org-events-page' },
-  { name: 'org-training', path: '/org/training', stayOn: /\/org\/training/, root: 'org-training-page' },
-  { name: 'org-meetings', path: '/org/meetings', stayOn: /\/org\/meetings/, root: 'org-meetings-page' },
-  { name: 'org-groups', path: '/org/groups', stayOn: /\/org\/groups/, root: 'org-groups-page' },
-  { name: 'org-profile', path: '/org/profile', stayOn: /\/org\/profile/, root: 'org-profile-page' },
-  { name: 'org-projects', path: '/org/projects', stayOn: /\/org\/projects(?:\/|$|\?)/, root: 'org-projects-page' },
-  { name: 'org-roi', path: '/org/roi', stayOn: /\/org\/roi(?:\/|$|\?)/, root: 'org-roi-page' },
-  { name: 'org-roi-project-detail', path: '/org/roi/projects/cascade', stayOn: /\/org\/roi\/projects\//, root: 'org-roi-project-detail-page' },
+  { name: 'org-overview', path: '/company/overview', stayOn: /\/company\/overview/, root: 'org-overview-page' },
+  { name: 'org-people', path: '/company/people', stayOn: /\/company\/people/, root: 'org-people-page' },
+  { name: 'org-contributions', path: '/company/contributions', stayOn: /\/company\/contributions/, root: 'org-contributions-page' },
+  { name: 'org-events', path: '/company/events', stayOn: /\/company\/events/, root: 'org-events-page' },
+  { name: 'org-training', path: '/company/training', stayOn: /\/company\/training/, root: 'org-training-page' },
+  { name: 'org-meetings', path: '/company/meetings', stayOn: /\/company\/meetings/, root: 'org-meetings-page' },
+  { name: 'org-groups', path: '/company/groups', stayOn: /\/company\/groups/, root: 'org-groups-page' },
+  { name: 'org-profile', path: '/company/profile', stayOn: /\/company\/profile/, root: 'org-profile-page' },
+  { name: 'org-projects', path: '/company/projects', stayOn: /\/company\/projects(?:\/|$|\?)/, root: 'org-projects-page' },
+  { name: 'org-roi', path: '/company/roi', stayOn: /\/company\/roi(?:\/|$|\?)/, root: 'org-roi-page' },
+  { name: 'org-roi-project-detail', path: '/company/roi/projects/cascade', stayOn: /\/company\/roi\/projects\//, root: 'org-roi-project-detail-page' },
   { name: 'foundation-projects', path: '/foundation/projects', stayOn: /\/foundation\/projects/, root: 'foundation-projects-page' },
 ];
 
@@ -408,10 +408,10 @@ test.describe('Org and foundation pages — single main landmark (GH-2220)', () 
 
 // S15 — no-access disclosure: a user whose role-grants settle empty (no direct
 // writer/auditor grant) AND who has no persona-seeded accounts must land on a
-// definitive no-organization state ("No organization linked to your account", spec 053
-// registry) on /org/overview — never an endless loading skeleton. Stubs mirror S9 (the
+// definitive no-company state ("No company linked to your account", spec 053
+// registry) on /company/overview — never an endless loading skeleton. Stubs mirror S9 (the
 // visibility gate's two inputs) so the assertion is hermetic to the bootstrap user's real grants.
-test.describe('Org Selector — /org/overview no-access state (S15)', () => {
+test.describe('Org Selector — /company/overview no-access state (S15)', () => {
   test('S15: empty role-grants + no persona-seeds renders the no-access state, not the skeleton', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -446,7 +446,7 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     );
 
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
+    await page.goto('/company/overview', { waitUntil: 'domcontentloaded' });
 
     // hasNoOrgAccess settles to true once the stubbed (empty) role-grants resolve — independent of the
     // org-selector list fetch, which never fires for a zero-grants user. The no-access branch must win
@@ -454,9 +454,9 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     const root = page.getByTestId('org-overview-page');
     await expect(root).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(root).toHaveAttribute('data-no-access', 'true', { timeout: DATA_LOAD_TIMEOUT });
-    expect(page.url()).toContain('/org/overview');
+    expect(page.url()).toContain('/company/overview');
     await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
-    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No organization linked to your account');
+    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No company linked to your account');
     await expect(page.getByTestId('org-overview-no-access-secondary')).toContainText('How affiliations and access work');
     // The skeleton and the no-org-selected empty state must NOT show in this branch.
     await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
@@ -532,11 +532,11 @@ test.describe('Org Selector — Snowflake lens regression guard (S13)', () => {
 
 // S9 — zero-grants visibility gate (authenticated path). We stub both inputs
 // to `effectiveShowOrgSelector` — `/api/orgs/me/role-grants` (empty writers +
-// auditors) and `/api/user/personas` (empty `organizations`) — so the gate's
+// auditors) and `/api/user/personas` (empty `companies`) — so the gate's
 // `(writers ∨ auditors ∨ personaSeeds)` clause evaluates false against the real
 // authenticated session. The slot exposes its computed state on `data-visible`
 // (added for testability), giving us a hermetic assertion without
-// having to navigate to `/org` and unwind the empty-response redirect dance.
+// having to navigate to `/company` and unwind the empty-response redirect dance.
 test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
   test('S9: with empty role-grants AND empty persona-seeds, the slot reports data-visible="false" and the trigger is hidden', async ({ page }) => {
     // Skip when the auth fixture didn't bootstrap — same logic as the authorized suite.
@@ -592,16 +592,16 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
   });
 });
 
-// LF-team scenarios (S17–S20). These drive /org/overview rather than APP_HOME because the
+// LF-team scenarios (S17–S20). These drive /company/overview rather than APP_HOME because the
 // org-selector slot is ANDed with the me-lens parent input (`nav-menu-base.directive.ts`
 // initEffectiveShowOrgSelector), so the switcher is legitimately hidden on '/'.
-const ORG_LENS_HOME = '/org/overview';
+const ORG_LENS_HOME = '/company/overview';
 
 // S17 — an LF-team caller with zero assigned orgs must still get the switcher, and must land on
 // a usable page rather than being bounced away or shown a failure toast. This is the case that was
 // previously indistinguishable from "no access".
 test.describe('Org Selector — LF-team caller with zero assigned orgs (S17)', () => {
-  test('S17: LF-team caller with no grants sees the switcher on /org/overview with no redirect or error toast', async ({ page }) => {
+  test('S17: LF-team caller with no grants sees the switcher on /company/overview with no redirect or error toast', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
@@ -647,11 +647,11 @@ test.describe('Org Selector — LF-team caller with zero assigned orgs (S17)', (
     // The LF-team affordance is the search input — an empty list must not read as "no access".
     await openSelector(page, { expectSearch: true });
 
-    // Prompt copy, not "No organizations found": nothing has failed, the caller simply hasn't searched.
+    // Prompt copy, not "No companies found": nothing has failed, the caller simply hasn't searched.
     await expect(page.getByTestId('org-selector-search-prompt')).toBeVisible({ timeout: 5_000 });
     await expect(page.getByTestId('org-selector-empty')).toHaveCount(0);
 
-    expect(page.url()).toContain('/org/overview');
+    expect(page.url()).toContain('/company/overview');
     await expect(page.locator('.p-toast-message-error')).toHaveCount(0);
   });
 });
@@ -752,8 +752,8 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
 
     await page.getByTestId('org-search-input').fill('co');
 
-    await expect(page.getByTestId('org-selector-section-assigned')).toHaveText('Your organizations');
-    await expect(page.getByTestId('org-selector-section-discovered')).toHaveText('All organizations');
+    await expect(page.getByTestId('org-selector-section-assigned')).toHaveText('Your companies');
+    await expect(page.getByTestId('org-selector-section-discovered')).toHaveText('All companies');
 
     // The chip is keyed on the row being discovered, not on a search being active — an assigned row
     // never carries one, whatever the caller typed.
@@ -825,7 +825,7 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
 
     // Read: the profile renders for an org with no roster grant (authorizer-backed gate, DR-001)
     // and exposes no edit affordance — `org-profile-edit-button` is rendered only under `canEdit()`.
-    await page.goto('/org/profile', { waitUntil: 'domcontentloaded' });
+    await page.goto('/company/profile', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('org-profile-description')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-profile-load-error')).toHaveCount(0);
     await expect(page.getByTestId('org-profile-edit-button'), 'LF-team read access must not surface the profile edit affordance').toHaveCount(0);
@@ -851,8 +851,8 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
 // interleaved with org items. The sidebar now withholds the concrete menu until
 // afterNextRender, so the resolved menu is built entirely from client state and must contain org items only.
 test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)', () => {
-  test('S16: hard-refreshing /org/overview resolves to org-lens nav only, no Me-lens sections', async ({ page }) => {
-    await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
+  test('S16: hard-refreshing /company/overview resolves to org-lens nav only, no Me-lens sections', async ({ page }) => {
+    await page.goto('/company/overview', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
     // Wait for the sidebar to hydrate past the loading skeleton and render the resolved org menu.

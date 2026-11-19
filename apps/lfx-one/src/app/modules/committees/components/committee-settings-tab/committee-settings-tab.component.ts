@@ -580,6 +580,23 @@ export class CommitteeSettingsTabComponent {
     this.refreshMl$.next();
   }
 
+  // Mirrors openSyncPreviewDialog's own onClose handling (#5786) — the Auto Sync drawer card now owns
+  // the Sync Now dialog itself, but a reverse sync (mailing list → committee) still changes committee
+  // membership, so the same refresh/committeeUpdated behavior applies regardless of which entry point
+  // opened the dialog.
+  public onSyncApplied(result: MailingListSyncPreviewDialogResult): void {
+    // Same stale-committee guard as onSyncSettingsUpdated() above — the Sync Now dialog can likewise
+    // resolve after the user has switched committee context in the drawer, and without this check its
+    // refresh/committeeUpdated would land against the wrong committee (cursor Bugbot #5790 review).
+    if (this.autoSyncDrawerCommitteeUid !== undefined && this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
+      return;
+    }
+    this.refreshMl$.next();
+    if (result.committeeChanged) {
+      this.committeeUpdated.emit();
+    }
+  }
+
   // Re-fires the refresh that failed in initAssociatedMailingLists' catchError — the only recovery
   // path once refreshingMl is latched true with no successful refresh to clear it (#4899 review).
   public retryMlRefresh(): void {
@@ -1014,7 +1031,20 @@ export class CommitteeSettingsTabComponent {
         map(() => ({ uid, success: true })),
         catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
       );
-      if (explicitSyncMode && explicitSyncMode !== MailingListSyncMode.MANUAL) {
+      // Only leaving AUTO_MAILING_LIST_TO_COMMITTEE needs release-phase priority: it's the single-slot
+      // direction (cToMlUid blocks ML→C for everyone else while one list holds it), so a sibling
+      // claiming that slot must run after this list gives it up, same as moving to MANUAL. Leaving
+      // AUTO_COMMITTEE_TO_MAILING_LIST straight into the other auto mode does NOT need this treatment:
+      // routing it into releaseUpdates put it in the same parallel forkJoin as a sibling's own Manual
+      // release, so this list's ML→C activation could be validated before that sibling's release lands
+      // and fail the mixed-direction check — the exact regression this round's fix must not reintroduce
+      // (cursor/greptile/copilot/lfx-one #5790 round 2 review).
+      const releasesMlToCSlot =
+        currentlyOnThisCommittee && currentSyncMode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE && explicitSyncMode !== currentSyncMode;
+
+      if (releasesMlToCSlot) {
+        releaseUpdates.push({ uid, result$, releasesAutoSyncSlot: true });
+      } else if (explicitSyncMode && explicitSyncMode !== MailingListSyncMode.MANUAL) {
         activateUpdates.push({ uid, result$ });
       } else {
         const releasesAutoSyncSlot = currentlyOnThisCommittee && !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL;

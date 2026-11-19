@@ -15,6 +15,7 @@ import {
   requireGoogleConversionActionsAccess,
   requireGoogleMonitorAccess,
   requireGoogleUserListsAccess,
+  requireMetaCustomAudiencesAccess,
 } from '../middleware/require-marketing-access.middleware';
 
 /**
@@ -93,6 +94,13 @@ router.get('/google/user-lists', requireGoogleUserListsAccess, (req, res, next) 
 // 503, not that guard's uncoded 403.
 router.get('/google/audiences', requireGoogleAudiencesAccess, (req, res, next) => campaignController.getGoogleAdsAudiences(req, res, next));
 
+// The custom audiences on the Meta ad account a create uses, for the Implement tab's Meta audience
+// targeting (#5905). The ad account is shared, so the list names every foundation's audiences: answered
+// only to `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#550).
+// 404 while Meta audience targeting is off. Ahead of `router.use(requireCampaignManager)` for the same
+// reason as the Google lists above.
+router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res, next) => campaignController.getMetaCustomAudiences(req, res, next));
+
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
 // server flag is off — this is an intentional tightening of the prior (fully open) behavior, not
@@ -153,6 +161,11 @@ router.post('/send-workflow', (req, res, next) => campaignController.createSendW
 // connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
 router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));
 router.get('/linkedin/accounts', (req, res) => campaignController.getLinkedInAccounts(req, res));
+// The LinkedIn ad account a create uses and, for global_marketing_ops, the accounts it may choose (#5809).
+// 404 unless the create cutover and LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION are on.
+router.get('/linkedin/create-account', (req, res, next) => campaignController.getLinkedInCreateAccount(req, res, next));
+// The configured targeting profiles, so the Implement tab can show what each one targets (#5546).
+router.get('/linkedin/targeting-profiles', (req, res, next) => campaignController.getLinkedInTargetingProfiles(req, res, next));
 router.get('/linkedin/monitor', (req, res, next) => campaignController.getLinkedInMonitor(req, res, next));
 router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccounts(req, res));
 router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMonitor(req, res, next));

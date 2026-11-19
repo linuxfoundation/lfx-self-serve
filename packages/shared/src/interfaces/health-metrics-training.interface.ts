@@ -8,7 +8,7 @@ import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-m
 /** Section key from the design's `T2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsTrainingSectionKey = (typeof HEALTH_METRICS_TRAINING_SECTIONS)[number]['key'];
 
-/** Training's sub-nav badge, keyed to its own sections. */
+/** Training's sub-nav entry, keyed to its own sections. */
 export interface HealthMetricsTrainingSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsTrainingSectionKey;
 }

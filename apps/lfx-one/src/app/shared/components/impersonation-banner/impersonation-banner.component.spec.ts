@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Dialog } from '@angular/cdk/dialog';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -17,16 +18,19 @@ import { ImpersonationBannerComponent } from './impersonation-banner.component';
 describe('ImpersonationBannerComponent', () => {
   let fixture: ComponentFixture<ImpersonationBannerComponent>;
   let open: ReturnType<typeof vi.fn>;
+  let closeAll: ReturnType<typeof vi.fn>;
   const transition = signal<ImpersonationTransition | null>(null);
 
   beforeEach(async () => {
     open = vi.fn();
+    closeAll = vi.fn();
     transition.set(null);
     await TestBed.configureTestingModule({
       imports: [ImpersonationBannerComponent],
       providers: [
         provideNoopAnimations(),
         { provide: DialogService, useValue: { open } },
+        { provide: Dialog, useValue: { closeAll } },
         { provide: ImpersonationService, useValue: { stopImpersonation: vi.fn(), transition } },
         {
           provide: UserService,
@@ -44,6 +48,10 @@ describe('ImpersonationBannerComponent', () => {
 
     expect(root.querySelector('[data-testid="switch-impersonation-button"]')).toBeTruthy();
     expect(root.querySelector('[data-testid="stop-impersonation-button"]')).toBeTruthy();
+  });
+
+  it('publishes its height so overlays stay clear of it', () => {
+    expect(document.documentElement.style.getPropertyValue('--lfx-banner-height')).toBe('36px');
   });
 
   it('shows who is being viewed while no change is in flight', () => {
@@ -64,8 +72,10 @@ describe('ImpersonationBannerComponent', () => {
     expect(root.querySelector('[data-testid="stop-impersonation-button"] button')?.hasAttribute('disabled')).toBe(true);
   });
 
-  it('opens the impersonation dialog in switching mode', () => {
+  it('closes open drawers and opens the impersonation dialog in switching mode', () => {
     (fixture.componentInstance as unknown as { openSwitchDialog: () => void }).openSwitchDialog();
+
+    expect(closeAll).toHaveBeenCalled();
 
     expect(open).toHaveBeenCalledWith(ImpersonationDialogComponent, expect.objectContaining({ header: 'Switch Impersonated User', data: { switching: true } }));
   });

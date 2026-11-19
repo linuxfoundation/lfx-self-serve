@@ -243,6 +243,61 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
     });
 
+    describe('import confirmation', () => {
+      let toast: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        vi.useFakeTimers();
+        toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+      });
+
+      // Let the post-import roster poll finish while the host is still alive.
+      afterEach(() => vi.advanceTimersByTime(3000));
+
+      it('confirms how many members were added and that they may take a moment to appear', () => {
+        component.openImportMembersDialog();
+        dialogClose.next({ added: 2, conflicts: 1 } satisfies MemberImportDialogResult);
+
+        expect(toast).toHaveBeenCalledExactlyOnceWith({
+          severity: 'success',
+          summary: 'Members Added',
+          detail: '2 members added to Docs Working Group. New members may take a moment to appear.',
+          life: 6000,
+        });
+      });
+
+      it('uses the singular for one added member', () => {
+        component.openImportMembersDialog();
+        dialogClose.next({ added: 1, conflicts: 0 } satisfies MemberImportDialogResult);
+
+        expect(toast).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ detail: '1 member added to Docs Working Group. New members may take a moment to appear.' })
+        );
+      });
+
+      it('still confirms the imported group after the page moved to another group', async () => {
+        component.openImportMembersDialog();
+        fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2', name: 'Other Group' });
+        await fixture.whenStable();
+        dialogClose.next({ added: 3, conflicts: 0 } satisfies MemberImportDialogResult);
+
+        expect(toast).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ detail: expect.stringContaining('3 members added to Docs Working Group.') }));
+        expect(refreshes).toBe(0);
+      });
+
+      it.each([
+        ['conflicts only', { added: 0, conflicts: 2 }],
+        ['an unknown outcome', { added: 0, conflicts: 0, uncertain: true }],
+        ['a cancelled preview', { added: 0, conflicts: 0 }],
+        ['no result', undefined],
+      ] satisfies [string, MemberImportDialogResult | undefined][])('shows no confirmation after %s', (_label, result) => {
+        component.openImportMembersDialog();
+        dialogClose.next(result);
+
+        expect(toast).not.toHaveBeenCalled();
+      });
+    });
+
     it.each([{ membersReady: false }, { membersError: true }, { membersLoading: true }])(
       'blocks direct Add and Import calls while roster is unavailable: %j',
       async (inputs) => {

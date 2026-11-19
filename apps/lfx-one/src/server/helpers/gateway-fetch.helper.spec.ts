@@ -277,3 +277,45 @@ describe('gatewayFetch empty success body', () => {
     expect(error.code).toBe('UPSTREAM_INVALID_RESPONSE');
   });
 });
+
+describe('gatewayFetch cache bypass', () => {
+  const req = { apiGatewayToken: 'gateway-token' } as Request;
+  const options = {
+    operation: 'get_user_preference',
+    service: 'user_service',
+    errorMessage: 'Preference fetch failed',
+    errorCode: 'USER_PREFERENCE_FETCH_FAILED',
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  function stubFetch(): ReturnType<typeof vi.fn> {
+    const fetchMock = vi.fn(async () => new Response('{"Data":[]}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  function sentHeaders(fetchMock: ReturnType<typeof vi.fn>): Record<string, string> {
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    return init.headers as Record<string, string>;
+  }
+
+  it('asks the upstream to skip its read cache when the caller opts in', async () => {
+    const fetchMock = stubFetch();
+
+    await gatewayFetch(req, 'https://gateway.example.test/preferences', { ...options, bypassCache: true });
+
+    expect(sentHeaders(fetchMock)['X-LFX-CACHE']).toBe('false');
+  });
+
+  it('leaves the upstream cache alone by default', async () => {
+    const fetchMock = stubFetch();
+
+    await gatewayFetch(req, 'https://gateway.example.test/preferences', options);
+
+    expect(sentHeaders(fetchMock)).not.toHaveProperty('X-LFX-CACHE');
+  });
+});

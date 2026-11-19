@@ -13,7 +13,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
+import { EMPTY, firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewsletterManageComponent } from './newsletter-manage.component';
@@ -57,6 +57,8 @@ describe('NewsletterManageComponent publications (#4349)', () => {
     getNewsletter: ReturnType<typeof vi.fn>;
     getPublication: ReturnType<typeof vi.fn>;
     getRecipientCount: ReturnType<typeof vi.fn>;
+    resolveAudience: ReturnType<typeof vi.fn>;
+    getAudience: ReturnType<typeof vi.fn>;
   };
   let messageAdd: ReturnType<typeof vi.fn>;
   let committees: { uid: string; category: string }[];
@@ -83,6 +85,9 @@ describe('NewsletterManageComponent publications (#4349)', () => {
       getNewsletter: vi.fn(),
       getPublication: vi.fn(() => of(PUBLICATION)),
       getRecipientCount: vi.fn(() => of({ count: 1 })),
+      // A saved draft resolves its audience snapshot (#4352); these specs don't depend on it.
+      resolveAudience: vi.fn(() => EMPTY),
+      getAudience: vi.fn(() => EMPTY),
     };
     messageAdd = vi.fn();
     committees = [];

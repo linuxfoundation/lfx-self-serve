@@ -9,11 +9,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@lfx-one/shared/constants', () => ({
   ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP: 5,
   ORG_CATALOGUE_SEARCH_MIN_CHARS: 2,
+  ORG_LENS_ROLLUP_ENABLED_FLAG: 'org-lens-rollup-enabled',
 }));
 
-const { proxyRequest, getAccessAwareOrgs, getEffectiveUsername, listClaOnlyOrgs } = vi.hoisted(() => ({
+const { proxyRequest, getAccessAwareOrgs, resolveFamilyRoots, isFlagEnabled, getEffectiveUsername, listClaOnlyOrgs } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getAccessAwareOrgs: vi.fn(),
+  resolveFamilyRoots: vi.fn(),
+  isFlagEnabled: vi.fn(),
   getEffectiveUsername: vi.fn(),
   listClaOnlyOrgs: vi.fn(),
 }));
@@ -27,13 +30,16 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+    public resolveFamilyRoots = resolveFamilyRoots;
   },
 }));
+vi.mock('./launchdarkly-server.service', () => ({ LaunchDarklyServerService: { getInstance: () => ({ isFlagEnabled }) } }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 // The real predicate is pinned in org-cla-only-orgs.service.spec.ts; the service's own imports reach
 // the Angular-bearing shared barrel, so it cannot be loaded here.
 vi.mock('./org-cla-only-orgs.service', () => ({
   claOnlyEntryApplies: (isStaff: boolean, grantedOrgCount: number, rosterAnswered: boolean) => rosterAnswered && !isStaff && grantedOrgCount === 0,
+  claOnlyListApplies: (isStaff: boolean, rosterAnswered: boolean) => rosterAnswered && !isStaff,
   OrgClaOnlyOrgsService: class {
     public listOrgs = listClaOnlyOrgs;
   },
@@ -64,6 +70,90 @@ beforeEach(() => {
     loadedAt: 'now',
     username: 'staffer',
     isStaff: true,
+  });
+  isFlagEnabled.mockResolvedValue(false);
+  resolveFamilyRoots.mockResolvedValue(new Map());
+});
+
+describe('OrgNavigationService — family roll-up labels on a staff search (#5942)', () => {
+  const ROOT = { rootUid: 'top', rootName: 'Top Co', rootLogoUrl: null };
+
+  beforeEach(() => {
+    isFlagEnabled.mockResolvedValue(true);
+  });
+
+  it('labels a family company with its top account and leaves a standalone company unlabelled', async () => {
+    proxyRequest.mockResolvedValue(cataloguePage(['child', 'solo'], null));
+    resolveFamilyRoots.mockResolvedValue(new Map([['child', ROOT]]));
+
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+
+    expect(isFlagEnabled).toHaveBeenCalledWith(req, 'org-lens-rollup-enabled', false);
+    expect(response.items.find((item) => item.uid === 'child')).toMatchObject({ familyRootUid: 'top', familyRootName: 'Top Co' });
+    expect(response.items.find((item) => item.uid === 'solo')).not.toHaveProperty('familyRootUid');
+  });
+
+  it('hands the climb the indexed record of every row shown, assigned rows included', async () => {
+    getAccessAwareOrgs.mockResolvedValue({
+      resolved: new Map([['owned', { roleSource: 'direct-writer' }]]),
+      orgDocByUid: new Map([['owned', { name: 'Owned Org', parent_uid: 'top' }]]),
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: 'staffer',
+      isStaff: true,
+    });
+    proxyRequest.mockResolvedValue(cataloguePage(['found'], null));
+
+    await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+
+    const docs = resolveFamilyRoots.mock.calls[0][1] as Map<string, unknown>;
+    expect([...docs.keys()].sort()).toEqual(['found', 'owned']);
+    expect(docs.get('owned')).toMatchObject({ parent_uid: 'top' });
+  });
+
+  it('labels nothing and skips the climb while the roll-up flag is off for the caller', async () => {
+    isFlagEnabled.mockResolvedValue(false);
+    proxyRequest.mockResolvedValue(cataloguePage(['child'], null));
+
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+
+    expect(resolveFamilyRoots).not.toHaveBeenCalled();
+    expect(response.items[0]).not.toHaveProperty('familyRootUid');
+  });
+
+  it('still answers the search, unlabelled, when the climb fails', async () => {
+    proxyRequest.mockResolvedValue(cataloguePage(['child'], null));
+    resolveFamilyRoots.mockRejectedValue(new Error('query-service down'));
+
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+
+    expect(response.upstream_failed).toBe(false);
+    expect(response.items.map((item) => item.uid)).toEqual(['child']);
+    expect(response.items[0]).not.toHaveProperty('familyRootUid');
+  });
+
+  it('labels nothing for a caller who is not staff, who has no catalogue search', async () => {
+    getAccessAwareOrgs.mockResolvedValue({
+      resolved: new Map([['owned', { roleSource: 'direct-writer' }]]),
+      orgDocByUid: new Map([['owned', { name: 'Owned Org', parent_uid: 'top' }]]),
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: 'member',
+      isStaff: false,
+      staffCheck: 'ok',
+    });
+
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'own' });
+
+    expect(isFlagEnabled).not.toHaveBeenCalled();
+    expect(resolveFamilyRoots).not.toHaveBeenCalled();
+    expect(response.items[0]).not.toHaveProperty('familyRootUid');
+  });
+
+  it('does not evaluate the flag for an unsearched list', async () => {
+    await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(isFlagEnabled).not.toHaveBeenCalled();
   });
 });
 
@@ -162,23 +252,138 @@ describe('OrgNavigationService — CLA-only organizations', () => {
       expect.objectContaining({ uid: COMPANY_B, name: 'Beta Corp', claOnly: true }),
     ]);
     expect(response).toMatchObject({ next_page_token: null, upstream_failed: false, total: 2 });
+    expect(response.cla_only_deferred).toBeUndefined();
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 
-  it('never asks for CLA-only organizations when Org Lens resolved any', async () => {
-    getAccessAwareOrgs.mockResolvedValue({
-      resolved: new Map([[COMPANY_A, { roleSource: 'direct-writer' }]]),
-      orgDocByUid: new Map([[COMPANY_A, { name: 'Acme Corp' }]]),
-      upstreamFailed: false,
-      loadedAt: 'now',
-      username: 'contributor',
-      isStaff: false,
-    });
+  it('answers cla_only with nothing for a caller with no Org Lens grant, whose CLA-only rows are already on the main list', async () => {
+    noGrants();
+    listClaOnlyOrgs.mockResolvedValue({ orgs: [{ uid: COMPANY_A, name: 'Acme Corp' }], failed: false });
 
-    const response = await new OrgNavigationService().getOrgItems(req, {});
+    const response = await new OrgNavigationService().getOrgItems(req, { claOnly: true });
 
     expect(listClaOnlyOrgs).not.toHaveBeenCalled();
-    expect(response.items).toEqual([expect.not.objectContaining({ claOnly: true })]);
+    expect(response).toEqual({ items: [], next_page_token: null, upstream_failed: false, total: 0 });
+  });
+
+  describe('for a caller who also holds organizations', () => {
+    const HELD_Z = '001Z000000ZZZZZZZZ';
+    const HELD_INHERITED = '001I000000IIIIIIII';
+    const COMPANY_C = '001C000000CCCCCCCC';
+
+    function holds(overrides: Record<string, unknown> = {}) {
+      getAccessAwareOrgs.mockResolvedValue({
+        resolved: new Map([
+          [HELD_Z, { roleSource: 'direct-writer' }],
+          [HELD_INHERITED, { roleSource: 'inherited-auditor', parentName: 'Zeta Corp' }],
+        ]),
+        orgDocByUid: new Map([
+          [HELD_Z, { name: 'Zeta Corp' }],
+          [HELD_INHERITED, { name: 'Zeta Labs' }],
+        ]),
+        upstreamFailed: false,
+        loadedAt: 'now',
+        username: 'contributor',
+        isStaff: false,
+        ...overrides,
+      });
+    }
+
+    it('answers the held organizations without waiting on the CLA-only lookup, and says the CLA-only rows are deferred', async () => {
+      holds();
+      listClaOnlyOrgs.mockReturnValue(new Promise(() => undefined));
+
+      const response = await new OrgNavigationService().getOrgItems(req, {});
+
+      expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+      expect(response.items.map((item) => item.uid)).toEqual([HELD_Z, HELD_INHERITED]);
+      expect(response).toMatchObject({ next_page_token: null, upstream_failed: false, total: 2, cla_only_deferred: true });
+    });
+
+    it('defers the CLA-only rows on a search page too, filtering only the held half', async () => {
+      holds();
+
+      const response = await new OrgNavigationService().getOrgItems(req, { name: 'lab' });
+
+      expect(response.items.map((item) => item.uid)).toEqual([HELD_INHERITED]);
+      expect(response.cla_only_deferred).toBe(true);
+    });
+
+    describe('with cla_only', () => {
+      it('answers only the CLA-only companies, alphabetical and unfiltered by the name', async () => {
+        holds();
+        listClaOnlyOrgs.mockResolvedValue({
+          orgs: [
+            { uid: COMPANY_B, name: 'Beta Corp' },
+            { uid: COMPANY_A, name: 'Acme Corp' },
+          ],
+          failed: false,
+        });
+
+        const response = await new OrgNavigationService().getOrgItems(req, { claOnly: true, name: 'beta' });
+
+        expect(response.items.map((item) => [item.uid, item.claOnly === true])).toEqual([
+          [COMPANY_A, true],
+          [COMPANY_B, true],
+        ]);
+        expect(response).toEqual({ items: response.items, next_page_token: null, upstream_failed: false, total: 2 });
+      });
+
+      it('never looks up an organization the caller holds, directly or by inheritance', async () => {
+        holds();
+        listClaOnlyOrgs.mockResolvedValue({ orgs: [], failed: false });
+
+        await new OrgNavigationService().getOrgItems(req, { claOnly: true });
+
+        expect(listClaOnlyOrgs).toHaveBeenCalledWith(req, new Set([HELD_Z, HELD_INHERITED]));
+      });
+
+      it('reports a failed lookup alongside the rows that did resolve', async () => {
+        holds();
+        listClaOnlyOrgs.mockResolvedValue({ orgs: [{ uid: COMPANY_C, name: 'Gamma Corp' }], failed: true });
+
+        const response = await new OrgNavigationService().getOrgItems(req, { claOnly: true });
+
+        expect(response.items.map((item) => item.uid)).toEqual([COMPANY_C]);
+        expect(response.upstream_failed).toBe(true);
+      });
+
+      it.each([
+        ['the roster never loaded', { upstreamFailed: true }, true],
+        ['the roll-up is degraded', { degraded: true }, true],
+        ['the staff check failed', { staffCheck: 'failed' }, true],
+        ['the caller is staff', { isStaff: true }, false],
+      ])('answers an empty list without asking when %s, reporting whether the list went unchecked', async (_label, overrides, upstreamFailed) => {
+        holds(overrides);
+
+        const response = await new OrgNavigationService().getOrgItems(req, { claOnly: true });
+
+        expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+        expect(response).toEqual({ items: [], next_page_token: null, upstream_failed: upstreamFailed, total: 0 });
+      });
+    });
+
+    it.each([
+      ['the roll-up is degraded', { degraded: true }],
+      ['the staff check failed', { staffCheck: 'failed' }],
+    ])('lists the held organizations alone when %s, since what is held is not proven', async (_label, overrides) => {
+      holds(overrides);
+
+      const response = await new OrgNavigationService().getOrgItems(req, {});
+
+      expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+      expect(response.items.map((item) => item.uid)).toEqual([HELD_Z, HELD_INHERITED]);
+      expect(response.cla_only_deferred).toBeUndefined();
+    });
+
+    it('asks nothing and defers nothing on a continuation page', async () => {
+      holds();
+
+      const response = await new OrgNavigationService().getOrgItems(req, { pageToken: 'cursor-2' });
+
+      expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+      expect(response.cla_only_deferred).toBeUndefined();
+    });
   });
 
   it('never asks for CLA-only organizations while the roll-up is degraded, since inherited organizations may be missing', async () => {
@@ -189,12 +394,13 @@ describe('OrgNavigationService — CLA-only organizations', () => {
     expect(listClaOnlyOrgs).not.toHaveBeenCalled();
   });
 
-  it('never asks for CLA-only organizations for staff', async () => {
-    proxyRequest.mockResolvedValue(cataloguePage([], null));
+  it('never asks for or defers CLA-only organizations for staff', async () => {
+    proxyRequest.mockResolvedValue(cataloguePage(['found'], null));
 
-    await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'org' });
 
     expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+    expect(response.cla_only_deferred).toBeUndefined();
   });
 
   it('reports a failed lookup alongside the rows that did resolve', async () => {

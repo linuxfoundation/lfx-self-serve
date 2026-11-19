@@ -507,7 +507,7 @@ export class MeetingComposerFormService {
     const meetingUid = this.meetingId() ?? '';
 
     this.registrantUpdates.set({
-      // `occurrence_id` is added here rather than by the shared mapper, which the pre-v2 guest screens use
+      // `occurrence_id` is added here rather than by the shared mapper, which the meeting card's guest list uses
       // too: only the occurrence edit ever sets it on a new guest (see `newGuestDefaults`).
       toAdd: next
         .filter((guest) => guest.state === 'new')
@@ -2097,10 +2097,9 @@ export class MeetingComposerFormService {
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,
-      // Read through the default (pre-v2) lock, not the composer's: a restricted meeting saved before the
-      // composer existed opens with sharing off, so a stale stored `true` is never re-saved as a choice.
-      // A v2 opt-in on a restricted meeting reads the same way and has to be switched on again per edit.
-      show_meeting_attendees: getSavedAttendeeVisibility(meeting) ?? false,
+      // Read through the composer lock, the rule this form writes with: a restricted (invite-only) meeting
+      // reopens with the organizer's stored choice, and only a Board meeting reads as undecided (off).
+      show_meeting_attendees: getSavedAttendeeVisibility(meeting, COMPOSER_ATTENDEE_LOCK) ?? false,
       zoom_ai_enabled: meeting.ai_summary_enabled || false,
       require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
@@ -2236,7 +2235,7 @@ export class MeetingComposerFormService {
    * Rejects an occurrence start that falls in the series zone's spring-forward gap.
    * @description `combineDateTime` silently normalizes such a time (2:30 AM on a spring-forward day becomes
    * 3:30 AM), so it would pass the future check and move the occurrence to an instant the organizer never
-   * picked. The same guard the pre-v2 reschedule dialog applies; occurrence mode only, since the occurrence
+   * picked. The same guard the reschedule-occurrence dialog applies; occurrence mode only, since the occurrence
    * endpoint always reads the time in the series zone.
    */
   private occurrenceWallTimeValidator(): ValidatorFn {

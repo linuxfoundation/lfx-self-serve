@@ -1,19 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
+import { DialogRef } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Injector, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Meeting, MeetingDetailsDrawerData, MeetingHomeRow, MeetingOccurrence, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsContext } from './meeting-details.context';
+import { MeetingDetailsSource } from './meeting-details.source';
 
 const START = '2050-01-01T09:00:00.000Z';
 const NEXT: MeetingOccurrence = { occurrence_id: '2525245200', title: '', start_time: '2050-01-08T09:00:00.000Z', duration: 45 } as MeetingOccurrence;
@@ -31,23 +31,24 @@ describe('MeetingDetailsContext', () => {
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn<(row: MeetingHomeRow) => void>>;
   const upcomingRows = signal<MeetingHomeRow[]>([]);
+  const authenticated = signal(true);
+  let sourceExtras: Partial<MeetingDetailsSource> = {};
   const now = signal(new Date('2049-12-31T09:00:00.000Z'));
 
-  const create = (row: MeetingHomeRow, detail$: Observable<Meeting> = of(row.meeting)): MeetingDetailsContext => {
+  const create = (row: MeetingHomeRow, detail$: Observable<Meeting> = of(row.meeting), hosted = true): MeetingDetailsContext => {
     detail = vi.fn().mockReturnValue(detail$);
     toast = vi.fn();
     close = vi.fn();
     refreshUserMeetings = vi.fn();
     open = vi.fn<(row: MeetingHomeRow) => void>();
-    const data: MeetingDetailsDrawerData = { row, tab: 'agenda', injector: Injector.NULL, open };
+    const hostRef = hosted ? ({ close } as unknown as DialogRef) : null;
+    const source: MeetingDetailsSource = { row, tab: 'agenda', now, upcomingRows, hostRef, open, applySummaryChange: vi.fn(), ...sourceExtras };
     TestBed.configureTestingModule({
       providers: [
         MeetingDetailsContext,
-        { provide: DIALOG_DATA, useValue: data },
-        { provide: DialogRef, useValue: { close } },
+        { provide: MeetingDetailsSource, useValue: source },
         { provide: MeetingService, useValue: { getMeetingDetail: detail, removedRegistrationMeetingIds: signal(new Set<string>()) } },
-        { provide: UserService, useValue: { refreshUserMeetings, refreshUserPastMeetings: vi.fn() } },
-        { provide: MeetingsHomeStore, useValue: { now, upcomingRows } },
+        { provide: UserService, useValue: { authenticated, refreshUserMeetings, refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => [] } },
         { provide: UiToastService, useValue: { show: toast } },
       ],
     });
@@ -58,6 +59,8 @@ describe('MeetingDetailsContext', () => {
     TestBed.resetTestingModule();
     now.set(new Date('2049-12-31T09:00:00.000Z'));
     upcomingRows.set([]);
+    authenticated.set(true);
+    sourceExtras = {};
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
@@ -69,6 +72,47 @@ describe('MeetingDetailsContext', () => {
     expect(context.meeting().title).toBe('Renamed');
     expect(context.shownRow().title).toBe('Renamed');
     expect(context.invited()).toBe(false);
+  });
+
+  it('keeps the public copy for a signed-out visitor, who sees no guests', () => {
+    authenticated.set(false);
+    const context = create(buildRow({ ...MEETING, organizer: true }));
+
+    expect(detail).not.toHaveBeenCalled();
+    expect(context.canViewGuests()).toBe(false);
+    expect(context.fullAccess()).toBe(true);
+    expect(context.signedInAccess()).toBe(false);
+  });
+
+  it('keeps the public copy and no full access when the host says the viewer lacks it', () => {
+    sourceExtras = { fullAccess: false };
+    const context = create(buildRow({ ...MEETING, organizer: true }));
+
+    expect(detail).not.toHaveBeenCalled();
+    expect(context.fullAccess()).toBe(false);
+    expect(context.canViewGuests()).toBe(false);
+  });
+
+  it("takes a passcode guest's join window from the host, as the copy has no start", () => {
+    sourceExtras = { fullAccess: false, canJoin: signal(false) };
+    expect(create({ ...buildRow(MEETING), startTime: '' }).state()).toBe('far');
+
+    TestBed.resetTestingModule();
+    sourceExtras = { fullAccess: false, canJoin: signal(true) };
+    expect(create({ ...buildRow(MEETING), startTime: '' }).state()).toBe('soon');
+  });
+
+  it.each([
+    ['a signed-out visitor', () => authenticated.set(false)],
+    ['a viewer without full access', () => (sourceExtras = { fullAccess: false })],
+  ])('sends %s picking an upcoming date on a past row to that date of the series', (_case, arrange) => {
+    arrange();
+    const context = create({ ...buildRow(PAST as unknown as Meeting), key: 'past-1' });
+
+    context.showUpcoming(NEXT);
+
+    expect(detail).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ meeting: { id: 'mtg-1', title: 'Synthetic sync' }, startTime: NEXT.start_time }));
   });
 
   it('closes the drawer and reloads the list when the meeting is gone', () => {
@@ -83,15 +127,57 @@ describe('MeetingDetailsContext', () => {
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Meeting unavailable' }));
   });
 
-  it('keeps the row data open with a toast on any other error', () => {
+  it('flags a load error on any other error, and clears it once a retry loads', () => {
     const context = create(
       buildRow(MEETING),
       throwError(() => new HttpErrorResponse({ status: 500 }))
     );
 
-    expect(context.meeting()).toBe(MEETING);
+    expect(context.loadError()).toBe(true);
     expect(close).not.toHaveBeenCalled();
-    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Meeting details unavailable' }));
+    expect(toast).not.toHaveBeenCalled();
+
+    detail.mockReturnValue(of({ ...MEETING, title: 'Renamed' }));
+    context.retryLoad();
+
+    expect(context.loadError()).toBe(false);
+    expect(context.retrying()).toBe(false);
+    expect(context.meeting().title).toBe('Renamed');
+  });
+
+  it('keeps retrying while a newer retry replaces a pending one', () => {
+    const context = create(
+      buildRow(MEETING),
+      throwError(() => new HttpErrorResponse({ status: 500 }))
+    );
+    const first = new Subject<Meeting>();
+    const second = new Subject<Meeting>();
+    context.meeting();
+
+    detail.mockReturnValue(first);
+    context.retryLoad();
+    detail.mockReturnValue(second);
+    context.retryLoad();
+
+    expect(context.retrying()).toBe(true);
+
+    second.next({ ...MEETING, title: 'Renamed' });
+
+    expect(context.retrying()).toBe(false);
+    expect(context.loadError()).toBe(false);
+  });
+
+  it('runs from a source alone, outside a dialog and the meetings home page', () => {
+    const context = create(
+      buildRow(MEETING),
+      throwError(() => new HttpErrorResponse({ status: 404 })),
+      false
+    );
+
+    expect(context.meeting()).toBe(MEETING);
+    expect(context.now()).toEqual(now());
+    expect(close).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Meeting unavailable' }));
   });
 
   it('rebuilds the row for another date without the first date answer', () => {
@@ -151,10 +237,26 @@ describe('MeetingDetailsContext', () => {
     expect(context.invited()).toBe(false);
   });
 
+  it('counts the viewer as invited once the guests list shows them under a new registration', () => {
+    const removed = signal(new Set<string>([MEETING.id]));
+    TestBed.overrideProvider(MeetingService, {
+      useValue: { getMeetingDetail: () => of(MEETING), removedRegistrationMeetingIds: removed, clearRemovedRegistration: vi.fn() },
+    });
+    const stale = { ...MEETING, organizer: true, invited: false, my_registrant_ids: [] };
+    const context = create(buildRow(stale), of(stale));
+    expect(context.invited()).toBe(false);
+
+    removed.set(new Set());
+    context.listedSelfRegistrantUids.set(['reg-new']);
+    expect(context.invited()).toBe(true);
+  });
+
   it('reloads the participants now and after 1s, and the past list behind the drawer', () => {
     vi.useFakeTimers();
     const refreshUserPastMeetings = vi.fn();
-    TestBed.overrideProvider(UserService, { useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings } });
+    TestBed.overrideProvider(UserService, {
+      useValue: { authenticated, refreshUserMeetings: vi.fn(), refreshUserPastMeetings, confirmedMeetingRsvps: () => [] },
+    });
     const context = create(buildRow(PAST as unknown as Meeting));
 
     context.refreshParticipants();
@@ -162,6 +264,148 @@ describe('MeetingDetailsContext', () => {
     expect(refreshUserPastMeetings).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(1000);
     expect(context.participantsVersion()).toBe(2);
+  });
+
+  it('keeps a saved answer after a feed refresh retires it, and takes a newer copy of the same answer', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: () => true,
+      },
+    });
+    const context = create(buildRow(MEETING));
+    const saved = { id: 'rsvp-1', registrant_id: 'reg-1', response_type: 'accepted', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([saved]);
+    expect(context.savedRsvps()).toEqual([saved]);
+
+    confirmed.set([]);
+    expect(context.savedRsvps()).toEqual([saved]);
+
+    const changed = { ...saved, response_type: 'declined', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
+    confirmed.set([changed]);
+    expect(context.savedRsvps()).toEqual([changed]);
+  });
+
+  it('keeps a write saved after a retirement even when its acknowledgement is older than the kept copy', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: () => true,
+      },
+    });
+    const context = create(buildRow(MEETING));
+    const saved = { id: 'rsvp-1', registrant_id: 'reg-1', response_type: 'accepted', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([saved]);
+    context.savedRsvps();
+    confirmed.set([]);
+    context.savedRsvps();
+    const rewritten = { ...saved, response_type: 'declined', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+    confirmed.set([rewritten]);
+
+    expect(context.savedRsvps()).toEqual([rewritten]);
+  });
+
+  it('drops answers from other registrations once a newer all-dates answer covers them', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: () => true,
+      },
+    });
+    const context = create(buildRow(MEETING));
+    const single = { id: 'rsvp-a', registrant_id: 'reg-a', response_type: 'accepted', scope: 'single', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+    const allDates = { id: 'rsvp-b', registrant_id: 'reg-b', response_type: 'declined', scope: 'all', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([single]);
+    expect(context.savedRsvps()).toEqual([single]);
+    confirmed.set([allDates]);
+
+    expect(context.savedRsvps()).toEqual([allDates]);
+  });
+
+  it('drops a retired answer once its registration ends in a partial removal', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    const ended = new Set<string>();
+    TestBed.overrideProvider(UserService, {
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: (rsvp: MeetingRsvp) => !ended.has(rsvp.registrant_id),
+      },
+    });
+    const context = create(buildRow(MEETING));
+    const removed = { id: 'rsvp-a', registrant_id: 'reg-a', response_type: 'accepted', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+    const surviving = { id: 'rsvp-b', registrant_id: 'reg-b', response_type: 'declined', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([removed, surviving]);
+    context.savedRsvps();
+    confirmed.set([]);
+    expect(context.savedRsvps()).toEqual([removed, surviving]);
+
+    ended.add('reg-a');
+    confirmed.set([]);
+    expect(context.savedRsvps()).toEqual([surviving]);
+  });
+
+  it('keeps a retired answer from a registration missing from the opening row', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: (rsvp: MeetingRsvp, meeting: Meeting) => meeting.my_registrant_ids?.includes(rsvp.registrant_id) ?? true,
+      },
+    });
+    const context = create(buildRow({ ...MEETING, my_registrant_ids: ['reg-old'] } as Meeting));
+    const saved = { id: 'rsvp-new', registrant_id: 'reg-new', response_type: 'accepted', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([saved]);
+    context.savedRsvps();
+    confirmed.set([]);
+
+    expect(context.savedRsvps()).toEqual([saved]);
+  });
+
+  it('keeps recovered history at its own timestamp beside a newer retired single-date answer', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: () => true,
+      },
+    });
+    const context = create(buildRow(MEETING));
+    const single = { id: 'rsvp-s', registrant_id: 'reg-a', response_type: 'declined', scope: 'single', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
+    const history = { id: 'rsvp-h', registrant_id: 'reg-a', response_type: 'accepted', scope: 'all', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([single]);
+    context.savedRsvps();
+    confirmed.set([]);
+    context.savedRsvps();
+    confirmed.set([history]);
+
+    expect(context.savedRsvps()).toEqual([history, single]);
   });
 
   it('counts a past row viewer as a member', () => {

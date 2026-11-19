@@ -12,6 +12,16 @@ strategy:
     maxSurge: "100%"
     maxUnavailable: 0
 
+# minReadySeconds is how long a new pod must keep its Ready condition before the rollout counts it
+# as available and moves on to terminating an old pod. A crash or a change to NotReady during this
+# time resets the wait. Without it a pod that passes /readyz once is trusted immediately.
+# 40s is longer than the readiness probe needs to mark a failing pod NotReady
+# (failureThreshold 3 × periodSeconds 10 = 30s) plus one period of margin, so a pod that passes
+# once and then stops answering goes NotReady before it counts as available. Keep this above
+# readinessProbe.failureThreshold × periodSeconds if those change.
+# Set to null to omit the field.
+minReadySeconds: 40
+
 # terminationGracePeriodSeconds must exceed preStop.sleep + PM2 kill_timeout.
 # IMPORTANT: preStop runs *inside* the grace period — the clock starts when the pod enters
 # Terminating (before preStop executes), not after it finishes.
@@ -226,10 +236,12 @@ livenessProbe:
 # startupProbe handles the startup window, so initialDelaySeconds is 0 here.
 # Targets GET /readyz (JSON {"status":"ready"}) which is registered before
 # pino-http so probes don't pollute request logs. The endpoint confirms that
-# Express is listening and the Angular SSR engine loaded; it intentionally
-# does not probe lazy-initialized clients (NATS, Snowflake) because those
-# report not-connected at startup even when most SSR pages render fine without
-# them. See apps/lfx-one/src/server/server.ts for implementation details.
+# Express is listening, the Angular SSR engine loaded, and the browser dist has
+# the HTML shell plus the main script and stylesheet; otherwise it
+# returns 503 {"status":"not_ready","reason":...}. It intentionally does not
+# probe lazy-initialized clients (NATS, Snowflake) because those report
+# not-connected at startup even when most SSR pages render fine without them.
+# See apps/lfx-one/src/server/server.ts for implementation details.
 # Set to null to disable: readinessProbe: null
 readinessProbe:
   httpGet:
@@ -737,6 +749,62 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS:
     value: "true"
 
+  # Lets the LinkedIn section of the create flow choose the ad account a campaign is created in
+  # (#5809), sent as `linkedInConfig.adAccountId`. The accounts come from campaign-service's
+  # `GET /projects/{projectId}/linkedin-ads/create-account`, not from the mounted linkedin.json.
+  # Only a caller with `global_marketing_ops` on the project is offered a choice; everyone else sees
+  # the default account read-only. The default is never sent as an id, because campaign-service
+  # requires `global_marketing_ops` for any `adAccountId` while its selection is on.
+  #
+  # A CAPABILITY flag of the Bidding kind. REQUIRES linuxfoundation/lfx-v2-campaign-service#581
+  # (v1.0.37) DEPLOYED, and offers a real choice only where that deployment also has
+  # LINKEDIN_ADS_ACCOUNT_SELECTION_ENABLED=true and the operator has installed account grants. It also
+  # needs the create pipeline (CREATE, BRIEFS, JOBS) on.
+  #
+  # Off (the default), `adAccountId` is dropped as before and the Implement tab shows a read-only
+  # line saying the project's LinkedIn connection sets the account. Turning it back off strands
+  # nothing. Order: deploy campaign-service v1.0.37, set its LINKEDIN_ADS_ACCOUNT_SELECTION_ENABLED,
+  # THEN set this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION:
+    value:
+
+  # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
+  # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
+  # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for
+  # a caller holding `global_marketing_ops` on the project, because the Meta ad account is shared by
+  # every foundation.
+  #
+  # A CAPABILITY flag of the Bidding kind. REQUIRES linuxfoundation/lfx-v2-campaign-service#550
+  # (v1.0.37) DEPLOYED with its own META_AUDIENCE_TARGETING_ENABLED="true": campaign-service refuses
+  # any `metaConfig.targeting` with a 400 otherwise. It also needs the create pipeline (CREATE, BRIEFS,
+  # JOBS) on.
+  #
+  # Off (the default), the section is hidden, the custom-audience read answers 404 and the create
+  # route refuses a `targeting` block with a 400, so a tab opened while the flag was on must reload.
+  # Turning it back off strands nothing. Order: set campaign-service's
+  # META_AUDIENCE_TARGETING_ENABLED, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING:
+    value:
+
+  # Offer the Meta call to action, conversion event and optimization goal on the Implement tab (#5934),
+  # sent as `metaConfig.callToAction` (every objective), `conversionEvent` (`conversions` only) and
+  # `optimizationGoal` (`traffic` only; LANDING_PAGE_VIEWS not with manual bidding). One flag each.
+  #
+  # CAPABILITY flags of the Bidding kind. Each REQUIRES campaign-service v1.0.38 DEPLOYED with its own
+  # META_CALL_TO_ACTION_ENABLED, META_CONVERSION_EVENT_ENABLED or META_OPTIMIZATION_GOAL_ENABLED="true":
+  # campaign-service refuses the field with a 400 otherwise. They also need the create pipeline (CREATE,
+  # BRIEFS, JOBS) on. None needs `global_marketing_ops`.
+  #
+  # Off (the default), the dropdown is hidden and the create route refuses the field with a 400, so a
+  # tab opened while the flag was on must reload. Turning one back off strands nothing. Order: set
+  # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_CONVERSION_EVENT:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL:
+    value:
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the
@@ -800,6 +868,16 @@ environment:
   # that a not-yet-converged pod still 403s on. To roll back, reverse it: disable the client flag
   # first, confirm it, then unset/disable this flag.
   LFX_MARKETING_OPS_FGA_ENABLED:
+    value:
+
+  # Dark-launch gate for the Foundation Lens Participating Companies endpoints (#5697). OFF answers every
+  # /api/foundation-participating-orgs request with a neutral 404. ON reads the live warehouse table
+  # PROJECT_PARTICIPATING_ORGS (#5707), so it needs Snowflake access to that table. Before enabling it, someone with
+  # access must run the two foundation queries against a real foundation (the foundation's own row carries its slug,
+  # and unique contributors per company stay at or under the sum of its project lines) and measure the largest
+  # foundation roster against the cache cap.
+  # Pairs with the client-side `foundation-participating-orgs-enabled` flag, which hides the route and nav item.
+  LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED:
     value:
 
   # Server-side kill switch for the /api/gatewaze routes. It does NOT gate the Angular routes — the

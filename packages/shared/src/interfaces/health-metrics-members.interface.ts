@@ -22,7 +22,7 @@ export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECT
 /** A read a deep link waits on: one per section. */
 export type HealthMetricsMembersDataSectionKey = HealthMetricsMembersSectionKey;
 
-/** Members' sub-nav badge, keyed to its own sections. */
+/** Members' sub-nav entry, keyed to its own sections. */
 export interface HealthMetricsMembersSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsMembersSectionKey;
 }
@@ -104,8 +104,6 @@ export interface HealthMetricsMembersBreakdownView {
   measured: boolean;
   columns: HealthMetricsMembersBreakdownColumnView[];
   rows: HealthMetricsMembersBreakdownRowView[];
-  /** The selected year's members, for the sub-nav badge; `null` when unmeasured. */
-  count: number | null;
 }
 
 /** `GET /api/analytics/members-growth` — every year's months at once, so the view switch never re-reads. */
@@ -207,7 +205,7 @@ export interface HealthMetricsMembersDirectory {
   rows: HealthMetricsMembersDirectoryMember[];
   /** Members matching the filters and search. */
   totalRecords: number;
-  /** Every member of the foundation; the sub-nav badge and the unfiltered count. */
+  /** Every member of the foundation; the unfiltered count. */
   scopeTotal: number;
   /** At-risk members across the whole foundation, whatever the filters. */
   atRiskCount: number;

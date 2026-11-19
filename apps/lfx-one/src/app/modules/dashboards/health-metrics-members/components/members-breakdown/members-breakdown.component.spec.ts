@@ -42,7 +42,6 @@ describe('MembersBreakdownComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
   let verdicts: boolean[];
-  let counts: (number | null)[];
 
   async function render(payload: HealthMetricsMembersTiers | Error = TIERS): Promise<void> {
     getMembersTiers = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -63,7 +62,6 @@ describe('MembersBreakdownComponent', () => {
       lifecycle.push('settled');
       verdicts.push(empty);
     });
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     await settle();
   }
 
@@ -90,31 +88,28 @@ describe('MembersBreakdownComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
     verdicts = [];
-    counts = [];
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('reads the foundation once, settles, and reports the running year for the sub-nav', async () => {
+  it('reads the foundation once and settles', async () => {
     await render();
 
     expect(getMembersTiers).toHaveBeenCalledTimes(1);
     expect(getMembersTiers).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-    expect(counts).toEqual([null, 84]);
   });
 
-  it('re-counts the sub-nav for a period change without a re-read', async () => {
+  it('neither re-reads nor re-settles on a period change, since every year is already tabled', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR');
 
     expect(getMembersTiers).toHaveBeenCalledTimes(1);
-    expect(lifecycle).toEqual(['reading', 'settled', 'settled']);
-    expect(counts.at(-1)).toBe(75);
+    expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
   it('tables every tier in rank order, then the totals, striped and washed as the design draws them', async () => {
@@ -160,7 +155,6 @@ describe('MembersBreakdownComponent', () => {
     expect(query('members-breakdown-chart')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([true]);
-    expect(counts).toEqual([null, null]);
   });
 
   it('shows the error state and still settles when the read fails', async () => {
@@ -169,7 +163,6 @@ describe('MembersBreakdownComponent', () => {
     expect(query('members-breakdown-error')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-    expect(counts).toEqual([null, null]);
   });
 
   it('holds the skeleton and never settles until a foundation resolves', async () => {
