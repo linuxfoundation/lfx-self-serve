@@ -22,6 +22,7 @@ import {
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_CROWDFUNDING_STATS, EMPTY_INITIATIVES_RESPONSE, NAV_LENSES } from '@lfx-one/shared/constants';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of } from 'rxjs';
@@ -42,6 +43,7 @@ export class MyInitiativesComponent {
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgLensViewMode = inject(OrgLensViewModeService);
 
   // ─── Public Fields ─────────────────────────────────────────────────────────
   protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}?fundraise=true`;
@@ -50,6 +52,8 @@ export class MyInitiativesComponent {
   private readonly lens = this.route.snapshot.data['lens'] as Lens | undefined;
   private readonly isOrgLens = this.lens === 'org';
   protected readonly isLensPage = this.isOrgLens || NAV_LENSES.includes(this.lens as NavLens);
+  // The all employee view (epic #5845): no creator names, no way into an initiative's detail. Only the company lens has one.
+  protected readonly isEmployeeView = computed(() => this.isOrgLens && this.orgLensViewMode.isEmployeeView());
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly isLoading = signal(true);
@@ -77,6 +81,7 @@ export class MyInitiativesComponent {
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onInitiativeClick(slug: string): void {
+    if (this.isEmployeeView()) return;
     // Relative, keeping ?project=, so a lens page opens its own lens's detail route rather than the Me one.
     void this.router.navigate([slug], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }

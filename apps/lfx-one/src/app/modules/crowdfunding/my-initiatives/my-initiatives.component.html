@@ -15,17 +15,19 @@
         titleTestId="my-initiatives-title"
         descriptionTestId="my-initiatives-description">
         <div pageHeaderActions class="flex items-center gap-6">
-          <lfx-button
-            label="New Initiative"
-            icon="fa-light fa-arrow-up-right-from-square"
-            iconPos="right"
-            severity="secondary"
-            [outlined]="true"
-            size="small"
-            [href]="crowdfundingUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            data-testid="new-initiative-button" />
+          @if (!isEmployeeView()) {
+            <lfx-button
+              label="New Initiative"
+              icon="fa-light fa-arrow-up-right-from-square"
+              iconPos="right"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              [href]="crowdfundingUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="new-initiative-button" />
+          }
         </div>
       </lfx-page-header>
 
@@ -57,7 +59,8 @@
             [createUrl]="crowdfundingUrl"
             [hasMore]="initiativesHasMore()"
             [loadingMore]="loadingMore()"
-            [showCreator]="isLensPage"
+            [showCreator]="isLensPage && !isEmployeeView()"
+            [readOnly]="isEmployeeView()"
             (loadMore)="onLoadMoreInitiatives()"
             (initiativeClick)="onInitiativeClick($event)" />
         }

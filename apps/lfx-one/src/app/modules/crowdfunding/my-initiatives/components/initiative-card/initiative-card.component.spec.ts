@@ -54,4 +54,18 @@ describe('InitiativeCardComponent creator (lfx-crowdfunding#452)', () => {
   it('shows no creator line when CF sends no creator', () => {
     expect(creatorLine(render(initiative(), true))).toBeNull();
   });
+
+  it('does not open the detail in the all employee view (readOnly)', () => {
+    TestBed.configureTestingModule({ imports: [InitiativeCardComponent] });
+    fixture = TestBed.createComponent(InitiativeCardComponent);
+    fixture.componentRef.setInput('initiative', initiative({ status: 'published' }));
+    fixture.componentRef.setInput('readOnly', true);
+    fixture.detectChanges();
+    const emitted: string[] = [];
+    fixture.componentInstance.cardClick.subscribe((slug) => emitted.push(slug));
+    const el = card(fixture.nativeElement) as HTMLElement;
+    el.click();
+    expect(emitted).toEqual([]);
+    expect(el.getAttribute('role')).toBeNull();
+  });
 });

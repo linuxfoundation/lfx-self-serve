@@ -10,14 +10,18 @@ import {
   CROWDFUNDING_ATTRIBUTION_TYPES,
   CROWDFUNDING_INITIATIVE_STATUSES,
   ORG_ACCOUNT_ID_PATTERN,
+  ORG_LENS_EMPLOYEE_VIEW,
+  ORG_LENS_FULL_VIEW,
   SPONSORSHIP_DONATION_MODES,
   SPONSORSHIP_TIER_NAMES,
 } from '@lfx-one/shared/constants';
 import {
   CreateAnnouncementInput,
   CrowdfundingAttributionType,
+  InitiativesResponse,
   InitiativesScope,
   CrowdfundingInitiativeStatus,
+  OrgLensViewMode,
   SponsorshipDonationMode,
   SponsorshipTierName,
   UpdateAnnouncementInput,
@@ -27,9 +31,14 @@ import {
 import { isUuid, stripHtml } from '@lfx-one/shared/utils';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { redactForEmployeeView, stripPersonalFields } from '../helpers/org-lens-employee-view.helper';
+import { resolveOrgLensViewMode } from '../helpers/org-lens-read-access.helper';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { CrowdfundingService } from '../services/crowdfunding.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
+
+const CROWDFUNDING_EMPLOYEE_VIEW_PAGE = 'crowdfunding';
 
 const parseNonNegativeInt = (val: unknown): number | undefined => {
   if (val == null || val === '') return undefined;
@@ -60,6 +69,34 @@ const parseInitiativesScope = (query: Request['query'], operation: string): Init
     return { kind: 'organizations', uid: orgUid };
   }
   return undefined;
+};
+
+/**
+ * Resolves the Company Lens view mode for a company-scoped crowdfunding read (epic #5845). These routes live under
+ * `/api/crowdfunding`, not `/api/orgs/:orgUid/lens`, so the lens gate is not mounted on them: the company is the
+ * `orgUid` the request names, and the gate is asked here. With the employee-view flag off this is a no-op (no gate,
+ * no extra lookups) and the answer is always the full view, so nothing changes until the rollout flag is turned on.
+ */
+const resolveCrowdfundingViewMode = async (req: Request, orgUid: string, operation: string): Promise<OrgLensViewMode> =>
+  isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView) ? resolveOrgLensViewMode(req, orgUid, operation) : ORG_LENS_FULL_VIEW;
+
+/** Person fields of the Crowdfunding page that travel under keys the shared personal-field list does not carry. */
+const EMPLOYEE_VIEW_CROWDFUNDING_PERSON_FIELDS = ['donorName', 'donorEmail', 'creator'] as const;
+
+/**
+ * Initiatives for the all employee view: no creator, and no attribution name unless the initiative is attributed to
+ * a company or project (a personal attribution carries the person's own name).
+ */
+const redactInitiativesForEmployeeView = (initiatives: InitiativesResponse): InitiativesResponse => {
+  const redacted = stripPersonalFields(initiatives, { page: CROWDFUNDING_EMPLOYEE_VIEW_PAGE, extraFields: EMPLOYEE_VIEW_CROWDFUNDING_PERSON_FIELDS });
+  return {
+    ...redacted,
+    data: redacted.data.map((initiative) =>
+      initiative.attribution?.type === 'personal'
+        ? { ...initiative, attribution: { type: initiative.attribution.type, entityUid: initiative.attribution.entityUid } }
+        : initiative
+    ),
+  };
 };
 
 /**
@@ -121,16 +158,15 @@ export class CrowdfundingController {
 
       const { pageSize, offset } = req.query;
 
-      const initiatives = await this.crowdfundingService.getMyInitiatives(
-        req,
-        parseNonNegativeInt(pageSize),
-        parseNonNegativeInt(offset),
-        parseInitiativesScope(req.query, 'get_my_initiatives')
-      );
+      const scope = parseInitiativesScope(req.query, 'get_my_initiatives');
+      // Gate before the upstream call so an employee-view caller never reaches the data unredacted.
+      const viewMode = scope?.kind === 'organizations' ? await resolveCrowdfundingViewMode(req, scope.uid, 'get_my_initiatives') : ORG_LENS_FULL_VIEW;
+
+      const initiatives = await this.crowdfundingService.getMyInitiatives(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset), scope);
 
       logger.success(req, 'get_my_initiatives', startTime, { result_count: initiatives.data.length });
 
-      res.json(initiatives);
+      res.json(viewMode === ORG_LENS_EMPLOYEE_VIEW ? redactInitiativesForEmployeeView(initiatives) : initiatives);
     } catch (error) {
       next(error);
     }
@@ -257,11 +293,22 @@ export class CrowdfundingController {
         throw ServiceValidationError.forField('orgUid', 'orgUid must be a company account id', { operation: 'get_org_donations' });
       }
 
+      const viewMode = await resolveCrowdfundingViewMode(req, orgUid, 'get_org_donations');
+
       const donations = await this.crowdfundingService.getOrgDonations(req, orgUid, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
 
       logger.success(req, 'get_org_donations', startTime, { result_count: donations.data.length, total: donations.total });
 
-      res.json(donations);
+      // The all employee view shows initiative, date and amount only: no donor name, no email, and not even the
+      // anonymous flag, which would tell an employee which donor chose to hide.
+      res.json(
+        viewMode === ORG_LENS_EMPLOYEE_VIEW
+          ? redactForEmployeeView(req, orgUid, donations, {
+              page: CROWDFUNDING_EMPLOYEE_VIEW_PAGE,
+              extraFields: [...EMPLOYEE_VIEW_CROWDFUNDING_PERSON_FIELDS, 'anonymous'],
+            })
+          : donations
+      );
     } catch (error) {
       next(error);
     }
@@ -276,7 +323,12 @@ export class CrowdfundingController {
         throw new AuthenticationError('User authentication required', { operation: 'get_initiatives_stats' });
       }
 
-      const stats = await this.crowdfundingService.getInitiativesStats(req, parseInitiativesScope(req.query, 'get_initiatives_stats'));
+      const scope = parseInitiativesScope(req.query, 'get_initiatives_stats');
+      // Totals only, so nothing to redact; the gate still answers for a caller with no standing on the company.
+      if (scope?.kind === 'organizations') {
+        await resolveCrowdfundingViewMode(req, scope.uid, 'get_initiatives_stats');
+      }
+      const stats = await this.crowdfundingService.getInitiativesStats(req, scope);
 
       logger.success(req, 'get_initiatives_stats', startTime);
 
