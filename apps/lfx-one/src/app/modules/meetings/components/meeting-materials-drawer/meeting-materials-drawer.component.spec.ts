@@ -121,8 +121,19 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
   });
 
   describe('adding materials', () => {
-    it('adds a link to every occurrence by default', async () => {
+    it('scopes a new link to the managed occurrence by default (#5912)', async () => {
       const { component, meetingService } = await mount({ occurrence });
+      component.newLinkTitle.set('Repo');
+      component.newLinkUrl.set('https://example.com/repo');
+
+      component.addLink();
+
+      expect(meetingService.createMeetingAttachment).toHaveBeenCalledWith('m1', expect.objectContaining({ occurrence_id: OCCURRENCE_ID }));
+    });
+
+    it('adds a link to every occurrence when "all occurrences" is chosen', async () => {
+      const { component, meetingService } = await mount({ occurrence });
+      component.setNewItemScope('series');
       component.newLinkTitle.set('Repo');
       component.newLinkUrl.set('https://example.com/repo');
 
@@ -132,20 +143,8 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
       expect(body).not.toHaveProperty('occurrence_id');
     });
 
-    it('scopes a new link to the managed occurrence when "this occurrence" is chosen', async () => {
+    it('scopes an uploaded file to the managed occurrence by default', async () => {
       const { component, meetingService } = await mount({ occurrence });
-      component.setNewItemScope('occurrence');
-      component.newLinkTitle.set('Repo');
-      component.newLinkUrl.set('https://example.com/repo');
-
-      component.addLink();
-
-      expect(meetingService.createMeetingAttachment).toHaveBeenCalledWith('m1', expect.objectContaining({ occurrence_id: OCCURRENCE_ID }));
-    });
-
-    it('scopes an uploaded file to the managed occurrence when "this occurrence" is chosen', async () => {
-      const { component, meetingService } = await mount({ occurrence });
-      component.setNewItemScope('occurrence');
       component.onFileSelect({ files: [pdf('notes.pdf')] });
 
       component.onSave();
@@ -155,7 +154,6 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
 
     it('keeps the scope a file was queued with when the picker changes afterwards', async () => {
       const { component, meetingService } = await mount({ occurrence });
-      component.setNewItemScope('occurrence');
       component.onFileSelect({ files: [pdf('notes.pdf')] });
       component.setNewItemScope('series');
       component.onFileSelect({ files: [pdf('agenda.pdf')] });

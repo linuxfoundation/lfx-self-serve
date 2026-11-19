@@ -280,3 +280,14 @@ export const VOTE_CLOSE_CONFIRMATION = {
   acceptButtonStyleClass: 'p-button-danger p-button-sm',
   rejectButtonStyleClass: 'p-button-outlined p-button-sm',
 } as const;
+
+/** Last-voter confirmation (#4726) on every first-submit surface: one copy so the cast drawer, inline ballot and vote link never drift. */
+export const VOTE_LAST_VOTER_CONFIRMATION = {
+  header: 'Submitting will end this vote',
+  message: "You're the last member to respond, so submitting now ends the vote. You won't be able to change your choices, comments, or abstention afterward.",
+  acceptLabel: 'Submit and end vote',
+  rejectLabel: 'Go back',
+  defaultFocus: 'reject',
+  acceptButtonStyleClass: 'p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;

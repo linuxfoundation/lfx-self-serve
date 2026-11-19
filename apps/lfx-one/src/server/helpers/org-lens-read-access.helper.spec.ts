@@ -46,7 +46,7 @@ beforeEach(() => {
   mocks.getEffectiveUsername.mockReturnValue('employee');
   mocks.getAccessAwareOrgs.mockResolvedValue(roster());
   mocks.checkSingleAccessStrict.mockResolvedValue(false);
-  mocks.resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-employer' });
+  mocks.resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
 });
 
 describe('assertOrgLensRead: employee-view qualification', () => {
@@ -60,12 +60,9 @@ describe('assertOrgLensRead: employee-view qualification', () => {
   });
 
   it.each([
-    ['no employer', { eligible: false, reason: 'no-employer' }],
-    ['an ended employment', { eligible: false, reason: 'no-employer' }],
-    ['a non-member company', { eligible: false, reason: 'not-member' }],
-    ['an unverified email', { eligible: false, reason: 'no-verified-company-email' }],
-    ['an email on another company domain', { eligible: false, reason: 'no-verified-company-email' }],
-    ['a different company than the employer', { eligible: false, reason: 'other-company' }],
+    ['no verified company email', { eligible: false, reason: 'no-verified-company-email' }],
+    ['an email on a non-member or other company domain', { eligible: false, reason: 'no-verified-company-email' }],
+    ['a different company than the one their email names', { eligible: false, reason: 'other-company' }],
   ])('refuses with 403 for %s', async (_label, verdict) => {
     mocks.resolveEmployeeView.mockResolvedValue(verdict);
 

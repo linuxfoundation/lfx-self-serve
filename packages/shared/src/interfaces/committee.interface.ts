@@ -747,6 +747,17 @@ export interface GroupsHomeUndo {
   run: () => void;
 }
 
+/** One row of the Invitations drawer on the redesigned Groups page. */
+export interface GroupInvitationItem {
+  invitation: PendingInvitation;
+  /** Font Awesome class string of the group's type. */
+  typeIcon: string;
+  /** The group's own type, such as "Technical Advisory Committee"; the class label when it has none. */
+  typeLabel: string;
+  /** "Invited by {name} · Expires {date}", or "You've been invited" without an inviter. */
+  detail: string;
+}
+
 /**
  * One card's display data on the My Groups card grid. Built entirely client-side from a
  * `MyCommittee` — no new upstream shape.
