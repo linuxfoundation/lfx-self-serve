@@ -795,7 +795,6 @@ export class MeetingRegistrantsDisplayComponent {
     }
     const meetingId = this.meeting().id;
     const contextKey = this.registrantContextKey();
-    const self = this.selfGuest();
     this.deleting.set(true);
     this.meetingService
       .deleteMeetingRegistrants(meetingId, [uid])
@@ -810,9 +809,9 @@ export class MeetingRegistrantsDisplayComponent {
             // waiting for the async refetch (works for both managed and self-managed modes).
             this.deletedRegistrantUids.update((uids) => new Set([...uids, uid]));
             this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
-            if (self && isMeetingSelfGuestListed(self, [registrant])) {
+            if (this.isSelfRegistrant(registrant)) {
               const remaining = this.registrants()
-                .filter((row) => isMeetingSelfGuestListed(self, [row]))
+                .filter((row) => this.isSelfRegistrant(row))
                 .map((row) => row.uid);
               this.selfRemoved.emit({ meeting_id: meetingId, removed_registrant_ids: [uid], remaining_registrant_ids: remaining });
             }

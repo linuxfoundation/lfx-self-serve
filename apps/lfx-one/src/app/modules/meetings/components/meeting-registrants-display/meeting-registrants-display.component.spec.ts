@@ -822,6 +822,49 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     expect(addMeetingRegistrants.mock.calls[0][1][0].email).toBe(email);
   });
 
+  it.each([
+    { byUsername: false, survives: false },
+    { byUsername: false, survives: true },
+    { byUsername: true, survives: false },
+    { byUsername: true, survives: true },
+  ])('acknowledges a manual fallback add/delete round trip with %j', async ({ byUsername, survives }) => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    const other = listed('other-guest@vendor-corp.example');
+    const survivor = { ...listed('surviving-alias@vendor-corp.example'), uid: 'synthetic-surviving-self', username: SELF_GUEST.username };
+    const { fixture } = await mount({ registrants: survives ? [other, survivor] : [other] });
+    const email = byUsername ? 'alternate@vendor-corp.example' : SELF_GUEST.email;
+    const saved = { ...listed(email), uid: 'saved-self', username: byUsername ? SELF_GUEST.username : null };
+    addMeetingRegistrants.mockReturnValueOnce(of({ ...SUCCESS, successes: [saved] }));
+    let invited = false;
+    fixture.componentInstance.selfAdded.subscribe(() => {
+      invited = true;
+    });
+    const selfRemoved = vi.fn();
+    fixture.componentInstance.selfRemoved.subscribe((result) => {
+      selfRemoved(result);
+      invited = result.remaining_registrant_ids.length > 0;
+    });
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(email));
+    form.addControl('first_name', new FormControl('Synthetic'));
+    form.addControl('last_name', new FormControl('Viewer'));
+    if (byUsername) form.addControl('username', new FormControl(SELF_GUEST.username));
+    fixture.componentInstance.onAddRegistrant();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(invited).toBe(true);
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    fixture.componentInstance.onRequestRemoveGuest(saved);
+    confirm.mock.calls[0][0].accept?.();
+    expect(selfRemoved).toHaveBeenCalledWith({
+      meeting_id: 'meeting-1',
+      removed_registrant_ids: [saved.uid],
+      remaining_registrant_ids: survives ? [survivor.uid] : [],
+    });
+    expect(invited).toBe(survives);
+    expect(fixture.componentInstance.registrants().map((row) => row.uid)).not.toContain(saved.uid);
+  });
+
   it('holds the shared guard during a manual fallback self-invite without changing the chosen address', async () => {
     getMeetingSelfGuest.mockReturnValue(of(null));
     const { fixture } = await mount();
