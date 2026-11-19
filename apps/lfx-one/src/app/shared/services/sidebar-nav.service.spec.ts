@@ -7,6 +7,7 @@ import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
   FORMATION_ENABLED_FLAG,
+  FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
@@ -39,6 +40,7 @@ describe('SidebarNavService', () => {
   // The mobile drawer's previewed lens (#4208); the menu follows it while set, otherwise the active lens.
   const menuLensPreview = signal<Lens | null>(null);
   const mktgOsEnabled = signal(false);
+  const foundationParticipatingOrgsEnabled = signal(false);
   const cfOrgDonationsEnabled = signal(false);
   const mentorshipEnabled = signal(false);
   const lfStaff = signal(false);
@@ -97,6 +99,7 @@ describe('SidebarNavService', () => {
     activeProject.set(null);
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
+    foundationParticipatingOrgsEnabled.set(false);
     cfOrgDonationsEnabled.set(false);
     mentorshipEnabled.set(false);
     lfStaff.set(false);
@@ -136,6 +139,7 @@ describe('SidebarNavService', () => {
           useValue: {
             getBooleanFlag: vi.fn((key: string) => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
+              if (key === FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG) return foundationParticipatingOrgsEnabled;
               if (key === CF_ORG_DONATIONS_FLAG) return cfOrgDonationsEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
@@ -1090,6 +1094,15 @@ describe('SidebarNavService', () => {
       TestBed.tick();
 
       expect(getSocialListeningAccess).toHaveBeenCalledWith('tlf');
+      expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Social Listening']);
+    });
+
+    it('does not show Participating companies to a group member, even with its flag on', () => {
+      foundationParticipatingOrgsEnabled.set(true);
+      getSocialListeningAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
       expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Social Listening']);
     });
 

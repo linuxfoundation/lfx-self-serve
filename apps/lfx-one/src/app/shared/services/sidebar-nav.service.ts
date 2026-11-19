@@ -701,8 +701,9 @@ export class SidebarNavService {
           testId: 'sidebar-metrics-social-listening',
         });
 
-        // Dark-launched (#5697): the page reads live PROJECT_PARTICIPATING_ORGS figures from the warehouse, so the flag is the only gate before it is generally available.
-        if (this.isFoundationParticipatingOrgsEnabled()) {
+        // Dark-launched (#5697): the page reads live PROJECT_PARTICIPATING_ORGS figures from the warehouse, so the flag gates it before it is generally available.
+        // ED/staff only, like its dashboardAccessGuard; a group member here only has Social Listening.
+        if (canViewExecutiveDashboards && this.isFoundationParticipatingOrgsEnabled()) {
           metricsItems.push({
             label: 'Participating companies',
             icon: 'fa-light fa-building',
