@@ -61,7 +61,7 @@ Each page story applies these to **one** page. Nothing is exposed by default.
 
 ## Client
 
-`GET /api/orgs/me/role-grants` carries `employeeView?: { orgUid, orgName }`, computed only for a caller with no grant, not staff, whose affiliation already says the employer is a member. `OrgRoleGrantsService.employeeViewOrgUid` holds it. `OrgLensViewModeService` answers `viewMode()` / `isEmployeeView()` for the selected company (`modeFor(uid)` for others); a real grant or staff always wins. The selector lists the company (`OrgItem.employeeView`), `/api/orgs/resolve/:segment` resolves its address (`OrgResolveResponse.employeeView`), and the empty state opens the lens instead of "no company linked". The client is UX only: the server refuses and redacts regardless.
+`GET /api/orgs/me/role-grants` carries `employeeView?: { orgUid, orgName, orgSlug? }`, computed only for a caller with no grant and not staff. The affiliation pre-filter (the employer must already be a member) applies to everyone except LF contractors, who go straight to the strict employee lookup without an affiliation verdict. `OrgRoleGrantsService.employeeViewOrgUid` holds it. `OrgLensViewModeService` answers `viewMode()` / `isEmployeeView()` for the selected company (`modeFor(uid)` for others); a real grant or staff always wins. The selector lists the company (`OrgItem.employeeView`), `/api/orgs/resolve/:segment` resolves its address (`OrgResolveResponse.employeeView`), and the empty state opens the lens instead of "no company linked". The client is UX only: the server refuses and redacts regardless.
 
 ## Every `assertOrgLensRead` consumer
 
