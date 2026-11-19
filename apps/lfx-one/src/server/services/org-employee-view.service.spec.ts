@@ -52,6 +52,9 @@ const ORG_UID = '0016100000ACMEAAA1';
 const UID_B = '0016100000ZETAAAA1';
 const OTHER_UID = '0016100000OTHERAAA1';
 
+/** Lets the fire-and-forget sole-pin reconcile finish. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
 const req = (): Request => ({ path: '/api/orgs/x/lens/overview' }) as unknown as Request;
 
 interface Doc {
@@ -522,6 +525,7 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
     const alone = build({ orgs: [[ORG_UID, acme]], emails, experiences });
     await expect(alone.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    await settle();
 
     // Zeta becomes a member: the fingerprint is unchanged, and Zeta now leads on both start date and activity.
     OrgEmployeeViewService.clearCache();
@@ -538,6 +542,15 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     expect(both2.engagement.getLastActivityByAccount).not.toHaveBeenCalled();
   });
 
+  it('does not wait for the pin store when there is a sole company', async () => {
+    const { valkeyService } = await import('./valkey.service');
+    const hang = vi.spyOn(valkeyService, 'getJsonStrict').mockImplementation(() => new Promise(() => undefined));
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    hang.mockRestore();
+  });
+
   it('follows the sole company through a two, one, two transition, so an obsolete pin cannot come back', async () => {
     const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
     const activity = (acmeAt: number, zetaAt: number) =>
@@ -552,6 +565,7 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     OrgEmployeeViewService.clearCache();
     const one = build({ orgs: [[UID_B, zeta]], emails, experiences });
     await expect(one.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+    await settle();
 
     // Acme returns: the pin is Zeta, not the old Acme pin.
     OrgEmployeeViewService.clearCache();

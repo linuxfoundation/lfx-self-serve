@@ -364,7 +364,8 @@ export class OrgEmployeeViewService {
    */
   private async chooseEmployer(req: Request, username: string, qualifying: QualifyingEmployer[], fingerprint: string): Promise<QualifyingEmployer> {
     if (qualifying.length === 1) {
-      await this.reconcileSolePin(username, qualifying[0], fingerprint);
+      // Not awaited: with one candidate nothing can contradict the answer, and a slow or down cache must not delay it past the role-grants budget.
+      void this.reconcileSolePin(username, qualifying[0], fingerprint).catch(() => undefined);
       return qualifying[0];
     }
 
@@ -406,8 +407,8 @@ export class OrgEmployeeViewService {
   }
 
   /**
-   * Keeps the stored pin in step with a SOLE qualifying company, best effort: with one candidate there is nothing to contradict, so
-   * an unavailable store never blocks the answer. Recording it matters later: if a second company then qualifies for the same
+   * Keeps the stored pin in step with a SOLE qualifying company, best effort and in the background: with one candidate there is nothing
+   * to contradict, so an unavailable or slow store never delays or blocks the answer. Recording it matters later: if a second company then qualifies for the same
    * employers and verified emails (it became a member, say), the first one stays put instead of being re-ranked away, and a
    * pin left over from an earlier two-company period cannot regain authority on a later one-to-two transition.
    */
