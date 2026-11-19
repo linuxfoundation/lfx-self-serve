@@ -266,7 +266,7 @@ export class CommitteeMemberImportService {
     this.messageService.add({ ...this.settlementNotice(summary), life: 8000 });
   }
 
-  private settlementNotice(summary: MemberImportRunSummary): { severity: 'success' | 'warn'; summary: string; detail: string } {
+  private settlementNotice(summary: MemberImportRunSummary): { severity: 'success' | 'warn' | 'error'; summary: string; detail: string } {
     const group = summary.committeeName;
     const added = `${summary.added} ${summary.added === 1 ? 'member' : 'members'} added`;
     const report = "Open the report from the group's Members tab.";
@@ -282,6 +282,13 @@ export class CommitteeMemberImportService {
         severity: 'warn',
         summary: 'Import Stopped',
         detail: `Import into ${group} stopped: ${added}, ${summary.notSubmitted} not yet submitted. ${report}`,
+      };
+    }
+    if (summary.added === 0 && (summary.failed > 0 || summary.notSubmitted > 0)) {
+      return {
+        severity: 'error',
+        summary: 'Import Failed',
+        detail: `Import into ${group} finished: no members added, ${summary.failed + summary.notSubmitted} not added. ${report}`,
       };
     }
     if (summary.failed > 0 || summary.notSubmitted > 0) {

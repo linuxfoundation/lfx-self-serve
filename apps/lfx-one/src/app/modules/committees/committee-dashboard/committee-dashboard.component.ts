@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -481,7 +482,14 @@ export class CommitteeDashboardComponent {
     }
     return timer(MEMBER_IMPORT_RECONCILE_INTERVAL_MS, MEMBER_IMPORT_RECONCILE_INTERVAL_MS).pipe(
       take(MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS),
-      exhaustMap(() => this.fetchShownCommittees().pipe(catchError(() => of(null)))),
+      exhaustMap(() =>
+        this.fetchShownCommittees().pipe(
+          catchError((error: unknown) => {
+            console.error('Failed to refetch committees after CSV import', { status: error instanceof HttpErrorResponse ? error.status : 0 });
+            return of(null);
+          })
+        )
+      ),
       first((committees) => committees !== null && reached(committees), null),
       map(() => {
         targets.clear();

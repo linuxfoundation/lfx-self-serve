@@ -1363,6 +1363,49 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('import-members-close-btn')?.textContent).toContain('Close');
     });
 
+    it('ignores Escape while a file is previewed, so the parsed rows are kept', async () => {
+      await upload(`email\n${emails(3)}`);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+      expect(dialogRef.close).not.toHaveBeenCalled();
+      expect(component.phase()).toBe('preview');
+      expect(component.rows()).toHaveLength(3);
+      expectNothingWritten();
+    });
+
+    it('hides a running import on Escape without stopping it, then hides its report', async () => {
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
+
+      fixture.destroy();
+      respond(0);
+      expect(pending).toHaveLength(2);
+      respond(1);
+
+      await createDialog();
+      expect(component.phase()).toBe('results');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(dialogRef.close).toHaveBeenCalledTimes(2);
+      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)?.status).toBe('settled');
+    });
+
+    it("reopens a run with the rules its rows were validated against, not the group's current settings", async () => {
+      await upload(`email\n${emails(3)}`);
+      component.startImport();
+      const confirmedRules = component.rules;
+      fixture.destroy();
+
+      const config = TestBed.inject(DynamicDialogConfig);
+      config.data = { ...config.data, committee: VOTING_GROUP, attach: true };
+      await createDialog();
+
+      expect(component.rules).toEqual(confirmedRules);
+      expect(component.rules.votingEnabled).toBe(false);
+      expect(component.fieldGuide.map(({ column }) => column)).not.toContain('voting_status');
+    });
+
     it('closes a reattached view without offering a new preview when no run is retained', async () => {
       await reattach();
       expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();

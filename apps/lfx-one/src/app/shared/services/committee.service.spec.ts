@@ -128,6 +128,27 @@ describe('CommitteeService detail cache aliases', () => {
 
     expect(http.get).toHaveBeenCalledTimes(2);
   });
+
+  it('sends strict-writer reads to the network without reading or replacing a cached entry (#5731)', () => {
+    service.getCommitteeDetail(SLUG).subscribe();
+    service.getCommitteeDetail(SLUG, { strictWriter: true }).subscribe();
+    service.getCommitteeDetail(SLUG, { strictWriter: true }).subscribe();
+    service.getCommitteeDetail(SLUG).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(3);
+    const strictParams = http.get.mock.calls[1][1]?.params as HttpParams;
+    expect(strictParams.get('strict_writer')).toBe('true');
+    expect(strictParams.has('auditor')).toBe(false);
+  });
+
+  it('does not cache a failed strict-writer read', () => {
+    http.get.mockReturnValueOnce(throwError(() => new Error('access check unavailable')));
+    service.getCommitteeDetail(UID, { strictWriter: true }).subscribe({ error: vi.fn() });
+    service.getCommitteeDetail(UID).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+    expect(http.get.mock.calls[1]).toEqual([`/api/committees/${UID}`]);
+  });
 });
 
 describe('CommitteeService.bulkCreateCommitteeMembers', () => {

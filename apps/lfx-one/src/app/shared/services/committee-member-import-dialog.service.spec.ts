@@ -117,14 +117,14 @@ describe('CommitteeMemberImportDialogService', () => {
   afterEach(() => vi.restoreAllMocks());
 
   describe('openNew', () => {
-    it('opens one preview with backdrop dismissal off and Escape only hiding it', () => {
+    it('opens one preview with backdrop dismissal and PrimeNG Escape handling off (the dialog owns Escape)', () => {
       const data = { committee: GROUP, existingMembers: [], existingInvites: [] };
       service.openNew(data);
       service.openNew(data);
 
       expect(dialogService.open).toHaveBeenCalledExactlyOnceWith(
         ImportMembersDialogComponent,
-        expect.objectContaining({ closable: false, closeOnEscape: true, dismissableMask: false, data: { ...data, attach: false } })
+        expect.objectContaining({ closable: false, closeOnEscape: false, dismissableMask: false, data: { ...data, attach: false } })
       );
     });
 
@@ -132,7 +132,7 @@ describe('CommitteeMemberImportDialogService', () => {
       retain();
       service.openNew({ committee: GROUP, existingMembers: [], existingInvites: [] });
 
-      expect(committeeService.getCommitteeDetail).toHaveBeenCalledExactlyOnceWith(GROUP.uid, { skipCache: true });
+      expect(committeeService.getCommitteeDetail).toHaveBeenCalledExactlyOnceWith(GROUP.uid, { strictWriter: true });
       answer(0);
       expect(openedData().attach).toBe(true);
     });
@@ -172,7 +172,7 @@ describe('CommitteeMemberImportDialogService', () => {
     });
 
     it.each([
-      ['a row without writer access', (): void => answer(0, { writer: false })],
+      ['a completed strict check without writer access', (): void => answer(0, { writer: false })],
       ['a forbidden group', (): void => fail(0, 403)],
       ['a missing group', (): void => fail(0, 404)],
     ])('discards the private report on %s and stops its future writes', (_label, deny) => {
@@ -245,7 +245,7 @@ describe('CommitteeMemberImportDialogService', () => {
       const first = service.probeAccess([GROUP.uid, 'group-without-run']).subscribe();
       const second = service.probeAccess([GROUP.uid]).subscribe();
 
-      expect(committeeService.getCommitteeDetail).toHaveBeenCalledExactlyOnceWith(GROUP.uid, { skipCache: true });
+      expect(committeeService.getCommitteeDetail).toHaveBeenCalledExactlyOnceWith(GROUP.uid, { strictWriter: true });
       expect(service.accessByUid().has(GROUP.uid)).toBe(false);
       answer(0);
       expect(service.accessByUid().get(GROUP.uid)).toBe('authorized');
@@ -272,6 +272,16 @@ describe('CommitteeMemberImportDialogService', () => {
 
       expect(dialogs[0].close).toHaveBeenCalled();
       expect(importService.revoke).toHaveBeenCalledExactlyOnceWith(GROUP.uid);
+    });
+
+    it.each([500, 502, 503])('keeps the retained run and reveals nothing when the strict writer check fails with %s (#5731)', (status) => {
+      retain();
+      service.probeAccess([GROUP.uid]).subscribe();
+      fail(0, status);
+
+      expect(importService.revoke).not.toHaveBeenCalled();
+      expect(service.accessByUid().get(GROUP.uid)).toBe('error');
+      expect(importService.getRun(GROUP.uid)).toBeDefined();
     });
 
     it('ignores a result for a replaced run', () => {

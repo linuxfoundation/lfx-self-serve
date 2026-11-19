@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { NO_ERRORS_SCHEMA, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
@@ -14,7 +15,7 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { EMPTY, Observable, of, Subject } from 'rxjs';
+import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
@@ -464,5 +465,20 @@ describe('CSV import count reconciliation (#5731)', () => {
     expect(committeeService.getCommitteesByProjectOrThrow).toHaveBeenCalledTimes(1);
     expect(committeeService.getCommitteesByProject).toHaveBeenCalledTimes(2);
     expect(shownTotal()).toBe(5);
+  });
+
+  it('logs only the status of each failed project refetch and still ends at the bound', async () => {
+    await setup('project', [3]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    committeeService.getCommitteesByProjectOrThrow.mockImplementation(() => throwError(() => new HttpErrorResponse({ status: 503 })));
+    settle();
+    await step();
+    await step(10_000);
+
+    expect(committeeService.getCommitteesByProjectOrThrow).toHaveBeenCalledTimes(6);
+    expect(committeeService.getCommitteesByProject).toHaveBeenCalledTimes(2);
+    expect(consoleError).toHaveBeenCalledTimes(6);
+    expect(consoleError).toHaveBeenCalledWith('Failed to refetch committees after CSV import', { status: 503 });
+    consoleError.mockRestore();
   });
 });

@@ -143,8 +143,15 @@ export class CommitteeService {
    * still observe a stale result. Mirrors MeetingService.getMeetingDetail. `auditor: true` adds the
    * caller-scoped `committee#auditor` boolean (GH-2407) and caches under an `:aud`-suffixed key so the
    * payload never replays to a caller that didn't ask for it; writes evict both variants.
+   * `strictWriter: true` asks the BFF to fail rather than degrade `writer` to `false` when the access
+   * check cannot complete (#5731). That read always goes to the network and never touches the cache, so a
+   * transient failure cannot replay and an access probe never replaces an ordinary cached payload.
    */
-  public getCommitteeDetail(id: string, options?: { skipCache?: boolean; auditor?: boolean }): Observable<Committee> {
+  public getCommitteeDetail(id: string, options?: { skipCache?: boolean; auditor?: boolean; strictWriter?: boolean }): Observable<Committee> {
+    if (options?.strictWriter) {
+      const strictParams = new HttpParams().set('strict_writer', 'true');
+      return this.http.get<Committee>(`/api/committees/${id}`, { params: options.auditor ? strictParams.set('auditor', 'true') : strictParams });
+    }
     const cacheKey = options?.auditor ? `${id}:aud` : id;
     const cached = this.lookupCommitteeDetailCache(cacheKey);
     if (!options?.skipCache && cached && Date.now() - cached.cachedAt < COMMITTEE_DETAIL_CACHE_TTL_MS) {

@@ -21,9 +21,10 @@ import { CommitteeService } from './committee.service';
  * view cannot stop, restart or resubmit a run.
  *
  * Reopening and every status surface first confirm manager access with a fresh, side-effect-free
- * detail read (never `getCommittee`, which replaces the page's current group). Denial or a missing
- * group discards that run's retained details and closes its view; a transient failure reveals
- * nothing but keeps the results for a later attempt. Results for a replaced subject or run are ignored.
+ * strict-writer detail read (never `getCommittee`, which replaces the page's current group). Denial
+ * (`writer: false` from a check that completed, or 403/404) discards that run's retained details and
+ * closes its view; a failed check reveals nothing but keeps the results for a later attempt, because the
+ * strict read fails instead of degrading to `writer: false`. Results for a replaced subject or run are ignored.
  */
 @Injectable({ providedIn: 'root' })
 export class CommitteeMemberImportDialogService {
@@ -146,7 +147,7 @@ export class CommitteeMemberImportDialogService {
 
   /** Records the result only while the same subject still retains the same run. */
   private checkAccess(committeeUid: string, owner: string, runId: string): Observable<MemberImportAccessCheck> {
-    return this.committeeService.getCommitteeDetail(committeeUid, { skipCache: true }).pipe(
+    return this.committeeService.getCommitteeDetail(committeeUid, { strictWriter: true }).pipe(
       take(1),
       map((committee): MemberImportAccessCheck => (canManageCommitteeMembers(committee) ? { state: 'authorized', committee } : { state: 'denied' })),
       catchError((error: unknown) => {
@@ -178,9 +179,10 @@ export class CommitteeMemberImportDialogService {
       width: '960px',
       breakpoints: { '1024px': '95vw' },
       modal: true,
-      // The dialog's own buttons close it; Escape only hides it. A stray backdrop click must not discard a preview.
+      // The dialog's own buttons and Escape handler close it (PrimeNG ignores closeOnEscape unless closable).
+      // A stray backdrop click must not discard a preview.
       closable: false,
-      closeOnEscape: true,
+      closeOnEscape: false,
       dismissableMask: false,
       data,
     });

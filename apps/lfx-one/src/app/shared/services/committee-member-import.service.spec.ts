@@ -324,7 +324,23 @@ describe('CommitteeMemberImportService', () => {
         (): void => {
           pending[0].response.error(new HttpErrorResponse({ status: 400 }));
         },
-        { severity: 'warn', summary: 'Import Partly Complete', detail: expect.stringContaining('0 members added, 2 not added') },
+        { severity: 'error', summary: 'Import Failed', detail: expect.stringContaining('Import into Group group-a finished: no members added, 2 not added.') },
+      ],
+      [
+        'all-failed',
+        (): void => {
+          pending[0].response.next({
+            results: [
+              { index: 0, email: 'person0@example.com', status: 'failed', reason: 'invalid', retryable: false, message: 'Rejected.' },
+              { index: 1, email: 'person1@example.com', status: 'failed', reason: 'invalid', retryable: false, message: 'Rejected.' },
+            ],
+            added: 0,
+            skipped: 0,
+            failed: 2,
+          });
+          pending[0].response.complete();
+        },
+        { severity: 'error', summary: 'Import Failed', detail: expect.stringContaining('no members added, 2 not added.') },
       ],
     ] as const)('names the group and distinguishes a %s outcome in one root toast', (_label, finish, notice) => {
       service.start(input('group-a', readyRows(2)));

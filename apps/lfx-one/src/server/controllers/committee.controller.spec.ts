@@ -346,6 +346,21 @@ describe('CommitteeController.getCommitteeById — vanity slug resolution (GH-20
     expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: false }));
     expect(next).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['true', true],
+    ['1', false],
+  ])('forwards strictWriter for strict_writer=%s (#5731)', async (flag, expected) => {
+    const req = buildReq();
+    req.query = { strict_writer: flag };
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCommitteeById(req, res as any, next);
+
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ strictWriter: expected }));
+    expect(next).not.toHaveBeenCalled();
+  });
 });
 
 describe('CommitteeController.getMyCommittees — foundation_uid validation (PR #2436)', () => {

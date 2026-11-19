@@ -61,8 +61,11 @@ import { pairwise } from 'rxjs';
  * member route (GH-5111) and retains the run per group (#5730); this dialog only projects that run.
  * Each row keeps its own outcome; Retry resubmits rows that were not sent and failures that can still
  * succeed. Continue in background, Close, Escape and navigation only hide the view (#5731): the run
- * keeps going in this tab, and its report stays until it is dismissed from the Members tab. Reopening
- * (`attach`) shows the retained run instead of a new preview, and closes if that run is gone. Stop
+ * keeps going in this tab, and its report stays until it is dismissed from the Members tab. Escape is
+ * handled here, because PrimeNG ignores `closeOnEscape` on a dialog that is not `closable`; it hides a
+ * running import or a report and is ignored while choosing or previewing a file, so a keystroke never
+ * discards a parsed file. Reopening (`attach`) shows the retained run, with the rules its rows were
+ * validated against, instead of a new preview, and closes if that run is gone. Stop
  * import is separate. An inline spinner stays active through automatic recovery; processed counts
  * come only from results. Never resolves organizations, creates invitations, or changes permissions.
  * In collect-only mode, confirmation returns validated member requests to the create or edit wizard
@@ -82,6 +85,7 @@ import { pairwise } from 'rxjs';
   ],
   templateUrl: './import-members-dialog.component.html',
   styleUrl: './import-members-dialog.component.scss',
+  host: { '(document:keydown.escape)': 'onEscape()' },
 })
 export class ImportMembersDialogComponent {
   private readonly importService = inject(CommitteeMemberImportService);
@@ -99,10 +103,8 @@ export class ImportMembersDialogComponent {
   private readonly committeeUid: string = this.data.committee.uid;
   public readonly committeeName: string = this.data.committee.name;
   public readonly collectOnly = !!this.data.collectOnly;
-  public readonly rules: MemberImportGroupRules = {
-    requiresOrganization: committeeRequiresOrganization(this.data.committee),
-    votingEnabled: !!this.data.committee.enable_voting,
-  };
+  /** A retained run keeps the rules its rows were validated against; only a new preview uses the group's current rules. */
+  public readonly rules: MemberImportGroupRules = this.initRules();
   public readonly fieldGuide: MemberImportFieldGuide[] = getMemberImportFieldGuide(this.rules);
   public readonly maxRecords = MEMBER_IMPORT_MAX_RECORDS;
   public readonly maxFileMegabytes = MEMBER_IMPORT_MAX_FILE_BYTES / (1024 * 1024);
@@ -346,6 +348,25 @@ export class ImportMembersDialogComponent {
       return;
     }
     this.detach();
+  }
+
+  /** Escape hides a running import or a report; file selection and preview ignore it, so a preview is never lost to a keystroke. */
+  public onEscape(): void {
+    if (this.phase() === 'importing') {
+      this.continueInBackground();
+    } else if (this.phase() === 'results') {
+      this.close();
+    }
+  }
+
+  private initRules(): MemberImportGroupRules {
+    const retained = this.collectOnly ? undefined : this.importService.getRun(this.committeeUid);
+    return (
+      retained?.rules ?? {
+        requiresOrganization: committeeRequiresOrganization(this.data.committee),
+        votingEnabled: !!this.data.committee.enable_voting,
+      }
+    );
   }
 
   private initPendingInvites(invites: CommitteeInvite[]): Record<string, string> {
