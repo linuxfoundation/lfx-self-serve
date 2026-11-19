@@ -2479,8 +2479,8 @@ export interface MetaCustomAudienceListState extends MetaCustomAudienceListView 
   chips: MetaCustomAudienceChipView[];
 }
 
-/** Why `metaConfig.targeting` cannot be sent: the field it names (`metaConfig.targeting.ageMin`, ...) and a sentence. */
-export interface MetaAudienceTargetingRefusal {
+/** Why part of `metaConfig` cannot be sent: the field it names (`metaConfig.targeting.ageMin`, `metaConfig.callToAction`, ...) and a sentence. */
+export interface MetaConfigRefusal {
   field: string;
   message: string;
 }

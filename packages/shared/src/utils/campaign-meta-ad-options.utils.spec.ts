@@ -14,6 +14,9 @@ describe('metaAdOptionsRefusal', () => {
     // An absent objective is campaign-service's default, traffic.
     [{ optimizationGoal: 'LANDING_PAGE_VIEWS' }, undefined, false],
     [{ optimizationGoal: 'LINK_CLICKS' }, 'traffic', true],
+    // The objective is matched ignoring case, as campaign-service does.
+    [{ conversionEvent: 'LEAD' }, ' CONVERSIONS ', false],
+    [{ optimizationGoal: 'LINK_CLICKS' }, 'Traffic', false],
   ])('accepts %j under %s (manual bidding %s)', (raw, objective, manual) => {
     expect(metaAdOptionsRefusal(raw, objective, manual)).toBeNull();
   });

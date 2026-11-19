@@ -9,7 +9,7 @@ import {
   META_CUSTOM_AUDIENCE_ID_PATTERN,
   META_MAX_CUSTOM_AUDIENCES,
 } from '../constants/campaign.constants';
-import type { MetaAudienceGender, MetaAudienceTargeting, MetaAudienceTargetingRefusal } from '../interfaces/campaign.interface';
+import type { MetaAudienceGender, MetaAudienceTargeting, MetaConfigRefusal } from '../interfaces/campaign.interface';
 
 /**
  * Meta ad set audience targeting (#5905), `metaConfig.targeting`. One set of rules for the Implement
@@ -27,7 +27,7 @@ const ID_LISTS = [
  * Why `raw` cannot be sent as `metaConfig.targeting`, or `null`. Typed runtime checks, since the create
  * route has no body validator: an absent or null block is fine, and so is an absent or null key.
  */
-export function metaAudienceTargetingRefusal(raw: unknown): MetaAudienceTargetingRefusal | null {
+export function metaAudienceTargetingRefusal(raw: unknown): MetaConfigRefusal | null {
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== 'object' || Array.isArray(raw)) return { field: FIELD, message: 'Meta audience targeting must be an object.' };
   const t = raw as Record<string, unknown>;

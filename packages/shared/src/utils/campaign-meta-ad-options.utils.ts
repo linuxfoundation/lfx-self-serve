@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DEFAULT_META_OBJECTIVE, META_AD_OPTION_FIELDS } from '../constants/campaign.constants';
-import type { MetaAdOptionField, MetaAdOptions, MetaAudienceTargetingRefusal } from '../interfaces/campaign.interface';
+import type { MetaAdOptionField, MetaAdOptions, MetaConfigRefusal } from '../interfaces/campaign.interface';
 
 /**
  * The Meta call to action, conversion event and optimization goal (#5934): `metaConfig.callToAction`,
@@ -10,9 +10,9 @@ import type { MetaAdOptionField, MetaAdOptions, MetaAudienceTargetingRefusal } f
  * a refusal) and the create route (which answers it with a 400), mirroring campaign-service v1.0.38.
  */
 
-/** Whether `field` applies to a Meta create with this objective; an absent or blank objective is `traffic`, as upstream. */
+/** Whether `field` applies to a Meta create with this objective; matched ignoring case; an absent or blank objective is `traffic`, as upstream. */
 export function metaAdOptionApplies(field: MetaAdOptionField, objective: unknown): boolean {
-  const resolved = typeof objective === 'string' && objective.trim() !== '' ? objective.trim() : DEFAULT_META_OBJECTIVE;
+  const resolved = typeof objective === 'string' && objective.trim() !== '' ? objective.trim().toLowerCase() : DEFAULT_META_OBJECTIVE;
   return field.objectives === null || (field.objectives as readonly string[]).includes(resolved);
 }
 
@@ -27,7 +27,7 @@ export function metaConfigRecord(raw: unknown): Record<string, unknown> | undefi
  * case, as campaign-service does. `manualBidding` is a `bidding.strategy` of `manual`, a link-click bid cap,
  * which campaign-service refuses with LANDING_PAGE_VIEWS.
  */
-export function metaAdOptionsRefusal(raw: unknown, objective: unknown, manualBidding: boolean): MetaAudienceTargetingRefusal | null {
+export function metaAdOptionsRefusal(raw: unknown, objective: unknown, manualBidding: boolean): MetaConfigRefusal | null {
   const record = metaConfigRecord(raw);
   for (const field of META_AD_OPTION_FIELDS) {
     const value = record?.[field.key];

@@ -19,7 +19,7 @@ import {
 import type {
   MetaAudienceGender,
   MetaAudienceTargetingDraft,
-  MetaAudienceTargetingRefusal,
+  MetaConfigRefusal,
   MetaCustomAudienceChipView,
   MetaCustomAudienceListKey,
   MetaCustomAudienceListState,
@@ -66,7 +66,7 @@ export class MetaAudienceTargetingComponent {
   protected readonly pickerTruncated = META_CUSTOM_AUDIENCE_PICKER_TRUNCATED;
 
   /** Why the targeting cannot be sent, or `null`: the same rules the create route applies. */
-  protected readonly refusal: Signal<MetaAudienceTargetingRefusal | null> = computed(() => metaAudienceTargetingRefusal(this.targeting()));
+  protected readonly refusal: Signal<MetaConfigRefusal | null> = computed(() => metaAudienceTargetingRefusal(this.targeting()));
   protected readonly maleSelected = computed<boolean>(() => this.targeting().genders.includes('male'));
   protected readonly femaleSelected = computed<boolean>(() => this.targeting().genders.includes('female'));
   /** Ticked only for an explicit yes; unticked both for an explicit no and for unsaid, which only a click turns into a choice. */
