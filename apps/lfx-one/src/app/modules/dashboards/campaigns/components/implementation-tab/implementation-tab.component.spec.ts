@@ -23505,3 +23505,182 @@ describe('ImplementationTabComponent meta audience targeting', () => {
     expect(c(f)['metaAudienceTargeting']()).toEqual(DEFAULT_META_AUDIENCE_TARGETING);
   });
 });
+
+/**
+ * The Meta call to action, conversion event and optimization goal (#5934), one capability each in
+ * `metaAdOptionsEnabled`. A dropdown shows on an explicit yes where the objective fits; "Not set" sends
+ * nothing; a choice the request cannot carry HOLDS Create (never dropped); objective and foundation changes clear.
+ */
+describe('ImplementationTabComponent meta ad options', () => {
+  let createCampaign: ReturnType<typeof vi.fn>;
+  const allOn = { callToAction: true, conversionEvent: true, optimizationGoal: true };
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['meta-ads'],
+      metaCopy: { variants: [{ primaryText: 'Primary', headline: 'Headline', description: '' }], recommendedGeos: ['US'] },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+  const c = (f: ComponentFixture<ImplementationTabComponent>): Record<string, any> => f.componentInstance as unknown as Record<string, any>;
+  const query = (f: ComponentFixture<ImplementationTabComponent>, testId: string): HTMLElement | null =>
+    f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const setFoundation = (slug: string): void =>
+    TestBed.inject(ProjectContextService).setFoundation({ uid: `uid-${slug}`, slug, name: slug } as ProjectContext, false);
+
+  async function mount(
+    enabled: Record<string, boolean | null>,
+    draft?: Record<string, unknown>,
+    read: CampaignCapabilityReadState = 'ready'
+  ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    f.componentRef.setInput('createCapabilityRead', read);
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
+    f.componentRef.setInput('biddingEnabled', true);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    f.componentRef.setInput('metaAdOptionsEnabled', enabled);
+    if (draft) f.componentRef.setInput('draft', { eventSlug: 'kubecon-eu-2026', headlines: [''], descriptions: [''], ...draft });
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    c(f)['selectedPlatforms'].set(['meta-ads']);
+    c(f)['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+    c(f)['campaignForm'].controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c(f)['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c(f)['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    f.detectChanges();
+    await f.whenStable();
+    return { f, latest: () => captured };
+  }
+
+  const choose = (f: ComponentFixture<ImplementationTabComponent>, key: string, value: string): void => {
+    c(f)['onMetaAdOptionChange'](key, { target: { value } });
+    f.detectChanges();
+  };
+  const objective = (f: ComponentFixture<ImplementationTabComponent>, value: string): void => {
+    c(f)['onMetaObjectiveChange']({ target: { value } });
+    c(f)['metaPixelId'].set('123');
+    f.detectChanges();
+  };
+
+  async function submittedMeta(f: ComponentFixture<ImplementationTabComponent>): Promise<Record<string, unknown>> {
+    expect(c(f)['createBlockedReason']()).toBeNull();
+    c(f)['submit']();
+    await f.whenStable();
+    return createCampaign.mock.calls.at(-1)?.[0]['metaConfig'];
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
+            getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
+          },
+        },
+      ],
+    }).compileComponents();
+    TestBed.inject(ProjectContextService).setRouteLensKind('foundation');
+    setFoundation('tlf');
+  });
+
+  it('offers each dropdown only on an explicit yes and where the objective fits', async () => {
+    const { f } = await mount({ callToAction: true, conversionEvent: true, optimizationGoal: null });
+    expect(query(f, 'implementation-meta-callToAction')).not.toBeNull();
+    expect(query(f, 'implementation-meta-conversionEvent')).toBeNull();
+    expect(query(f, 'implementation-meta-optimizationGoal')).toBeNull();
+
+    objective(f, 'conversions');
+    expect(query(f, 'implementation-meta-conversionEvent')).not.toBeNull();
+  });
+
+  it('sends the chosen values, and nothing for "Not set"', async () => {
+    const { f } = await mount(allOn);
+    choose(f, 'callToAction', 'SIGN_UP');
+    choose(f, 'optimizationGoal', 'LANDING_PAGE_VIEWS');
+    expect(await submittedMeta(f)).toMatchObject({ callToAction: 'SIGN_UP', optimizationGoal: 'LANDING_PAGE_VIEWS' });
+
+    choose(f, 'callToAction', '');
+    choose(f, 'optimizationGoal', '');
+    const sent = await submittedMeta(f);
+    expect('callToAction' in sent || 'optimizationGoal' in sent || 'conversionEvent' in sent).toBe(false);
+  });
+
+  it('clears a choice the new objective does not take', async () => {
+    const { f, latest } = await mount(allOn);
+    choose(f, 'callToAction', 'BOOK_NOW');
+    choose(f, 'optimizationGoal', 'LANDING_PAGE_VIEWS');
+    objective(f, 'conversions');
+
+    expect(c(f)['metaAdOptions']()).toEqual({ callToAction: 'BOOK_NOW' });
+    expect(latest()?.metaAdOptions).toEqual({ callToAction: 'BOOK_NOW' });
+  });
+
+  it('refuses landing page views under manual bidding, disabling the option', async () => {
+    const { f } = await mount(allOn);
+    choose(f, 'optimizationGoal', 'LANDING_PAGE_VIEWS');
+    c(f)['biddingDrafts'].set({ 'meta-ads': { strategy: 'manual', bidAmount: 1 } });
+    f.detectChanges();
+
+    expect(c(f)['createBlockedReason']()).toContain('manual bidding');
+    expect(query(f, 'implementation-meta-ad-options-error')).not.toBeNull();
+    const option = query(f, 'implementation-meta-optimizationGoal')?.querySelector('option[value="LANDING_PAGE_VIEWS"]') as HTMLOptionElement;
+    expect(option.disabled).toBe(true);
+  });
+
+  // An unanswered capability (the read loading or failed) is not a no: Create waits, and Clear is not offered.
+  it.each([
+    ['pending', 'pending'],
+    ['failed', 'failed'],
+  ] as const)('holds a restored choice without offering Clear while the capability read is %s', async (read, kind) => {
+    const { f } = await mount({ callToAction: null }, { metaAdOptions: { callToAction: 'SIGN_UP' }, metaAdOptionsProject: 'tlf' }, read);
+
+    expect(c(f)['createBlockedReason']()).toContain('call to action');
+    expect(query(f, `implementation-meta-ad-options-block-${kind}`)).not.toBeNull();
+    expect(query(f, 'implementation-meta-ad-options-clear')).toBeNull();
+  });
+
+  it('holds a choice this deployment answered no to, offering Clear', async () => {
+    const { f } = await mount({ callToAction: false }, { metaAdOptions: { callToAction: 'SIGN_UP' }, metaAdOptionsProject: 'tlf' });
+
+    expect(query(f, 'implementation-meta-ad-options-block-unsupported')).not.toBeNull();
+    query(f, 'implementation-meta-ad-options-clear')?.querySelector('button')?.click();
+    f.detectChanges();
+
+    expect('callToAction' in (await submittedMeta(f))).toBe(false);
+  });
+
+  it('resets the choices on a foundation switch, and restores a draft only under its own foundation', async () => {
+    const { f, latest } = await mount(allOn);
+    choose(f, 'callToAction', 'CONTACT_US');
+    const savedUnderTlf = latest();
+    expect(savedUnderTlf).toMatchObject({ metaAdOptions: { callToAction: 'CONTACT_US' }, metaAdOptionsProject: 'tlf' });
+
+    const restored = await mount(allOn, { ...savedUnderTlf });
+    expect(c(restored.f)['metaAdOptions']()).toEqual({ callToAction: 'CONTACT_US' });
+
+    setFoundation('cncf');
+    f.detectChanges();
+    await f.whenStable();
+    expect(c(f)['metaAdOptions']()).toEqual({});
+    expect(latest()?.metaAdOptions).toEqual({});
+
+    const elsewhere = await mount(allOn, { ...savedUnderTlf });
+    expect(c(elsewhere.f)['metaAdOptions']()).toEqual({});
+  });
+});

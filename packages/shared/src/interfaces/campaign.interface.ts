@@ -1261,6 +1261,10 @@ export interface CampaignImplementationDraft {
    * because custom audience ids belong to the ad account that foundation's connection resolves to.
    */
   metaAudienceTargetingProject?: string;
+  /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
+  metaAdOptions?: MetaAdOptions;
+  /** The foundation slug {@link metaAdOptions} was chosen under: restored only under the same one, like the targeting. */
+  metaAdOptionsProject?: string;
   /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
@@ -2387,6 +2391,41 @@ export interface MetaCampaignCreateRequest {
    * 400 otherwise, so a tab opened while the capability was on must reload.
    */
   targeting?: MetaAudienceTargeting;
+  /**
+   * The button on every ad (#5934; campaign-service #550), one of `META_CALL_TO_ACTIONS`. Absent means
+   * campaign-service's default, LEARN_MORE. Sent ONLY when `CampaignListResult.metaCallToActionEnabled` is
+   * an explicit yes; the create route refuses it with a 400 otherwise.
+   */
+  callToAction?: string;
+  /** The pixel event a `conversions` create optimizes toward, one of `META_CONVERSION_EVENTS`; absent is PURCHASE. Same gate, on `metaConversionEventEnabled`. */
+  conversionEvent?: string;
+  /** The ad set optimization goal of a `traffic` create, one of `META_OPTIMIZATION_GOALS`; absent is LINK_CLICKS. Same gate, on `metaOptimizationGoalEnabled`. */
+  optimizationGoal?: string;
+}
+
+/** The three optional Meta ad choices of #5934, each a `metaConfig` key of its own. */
+export type MetaAdOptionKey = 'callToAction' | 'conversionEvent' | 'optimizationGoal';
+
+/** The Meta ad choices as edited or sent: an absent key is "Not set", which sends nothing and leaves campaign-service's default. */
+export type MetaAdOptions = Partial<Record<MetaAdOptionKey, string>>;
+
+/** One Meta ad choice as the Implement tab offers it and the create route checks it. */
+export interface MetaAdOptionField {
+  key: MetaAdOptionKey;
+  label: string;
+  /** Every value campaign-service accepts, upper case; the first is its default. */
+  values: readonly string[];
+  /** The objectives it applies to, or `null` for every objective. */
+  objectives: readonly MetaObjective[] | null;
+}
+
+/** One Meta ad choice's dropdown as the Implement tab renders it. */
+export interface MetaAdOptionView {
+  key: MetaAdOptionKey;
+  label: string;
+  /** The "Not set" option's text, naming campaign-service's default. */
+  notSetLabel: string;
+  options: { value: string; label: string; disabled: boolean }[];
 }
 
 /** A Meta gender campaign-service accepts in `metaConfig.targeting.genders`. */
@@ -7140,6 +7179,14 @@ export interface CampaignListResult {
    * is shared by every foundation). `null` when that check cannot be made. Optional, as above.
    */
   metaCustomAudiencesEnabled?: boolean | null;
+  /**
+   * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
+   * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,
+   * `..._META_CONVERSION_EVENT`, `..._META_OPTIMIZATION_GOAL`. Optional, so a BFF that predates them reads as unanswered.
+   */
+  metaCallToActionEnabled?: boolean;
+  metaConversionEventEnabled?: boolean;
+  metaOptimizationGoalEnabled?: boolean;
   /**
    * Whether THIS caller may send Google audience segments (`audienceSegments` or
    * `campaignAudienceSegments`) on a create.

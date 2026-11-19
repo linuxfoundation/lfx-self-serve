@@ -2535,6 +2535,77 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
+   * The Meta call to action, conversion event and optimization goal (#5934), one flag each: refused with a
+   * 400 while their flag is off (never dropped), checked by the tab's own rules, and sent upper-cased.
+   */
+  describe('meta ad options', () => {
+    const flagsWith = (off: ServerFeatureFlag[] = []): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => !off.includes(flag as ServerFeatureFlag));
+    };
+    async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusedField = (): unknown => {
+      const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      return error.toResponse()['errors'][0].field;
+    };
+
+    beforeEach(() => flagsWith());
+
+    it.each([
+      [ServerFeatureFlag.CampaignServiceMetaCallToAction, { callToAction: 'SIGN_UP' }, 'metaConfig.callToAction'],
+      [ServerFeatureFlag.CampaignServiceMetaConversionEvent, { objective: 'conversions', pixelId: '1', conversionEvent: 'LEAD' }, 'metaConfig.conversionEvent'],
+      [ServerFeatureFlag.CampaignServiceMetaOptimizationGoal, { optimizationGoal: 'LINK_CLICKS' }, 'metaConfig.optimizationGoal'],
+    ])('refuses a field with a 400 while %s is off, rather than creating without it', async (flag, extra, field) => {
+      flagsWith([flag]);
+
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+
+    it('forwards the checked values upper-cased, and sends nothing for "Not set"', async () => {
+      const sent = await sendWith({
+        objective: 'conversions',
+        pixelId: '1',
+        callToAction: 'buy_tickets',
+        conversionEvent: 'COMPLETE_REGISTRATION',
+        optimizationGoal: '',
+      });
+
+      expect(sent).toMatchObject({ callToAction: 'BUY_TICKETS', conversionEvent: 'COMPLETE_REGISTRATION' });
+      expect(sent).not.toHaveProperty('optimizationGoal');
+      createCampaigns.mockClear();
+      expect(await sendWith({})).not.toHaveProperty('callToAction');
+    });
+
+    it.each([
+      ['a value outside the list', { callToAction: 'REGISTER_NOW' }, 'metaConfig.callToAction'],
+      ['a conversion event on traffic', { conversionEvent: 'LEAD' }, 'metaConfig.conversionEvent'],
+      ['an optimization goal on awareness', { objective: 'awareness', optimizationGoal: 'LINK_CLICKS' }, 'metaConfig.optimizationGoal'],
+      [
+        'landing page views with manual bidding',
+        { optimizationGoal: 'LANDING_PAGE_VIEWS', bidding: { strategy: 'manual', bidAmount: 1 } },
+        'metaConfig.optimizationGoal',
+      ],
+    ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+  });
+
+  /**
    * The Meta Instagram id and EU DSA disclosures (linuxfoundation/lfx-v2-campaign-service#414). With
    * the capability on they reach campaign-service UNTOUCHED, which judges them and answers a missing
    * or malformed one with a 400. With it off the request is refused rather than the keys dropped.

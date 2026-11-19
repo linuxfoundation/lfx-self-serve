@@ -60,6 +60,7 @@ import {
   metaAudienceTargetingRefusal,
   metaTargetingNamesCustomAudiences,
 } from '@lfx-one/shared/utils/campaign-meta-audience-targeting.utils';
+import { compactMetaAdOptions, metaAdOptionOffMessage, metaAdOptionsRefusal } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
 import {
   googleDemandGenAudienceCarried,
   googleDemandGenAudiencesRefusal,
@@ -143,6 +144,8 @@ import type {
   MonitorConnectionPlatform,
   NormalizedGoogleAdSchedule,
   NormalizedGoogleDeviceBidModifier,
+  MetaAdOptionKey,
+  MetaAdOptions,
   MetaAudienceTargeting,
   MetaCustomAudiencesResult,
 } from '@lfx-one/shared/interfaces';
@@ -337,6 +340,7 @@ import {
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
   META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
   META_AUDIENCE_TARGETING_OFF_MESSAGE,
+  META_AD_OPTION_FIELDS,
   META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE,
 } from '@lfx-one/shared/constants';
 
@@ -381,6 +385,9 @@ import {
   canSetLinkedInDailyCap,
   canSearchGoogleGeoTargets,
   canSetMetaAudienceTargeting,
+  canSetMetaCallToAction,
+  canSetMetaConversionEvent,
+  canSetMetaOptimizationGoal,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -1277,7 +1284,9 @@ export class CampaignController {
       const linkedInAdAccountId = await this.linkedInAdAccountToForward(req, projectSlug, body);
       // The Meta audience targeting to send (#5905), or none. See `metaTargetingToForward`.
       const metaTargeting = await this.metaTargetingToForward(req, projectSlug, body);
-      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting);
+      // The Meta call to action, conversion event and optimization goal (#5934). See `metaAdOptionsToForward`.
+      const metaAdOptions = this.metaAdOptionsToForward(body);
+      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions);
 
       // The channel the Google config resolved to, read ONCE for every channel fence below rather
       // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever
@@ -6950,7 +6959,8 @@ export class CampaignController {
   private createConfigEnvelope(
     body: CampaignCreateRequest,
     linkedInAdAccountId: string | null = null,
-    metaTargeting: MetaAudienceTargeting | null = null
+    metaTargeting: MetaAudienceTargeting | null = null,
+    metaAdOptions: MetaAdOptions = {}
   ): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
@@ -6962,7 +6972,7 @@ export class CampaignController {
     if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
 
-    const metaConfig = this.buildMetaConfig(body, metaTargeting);
+    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
     const microsoftConfig = this.buildMicrosoftConfig(body);
@@ -9491,14 +9501,52 @@ export class CampaignController {
    * not exposed to this application); see the fuller note on `buildGoogleAdsConfig`.
    *
    * The request's own `targeting` is never forwarded: only the block `metaTargetingToForward` checked and
-   * compacted (#5905), and otherwise nothing.
+   * compacted (#5905), and otherwise nothing. Likewise the call to action, conversion event and
+   * optimization goal: only what `metaAdOptionsToForward` checked (#5934).
    */
-  private buildMetaConfig(body: CampaignCreateRequest, targeting: MetaAudienceTargeting | null = null): Record<string, unknown> | null {
+  private buildMetaConfig(
+    body: CampaignCreateRequest,
+    targeting: MetaAudienceTargeting | null = null,
+    adOptions: MetaAdOptions = {}
+  ): Record<string, unknown> | null {
     if (!body?.metaConfig) return null;
 
     const { budgetUsd, ...rest } = body.metaConfig;
     delete rest.targeting;
-    return { ...rest, budget: budgetUsd, ...(targeting ? { targeting } : {}) };
+    for (const { key } of META_AD_OPTION_FIELDS) delete rest[key];
+    return { ...rest, budget: budgetUsd, ...(targeting ? { targeting } : {}), ...adOptions };
+  }
+
+  /**
+   * The `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal` a create sends (#5934):
+   *
+   * - a field present (anything but absent or null) while its flag is off (`canSetMetaCallToAction`, ...):
+   *   400, never a silent drop. The form never sends it in that state, so it comes from a tab opened while
+   *   the flag was on; dropping it would create ads with a button or goal the operator did not choose;
+   * - a value outside campaign-service's list, on an objective it does not apply to, or LANDING_PAGE_VIEWS
+   *   with manual bidding (`metaAdOptionsRefusal`, the tab's own rules): 400 naming the field;
+   * - otherwise each value trimmed and upper-cased, a blank one dropped as "Not set".
+   */
+  private metaAdOptionsToForward(body: CampaignCreateRequest): MetaAdOptions {
+    const meta = body?.metaConfig as unknown as Record<string, unknown> | undefined;
+    if (!meta) return {};
+    const operation = 'campaign_create';
+    const enabled: Record<MetaAdOptionKey, () => boolean> = {
+      callToAction: canSetMetaCallToAction,
+      conversionEvent: canSetMetaConversionEvent,
+      optimizationGoal: canSetMetaOptimizationGoal,
+    };
+    for (const field of META_AD_OPTION_FIELDS) {
+      if (meta[field.key] !== undefined && meta[field.key] !== null && !enabled[field.key]()) {
+        throw ServiceValidationError.forField(`metaConfig.${field.key}`, metaAdOptionOffMessage(field), { operation, service: 'campaign_controller' });
+      }
+    }
+    const manualBidding = (meta['bidding'] as { strategy?: unknown } | undefined)?.strategy === 'manual';
+    const refusal = metaAdOptionsRefusal(meta, meta['objective'], manualBidding);
+    if (refusal !== null) {
+      throw ServiceValidationError.forField(refusal.field, refusal.message, { operation, service: 'campaign_controller' });
+    }
+    return compactMetaAdOptions(meta);
   }
 
   /**

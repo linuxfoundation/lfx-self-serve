@@ -786,6 +786,25 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING:
     value:
 
+  # Offer the Meta call to action, conversion event and optimization goal on the Implement tab (#5934),
+  # sent as `metaConfig.callToAction` (every objective), `conversionEvent` (`conversions` only) and
+  # `optimizationGoal` (`traffic` only; LANDING_PAGE_VIEWS not with manual bidding). One flag each.
+  #
+  # CAPABILITY flags of the Bidding kind. Each REQUIRES campaign-service v1.0.38 DEPLOYED with its own
+  # META_CALL_TO_ACTION_ENABLED, META_CONVERSION_EVENT_ENABLED or META_OPTIMIZATION_GOAL_ENABLED="true":
+  # campaign-service refuses the field with a 400 otherwise. They also need the create pipeline (CREATE,
+  # BRIEFS, JOBS) on. None needs `global_marketing_ops`.
+  #
+  # Off (the default), the dropdown is hidden and the create route refuses the field with a 400, so a
+  # tab opened while the flag was on must reload. Turning one back off strands nothing. Order: set
+  # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_CONVERSION_EVENT:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL:
+    value:
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the

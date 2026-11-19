@@ -23,6 +23,7 @@ import type {
   CampaignEmailTypeOption,
   CampaignFunnelStage,
   CampaignGoalOption,
+  MetaAdOptionField,
   MetaAudienceGender,
   MetaAudienceTargetingDraft,
   MetaCustomAudienceListView,
@@ -973,6 +974,32 @@ export const DEFAULT_META_AUDIENCE_TARGETING: Readonly<MetaAudienceTargetingDraf
   customAudiences: [],
   excludedCustomAudiences: [],
 };
+
+/**
+ * The Meta call to action, conversion event and optimization goal (#5934), as campaign-service v1.0.38
+ * accepts them in `metaConfig` (`docs/api-catalog.md`, MetaConfig; linuxfoundation/lfx-v2-campaign-service#550).
+ * Each list starts with campaign-service's default. The call to action fits every objective this app sends
+ * (it never sends a lead form `leadFormId`, the one case campaign-service refuses it in).
+ */
+export const META_CALL_TO_ACTIONS = [
+  'LEARN_MORE',
+  'SIGN_UP',
+  'BUY_TICKETS',
+  'APPLY_NOW',
+  'BOOK_NOW',
+  'SUBSCRIBE',
+  'DOWNLOAD',
+  'WATCH_MORE',
+  'CONTACT_US',
+] as const;
+export const META_CONVERSION_EVENTS = ['PURCHASE', 'COMPLETE_REGISTRATION', 'LEAD', 'SUBMIT_APPLICATION', 'SUBSCRIBE'] as const;
+/** LANDING_PAGE_VIEWS is refused with manual bidding, which campaign-service creates as a link-click bid cap. */
+export const META_OPTIMIZATION_GOALS = ['LINK_CLICKS', 'LANDING_PAGE_VIEWS'] as const;
+export const META_AD_OPTION_FIELDS: readonly MetaAdOptionField[] = [
+  { key: 'callToAction', label: 'Call to action', values: META_CALL_TO_ACTIONS, objectives: null },
+  { key: 'conversionEvent', label: 'Conversion event', values: META_CONVERSION_EVENTS, objectives: ['conversions'] },
+  { key: 'optimizationGoal', label: 'Optimization goal', values: META_OPTIMIZATION_GOALS, objectives: ['traffic'] },
+];
 
 /**
  * The countries for which Meta requires the EU Digital Services Act disclosures

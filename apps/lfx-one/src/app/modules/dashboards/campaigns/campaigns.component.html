@@ -1962,6 +1962,11 @@
               [metaInstagramDsaEnabled]="briefCampaignsMetaInstagramDsaEnabled()"
               [metaAudienceTargetingEnabled]="briefCampaignsMetaAudienceTargetingEnabled()"
               [metaCustomAudiencesEnabled]="briefCampaignsMetaCustomAudiencesEnabled()"
+              [metaAdOptionsEnabled]="{
+                callToAction: briefCampaignsMetaCallToActionEnabled(),
+                conversionEvent: briefCampaignsMetaConversionEventEnabled(),
+                optimizationGoal: briefCampaignsMetaOptimizationGoalEnabled(),
+              }"
               [googleAudienceSegmentsEnabled]="briefCampaignsGoogleAudienceSegmentsEnabled()"
               [googleConversionActionsEnabled]="briefCampaignsGoogleConversionActionsEnabled()"
               [googleDemandGenAudienceEnabled]="briefCampaignsGoogleDemandGenAudienceEnabled()"
