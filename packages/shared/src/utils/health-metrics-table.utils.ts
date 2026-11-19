@@ -56,7 +56,7 @@ export function healthMetricsSortIcon(sort: HealthMetricsColumnSort): string {
  */
 export function formatHealthMetricsSmallPercent(pct: number): string | null {
   if (!(pct > 0 && pct < 1)) return null;
-  const tenths = Math.max(0.1, Math.round(pct * 10) / 10);
+  const tenths = smallPercentTenths(pct);
   return tenths >= 1 ? '1%' : `${tenths.toFixed(1)}%`;
 }
 
@@ -67,8 +67,7 @@ export function formatHealthMetricsPercent(pct: number): string {
 
 /** The number `formatHealthMetricsPercent` shows, so a column sorts on what its cell reads. */
 export function healthMetricsShownPercent(pct: number): number {
-  if (!(pct > 0 && pct < 1)) return Math.round(pct);
-  return Math.min(1, Math.max(0.1, Math.round(pct * 10) / 10));
+  return pct > 0 && pct < 1 ? smallPercentTenths(pct) : Math.round(pct);
 }
 
 /** The sort after a header click: the sorted column flips; any other starts A to Z for text, highest or newest first otherwise. */
@@ -167,4 +166,9 @@ function isEmptySortValue(value: HealthMetricsSortValue): boolean {
 /** Letters only, so "Non-Member" and "non member" both read `nonmember`. */
 function normalizeTierName(tier: string): string {
   return tier.toLowerCase().replace(/[^a-z]/g, '');
+}
+
+/** The one-decimal value a share under 1% shows: at least 0.1, rounding up to 1 at the top. */
+function smallPercentTenths(pct: number): number {
+  return Math.min(1, Math.max(0.1, Math.round(pct * 10) / 10));
 }

@@ -348,6 +348,15 @@ describe('participation period selection and delta formatting', () => {
     });
   });
 
+  it('reads an attendance rate under 1% to one decimal and sorts it on that shown figure', () => {
+    const faint = {
+      ...participationRow,
+      periods: participationRow.periods.map((candidate) => (candidate.range === 'YTD' ? { ...candidate, attendancePct: 0.004 } : candidate)),
+    };
+    const view = buildHealthMetricsEngagementParticipationRowView(faint, 'YTD');
+    expect([view.attendanceLabel, view.sortValues.attendance]).toEqual(['0.4%', 0.4]);
+  });
+
   it('gives a type the view adds later the Other icon and the default bar rule', () => {
     const view = buildHealthMetricsEngagementParticipationRowView(
       { ...participationRow, group: 'Outreach', label: 'Outreach groups', governance: false },
@@ -477,6 +486,17 @@ describe('organization participation rules', () => {
       attendedPct: 33,
       attendedFillClass: 'bg-amber-500',
     });
+  });
+
+  it('reads a company attended share under 1% to one decimal, and sorts it on that shown figure', () => {
+    const view = buildHealthMetricsEngagementOrgRowView(
+      orgRow('Acme Motors', 1, {
+        periods: [{ range: 'YTD', meetingsHeld: 300, meetingsTotal: 250, invitedCount: 250, attendedCount: 1, attendancePct: 0.004, avgReps: 1, sortRank: 1 }],
+      }),
+      'YTD'
+    );
+    expect(view.attendedLabel).toBe('1 of 250 (0.4%)');
+    expect(view.sortValues.attended).toBe(0.4);
   });
 
   it('reads a non-member as "Non-member" with no tier, and a tier outside the four as its own name', () => {
@@ -1127,6 +1147,20 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
       { key: 'open', label: 'Avg. open rate', value: '45%' },
       { key: 'click', label: 'Avg. click rate', value: '5.7%', description: '13% of opens' },
     ]);
+  });
+
+  it('keeps Avg. click rate to one decimal, never 0.0% above zero, and the whole rates to one decimal under 1%', () => {
+    const faint = buildHealthMetricsEngagementNewsletterView(
+      { ...performance, periods: { ...performance.periods, YTD: { ...period, avgClickRate: 0.0002, avgOpenRate: 0.004 } } },
+      'YTD'
+    );
+    expect(faint.metrics.find((metric) => metric.key === 'click')?.value).toBe('0.1%');
+    expect(faint.metrics.find((metric) => metric.key === 'open')?.value).toBe('0.4%');
+    const atOne = buildHealthMetricsEngagementNewsletterView(
+      { ...performance, periods: { ...performance.periods, YTD: { ...period, avgClickRate: 0.0097 } } },
+      'YTD'
+    );
+    expect(atOne.metrics.find((metric) => metric.key === 'click')?.value).toBe('1.0%');
   });
 
   it('leaves out a description with no rate behind it', () => {

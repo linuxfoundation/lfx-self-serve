@@ -29,10 +29,10 @@ import {
 import { HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
 import { formatIsoDateLabel, parseIsoDateAsUtcMidnight } from './date-time.utils';
+import { formatHealthMetricsPercent } from './health-metrics-table.utils';
 import { getHealthMetricsTrainingDeliveryTypeLabel } from './health-metrics-training.utils';
 import { formatCurrency, formatNumber } from './number.utils';
 
-import { formatHealthMetricsPercent } from './health-metrics-table.utils';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
   HealthMetricsEventsAtAGlance,

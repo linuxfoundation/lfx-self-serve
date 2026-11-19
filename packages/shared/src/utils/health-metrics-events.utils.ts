@@ -42,10 +42,10 @@ import { HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH, HEALTH_METRICS_NON_M
 import { HEALTH_METRICS_TABLE_DASH } from '../constants/health-metrics-table.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { buildHealthMetricsColumnChart, formatHealthMetricsChartCompact } from './health-metrics-column-chart.utils';
+import { formatHealthMetricsPercent, healthMetricsShownPercent } from './health-metrics-table.utils';
 import { formatHealthMetricsCountryFlag } from './health-metrics-world-map.utils';
 import { formatCurrency } from './number.utils';
 
-import { formatHealthMetricsPercent, healthMetricsShownPercent } from './health-metrics-table.utils';
 import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsAtAGlancePeriod,
@@ -550,7 +550,7 @@ export function buildHealthMetricsEventsSpeakersView(speakers: HealthMetricsEven
         key: 'accepted',
         label: 'Accepted proposals',
         value: formatDashCount(period?.accepted),
-        ...(acceptance === null ? {} : { description: `${Math.round(acceptance * 100)}% acceptance rate` }),
+        ...(acceptance === null ? {} : { description: `${formatHealthMetricsPercent(acceptance * 100)} acceptance rate` }),
       },
       { key: 'in-review', label: 'In review', value: formatDashCount(period?.inReview) },
       {
@@ -594,7 +594,8 @@ export function buildHealthMetricsEventsSponsorshipView(
   const period = sponsorship.periods.find((candidate) => candidate.range === range) ?? null;
   const changes = period?.changes ?? null;
   const goal = period?.goalUsd ? period.goalUsd : null;
-  const reached = goal !== null && period?.progressToGoal !== null && period?.progressToGoal !== undefined ? Math.round(period.progressToGoal * 100) : null;
+  const reached =
+    goal !== null && period?.progressToGoal !== null && period?.progressToGoal !== undefined ? formatHealthMetricsPercent(period.progressToGoal * 100) : null;
   const tiers = period?.tiers ?? [];
   const most = Math.max(0, ...tiers.map((tier) => tier.packages));
 
@@ -612,7 +613,7 @@ export function buildHealthMetricsEventsSponsorshipView(
         key: 'goal',
         label: 'Goal',
         value: goal === null ? HEALTH_METRICS_TABLE_DASH : formatCurrency(goal),
-        ...(reached === null ? {} : { description: `${reached}% reached` }),
+        ...(reached === null ? {} : { description: `${reached} reached` }),
       },
       { key: 'tier-packages', label: 'Tier packages', value: formatDashCount(period?.tierPackages) },
       { key: 'add-ons', label: 'Add-ons', value: formatDashCount(period?.addOns) },

@@ -136,7 +136,8 @@ export class MembersBoardAttendanceComponent {
         enabled: true,
         callbacks: {
           title: (items) => this.tooltipTitle(items[0]?.dataIndex),
-          label: (item) => (item.parsed.y === null ? '' : `${item.parsed.y}%`),
+          // The table's own label, so the tooltip and the table under the chart read the same.
+          label: (item) => this.trend()[item.dataIndex]?.pctLabel ?? '',
         },
       },
     },

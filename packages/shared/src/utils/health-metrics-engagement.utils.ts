@@ -359,7 +359,7 @@ export function buildHealthMetricsEngagementOrgRowView(row: HealthMetricsEngagem
     attendedLabel:
       share === null
         ? HEALTH_METRICS_TABLE_DASH
-        : `${formatHealthMetricsEngagementCount(attended)} of ${formatHealthMetricsEngagementCount(total)} (${share}%)`,
+        : `${formatHealthMetricsEngagementCount(attended)} of ${formatHealthMetricsEngagementCount(total)} (${formatHealthMetricsPercent((fraction ?? 0) * 100)})`,
     attendedPct: share,
     attendedFillClass: share === null ? '' : healthMetricsBarFillClass(share),
     avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
@@ -368,7 +368,8 @@ export function buildHealthMetricsEngagementOrgRowView(row: HealthMetricsEngagem
       company: row.accountName,
       // A non-member ranks lowest; a member with a blank tier shows "—", so it is empty and sorts last.
       membership: row.isMember ? healthMetricsTierSortRank(tierName) : 0,
-      attended: share,
+      // The share its cell shows; the bar keeps the whole percent.
+      attended: share === null ? null : healthMetricsShownPercent((fraction ?? 0) * 100),
       reps: period?.avgReps ?? null,
       last: row.lastEngagedDate,
     },
@@ -769,7 +770,7 @@ function attendanceMonthName(month: HealthMetricsEngagementAttendanceMonth): str
   return MONTH_NAMES[Number(month.monthStartDate.slice(5, 7)) - 1] ?? month.monthStartDate.slice(0, 7);
 }
 
-/** A rated month's rate as a whole percent, the number every label shows. */
+/** A rated month's rate as a whole percent, for the change in points; the labels format the rate itself. */
 function attendanceWholePct(month: HealthMetricsEngagementAttendanceMonth): number {
   return Math.round((month.attendancePct as number) * 100);
 }
@@ -859,7 +860,7 @@ function buildAttendanceTrendMetrics(
       key: 'change',
       label: `Change since ${startName}`,
       value: formatAttendanceTrendPp(attendanceWholePct(end) - attendanceWholePct(start)),
-      description: `${attendanceWholePct(start)}% in ${startName.slice(0, 3)} → ${attendanceWholePct(end)}% in ${endName.slice(0, 3)}`,
+      description: `${formatHealthMetricsPercent((start.attendancePct as number) * 100)} in ${startName.slice(0, 3)} → ${formatHealthMetricsPercent((end.attendancePct as number) * 100)} in ${endName.slice(0, 3)}`,
       tip: `Difference in attendance rate between ${startName} and ${end === head ? 'the last full month' : endName} of the selected year, in percentage points.`,
     },
     {
@@ -914,16 +915,19 @@ function buildAttendanceTrendChart(
   });
 }
 
-/** A 0–100 percentage, whole; "—" when there is none. */
+/** A 0–100 percentage, whole from 1% and at 0, one decimal under 1%; "—" when there is none. */
 function formatNewsletterPct(value: number | null): string {
   return value === null ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsPercent(value);
 }
 
-/** A 0–1 rate as a percentage, whole unless `digits` asks for more. */
+/**
+ * A 0–1 rate as a percentage: whole from 1% and at 0, one decimal under 1%. With `digits`, it keeps that many decimals
+ * throughout, never reading "0.0%" above zero.
+ */
 function formatNewsletterRate(value: number | null, digits = 0): string {
   if (value === null || !Number.isFinite(value)) return '—';
-  // Under 1% reads to one decimal, never "0%" or "0.0%" above zero.
-  return formatHealthMetricsSmallPercent(value * 100) ?? `${(value * 100).toFixed(digits)}%`;
+  if (digits === 0) return formatHealthMetricsPercent(value * 100);
+  return value > 0 && value * 100 < 0.1 ? `${(0.1).toFixed(digits)}%` : `${(value * 100).toFixed(digits)}%`;
 }
 
 function buildNewsletterRow(newsletter: HealthMetricsEngagementNewsletter): HealthMetricsEngagementNewsletterRowView {
