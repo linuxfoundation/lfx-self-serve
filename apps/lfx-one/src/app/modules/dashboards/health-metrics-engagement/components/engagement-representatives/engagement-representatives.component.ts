@@ -9,16 +9,20 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
-  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_REP_DEFAULT_SORT,
   HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_REP_SORT_COLUMNS,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsEngagementRepRowView,
-  formatHealthMetricsEngagementRepLastAttended,
   filterHealthMetricsEngagementRepRows,
+  formatHealthMetricsEngagementRepLastAttended,
+  healthMetricsRowSortValue,
   parseHealthMetricsEngagementRepFilter,
   selectHealthMetricsEngagementRepCounts,
+  sortHealthMetricsRows,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -27,6 +31,8 @@ import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.compo
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { catchError, debounce, distinctUntilChanged, map, of, skip, switchMap, tap, timer } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
@@ -46,7 +52,15 @@ import type {
  */
 @Component({
   selector: 'lfx-engagement-representatives',
-  imports: [EmptyStateComponent, HealthMetricsCellComponent, TableComponent, UiBadgeComponent, UiPaginationComponent, UiSearchInputComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsThComponent,
+    TableComponent,
+    UiBadgeComponent,
+    UiPaginationComponent,
+    UiSearchInputComponent,
+  ],
   templateUrl: './engagement-representatives.component.html',
 })
 export class EngagementRepresentativesComponent {
@@ -85,9 +99,13 @@ export class EngagementRepresentativesComponent {
   protected readonly query: Signal<HealthMetricsEngagementRepQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementRepresentatives> = this.initResponse();
 
-  /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_ENGAGEMENT_REP_SORT_COLUMNS, HEALTH_METRICS_ENGAGEMENT_REP_DEFAULT_SORT);
+  /** Narrowing or re-sorting the table must land the reader on rows, so any change to the cut or the order restarts paging. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`),
+    source: computed(
+      () =>
+        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}|${JSON.stringify(this.sorting.sort())}`
+    ),
     computation: () => 0,
   });
 
@@ -160,9 +178,10 @@ export class EngagementRepresentativesComponent {
     return computed(() => {
       const views = this.rowViewsByRow();
 
-      return filterHealthMetricsEngagementRepRows(this.response().rows, this.filter(), this.search(), this.chrome.selectedRange())
+      const filtered = filterHealthMetricsEngagementRepRows(this.response().rows, this.filter(), this.search(), this.chrome.selectedRange())
         .map((row) => views.get(row))
         .filter((view) => view !== undefined);
+      return sortHealthMetricsRows(filtered, this.sorting.order(), healthMetricsRowSortValue);
     });
   }
 

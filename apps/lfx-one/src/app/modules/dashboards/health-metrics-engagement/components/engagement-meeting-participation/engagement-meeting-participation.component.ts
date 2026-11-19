@@ -11,12 +11,15 @@ import {
   HEALTH_METRICS_BASE_PATH,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsEngagementParticipationMetrics,
   buildHealthMetricsEngagementParticipationRowView,
+  healthMetricsRowSortValue,
   selectHealthMetricsEngagementParticipationPeriod,
+  sortHealthMetricsRows,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -24,6 +27,8 @@ import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsValueBarComponent } from '../../../components/health-metrics-value-bar/health-metrics-value-bar.component';
@@ -49,6 +54,7 @@ import type {
     EmptyStateComponent,
     HealthMetricsCellComponent,
     HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
     HealthMetricsValueBarComponent,
     RouterLink,
     SkeletonModule,
@@ -94,9 +100,12 @@ export class EngagementMeetingParticipationComponent {
   protected readonly metrics: Signal<HealthMetricsMetricItem[]> = computed(() =>
     buildHealthMetricsEngagementParticipationMetrics(this.response().total, this.chrome.selectedRange())
   );
+  /** No arrow by default: the rows keep the meeting-type order. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_SORT_COLUMNS, null);
   protected readonly rowViews: Signal<HealthMetricsEngagementParticipationRowView[]> = computed(() => {
     const range = this.chrome.selectedRange();
-    return this.response().rows.map((row) => buildHealthMetricsEngagementParticipationRowView(row, range));
+    const views = this.response().rows.map((row) => buildHealthMetricsEngagementParticipationRowView(row, range));
+    return sortHealthMetricsRows(views, this.sorting.order(), healthMetricsRowSortValue);
   });
   // The roll-up's own meeting count decides this, not a row's: the note qualifies the headline rate.
   protected readonly lowConfidence = computed(() => {

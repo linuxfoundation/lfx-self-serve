@@ -28,8 +28,16 @@ export function injectHealthMetricsTableSort<K extends string>(columns: readonly
       ) as Record<K, HealthMetricsSortHeaderView>
   );
 
+  // The default sort only marks the table's own order (a view's rank, say), which a re-sort could reorder; `order` keeps it.
+  const order = computed(() => {
+    const current = sort();
+    return current && defaultSort && current.key === defaultSort.key && current.direction === defaultSort.direction ? null : current;
+  });
+
   return {
     sort: sort.asReadonly(),
+    /** The sort to apply: `null` while the table sits on its default, so the rows keep the order they arrive in. */
+    order,
     headers,
     /** Sorts by the column, or flips it when it is already the sort. */
     toggle(key: K): void {

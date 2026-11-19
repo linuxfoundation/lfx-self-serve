@@ -147,6 +147,26 @@ describe('EngagementNewsletterRecipientsComponent', () => {
     expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { nlFilter: 'failed' }, queryParamsHandling: 'merge' }));
   });
 
+  it('opens in the engagement order with no arrow, and sorts a count highest first with a failed delivery last', async () => {
+    await render();
+    const header = (key: string): HTMLElement => query(`engagement-newsletter-recipients-sort-${key}`) as HTMLElement;
+    expect(['recipient', 'delivery', 'engagement', 'opens', 'clicks'].map((key) => header(key).closest('th')?.getAttribute('aria-sort'))).toEqual([
+      'none',
+      'none',
+      'none',
+      'none',
+      'none',
+    ]);
+    const before = rowRanks();
+
+    (header('opens').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(rowRanks()).toEqual([before[0], before[1], before[2]]);
+    (header('opens').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(rowRanks()).toEqual([before[1], before[0], before[2]]);
+  });
+
   it('pages the cut rather than the whole list once a filter narrows it', async () => {
     // 60 recipients, every other one clicked: the Clicked cut holds 30, still more than a page.
     await render({

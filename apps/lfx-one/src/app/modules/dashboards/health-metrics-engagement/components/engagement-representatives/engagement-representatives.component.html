@@ -44,11 +44,35 @@
         data-testid="engagement-representatives-table">
         <ng-template #header>
           <tr>
-            <th scope="col">Representative</th>
+            <th scope="col" [attr.aria-sort]="sorting.headers().representative.ariaSort">
+              <lfx-health-metrics-th
+                label="Representative"
+                [sort]="sorting.headers().representative.state"
+                (sorted)="sorting.toggle('representative')"
+                data-testid="engagement-representatives-sort-representative" />
+            </th>
             <!-- Exact %: the design's 1.3 / 0.6 / 0.8 shares of the columns after Representative. -->
-            <th scope="col" class="w-[28%]">Group</th>
-            <th scope="col" class="w-[13%]">Attended</th>
-            <th scope="col" class="w-[17%]">Last attended</th>
+            <th scope="col" class="w-[28%]" [attr.aria-sort]="sorting.headers().group.ariaSort">
+              <lfx-health-metrics-th
+                label="Group"
+                [sort]="sorting.headers().group.state"
+                (sorted)="sorting.toggle('group')"
+                data-testid="engagement-representatives-sort-group" />
+            </th>
+            <th scope="col" class="w-[13%]" [attr.aria-sort]="sorting.headers().attended.ariaSort">
+              <lfx-health-metrics-th
+                label="Attended"
+                [sort]="sorting.headers().attended.state"
+                (sorted)="sorting.toggle('attended')"
+                data-testid="engagement-representatives-sort-attended" />
+            </th>
+            <th scope="col" class="w-[17%]" [attr.aria-sort]="sorting.headers().last.ariaSort">
+              <lfx-health-metrics-th
+                label="Last attended"
+                [sort]="sorting.headers().last.state"
+                (sorted)="sorting.toggle('last')"
+                data-testid="engagement-representatives-sort-last" />
+            </th>
           </tr>
         </ng-template>
 

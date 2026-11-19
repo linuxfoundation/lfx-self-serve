@@ -31,10 +31,28 @@
         data-testid="engagement-meeting-participation-table">
         <ng-template #header>
           <tr>
-            <th scope="col">Meeting type</th>
+            <th scope="col" [attr.aria-sort]="sorting.headers().type.ariaSort">
+              <lfx-health-metrics-th
+                label="Meeting type"
+                [sort]="sorting.headers().type.state"
+                (sorted)="sorting.toggle('type')"
+                data-testid="engagement-meeting-participation-sort-type" />
+            </th>
             <!-- Exact px: the design's 240px attendance column, and meetings held about a quarter of the rest. -->
-            <th scope="col" class="w-[20%]">Meetings held</th>
-            <th scope="col" class="w-[240px]">Attendance</th>
+            <th scope="col" class="w-[20%]" [attr.aria-sort]="sorting.headers().meetings.ariaSort">
+              <lfx-health-metrics-th
+                label="Meetings held"
+                [sort]="sorting.headers().meetings.state"
+                (sorted)="sorting.toggle('meetings')"
+                data-testid="engagement-meeting-participation-sort-meetings" />
+            </th>
+            <th scope="col" class="w-[240px]" [attr.aria-sort]="sorting.headers().attendance.ariaSort">
+              <lfx-health-metrics-th
+                label="Attendance"
+                [sort]="sorting.headers().attendance.state"
+                (sorted)="sorting.toggle('attendance')"
+                data-testid="engagement-meeting-participation-sort-attendance" />
+            </th>
           </tr>
         </ng-template>
 

@@ -168,6 +168,25 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-metrics-attendance-value')).toBe('41%');
   });
 
+  it('opens in the meeting-type order with no arrow, and sorts on a picked column', async () => {
+    await render();
+    const header = (key: string): HTMLElement => query(`engagement-meeting-participation-sort-${key}`) as HTMLElement;
+    const rows = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('tr[data-testid^="engagement-meeting-participation-row-"]')].map(
+        (row: Element) => row.getAttribute('data-testid') ?? ''
+      );
+
+    expect(['type', 'meetings', 'attendance'].map((key) => header(key).closest('th')?.getAttribute('aria-sort'))).toEqual(['none', 'none', 'none']);
+    expect(rows()).toEqual(['engagement-meeting-participation-row-Board', 'engagement-meeting-participation-row-Marketing']);
+
+    (header('type').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (header('type').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(header('type').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    expect(rows()).toEqual(['engagement-meeting-participation-row-Marketing', 'engagement-meeting-participation-row-Board']);
+  });
+
   it('draws each meeting type with its icon tile, its count and a 160px attendance bar', async () => {
     await render();
 
