@@ -23,6 +23,10 @@ import type {
   CampaignEmailTypeOption,
   CampaignFunnelStage,
   CampaignGoalOption,
+  MetaAdOptionField,
+  MetaAudienceGender,
+  MetaAudienceTargetingDraft,
+  MetaCustomAudienceListView,
   CampaignKeyword,
   CampaignLabelOption,
   CampaignNegativeKeywordMatchType,
@@ -945,6 +949,59 @@ export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 
 export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
 
 /**
+ * Meta ad set audience targeting (#5905), mirroring campaign-service's `NormalizeAudienceTargeting`
+ * (`internal/platform/meta/targeting.go`, linuxfoundation/lfx-v2-campaign-service#550).
+ */
+export const META_AUDIENCE_MIN_AGE = 18;
+export const META_AUDIENCE_MAX_AGE = 65;
+/** With Advantage+ audience on, Meta accepts an `ageMin` of at most this and fixes `ageMax` at {@link META_AUDIENCE_MAX_AGE}. */
+export const META_ADVANTAGE_AUDIENCE_MAX_AGE_MIN = 25;
+/** At most this many distinct ids in each of `customAudiences` and `excludedCustomAudiences`. */
+export const META_MAX_CUSTOM_AUDIENCES = 25;
+/** A canonical Meta custom-audience id: digits with no leading zero (campaign-service's `canonicalCampaignIDRe`). */
+export const META_CUSTOM_AUDIENCE_ID_PATTERN = /^[1-9][0-9]*$/;
+export const META_AUDIENCE_GENDERS: readonly MetaAudienceGender[] = ['male', 'female'];
+/** The custom-audience lists the Implement tab offers, in order. */
+export const META_CUSTOM_AUDIENCE_LISTS: readonly MetaCustomAudienceListView[] = [
+  { key: 'customAudiences', label: 'Include custom audiences' },
+  { key: 'excludedCustomAudiences', label: 'Exclude custom audiences' },
+];
+/** The Meta audience targeting a fresh form starts from, which sends nothing: Advantage+ audience is left unsaid. */
+export const DEFAULT_META_AUDIENCE_TARGETING: Readonly<MetaAudienceTargetingDraft> = {
+  ageMin: META_AUDIENCE_MIN_AGE,
+  ageMax: META_AUDIENCE_MAX_AGE,
+  genders: [],
+  customAudiences: [],
+  excludedCustomAudiences: [],
+};
+
+/**
+ * The Meta call to action, conversion event and optimization goal (#5934), as campaign-service v1.0.38
+ * accepts them in `metaConfig` (`docs/api-catalog.md`, MetaConfig; linuxfoundation/lfx-v2-campaign-service#550).
+ * Each list starts with campaign-service's default. The call to action fits every objective this app sends
+ * (it never sends a lead form `leadFormId`, the one case campaign-service refuses it in).
+ */
+export const META_CALL_TO_ACTIONS = [
+  'LEARN_MORE',
+  'SIGN_UP',
+  'BUY_TICKETS',
+  'APPLY_NOW',
+  'BOOK_NOW',
+  'SUBSCRIBE',
+  'DOWNLOAD',
+  'WATCH_MORE',
+  'CONTACT_US',
+] as const;
+export const META_CONVERSION_EVENTS = ['PURCHASE', 'COMPLETE_REGISTRATION', 'LEAD', 'SUBMIT_APPLICATION', 'SUBSCRIBE'] as const;
+/** LANDING_PAGE_VIEWS is refused with manual bidding, which campaign-service creates as a link-click bid cap. */
+export const META_OPTIMIZATION_GOALS = ['LINK_CLICKS', 'LANDING_PAGE_VIEWS'] as const;
+export const META_AD_OPTION_FIELDS: readonly MetaAdOptionField[] = [
+  { key: 'callToAction', label: 'Call to action', values: META_CALL_TO_ACTIONS, objectives: null },
+  { key: 'conversionEvent', label: 'Conversion event', values: META_CONVERSION_EVENTS, objectives: ['conversions'] },
+  { key: 'optimizationGoal', label: 'Optimization goal', values: META_OPTIMIZATION_GOALS, objectives: ['traffic'] },
+];
+
+/**
  * The countries for which Meta requires the EU Digital Services Act disclosures
  * (`dsa_beneficiary` / `dsa_payor` on the ad set): "For ad sets targeting the EU and/or associated
  * territories, the dsa_payor and dsa_beneficiary fields are required." The 27 member states, the
@@ -1571,6 +1628,21 @@ export const GOOGLE_USER_LISTS_RESTRICTED_CODE = 'GOOGLE_USER_LISTS_RESTRICTED';
 /** The user-facing message of that refusal. */
 export const GOOGLE_USER_LISTS_RESTRICTED_MESSAGE =
   "This Google Ads account's user lists can only be listed by the LF marketing team, because every foundation shares one Google Ads account.";
+/** The 400 a create gets for `metaConfig.targeting` while Meta audience targeting is off on this deployment (#5905). */
+export const META_AUDIENCE_TARGETING_OFF_MESSAGE =
+  'Meta audience targeting is not available on this deployment. Reload the page, then create again without it.';
+
+/**
+ * The error `code` (HTTP 403) of a Meta custom-audience read, or a create naming custom audiences, refused
+ * because the caller does not hold `global_marketing_ops` on the project: the Meta ad account is shared
+ * by every foundation, so campaign-service answers both on that relation (linuxfoundation/lfx-v2-campaign-service#550).
+ */
+export const META_CUSTOM_AUDIENCES_RESTRICTED_CODE = 'META_CUSTOM_AUDIENCES_RESTRICTED';
+export const META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE =
+  'Meta custom audiences can only be used by the LF marketing team, because every foundation shares one Meta ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE';
+export const META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Meta custom audiences could not be verified. Try again in a few minutes.';
 /** The error `code` (HTTP 503) of a user list read refused because the caller's access could not be verified. */
 export const GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE';
 /** The user-facing message of that refusal. Nothing was read. */
@@ -6369,6 +6441,15 @@ export const GOOGLE_CONVERSION_ACTION_PICKER_LOADING = "Loading this account's c
  */
 export const GOOGLE_CONVERSION_ACTION_PICKER_EMPTY =
   "This Google Ads account has no enabled conversion actions. Enter ids below or leave the box blank to use the account's own goals.";
+
+/** Why the Meta custom-audience picker has no list, one sentence each; the typed id boxes still add an id. */
+export const META_CUSTOM_AUDIENCE_PICKER_REASONS = {
+  unavailable: "The custom audience picker isn't available here. Enter audience ids instead.",
+  failed: "The custom audiences couldn't be read for this project's Meta ad account. Enter audience ids instead.",
+} as const;
+export const META_CUSTOM_AUDIENCE_PICKER_LOADING = "Loading this ad account's custom audiences…";
+export const META_CUSTOM_AUDIENCE_PICKER_EMPTY = 'This Meta ad account has no custom audiences to pick from. Enter audience ids instead.';
+export const META_CUSTOM_AUDIENCE_PICKER_TRUNCATED = "This ad account has more custom audiences than the picker shows. If one isn't listed, enter its id.";
 
 /**
  * Why the Implement tab's audience segment picker has no list, one sentence each; the typed box below

@@ -28,6 +28,9 @@ export const ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS = 60 * 1000;
 /** Upper bound on cached employee-view verdicts per server process. */
 export const ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES = 1000;
 
+/** Most candidate company domains one lookup sends to the query service (a person's verified addresses, each with its parent domains). */
+export const ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS = 20;
+
 /**
  * Field names `stripPersonalFields` removes from every object, at any depth, in the all employee view.
  * Matched case-insensitively and ignoring `_` and `-`, so `first_name`, `firstName` and `FIRST-NAME` are one entry.

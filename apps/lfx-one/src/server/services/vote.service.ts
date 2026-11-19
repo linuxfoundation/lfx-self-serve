@@ -1309,6 +1309,34 @@ export class VoteService {
     };
   }
 
+  /**
+   * Whether the caller's first submission would end the vote (#4726), read at submit time.
+   * @description Only a current, pending row is checked upstream; anything else answers false without a read. The
+   * response uid comes from the identity-matched row, never the client. `would_end_vote` is point-in-time and advisory,
+   * and a voting service that predates it omits the field, which reads as false.
+   */
+  public async getMyWouldEndVote(req: Request, voteUid: string): Promise<boolean> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.AWAITING_RESPONSE) return false;
+
+    const detail = await this.microserviceProxy.proxyRequest<VoteResponseDetail>(
+      req,
+      'LFX_V2_SERVICE',
+      `/vote_responses/${encodeURIComponent(row.uid)}`,
+      'GET'
+    );
+
+    if (detail?.vote_uid && detail.vote_uid !== voteUid) {
+      logger.warning(req, 'get_my_would_end_vote', 'Vote response belongs to a different vote, answering false', {
+        vote_uid: voteUid,
+        vote_response_uid: row.uid,
+      });
+      return false;
+    }
+
+    return detail?.would_end_vote === true;
+  }
+
   // ============================================
   // Private Helpers
   // ============================================

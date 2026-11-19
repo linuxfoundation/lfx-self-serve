@@ -27,7 +27,6 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
-  HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
@@ -1621,8 +1620,8 @@ describe('HealthMetricsEventsService.getGeography', () => {
     COUNTRIES_COUNT_3RD_LAST_COMPLETED_YEAR: null,
   };
 
-  function countryRow(country: string | null, ytd: number | null, lastYear: number | null = 0) {
-    return { COUNTRY: country, REGISTRATION_COUNT_YTD: ytd, REGISTRATION_COUNT_LAST_COMPLETED_YEAR: lastYear };
+  function countryRow(country: string | null, ytd: number | null, lastYear: number | null = 0, code: string | null = null) {
+    return { COUNTRY_CODE: code, COUNTRY: country, REGISTRATION_COUNT_YTD: ytd, REGISTRATION_COUNT_LAST_COMPLETED_YEAR: lastYear };
   }
 
   function mockReads(scope: Record<string, unknown>[], countries: Record<string, unknown>[]) {
@@ -1634,12 +1633,15 @@ describe('HealthMetricsEventsService.getGeography', () => {
     mockReads(
       [scopeRow],
       [
-        countryRow('Japan', 50),
-        countryRow('Canada', 300, 10),
-        countryRow('Germany', 50),
-        countryRow('Brazil', 20),
-        countryRow('Kenya', 10),
-        countryRow('Norway', 5),
+        countryRow('Japan', 50, 0, 'JP'),
+        countryRow('Canada', 300, 10, 'CA'),
+        countryRow('Germany', 50, 0, 'DE'),
+        countryRow('Brazil', 20, 0, 'BR'),
+        countryRow('Kenya', 10, 0, 'KE'),
+        // A malformed or unassigned code keys nothing.
+        countryRow('Norway', 5, 0, 'NOR'),
+        countryRow('Britain', 2, 0, 'UK'),
+        countryRow('Atlantis', 1),
         countryRow('Chile', 0),
         countryRow('Peru', null),
         countryRow(null, 99),
@@ -1658,16 +1660,25 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(scopeSql).toContain('countries_change_pct_last_completed_year');
     expect(scopeSql).not.toContain('countries_change_pct_prev_completed_year');
     expect(countryBinds).toEqual(['fdn-acme']);
-    expect(countrySql).toContain("NULLIF(TRIM(country), '') AS country");
     expect(countrySql).toContain("AND NULLIF(TRIM(country), '') IS NOT NULL");
+    // Rows fold by name first, keeping any valid two-letter code, then names sharing a code fold into one.
+    // Only an assigned code (or XK) survives the first fold, so a placeholder code can neither merge countries nor outrank a real one.
+    const kept = /UPPER\(TRIM\(country_code\)\) IN \(([^)]*)\)/.exec(countrySql as string)?.[1] ?? '';
+    expect(kept).toContain("'US'");
+    expect(kept).toContain("'GB'");
+    expect(kept).toContain("'XK'");
+    expect(kept).not.toContain("'UK'");
+    expect(kept).not.toContain("'ZZ'");
     expect(countrySql).toContain("GROUP BY NULLIF(TRIM(country), '')");
+    expect(countrySql).toContain('GROUP BY COALESCE(country_code, country)');
     for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
       expect(scopeSql).toContain(`countries_count_${suffix}`);
       expect(countrySql).toContain(`SUM(registration_count_${suffix}) AS registration_count_${suffix}`);
+      expect(countrySql).toContain(`SUM(by_name.registration_count_${suffix}) AS registration_count_${suffix}`);
     }
   });
 
-  it('ranks each period by registrations, then name, and caps the list while counting every country', async () => {
+  it('ranks every country in each period by registrations, then name, keeping only assigned codes', async () => {
     const { periods } = await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
 
     const byRange = (range: string) => periods.find((period) => period.range === range);
@@ -1676,23 +1687,23 @@ describe('HealthMetricsEventsService.getGeography', () => {
       range: 'YTD',
       countries: 7,
       changes: { countries: 0.4 },
-      topCountries: [
-        { country: 'Canada', registrations: 300 },
-        { country: 'Germany', registrations: 50 },
-        { country: 'Japan', registrations: 50 },
-        { country: 'Brazil', registrations: 20 },
-        { country: 'Kenya', registrations: 10 },
+      registrationsByCountry: [
+        { code: 'CA', country: 'Canada', registrations: 300 },
+        { code: 'DE', country: 'Germany', registrations: 50 },
+        { code: 'JP', country: 'Japan', registrations: 50 },
+        { code: 'BR', country: 'Brazil', registrations: 20 },
+        { code: 'KE', country: 'Kenya', registrations: 10 },
+        { code: null, country: 'Norway', registrations: 5 },
+        { code: null, country: 'Britain', registrations: 2 },
+        { code: null, country: 'Atlantis', registrations: 1 },
       ],
-      rankedCountries: 6,
     });
-    expect(byRange('YTD')?.topCountries).toHaveLength(HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES);
     expect(byRange('COMPLETED_YEAR')).toMatchObject({
       countries: 6,
       changes: { countries: null },
-      topCountries: [{ country: 'Canada', registrations: 10 }],
-      rankedCountries: 1,
+      registrationsByCountry: [{ code: 'CA', country: 'Canada', registrations: 10 }],
     });
-    expect(byRange('COMPLETED_YEAR_2')).toMatchObject({ countries: 2, changes: null, topCountries: [], rankedCountries: 0 });
+    expect(byRange('COMPLETED_YEAR_2')).toMatchObject({ countries: 2, changes: null, registrationsByCountry: [] });
     expect(byRange('COMPLETED_YEAR_3')).toMatchObject({ countries: null, changes: null });
   });
 

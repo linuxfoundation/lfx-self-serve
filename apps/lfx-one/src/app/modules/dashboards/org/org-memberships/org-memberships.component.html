@@ -86,9 +86,7 @@
                 } @else {
                   <p class="text-xl font-medium text-gray-900">{{ summary()?.activeMemberships ?? 0 }}</p>
                 }
-                <p class="text-sm font-normal text-gray-900" data-testid="memberships-stat-active-label">
-                  {{ isRollUp() ? 'Foundations with Membership' : 'Active Memberships' }}
-                </p>
+                <p class="text-sm font-normal text-gray-900" data-testid="memberships-stat-active-label">Active Memberships</p>
               </div>
             </div>
             <div class="flex items-center gap-3 p-4" data-testid="memberships-stat-renewing">
@@ -204,14 +202,13 @@
                 [loading]="activeState() === 'loading'"
                 [sortField]="isRollUp() ? undefined : 'foundationName'"
                 [sortOrder]="1"
-                [skeletonColumns]="6"
+                [skeletonColumns]="isRollUp() ? 7 : 6"
                 data-testid="memberships-active-table">
                 <ng-template #header>
                   <tr>
+                    <th>Name</th>
                     @if (isRollUp()) {
                       <th data-testid="memberships-active-company-header">Company</th>
-                    } @else {
-                      <th>Name</th>
                     }
                     <th>Membership Tier</th>
                     <th>Member Since</th>
@@ -221,14 +218,12 @@
                   </tr>
                 </ng-template>
                 <ng-template #body let-membership>
-                  @if (isRollUp() && membership.groupStart) {
-                    <tr class="bg-gray-50" [attr.data-testid]="'memberships-active-group-' + membership.foundationId">
-                      <th scope="rowgroup" colspan="6" class="text-left font-normal">
-                        <ng-container *ngTemplateOutlet="foundationIdentity; context: { $implicit: membership }" />
-                      </th>
-                    </tr>
-                  }
                   <tr>
+                    @if (isRollUp()) {
+                      <td [attr.data-testid]="'memberships-active-foundation-' + membership.foundationId + '-' + membership.organization?.accountId">
+                        <ng-container *ngTemplateOutlet="foundationIdentity; context: { $implicit: membership }" />
+                      </td>
+                    }
                     <td>
                       @if (isRollUp()) {
                         <div
