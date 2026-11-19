@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
+import { HttpParams } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -729,7 +730,10 @@ export class VoteManageComponent {
           if (!uid) {
             return of(idle);
           }
-          return forkJoin({ committee: this.committeeService.getCommitteeDetail(uid), members: this.committeeService.getCommitteeMembers(uid) }).pipe(
+          return forkJoin({
+            committee: this.committeeService.getCommitteeDetail(uid),
+            members: this.committeeService.getCommitteeMembers(uid, new HttpParams().set('require_complete', 'true')),
+          }).pipe(
             switchMap(({ committee, members }) =>
               eligibility$.pipe(
                 map(

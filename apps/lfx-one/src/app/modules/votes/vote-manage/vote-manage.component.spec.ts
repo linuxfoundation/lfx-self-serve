@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ApplicationRef, PLATFORM_ID, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -1227,6 +1227,16 @@ describe('VoteManageComponent', () => {
       expect(voteServiceMock.updateVote.mock.calls[0][1].poll_questions.map((question: { type: string }) => question.type)).toEqual(['multiple_choice']);
       expect(voteServiceMock.enableVote).toHaveBeenCalledWith(VOTE_UID);
       expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+    });
+
+    it('requires a complete roster before counting eligible voters for an existing Condorcet draft', async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(rankedVote()));
+      const fixture = await createComponent();
+
+      expect(getCommitteeMembers).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, expect.any(HttpParams));
+      expect(getCommitteeMembers.mock.calls[0][1].get('require_complete')).toBe('true');
+      expect(fixture.componentInstance.eligibleVoterCountState()).toEqual({ status: 'loaded', count: 3 });
     });
 
     it('keeps the method out of an edit’s update request, so ITX keeps the stored one', async () => {
