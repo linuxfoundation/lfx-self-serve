@@ -4,7 +4,7 @@ description: How to read the People page for the selected company — its All Em
 audience: [all]
 product_area: Company
 tags: [company, org, org-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
-last_updated: 2026-11-16
+last_updated: 2026-11-17
 intercom_collection: Company
 ---
 
@@ -159,7 +159,7 @@ The **Trainees** tab shows the employees who enrolled in a course or earned a ce
 - **Cards:** the tab opens with three cards, **People with training activity**, **Courses taken** and **Certified people**. Select **Show 7 more stats** for the others: **Training-program roster members**, **Learners not on the people list**, **Certifications**, **Trainings completed**, **Completion rate**, **Courses in progress** and **People in training**; **Show fewer stats** hides them again. Point at a card to see what it counts. **Training-program roster members** is today's count of the people on the company's LF Education training program, and does not follow the time range or the filters.
 - **Columns:** **Name**, **Status** (**Certified** or **Enrolled**), **Courses**, **Certs**, **Trainings**, **In progress** and **Most Recent Course**.
 - **Former employees:** former employees on the people list can count in the cards, but the table lists current employees only. A note under the cards says how many, except while a foundation, project, course, level or format is selected: the note is then hidden, though they can still be counted.
-- **Learners not on the people list:** learners linked to the company who are not on its people list are listed under the table by name and status. The list is closed at first, with its count in the header: select the header to open it. A note there says that one person can appear more than once, for example with several training accounts under different emails, and that an org admin can review the list if a name looks familiar. The list is hidden while a foundation, project, course, level or format is selected.
+- **Learners not on the people list:** learners linked to the company who are not on its people list are listed under the table by name and status. The list is closed at first, with its count in the header: select the header to open it. A note there says that one person can appear more than once, for example with several training accounts under different emails, and that a company admin can review the list if a name looks familiar. The list is hidden while a foundation, project, course, level or format is selected.
 
 Select a row on either tab to expand it and see each event, course or certification. **Event Attendees** shows 30 people at first: select **Show All** at the bottom to see the rest. On **Trainees**, the table and the **Learners not on the people list** list each have their own pages of 10 rows, with page numbers and **Showing 1 to 10 of N** at the bottom. When a list has more than 10 people, the menu next to the page numbers shows 25 or 50 rows per page. A new search, filter, time range or sort goes back to the first page.
 

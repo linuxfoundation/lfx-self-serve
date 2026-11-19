@@ -71,12 +71,12 @@ export class OrgIdentityController {
       const grants: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
       // Both run only for a caller who holds nothing, and neither can throw — a failed lookup reports
       // itself on the wire so the client can say "unknown" instead of asserting something wrong.
-      const [claManagerOrgs, affiliation] = await Promise.all([
+      // Epic #5845 — the all employee view rests on a verified company email alone, so it runs alongside them.
+      const [claManagerOrgs, affiliation, employeeView] = await Promise.all([
         this.claOnlyOrgs.getRoleGrantClaManagerOrgs(req, grants),
         this.affiliation.getRoleGrantAffiliation(req, grants),
+        this.employeeView.getRoleGrantEmployeeView(req, grants),
       ]);
-      // Epic #5845 — the all employee view is offered only to a caller whose employer is already known to be a member.
-      const employeeView = await this.employeeView.getRoleGrantEmployeeView(req, grants, affiliation.affiliation);
       const result: RoleGrantsResponse = { ...grants, ...claManagerOrgs, ...affiliation, ...employeeView };
 
       logger.success(req, 'get_org_role_grants', startTime, {

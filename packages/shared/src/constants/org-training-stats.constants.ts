@@ -114,4 +114,4 @@ export const ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE =
 
 /** Note in the open Trainees list of learners not on the people list: one person can appear more than once, and who can recognize them (lfx-self-serve#5304). */
 export const ORG_TRAINEES_OUTSIDE_LEARNERS_REVIEW_NOTE =
-  'These learners have training linked to this company but are not on its people list. One person can appear more than once, for example with several training accounts under different emails. An org admin can review this list if a name looks familiar.';
+  'These learners have training linked to this company but are not on its people list. One person can appear more than once, for example with several training accounts under different emails. A company admin can review this list if a name looks familiar.';

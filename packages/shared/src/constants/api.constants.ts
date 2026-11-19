@@ -80,6 +80,13 @@ export const ORG_SEARCH_TIMEOUT_MS = 10000;
 export const CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS = 2000;
 
 /**
+ * How long the meeting guest editors wait for each of the signed-in user's profile and meeting-invite
+ * email lookups before giving up on it for "Add myself" (#5798). Short on purpose: the action is a
+ * convenience, and a lookup that never settles must not leave it pending.
+ */
+export const MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS = 2000;
+
+/**
  * Ceiling (ms) for a single CDP organization lookup (by name or by domain) inside
  * `searchOrganizationsWithCdp`.
  * @description CDP token generation and the lookup request each carry their own independent

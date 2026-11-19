@@ -86,6 +86,7 @@ import type {
   CampaignServiceGoogleAdsGeoTargetSuggestions,
   CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
+  CampaignServiceMetaCustomAudiences,
   CampaignServiceLinkedInAdsCreateAccount,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
@@ -803,6 +804,30 @@ export function canChooseLinkedInAdAccount(): boolean {
 }
 
 /**
+ * Whether a Meta create may carry `metaConfig.targeting` (#5905), and whether
+ * `GET /api/campaigns/meta/custom-audiences` answers. Needs the campaign-service create path AND the
+ * audience-targeting flag: the legacy creator never reads the block. Whether the caller may name custom
+ * audiences (`global_marketing_ops`) the controller decides per request.
+ */
+export function canSetMetaAudienceTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal` (#5934),
+ * one flag each, each also needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaCallToAction(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaCallToAction);
+}
+export function canSetMetaConversionEvent(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaConversionEvent);
+}
+export function canSetMetaOptimizationGoal(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaOptimizationGoal);
+}
+
+/**
  * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
  * targeting profile with entries removed.
  *
@@ -1057,6 +1082,10 @@ export class CampaignServiceClient {
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
         twitterCreateEnabled: canCreateTwitter(),
         metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
+        metaAudienceTargetingEnabled: canSetMetaAudienceTargeting(),
+        metaCallToActionEnabled: canSetMetaCallToAction(),
+        metaConversionEventEnabled: canSetMetaConversionEvent(),
+        metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -1131,6 +1160,10 @@ export class CampaignServiceClient {
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
       twitterCreateEnabled: canCreateTwitter(),
       metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
+      metaAudienceTargetingEnabled: canSetMetaAudienceTargeting(),
+      metaCallToActionEnabled: canSetMetaCallToAction(),
+      metaConversionEventEnabled: canSetMetaConversionEvent(),
+      metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -3577,6 +3610,29 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/google-ads/user-lists`,
       'GET'
+    );
+  }
+
+  /**
+   * The custom audiences (lookalikes included) of the Meta ad account a create for this project uses
+   * (`list-meta-custom-audiences`, linuxfoundation/lfx-v2-campaign-service#550), for the Implement tab's
+   * Meta audience picker (#5905). `q`, when given, keeps names containing it, ignoring case. Upstream answers
+   * it on `global_marketing_ops` of the path project, the relation the BFF checks first; at most 500 sorted by
+   * name, with `truncated`. Failures are left to the caller, which falls back to typed ids.
+   */
+  public async listMetaCustomAudiences(req: Request, projectSlug: string, q?: string): Promise<CampaignServiceMetaCustomAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A custom audience read requires the project it belongs to.', {
+        operation: 'list_meta_custom_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaCustomAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/custom-audiences`,
+      'GET',
+      q === undefined ? undefined : { q }
     );
   }
 
