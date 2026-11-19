@@ -32,6 +32,7 @@ import { formatIsoDateLabel, parseIsoDateAsUtcMidnight } from './date-time.utils
 import { getHealthMetricsTrainingDeliveryTypeLabel } from './health-metrics-training.utils';
 import { formatCurrency, formatNumber } from './number.utils';
 
+import { formatHealthMetricsPercent } from './health-metrics-table.utils';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
   HealthMetricsEventsAtAGlance,
@@ -207,7 +208,7 @@ export function buildHealthMetricsOverviewNpsView(nps: HealthMetricsOverviewNps,
       range: row.range,
       dotClass: row.dotClass,
       countLabel: formatCount(row.count),
-      pctLabel: responses && row.count !== null ? formatShare(row.count / responses, false) : NOT_AVAILABLE,
+      pctLabel: responses && row.count !== null ? formatShare(row.count / responses) : NOT_AVAILABLE,
     })),
     noResponseLabel: formatCount(period?.noResponseCount),
   };
@@ -445,8 +446,8 @@ export function buildHealthMetricsOverviewNewsletterView(
         ),
       },
       kpi('sent', 'Newsletters sent', formatCount(period?.newslettersSent)),
-      kpi('open', 'Avg. open rate', formatShare(period?.avgOpenRate ?? null, false)),
-      kpi('cto', 'Avg. click-to-open rate', formatShare(period?.avgClickToOpenRate ?? null, false)),
+      kpi('open', 'Avg. open rate', formatShare(period?.avgOpenRate ?? null)),
+      kpi('cto', 'Avg. click-to-open rate', formatShare(period?.avgClickToOpenRate ?? null)),
     ],
     chart: buildNewsletterChart(newsletters, getYearForRange(range)),
     engagementBasis:
@@ -455,7 +456,7 @@ export function buildHealthMetricsOverviewNewsletterView(
         : '',
     engagement: buildNewsletterEngagement(period),
     mostEngaging: period?.mostEngagingName
-      ? { name: period.mostEngagingName, rateLabel: `${formatShare(period.mostEngagingClickToOpenRate, false)} click-to-open` }
+      ? { name: period.mostEngagingName, rateLabel: `${formatShare(period.mostEngagingClickToOpenRate)} click-to-open` }
       : null,
   };
 }
@@ -480,7 +481,7 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
       organizationInitial: member.organization?.charAt(0).toUpperCase() ?? '',
       logoUrl: member.logoUrl,
       attendedLabel: `${formatCount(attendance.attended ?? 0)} of ${formatCount(attendance.invited)}`,
-      pctLabel: formatShare(share, false),
+      pctLabel: formatShare(share),
       attendance: share,
       widthPct: clampPct(share * 100),
       barClass: attendanceFill(share),
@@ -502,7 +503,7 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
       {
         key: 'attendance',
         label: 'Average attendance',
-        value: formatShare(period?.avgAttendancePct ?? null, false),
+        value: formatShare(period?.avgAttendancePct ?? null),
         delta: buildPctDelta(period?.avgAttendanceChangePct ?? null, true),
         note: '',
       },
@@ -1028,8 +1029,8 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
     clickPath: path(points.filter((point) => point.clickY !== null).map((point): [number, number] => [point.x, point.clickY as number])),
     points: points.map((point, index) => {
       const parts = [point.send.name, point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : ''].filter(Boolean);
-      const open = formatShare(point.open, false);
-      // A click rate under 1% reads "<1%" rather than rounding to a misleading 0%.
+      const open = formatShare(point.open);
+      // A rate under 1% reads to one decimal rather than rounding to a misleading 0%.
       const click = formatShare(point.click);
       return {
         key: point.send.key,
@@ -1246,7 +1247,7 @@ function buildSponsorshipView(revenue: number | null, goal: number | null, model
     goalLabel: hasGoal ? formatCurrency(goal) : '',
     widthPct: clampPct(progress * 100),
     barClass: progress >= 1 ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
-    progressLabel: hasGoal ? `${formatShare(progress, false)} reached · ${remainingLabel(remaining)}` : 'No goal set',
+    progressLabel: hasGoal ? `${formatShare(progress)} reached · ${remainingLabel(remaining)}` : 'No goal set',
   };
 }
 
@@ -1544,14 +1545,13 @@ function formatMoneyCompact(value: number | null | undefined): string {
 
 /** A rate the view already carries as a percentage (0–100). */
 function formatRatePct(value: number | null | undefined): string {
-  return value === null || value === undefined ? NOT_AVAILABLE : `${Math.round(value)}%`;
+  return value === null || value === undefined ? NOT_AVAILABLE : formatHealthMetricsPercent(value);
 }
 
-/** A 0–1 share as a whole percentage; a share under 1% reads "<1%" unless `allowLessThanOne` is off. */
-function formatShare(value: number | null, allowLessThanOne = true): string {
+/** A 0–1 share as Health Metrics shows a percentage: whole from 1%, one decimal under it. */
+function formatShare(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return NOT_AVAILABLE;
-  const pct = value * 100;
-  return allowLessThanOne && pct > 0 && pct < 1 ? '<1%' : `${Math.round(pct)}%`;
+  return formatHealthMetricsPercent(value * 100);
 }
 
 function clampPct(value: number): number {

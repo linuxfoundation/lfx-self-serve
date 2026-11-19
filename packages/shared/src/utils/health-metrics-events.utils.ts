@@ -45,6 +45,7 @@ import { buildHealthMetricsColumnChart, formatHealthMetricsChartCompact } from '
 import { formatHealthMetricsCountryFlag } from './health-metrics-world-map.utils';
 import { formatCurrency } from './number.utils';
 
+import { formatHealthMetricsPercent, healthMetricsShownPercent } from './health-metrics-table.utils';
 import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsAtAGlancePeriod,
@@ -386,7 +387,7 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
     (candidate: HealthMetricsEventsAtAGlancePeriod | null): number | null =>
       candidate?.[field] ?? null;
   const showUpFigure = (candidate: HealthMetricsEventsAtAGlancePeriod | null): number | null =>
-    candidate?.showUpRate === null || candidate?.showUpRate === undefined ? null : Math.round(candidate.showUpRate * 100);
+    candidate?.showUpRate === null || candidate?.showUpRate === undefined ? null : healthMetricsShownPercent(candidate.showUpRate * 100);
   const showUpRate = formatShowUpRate(period);
   const eventsDescription = ytd ? `${formatDashCount(past)} past · ${formatDashCount(upcoming)} upcoming` : `${formatDashCount(past)} past`;
 
@@ -663,14 +664,14 @@ export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEv
         value: top?.country ?? HEALTH_METRICS_TABLE_DASH,
         ...(top
           ? {
-              description: `${formatHealthMetricsEventsCount(top.registrations)} ${top.registrations === 1 ? 'registration' : 'registrations'} · ${formatGeographyShare(share(top.registrations))}`,
+              description: `${formatHealthMetricsEventsCount(top.registrations)} ${top.registrations === 1 ? 'registration' : 'registrations'} · ${formatHealthMetricsPercent(share(top.registrations))}`,
             }
           : {}),
       },
       {
         key: 'outside-us',
         label: 'Outside the US',
-        value: measured ? formatGeographyShare(share(total - unitedStates)) : HEALTH_METRICS_TABLE_DASH,
+        value: measured ? formatHealthMetricsPercent(share(total - unitedStates)) : HEALTH_METRICS_TABLE_DASH,
         ...(measured ? { description: 'of registrations' } : {}),
       },
     ],
@@ -678,28 +679,20 @@ export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEv
       code: country.code,
       name: country.country,
       value: country.registrations,
-      valueLabel: `${formatHealthMetricsEventsCount(country.registrations)} · ${formatGeographyShare(share(country.registrations))}`,
+      valueLabel: `${formatHealthMetricsEventsCount(country.registrations)} · ${formatHealthMetricsPercent(share(country.registrations))}`,
     })),
     topCountries: ranked.slice(0, HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES).map((country) => ({
       key: country.code ?? country.country,
       flag: formatHealthMetricsCountryFlag(country.code),
       name: country.country,
       registrationsLabel: formatHealthMetricsEventsCount(country.registrations),
-      pctLabel: formatGeographyShare(share(country.registrations)),
+      pctLabel: formatHealthMetricsPercent(share(country.registrations)),
     })),
   };
 }
 
-/** A share as a whole percent, or one decimal under 1% that never rounds to zero ("0.1%" to "0.9%"), so a small country never reads 0%. */
-function formatGeographyShare(pct: number): string {
-  if (pct <= 0 || pct >= 1) return `${Math.round(pct)}%`;
-
-  const tenths = Math.max(0.1, Math.round(pct * 10) / 10);
-  return tenths >= 1 ? '1%' : `${tenths.toFixed(1)}%`;
-}
-
 function formatShowUpRate(period: HealthMetricsEventsAtAGlancePeriod | null): string {
-  return period?.showUpRate === null || period?.showUpRate === undefined ? HEALTH_METRICS_TABLE_DASH : `${Math.round(period.showUpRate * 100)}%`;
+  return period?.showUpRate === null || period?.showUpRate === undefined ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsPercent(period.showUpRate * 100);
 }
 
 function formatRevenueGoalSuffix(goal: number | null, withheld: boolean): string {

@@ -1143,7 +1143,7 @@ describe('members churn', () => {
     expect(tiers.map((row) => row.tier)).toEqual(['Gold', 'Silver', 'Associate', 'Bronze']);
     expect(tiers.map((row) => row.isHighRate)).toEqual([true, true, false, false]);
     expect(tiers.map((row) => row.shareWidthPct)).toEqual([66.7, 33.3, 1, 0]);
-    expect(tiers.map((row) => row.shareLabel)).toEqual(['67%', '33%', '<1%', '0%']);
+    expect(tiers.map((row) => row.shareLabel)).toEqual(['67%', '33%', '0.3%', '0%']);
     expect(tiers[0]).toMatchObject({ lostLabel: '2', rateLabel: '40%', duesLabel: '$1M', shareLabel: '67%' });
   });
 

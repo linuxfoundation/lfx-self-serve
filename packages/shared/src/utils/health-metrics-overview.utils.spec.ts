@@ -192,7 +192,7 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
       ['Medium', '164', '72%'],
       ['Low', '0', '0%'],
     ]);
-    expect(nonMembers.rows[0].pctLabel).toBe('<1%');
+    expect(nonMembers.rows[0].pctLabel).toBe('0.3%');
   });
 
   /** Each segment's start on the ring and its drawn length. */
@@ -234,11 +234,11 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
     expect(donut.map((segment) => segment.key)).toEqual(['high']);
   });
 
-  it('reads a share between 0.5% and 1% as "<1%", as the design does', () => {
+  it('reads a share under 1% to one decimal, never as 0%', () => {
     const tiny = { ...period, memberEngagement: { highCount: 7, mediumCount: 993, lowCount: 0, highPct: null, mediumPct: null, lowPct: null } };
     const [members] = buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(tiny) }, 'YTD').halves;
 
-    expect(members.rows.map((row) => row.pctLabel)).toEqual(['<1%', '99%', '0%']);
+    expect(members.rows.map((row) => row.pctLabel)).toEqual(['0.7%', '99%', '0%']);
   });
 
   it('leaves the split unmeasured for a period the view does not model', () => {
@@ -701,7 +701,7 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     expect([view.totalLabel, view.metricLabel, view.goalLabel]).toEqual(['131.5K', 'Enrollments', '88% of 150K goal']);
     expect(view.items.map((item) => [item.label, item.valueLabel, item.shareLabel])).toEqual([
       ['eLearning', '112.8K', '86%'],
-      ['Instructor-led', '337', '<1%'],
+      ['Instructor-led', '337', '0.3%'],
     ]);
     expect(view.items[0].widthPct).toBe(100);
     expect(view.items[1].widthPct).toBe(1);
@@ -871,7 +871,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     // A click rate under 1% is not rounded down to 0%.
     expect(chart?.points[0]?.tip.rows[1]?.value).toBe('3%');
     const faint = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.3, 0.004)] };
-    expect(buildHealthMetricsOverviewNewsletterView(faint, 'YTD').chart?.points[0]?.tip.rows[1]?.value).toBe('<1%');
+    expect(buildHealthMetricsOverviewNewsletterView(faint, 'YTD').chart?.points[0]?.tip.rows[1]?.value).toBe('0.4%');
     expect(chart?.points[1]?.ariaLabel).toBe(`Newsletter n3, Aug 24, ${year}: open rate 40%, click rate —`);
     expect(chart?.ticks).toEqual([
       { label: 'Aug', xPct: '0.00' },
@@ -924,7 +924,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
       periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, highEngagement: 1, highEngagementShare: 0.0001 }),
     };
     expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.widthPct).toBe(1.5);
-    expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.pctLabel).toBe('<1%');
+    expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.pctLabel).toBe('0.1%');
   });
 
   it('is empty when nothing was sent in the period or the foundation is unmeasured', () => {
