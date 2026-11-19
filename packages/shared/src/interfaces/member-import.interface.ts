@@ -140,6 +140,11 @@ export interface MemberImportDialogResult {
   conflicts: number;
   /** Refresh the roster when an attempted write may have committed without a confirmed response. */
   uncertain?: boolean;
+  /**
+   * The run's pre-import roster size, set when a run is closed. A reopened run's additions may already be in
+   * the roster the host fetched for the new dialog, so the host reconciles against this baseline instead.
+   */
+  baselineMemberCount?: number;
 }
 
 /** Whether a confirmed import run is still writing (`importing`) or has finished its latest attempt (`settled`). */

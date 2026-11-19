@@ -204,6 +204,15 @@ describe('CommitteeMemberImportService', () => {
     expect(service.getRun('group-a')).toBeUndefined();
   });
 
+  it('sends no later chunk after the root injector is destroyed mid-run', () => {
+    service.start(input('group-a', readyRows(30)));
+    TestBed.resetTestingModule();
+
+    respond(0);
+    expect(pending).toHaveLength(1);
+    expect(service.getRun('group-a')).toBeUndefined();
+  });
+
   it('stops scheduling invitation cleanup after the user changes', () => {
     const rows = readyRows(7);
     const pendingInviteUidByEmail = Object.fromEntries(rows.map((row, index) => [row.normalizedEmail, `invite-${index}`]));

@@ -68,7 +68,7 @@ export class CommitteeMemberImportService {
     toObservable(this.viewerSubject)
       .pipe(takeUntilDestroyed())
       .subscribe((owner) => this.synchronizeOwner(owner));
-    inject(DestroyRef).onDestroy(() => this.retireAll());
+    inject(DestroyRef).onDestroy(() => this.discardAll());
   }
 
   /** A different observed subject cannot read the previous subject's runs, even before the cleanup subscription runs. */
@@ -150,12 +150,15 @@ export class CommitteeMemberImportService {
   private synchronizeOwner(owner: string | null): void {
     if (this.owner === owner) return;
     this.owner = owner;
-    // Requests already sent may still commit upstream; only later chunks, pauses and timers end here.
-    this.runs.set(new Map());
-    this.retireAll();
+    this.discardAll();
   }
 
-  private retireAll(): void {
+  /**
+   * Requests already sent may still commit upstream; only later chunks, pauses and timers end here.
+   * Clearing the runs first makes every later chunk, resumed pause and late response a no-op.
+   */
+  private discardAll(): void {
+    this.runs.set(new Map());
     for (const runId of [...this.stopRequests.keys(), ...this.retryDeadlineTimers.keys()]) {
       this.retireRun(runId);
     }

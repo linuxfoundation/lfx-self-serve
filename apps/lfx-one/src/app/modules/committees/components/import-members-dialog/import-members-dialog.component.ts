@@ -92,6 +92,8 @@ export class ImportMembersDialogComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
+  /** The subject that opened the dialog; a different observed subject closes it without a result. */
+  private readonly viewerSubject = this.importService.viewerSubject();
 
   private readonly resultSummary = viewChild<ElementRef<HTMLElement>>('resultSummary');
 
@@ -166,7 +168,7 @@ export class ImportMembersDialogComponent {
   public readonly stopping = computed(() => this.phase() === 'importing' && !this.paused() && this.manualStopRequested());
   public readonly conflictCount = computed(() => this.rows().filter((row) => row.conflict).length);
   public readonly cleanupWarningCount = computed(() => this.rows().filter((row) => row.cleanupWarning).length);
-  public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0);
+  public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0 && this.importService.viewerSubject() === this.viewerSubject);
   public readonly canRetry = computed(() => this.phase() === 'results' && this.retryableCount() > 0);
   public readonly retryDeadlineLabel = computed(() => {
     if (!this.canRetry() || this.retryNotBefore() === 0) {
@@ -191,6 +193,7 @@ export class ImportMembersDialogComponent {
     this.initStatusFilterReset();
     this.initTablePageBounds();
     this.initRunTransitions();
+    this.initSubjectChange();
     // Until the dependent hide/reopen issue (#5731), a torn-down view schedules no later chunk or retry.
     this.destroyRef.onDestroy(() => {
       if (this.run()?.status === 'importing') {
@@ -337,10 +340,12 @@ export class ImportMembersDialogComponent {
       this.dialogRef.close();
       return;
     }
+    const run = this.run();
     const result: MemberImportDialogResult = {
       added: this.addedCount(),
       conflicts: this.conflictCount(),
       ...(this.rows().some((row) => row.uncertain) ? { uncertain: true } : {}),
+      ...(run ? { baselineMemberCount: run.baselineMemberCount } : {}),
     };
     this.dialogRef.close(result);
     // The result above is captured; the settled run no longer blocks the next import into this group.
@@ -455,6 +460,22 @@ export class ImportMembersDialogComponent {
         } else if (current === 'importing') {
           this.form.controls.send_notification.disable();
         }
+      });
+  }
+
+  /**
+   * Like the vote summary dialog, closes without a result when the observed subject changes: the service has
+   * already discarded the previous subject's run, and its file preview must not be shown or resubmitted.
+   */
+  private initSubjectChange(): void {
+    toObservable(this.importService.viewerSubject)
+      .pipe(takeUntilDestroyed())
+      .subscribe((subject) => {
+        if (subject === this.viewerSubject) return;
+        this.previewRows.set([]);
+        this.previewPhase.set('select');
+        this.fileName.set(null);
+        this.dialogRef.close();
       });
   }
 
