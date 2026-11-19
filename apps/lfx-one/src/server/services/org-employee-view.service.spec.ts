@@ -506,6 +506,18 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'other-company' });
   });
 
+  it('gives every pin operation the fail-closed budget, not the 250 ms cache budget', async () => {
+    const { valkeyService } = await import('./valkey.service');
+    const getSpy = vi.spyOn(valkeyService, 'getJsonStrict');
+    const setSpy = vi.spyOn(valkeyService, 'setJsonIfAbsent');
+    const { svc } = build({ orgs: both, emails, experiences: [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')] });
+
+    await svc.resolve(req(), null);
+
+    expect(getSpy).toHaveBeenCalledWith(expect.any(String), expect.any(Function), 3000);
+    expect(setSpy).toHaveBeenCalledWith(expect.any(String), expect.any(Object), expect.any(Number), 3000);
+  });
+
   it('does not need the pin store for a single qualifying company', async () => {
     valkeyState.enabled = false;
     const { svc } = build();

@@ -370,9 +370,11 @@ export class OrgEmployeeViewService {
 
     const accept = (value: unknown): boolean => !!value && typeof value === 'object' && typeof (value as { orgUid?: unknown }).orgUid === 'string';
     const ttl = VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS;
+    // Fail-closed, so the larger session-store budget: a cold TLS handshake must be able to finish, or a pin that IS stored would read as unavailable.
+    const pinTimeoutMs = VALKEY_CACHE.SESSION_OP_TIMEOUT_MS;
     // A read FAULT is not "no pin": re-ranking on a blip would overwrite the stored company with whichever one currently leads.
     const readPin = async (): Promise<{ orgUid: string } | null> => {
-      const read = await valkeyService.getJsonStrict<{ orgUid: string }>(key, accept);
+      const read = await valkeyService.getJsonStrict<{ orgUid: string }>(key, accept, pinTimeoutMs);
       if (read.status === 'fault') throw this.pinUnavailable();
       return read.status === 'hit' ? read.value : null;
     };
@@ -383,17 +385,17 @@ export class OrgEmployeeViewService {
     const kept = winner(stored);
     if (kept) {
       // Sliding lifetime, best effort: a failed refresh only leaves the remaining time as it was.
-      void valkeyService.setJson(key, { orgUid: kept.org.orgUid }, ttl);
+      void valkeyService.setJson(key, { orgUid: kept.org.orgUid }, ttl, pinTimeoutMs);
       return kept;
     }
 
     const chosen = await this.rank(req, username, qualifying);
     if (stored) {
       // The pinned company no longer qualifies: persist the replacement so it, too, stays put.
-      if (!(await valkeyService.setJson(key, { orgUid: chosen.org.orgUid }, ttl))) throw this.pinUnavailable();
+      if (!(await valkeyService.setJson(key, { orgUid: chosen.org.orgUid }, ttl, pinTimeoutMs))) throw this.pinUnavailable();
     } else {
       // First choice: establish it ATOMICALLY so concurrent cold requests cannot each pin a different company.
-      const written = await valkeyService.setJsonIfAbsent(key, { orgUid: chosen.org.orgUid }, ttl);
+      const written = await valkeyService.setJsonIfAbsent(key, { orgUid: chosen.org.orgUid }, ttl, pinTimeoutMs);
       if (written === 'fault') throw this.pinUnavailable();
     }
     // Every contender answers with whatever is stored, so the one that lost the race uses the winner, not its own ranking.
