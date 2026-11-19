@@ -42,11 +42,7 @@ export interface OrgLensEmployeeViewException {
 
 /** Why a caller is not in the all employee view of a company. Every one of these is "no access" (403), never an outage. */
 export type OrgEmployeeViewDenial =
-  | 'no-employer'
-  | 'employer-unresolvable'
   | 'other-company'
-  | 'not-member'
-  | 'company-domains-unknown'
   | 'no-verified-company-email'
   | 'holds-full-access';
 

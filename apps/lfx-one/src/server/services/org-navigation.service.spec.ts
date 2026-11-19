@@ -70,7 +70,7 @@ beforeEach(() => {
   // be answered to the next test's first request.
   vi.resetAllMocks();
   delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
-  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-employer' });
+  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
   getEffectiveUsername.mockReturnValue('staffer');
   // The defining staff shape: the catalogue is the only source of rows.
   getAccessAwareOrgs.mockResolvedValue({

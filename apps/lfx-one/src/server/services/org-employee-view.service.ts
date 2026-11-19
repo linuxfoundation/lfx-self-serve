@@ -1,84 +1,55 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_AFFILIATION_LOOKUP_TIMEOUT_MS, ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES, ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import type { MemberServiceB2bOrgResponse, OrgEmployeeViewDenial, OrgEmployeeViewVerdict, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
+import {
+  ORG_AFFILIATION_LOOKUP_TIMEOUT_MS,
+  ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES,
+  ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS,
+  ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS,
+} from '@lfx-one/shared/constants';
+import type {
+  B2bOrgIndexedDoc,
+  OrgEmployeeViewDenial,
+  OrgEmployeeViewVerdict,
+  OrgLensEmployeeViewGrant,
+  QueryServiceResponse,
+  RoleGrantsResponse,
+} from '@lfx-one/shared/interfaces';
 // Deep import, never the `utils` barrel (see org-affiliation.service.ts).
-import { currentEmployerFromWorkExperiences } from '@lfx-one/shared/utils/invitation.utils';
+import { candidateMemberDomains, emailDomain, isPersonalEmailDomain, normalizeDomain } from '@lfx-one/shared/utils/email-domain.utils';
 import type { Request } from 'express';
 
-import { MicroserviceError } from '../errors';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
-import { CdpService } from './cdp.service';
 import { AccessCheckService } from './access-check.service';
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { claOnlyEntryApplies } from './org-cla-only-orgs.service';
-import { OrganizationService } from './organization.service';
 
 const OPERATION = 'resolve_org_lens_employee_view';
 
 /**
- * Lowercased bare hostname from a domain or URL (`https://www.Acme.com/careers` -> `acme.com`), or null when
- * the value does not look like a hostname. A leading `www.` is dropped.
- */
-export function normalizeCompanyDomain(value: string | null | undefined): string | null {
-  const raw = value?.trim().toLowerCase();
-  if (!raw) return null;
-  let host = raw;
-  if (raw.includes('://')) {
-    try {
-      host = new URL(raw).hostname;
-    } catch {
-      return null;
-    }
-  } else {
-    host = raw.split(/[/?#]/)[0];
-  }
-  host = host.replace(/^www\./, '').replace(/\.$/, '');
-  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host) ? host : null;
-}
-
-/**
- * Whether `email` sits on one of `domains`: the exact domain or a subdomain of it (`eng.acme.com` for `acme.com`).
- * The comparison is on a whole label boundary, so `notacme.com` and `acme.com.evil.example` never match.
- */
-export function emailBelongsToCompanyDomain(email: string, domains: readonly string[]): boolean {
-  const at = email.lastIndexOf('@');
-  if (at < 1) return false;
-  const host = email
-    .slice(at + 1)
-    .trim()
-    .toLowerCase();
-  return domains.some((domain) => host === domain || host.endsWith(`.${domain}`));
-}
-
-/**
  * Epic #5845 — decides whether a caller may open the all employee view of a company.
  *
- * All three must be proven, and anything unproven is a denial:
- *   1. the caller's CURRENT employer (CDP work history, no end date) resolves to a crowd.dev organization whose
- *      LF account is `orgUid` — the company is whichever one the affiliation names, never one the URL asserts;
- *   2. that account is an active LF member (`ORG_LENS_ACCOUNT_CONTEXT.IS_MEMBER`);
- *   3. the caller holds a VERIFIED email whose domain is one of the company's (member-service `primary_domain` or one of
- *      its registered `domain_aliases`; never the host of its `website`).
+ * The one proof is a VERIFIED email address on a member company's domain (member-service `primary_domain` or one of its
+ * `domain_aliases`, the Salesforce `Domain_Alias__c` list). CDP identity and work history play no part: the caller's
+ * verified addresses are mapped to the active-member companies that registered those domains, and a request for
+ * `orgUid` is eligible only when `orgUid` is one of them. The company is whichever one the email names, never one the URL
+ * asserts. Personal mailbox domains (`gmail.com`, ...) and public suffixes never match, and a subdomain address
+ * (`eng.acme.com`) matches a company that registered the parent (`acme.com`) but never a public suffix.
  *
- * "Could not check" is different from "checked and no": a CDP, warehouse, member-service or email-lookup failure
- * REJECTS (the gate answers 503 `ROLE_GRANTS_UNAVAILABLE`), so an outage never reads as "you are not an employee".
- * Only a clean negative resolves `eligible: false`. The membership lookup is account-grain and may miss a
- * company's second mapped crowd.dev org; that miss is a denial here (fail closed), unlike the affiliation verdict
- * where it only picks wording.
+ * "Could not check" is different from "checked and no": an email-lookup or query-service failure REJECTS (the gate
+ * answers 503 `ROLE_GRANTS_UNAVAILABLE`), so an outage never reads as "you are not an employee". Only a clean negative
+ * resolves `eligible: false`.
  *
  * Verdicts are held for {@link ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS} per (caller, company) so a lens page's parallel
  * requests share one lookup; a rejected lookup is never kept.
  */
 export class OrgEmployeeViewService {
-  private readonly cdp: CdpService;
-  private readonly organizations: OrganizationService;
   private readonly emailVerification: EmailVerificationService;
   private readonly proxy: MicroserviceProxyService;
   private readonly accessCheck: AccessCheckService;
@@ -86,28 +57,24 @@ export class OrgEmployeeViewService {
 
   public constructor(
     deps: {
-      cdp?: CdpService;
-      organizations?: OrganizationService;
       emailVerification?: EmailVerificationService;
       proxy?: MicroserviceProxyService;
       accessCheck?: AccessCheckService;
     } = {}
   ) {
-    this.cdp = deps.cdp ?? new CdpService();
-    this.organizations = deps.organizations ?? new OrganizationService();
     this.emailVerification = deps.emailVerification ?? new EmailVerificationService();
     this.proxy = deps.proxy ?? new MicroserviceProxyService();
     this.accessCheck = deps.accessCheck ?? new AccessCheckService();
   }
 
   /**
-   * The caller's verdict for `orgUid`, or for whichever company their affiliation names when `orgUid` is null
+   * The caller's verdict for `orgUid`, or for the first company their verified email names when `orgUid` is null
    * (the role-grants and selector callers, who do not know it yet). Rejects when it cannot be established.
    */
   public async resolve(req: Request, orgUid: string | null): Promise<OrgEmployeeViewVerdict> {
     const username = getEffectiveUsername(req);
     if (!username) {
-      return { eligible: false, reason: 'no-employer' };
+      return { eligible: false, reason: 'no-verified-company-email' };
     }
 
     const key = `${username}\u0000${orgUid ?? ''}`;
@@ -145,26 +112,18 @@ export class OrgEmployeeViewService {
   }
 
   /**
-   * The `employeeView` field for `GET /api/orgs/me/role-grants`, or nothing. Asked only when the flag is on, the caller
+   * The `employeeView` field for `GET /api/orgs/me/role-grants`, or nothing. Asked only when the flag is on and the caller
    * demonstrably holds no grant on a clean roster and is not staff (the same entry rule as the CLA-only and affiliation
-   * lookups), and the affiliation verdict already says their employer is an LF member (contractors, who get no verdict, skip that pre-filter), so a caller who cannot qualify
-   * costs no extra upstream call. Never throws and never blocks past the affiliation budget: a failed or slow lookup
-   * answers nothing, which the client reads as today's empty state.
+   * lookups), so a caller who holds anything costs no extra upstream call. Never throws and never blocks past the
+   * affiliation budget: a failed or slow lookup answers nothing, which the client reads as today's empty state.
    */
-  public async getRoleGrantEmployeeView(
-    req: Request,
-    grants: RoleGrantsResponse,
-    affiliation: RoleGrantsResponse['affiliation']
-  ): Promise<Pick<RoleGrantsResponse, 'employeeView' | 'fullAccessOrgUid'>> {
+  public async getRoleGrantEmployeeView(req: Request, grants: RoleGrantsResponse): Promise<Pick<RoleGrantsResponse, 'employeeView' | 'fullAccessOrgUid'>> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
       return {};
     }
     const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;
     const rosterAnswered = (grants.lookupOutcome ?? 'ok') === 'ok' && grants.staffCheck !== 'failed';
-    // The affiliation verdict is copy-only and `OrgAffiliationService` deliberately omits it for LF contractors, so a
-    // contractor goes straight to the strict lookup; everyone else is pre-filtered by it to avoid a pointless upstream call.
-    const affiliatedMember = affiliation?.lookup === 'ok' && affiliation.employerIsMember;
-    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount, rosterAnswered) || (grants.isContractor !== true && !affiliatedMember)) {
+    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount, rosterAnswered)) {
       return {};
     }
 
@@ -207,62 +166,86 @@ export class OrgEmployeeViewService {
       return { eligible: false, reason };
     };
 
-    const experiences = await this.cdp.getWorkExperiencesForKnownUser(req, username);
-    // Only ongoing employment: `currentEmployerFromWorkExperiences` falls back to the latest past job when every
-    // entry has ended, which would admit someone who has left the company.
-    const employer = currentEmployerFromWorkExperiences(experiences.filter((entry) => !entry.endDate));
-    if (!employer) return deny('no-employer');
-    if (!employer.id) return deny('employer-unresolvable');
+    const emails = await this.getVerifiedEmails(req);
+    // Personal mailbox providers never prove employment; a public suffix yields no candidate at all.
+    const candidates = [
+      ...new Set(
+        emails.flatMap((email) => {
+          const domain = emailDomain(email);
+          return domain && !isPersonalEmailDomain(domain) ? candidateMemberDomains(domain) : [];
+        })
+      ),
+    ].slice(0, ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS);
+    if (candidates.length === 0) return deny('no-verified-company-email');
 
-    const account = await this.organizations.getOrgLensAccountContextByCdevOrgId(employer.id);
-    if (!account) return deny('employer-unresolvable');
-    if (requestedOrgUid && account.accountId !== requestedOrgUid) return deny('other-company');
-    if (account.isMember !== true) return deny('not-member');
+    const companies = await this.findMemberCompanies(req, candidates);
+    if (companies.length === 0) return deny('no-verified-company-email');
 
-    const [company, emails] = await Promise.all([this.getCompanyRecord(req, account.accountId), this.getVerifiedEmails(req)]);
-    // `primary_domain` plus the registered `domain_aliases` only: a website can name a third-party host, which would let
-    // any verified address there qualify.
-    const domains = [...new Set([company?.primary_domain, ...(company?.domain_aliases ?? [])].map(normalizeCompanyDomain).filter((d): d is string => !!d))];
-    if (domains.length === 0) return deny('company-domains-unknown');
-    if (!emails.some((email) => emailBelongsToCompanyDomain(email, domains))) return deny('no-verified-company-email');
-
-    return { eligible: true, org: { orgUid: account.accountId, orgName: account.accountName, orgSlug: company?.slug?.trim().toLowerCase() || null } };
+    // A request for a specific company must be one the caller's own verified email names; with none (role-grants, selector),
+    // the first company in a stable order.
+    const match = requestedOrgUid ? companies.find((company) => company.orgUid === requestedOrgUid) : companies[0];
+    return match ? { eligible: true, org: match } : deny('other-company');
   }
 
   /**
-   * The company's member-service record (`primary_domain`, `slug`), or null when it has none.
+   * Active-member companies whose `primary_domain` or `domain_aliases` exactly equal one of `domains`, in a stable order (name, then uid).
    *
-   * Read with the BFF's own machine token, not the caller's: this runs only after the read gate refused the caller
-   * `b2b_org#auditor`, and member-service requires that same permission for `GET /b2b_orgs/{uid}`, so the caller's token
-   * could never fetch the domain it is being checked against. The token is scoped to this one upstream call, runs only
-   * after the employer, account and membership checks have passed for the effective user, and nothing of the record
-   * beyond the domain and slug is used or returned.
+   * Read with the BFF's own machine token, not the caller's: this caller was just refused `b2b_org#auditor`, which the
+   * query service applies per row, so their own token would see no company at all. The token is scoped to this one
+   * lookup, runs only for the effective user's own verified addresses, and nothing of a record beyond its id, name, slug
+   * and domains is read or returned. Every returned record's domains are re-checked, since the query service matches
+   * exactly and case-sensitively. Complete or nothing: a failed or truncated page rejects (a retriable 503 at the gate)
+   * rather than passing a partial set off as every match.
    */
-  private async getCompanyRecord(req: Request, accountId: string): Promise<MemberServiceB2bOrgResponse | null> {
-    // Minted OUTSIDE the try: the token endpoint's HTTP status survives in its MicroserviceError, so a 404 there must reject
-    // (a retriable 503 at the gate), not read as "this company has no record" and be cached as a denial.
+  private async findMemberCompanies(req: Request, domains: string[]): Promise<OrgLensEmployeeViewGrant[]> {
+    // Minted OUTSIDE the lookup: a token failure must reject, never read as "no company matches" and be cached as a denial.
     const bearerToken = await generateM2MToken(req);
-    try {
-      return await this.proxy.proxyRequest<MemberServiceB2bOrgResponse>(
-        req,
-        'LFX_V2_SERVICE',
-        `/b2b_orgs/${encodeURIComponent(accountId)}`,
-        'GET',
-        undefined,
-        undefined,
-        undefined,
-        {
-          bearerToken,
-        }
-      );
-    } catch (error) {
-      if (error instanceof MicroserviceError && error.statusCode === 404) return null;
-      throw error;
+    const filtersOr = domains.flatMap((domain) => [`primary_domain:${domain}`, `domain_aliases:${domain}`]);
+    const docs = await fetchAllQueryResources<B2bOrgIndexedDoc>(
+      req,
+      (pageToken) =>
+        this.proxy
+          .proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources',
+            'GET',
+            { type: 'b2b_org', tags_all: ['is_member:true'], filters_or: filtersOr, page_size: 50, ...(pageToken && { page_token: pageToken }) },
+            undefined,
+            undefined,
+            { bearerToken }
+          )
+          // The canonical account id lives on the query-service wrapper (`resource.id`, `b2b_org:<sfid>`), which flattening drops.
+          .then((page) => ({
+            ...page,
+            resources: (page?.resources ?? []).map((resource) => ({
+              ...resource,
+              data: { ...resource.data, uid: bareUid(resource.id) || resource.data?.uid },
+            })),
+          })),
+      { failOnPartial: true }
+    );
+
+    const wanted = new Set(domains);
+    const companies = new Map<string, OrgLensEmployeeViewGrant>();
+    for (const doc of docs) {
+      if (!doc.uid || doc.is_member === false) continue;
+      const own = [doc.primary_domain, ...(doc.domain_aliases ?? [])].map((value) => normalizeDomain(value));
+      if (!own.some((domain) => domain && wanted.has(domain))) continue;
+      companies.set(doc.uid, { orgUid: doc.uid, orgName: doc.name ?? '', orgSlug: doc.slug?.trim().toLowerCase() || null });
     }
+    return [...companies.values()].sort((a, b) => a.orgName.localeCompare(b.orgName) || a.orgUid.localeCompare(b.orgUid));
   }
 
   /** Verified addresses only, read strictly so a failed lookup is an outage rather than the single session email. */
   private getVerifiedEmails(req: Request): Promise<string[]> {
     return resolveVerifiedUserEmails(req, this.emailVerification, { strict: true });
   }
+}
+
+/** The bare id of a query-service resource id (`b2b_org:<sfid>` -> `<sfid>`); '' when absent. */
+function bareUid(resourceId: string | undefined | null): string {
+  if (!resourceId) return '';
+  const colon = resourceId.indexOf(':');
+  return colon === -1 ? resourceId : resourceId.substring(colon + 1);
 }
