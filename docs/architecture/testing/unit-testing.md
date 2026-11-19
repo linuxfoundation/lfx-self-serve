@@ -47,6 +47,18 @@ Keep the two sets disjoint. A server spec picked up by the Angular builder pays 
 environment it never uses; an app spec picked up by `vitest.config.ts` fails on the missing
 template compiler.
 
+## Node's built-in `localStorage`
+
+`yarn test:app` adds `--no-experimental-webstorage` to `NODE_OPTIONS` and keeps whatever was
+already there. From Node 25, Node ships its own global `localStorage`, which is undefined unless
+`--localstorage-file` is set, and it takes the place of the jsdom `localStorage` that app specs
+use. Without the flag, every spec that touches storage fails with
+`Cannot read properties of undefined (reading 'clear')` on Node 25+, while CI on Node 22 stays
+green. Node 22.13+ accepts the flag, so it is safe on every supported version.
+
+`yarn test`, `yarn test:app` and the CI shard script all go through this script. A bare
+`yarn ng test` or an IDE test runner does not, so on Node 25+ set the flag yourself there.
+
 ## CI execution
 
 The **Quality Checks** workflow (`.github/workflows/quality-check.yml`) runs these jobs
