@@ -809,6 +809,16 @@ describe('buildHealthMetricsEngagementRepRowView', () => {
   });
 
   // Attended sorts on the share, so a never-attended seat is the lowest rated one, and its dashed date sorts last.
+  it('sorts an Attended cell with a missing count as empty, as its "—" shows', () => {
+    const missing = {
+      ...base,
+      periods: [{ range: 'YTD' as const, meetingsInvited: 6, meetingsAttended: null, neverAttended: false, lapsed: false, sortRank: 1 }],
+    };
+    const view = buildHealthMetricsEngagementRepRowView(missing, 'YTD');
+    expect(view.attendedLabel).toBe('—');
+    expect(view.sortValues.attended).toBeNull();
+  });
+
   it('sorts a never-attended seat lowest on Attended, with no last attended date', () => {
     expect(buildHealthMetricsEngagementRepRowView(base, 'COMPLETED_YEAR').sortValues).toEqual({
       representative: 'Dana Fields',

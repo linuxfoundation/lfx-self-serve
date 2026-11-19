@@ -469,7 +469,8 @@ export function buildHealthMetricsEngagementRepRowView(
   const period = selectPeriod(row.periods, range);
   const unresolved = isUnresolvedRep(row);
   const neverAttended = period?.neverAttended ?? false;
-  const invited = period?.meetingsInvited ?? 0;
+  const invited = period?.meetingsInvited ?? null;
+  const attended = period?.meetingsAttended ?? null;
   const title = unresolved ? '' : (row.jobTitle?.trim() ?? '');
 
   return {
@@ -484,8 +485,8 @@ export function buildHealthMetricsEngagementRepRowView(
     sortValues: {
       representative: repDisplayName(row),
       group: row.committeeName,
-      // The share of meetings attended, so a never-attended seat (0) is the lowest.
-      attended: invited > 0 ? (period?.meetingsAttended ?? 0) / invited : null,
+      // The share of meetings attended, so a never-attended seat (0) is the lowest; a "—" cell is empty.
+      attended: attended !== null && invited !== null && invited > 0 ? attended / invited : null,
       last: neverAttended ? null : row.lastAttendedDate,
     },
   };
