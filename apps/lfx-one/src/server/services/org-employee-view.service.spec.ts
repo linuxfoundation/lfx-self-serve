@@ -518,7 +518,48 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     expect(setSpy).toHaveBeenCalledWith(expect.any(String), expect.any(Object), expect.any(Number), 3000);
   });
 
-  it('does not need the pin store for a single qualifying company', async () => {
+  it('records a sole company, so a second one qualifying later (same employers and emails) does not displace it', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    const alone = build({ orgs: [[ORG_UID, acme]], emails, experiences });
+    await expect(alone.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+
+    // Zeta becomes a member: the fingerprint is unchanged, and Zeta now leads on both start date and activity.
+    OrgEmployeeViewService.clearCache();
+    const both2 = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 1000],
+        [UID_B, 9000],
+      ]),
+    });
+    await expect(both2.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+    expect(both2.engagement.getLastActivityByAccount).not.toHaveBeenCalled();
+  });
+
+  it('follows the sole company through a two, one, two transition, so an obsolete pin cannot come back', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    const activity = (acmeAt: number, zetaAt: number) =>
+      new Map([
+        [ORG_UID, acmeAt],
+        [UID_B, zetaAt],
+      ]);
+    const two = build({ orgs: both, emails, experiences, activity: activity(9000, 1000) });
+    await expect(two.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+
+    // Acme lapses: Zeta is the sole company and is recorded over the Acme pin.
+    OrgEmployeeViewService.clearCache();
+    const one = build({ orgs: [[UID_B, zeta]], emails, experiences });
+    await expect(one.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+
+    // Acme returns: the pin is Zeta, not the old Acme pin.
+    OrgEmployeeViewService.clearCache();
+    const again = build({ orgs: both, emails, experiences, activity: activity(9000, 1000) });
+    await expect(again.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+  });
+
+  it('answers a single qualifying company even when the pin store is unavailable', async () => {
     valkeyState.enabled = false;
     const { svc } = build();
 

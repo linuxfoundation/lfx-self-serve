@@ -363,7 +363,10 @@ export class OrgEmployeeViewService {
    * choice that the next request could contradict, which would let two companies be admitted in turn.
    */
   private async chooseEmployer(req: Request, username: string, qualifying: QualifyingEmployer[], fingerprint: string): Promise<QualifyingEmployer> {
-    if (qualifying.length === 1) return qualifying[0];
+    if (qualifying.length === 1) {
+      await this.reconcileSolePin(username, qualifying[0], fingerprint);
+      return qualifying[0];
+    }
 
     const key = buildPerUserOrgKey(VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_NAMESPACE, username, fingerprint);
     if (!key || !valkeyService.isEnabled()) throw this.pinUnavailable();
@@ -400,6 +403,25 @@ export class OrgEmployeeViewService {
     }
     // Every contender answers with whatever is stored, so the one that lost the race uses the winner, not its own ranking.
     return winner(await readPin()) ?? chosen;
+  }
+
+  /**
+   * Keeps the stored pin in step with a SOLE qualifying company, best effort: with one candidate there is nothing to contradict, so
+   * an unavailable store never blocks the answer. Recording it matters later: if a second company then qualifies for the same
+   * employers and verified emails (it became a member, say), the first one stays put instead of being re-ranked away, and a
+   * pin left over from an earlier two-company period cannot regain authority on a later one-to-two transition.
+   */
+  private async reconcileSolePin(username: string, sole: QualifyingEmployer, fingerprint: string): Promise<void> {
+    const key = buildPerUserOrgKey(VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_NAMESPACE, username, fingerprint);
+    if (!key || !valkeyService.isEnabled()) return;
+    const ttl = VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS;
+    const timeoutMs = VALKEY_CACHE.SESSION_OP_TIMEOUT_MS;
+    const accept = (value: unknown): boolean => !!value && typeof value === 'object' && typeof (value as { orgUid?: unknown }).orgUid === 'string';
+    const read = await valkeyService.getJsonStrict<{ orgUid: string }>(key, accept, timeoutMs);
+    if (read.status === 'fault') return;
+    const value = { orgUid: sole.org.orgUid };
+    if (read.status === 'miss') await valkeyService.setJsonIfAbsent(key, value, ttl, timeoutMs);
+    else await valkeyService.setJson(key, value, ttl, timeoutMs);
   }
 
   private pinUnavailable(): MicroserviceError {
