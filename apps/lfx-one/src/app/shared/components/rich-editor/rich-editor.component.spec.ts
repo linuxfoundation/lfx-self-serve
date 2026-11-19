@@ -18,8 +18,11 @@ async function render(value: string) {
   fixture.componentRef.setInput('form', form);
   fixture.componentRef.setInput('control', 'body');
   fixture.detectChanges();
+  // afterNextRender starts lazy TipTap imports; await them rather than racing a polling timeout.
+  await vi.dynamicImportSettled();
+  await fixture.whenStable();
   const component = fixture.componentInstance;
-  await vi.waitFor(() => expect(component['editorReady']()).toBe(true));
+  expect(component['editorReady']()).toBe(true);
   const editor = component['editor'];
   if (!editor) {
     throw new Error('editor did not initialize');

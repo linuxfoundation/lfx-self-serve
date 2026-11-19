@@ -543,7 +543,9 @@ export class CdpService {
 
       return entries;
     } catch (error) {
-      if (error instanceof MicroserviceError && error.statusCode === 404) {
+      // A 404 from the token endpoint (`CDP_TOKEN_ERROR`) is an outage, not a missing member: it must reject so the
+      // employee-view gate answers a retriable 503 and never caches "no employer" for the caller.
+      if (error instanceof MicroserviceError && error.statusCode === 404 && error.code !== 'CDP_TOKEN_ERROR') {
         logger.warning(req, 'get_cdp_work_experiences_for_known_user', 'No CDP profile found for caller');
         return [];
       }

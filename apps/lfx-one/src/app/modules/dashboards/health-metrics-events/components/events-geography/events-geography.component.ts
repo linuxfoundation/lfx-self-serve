@@ -12,17 +12,19 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
+import { HealthMetricsWorldMapComponent } from '../../../components/health-metrics-world-map/health-metrics-world-map.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { HealthMetricsEventsGeography, HealthMetricsEventsGeographyQuery, HealthMetricsEventsGeographyView } from '@lfx-one/shared/interfaces';
 
 /**
- * `#geo` — countries represented against the prior period, and the top countries by registrations.
+ * `#geo` — the metrics row, registrations by country on the world map, and the top countries beside it.
  * One read carries all four periods, so a period change re-projects it.
  */
 @Component({
   selector: 'lfx-events-geography',
-  imports: [EmptyStateComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsMetricsRowComponent, HealthMetricsWorldMapComponent, Skeleton],
   templateUrl: './events-geography.component.html',
 })
 export class EventsGeographyComponent {

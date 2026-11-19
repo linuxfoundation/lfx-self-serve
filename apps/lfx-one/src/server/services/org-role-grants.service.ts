@@ -223,6 +223,50 @@ export class OrgRoleGrantsService {
     }
   }
 
+  public async resolveFamilyRoots(req: Request, docByUid: ReadonlyMap<string, B2bOrgIndexedDoc>): Promise<Map<string, OrgFamilyRoot>> {
+    const known = new Map(docByUid);
+    const toRoot = (uid: string): OrgFamilyRoot => ({ rootUid: uid, rootName: known.get(uid)?.name || null, rootLogoUrl: known.get(uid)?.logo_url || null });
+    const roots = new Map<string, OrgFamilyRoot>();
+    const chains = new Map<string, string[]>();
+    for (const [uid, doc] of docByUid) {
+      if (doc.parent_uid) {
+        chains.set(uid, [uid]);
+      } else if (doc.is_parent === true) {
+        roots.set(uid, toRoot(uid));
+      }
+    }
+
+    while (chains.size > 0) {
+      const tails = [...chains.values()].map((chain) => known.get(chain[chain.length - 1])?.parent_uid);
+      const missing = [...new Set(tails.filter((uid): uid is string => !!uid && !known.has(uid)))];
+      if (missing.length > 0) {
+        for (const [uid, doc] of await this.fetchOrgDetailsByUids(req, missing)) {
+          known.set(uid, doc);
+        }
+      }
+      for (const [uid, chain] of chains) {
+        const parentUid = known.get(chain[chain.length - 1])?.parent_uid;
+        const parentDoc = parentUid ? known.get(parentUid) : undefined;
+        if (!parentUid || !parentDoc || chain.length >= ORG_STAFF_FAMILY_CLIMB_HARD_CAP) {
+          chains.delete(uid);
+          continue;
+        }
+        const cycleStart = chain.indexOf(parentUid);
+        if (cycleStart !== -1) {
+          roots.set(uid, toRoot(chain.slice(cycleStart).reduce((min, member) => (member < min ? member : min))));
+          chains.delete(uid);
+          continue;
+        }
+        chain.push(parentUid);
+        if (!parentDoc.parent_uid) {
+          roots.set(uid, toRoot(parentUid));
+          chains.delete(uid);
+        }
+      }
+    }
+    return roots;
+  }
+
   /** `b2b_org:<uid>#auditor` for each organization, asked in the same bounded waves as candidate classification; throws when a wave cannot be answered. */
   public checkAuditorAccess(req: Request, orgUids: string[]): Promise<Map<string, boolean>> {
     return this.runClassificationWaves(

@@ -43,7 +43,7 @@ export const COPILOT_FOUNDATION_PROMPTS: readonly string[] = [
 /** Suggested prompts for foundation+company context */
 export const COPILOT_COMPANY_PROMPTS: readonly string[] = [
   'How many employees attended events?',
-  'How many contributors from my organization are active?',
+  'How many contributors from my company are active?',
   'What is our membership status?',
   'Show me our contribution trends',
 ] as const;

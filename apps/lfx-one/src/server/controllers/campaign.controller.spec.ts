@@ -2427,6 +2427,185 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
+   * Meta audience targeting (#5905; linuxfoundation/lfx-v2-campaign-service#550): checked here, since the
+   * route has no body validator, compacted to what differs from Meta's defaults, and refused with a 400 while
+   * the flag is off (a tab opened while it was on must reload).
+   * Custom audiences name resources of the shared Meta ad account, so they need `global_marketing_ops`.
+   */
+  describe('meta audience targeting', () => {
+    const marketingOps = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+    const flagsWith = (targeting: boolean): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceMetaAudienceTargeting ? targeting : true));
+    };
+    async function sendWith(targeting: unknown): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        targeting,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusal = (): unknown => vi.mocked(next).mock.calls[0]?.[0];
+
+    beforeEach(() => {
+      flagsWith(true);
+      marketingOps.mockResolvedValue(true);
+    });
+
+    it('refuses the block with a 400 while the flag is off, rather than creating without it', async () => {
+      flagsWith(false);
+
+      expect(await sendWith({ ageMin: 30, customAudiences: ['23850000000000001'] })).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe('metaConfig.targeting');
+      expect(marketingOps).not.toHaveBeenCalled();
+    });
+
+    it('forwards only what differs from the defaults', async () => {
+      const sent = await sendWith({
+        ageMin: 25,
+        ageMax: 65,
+        genders: ['male', 'female'],
+        customAudiences: [' 23850000000000001', '23850000000000001'],
+        excludedCustomAudiences: [],
+        advantageAudience: true,
+      });
+
+      expect(sent?.['targeting']).toEqual({ ageMin: 25, customAudiences: ['23850000000000001'], advantageAudience: true });
+      expect(marketingOps).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    });
+
+    it('sends no targeting at all when every field is its default, and asks nothing about the caller', async () => {
+      const sent = await sendWith({ ageMin: 18, ageMax: 65, genders: [], customAudiences: [], excludedCustomAudiences: [], advantageAudience: null });
+
+      expect(sent).not.toHaveProperty('targeting');
+      expect(marketingOps).not.toHaveBeenCalled();
+    });
+
+    // campaign-service reads advantageAudience as a tri-state: an explicit false sends 0, which is an
+    // instruction, so it is forwarded on its own and is allowed with any age range.
+    it.each([[{ advantageAudience: false }], [{ advantageAudience: false, ageMin: 40, ageMax: 50 }]])(
+      'forwards an explicit Advantage+ off: %j',
+      async (targeting) => {
+        expect((await sendWith(targeting))?.['targeting']).toEqual(targeting);
+      }
+    );
+
+    it('forwards age and gender from a caller without global_marketing_ops', async () => {
+      marketingOps.mockResolvedValue(false);
+
+      expect((await sendWith({ ageMax: 44, genders: ['female'] }))?.['targeting']).toEqual({ ageMax: 44, genders: ['female'] });
+    });
+
+    it.each([
+      ['an out-of-range age', { ageMin: 16 }, 'metaConfig.targeting.ageMin'],
+      ['ageMin above ageMax', { ageMin: 50, ageMax: 30 }, 'metaConfig.targeting.ageMin'],
+      ['an unknown gender', { genders: ['unknown'] }, 'metaConfig.targeting.genders'],
+      ['a non-numeric audience id', { customAudiences: ['act_1'] }, 'metaConfig.targeting.customAudiences'],
+      ['an id in both lists', { customAudiences: ['1001'], excludedCustomAudiences: ['1001'] }, 'metaConfig.targeting.excludedCustomAudiences'],
+      ['26 audiences', { excludedCustomAudiences: Array.from({ length: 26 }, (_, i) => String(1001 + i)) }, 'metaConfig.targeting.excludedCustomAudiences'],
+      ['Advantage+ with a narrowed age', { advantageAudience: true, ageMin: 30 }, 'metaConfig.targeting.advantageAudience'],
+    ])('refuses %s with a 400 naming the field, creating nothing', async (_label, targeting, field) => {
+      expect(await sendWith(targeting)).toBeNull();
+      const error = refusal() as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe(field);
+    });
+
+    it('refuses custom audiences from a caller without global_marketing_ops with a 403', async () => {
+      marketingOps.mockResolvedValue(false);
+
+      expect(await sendWith({ excludedCustomAudiences: ['1001'] })).toBeNull();
+      expect(refusal()).toBeInstanceOf(AuthorizationError);
+    });
+
+    it('refuses custom audiences with a 503 when the relation check cannot be made', async () => {
+      marketingOps.mockRejectedValueOnce(new Error('access check unavailable'));
+
+      expect(await sendWith({ customAudiences: ['1001'] })).toBeNull();
+      expect((refusal() as MicroserviceError).statusCode).toBe(503);
+    });
+  });
+
+  /**
+   * The Meta call to action, conversion event and optimization goal (#5934), one flag each: refused with a
+   * 400 while their flag is off (never dropped), checked by the tab's own rules, and sent upper-cased.
+   */
+  describe('meta ad options', () => {
+    const flagsWith = (off: ServerFeatureFlag[] = []): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => !off.includes(flag as ServerFeatureFlag));
+    };
+    async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusedField = (): unknown => {
+      const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      return error.toResponse()['errors'][0].field;
+    };
+
+    beforeEach(() => flagsWith());
+
+    it.each([
+      [ServerFeatureFlag.CampaignServiceMetaCallToAction, { callToAction: 'SIGN_UP' }, 'metaConfig.callToAction'],
+      [ServerFeatureFlag.CampaignServiceMetaConversionEvent, { objective: 'conversions', pixelId: '1', conversionEvent: 'LEAD' }, 'metaConfig.conversionEvent'],
+      [ServerFeatureFlag.CampaignServiceMetaOptimizationGoal, { optimizationGoal: 'LINK_CLICKS' }, 'metaConfig.optimizationGoal'],
+    ])('refuses a field with a 400 while %s is off, rather than creating without it', async (flag, extra, field) => {
+      flagsWith([flag]);
+
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+
+    it('forwards the checked values upper-cased, and sends nothing for "Not set"', async () => {
+      const sent = await sendWith({
+        objective: 'conversions',
+        pixelId: '1',
+        callToAction: 'buy_tickets',
+        conversionEvent: 'COMPLETE_REGISTRATION',
+        optimizationGoal: '',
+      });
+
+      expect(sent).toMatchObject({ callToAction: 'BUY_TICKETS', conversionEvent: 'COMPLETE_REGISTRATION' });
+      expect(sent).not.toHaveProperty('optimizationGoal');
+      createCampaigns.mockClear();
+      expect(await sendWith({})).not.toHaveProperty('callToAction');
+    });
+
+    it.each([
+      ['a value outside the list', { callToAction: 'REGISTER_NOW' }, 'metaConfig.callToAction'],
+      ['a conversion event on traffic', { conversionEvent: 'LEAD' }, 'metaConfig.conversionEvent'],
+      ['an optimization goal on awareness', { objective: 'awareness', optimizationGoal: 'LINK_CLICKS' }, 'metaConfig.optimizationGoal'],
+      [
+        'landing page views with manual bidding',
+        { optimizationGoal: 'LANDING_PAGE_VIEWS', bidding: { strategy: 'manual', bidAmount: 1 } },
+        'metaConfig.optimizationGoal',
+      ],
+    ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
+      expect(await sendWith(extra)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+  });
+
+  /**
    * The Meta Instagram id and EU DSA disclosures (linuxfoundation/lfx-v2-campaign-service#414). With
    * the capability on they reach campaign-service UNTOUCHED, which judges them and answers a missing
    * or malformed one with a 400. With it off the request is refused rather than the keys dropped.
@@ -11033,6 +11212,8 @@ describe('CampaignController.listBriefCampaigns', () => {
         googleDemandGenAudienceEnabled: conversions,
         googleDisplayAudiencesEnabled: conversions,
         googlePerformanceMaxAudienceSignalEnabled: conversions,
+        // Meta custom audiences (#5905) on the same relation; every flag is on here.
+        metaCustomAudiencesEnabled: conversions,
       })
     );
   });
@@ -11052,6 +11233,7 @@ describe('CampaignController.listBriefCampaigns', () => {
         googleDemandGenAudienceEnabled: null,
         googleDisplayAudiencesEnabled: null,
         googlePerformanceMaxAudienceSignalEnabled: null,
+        metaCustomAudiencesEnabled: null,
       })
     );
   });
@@ -11062,7 +11244,9 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false, googleConversionActionsEnabled: false }));
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ googleAudienceSegmentsEnabled: false, googleConversionActionsEnabled: false, metaCustomAudiencesEnabled: false })
+    );
     expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
     expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
   });
