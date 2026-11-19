@@ -4,9 +4,10 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, inject, input, output } from '@angular/core';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import type { OrgEvent, OrgEventRowVm, OrgEventsResponse, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -15,6 +16,9 @@ import type { OrgEvent, OrgEventRowVm, OrgEventsResponse, PageChangeEvent, SortC
   templateUrl: './org-events-table.component.html',
 })
 export class OrgEventsTableComponent {
+  // All employee view: the registered/attended and speaker numbers are plain text; no attendee or speaker panel opens.
+  protected readonly employeeView = inject(OrgLensViewModeService).isEmployeeView;
+
   public readonly eventsResponse = input.required<OrgEventsResponse>();
   public readonly loading = input<boolean>(false);
   public readonly loadFailed = input<boolean>(false);

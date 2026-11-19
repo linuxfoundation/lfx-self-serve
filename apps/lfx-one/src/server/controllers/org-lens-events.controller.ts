@@ -127,7 +127,7 @@ export class OrgLensEventsController {
 
   /** GET /api/orgs/:accountId/lens/events/:eventId/attendees */
   public async getEventAttendees(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const accountId = req.params['accountId'];
+    const accountId = req.params['orgUid'] ?? req.params['accountId'];
     const eventId = req.params['eventId'];
     const startTime = logger.startOperation(req, 'get_event_attendees', { account_id: accountId, event_id: eventId });
 
@@ -158,7 +158,7 @@ export class OrgLensEventsController {
 
   /** GET /api/orgs/:accountId/lens/events/:eventId/speakers */
   public async getEventSpeakers(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const accountId = req.params['accountId'];
+    const accountId = req.params['orgUid'] ?? req.params['accountId'];
     const eventId = req.params['eventId'];
     const startTime = logger.startOperation(req, 'get_event_speakers', { account_id: accountId, event_id: eventId });
 

@@ -61,6 +61,13 @@ let impersonatingStub = false;
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'jdoe', isImpersonating: () => impersonatingStub }));
 // The ROI LF-staff gate (in every environment) asks `lf-staff#member`; each case sets the answer it needs.
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkLFStaff: () => checkLFStaff() } }));
+// All employee view (#5851): the middleware has its own unit spec; here only that the per-event attendee and
+// speaker routes are mounted behind it (and the events list is not) is asserted.
+let employeeViewStub = false;
+vi.mock('../middleware/block-employee-view.middleware', () => ({
+  blockEmployeeView: (_req: unknown, _res: unknown, next: (error?: unknown) => void) =>
+    next(employeeViewStub ? Object.assign(new Error('employee view'), { statusCode: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' }) : undefined),
+}));
 vi.mock('../services/logger.service', () => ({
   logger: {
     info: vi.fn(),
@@ -98,9 +105,35 @@ afterAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   impersonatingStub = false;
+  employeeViewStub = false;
   lfStaffStub = false;
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
+});
+
+describe('orgs router — all employee view event panels (#5851)', () => {
+  it.each(['attendees', 'speakers'])('answers 403 on the per-event %s route in the employee view, past or upcoming alike', async (panel) => {
+    employeeViewStub = true;
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/events/evt-1/${panel}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it.each(['attendees', 'speakers'])('lets the full view past the block on the per-event %s route', async (panel) => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/events/evt-1/${panel}`);
+
+    expect(res.status).not.toBe(403);
+  });
+
+  it('keeps the events list, summary and foundations readable in the employee view', async () => {
+    employeeViewStub = true;
+
+    for (const path of ['', '/summary', '/foundations']) {
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/events${path}`);
+      expect(res.status).not.toBe(403);
+    }
+  });
 });
 
 describe('orgs router — Org Lens read gate', () => {
