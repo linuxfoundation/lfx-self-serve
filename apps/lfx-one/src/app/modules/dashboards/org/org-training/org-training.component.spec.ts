@@ -10,6 +10,7 @@ import { AccountContextService } from '@shared/services/account-context.service'
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
+import { OrgLensViewModeService } from '@shared/services/org-lens-view-mode.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -63,11 +64,12 @@ interface RenderOptions {
   statsFor?: (orgUid: string) => Observable<OrgTrainingStats | null>;
   selectedAccount?: WritableSignal<Account>;
   params?: Record<string, string>;
+  employeeView?: boolean;
 }
 
 async function render(
   state: OrgLensEmptyStateName | null,
-  { settled = true, stats = null, statsFor, selectedAccount = signal<Account>(ACME), params = {} }: RenderOptions = {}
+  { settled = true, stats = null, statsFor, selectedAccount = signal<Account>(ACME), params = {}, employeeView = false }: RenderOptions = {}
 ) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
   const queryParamMap$ = new BehaviorSubject(convertToParamMap(params));
@@ -99,6 +101,7 @@ async function render(
       },
       { provide: OrgLensTrainingService, useValue: trainingService },
       { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
+      { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(employeeView) } },
     ],
   }).compileComponents();
 
@@ -466,5 +469,22 @@ describe('OrgTrainingComponent — organization switch', () => {
     expect(extras.queryParamsHandling).toBe('merge');
     expect(extras.queryParams).toMatchObject({ range: '90d', foundation: null, trainingProject: null, course: null, level: null, format: null });
     navigate.mockRestore();
+  });
+
+  it('shows the learners-not-on-the-people-list tile to a full-view user', async () => {
+    const { el } = await render(null, { stats: STATS });
+
+    expect(el.querySelector('[data-testid="org-training-stat-learners-outside-people-list"]')).not.toBeNull();
+    expect(el.querySelector('lfx-person-detail-drawer')).not.toBeNull();
+  });
+
+  it('drops the learners-not-on-the-people-list tile and the person drawer in the all employee view, keeping the aggregates', async () => {
+    const { el } = await render(null, { stats: STATS, employeeView: true });
+
+    expect(el.querySelector('[data-testid="org-training-stat-learners-outside-people-list"]')).toBeNull();
+    expect(el.textContent).not.toContain('Learners not on the people list');
+    expect(el.querySelector('[data-testid="org-training-stat-courses-taken"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-training-stat-certifications"]')).not.toBeNull();
+    expect(el.querySelector('lfx-person-detail-drawer')).toBeNull();
   });
 });
