@@ -55,6 +55,7 @@ import {
   registrantDisplayName,
   getPastMeetingResourceId,
   isMeetingInviteResponsesEnabled,
+  isMeetingGuestViewer,
   isMeetingSelfGuestListed,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
@@ -681,8 +682,7 @@ export class MeetingRegistrantsDisplayComponent {
     stagedGuestId?: string,
     onAdded?: (added: MeetingRegistrant) => void
   ): void {
-    const self = this.selfGuest();
-    const addsSelf = !!self && isMeetingSelfGuestListed(self, [formValue as unknown as MeetingRegistrant]);
+    const addsSelf = this.isSelfRegistrant(formValue as unknown as MeetingRegistrant);
     if (addsSelf && this.selfInvite.isPending(this.meeting().id)) return;
     if (stagedGuestId) {
       this.submittingGuestIds.update((ids) => new Set([...ids, stagedGuestId]));
@@ -745,8 +745,7 @@ export class MeetingRegistrantsDisplayComponent {
               ...returned,
               uid: returned.uid?.trim() || `optimistic-${crypto.randomUUID()}`,
             };
-            const self = this.selfGuest();
-            const addsSelf = !!self && isMeetingSelfGuestListed(self, [optimistic]);
+            const addsSelf = this.isSelfRegistrant(optimistic);
             // A confirmed self-invite supersedes a prior removal, including normal Add Guest submissions.
             if (addsSelf) this.meetingService.clearRemovedRegistration(meetingId);
             if (this.externallyManaged()) {
@@ -1142,6 +1141,16 @@ export class MeetingRegistrantsDisplayComponent {
       const people: (MeetingHostCandidate & { uid: string })[] = this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants();
 
       return new Map(people.map((person) => [person.uid, resolveMeetingGuestRole(person, organizerKeys)] as const));
+    });
+  }
+
+  /** Identity matching does not choose an invitation address, so known session identity stays usable after a preference lookup fails. */
+  private isSelfRegistrant(registrant: Pick<MeetingHostCandidate, 'email' | 'username'>): boolean {
+    const self = this.selfGuest();
+    if (self && isMeetingSelfGuestListed(self, [registrant])) return true;
+    return isMeetingGuestViewer(registrant, {
+      email: this.userService.user()?.email ?? null,
+      username: this.userService.viewerUsername(),
     });
   }
 

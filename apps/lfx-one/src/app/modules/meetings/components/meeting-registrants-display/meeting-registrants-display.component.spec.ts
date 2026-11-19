@@ -52,7 +52,7 @@ describe('MeetingRegistrantsDisplayComponent — past-participant total', () => 
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -108,7 +108,7 @@ describe('MeetingRegistrantsDisplayComponent — open add form on show', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -173,7 +173,7 @@ describe('MeetingRegistrantsDisplayComponent — guest invite scope', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -248,7 +248,7 @@ describe('MeetingRegistrantsDisplayComponent — organizer filter and collapsibl
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -400,7 +400,7 @@ describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -542,7 +542,7 @@ describe('MeetingRegistrantsDisplayComponent — guest rows on mobile (#4864)', 
       providers: [
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -647,7 +647,10 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
       providers: [
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest, user: signal({ sub: 'synthetic-subject' }) } },
+        {
+          provide: UserService,
+          useValue: { getMeetingSelfGuest, user: signal({ sub: 'synthetic-subject', email: SELF_GUEST.email }), viewerUsername: signal(SELF_GUEST.username) },
+        },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -778,6 +781,86 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     fixture.componentRef.setInput('selfInvitePending', false);
     fixture.detectChanges();
     expect(button()).not.toBeNull();
+  });
+
+  it('blocks a manual session-email self-invite while a card attempt is pending after lookup failure', async () => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    const { fixture, button } = await mount();
+    expect(button()).toBeNull();
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(` ${SELF_GUEST.email.toUpperCase()} `));
+    form.addControl('first_name', new FormControl('Synthetic'));
+    form.addControl('last_name', new FormControl('Viewer'));
+    const pending = TestBed.inject(MeetingSelfInviteService)
+      .withPendingInvite$('meeting-1', () => new Subject<unknown>())
+      .subscribe();
+    fixture.componentInstance.onAddRegistrant();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    pending.unsubscribe();
+    fixture.componentInstance.onAddRegistrant();
+    expect(addMeetingRegistrants).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('recognizes a manually saved self after lookup failure by LFID rather than email: %s', async (byUsername) => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    removedMeetingIds.set(new Set(['meeting-1']));
+    const { fixture, button } = await mount();
+    const selfAdded = vi.fn();
+    fixture.componentInstance.selfAdded.subscribe(selfAdded);
+    const email = byUsername ? 'alternate@vendor-corp.example' : SELF_GUEST.email;
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(email));
+    form.addControl('first_name', new FormControl('Synthetic'));
+    form.addControl('last_name', new FormControl('Viewer'));
+    if (byUsername) form.addControl('username', new FormControl(SELF_GUEST.username?.toUpperCase()));
+    const saved = { ...listed(email), uid: 'synthetic-manual-self', username: byUsername ? SELF_GUEST.username : null };
+    addMeetingRegistrants.mockReturnValueOnce(of({ ...SUCCESS, successes: [saved] }));
+    fixture.componentInstance.onAddRegistrant();
+    expect(selfAdded).toHaveBeenCalledWith(expect.objectContaining({ uid: saved.uid, email }));
+    expect(removedMeetingIds().has('meeting-1')).toBe(false);
+    expect(button()).toBeNull();
+    expect(addMeetingRegistrants.mock.calls[0][1][0].email).toBe(email);
+  });
+
+  it('holds the shared guard during a manual fallback self-invite without changing the chosen address', async () => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    const { fixture } = await mount();
+    const pending$ = new Subject<typeof SUCCESS>();
+    addMeetingRegistrants.mockReturnValueOnce(pending$);
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(SELF_GUEST.email));
+    form.addControl('first_name', new FormControl('Synthetic'));
+    form.addControl('last_name', new FormControl('Viewer'));
+    fixture.componentInstance.onAddRegistrant();
+    const invites = TestBed.inject(MeetingSelfInviteService);
+    expect(invites.isPending('meeting-1')).toBe(true);
+    const profileCalls = getMeetingSelfGuest.mock.calls.length;
+    invites.add$('meeting-1').subscribe();
+    expect(getMeetingSelfGuest).toHaveBeenCalledTimes(profileCalls);
+    expect(addMeetingRegistrants).toHaveBeenCalledTimes(1);
+    expect(addMeetingRegistrants.mock.calls[0][1][0].email).toBe(SELF_GUEST.email);
+    pending$.error(new Error('Synthetic manual invitation rejected'));
+    expect(invites.isPending('meeting-1')).toBe(false);
+  });
+
+  it('does not claim an unrelated manual guest or block them behind a pending self-invite when lookup failed', async () => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    removedMeetingIds.set(new Set(['meeting-1']));
+    const { fixture } = await mount();
+    const selfAdded = vi.fn();
+    fixture.componentInstance.selfAdded.subscribe(selfAdded);
+    const pending = TestBed.inject(MeetingSelfInviteService)
+      .withPendingInvite$('meeting-1', () => new Subject<unknown>())
+      .subscribe();
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl('other-guest@vendor-corp.example'));
+    form.addControl('first_name', new FormControl('Another'));
+    form.addControl('last_name', new FormControl('Guest'));
+    fixture.componentInstance.onAddRegistrant();
+    expect(addMeetingRegistrants).toHaveBeenCalledOnce();
+    expect(selfAdded).not.toHaveBeenCalled();
+    expect(removedMeetingIds().has('meeting-1')).toBe(true);
+    pending.unsubscribe();
   });
 
   it('keeps a closed drawer self-invite exclusive against the card and permits retry after failure', async () => {
