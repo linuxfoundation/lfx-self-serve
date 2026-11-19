@@ -92,6 +92,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
@@ -161,6 +162,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly meetingService = inject(MeetingService);
   private readonly inviteResend = inject(MeetingInviteResendService);
   private readonly selfRemoval = inject(MeetingSelfRemovalService);
+  private readonly selfInvite = inject(MeetingSelfInviteService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -218,6 +220,7 @@ export class MeetingCardComponent implements OnInit {
   /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
   public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
+  public readonly addingMyself: WritableSignal<boolean> = signal(false);
   public readonly resendingInvite: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.meeting().id));
 
   // Computed values for template
@@ -312,6 +315,12 @@ export class MeetingCardComponent implements OnInit {
   });
   // Whoever is shown as registered can remove that registration, so the badge and the action share one rule.
   public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
+  // The other half of that toggle, for the organizers who can manage guests. The feed's `invited` flag also reads "not
+  // invited" when its registrant lookup failed, so this only decides whether to offer the add; the service confirms the
+  // complete roster before posting.
+  public readonly canAddMyself: Signal<boolean> = computed(
+    () => this.authenticated() && !!this.meeting().organizer && !this.pastMeeting() && !this.isRegisteredAttendee() && !this.leavingMeeting()
+  );
   // Resending goes to the viewer's own registrant row, so it needs one that really exists. `isRegisteredAttendee` is not
   // enough for a non-organizer: `invited` is derived from access grants and can be true while the feed's
   // `my_registrant_ids` is `[]` (no active registration), which would offer a resend that 404s. So a supplied list is
@@ -602,6 +611,51 @@ export class MeetingCardComponent implements OnInit {
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => this.leaveMeeting(),
     });
+  }
+
+  /**
+   * Adds the viewer to this meeting's guests, for every occurrence, from the card's own-actions row.
+   * @description Mirrors {@link registerForMeeting}: the card shows the viewer as invited at once, then refetches. When
+   * the roster already lists the viewer the card only catches up. A profile the service cannot invite (no email, or no
+   * first and last name) opens the Guests drawer on its Add Guest form instead.
+   */
+  public addMyself(): void {
+    if (this.addingMyself() || !this.canAddMyself()) return;
+    const meetingId = this.meeting().id;
+    this.addingMyself.set(true);
+
+    this.selfInvite
+      .add$(meetingId)
+      .pipe(
+        take(1),
+        finalize(() => this.addingMyself.set(false))
+      )
+      .subscribe({
+        next: (result) => {
+          if (this.meeting().id !== meetingId) return;
+          if (result.status === 'unavailable') {
+            this.messageService.add({
+              severity: 'info',
+              summary: 'Add Yourself',
+              detail: "We couldn't add you automatically. Use Add Guest to invite yourself.",
+            });
+            this.onInvitePeople();
+            return;
+          }
+          this.optimisticInvited.set(true);
+          if (result.status === 'added') {
+            this.additionalRegistrantsCount.update((count) => count + 1);
+            this.messageService.add({ severity: 'success', summary: 'Added', detail: "You've been added to this meeting." });
+          } else {
+            this.messageService.add({ severity: 'info', summary: 'Already Invited', detail: "You're already a guest of this meeting." });
+          }
+          this.userService.refreshUserMeetings(false);
+          this.refreshMeeting();
+        },
+        error: (error: unknown) => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfInvite.describeFailure(error) });
+        },
+      });
   }
 
   public resendInvite(): void {

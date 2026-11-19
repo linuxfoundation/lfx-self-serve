@@ -15,6 +15,7 @@ import {
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
   MeetingRsvp,
+  MeetingSelfInviteResult,
   PastMeeting,
   PastMeetingSummary,
   User,
@@ -24,6 +25,7 @@ import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/me
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { LensService } from '@services/lens.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -1214,6 +1216,234 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.isRegisteredAttendee()).toBe(true);
     expect(rsvpButtons?.selectedResponse()).toBeNull();
     expect(component.confirmedRsvps()).toEqual([]);
+  });
+});
+
+/**
+ * Covers the "Add Myself" half of the card's own-actions toggle: who is offered it, what each result of the
+ * self-invite does to the card, and how it hands back to "Remove Myself" and returns after a removal.
+ */
+describe('MeetingCardComponent — add myself', () => {
+  const ORGANIZER = {
+    id: 'meeting-1',
+    project_uid: 'project-1',
+    organizer: true,
+    invited: false,
+    my_registrant_ids: [],
+    registrant_count: 3,
+    title: 'TAC Sync',
+  } as unknown as Meeting;
+
+  let toastAdd: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
+  let add$: ReturnType<typeof vi.fn>;
+  let getMeeting: ReturnType<typeof vi.fn>;
+  let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
+  let mountedFixture: ComponentFixture<MeetingCardComponent> | undefined;
+
+  async function mount(meeting: Meeting = ORGANIZER, options: { authenticated?: boolean; past?: boolean } = {}): Promise<MeetingCardComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: { get: vi.fn((url: string) => of(url === '/api/user/meetings' ? [meeting] : { profile: {} })) } },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: LensService, useValue: { activeLens: signal('me') } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: MessageService, useValue: { add: toastAdd } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: ConfirmationService, useValue: { confirm } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        {
+          provide: MeetingSelfInviteService,
+          useValue: { add$, describeFailure: vi.fn(() => 'Unable to add you to this meeting. Please try again.') },
+        },
+        {
+          provide: MeetingService,
+          useValue: {
+            removedRegistrationMeetingIds: removedIds,
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
+            markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
+            rememberRemovedRegistrants: vi.fn(),
+            clearRemovedRegistration: (id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id))),
+            removeMyMeetingRegistration: vi.fn().mockReturnValue(of({ removed_registrant_ids: ['reg-self'], remaining_registrant_ids: [] })),
+            getMeeting,
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
+            getPastMeetingSummary: vi.fn().mockReturnValue(of(null)),
+            getPastMeetingTranscript: vi.fn().mockReturnValue(of(null)),
+            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, { set: { template: '', imports: [], providers: [] } });
+    await TestBed.compileComponents();
+    const userService = TestBed.inject(UserService);
+    userService.user.set({ sub: 'synthetic-subject', username: 'synthetic-viewer', email: 'synthetic@example.com' } as User);
+    userService.authenticated.set(options.authenticated ?? true);
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.componentRef.setInput('pastMeeting', options.past ?? false);
+    fixture.detectChanges();
+    await TestBed.inject(ApplicationRef).whenStable();
+    mountedFixture = fixture;
+
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    toastAdd = vi.fn();
+    confirm = vi.fn();
+    add$ = vi.fn().mockReturnValue(of<MeetingSelfInviteResult>({ status: 'added' }));
+    // Pending, so the optimistic count is observable before the refetch replaces it.
+    getMeeting = vi.fn().mockReturnValue(new Subject<Meeting>());
+    removedIds = signal<ReadonlySet<string>>(new Set());
+    mountedFixture = undefined;
+  });
+
+  it('renders Add Myself alone in the own-actions row of an organizer card', async () => {
+    // The card's animate-on-scroll directive needs IntersectionObserver, which jsdom lacks.
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        public observe = vi.fn();
+        public unobserve = vi.fn();
+        public disconnect = vi.fn();
+      }
+    );
+    // Real services, as in the RSVP cache suite: an organizer card mounts the Guests drawer and other organizer-only
+    // children. Deferred blocks stay on their placeholders; the own-actions row is outside them.
+    TestBed.configureTestingModule({
+      deferBlockBehavior: DeferBlockBehavior.Manual,
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, { add: { providers: [] } });
+    await TestBed.compileComponents();
+    const userService = TestBed.inject(UserService);
+    userService.user.set({ sub: 'synthetic-subject', username: 'synthetic-viewer', email: 'synthetic@example.com' } as User);
+    userService.authenticated.set(true);
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', { ...ORGANIZER, start_time: '2099-01-01T10:00:00Z', duration: 30, timezone: 'UTC' } as Meeting);
+    fixture.detectChanges();
+    const card = fixture.nativeElement as HTMLElement;
+
+    const row = card.querySelector('[data-testid="own-invite-actions"]');
+    expect(row?.querySelector('[data-testid="add-myself-button"]')?.textContent).toContain('Add Myself');
+    expect(card.querySelector('[data-testid="leave-meeting-button"]')).toBeNull();
+    expect(card.querySelector('[data-testid="resend-invite-button"]')).toBeNull();
+  });
+
+  it('offers the action to a signed-in organizer of an upcoming meeting who is not a guest', async () => {
+    const component = await mount();
+
+    expect(component.canAddMyself()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(false);
+  });
+
+  it.each([
+    ['a past meeting', ORGANIZER, { past: true }],
+    ['a viewer who cannot manage guests', { ...ORGANIZER, organizer: false } as Meeting, {}],
+    ['an organizer who is already a guest', { ...ORGANIZER, invited: true, my_registrant_ids: ['reg-self'] } as Meeting, {}],
+    ['an anonymous viewer', ORGANIZER, { authenticated: false }],
+  ])('does not offer the action to %s', async (_label, meeting, options) => {
+    const component = await mount(meeting, options);
+
+    expect(component.canAddMyself()).toBe(false);
+  });
+
+  it('adds the viewer once, ignoring a second click while the request is in flight', async () => {
+    const result$ = new Subject<MeetingSelfInviteResult>();
+    add$.mockReturnValue(result$);
+    const component = await mount();
+
+    component.addMyself();
+    expect(component.addingMyself()).toBe(true);
+    component.addMyself();
+    expect(add$).toHaveBeenCalledExactlyOnceWith('meeting-1');
+
+    result$.next({ status: 'added' });
+    result$.complete();
+    expect(component.addingMyself()).toBe(false);
+  });
+
+  it('swaps to Remove Myself, counts the new guest and refreshes once added', async () => {
+    const component = await mount();
+    const refresh = vi.spyOn(TestBed.inject(UserService), 'refreshUserMeetings');
+    expect(component.guestCount()).toBe(3);
+
+    component.addMyself();
+
+    expect(component.canAddMyself()).toBe(false);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.guestCount()).toBe(4);
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
+    expect(getMeeting).toHaveBeenCalledExactlyOnceWith('meeting-1');
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: "You've been added to this meeting." }));
+  });
+
+  it('only catches up, without counting a new guest, when the roster already lists the viewer', async () => {
+    add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'already-listed' }));
+    const component = await mount();
+
+    component.addMyself();
+
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.guestCount()).toBe(3);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', detail: "You're already a guest of this meeting." }));
+  });
+
+  it('opens the Guests drawer on its add form when the profile cannot be invited automatically', async () => {
+    add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'unavailable' }));
+    const component = await mount();
+
+    component.addMyself();
+
+    expect(component.showRegistrants()).toBe(true);
+    expect(component.openRegistrantsOnAddForm()).toBe(true);
+    expect(component.canAddMyself()).toBe(true);
+    expect(getMeeting).not.toHaveBeenCalled();
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'info', detail: "We couldn't add you automatically. Use Add Guest to invite yourself." })
+    );
+  });
+
+  it('keeps Add Myself and shows the failure when the add fails', async () => {
+    add$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+    const component = await mount();
+
+    component.addMyself();
+
+    expect(component.canAddMyself()).toBe(true);
+    expect(component.addingMyself()).toBe(false);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to add you to this meeting. Please try again.' }));
+  });
+
+  it('offers Add Myself again once the viewer confirms Remove Myself, and on the rebuilt card', async () => {
+    const component = await mount();
+    component.addMyself();
+    expect(component.canLeaveMeeting()).toBe(true);
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.canLeaveMeeting()).toBe(false);
+    expect(component.canAddMyself()).toBe(true);
+
+    mountedFixture!.componentRef.setInput('meetingInput', { ...ORGANIZER, registrant_count: 3 } as Meeting);
+    mountedFixture!.detectChanges();
+    expect(component.canAddMyself()).toBe(true);
   });
 });
 

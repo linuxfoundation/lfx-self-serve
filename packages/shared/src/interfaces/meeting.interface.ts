@@ -716,6 +716,18 @@ export interface MeetingRegistrationRemovalResult {
   remaining_rsvps?: MeetingRsvp[];
 }
 
+/**
+ * Outcome of adding the signed-in user to a meeting's guests from a meeting card.
+ * @description `added` when the invite was saved, with the registrant the API returned; `already-listed` when the
+ * confirmed roster already has the user, so nothing was posted; `unavailable` when the user's profile has no email or
+ * no first and last name to invite them with.
+ */
+export interface MeetingSelfInviteResult {
+  status: 'added' | 'already-listed' | 'unavailable';
+  /** The saved registrant, present only for `added`. */
+  registrant?: MeetingRegistrant;
+}
+
 /** A confirmed organizer-side self-row delete, reconciled against the drawer's complete roster. */
 export interface MeetingSelfRegistrationRemovalEvent {
   meeting_id: string;

@@ -4,7 +4,7 @@ description: How to join a project meeting from its LFX Self Serve link, respond
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, attendee, rsvp, register, guest, zoom]
-last_updated: 2026-11-17
+last_updated: 2026-11-18
 intercom_collection: Meetings
 ---
 
@@ -83,7 +83,7 @@ If you're registered for an upcoming meeting and can't attend, select **Remove M
 
 - Your registration ends, and your saved response is discarded. If you register again, you start with no response.
 - If you were added through a group or a mailing list, you stay a member of it. Its syncs won't add you back to this meeting unless you leave and rejoin the group or list. An organizer, or you registering yourself, can still add you.
-- Organizers who are also registered can remove their registration and stay organizers.
+- Organizers who are also registered can remove their registration and stay organizers. On the card of a meeting you organize, the button then changes back to **Add Myself**, so you can invite yourself again. See [Add yourself](../manage-participants/#add-yourself).
 - If only some of your registrations can be removed, you see **Removal incomplete**. You stay invited, and you can try again.
 
 ## Meeting materials

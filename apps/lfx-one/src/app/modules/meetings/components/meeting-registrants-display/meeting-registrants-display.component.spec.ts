@@ -751,6 +751,22 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     expect(button()).toBeNull();
   });
 
+  it('is hidden while the host shows the user as a guest, even before the roster lists them', async () => {
+    const { fixture, button } = await mount({ registrants: [listed('someone@acme-motors.example')] });
+    expect(button()).not.toBeNull();
+
+    fixture.componentRef.setInput('selfInvited', true);
+    fixture.detectChanges();
+    expect(button()).toBeNull();
+
+    fixture.componentInstance.onAddSelf();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+
+    fixture.componentRef.setInput('selfInvited', false);
+    fixture.detectChanges();
+    expect(button()).not.toBeNull();
+  });
+
   it('is hidden when the drawer cannot add guests', async () => {
     const { fixture, button } = await mount();
     fixture.componentRef.setInput('showAddRegistrant', false);

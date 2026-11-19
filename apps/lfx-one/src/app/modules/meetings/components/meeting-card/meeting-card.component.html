@@ -536,7 +536,7 @@
           }
         </div>
         <!-- Viewer's own actions, side by side like Guests / See Meeting Details; a lone button fills the row -->
-        @if (canResendInvite() || canLeaveMeeting()) {
+        @if (canResendInvite() || canLeaveMeeting() || canAddMyself()) {
           <div class="flex gap-2 mt-2" data-testid="own-invite-actions">
             @if (canResendInvite()) {
               <lfx-button
@@ -562,6 +562,19 @@
                 data-testid="leave-meeting-button"
                 [loading]="leavingMeeting()"
                 (onClick)="confirmLeaveMeeting()">
+              </lfx-button>
+            }
+            @if (canAddMyself()) {
+              <lfx-button
+                class="w-full"
+                styleClass="w-full"
+                icon="fa-light fa-user-plus"
+                label="Add Myself"
+                size="small"
+                severity="secondary"
+                data-testid="add-myself-button"
+                [loading]="addingMyself()"
+                (onClick)="addMyself()">
               </lfx-button>
             }
           </div>
@@ -607,6 +620,7 @@
           [showAddRegistrant]="!pastMeeting()"
           [openAddFormOnShow]="openRegistrantsOnAddForm()"
           [occurrence]="occurrence()"
+          [selfInvited]="isRegisteredAttendee()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
           (selfAdded)="onSelfAdded($event.meeting_id)"

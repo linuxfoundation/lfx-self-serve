@@ -126,6 +126,8 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
   /** The parent could not confirm a complete roster; suppress duplicate-sensitive self-adds. */
   public readonly initialRegistrantsFailed: InputSignal<boolean> = input<boolean>(false);
+  /** The host already shows the viewer as a guest, for example right after adding them; hides "Add myself" while the roster catches up. */
+  public readonly selfInvited: InputSignal<boolean> = input<boolean>(false);
   /** The occurrence the host is showing; lets a guest be invited to that date only. */
   public readonly occurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
 
@@ -1082,13 +1084,15 @@ export class MeetingRegistrantsDisplayComponent {
   /**
    * Whether to offer "Add myself".
    * @description Hidden while the list loads or after its fetch failed, since it may be incomplete, and
-   * once the user is on it under a known email or their LFID. A profile without both names is never
-   * offered: the add payload requires them.
+   * once the user is on it under a known email or their LFID. Also hidden while the host shows the user
+   * as a guest ({@link selfInvited}), since the list can lag a save made outside this drawer. A profile
+   * without both names is never offered: the add payload requires them.
    */
   private initCanAddSelf(): Signal<boolean> {
     return computed(() => {
       const self = this.selfGuest();
       if (
+        this.selfInvited() ||
         !self?.first_name ||
         !self.last_name ||
         this.pastMeeting() ||
