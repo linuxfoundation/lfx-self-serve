@@ -1145,7 +1145,8 @@ export class HealthMetricsEventsService {
     // Only a code that can key a country is kept, before either fold, so a placeholder code never merges two countries or
     // outranks a real one. The list comes from constants, never from the request, so interpolating it is safe.
     const codes = [...HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES].map((code) => `'${code}'`).join(', ');
-    // A spelling's registrations across every period, so a group is labelled by its most common spelling.
+    // A spelling's registrations across every period, so a group is labelled by its most common spelling. Qualified, so
+    // it reads the source's columns, never the SUM aliases of the same name beside it.
     const total = (source: string) => columns.map((column) => `COALESCE(${source}${column}, 0)`).join(' + ');
     // A name read as words: underscores as spaces, runs of whitespace as one, trimmed after both, case ignored.
     const nameKey = "LOWER(TRIM(REGEXP_REPLACE(REPLACE(country, '_', ' '), '[[:space:]]+', ' ')))";
@@ -1167,14 +1168,14 @@ export class HealthMetricsEventsService {
         SELECT
           name_key,
           MAX(country_code) AS country_code,
-          MAX_BY(country, ${total('')}) AS country,
+          MAX_BY(spellings.country, ${total('spellings.')}) AS country,
           ${sums('spellings.')}
         FROM spellings
         GROUP BY name_key
       )
       SELECT
         MAX(country_code) AS country_code,
-        MAX_BY(country, ${total('')}) AS country,
+        MAX_BY(by_name.country, ${total('by_name.')}) AS country,
         ${sums('by_name.')}
       FROM by_name
       -- Names under one code fold into one row; a code names its country, and a name with no code keeps its most common spelling.

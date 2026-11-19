@@ -1728,8 +1728,12 @@ describe('HealthMetricsEventsService.getGeography', () => {
     // Trimmed after the underscores turn to spaces, so "_united_kingdom_" reads as the same words as "United Kingdom".
     const nameKey = "LOWER(TRIM(REGEXP_REPLACE(REPLACE(country, '_', ' '), '[[:space:]]+', ' ')))";
     expect(countrySql).toContain(`${nameKey} AS name_key`);
-    expect(countrySql).toMatch(/by_name AS \(\s+SELECT\s+name_key,\s+MAX\(country_code\) AS country_code,\s+MAX_BY\(country, COALESCE\(registration_count_/);
-    expect(countrySql).toContain('COALESCE(registration_count_ytd, 0)');
+    // The label's weights read the source's columns, qualified, never the SUM aliases of the same name.
+    expect(countrySql).toMatch(
+      /by_name AS \(\s+SELECT\s+name_key,\s+MAX\(country_code\) AS country_code,\s+MAX_BY\(spellings\.country, COALESCE\(spellings\.registration_count_/
+    );
+    expect(countrySql).toContain('COALESCE(spellings.registration_count_ytd, 0)');
+    expect(countrySql).toContain('MAX_BY(by_name.country, COALESCE(by_name.registration_count_');
     expect(countrySql).toContain('GROUP BY name_key');
     expect(countrySql).toContain('GROUP BY COALESCE(country_code, name_key)');
     expect(countrySql).not.toContain('MAX(country) AS country');
