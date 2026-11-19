@@ -87,7 +87,7 @@ interface Setup {
 function build(opts: Setup = {}) {
   const orgs = opts.orgs ?? [[ORG_UID, acme]];
   const cdp = {
-    getWorkExperiencesAsProfile: vi
+    getWorkExperiencesForKnownUser: vi
       .fn()
       .mockImplementation(() =>
         opts.experiences instanceof Error ? Promise.reject(opts.experiences) : Promise.resolve(opts.experiences ?? [job('Acme Motors')])
@@ -258,13 +258,13 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgSlug: 'acme-motors' } });
   });
 
-  it('reads companies with the BFF machine token and the work history exactly as the profile tab does', async () => {
+  it('reads companies with the BFF machine token and the work history read-only, never creating a CDP member', async () => {
     const { svc, proxy, cdp } = build();
 
     await svc.resolve(req(), ORG_UID);
 
     expect(proxy.proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
-    expect(cdp.getWorkExperiencesAsProfile).toHaveBeenCalledWith(expect.anything(), 'employee');
+    expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledWith(expect.anything(), 'employee');
   });
 
   it.each([
@@ -285,12 +285,20 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
   });
 
+  it('only reads work history: a caller CDP has never seen simply has none, and no CDP member is created', async () => {
+    const { svc, cdp } = build({ experiences: [] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-employer' });
+    expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(1);
+    expect(Object.keys(cdp)).toEqual(['getWorkExperiencesForKnownUser']);
+  });
+
   it('shares ONE lookup between the specific-company and unscoped calls of one page', async () => {
     const { svc, cdp } = build();
 
     await Promise.all([svc.resolve(req(), ORG_UID), svc.resolve(req(), null), svc.resolveReduced(req()), svc.resolve(req(), OTHER_UID)]);
 
-    expect(cdp.getWorkExperiencesAsProfile).toHaveBeenCalledTimes(1);
+    expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(1);
     expect(resolveVerifiedUserEmails).toHaveBeenCalledTimes(1);
   });
 
@@ -300,7 +308,7 @@ describe('OrgEmployeeViewService.resolve', () => {
 
     await Promise.all([a.svc.resolve(req(), ORG_UID), b.svc.resolve(req(), null)]);
 
-    expect(a.cdp.getWorkExperiencesAsProfile.mock.calls.length + b.cdp.getWorkExperiencesAsProfile.mock.calls.length).toBe(1);
+    expect(a.cdp.getWorkExperiencesForKnownUser.mock.calls.length + b.cdp.getWorkExperiencesForKnownUser.mock.calls.length).toBe(1);
   });
 
   it('resolves for the effective user, never the impersonating admin', async () => {
@@ -309,7 +317,7 @@ describe('OrgEmployeeViewService.resolve', () => {
 
     await svc.resolve(req(), ORG_UID);
 
-    expect(cdp.getWorkExperiencesAsProfile).toHaveBeenCalledWith(expect.anything(), 'impersonated-user');
+    expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledWith(expect.anything(), 'impersonated-user');
     expect(resolveVerifiedUserEmails).toHaveBeenCalledWith(expect.anything(), expect.anything(), { strict: true });
   });
 
@@ -705,7 +713,7 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
     const { svc, cdp } = build();
 
     await expect(svc.getRoleGrantEmployeeView(req(), g)).resolves.toEqual({});
-    expect(cdp.getWorkExperiencesAsProfile).not.toHaveBeenCalled();
+    expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
   });
 
   it('publishes the full-access company, not an employee view, for a caller who also holds the auditor entitlement', async () => {
@@ -727,6 +735,6 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
     const { svc, cdp } = build();
 
     await expect(svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({});
-    expect(cdp.getWorkExperiencesAsProfile).not.toHaveBeenCalled();
+    expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
   });
 });

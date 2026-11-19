@@ -524,21 +524,35 @@ export class CdpService {
    * "no employer" and gets the unchanged copy.
    */
   public async getWorkExperiencesForKnownUser(req: Request | undefined, sub: string): Promise<WorkExperienceEntry[]> {
-    return this.readWorkExperiences(req, sub, 'get_cdp_work_experiences_for_known_user', () => this.resolveMemberId(req, [sub]));
-  }
+    // `sub` is the caller's LFID username, not an opaque id, so it stays out of every log line here:
+    // this runs on a page-blocking request for every grant-less caller, which would put a username in
+    // production logs for exactly that group (PR #4318 review; `security/pii-in-logs-and-identifiers`).
+    // CDP's own member id is opaque and safe, and the request-scoped logger already identifies the caller.
+    const startTime = logger.startOperation(req, 'get_cdp_work_experiences_for_known_user');
 
-  /**
-   * Epic #5845 — the work history the profile's Work history & Affiliations tab shows, read the way that tab reads it
-   * (`GET /api/profile/work-experiences` → {@link getWorkExperiencesForUser}): resolve the user's CDP member, creating one seeded
-   * with their LFID identity when CDP has none, then list its work experiences. Work history is entered on the profile and merely
-   * STORED in CDP, so a user who has never been seen by CDP simply has an empty list here, exactly as on the profile; the access
-   * check depends on the profile's work history, not on a CDP member already existing.
-   *
-   * Unlike {@link getWorkExperiencesForUser}, a 404 from the CDP token endpoint (`CDP_TOKEN_ERROR`) is an outage and rejects, so
-   * the employee-view gate answers a retriable 503 and never caches "no employer" for the caller.
-   */
-  public async getWorkExperiencesAsProfile(req: Request | undefined, sub: string): Promise<WorkExperienceEntry[]> {
-    return this.readWorkExperiences(req, sub, 'get_cdp_work_experiences_as_profile', () => this.resolveMember(req, [sub]));
+    try {
+      const memberId = await this.resolveMemberId(req, [sub]);
+      if (!memberId) {
+        logger.debug(req, 'get_cdp_work_experiences_for_known_user', 'No CDP member for caller; reporting no work history');
+        return [];
+      }
+
+      const entries = (await this.getMemberWorkExperiences(req, memberId)).map((raw) => this.toWorkExperienceEntry(raw, sub));
+
+      logger.success(req, 'get_cdp_work_experiences_for_known_user', startTime, { member_id: memberId, work_experience_count: entries.length });
+
+      return entries;
+    } catch (error) {
+      // A 404 from the token endpoint (`CDP_TOKEN_ERROR`) is an outage, not a missing member: it must reject so the
+      // employee-view gate answers a retriable 503 and never caches "no employer" for the caller.
+      if (error instanceof MicroserviceError && error.statusCode === 404 && error.code !== 'CDP_TOKEN_ERROR') {
+        logger.warning(req, 'get_cdp_work_experiences_for_known_user', 'No CDP profile found for caller');
+        return [];
+      }
+
+      logger.error(req, 'get_cdp_work_experiences_for_known_user', startTime, error);
+      throw error;
+    }
   }
 
   /**
@@ -1039,44 +1053,6 @@ export class CdpService {
     }
 
     return data.memberId;
-  }
-
-  /** Shared body of the two read-only work-history lookups: resolve a member (or none), list its experiences, and tell an outage from "no profile". */
-  private async readWorkExperiences(
-    req: Request | undefined,
-    sub: string,
-    operation: string,
-    resolve: () => Promise<string | undefined>
-  ): Promise<WorkExperienceEntry[]> {
-    // `sub` is the caller's LFID username, not an opaque id, so it stays out of every log line here:
-    // this runs on a page-blocking request for every grant-less caller, which would put a username in
-    // production logs for exactly that group (PR #4318 review; `security/pii-in-logs-and-identifiers`).
-    // CDP's own member id is opaque and safe, and the request-scoped logger already identifies the caller.
-    const startTime = logger.startOperation(req, operation);
-
-    try {
-      const memberId = await resolve();
-      if (!memberId) {
-        logger.debug(req, operation, 'No CDP member for caller; reporting no work history');
-        return [];
-      }
-
-      const entries = (await this.getMemberWorkExperiences(req, memberId)).map((raw) => this.toWorkExperienceEntry(raw, sub));
-
-      logger.success(req, operation, startTime, { member_id: memberId, work_experience_count: entries.length });
-
-      return entries;
-    } catch (error) {
-      // A 404 from the token endpoint (`CDP_TOKEN_ERROR`) is an outage, not a missing member: it must reject so the
-      // employee-view gate answers a retriable 503 and never caches "no employer" for the caller.
-      if (error instanceof MicroserviceError && error.statusCode === 404 && error.code !== 'CDP_TOKEN_ERROR') {
-        logger.warning(req, operation, 'No CDP profile found for caller');
-        return [];
-      }
-
-      logger.error(req, operation, startTime, error);
-      throw error;
-    }
   }
 
   /** Shared wire → `WorkExperienceEntry` mapping for both work-history readers. */
