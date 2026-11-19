@@ -284,6 +284,34 @@ describe('ValkeyService — getJsonStrict', () => {
   });
 });
 
+describe('ValkeyService — setJsonIfAbsent', () => {
+  beforeEach(() => {
+    vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
+    setMock.mockReset();
+    ValkeyService.resetInstance();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('writes with NX and reports set, exists or fault', async () => {
+    setMock.mockResolvedValueOnce('OK');
+    await expect(ValkeyService.getInstance().setJsonIfAbsent('some:key', { orgUid: 'a' }, 60)).resolves.toBe('set');
+    expect(setMock).toHaveBeenCalledWith('some:key', JSON.stringify({ orgUid: 'a' }), 'EX', 60, 'NX');
+
+    setMock.mockResolvedValueOnce(null);
+    await expect(ValkeyService.getInstance().setJsonIfAbsent('some:key', { orgUid: 'b' }, 60)).resolves.toBe('exists');
+
+    setMock.mockRejectedValueOnce(new Error('connection reset'));
+    await expect(ValkeyService.getInstance().setJsonIfAbsent('some:key', { orgUid: 'c' }, 60)).resolves.toBe('fault');
+
+    vi.stubEnv('VALKEY_URL', '');
+    ValkeyService.resetInstance();
+    await expect(ValkeyService.getInstance().setJsonIfAbsent('some:key', { orgUid: 'd' }, 60)).resolves.toBe('fault');
+  });
+});
+
 describe('buildAuthStateCacheKey (#1938)', () => {
   beforeEach(() => {
     vi.stubEnv('VALKEY_KEY_NAMESPACE', '');

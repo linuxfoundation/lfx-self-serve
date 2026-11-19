@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken, pinned, valkeyState } = vi.hoisted(() => ({
   pinned: new Map<string, unknown>(),
-  valkeyState: { enabled: true, writeFails: false, readFails: false },
+  valkeyState: { enabled: true, writeFails: false, readFails: false, raceWinner: null as string | null },
   generateM2MToken: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'employee'),
   resolveVerifiedUserEmails: vi.fn(),
@@ -25,6 +25,17 @@ vi.mock('./valkey.service', () => ({
     getJsonStrict: async (key: string) => {
       if (valkeyState.readFails) return { status: 'fault' };
       return pinned.has(key) ? { status: 'hit', value: pinned.get(key) } : { status: 'miss' };
+    },
+    setJsonIfAbsent: async (key: string, value: unknown) => {
+      if (!valkeyState.enabled || valkeyState.writeFails) return 'fault';
+      if (valkeyState.raceWinner) {
+        // Another request pinned first, between this one's read and write.
+        pinned.set(key, { orgUid: valkeyState.raceWinner });
+        return 'exists';
+      }
+      if (pinned.has(key)) return 'exists';
+      pinned.set(key, value);
+      return 'set';
     },
     setJson: async (key: string, value: unknown) => {
       if (!valkeyState.enabled || valkeyState.writeFails) return false;
@@ -102,9 +113,11 @@ function build(opts: Setup = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   pinned.clear();
+  OrgEmployeeViewService.clearCache();
   valkeyState.enabled = true;
   valkeyState.writeFails = false;
   valkeyState.readFails = false;
+  valkeyState.raceWinner = null;
   getEffectiveUsername.mockReturnValue('employee');
   generateM2MToken.mockResolvedValue('m2m-token');
 });
@@ -278,6 +291,15 @@ describe('OrgEmployeeViewService.resolve', () => {
     expect(resolveVerifiedUserEmails).toHaveBeenCalledTimes(1);
   });
 
+  it('shares one lookup across separately constructed services, as the gate, controller, navigation and resolver each build their own', async () => {
+    const a = build();
+    const b = build();
+
+    await Promise.all([a.svc.resolve(req(), ORG_UID), b.svc.resolve(req(), null)]);
+
+    expect(a.cdp.getWorkExperiencesForKnownUser.mock.calls.length + b.cdp.getWorkExperiencesForKnownUser.mock.calls.length).toBe(1);
+  });
+
   it('resolves for the effective user, never the impersonating admin', async () => {
     getEffectiveUsername.mockReturnValue('impersonated-user');
     const { svc, cdp } = build();
@@ -345,6 +367,8 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     });
     await expect(first.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
 
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
+
     const later = build({
       orgs: both,
       emails,
@@ -371,6 +395,8 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     });
     await first.svc.resolve(req(), null);
 
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
+
     const changed = build({
       orgs: both,
       emails: [...emails, 'dev2@zeta-holdings.example'],
@@ -394,6 +420,8 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
       ]),
     });
     await first.svc.resolve(req(), null);
+
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
 
     const changed = build({
       orgs: both,
@@ -433,6 +461,7 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     await expect(first.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
 
     valkeyState.readFails = true;
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
     const blip = build({
       orgs: both,
       emails,
@@ -446,6 +475,7 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     expect(blip.engagement.getLastActivityByAccount).not.toHaveBeenCalled();
 
     valkeyState.readFails = false;
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
     const after = build({
       orgs: both,
       emails,
@@ -456,6 +486,24 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
       ]),
     });
     await expect(after.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+  });
+
+  it('answers with the stored winner when another request pinned first, so concurrent cold requests cannot admit two companies', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    valkeyState.raceWinner = UID_B;
+    const { svc } = build({
+      orgs: both,
+      emails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 9000],
+        [UID_B, 1000],
+      ]),
+    });
+
+    // This request ranks Acme first, but Zeta was pinned a moment earlier: Zeta is the answer.
+    await expect(svc.resolve(req(), null)).resolves.toMatchObject({ eligible: true, org: { orgUid: UID_B } });
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'other-company' });
   });
 
   it('does not need the pin store for a single qualifying company', async () => {
@@ -482,6 +530,7 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
     await expect(first.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
 
     // Acme stops being a member (same fingerprint: same employers and emails). The replacement is ranked once and stored.
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
     const second = build({
       orgs: [third[1], third[2]],
       emails: threeEmails,
@@ -492,6 +541,8 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
       ]),
     });
     await expect(second.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+
+    OrgEmployeeViewService.clearCache(); // the 60 s outcome is shared by every instance; start a fresh page load
 
     const later = build({
       orgs: [third[1], third[2]],

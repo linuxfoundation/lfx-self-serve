@@ -124,7 +124,8 @@ export class OrgEmployeeViewService {
   private readonly proxy: MicroserviceProxyService;
   private readonly accessCheck: AccessCheckService;
   private readonly engagement: OrgEmployeeViewEngagementService;
-  private readonly cache = new Map<string, { expiresAt: number; outcome: Promise<EmployeeViewOutcome> }>();
+  /** Shared by every instance: the read gate, identity controller, navigation service and slug resolver each construct their own service, and one page's calls must share a single lookup. */
+  private static readonly cache = new Map<string, { expiresAt: number; outcome: Promise<EmployeeViewOutcome> }>();
 
   public constructor(
     deps: {
@@ -142,6 +143,11 @@ export class OrgEmployeeViewService {
     this.engagement = deps.engagement ?? new OrgEmployeeViewEngagementService();
   }
 
+  /** Drops every held outcome (tests). */
+  public static clearCache(): void {
+    OrgEmployeeViewService.cache.clear();
+  }
+
   /**
    * The caller's verdict for `orgUid`, or for the one company they are pinned to when `orgUid` is null (the role-grants and
    * selector callers, who do not know it yet). Rejects when it cannot be established.
@@ -153,18 +159,18 @@ export class OrgEmployeeViewService {
     }
 
     const now = Date.now();
-    const hit = this.cache.get(username);
+    const hit = OrgEmployeeViewService.cache.get(username);
     let outcome: Promise<EmployeeViewOutcome>;
     if (hit && hit.expiresAt > now) {
       outcome = hit.outcome;
     } else {
       outcome = this.compute(req, username);
-      this.cache.set(username, { expiresAt: now + ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS, outcome });
-      if (this.cache.size > ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES) {
+      OrgEmployeeViewService.cache.set(username, { expiresAt: now + ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS, outcome });
+      if (OrgEmployeeViewService.cache.size > ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES) {
         this.evict(now);
       }
       outcome.catch(() => {
-        if (this.cache.get(username)?.outcome === outcome) this.cache.delete(username);
+        if (OrgEmployeeViewService.cache.get(username)?.outcome === outcome) OrgEmployeeViewService.cache.delete(username);
       });
     }
 
@@ -233,13 +239,13 @@ export class OrgEmployeeViewService {
   }
 
   private evict(now: number): void {
-    for (const [key, entry] of this.cache) {
-      if (entry.expiresAt <= now) this.cache.delete(key);
+    for (const [key, entry] of OrgEmployeeViewService.cache) {
+      if (entry.expiresAt <= now) OrgEmployeeViewService.cache.delete(key);
     }
     // Still over the bound: drop the oldest insertions.
-    for (const key of this.cache.keys()) {
-      if (this.cache.size <= ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES) break;
-      this.cache.delete(key);
+    for (const key of OrgEmployeeViewService.cache.keys()) {
+      if (OrgEmployeeViewService.cache.size <= ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES) break;
+      OrgEmployeeViewService.cache.delete(key);
     }
   }
 
@@ -351,7 +357,7 @@ export class OrgEmployeeViewService {
    * most recent engagement wins, then the most recent start date, and the choice is STORED under the fingerprint: it is
    * made once per change of employer or verified email, never re-derived from activity on a later load.
    *
-   * The stored pin is authoritative: it is read back as long as that company still qualifies, and each read refreshes its
+   * The stored pin is authoritative (kept for a year, refreshed on every read; a first choice is written atomically and every contender then answers with the stored winner): it is read back as long as that company still qualifies, and each read refreshes its
    * 30-day lifetime. A read that FAULTS (timeout, connection error) is not a missing pin and is treated like a failed write. A pin that no longer qualifies is replaced, and the replacement is persisted. When the pin cannot be
    * read or stored (the cache is disabled, or a read or the write fails) the lookup REJECTS (a retriable 503) rather than answering with a
    * choice that the next request could contradict, which would let two companies be admitted in turn.
@@ -363,19 +369,35 @@ export class OrgEmployeeViewService {
     if (!key || !valkeyService.isEnabled()) throw this.pinUnavailable();
 
     const accept = (value: unknown): boolean => !!value && typeof value === 'object' && typeof (value as { orgUid?: unknown }).orgUid === 'string';
+    const ttl = VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS;
     // A read FAULT is not "no pin": re-ranking on a blip would overwrite the stored company with whichever one currently leads.
-    const read = await valkeyService.getJsonStrict<{ orgUid: string }>(key, accept);
-    if (read.status === 'fault') throw this.pinUnavailable();
-    const kept = read.status === 'hit' ? qualifying.find((entry) => entry.org.orgUid === read.value.orgUid) : undefined;
+    const readPin = async (): Promise<{ orgUid: string } | null> => {
+      const read = await valkeyService.getJsonStrict<{ orgUid: string }>(key, accept);
+      if (read.status === 'fault') throw this.pinUnavailable();
+      return read.status === 'hit' ? read.value : null;
+    };
+    const winner = (pin: { orgUid: string } | null): QualifyingEmployer | undefined =>
+      pin ? qualifying.find((entry) => entry.org.orgUid === pin.orgUid) : undefined;
+
+    const stored = await readPin();
+    const kept = winner(stored);
     if (kept) {
       // Sliding lifetime, best effort: a failed refresh only leaves the remaining time as it was.
-      void valkeyService.setJson(key, { orgUid: kept.org.orgUid }, VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS);
+      void valkeyService.setJson(key, { orgUid: kept.org.orgUid }, ttl);
       return kept;
     }
 
     const chosen = await this.rank(req, username, qualifying);
-    if (!(await valkeyService.setJson(key, { orgUid: chosen.org.orgUid }, VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS))) throw this.pinUnavailable();
-    return chosen;
+    if (stored) {
+      // The pinned company no longer qualifies: persist the replacement so it, too, stays put.
+      if (!(await valkeyService.setJson(key, { orgUid: chosen.org.orgUid }, ttl))) throw this.pinUnavailable();
+    } else {
+      // First choice: establish it ATOMICALLY so concurrent cold requests cannot each pin a different company.
+      const written = await valkeyService.setJsonIfAbsent(key, { orgUid: chosen.org.orgUid }, ttl);
+      if (written === 'fault') throw this.pinUnavailable();
+    }
+    // Every contender answers with whatever is stored, so the one that lost the race uses the winner, not its own ranking.
+    return winner(await readPin()) ?? chosen;
   }
 
   private pinUnavailable(): MicroserviceError {

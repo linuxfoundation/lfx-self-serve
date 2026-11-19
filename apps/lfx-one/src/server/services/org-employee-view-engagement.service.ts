@@ -10,8 +10,7 @@ import { SnowflakeService } from './snowflake.service';
  * Epic #5845 — "most recent engagement" per company for one person, used once to choose between two present
  * employers (never to grant or revoke access on its own).
  *
- * Wired source today: code activity (`ORG_PEOPLE_CONTRIBUTORS_DAILY` joined to the roster's LF username in
- * `ORG_PEOPLE_ALL`). Events and meetings are NOT yet read here; a person whose only recent engagement is there ties at
+ * Wired source today: code activity (`ORG_PEOPLE_CONTRIBUTORS_DAILY`, by the row's own `lf_username`, so a contributor with no roster row still counts). Events and meetings are NOT yet read here; a person whose only recent engagement is there ties at
  * "no data" and falls back to the most recent work-history start date. Fail-soft by design: an unavailable warehouse
  * yields no engagement, never a rejection, because the fallback is a defined rule rather than a guess.
  */
@@ -29,12 +28,10 @@ export class OrgEmployeeViewEngagementService {
     try {
       const placeholders = accountIds.map(() => '?').join(', ');
       const query = `
-        SELECT c.account_id AS ACCOUNT_ID, MAX(c.activity_date) AS LAST_ACTIVITY
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY c
-        JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
-          ON p.ACCOUNT_ID = c.account_id AND p.PERSON_KEY = c.person_key
-        WHERE LOWER(TRIM(p.LF_USERNAME)) = ? AND c.account_id IN (${placeholders})
-        GROUP BY c.account_id
+        SELECT account_id AS ACCOUNT_ID, MAX(activity_date) AS LAST_ACTIVITY
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+        WHERE LOWER(TRIM(lf_username)) = ? AND account_id IN (${placeholders})
+        GROUP BY account_id
       `;
       const rows = await this.snowflake.execute<{ ACCOUNT_ID: string; LAST_ACTIVITY: Date | string | null }>(query, [username.toLowerCase(), ...accountIds]);
       for (const row of rows.rows) {

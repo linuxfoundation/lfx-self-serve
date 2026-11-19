@@ -105,6 +105,32 @@ export class ValkeyService implements CachePort {
   }
 
   /**
+   * Writes a JSON value ONLY when the key is absent (`SET key value EX ttl NX`), so of several concurrent writers exactly one
+   * wins. `exists` means another writer got there first; `fault` means the write could not be performed (disabled, timeout,
+   * error, oversized value).
+   */
+  public async setJsonIfAbsent(
+    key: string,
+    value: unknown,
+    ttlSeconds: number,
+    timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS
+  ): Promise<'set' | 'exists' | 'fault'> {
+    if (!this.client) return 'fault';
+    try {
+      const serialized = JSON.stringify(value, isoDateReplacer);
+      if (Buffer.byteLength(serialized, 'utf8') > ValkeyService.maxBytesFor(key)) return 'fault';
+      const reply = await this.withTimeout(
+        this.runWhenConnected(() => this.client!.set(key, serialized, 'EX', ttlSeconds, 'NX'), timeoutMs),
+        timeoutMs
+      );
+      return reply === 'OK' ? 'set' : 'exists';
+    } catch (err) {
+      logger.warning(undefined, 'valkey_set_nx', 'Conditional cache write failed', { err, cache_key: ValkeyService.redactKey(key) });
+      return 'fault';
+    }
+  }
+
+  /**
    * Atomic read-and-delete (`GETDEL`) — the single-use counterpart to `getJson`. A plain `getJson`
    * followed by `del` is two round trips: two concurrent callers can both `GET` the same key before
    * either `DEL` lands, so both see it as valid. `GETDEL` closes that window server-side. Requires
