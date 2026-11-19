@@ -87,7 +87,13 @@ describe('health metrics table sorting', () => {
   it('ranks tiers Diamond down to Non-member, any other named tier just above Non-member, and no tier as empty', () => {
     const tiers = ['Diamond', 'Platinum', 'Gold', 'Silver', 'Associate', 'End User Supporter', 'Premier', 'Non-Member'];
     expect(tiers.map(healthMetricsTierSortRank)).toEqual([7, 6, 5, 4, 3, 2, 1, 0]);
-    expect([healthMetricsTierSortRank('non member'), healthMetricsTierSortRank(''), healthMetricsTierSortRank(null)]).toEqual([0, null, null]);
+    expect([healthMetricsTierSortRank('non member'), healthMetricsTierSortRank(''), healthMetricsTierSortRank(' — '), healthMetricsTierSortRank(null)]).toEqual(
+      [0, null, null, null]
+    );
+  });
+
+  it('ranks the warehouse\'s "Membership" and "Member" forms as their tier, and a non-Latin name as an unknown tier', () => {
+    expect(['Gold Membership', 'Platinum Member', 'Silver (100 - 499)', '会员', '24/7'].map(healthMetricsTierSortRank)).toEqual([5, 6, 4, 1, 1]);
   });
 
   it('compares numbers by value and text ignoring case, with empty values last in both directions', () => {
@@ -99,6 +105,7 @@ describe('health metrics table sorting', () => {
     expect(order(['beta', '—', 'Alpha', ' ', 'alpha 2'], 'asc')).toEqual(['Alpha', 'alpha 2', 'beta', '—', ' ']);
     expect(order(['2026-01-05', '2025-12-31'], 'desc')).toEqual(['2026-01-05', '2025-12-31']);
     expect(order(['Item 2', 'item 10', 'Éclair', 'Eagle'], 'asc')).toEqual(['Eagle', 'Éclair', 'item 10', 'Item 2']);
+    expect(order(['  Zebra', 'Alpha\t'], 'asc')).toEqual(['Alpha\t', '  Zebra']);
     expect(order([0, HEALTH_METRICS_SORT_DORMANT_VALUE, 12], 'asc')).toEqual([HEALTH_METRICS_SORT_DORMANT_VALUE, 0, 12]);
   });
 

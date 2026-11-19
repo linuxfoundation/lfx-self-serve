@@ -24,7 +24,7 @@ describe('buildHealthMetricsSortOrderBy', () => {
       `registrations_ytd DESC NULLS LAST, ${DEFAULT_ORDER}`
     );
     expect(buildHealthMetricsSortOrderBy({ key: 'company', direction: 'asc' }, COLUMNS, DEFAULT_ORDER)).toBe(
-      `COLLATE(NULLIF(TRIM(account_name), ''), 'en-ci-ai') ASC NULLS LAST, ${DEFAULT_ORDER}`
+      `COLLATE(NULLIF(NULLIF(TRIM(account_name, ' \\t\\n\\r'), ''), '—'), 'en-ci-ai') ASC NULLS LAST, ${DEFAULT_ORDER}`
     );
   });
 
@@ -40,14 +40,15 @@ describe('buildHealthMetricsSortOrderBy', () => {
 });
 
 describe('healthMetricsTierRankSql', () => {
-  it('ranks the named tiers as the client does, an unknown tier 1 and no tier NULL', () => {
+  it('ranks the named tiers and their "Membership" forms as the client does, an unknown tier 1 and no tier NULL', () => {
     const sql = healthMetricsTierRankSql('t.tier');
-    const name = "LOWER(REGEXP_REPLACE(t.tier, '[^A-Za-z]', ''))";
+    const trimmed = "TRIM(t.tier, ' \\t\\n\\r')";
+    const name = `REGEXP_REPLACE(LOWER(${trimmed}), '[^a-z]', '')`;
 
-    expect(sql.startsWith(`CASE WHEN ${name} IS NULL OR ${name} = '' THEN NULL `)).toBe(true);
-    expect(sql).toContain(`WHEN ${name} = 'diamond' THEN 7`);
-    expect(sql).toContain(`WHEN ${name} = 'endusersupporter' THEN 2`);
-    expect(sql).toContain(`WHEN ${name} = 'nonmember' THEN 0`);
+    expect(sql.startsWith(`CASE WHEN ${trimmed} IS NULL OR ${trimmed} IN ('', '—') THEN NULL `)).toBe(true);
+    expect(sql).toContain(`WHEN ${name} IN ('diamond', 'diamondmembership', 'diamondmember') THEN 7`);
+    expect(sql).toContain(`WHEN ${name} IN ('endusersupporter', 'endusersupportermembership', 'endusersupportermember') THEN 2`);
+    expect(sql).toContain(`WHEN ${name} IN ('nonmember') THEN 0`);
     expect(sql.endsWith('ELSE 1 END')).toBe(true);
   });
 });

@@ -25,12 +25,13 @@
   ></span>
 }
 @if (arrowClasses(); as classes) {
-  <!-- A pointer shortcut past the tip, out of the tab order; the label's button is the keyboard and screen-reader control. -->
+  <!-- A pointer shortcut past the tip that never takes focus; the label's button is the keyboard and screen-reader control. -->
   <button
     type="button"
     class="inline-flex border-0 bg-transparent p-0 text-inherit"
     tabindex="-1"
     aria-hidden="true"
+    (mousedown)="$event.preventDefault()"
     (click)="sorted.emit()"
     data-testid="health-metrics-th-sort-arrow">
     <i [class]="classes" data-testid="health-metrics-th-sort"></i>

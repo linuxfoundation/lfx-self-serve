@@ -18,6 +18,9 @@ import type {
   HealthMetricsTableSort,
 } from '../interfaces/health-metrics-table.interface';
 
+/** One collator for every text comparison: building one per comparison makes a long list's sort slow. */
+const HEALTH_METRICS_SORT_TEXT_COLLATOR = new Intl.Collator('en', { sensitivity: 'base' });
+
 /** A column's minimum width under the redesign: 72% of its old pixel value, rounded. */
 export function shrinkHealthMetricsColumnPx(px: number): number {
   return Math.round(px * HEALTH_METRICS_TABLE_COLUMN_SCALE);
@@ -68,17 +71,24 @@ export function healthMetricsAriaSort(state: HealthMetricsColumnSort): 'ascendin
   return 'none';
 }
 
-/** Each ranked tier's normalised name and rank: Non-member 0, any other named tier 1, then up to Diamond. */
-export function healthMetricsTierSortRanks(): { name: string; rank: number }[] {
+/**
+ * Each ranked tier's names and rank: Non-member 0, any other named tier 1, then up to Diamond. Names are letters only,
+ * and each tier also matches its "Membership" and "Member" forms, as the warehouse writes some tiers.
+ */
+export function healthMetricsTierSortRanks(): { names: string[]; rank: number }[] {
   const nonMember = HEALTH_METRICS_SORT_TIER_ORDER.length - 1;
-  return HEALTH_METRICS_SORT_TIER_ORDER.map((tier, index) => ({ name: normalizeTierName(tier), rank: index === nonMember ? 0 : nonMember - index + 1 }));
+  return HEALTH_METRICS_SORT_TIER_ORDER.map((tier, index) => {
+    const name = normalizeTierName(tier);
+    if (index === nonMember) return { names: [name], rank: 0 };
+    return { names: [name, `${name}membership`, `${name}member`], rank: nonMember - index + 1 };
+  });
 }
 
-/** A membership tier's sort rank, highest for Diamond; `null` for no tier, which sorts last. */
+/** A membership tier's sort rank, highest for Diamond; `null` for no tier ("—" or blank), which sorts last. */
 export function healthMetricsTierSortRank(tier: string | null | undefined): number | null {
-  const name = normalizeTierName(tier ?? '');
-  if (!name) return null;
-  return healthMetricsTierSortRanks().find((entry) => entry.name === name)?.rank ?? 1;
+  if (tier === null || tier === undefined || isEmptySortValue(tier)) return null;
+  const name = normalizeTierName(tier);
+  return healthMetricsTierSortRanks().find((entry) => entry.names.includes(name))?.rank ?? 1;
 }
 
 /**
@@ -90,7 +100,7 @@ export function compareHealthMetricsSortValues(a: HealthMetricsSortValue, b: Hea
   const bEmpty = isEmptySortValue(b);
   if (aEmpty || bEmpty) return Number(aEmpty) - Number(bEmpty);
 
-  const order = typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), 'en', { sensitivity: 'base' });
+  const order = typeof a === 'number' && typeof b === 'number' ? a - b : HEALTH_METRICS_SORT_TEXT_COLLATOR.compare(String(a).trim(), String(b).trim());
   return direction === 'asc' ? order : -order;
 }
 
@@ -128,7 +138,7 @@ function isEmptySortValue(value: HealthMetricsSortValue): boolean {
   return text === '' || text === HEALTH_METRICS_TABLE_DASH;
 }
 
-/** "Non-Member" and "non member" both read `nonmember`. */
+/** Letters only, so "Non-Member" and "non member" both read `nonmember`. */
 function normalizeTierName(tier: string): string {
   return tier.toLowerCase().replace(/[^a-z]/g, '');
 }

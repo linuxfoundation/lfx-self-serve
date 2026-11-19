@@ -61,6 +61,9 @@ describe('HealthMetricsThComponent', () => {
     const arrow = query('health-metrics-th-sort-arrow') as HTMLButtonElement;
     expect(arrow.getAttribute('tabindex')).toBe('-1');
     expect(arrow.getAttribute('aria-hidden')).toBe('true');
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    arrow.dispatchEvent(press);
+    expect(press.defaultPrevented).toBe(true);
     arrow.click();
     expect(sorted).toHaveBeenCalledTimes(2);
 
