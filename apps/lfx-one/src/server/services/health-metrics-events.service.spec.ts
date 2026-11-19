@@ -1725,7 +1725,8 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(kept).not.toContain("'ZZ'");
     expect(countrySql).toContain("GROUP BY NULLIF(TRIM(country), '')");
     // Spellings fold by their words first, taking any code one carries, then by code; each group keeps its most common spelling.
-    const nameKey = "LOWER(REGEXP_REPLACE(REPLACE(TRIM(country), '_', ' '), '[[:space:]]+', ' '))";
+    // Trimmed after the underscores turn to spaces, so "_united_kingdom_" reads as the same words as "United Kingdom".
+    const nameKey = "LOWER(TRIM(REGEXP_REPLACE(REPLACE(country, '_', ' '), '[[:space:]]+', ' ')))";
     expect(countrySql).toContain(`${nameKey} AS name_key`);
     expect(countrySql).toMatch(/by_name AS \(\s+SELECT\s+name_key,\s+MAX\(country_code\) AS country_code,\s+MAX_BY\(country, COALESCE\(registration_count_/);
     expect(countrySql).toContain('COALESCE(registration_count_ytd, 0)');

@@ -1147,8 +1147,8 @@ export class HealthMetricsEventsService {
     const codes = [...HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES].map((code) => `'${code}'`).join(', ');
     // A spelling's registrations across every period, so a group is labelled by its most common spelling.
     const total = (source: string) => columns.map((column) => `COALESCE(${source}${column}, 0)`).join(' + ');
-    // A name read as words: underscores as spaces, runs of whitespace as one, case ignored.
-    const nameKey = "LOWER(REGEXP_REPLACE(REPLACE(TRIM(country), '_', ' '), '[[:space:]]+', ' '))";
+    // A name read as words: underscores as spaces, runs of whitespace as one, trimmed after both, case ignored.
+    const nameKey = "LOWER(TRIM(REGEXP_REPLACE(REPLACE(country, '_', ' '), '[[:space:]]+', ' ')))";
     const sql = `
       WITH spellings AS (
         SELECT
