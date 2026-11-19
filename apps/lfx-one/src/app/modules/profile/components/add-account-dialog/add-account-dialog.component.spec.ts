@@ -534,10 +534,10 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
  * Guards #4042/#4190: dev can link GitLab; staging and production retain Coming soon.
  */
 describe.each([
-  { name: 'dev', config: devEnvironment },
-  { name: 'staging', config: stagingEnvironment },
-  { name: 'production', config: productionEnvironment },
-])('AddAccountDialogComponent — provider list ($name)', ({ config }) => {
+  { name: 'dev', config: devEnvironment, expectedDisabled: false },
+  { name: 'staging', config: stagingEnvironment, expectedDisabled: true },
+  { name: 'production', config: productionEnvironment, expectedDisabled: true },
+])('AddAccountDialogComponent — provider list ($name)', ({ config, expectedDisabled }) => {
   let fixture: ComponentFixture<AddAccountDialogComponent>;
   const originalProduction = environment.production;
 
@@ -571,23 +571,38 @@ describe.each([
     expect(component.providers.some((provider) => provider.id === 'lfid')).toBe(false);
   });
 
-  if (!config.production) {
-    it('enables Continue with GitLab without a Coming soon badge or blocking overlay', async () => {
-      const component = setup();
+  if (!expectedDisabled) {
+    it.each(['/profile/identities', '/profile/clas'])('enables GitLab and starts social linking with return path %s', async (returnTo) => {
+      setup();
       await fixture.whenStable();
-      // Observe the existing selection handler without leaving the test page for OAuth.
-      const selectProvider = vi.spyOn(component, 'onSelectProvider').mockImplementation(() => undefined);
       const root = fixture.nativeElement as HTMLElement;
       const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
+      const location = { pathname: returnTo, search: '?ignored=true', hash: '#ignored', href: '' };
 
       expect(button).not.toBeNull();
       expect(button?.disabled).toBe(false);
       expect(button?.textContent).toContain('Continue with GitLab');
       expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')).toBeNull();
       expect(root.querySelector('[data-testid="provider-action-hint-gitlab"]')).toBeNull();
-      button?.click();
 
-      expect(selectProvider).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'gitlab' }));
+      // Run the real click handler, replacing only the navigation sink so OAuth cannot leave jsdom.
+      vi.stubGlobal(
+        'window',
+        new Proxy(window, {
+          get: (target, property) => {
+            if (property === 'location') return location;
+            const value = Reflect.get(target, property);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        })
+      );
+      try {
+        button?.click();
+
+        expect(location.href).toBe(`/api/profile/identities/social/connect?provider=gitlab&returnTo=${encodeURIComponent(returnTo)}`);
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   } else {
     it('disables the GitLab button and does not start linking when clicked', async () => {
