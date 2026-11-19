@@ -1734,7 +1734,7 @@ describe('UserService.attachPastMeetingArtifacts', () => {
       { id: 'past-uid-2', meeting_and_occurrence_id: 'm2:1', start_time: yesterday },
     ] as unknown as PastMeeting[];
 
-    await new UserService().attachPastMeetingArtifacts(req, rows);
+    await new UserService().attachPastMeetingArtifacts(req, rows, 'get_past_meetings');
 
     expect(rows.map((m) => [m.has_recording, m.recording_share_url, m.has_ai_summary])).toEqual([
       [true, 'https://zoom.example/rec/1', true],
@@ -1743,7 +1743,7 @@ describe('UserService.attachPastMeetingArtifacts', () => {
   });
 
   it('makes no request for rows without an occurrence id', async () => {
-    await new UserService().attachPastMeetingArtifacts(req, [{ id: 'past-uid-1' } as unknown as PastMeeting]);
+    await new UserService().attachPastMeetingArtifacts(req, [{ id: 'past-uid-1' } as unknown as PastMeeting], 'get_past_meetings');
 
     expect(proxyRequest).not.toHaveBeenCalled();
   });

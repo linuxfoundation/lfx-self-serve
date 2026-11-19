@@ -736,7 +736,7 @@ export class UserService {
     const [withProjects, committeeNames, [recordingUrls, primarySummaries]] = await Promise.all([
       this.meetingService.getMeetingProjectName(req, pastOnly),
       this.meetingService.getCommitteeNameMap(req, pastOnly),
-      this.fetchPastMeetingArtifactMaps(req, pastMeetingIds),
+      this.fetchPastMeetingArtifactMaps(req, 'get_user_past_meetings', pastMeetingIds),
     ]);
     const enriched = this.withCommitteeNames(withProjects, committeeNames);
 
@@ -800,10 +800,10 @@ export class UserService {
    * Sets `has_recording`, `recording_share_url`, `has_ai_summary` and the organizer's summary approval fields on each
    * past meeting, keyed by `meeting_and_occurrence_id`. A failed lookup leaves the fields undefined.
    */
-  public async attachPastMeetingArtifacts(req: Request, meetings: PastMeeting[]): Promise<void> {
+  public async attachPastMeetingArtifacts(req: Request, meetings: PastMeeting[], operation: string): Promise<void> {
     const ids = [...new Set(meetings.map((meeting) => meeting.meeting_and_occurrence_id).filter((id): id is string => !!id))];
     if (ids.length === 0) return;
-    const [recordingUrls, primarySummaries] = await this.fetchPastMeetingArtifactMaps(req, ids);
+    const [recordingUrls, primarySummaries] = await this.fetchPastMeetingArtifactMaps(req, operation, ids);
     this.applyPastMeetingArtifacts(meetings, recordingUrls, primarySummaries);
   }
 
@@ -1275,13 +1275,17 @@ export class UserService {
   }
 
   /** Looks up the recording share URL and primary AI summary of each past meeting occurrence; no ids issues no requests. */
-  private fetchPastMeetingArtifactMaps(req: Request, pastMeetingIds: string[]): Promise<[Map<string, string | null>, Map<string, PastMeetingSummary | null>]> {
+  private fetchPastMeetingArtifactMaps(
+    req: Request,
+    operation: string,
+    pastMeetingIds: string[]
+  ): Promise<[Map<string, string | null>, Map<string, PastMeetingSummary | null>]> {
     return Promise.all([
-      this.fetchPastMeetingArtifacts<PastMeetingRecording, string | null>(req, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
+      this.fetchPastMeetingArtifacts<PastMeetingRecording, string | null>(req, operation, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
         getLargestSessionShareUrl(recording ?? null)
       ),
       // selectPrimaryPastMeetingSummary reads only `data` from each item.
-      this.fetchPastMeetingArtifacts<PastMeetingSummary, PastMeetingSummary | null>(req, 'v1_past_meeting_summary', pastMeetingIds, (summaries) =>
+      this.fetchPastMeetingArtifacts<PastMeetingSummary, PastMeetingSummary | null>(req, operation, 'v1_past_meeting_summary', pastMeetingIds, (summaries) =>
         selectPrimaryPastMeetingSummary(summaries.map((data) => ({ type: 'v1_past_meeting_summary', id: '', data })))
       ),
     ]);
@@ -1310,7 +1314,13 @@ export class UserService {
   }
 
   /** Maps past meeting ids to a value derived from their artifact rows via OR-tag batches; a failed batch's ids are omitted. */
-  private async fetchPastMeetingArtifacts<T, R>(req: Request, type: string, pastMeetingIds: string[], derive: (rows: T[]) => R): Promise<Map<string, R>> {
+  private async fetchPastMeetingArtifacts<T, R>(
+    req: Request,
+    operation: string,
+    type: string,
+    pastMeetingIds: string[],
+    derive: (rows: T[]) => R
+  ): Promise<Map<string, R>> {
     const values = new Map<string, R>();
     const batches: string[][] = [];
     for (let i = 0; i < pastMeetingIds.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
@@ -1347,7 +1357,7 @@ export class UserService {
           values.set(id, derive(rowsById.get(id) ?? []));
         }
       } catch (error) {
-        logger.warning(req, 'get_user_past_meetings', 'Past meeting artifact lookup failed, leaving its fields unset', {
+        logger.warning(req, operation, 'Past meeting artifact lookup failed, leaving its fields unset', {
           type,
           batch_size: batch.length,
           err: error,

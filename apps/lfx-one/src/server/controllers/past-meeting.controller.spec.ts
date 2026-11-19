@@ -45,6 +45,7 @@ vi.mock('@lfx-one/shared/utils', () => ({
 vi.mock('../helpers/validation.helper', () => ({
   validateUidParameter: validateUidParameterMock,
   validateRequiredParameter: vi.fn(() => true),
+  getStringQueryParam: vi.fn((req: { query: Record<string, unknown> }, name: string) => (typeof req.query[name] === 'string' ? req.query[name] : undefined)),
 }));
 // enrichMeetingsWithCreatedBy/stripHostKey aren't exercised by the reconcile path under test.
 vi.mock('../helpers/meeting.helper', () => ({
@@ -240,7 +241,7 @@ describe('PastMeetingController.getPastMeetings — meetings home include', () =
     await controller.getPastMeetings(listReq({ include: 'artifacts, attendance', name: 'weekly' }), res, vi.fn());
 
     expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { name: 'weekly' }, 'v1_past_meeting');
-    expect(attachArtifactsMock).toHaveBeenCalledWith(expect.anything(), meetings);
+    expect(attachArtifactsMock).toHaveBeenCalledWith(expect.anything(), meetings, 'get_past_meetings');
     expect(attachAttendanceSummariesMock).toHaveBeenCalledWith(expect.anything(), meetings);
     expect(res.json).toHaveBeenCalledWith({ data: withSummary, page_token: 'next' });
   });

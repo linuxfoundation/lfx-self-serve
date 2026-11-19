@@ -24,7 +24,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthorizationError, ServiceValidationError } from '../errors';
 import { attachPastMeetingAttendanceSummaries } from '../helpers/meeting-attendance.helper';
 import { enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
-import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
+import { getStringQueryParam, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { AttendanceReconciliationService } from '../services/attendance-reconciliation.service';
 import { logger } from '../services/logger.service';
@@ -65,8 +65,9 @@ export class PastMeetingController {
 
     try {
       // Controller-only flag: keep it out of the params forwarded to the query service.
-      const { include_viewer_attendance: includeViewerAttendance, include: includeParam, ...upstreamQuery } = req.query as Record<string, any>;
-      const include = typeof includeParam === 'string' ? includeParam.split(',').map((value) => value.trim()) : [];
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { include_viewer_attendance: includeViewerAttendance, include: _include, ...upstreamQuery } = req.query as Record<string, any>;
+      const include = (getStringQueryParam(req, 'include') ?? '').split(',').map((value) => value.trim());
 
       const { data: meetings, page_token } = (await this.meetingService.getMeetings(req, upstreamQuery, 'v1_past_meeting')) as {
         data: PastMeeting[];
@@ -86,7 +87,7 @@ export class PastMeetingController {
       if (includeViewerAttendance === 'true') {
         await this.userService.enrichPastMeetingsWithUserAttendance(req, getEffectiveEmail(req) ?? '', enriched);
       }
-      if (include.includes(USER_PAST_MEETINGS_INCLUDE_ARTIFACTS)) await this.userService.attachPastMeetingArtifacts(req, enriched);
+      if (include.includes(USER_PAST_MEETINGS_INCLUDE_ARTIFACTS)) await this.userService.attachPastMeetingArtifacts(req, enriched, 'get_past_meetings');
       if (include.includes(USER_MEETINGS_INCLUDE_ATTENDANCE)) enriched = await attachPastMeetingAttendanceSummaries(req, enriched);
 
       logger.success(req, 'get_past_meetings', startTime, {
