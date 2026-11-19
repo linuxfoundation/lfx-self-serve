@@ -37,14 +37,32 @@ import {
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { catchError, combineLatest, defer, interval, map, Observable, of, retry, startWith, Subject, switchMap, tap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  debounceTime,
+  defer,
+  distinctUntilChanged,
+  interval,
+  map,
+  Observable,
+  of,
+  retry,
+  startWith,
+  Subject,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs';
 
+import { MeetingsHomeFeed } from './meetings-home-feed';
 import { MeetingsHomeJoinService } from './meetings-home-join.service';
 
 /**
- * State of the Me lens meetings home list, provided by the page component.
+ * State of the meetings home list, provided by the page component over a {@link MeetingsHomeFeed}.
  * @description Loads the upcoming and past feeds up front so both tab counts show, expands upcoming meetings into one
  * row per date, then applies search and filters, groups by day and pages {@link MEETINGS_HOME_PAGE_SIZE} rows at a time.
+ * A paged past feed loads its next server page when the list runs out, and reloads from the first page on search.
  */
 @Injectable()
 export class MeetingsHomeStore {
@@ -53,12 +71,13 @@ export class MeetingsHomeStore {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly toast = inject(UiToastService);
   private readonly joinService = inject(MeetingsHomeJoinService);
+  private readonly feed = inject(MeetingsHomeFeed);
 
   private readonly tabState: WritableSignal<MeetingDashboardView> = signal<MeetingDashboardView>('upcoming');
   // Search and filters go back to their defaults when the viewer changes (login, impersonation).
-  private readonly searchState: WritableSignal<string> = linkedSignal({ source: this.userService.meetingFeedIdentity, computation: () => '' });
+  private readonly searchState: WritableSignal<string> = linkedSignal({ source: this.feed.key, computation: () => '' });
   private readonly filtersState: WritableSignal<MeetingsHomeFilters> = linkedSignal({
-    source: this.userService.meetingFeedIdentity,
+    source: this.feed.key,
     computation: () => MEETINGS_HOME_DEFAULT_FILTERS,
   });
   private readonly upcomingLoadingState: WritableSignal<boolean> = signal(true);
@@ -73,7 +92,7 @@ export class MeetingsHomeStore {
   private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
   private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
   /** Key of the concurrent date picked on the Next meeting card; the first one when it is not among them. */
-  private readonly nextCardKey: WritableSignal<string | null> = linkedSignal({ source: this.userService.meetingFeedIdentity, computation: () => null });
+  private readonly nextCardKey: WritableSignal<string | null> = linkedSignal({ source: this.feed.key, computation: () => null });
   /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
   public readonly now: Signal<Date> = this.initClock();
 
@@ -88,22 +107,30 @@ export class MeetingsHomeStore {
   public readonly lastMeetingFailed: Signal<boolean> = this.lastMeetingFailedState.asReadonly();
 
   private readonly upcomingMeetings: Signal<Meeting[]> = this.initFeed(
-    () => this.userService.getUserMeetings({ includeAttendance: true }),
-    this.userService.meetingsRefresh$,
+    () => this.feed.upcoming(),
+    this.feed.upcomingRefresh$,
     this.upcomingLoadingState,
     this.upcomingFailedState
   );
+  /** Cursor of a paged past feed's next server page; undefined once it is exhausted or for a whole feed. */
+  private readonly pastPageToken: WritableSignal<string | undefined> = signal(undefined);
+  private readonly pastLoadingMore: WritableSignal<boolean> = signal(false);
+  // Bumped whenever the first past page is requested, so a next page for an older query is dropped.
+  private pastQueryVersion = 0;
   // Carries `recording_share_url` / `has_ai_summary` for the Recording and AI Summary buttons, and organizer attendance.
-  private readonly pastMeetings: Signal<PastMeeting[]> = this.initFeed(
-    () => this.userService.getUserPastMeetings({ includeArtifactsAndAttendance: true }),
-    this.userService.pastMeetingsRefresh$,
+  private readonly pastFirstPage: Signal<PastMeeting[]> = this.initFeed(
+    () => this.loadFirstPastPage(),
+    this.feed.pastRefresh$,
     this.pastLoadingState,
-    this.pastFailedState
+    this.pastFailedState,
+    this.initServerSearchChanges()
   );
+  private readonly pastNextPages: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.pastFirstPage, computation: () => [] as PastMeeting[] });
+  private readonly pastMeetings: Signal<PastMeeting[]> = computed(() => [...this.pastFirstPage(), ...this.pastNextPages()]);
   // The fast latest-past feed paints the Last meeting card before the full past list arrives.
   private readonly latestPastMeetings: Signal<PastMeeting[]> = this.initFeed(
-    () => this.userService.getUserLatestPastMeetings(),
-    this.userService.pastMeetingsRefresh$,
+    () => this.feed.latestPast(),
+    this.feed.pastRefresh$,
     this.lastMeetingLoadingState,
     this.lastMeetingFailedState
   );
@@ -118,7 +145,7 @@ export class MeetingsHomeStore {
     computation: () => new Set<string>(),
   });
   private readonly visibleCountState: WritableSignal<number> = linkedSignal({
-    source: () => ({ tab: this.tab(), search: this.search(), filters: this.filters(), identity: this.userService.meetingFeedIdentity() }),
+    source: () => ({ tab: this.tab(), search: this.search(), filters: this.filters(), identity: this.feed.key() }),
     computation: () => MEETINGS_HOME_PAGE_SIZE,
   });
 
@@ -159,7 +186,10 @@ export class MeetingsHomeStore {
   public readonly groups: Signal<MeetingDayGroup[]> = computed(() =>
     groupMeetingsByDayBucket(this.filteredRows(), this.tab(), this.now(), this.visibleCount())
   );
-  public readonly hasMore: Signal<boolean> = computed(() => this.visibleCount() < this.filteredRows().length);
+  /** More rows to show, loaded or still on the server for a paged past feed. */
+  public readonly hasMore: Signal<boolean> = computed(
+    () => this.visibleCount() < this.filteredRows().length || (this.tab() === 'past' && this.pastPageToken() !== undefined)
+  );
   /** Most recent ended meeting the viewer has a direct grant on (invited, organizer or participant), as on the legacy dashboard card. */
   public readonly lastMeeting: Signal<MeetingHomeRow | null> = computed(
     () =>
@@ -212,7 +242,9 @@ export class MeetingsHomeStore {
   }
 
   public loadMore(): void {
-    if (this.hasMore()) this.visibleCountState.update((count) => count + MEETINGS_HOME_PAGE_SIZE);
+    if (!this.hasMore()) return;
+    this.visibleCountState.update((count) => count + MEETINGS_HOME_PAGE_SIZE);
+    if (this.tab() === 'past' && this.visibleCount() >= this.filteredRows().length) this.loadNextPastPage();
   }
 
   /** Clears both filters and search. */
@@ -270,14 +302,15 @@ export class MeetingsHomeStore {
     load: () => Observable<T[]>,
     refresh$: Observable<void>,
     loading: WritableSignal<boolean>,
-    failed: WritableSignal<boolean>
+    failed: WritableSignal<boolean>,
+    reload$: Observable<unknown> = of(undefined)
   ): Signal<T[]> {
     if (!isPlatformBrowser(this.platformId)) return signal<T[]>([]);
     let previousIdentity: string | null = null;
     let loaded = false;
 
     return toSignal(
-      combineLatest([toObservable(this.userService.meetingFeedIdentity), this.retry$.pipe(startWith(undefined))]).pipe(
+      combineLatest([toObservable(this.feed.key), this.retry$.pipe(startWith(undefined)), reload$]).pipe(
         switchMap(([identity]) => {
           const identityChanged = previousIdentity !== null && identity !== previousIdentity;
           previousIdentity = identity;
@@ -319,6 +352,46 @@ export class MeetingsHomeStore {
       description: 'Showing the list as it was last loaded.',
       duration: 5000,
     });
+  }
+
+  /** Emits when a paged past feed's search settles on a new value; never for a feed searched on the client. */
+  private initServerSearchChanges(): Observable<unknown> {
+    if (!this.feed.pagedPast) return of(undefined);
+    return toObservable(computed(() => this.search().trim())).pipe(debounceTime(300), startWith(''), distinctUntilChanged());
+  }
+
+  private loadFirstPastPage(): Observable<PastMeeting[]> {
+    const version = ++this.pastQueryVersion;
+    this.pastPageToken.set(undefined);
+    return this.feed.past(this.search().trim()).pipe(
+      tap((page) => {
+        if (version === this.pastQueryVersion) this.pastPageToken.set(page.pageToken);
+      }),
+      map((page) => page.meetings)
+    );
+  }
+
+  private loadNextPastPage(): void {
+    const pageToken = this.pastPageToken();
+    if (!pageToken || this.pastLoadingMore()) return;
+    const version = this.pastQueryVersion;
+    this.pastLoadingMore.set(true);
+    this.feed
+      .past(this.search().trim(), pageToken)
+      .pipe(take(1))
+      .subscribe({
+        next: (page) => {
+          this.pastLoadingMore.set(false);
+          if (version !== this.pastQueryVersion) return;
+          this.pastNextPages.update((meetings) => [...meetings, ...page.meetings]);
+          this.pastPageToken.set(page.pageToken);
+        },
+        error: (error: unknown) => {
+          console.error('Failed to load more past meetings for the meetings home page:', error);
+          this.pastLoadingMore.set(false);
+          this.showRefreshFailedToast();
+        },
+      });
   }
 
   private initNextRow(): Signal<MeetingHomeRow | null> {

@@ -48,6 +48,7 @@ import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.
 import { MeetingsHomeDeleteService } from './services/meetings-home-delete.service';
 import { MeetingsHomeDetailsService } from './services/meetings-home-details.service';
 import { MeetingsHomeEditService } from './services/meetings-home-edit.service';
+import { provideMeetingsHomeFeed } from './services/meetings-home-feed';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
@@ -83,7 +84,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     AppFooterComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
-  providers: [MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService, MeetingsHomeDetailsService],
+  providers: [...provideMeetingsHomeFeed(), MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService, MeetingsHomeDetailsService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block -mx-5 -my-6 md:-mx-8',

@@ -15,6 +15,7 @@ import { CreateArtifactDialogService } from '@services/create-artifact-dialog.se
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
+import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { PlausibleService } from '@services/plausible.service';
 import { SegmentService } from '@services/segment.service';
@@ -169,6 +170,7 @@ describe('MeetingsRedesignComponent', () => {
         },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded, hasBoardRole: signal(false), hasProjectRole: signal(true) } },
+        { provide: LensService, useValue: { activeLens: signal('me') } },
         { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
         { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },

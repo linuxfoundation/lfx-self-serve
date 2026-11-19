@@ -6,13 +6,14 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingRsvp, MeetingsHomePastPage, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeFeed, UserMeetingsHomeFeed } from './meetings-home-feed';
 import { MeetingsHomeStore } from './meetings-home.store';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -103,6 +104,7 @@ describe('MeetingsHomeStore', () => {
     TestBed.configureTestingModule({
       providers: [
         MeetingsHomeStore,
+        { provide: MeetingsHomeFeed, useClass: UserMeetingsHomeFeed },
         { provide: PLATFORM_ID, useValue: platform },
         { provide: UserService, useValue: userService },
         { provide: MeetingService, useValue: meetingService },
@@ -818,6 +820,95 @@ describe('MeetingsHomeStore', () => {
       expect(store.lastMeetingSummary()).toBeNull();
       expect(store.lastMeetingRecordingUrl()).toBeNull();
       expect(logged).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('paged past feed', () => {
+    let pastPages: Subject<MeetingsHomePastPage>[];
+    let past: ReturnType<typeof vi.fn<(search: string, pageToken?: string) => Subject<MeetingsHomePastPage>>>;
+
+    const createPaged = (): MeetingsHomeStore => {
+      pastPages = [];
+      past = vi.fn<(search: string, pageToken?: string) => Subject<MeetingsHomePastPage>>(() => {
+        const page$ = new Subject<MeetingsHomePastPage>();
+        pastPages.push(page$);
+        return page$;
+      });
+      const feed: MeetingsHomeFeed = {
+        key: identity,
+        pagedPast: true,
+        upcomingRefresh$: meetingsRefresh$,
+        pastRefresh$: pastMeetingsRefresh$,
+        upcoming: () => upcoming$,
+        past,
+        latestPast: () => latestPast$,
+      };
+      TestBed.configureTestingModule({
+        providers: [
+          MeetingsHomeStore,
+          { provide: MeetingsHomeFeed, useValue: feed },
+          { provide: PLATFORM_ID, useValue: 'browser' },
+          { provide: UserService, useValue: userService },
+          { provide: MeetingService, useValue: meetingService },
+          { provide: UiToastService, useValue: toast },
+        ],
+      });
+      const store = TestBed.inject(MeetingsHomeStore);
+      TestBed.tick();
+      return store;
+    };
+    const pastPage = (prefix: string, count: number, pageToken?: string): MeetingsHomePastPage => ({
+      meetings: Array.from({ length: count }, (_, index) => buildPastMeeting(`${prefix}${index}`, inDays(-1 - index))),
+      pageToken,
+    });
+
+    it('loads the next server page once the loaded rows are shown, and stops when the cursor ends', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      expect(store.hasMore()).toBe(true);
+      store.loadMore();
+      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+
+      pastPages[1].next(pastPage('b', 5));
+      TestBed.tick();
+      expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE + 5);
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('reloads from the first page with the search, and drops a next page of the earlier query', async () => {
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        store.setTab('past');
+        pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+        TestBed.tick();
+        store.loadMore();
+
+        store.setSearch(' weekly ');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        expect(past).toHaveBeenLastCalledWith('weekly');
+
+        pastPages[1].next(pastPage('stale', 3));
+        pastPages[2].next(pastPage('w', 2));
+        TestBed.tick();
+        expect(store.pastRows().map((row) => row.meeting.id)).toEqual(['w0', 'w1']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not request a next page on the upcoming tab', () => {
+      const store = createPaged();
+      pastPages[0].next(pastPage('a', 1, 'cursor-1'));
+      TestBed.tick();
+
+      store.loadMore();
+
+      expect(past).toHaveBeenCalledTimes(1);
     });
   });
 });
