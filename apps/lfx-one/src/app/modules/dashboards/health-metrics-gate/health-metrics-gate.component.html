@@ -18,9 +18,10 @@
       data-testid="health-metrics-sticky-header"
       class="@container/hmhead sticky z-10 -mx-[40px] -mt-6 mb-[32px] flex flex-col gap-[14px] bg-gray-50 px-[40px] pt-[28px] max-[640px]:-mx-[20px] max-[640px]:px-[20px]"
       [style.top.px]="chrome.headerTopPx()">
-      <!-- The fade content scrolls into under the pinned header; the header has no rule of its own. -->
+      <!-- The fade content scrolls into under the pinned header; the header has no rule of its own. Painted behind the
+           header's content, so a control's outline at the header's bottom edge, such as the view select's ring, stays whole. -->
       <span
-        class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-gray-50 via-gray-50/85 via-35% to-gray-50/0"
+        class="pointer-events-none absolute inset-x-0 top-full -z-10 h-[32px] bg-gradient-to-b from-gray-50 via-gray-50/85 via-35% to-gray-50/0"
         aria-hidden="true"
         data-testid="health-metrics-header-fade"></span>
 

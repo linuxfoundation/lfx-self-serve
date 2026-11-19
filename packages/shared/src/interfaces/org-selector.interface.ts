@@ -32,6 +32,8 @@ export interface OrgItem {
   slug?: string | null;
   /** True for an org the caller reaches only as its CLA Manager (see `OrgResolveResponse.claOnly`). Absent means false. */
   claOnly?: boolean;
+  familyRootUid?: string;
+  familyRootName?: string | null;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -155,6 +157,14 @@ export interface OrgRollUpSelectorRow {
   subtitle: string;
   organizationCount: number;
   isSelected: boolean;
+}
+
+export interface OrgRelatedCompanyRow {
+  org: OrgRollUpSetOrg;
+  isSelected: boolean;
+  roleLabel: string;
+  roleIcon: string;
+  roleTooltip: string;
 }
 
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */

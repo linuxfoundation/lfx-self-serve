@@ -407,6 +407,35 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInAccountSelection = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION',
 
   /**
+   * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
+   * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
+   * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding
+   * `global_marketing_ops` on the project, because the Meta ad account is shared by every foundation.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES linuxfoundation/lfx-v2-campaign-service#550 (v1.0.37)
+   * DEPLOYED with its own `META_AUDIENCE_TARGETING_ENABLED` on, since campaign-service refuses any
+   * `metaConfig.targeting` with a 400 otherwise. Only meaningful while the create cutover is on
+   * (`cutoverOwnsCreate`). Off (the default), the section is hidden, the read answers 404 and the create
+   * route refuses a `targeting` block with a 400, so a tab opened while the flag was on must reload. A
+   * request field and a read only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaAudienceTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING',
+
+  /**
+   * Offer the Meta call to action, conversion event and optimization goal on the Implement tab (#5934),
+   * sent as `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`, one flag each.
+   *
+   * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.38 DEPLOYED with its own
+   * `META_CALL_TO_ACTION_ENABLED`, `META_CONVERSION_EVENT_ENABLED` or `META_OPTIMIZATION_GOAL_ENABLED` on,
+   * since campaign-service refuses the field with a 400 otherwise, and is only meaningful while the create
+   * cutover is on (`cutoverOwnsCreate`). Off (the default), the dropdown is hidden and the create route
+   * refuses the field with a 400, never dropping it. A request field only, so flipping one back strands nothing.
+   */
+  CampaignServiceMetaCallToAction = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION',
+  CampaignServiceMetaConversionEvent = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_CONVERSION_EVENT',
+  CampaignServiceMetaOptimizationGoal = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *

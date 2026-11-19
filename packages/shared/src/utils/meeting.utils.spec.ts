@@ -40,6 +40,7 @@ import {
   buildMeetingOccurrenceRoute,
   buildOccurrenceNavTimeline,
   formatMeetingOccurrenceLabel,
+  getMeetingOwnResendQuestion,
   getMeetingSelfRemovalMessage,
   getMeetingSelfRemovalNotes,
   getMeetingSelfRemovalQuestion,
@@ -2083,6 +2084,12 @@ describe('getMeetingSelfRemovalQuestion and getMeetingSelfRemovalNotes', () => {
       'You will still be an organizer of this meeting.',
       "You stay in the committee, but it won't invite you to this meeting again.",
     ]);
+  });
+});
+
+describe('getMeetingOwnResendQuestion', () => {
+  it('asks with curly quotes before resending the invite to the caller', () => {
+    expect(getMeetingOwnResendQuestion('Weekly sync')).toBe("Resend your invitation to “Weekly sync”? We'll email it to your own address again.");
   });
 });
 
