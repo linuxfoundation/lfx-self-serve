@@ -208,7 +208,7 @@ export class VoteManageComponent {
   }
 
   public onSaveAsDraft(): void {
-    if (this.submitting()) {
+    if (this.submitting() || this.blockUnavailableCreateMethod()) {
       return;
     }
 
@@ -295,7 +295,7 @@ export class VoteManageComponent {
   }
 
   public onSubmit(): void {
-    if (this.submitting() || this.confirmingOpenVote()) {
+    if (this.submitting() || this.confirmingOpenVote() || this.blockUnavailableCreateMethod()) {
       return;
     }
 
@@ -416,8 +416,27 @@ export class VoteManageComponent {
     }
   }
 
+  /** Creation availability never prevents editing or opening an existing ranked draft. */
+  private blockUnavailableCreateMethod(): boolean {
+    const pollType = this.form().getRawValue().poll_type as PollType;
+    if (this.isEditMode() || parseVoteMethodParam(pollType) === pollType) {
+      return false;
+    }
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Voting method unavailable',
+      detail: 'This voting method is coming soon. Select Plurality to create a new vote.',
+    });
+    return true;
+  }
+
   private submitVote(): void {
     if (this.submitting()) {
+      return;
+    }
+
+    if (this.blockUnavailableCreateMethod()) {
+      this.voteService.discardSpeculativeVote();
       return;
     }
 

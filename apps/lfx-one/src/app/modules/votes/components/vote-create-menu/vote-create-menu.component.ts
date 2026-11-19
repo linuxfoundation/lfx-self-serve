@@ -40,9 +40,14 @@ export class VoteCreateMenuComponent {
         label: option.value === PollType.GENERIC ? `${option.label} vote` : option.label,
         icon: option.icon,
         description: option.description,
+        disabled: option.disabled,
         tileClass: 'bg-gray-50 text-gray-700',
         testId: `vote-create-method-${option.value}`,
-        command: () => this.methodSelected.emit(option.value),
+        command: () => {
+          if (!option.disabled) {
+            this.methodSelected.emit(option.value);
+          }
+        },
       })),
     },
   ];

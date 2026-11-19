@@ -113,7 +113,7 @@
             <p class="text-xs text-gray-400">Defines who within the selected {{ committeeLabel.singular | lowercase }} will be eligible to vote.</p>
           </div>
 
-          <!-- Voting Method — chosen in the Create Vote dropdown, changeable until the vote is created -->
+          <!-- Only enabled methods can be chosen for new votes; an existing vote keeps its locked method. -->
           <div class="flex flex-col gap-1">
             <label for="vote-method" class="text-sm font-medium text-gray-700"> Voting Method <span class="text-red-500">*</span> </label>
             <lfx-select
@@ -125,7 +125,14 @@
               [options]="methodOptions"
               optionLabel="label"
               optionValue="value"
+              optionDisabled="disabled"
               data-testid="vote-method-select">
+              <ng-template #item let-option>
+                {{ option.label }}
+                @if (option.disabled) {
+                  <span class="text-xs text-gray-500">— Coming soon</span>
+                }
+              </ng-template>
             </lfx-select>
             <p class="text-xs text-gray-400" data-testid="vote-method-description">{{ selectedMethodDescription() }}</p>
             @if (isEditMode()) {

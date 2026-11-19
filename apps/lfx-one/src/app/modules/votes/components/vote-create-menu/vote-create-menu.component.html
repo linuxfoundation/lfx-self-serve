@@ -18,12 +18,23 @@
   <ng-template #item let-item>
     <!-- A `<button>` so PrimeNG's Enter handling finds something to click (see the meeting menu);
          no `(click)` of our own, since the wrapper PrimeNG renders already runs `item.command`. -->
-    <button type="button" tabindex="-1" class="flex w-full cursor-pointer items-start gap-3 p-2 text-left" [attr.data-testid]="item.testId">
+    <button
+      type="button"
+      tabindex="-1"
+      class="flex w-full items-start gap-3 p-2 text-left disabled:cursor-not-allowed"
+      [class.cursor-pointer]="!item.disabled"
+      [disabled]="item.disabled"
+      [attr.data-testid]="item.testId">
       <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" [class]="item.tileClass">
         <i class="text-sm" [class]="item.icon" aria-hidden="true"></i>
       </span>
       <span class="flex min-w-0 flex-col gap-0.5">
-        <span class="text-sm font-medium text-gray-900">{{ item.label }}</span>
+        <span class="text-sm font-medium text-gray-900">
+          {{ item.label }}
+          @if (item.disabled) {
+            <span class="text-xs font-normal text-gray-500">— Coming soon</span>
+          }
+        </span>
         <span class="whitespace-normal text-xs leading-snug text-gray-500">{{ item.description }}</span>
       </span>
     </button>

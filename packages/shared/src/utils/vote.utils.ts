@@ -173,10 +173,10 @@ export function countEligibleVoters(members: CommitteeMember[], eligibility: str
 /**
  * Reads a `?poll_type=` query param into a voting method the create form offers
  * @param value - Raw query-param value
- * @returns The method when it is one of {@link VOTE_METHOD_OPTIONS}, otherwise plurality
+ * @returns The method when enabled in {@link VOTE_METHOD_OPTIONS}, otherwise plurality
  */
 export function parseVoteMethodParam(value: string | null): PollType {
-  return VOTE_METHOD_OPTIONS.find((option) => option.value === value)?.value ?? PollType.GENERIC;
+  return VOTE_METHOD_OPTIONS.find((option) => option.value === value && !option.disabled)?.value ?? PollType.GENERIC;
 }
 
 /**

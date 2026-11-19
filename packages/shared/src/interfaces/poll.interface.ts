@@ -983,6 +983,8 @@ export interface VoteMethodOption {
   description: string;
   /** Font Awesome icon classes for the method */
   icon: string;
+  /** Unavailable for new votes; does not change existing votes or ballots. */
+  disabled?: boolean;
 }
 
 /**

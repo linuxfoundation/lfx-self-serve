@@ -99,13 +99,15 @@ describe('VoteCreateMenuComponent', () => {
       expect(rows().map((row) => row.icon)).toEqual(VOTE_METHOD_OPTIONS.map((option) => option.icon));
     });
 
-    it('emits the row’s method rather than navigating itself', async () => {
+    it('emits only enabled methods, even if a disabled command is called directly', async () => {
       await mount();
 
       rows()[1].command!({});
       rows()[0].command!({});
 
-      expect(emitted).toEqual([PollType.CONDORCET_IRV, PollType.GENERIC]);
+      expect(rows()[1].disabled).toBe(true);
+      expect(rows()[0].disabled).not.toBe(true);
+      expect(emitted).toEqual([PollType.GENERIC]);
     });
   });
 
@@ -179,13 +181,31 @@ describe('VoteCreateMenuComponent', () => {
 
     const rowIn = (panel: HTMLElement, testId: string): HTMLElement => panel.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
 
-    it('emits the method when the rendered row is clicked', async () => {
+    it('shows Condorcet as coming soon and prevents mouse activation', async () => {
       await mount([provideNoopAnimations()]);
       const panel = await openPanel();
+      const condorcet = rowIn(panel, 'vote-create-method-condorcet_irv') as HTMLButtonElement;
 
-      rowIn(panel, 'vote-create-method-condorcet_irv').click();
+      expect(condorcet.disabled).toBe(true);
+      expect(condorcet.textContent).toContain('Coming soon');
+      expect(condorcet.closest('li')?.getAttribute('aria-disabled')).toBe('true');
+      condorcet.click();
+      expect(emitted).toEqual([]);
 
-      expect(emitted).toEqual([PollType.CONDORCET_IRV]);
+      rowIn(panel, 'vote-create-method-generic').click();
+      expect(emitted).toEqual([PollType.GENERIC]);
+    });
+
+    it('does not activate the disabled Condorcet row with Enter', async () => {
+      await mount([provideNoopAnimations()]);
+      const panel = await openPanel();
+      const menu = fixture.componentInstance['menu']()!['menuRef']()!;
+
+      menu.focusedOptionIndex.set(rowIn(panel, 'vote-create-method-condorcet_irv').closest('li')!.id);
+      await fixture.whenStable();
+      menu.onEnterKey(new KeyboardEvent('keydown', { key: 'Enter' }));
+
+      expect(emitted).toEqual([]);
     });
 
     it('emits the method when the focused row is chosen with Enter', async () => {

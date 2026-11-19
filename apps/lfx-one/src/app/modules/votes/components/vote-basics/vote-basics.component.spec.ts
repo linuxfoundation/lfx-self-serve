@@ -297,6 +297,7 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
 describe('VoteBasicsComponent — voting method (#2921)', () => {
   let fixture: ComponentFixture<VoteBasicsComponent>;
   let form: FormGroup;
+  let scrollIntoView: typeof HTMLElement.prototype.scrollIntoView;
 
   const element = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
@@ -309,6 +310,19 @@ describe('VoteBasicsComponent — voting method (#2921)', () => {
   };
 
   beforeEach(async () => {
+    // jsdom lacks the browser APIs used by PrimeNG's real select overlay.
+    scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    vi.stubGlobal('matchMedia', (media: string) => ({
+      matches: false,
+      media,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: () => false,
+    }));
     await TestBed.configureTestingModule({
       imports: [VoteBasicsComponent],
       providers: [provideRouter([]), provideNoopAnimations()],
@@ -327,6 +341,31 @@ describe('VoteBasicsComponent — voting method (#2921)', () => {
     fixture.componentRef.setInput('formValue', formValue);
   });
 
+  afterEach(async () => {
+    // Let PrimeNG's overlay alignment finish before restoring browser shims.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fixture.destroy();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    vi.unstubAllGlobals();
+  });
+
+  it('disables Condorcet in the rendered creation select and labels it coming soon', async () => {
+    await render(PollType.GENERIC);
+    element('vote-method-select')!.querySelector<HTMLElement>('[role="combobox"]')!.click();
+    await fixture.whenStable();
+
+    const options = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'));
+    const condorcet = options.find((option) => option.textContent?.includes('Condorcet IRV'))!;
+    const plurality = options.find((option) => option.textContent?.includes('Plurality'))!;
+    expect(condorcet.getAttribute('data-p-disabled')).toBe('true');
+    expect(condorcet.textContent).toContain('Coming soon');
+    expect(plurality.getAttribute('data-p-disabled')).not.toBe('true');
+    condorcet.click();
+    await fixture.whenStable();
+
+    expect(form.get('poll_type')?.value).toBe(PollType.GENERIC);
+  });
+
   it('offers Plurality and Condorcet IRV, describing the selected one', async () => {
     await render(PollType.CONDORCET_IRV);
 
@@ -343,6 +382,9 @@ describe('VoteBasicsComponent — voting method (#2921)', () => {
     await render(PollType.CONDORCET_IRV, { isEditMode: true });
 
     expect(element('vote-method-locked')?.textContent).toContain("The voting method can't be changed after the vote is created.");
+    expect(element('vote-method-select')?.textContent).toContain('Condorcet IRV');
+    expect(element('vote-method-select')?.textContent).not.toContain('Coming soon');
+    expect(element('vote-method-description')?.textContent).toContain('Voters rank the options.');
   });
 
   it('warns when Condorcet IRV has fewer than three eligible voters', async () => {

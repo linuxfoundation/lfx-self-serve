@@ -469,7 +469,7 @@ describe('countEligibleVoters (#2921)', () => {
 describe('parseVoteMethodParam (#2921)', () => {
   it.each([
     ['generic', PollType.GENERIC],
-    ['condorcet_irv', PollType.CONDORCET_IRV],
+    ['condorcet_irv', PollType.GENERIC],
     ['meek_stv', PollType.GENERIC],
     ['bogus', PollType.GENERIC],
     [null, PollType.GENERIC],

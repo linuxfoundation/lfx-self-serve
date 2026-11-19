@@ -1131,11 +1131,11 @@ describe('VoteManageComponent', () => {
     afterEach(() => setQueryParams({}));
 
     it.each([
-      ['condorcet_irv', PollType.CONDORCET_IRV],
+      ['condorcet_irv', PollType.GENERIC],
       ['generic', PollType.GENERIC],
       ['meek_stv', PollType.GENERIC],
       ['bogus', PollType.GENERIC],
-    ])('seeds ?poll_type=%s on create, leaving the method changeable', async (param, expected) => {
+    ])('seeds only enabled methods from ?poll_type=%s on create', async (param, expected) => {
       setQueryParams({ poll_type: param });
       const fixture = await createComponent();
       const control = fixture.componentInstance.form().get('poll_type')!;
@@ -1163,16 +1163,43 @@ describe('VoteManageComponent', () => {
       expect(control.disabled).toBe(true);
     });
 
-    it('sends condorcet_irv with multiple_choice questions when the vote is opened', async () => {
+    it.each(['onSubmit', 'onSaveAsDraft'] as const)('blocks new Condorcet votes at %s even if the form is set programmatically', async (action) => {
       const fixture = await createFilled();
+
+      fixture.componentInstance[action]();
+
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+      expect(voteServiceMock.createVote).not.toHaveBeenCalled();
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      expect(capturedConfirmation).toBeNull();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Voting method unavailable' }));
+    });
+
+    it('rechecks availability after the open confirmation and discards a pending speculative vote', async () => {
+      const fixture = await createFilled(PollType.GENERIC);
+      fixture.componentInstance.onSubmit();
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
+      expect(capturedConfirmation).not.toBeNull();
+
+      fixture.componentInstance.form().get('poll_type')?.setValue(PollType.CONDORCET_IRV);
+      capturedConfirmation!.accept!();
+
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalled();
+      expect(fixture.componentInstance.submitting()).toBe(false);
+    });
+
+    it('still opens an existing Condorcet draft with ranked questions', async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(rankedVote()));
+      const fixture = await createComponent();
 
       fixture.componentInstance.onSubmit();
 
-      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
-      const request = voteServiceMock.beginSpeculativeCreate.mock.calls[0][0];
-      expect(request.poll_type).toBe(PollType.CONDORCET_IRV);
-      expect(request.poll_questions.map((question: { type: string }) => question.type)).toEqual(['multiple_choice']);
-      expect(capturedConfirmation).not.toBeNull();
+      expect(voteServiceMock.updateVote).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.updateVote.mock.calls[0][1].poll_questions.map((question: { type: string }) => question.type)).toEqual(['multiple_choice']);
+      expect(voteServiceMock.enableVote).toHaveBeenCalledWith(VOTE_UID);
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
     });
 
     it('keeps the method out of an edit’s update request, so ITX keeps the stored one', async () => {
@@ -1240,17 +1267,20 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.canGoNext()).toBe(true);
     });
 
-    it('refuses to open below the minimum but still saves a draft', async () => {
+    it('refuses to open an existing Condorcet draft below the minimum but still saves edits', async () => {
       getCommitteeMembers.mockReturnValue(of(members(2)));
-      const fixture = await createFilled();
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(rankedVote()));
+      const fixture = await createComponent();
 
       fixture.componentInstance.onSubmit();
       expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
       expect(capturedConfirmation).toBeNull();
 
       fixture.componentInstance.onSaveAsDraft();
-      expect(voteServiceMock.createVote).toHaveBeenCalledTimes(1);
-      expect(voteServiceMock.createVote.mock.calls[0][0]).toMatchObject({ poll_type: PollType.CONDORCET_IRV });
+      expect(voteServiceMock.updateVote).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.enableVote).not.toHaveBeenCalled();
+      expect(voteServiceMock.createVote).not.toHaveBeenCalled();
     });
   });
 });
