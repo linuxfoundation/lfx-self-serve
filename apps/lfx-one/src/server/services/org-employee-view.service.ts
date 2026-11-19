@@ -22,6 +22,7 @@ import type {
 import { candidateMemberDomains, emailDomain, isPersonalEmailDomain, normalizeDomain } from '@lfx-one/shared/utils/email-domain.utils';
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
@@ -34,7 +35,7 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { claOnlyEntryApplies } from './org-cla-only-orgs.service';
 import { OrgEmployeeViewEngagementService } from './org-employee-view-engagement.service';
-import { withPerUserCache } from './valkey.service';
+import { buildPerUserOrgKey, valkeyService } from './valkey.service';
 
 const OPERATION = 'resolve_org_lens_employee_view';
 
@@ -347,22 +348,39 @@ export class OrgEmployeeViewService {
 
   /**
    * The single employer an all employee view user is pinned to. With one qualifying employer that is it. With several, the
-   * most recent engagement wins, then the most recent start date; the choice is stored under the fingerprint so it is made
-   * once per change of employer or verified email, not re-derived from activity on every load.
+   * most recent engagement wins, then the most recent start date, and the choice is STORED under the fingerprint: it is
+   * made once per change of employer or verified email, never re-derived from activity on a later load.
+   *
+   * The stored pin is authoritative: it is read back as long as that company still qualifies, and each read refreshes its
+   * 30-day lifetime. A pin that no longer qualifies is replaced, and the replacement is persisted. When the pin cannot be
+   * stored (the cache is disabled or the write fails) the lookup REJECTS (a retriable 503) rather than answering with a
+   * choice that the next request could contradict, which would let two companies be admitted in turn.
    */
   private async chooseEmployer(req: Request, username: string, qualifying: QualifyingEmployer[], fingerprint: string): Promise<QualifyingEmployer> {
     if (qualifying.length === 1) return qualifying[0];
 
-    const stored = await withPerUserCache(
-      VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_NAMESPACE,
-      username,
-      fingerprint,
-      VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS,
-      async () => ({ orgUid: (await this.rank(req, username, qualifying)).org.orgUid }),
-      (value) => !!value && typeof value === 'object' && typeof (value as { orgUid?: unknown }).orgUid === 'string'
-    );
-    // A pinned company that no longer qualifies (membership or domains changed without a fingerprint change) is re-chosen, not trusted.
-    return qualifying.find((entry) => entry.org.orgUid === stored.orgUid) ?? (await this.rank(req, username, qualifying));
+    const key = buildPerUserOrgKey(VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_NAMESPACE, username, fingerprint);
+    if (!key || !valkeyService.isEnabled()) throw this.pinUnavailable();
+
+    const accept = (value: unknown): boolean => !!value && typeof value === 'object' && typeof (value as { orgUid?: unknown }).orgUid === 'string';
+    const stored = await valkeyService.getJson<{ orgUid: string }>(key, accept);
+    const kept = stored ? qualifying.find((entry) => entry.org.orgUid === stored.orgUid) : undefined;
+    if (kept) {
+      // Sliding lifetime, best effort: a failed refresh only leaves the remaining time as it was.
+      void valkeyService.setJson(key, { orgUid: kept.org.orgUid }, VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS);
+      return kept;
+    }
+
+    const chosen = await this.rank(req, username, qualifying);
+    if (!(await valkeyService.setJson(key, { orgUid: chosen.org.orgUid }, VALKEY_CACHE.ORG_EMPLOYEE_VIEW_EMPLOYER_TTL_SECONDS))) throw this.pinUnavailable();
+    return chosen;
+  }
+
+  private pinUnavailable(): MicroserviceError {
+    return new MicroserviceError('Unable to record the employer for the all employee view right now', 503, 'ROLE_GRANTS_UNAVAILABLE', {
+      operation: OPERATION,
+      service: 'org_employee_view_service',
+    });
   }
 
   private async rank(req: Request, username: string, qualifying: QualifyingEmployer[]): Promise<QualifyingEmployer> {

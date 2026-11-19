@@ -7,8 +7,9 @@ import type { RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken, pinned } = vi.hoisted(() => ({
+const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken, pinned, valkeyState } = vi.hoisted(() => ({
   pinned: new Map<string, unknown>(),
+  valkeyState: { enabled: true, writeFails: false },
   generateM2MToken: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'employee'),
   resolveVerifiedUserEmails: vi.fn(),
@@ -18,10 +19,15 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiv
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 vi.mock('../helpers/user-emails.helper', () => ({ resolveVerifiedUserEmails }));
 vi.mock('./valkey.service', () => ({
-  withPerUserCache: async (_ns: string, username: string, fingerprint: string, _ttl: number, fetcher: () => Promise<unknown>) => {
-    const key = `${username}:${fingerprint}`;
-    if (!pinned.has(key)) pinned.set(key, await fetcher());
-    return pinned.get(key);
+  buildPerUserOrgKey: (namespace: string, username: string, id: string) => `${namespace}:${username}:${id}`,
+  valkeyService: {
+    isEnabled: () => valkeyState.enabled,
+    getJson: async (key: string) => (pinned.has(key) ? pinned.get(key) : null),
+    setJson: async (key: string, value: unknown) => {
+      if (!valkeyState.enabled || valkeyState.writeFails) return false;
+      pinned.set(key, value);
+      return true;
+    },
   },
 }));
 vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
@@ -87,6 +93,8 @@ function build(opts: Setup = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   pinned.clear();
+  valkeyState.enabled = true;
+  valkeyState.writeFails = false;
   getEffectiveUsername.mockReturnValue('employee');
   generateM2MToken.mockResolvedValue('m2m-token');
 });
@@ -387,6 +395,66 @@ describe('OrgEmployeeViewService with several qualifying companies', () => {
       ]),
     });
     await expect(changed.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+  });
+
+  it('rejects with a 503, and never chooses an unpinned company, when the pin cannot be stored', async () => {
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025')];
+    valkeyState.writeFails = true;
+    const failing = build({ orgs: both, emails, experiences });
+    await expect(failing.svc.resolve(req(), null)).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+
+    valkeyState.writeFails = false;
+    valkeyState.enabled = false;
+    const disabled = build({ orgs: both, emails, experiences });
+    await expect(disabled.svc.resolve(req(), null)).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it('does not need the pin store for a single qualifying company', async () => {
+    valkeyState.enabled = false;
+    const { svc } = build();
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('replaces a pin that no longer qualifies and persists the replacement, so later activity cannot move it again', async () => {
+    const third: Array<[string, Doc]> = [...both, [OTHER_UID, { name: 'Other Works', primary_domain: 'other-works.example' }]];
+    const threeEmails = [...emails, 'dev@other-works.example'];
+    const experiences = [job('Acme Motors', 'Jan 2024'), job('Zeta Holdings', 'Jan 2025'), job('Other Works', 'Jan 2023')];
+    const first = build({
+      orgs: third,
+      emails: threeEmails,
+      experiences,
+      activity: new Map([
+        [ORG_UID, 3000],
+        [UID_B, 2000],
+        [OTHER_UID, 1000],
+      ]),
+    });
+    await expect(first.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: ORG_UID } });
+
+    // Acme stops being a member (same fingerprint: same employers and emails). The replacement is ranked once and stored.
+    const second = build({
+      orgs: [third[1], third[2]],
+      emails: threeEmails,
+      experiences,
+      activity: new Map([
+        [UID_B, 2000],
+        [OTHER_UID, 1000],
+      ]),
+    });
+    await expect(second.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+
+    const later = build({
+      orgs: [third[1], third[2]],
+      emails: threeEmails,
+      experiences,
+      activity: new Map([
+        [UID_B, 1000],
+        [OTHER_UID, 9000],
+      ]),
+    });
+    await expect(later.svc.resolve(req(), null)).resolves.toMatchObject({ org: { orgUid: UID_B } });
+    expect(later.engagement.getLastActivityByAccount).not.toHaveBeenCalled();
   });
 
   it('counts two entries naming the same company once', async () => {
