@@ -56,9 +56,9 @@ describe('SidebarNavService', () => {
   const gatewazeEmbedEnabled = signal(false);
   const canWrite = signal(false);
   const selectedOrgUid = signal<string | null>(null);
+  const employeeViewOrgUids = signal<ReadonlySet<string>>(new Set());
   const orgWriterSet = signal(new Set<string>());
   const claManagerOrgSet = signal(new Set<string>());
-  const employeeViewOrgUids = signal<ReadonlySet<string>>(new Set());
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
   const selectedProject = signal<{ slug: string } | null>(null);
   const activeProject = signal<{ uid: string; parent_uid?: string } | null>(null);
@@ -113,6 +113,7 @@ describe('SidebarNavService', () => {
     gatewazeEmbedEnabled.set(false);
     canWrite.set(false);
     selectedOrgUid.set(null);
+    employeeViewOrgUids.set(new Set());
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
     personaLoaded.set(true);
@@ -121,7 +122,6 @@ describe('SidebarNavService', () => {
     authenticated.set(false);
     writerGrantsResolved.set(true);
     grantsByScope.set(new Map());
-    employeeViewOrgUids.set(new Set());
     writerLookupFailed.set(false);
     retrySummary = vi.fn((): Observable<void> => of(undefined));
     refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
@@ -635,6 +635,20 @@ describe('SidebarNavService', () => {
 
     expect(findByLink(items, '/company/people')).toBeUndefined();
     expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain('People');
+    expect(labels(items)).toContain('Dashboard');
+  });
+
+  // Epic #5845 / #5859: the all employee view has no Groups link; the full view keeps it.
+  it('drops the Groups link in the all employee view only', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000Te2ovAAB');
+
+    expect(labels(sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement'))).toContain(COMMITTEE_LABEL.plural);
+
+    employeeViewOrgUids.set(new Set(['0014100000Te2ovAAB']));
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain(COMMITTEE_LABEL.plural);
     expect(labels(items)).toContain('Dashboard');
   });
 

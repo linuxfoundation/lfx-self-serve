@@ -260,6 +260,7 @@ function orgLensPageRoutes(): Routes {
         description: "Working groups and committees your company's employees participate in.",
         icon: 'fa-light fa-users-rectangle',
       },
+      canActivate: [orgLensFullViewOnlyGuard()],
       loadComponent: () => import('./modules/dashboards/org/org-groups/org-groups.component').then((m) => m.OrgGroupsComponent),
     },
     {

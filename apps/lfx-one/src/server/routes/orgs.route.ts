@@ -238,7 +238,7 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/training/groups', (req, res, next) => orgLensTrainingController.getGroups(req, res, next));
 
   // LFXV2-2014 — Org Lens Groups page (working groups / committees the org's employees participate in).
-  router.get('/:orgUid/lens/groups', (req, res, next) => orgLensGroupsController.getGroups(req, res, next));
+  router.get('/:orgUid/lens/groups', blockEmployeeView, (req, res, next) => orgLensGroupsController.getGroups(req, res, next));
 
   // LFXV2-2735 — Org Lens Meetings insights. Unlike the sibling org-lens routes these carry an
   // org-membership read gate (`assertOrgLensRead`) inside each handler, ahead of any data access.
