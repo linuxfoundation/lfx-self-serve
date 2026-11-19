@@ -7,8 +7,15 @@ import { Component, computed, DestroyRef, inject, output, PLATFORM_ID, type Sign
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS, HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED, HEALTH_METRICS_L2_RANGES } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEventsSpeakersView } from '@lfx-one/shared/utils';
+import {
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_DEFAULT_SORT,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED,
+  HEALTH_METRICS_L2_RANGES,
+} from '@lfx-one/shared/constants';
+import { buildHealthMetricsEventsSpeakersProposalRowView, buildHealthMetricsEventsSpeakersView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
@@ -16,8 +23,10 @@ import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { Skeleton } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, of, skip, switchMap, take, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, skip, switchMap, take, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsBarListComponent } from '../../../components/health-metrics-bar-list/health-metrics-bar-list.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsColumnChartComponent } from '../../../components/health-metrics-column-chart/health-metrics-column-chart.component';
@@ -29,6 +38,7 @@ import type {
   HealthMetricsEventsSpeakerProposalsDrawerData,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersList,
+  HealthMetricsEventsSpeakersProposalRowView,
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSpeakersView,
 } from '@lfx-one/shared/interfaces';
@@ -45,6 +55,7 @@ import type {
     HealthMetricsCellComponent,
     HealthMetricsColumnChartComponent,
     HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
     Skeleton,
     TableComponent,
     UiBadgeComponent,
@@ -82,6 +93,14 @@ export class EventsSpeakersComponent {
   );
   /** Nothing measured for the foundation or the period; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
+  /** The recent proposals table opens on the most recent first; a picked column sorts the whole period on the server. */
+  protected readonly sorting = injectHealthMetricsTableSort(
+    HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS,
+    HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_DEFAULT_SORT
+  );
+  /** The period's first proposals in the picked order; `null` on the default order, which the section's read already holds. */
+  private readonly sortedProposals: Signal<HealthMetricsEventsSpeakersProposalRowView[] | null> = this.initSortedProposals();
+  protected readonly proposals = computed(() => this.sortedProposals() ?? this.view().proposals);
 
   public constructor() {
     inject(DestroyRef).onDestroy(() => this.closeAllProposals());
@@ -159,6 +178,47 @@ export class EventsSpeakersComponent {
         )
       ),
       { initialValue: HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED }
+    );
+  }
+
+  /**
+   * Reads the period's first proposals in a picked order, so the sort covers every proposal and not just the ten shown.
+   * A failed read puts the table back on its default, the rows it is showing, so the arrow never claims another order.
+   */
+  private initSortedProposals(): Signal<HealthMetricsEventsSpeakersProposalRowView[] | null> {
+    if (!isPlatformBrowser(this.platformId)) return signal(null);
+
+    const request = computed(() => {
+      const selected = this.chrome.selectedRange();
+      const range = HEALTH_METRICS_L2_RANGES.find((candidate) => candidate === selected) ?? null;
+      return { foundationSlug: this.query().foundationSlug, range, sort: this.sorting.order() };
+    });
+    return toSignal(
+      toObservable(request).pipe(
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        switchMap(({ foundationSlug, range, sort }) => {
+          if (!sort || !foundationSlug || !range) return of(null);
+          const query = {
+            foundationSlug,
+            range,
+            eventId: '',
+            status: null,
+            offset: 0,
+            pageSize: HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
+            includeEvents: false,
+            sort,
+          };
+          return this.analyticsService.getEventsSpeakerProposals(query).pipe(
+            map((page) => page.rows.map(buildHealthMetricsEventsSpeakersProposalRowView)),
+            // `AnalyticsService` has already logged the error.
+            catchError(() => {
+              this.sorting.reset();
+              return of(null);
+            })
+          );
+        })
+      ),
+      { initialValue: null }
     );
   }
 

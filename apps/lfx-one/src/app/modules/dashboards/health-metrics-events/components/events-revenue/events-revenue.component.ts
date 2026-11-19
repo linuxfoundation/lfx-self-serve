@@ -6,14 +6,20 @@ import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Si
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED, HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEventsRevenueView } from '@lfx-one/shared/utils';
+import {
+  HEALTH_METRICS_EVENTS_REVENUE_SORT_COLUMNS,
+  HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED,
+  HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
+import { buildHealthMetricsEventsRevenueView, healthMetricsRowSortValue, sortHealthMetricsRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -26,7 +32,15 @@ import type { HealthMetricsEventsRevenue, HealthMetricsEventsRevenueQuery, Healt
  */
 @Component({
   selector: 'lfx-events-revenue',
-  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsMetricsRowComponent, Skeleton, TableComponent, UiPaginationComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
+    Skeleton,
+    TableComponent,
+    UiPaginationComponent,
+  ],
   templateUrl: './events-revenue.component.html',
 })
 export class EventsRevenueComponent {
@@ -53,8 +67,12 @@ export class EventsRevenueComponent {
     buildHealthMetricsEventsRevenueView(this.response(), this.chrome.selectedRange())
   );
   /** A new read or period starts the table on its first page. */
-  protected readonly page = linkedSignal<HealthMetricsEventsRevenueView, number>({ source: this.view, computation: () => 0 });
-  protected readonly pageRows = computed(() => this.view().rows.slice(this.page() * this.pageSize, (this.page() + 1) * this.pageSize));
+  /** No arrow by default: upcoming events soonest first, then past events latest first. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_EVENTS_REVENUE_SORT_COLUMNS, null);
+  protected readonly rows = computed(() => sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue));
+  /** A new view or a new sort is a different order, so paging restarts. */
+  protected readonly page = linkedSignal({ source: () => ({ view: this.view(), sort: this.sorting.sort() }), computation: () => 0 });
+  protected readonly pageRows = computed(() => this.rows().slice(this.page() * this.pageSize, (this.page() + 1) * this.pageSize));
   /** Nothing to show for the period (unmeasured, or $0 with no event and no unconverted revenue); the shell shows the empty state. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
 

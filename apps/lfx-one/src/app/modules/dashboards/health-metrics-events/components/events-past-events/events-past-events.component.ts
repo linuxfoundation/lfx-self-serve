@@ -6,8 +6,13 @@ import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Si
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { HEALTH_METRICS_EVENTS_PAST_UNMEASURED, HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEventsPastView } from '@lfx-one/shared/utils';
+import {
+  HEALTH_METRICS_EVENTS_PAST_DEFAULT_SORT,
+  HEALTH_METRICS_EVENTS_PAST_SORT_COLUMNS,
+  HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
+  HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
+import { buildHealthMetricsEventsPastView, healthMetricsRowSortValue, sortHealthMetricsRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
@@ -15,6 +20,8 @@ import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.compo
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -31,6 +38,7 @@ import type { HealthMetricsEventsPast, HealthMetricsEventsPastQuery, HealthMetri
     EmptyStateComponent,
     HealthMetricsCellComponent,
     HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
     Skeleton,
     TableComponent,
     UiBadgeComponent,
@@ -62,8 +70,11 @@ export class EventsPastEventsComponent {
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.view().rows.length === 0);
 
   /** A new read or period starts the table on its first page. */
-  protected readonly page = linkedSignal<HealthMetricsEventsPastView, number>({ source: this.view, computation: () => 0 });
-  protected readonly pageRows = computed(() => this.view().rows.slice(this.page() * this.pageSize, (this.page() + 1) * this.pageSize));
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_EVENTS_PAST_SORT_COLUMNS, HEALTH_METRICS_EVENTS_PAST_DEFAULT_SORT);
+  protected readonly rows = computed(() => sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue));
+  /** A new view or a new sort is a different order, so paging restarts. */
+  protected readonly page = linkedSignal({ source: () => ({ view: this.view(), sort: this.sorting.sort() }), computation: () => 0 });
+  protected readonly pageRows = computed(() => this.rows().slice(this.page() * this.pageSize, (this.page() + 1) * this.pageSize));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {

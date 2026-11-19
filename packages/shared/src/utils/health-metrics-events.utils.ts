@@ -4,27 +4,28 @@
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPANIES_TIP,
+  HEALTH_METRICS_EVENTS_CHART_BAR_WIDTH_PX,
   HEALTH_METRICS_EVENTS_FORECAST_PACES,
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
-  HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_GEOGRAPHY_HOME_CODE,
   HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES,
+  HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
-  HEALTH_METRICS_EVENTS_CHART_BAR_WIDTH_PX,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEADROOM,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEIGHT_PX,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_SERIES,
   HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
   HEALTH_METRICS_EVENTS_SECTIONS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_CHART_HEIGHT_PX,
+  HEALTH_METRICS_EVENTS_SPEAKERS_INDIVIDUAL,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_SERIES,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
-  HEALTH_METRICS_EVENTS_SPEAKERS_CHART_HEIGHT_PX,
-  HEALTH_METRICS_EVENTS_SPEAKERS_SERIES,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNIQUE_TIP,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_PACKAGE_ICON,
 } from '../constants/health-metrics-events.constants';
@@ -279,6 +280,11 @@ export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEv
       pct: goal === null ? 0 : Math.min(100, ((event.registrationsNow ?? 0) / goal) * 100),
       fillClass: pace.fillClass,
       paceLabel: goal === null ? '' : pace.label,
+      // Registrations sorts by the share of goal reached; with no goal or no count it is empty.
+      sortValues: {
+        event: event.eventName,
+        registrations: goal === null || event.registrationsNow === null ? null : (event.registrationsNow / goal) * 100,
+      },
     };
   });
 }
@@ -353,17 +359,34 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
     key: string,
     label: string,
     pick: (candidate: HealthMetricsEventsAtAGlancePeriod | null) => string,
+    figure: (candidate: HealthMetricsEventsAtAGlancePeriod | null) => number | null,
     change: number | null | undefined,
     unit: 'pct' | 'pp' = 'pct'
-  ) => ({
-    key,
-    label,
-    value: pick(period),
-    comparison: comparedRange ? pick(compared) : HEALTH_METRICS_TABLE_DASH,
-    ...glanceChange(changes ? (change ?? null) : null, unit),
-  });
+  ): HealthMetricsEventsAtAGlanceRowView => {
+    const changeView = glanceChange(changes ? (change ?? null) : null, unit);
+    return {
+      key,
+      label,
+      value: pick(period),
+      comparison: comparedRange ? pick(compared) : HEALTH_METRICS_TABLE_DASH,
+      ...changeView,
+      // Each figure as its cell reads it; the show-up rate and the change by their shown percent.
+      sortValues: {
+        metric: label,
+        period: figure(period),
+        comparison: comparedRange ? figure(compared) : null,
+        change: changeView.change === null ? null : glanceChangeValue(change ?? 0, unit),
+      },
+    };
+  };
   const count = (field: 'registrations' | 'attendees' | 'organizations' | 'speakers' | 'countries') => (candidate: HealthMetricsEventsAtAGlancePeriod | null) =>
     formatDashCount(candidate?.[field]);
+  const countFigure =
+    (field: 'registrations' | 'attendees' | 'organizations' | 'speakers' | 'countries') =>
+    (candidate: HealthMetricsEventsAtAGlancePeriod | null): number | null =>
+      candidate?.[field] ?? null;
+  const showUpFigure = (candidate: HealthMetricsEventsAtAGlancePeriod | null): number | null =>
+    candidate?.showUpRate === null || candidate?.showUpRate === undefined ? null : Math.round(candidate.showUpRate * 100);
   const showUpRate = formatShowUpRate(period);
   const eventsDescription = ytd ? `${formatDashCount(past)} past · ${formatDashCount(upcoming)} upcoming` : `${formatDashCount(past)} past`;
 
@@ -393,12 +416,12 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
     // The view's year-to-date changes compare with the whole last completed year, so the column and badge agree.
     comparisonHeading: ytd ? `${year - 1} (full year)` : `${year - 1}`,
     rows: [
-      row('registrations', 'Registrations', count('registrations'), changes?.registrations),
-      row('attendees', 'Attendees', count('attendees'), changes?.attendees),
-      row('companies', 'Participating companies', count('organizations'), changes?.organizations),
-      row('speakers', 'Speakers', count('speakers'), changes?.speakers),
-      row('countries', 'Countries', count('countries'), changes?.countries),
-      row('show-up-rate', 'Show-up rate', formatShowUpRate, changes?.showUpRatePts, 'pp'),
+      row('registrations', 'Registrations', count('registrations'), countFigure('registrations'), changes?.registrations),
+      row('attendees', 'Attendees', count('attendees'), countFigure('attendees'), changes?.attendees),
+      row('companies', 'Participating companies', count('organizations'), countFigure('organizations'), changes?.organizations),
+      row('speakers', 'Speakers', count('speakers'), countFigure('speakers'), changes?.speakers),
+      row('countries', 'Countries', count('countries'), countFigure('countries'), changes?.countries),
+      row('show-up-rate', 'Show-up rate', formatShowUpRate, showUpFigure, changes?.showUpRatePts, 'pp'),
     ],
   };
 }
@@ -686,8 +709,13 @@ function formatRevenueGoalSuffix(goal: number | null, withheld: boolean): string
 
 /** A goal cell's amount; "—" when unmeasured, or a $0 with no goal to read it against. */
 function formatRevenueAmount(value: number | null, goal: number | null, withheld: boolean): string {
-  if (value === null || (value === 0 && goal === null && !withheld)) return HEALTH_METRICS_TABLE_DASH;
-  return formatCurrency(value);
+  const amount = revenueSortValue(value, goal, withheld);
+  return amount === null ? HEALTH_METRICS_TABLE_DASH : formatCurrency(amount);
+}
+
+/** The amount a revenue cell shows: `null` for its "—" ($0 with no goal, or unmeasured). */
+function revenueSortValue(value: number | null, goal: number | null, withheld: boolean): number | null {
+  return value === null || (value === 0 && goal === null && !withheld) ? null : value;
 }
 
 function buildRevenueRowView(event: HealthMetricsEventsRevenueEvent): HealthMetricsEventsRevenueRowView {
@@ -699,6 +727,12 @@ function buildRevenueRowView(event: HealthMetricsEventsRevenueEvent): HealthMetr
     registrationGoalSuffix: formatRevenueGoalSuffix(event.registrationGoal, event.registrationGoalWithheld),
     sponsorshipLabel: formatRevenueAmount(event.sponsorshipUsd, event.sponsorshipGoal, event.sponsorshipGoalWithheld),
     sponsorshipGoalSuffix: formatRevenueGoalSuffix(event.sponsorshipGoal, event.sponsorshipGoalWithheld),
+    // A "—" amount is empty, so it sorts last.
+    sortValues: {
+      event: event.eventName,
+      registration: revenueSortValue(event.registrationUsd, event.registrationGoal, event.registrationGoalWithheld),
+      sponsorship: revenueSortValue(event.sponsorshipUsd, event.sponsorshipGoal, event.sponsorshipGoalWithheld),
+    },
   };
 }
 
@@ -724,6 +758,13 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
     status,
     statusLabel: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].label,
     statusTone: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].tone,
+    // Event sorts by its date, not its name.
+    sortValues: {
+      event: event.eventStartDate,
+      registrations: event.registrations,
+      revenue: event.revenueUsd,
+      status: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].label,
+    },
   };
 }
 
@@ -742,10 +783,15 @@ function metricTrend(fraction: number | null): Pick<HealthMetricsMetricItem, 'tr
 }
 
 /** A comparison-table change as the design's badge: success from 0 up ("+0%"), danger below; show-up rate in points. */
+/** A change as its badge shows it: whole percent, or points to one decimal. */
+function glanceChangeValue(fraction: number, unit: 'pct' | 'pp'): number {
+  return unit === 'pct' ? Math.round(fraction * 100) : Math.round(fraction * 1000) / 10;
+}
+
 function glanceChange(fraction: number | null, unit: 'pct' | 'pp'): Pick<HealthMetricsEventsAtAGlanceRowView, 'change' | 'changeTone'> {
   if (fraction === null) return { change: null, changeTone: 'neutral' };
 
-  const rounded = unit === 'pct' ? Math.round(fraction * 100) : Math.round(fraction * 1000) / 10;
+  const rounded = glanceChangeValue(fraction, unit);
   const magnitude = unit === 'pct' ? `${Math.abs(rounded)}%` : `${Math.abs(rounded).toFixed(1)}pp`;
   return rounded >= 0 ? { change: `+${magnitude}`, changeTone: 'success' } : { change: `−${magnitude}`, changeTone: 'danger' };
 }
@@ -891,7 +937,7 @@ function buildSpeakersChart(speakers: HealthMetricsEventsSpeakers): HealthMetric
 /** A proposal's labels, shared by the recent proposals table and the All speaker proposals drawer. */
 export function buildHealthMetricsEventsSpeakersProposalRowView(proposal: HealthMetricsEventsSpeakersProposal): HealthMetricsEventsSpeakersProposalRowView {
   // Only the view's flag makes a speaker an individual; a company with no name reads "—".
-  const company = proposal.unaffiliated ? 'Individual' : (proposal.organizationName ?? HEALTH_METRICS_TABLE_DASH);
+  const company = proposal.unaffiliated ? HEALTH_METRICS_EVENTS_SPEAKERS_INDIVIDUAL : (proposal.organizationName ?? HEALTH_METRICS_TABLE_DASH);
   const group = proposal.statusGroup ? HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[proposal.statusGroup] : null;
   const date = proposal.submissionDate ? formatIsoDateLabel(proposal.submissionDate) : '';
 

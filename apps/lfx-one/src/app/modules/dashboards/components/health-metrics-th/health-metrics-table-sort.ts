@@ -39,6 +39,10 @@ export function injectHealthMetricsTableSort<K extends string>(columns: readonly
     /** The sort to apply: `null` while the table sits on its default, so the rows keep the order they arrive in. */
     order,
     headers,
+    /** Back to the table's default, as when a sorted read fails and the rows on screen are the default ones. */
+    reset(): void {
+      sort.set(defaultSort);
+    },
     /** Sorts by the column, or flips it when it is already the sort. */
     toggle(key: K): void {
       const column = columns.find((candidate) => candidate.key === key);

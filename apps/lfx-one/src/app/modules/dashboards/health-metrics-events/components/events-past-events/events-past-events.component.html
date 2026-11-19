@@ -25,11 +25,35 @@
       data-testid="events-past-events-table">
       <ng-template #header>
         <tr>
-          <th scope="col">Event</th>
+          <th scope="col" [attr.aria-sort]="sorting.headers().event.ariaSort">
+            <lfx-health-metrics-th
+              label="Event"
+              [sort]="sorting.headers().event.state"
+              (sorted)="sorting.toggle('event')"
+              data-testid="events-past-events-sort-event" />
+          </th>
           <!-- Exact px: the design's 220px column. -->
-          <th scope="col" class="w-[220px]">Final registrations vs goal</th>
-          <th scope="col">Revenue</th>
-          <th scope="col">Status</th>
+          <th scope="col" class="w-[220px]" [attr.aria-sort]="sorting.headers().registrations.ariaSort">
+            <lfx-health-metrics-th
+              label="Final registrations vs goal"
+              [sort]="sorting.headers().registrations.state"
+              (sorted)="sorting.toggle('registrations')"
+              data-testid="events-past-events-sort-registrations" />
+          </th>
+          <th scope="col" [attr.aria-sort]="sorting.headers().revenue.ariaSort">
+            <lfx-health-metrics-th
+              label="Revenue"
+              [sort]="sorting.headers().revenue.state"
+              (sorted)="sorting.toggle('revenue')"
+              data-testid="events-past-events-sort-revenue" />
+          </th>
+          <th scope="col" [attr.aria-sort]="sorting.headers().status.ariaSort">
+            <lfx-health-metrics-th
+              label="Status"
+              [sort]="sorting.headers().status.state"
+              (sorted)="sorting.toggle('status')"
+              data-testid="events-past-events-sort-status" />
+          </th>
         </tr>
       </ng-template>
 
@@ -49,6 +73,6 @@
         </tr>
       </ng-template>
     </lfx-table>
-    <lfx-ui-pagination [total]="view().rows.length" [pageSize]="pageSize" [(page)]="page" />
+    <lfx-ui-pagination [total]="rows().length" [pageSize]="pageSize" [(page)]="page" />
   }
 </div>

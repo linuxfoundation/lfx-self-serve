@@ -1245,7 +1245,15 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
 });
 
 describe('HealthMetricsEventsService.getOrganizations', () => {
-  const baseQuery: HealthMetricsEventsOrganizationsQuery = { foundationSlug: 'acme', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25 };
+  const baseQuery: HealthMetricsEventsOrganizationsQuery = {
+    foundationSlug: 'acme',
+    range: 'YTD',
+    segment: 'all',
+    search: '',
+    offset: 0,
+    pageSize: 25,
+    sort: null,
+  };
 
   function organizationRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -1295,7 +1303,27 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
     expect(sql).toContain("COALESCE(NULLIF(TRIM(logos.logo_url), ''), NULLIF(TRIM(page.logo_url), '')) AS logo_url");
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION');
-    expect(sql).toMatch(/WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+GROUP BY account_id\s+\) tiers ON tiers\.account_id = page\.account_id/);
+    // The tier joins before the page is cut, so a Membership sort covers every page.
+    expect(sql).toMatch(
+      /WITH tiers AS \(\s+--[^\n]*\n\s+SELECT account_id, MAX\(NULLIF\(TRIM\(membership_tier\), ''\)\) AS membership_tier\s+FROM ANALYTICS\.PLATINUM_LFX_ONE\.ENGAGEMENT_ORG_PARTICIPATION\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+GROUP BY account_id/
+    );
+    expect(sql).toContain('SELECT scoped.*, tiers.membership_tier FROM scoped LEFT JOIN tiers ON tiers.account_id = scoped.account_id');
+    expect(sql).toContain('page.membership_tier,');
+  });
+
+  it("sorts every page by the reader's column, empty values last, then the view's rank, and keeps that order after the joins", async () => {
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, sort: { key: 'sponsorship', direction: 'desc' } });
+
+    const [sql] = execute.mock.calls[0];
+    const order = 'NULLIF(sponsorship_revenue, 0) DESC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC';
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY ${order}) AS page_position`);
+    expect(sql).toMatch(new RegExp(`ORDER BY ${order.replace(/[()]/g, '\\$&')}\\s+LIMIT`));
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+
+    execute.mockClear();
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, sort: { key: 'membership', direction: 'desc' } });
+    // A non-member ranks lowest; a member with no tier or a "Non-Member" one reads "Member", an unnamed tier.
+    expect(execute.mock.calls[0][0]).toContain('CASE WHEN NOT COALESCE(is_member, FALSE) THEN 0 ELSE COALESCE(NULLIF(CASE WHEN');
   });
 
   it('binds the search once, with its wildcards escaped', async () => {
@@ -1304,8 +1332,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(sql).toContain("account_name ILIKE ? ESCAPE '!'");
     expect((sql as string).match(/\?/g)).toHaveLength(binds.length);
-    // The tier lookup's slug comes after the search, in text order.
-    expect(binds).toEqual(['acme', '%50!%!_off%', 'acme']);
+    // The tier lookup's slug comes first in the text, then the scope's, then the search.
+    expect(binds).toEqual(['acme', 'acme', '%50!%!_off%']);
   });
 
   it.each([
@@ -1392,6 +1420,7 @@ describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
     offset: 0,
     pageSize: 25,
     includeEvents: false,
+    sort: null,
   };
   const PAGE_SQL = /WITH matched AS/;
 
@@ -1438,6 +1467,23 @@ describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
     expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
     expect(sql).not.toContain('event_id = ?');
     expect(binds).toEqual(['acme']);
+  });
+
+  it('sorts the whole period by a picked column, each as its cell reads, then the most recent first, and keeps the order', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'status', direction: 'asc' } });
+
+    const [sql, binds] = pageCall();
+    const status =
+      "CASE WHEN proposal_status_group = 'Accepted' THEN 'Accepted' WHEN proposal_status_group = 'In review' THEN 'In review' WHEN proposal_status_group = 'Declined' THEN 'Declined' ELSE COALESCE(submission_status_original, proposal_status_group) END";
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY COLLATE(NULLIF(NULLIF(TRIM(${status}`);
+    expect(sql).toContain("'en-ci-ai') ASC NULLS LAST, TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC");
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+    expect(binds).toEqual(['acme']);
+
+    execute.mockClear();
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'company', direction: 'desc' } });
+    // An unaffiliated speaker reads "Individual", as the Company cell shows it.
+    expect(pageCall()[0]).toContain("CASE WHEN is_unaffiliated_proposal = TRUE THEN 'Individual' ELSE account_name END");
   });
 
   it('binds the event and the status group the view names', async () => {
