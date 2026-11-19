@@ -59,6 +59,7 @@ import {
   MeetingDeleteTypeResult,
   MeetingGroupLink,
   MeetingOccurrence,
+  MeetingRegistrant,
   MeetingRsvp,
   MeetingSelfRegistrationRemovalEvent,
   MeetingRecurrence,
@@ -197,6 +198,10 @@ export class MeetingCardComponent implements OnInit {
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  /** Confirmed card writes are separate from the drawer's own count delta. */
+  public readonly confirmedSelfCountDelta = signal(0);
+  public readonly confirmedSelfRegistrants = signal<MeetingRegistrant[]>([]);
+  public readonly confirmedRemovedRegistrantIds = signal<string[]>([]);
   public readonly confirmedRsvps = signal<MeetingRsvp[]>([]);
   /**
    * What the registrants drawer counted, or `null` while it has not counted yet.
@@ -424,6 +429,11 @@ export class MeetingCardComponent implements OnInit {
       .subscribe(() => {
         this.optimisticInvited.set(false);
         this.confirmedRsvps.set([]);
+        this.confirmedSelfCountDelta.set(0);
+        this.confirmedSelfRegistrants.set([]);
+        this.confirmedRemovedRegistrantIds.set([]);
+        this.additionalRegistrantsCount.set(0);
+        this.drawerGuestCount.set(null);
       });
   }
 
@@ -580,12 +590,13 @@ export class MeetingCardComponent implements OnInit {
   }
 
   /** The guest drawer already updates counts; synchronize only the viewer's invitation state here. */
-  public onSelfAdded(meetingId: string): void {
+  public onSelfAdded(meetingId: string, registrant?: MeetingRegistrant): void {
     if (this.meeting().id !== meetingId) return;
     this.optimisticInvited.set(true);
     this.meetingService.clearRemovedRegistration(meetingId);
     this.userService.refreshUserMeetings(false);
-    this.refreshMeeting();
+    if (registrant) this.confirmedSelfRegistrants.update((rows) => [...rows.filter((row) => row.uid !== registrant.uid), registrant]);
+    this.meeting.update((meeting) => ({ ...meeting, invited: true }));
   }
 
   public onSelfRemoved(result: MeetingSelfRegistrationRemovalEvent): void {
@@ -599,7 +610,8 @@ export class MeetingCardComponent implements OnInit {
     if (stillInvited) this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
     else this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
     this.userService.refreshUserMeetings(false);
-    this.refreshMeeting();
+    this.recordConfirmedRemoval(result.removed_registrant_ids, false);
+    this.meeting.update((meeting) => ({ ...meeting, invited: stillInvited, my_rsvp: stillInvited ? meeting.my_rsvp : null }));
   }
 
   public confirmLeaveMeeting(): void {
@@ -650,7 +662,9 @@ export class MeetingCardComponent implements OnInit {
           }
           this.optimisticInvited.set(true);
           if (result.status === 'added') {
-            this.additionalRegistrantsCount.update((count) => count + 1);
+            this.confirmedSelfCountDelta.update((count) => count + 1);
+            if (result.registrant) this.confirmedSelfRegistrants.update((rows) => [...rows, result.registrant!]);
+            this.drawerGuestCount.set(null);
             // Keep the confirmed count instead of replacing it with cached, pre-add details.
             this.meeting.update((meeting) => ({ ...meeting, invited: true }));
             this.messageService.add({ severity: 'success', summary: 'Added', detail: "You've been added to this meeting." });
@@ -951,7 +965,7 @@ export class MeetingCardComponent implements OnInit {
     this.leavingMeeting.set(true);
 
     this.selfRemoval
-      .remove$(meetingId, 'meeting-card')
+      .remove$(meetingId, 'meeting-card', this.confirmedSelfRegistrants().at(-1)?.uid)
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))
@@ -959,6 +973,7 @@ export class MeetingCardComponent implements OnInit {
       .subscribe({
         next: (result) => {
           if (this.meeting().id !== meetingId) return;
+          this.recordConfirmedRemoval(result.removed_registrant_ids);
           if (result.remaining_registrant_ids.length > 0) {
             this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
             this.optimisticInvited.set(true);
@@ -967,13 +982,11 @@ export class MeetingCardComponent implements OnInit {
               summary: 'Removal incomplete',
               detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
             });
-            this.refreshMeeting();
             return;
           }
           this.confirmedRsvps.set([]);
           this.optimisticInvited.set(false);
-          // Mirrors Add Myself's +1. Not refetched: the card keeps its own snapshot, and a lagging index would bring the viewer back.
-          this.additionalRegistrantsCount.update((count) => count - 1);
+          // Keep the confirmed deletion across stale detail reads and drawer opens.
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
           this.messageService.add({
             severity: 'success',
@@ -986,6 +999,15 @@ export class MeetingCardComponent implements OnInit {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfRemoval.describeFailure(error) });
         },
       });
+  }
+
+  private recordConfirmedRemoval(ids: string[], adjustCount = true): void {
+    const known = new Set(this.confirmedRemovedRegistrantIds());
+    const newIds = [...new Set(ids)].filter((id) => !known.has(id));
+    if (adjustCount) this.confirmedSelfCountDelta.update((count) => count - newIds.length);
+    this.confirmedRemovedRegistrantIds.set([...known, ...newIds]);
+    this.confirmedSelfRegistrants.update((rows) => rows.filter((row) => !ids.includes(row.uid)));
+    this.drawerGuestCount.set(null);
   }
 
   private refreshMeeting(): void {
@@ -1372,7 +1394,7 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => {
       const meeting = this.meeting();
       const meetingBaseCount = resolveMeetingBaseCount(meeting) ?? 0;
-      const meetingTotalCount = meetingBaseCount + this.additionalRegistrantsCount();
+      const meetingTotalCount = meetingBaseCount + this.additionalRegistrantsCount() + this.confirmedSelfCountDelta();
       return Math.max(meetingTotalCount, this.drawerGuestCount() ?? 0);
     });
   }

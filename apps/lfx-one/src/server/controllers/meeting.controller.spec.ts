@@ -1370,7 +1370,7 @@ describe('MeetingController', () => {
       meetingSvc.removeMeetingRegistrantSelf.mockResolvedValue({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
     });
 
-    it('ignores client-supplied identity and IDs and answers 200 with the removed registration IDs', async () => {
+    it('uses session identity while forwarding the optional saved UID for upstream ownership validation', async () => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
       const req = buildReq({
         body: { email: 'other@example.com', username: 'other', registrant_id: 'reg-other' },
@@ -1381,9 +1381,30 @@ describe('MeetingController', () => {
       await controller.removeMyMeetingRegistration(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN);
+      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN, 'reg-other');
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
+    });
+
+    it.each([{ value: '' }, { value: '   ' }, { value: ['reg-a', 'reg-b'] }, { value: { nested: 'reg-a' } }, { value: null }, { value: 123 }])(
+      'rejects malformed present registrant IDs: %j',
+      async ({ value: registrantUid }) => {
+        const req = buildReq({ query: { registrant_id: registrantUid } } as unknown as Partial<Request>);
+        await controller.removeMyMeetingRegistration(req, buildRes(), next);
+        expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+        expect(meetingSvc.removeMeetingRegistrantSelf).not.toHaveBeenCalled();
+        expect(generateM2MTokenMock).not.toHaveBeenCalled();
+      }
+    );
+
+    it('trims a saved UID and omits the hint when absent', async () => {
+      const req = buildReq({ query: { registrant_id: ' saved-self ' } });
+      await controller.removeMyMeetingRegistration(req, buildRes(), next);
+      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', undefined, M2M_TOKEN, 'saved-self');
+      meetingSvc.removeMeetingRegistrantSelf.mockClear();
+      const withoutHint = buildReq();
+      await controller.removeMyMeetingRegistration(withoutHint, buildRes(), next);
+      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(withoutHint, MEETING_ID, 'user@example.com', undefined, M2M_TOKEN, undefined);
     });
 
     it.each(['meeting-card', 'meetings-home'])('logs the UI surface named in the removal-source header (%s) on start and success', async (source) => {

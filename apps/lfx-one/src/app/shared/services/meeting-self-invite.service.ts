@@ -29,8 +29,9 @@ export class MeetingSelfInviteService {
       const subject = this.subject();
       return this.userService.getMeetingSelfGuest().pipe(
         take(1),
+        filter(() => this.subject() === subject),
         switchMap((self) =>
-          self?.first_name && self.last_name ? this.addIfUnlisted(meetingId, self) : of<MeetingSelfInviteResult>({ status: 'unavailable' })
+          self?.first_name && self.last_name ? this.addIfUnlisted(meetingId, self, subject) : of<MeetingSelfInviteResult>({ status: 'unavailable' })
         ),
         filter(() => this.subject() === subject),
         tap((result) => {
@@ -54,9 +55,10 @@ export class MeetingSelfInviteService {
    * @description While the viewer's own removal stands, their rows are the deleted registrations the query index has
    * not dropped yet, as in the Guests drawer, so they do not count as listed; a row under a new uid is a re-invite.
    */
-  private addIfUnlisted(meetingId: string, self: MeetingSelfGuest): Observable<MeetingSelfInviteResult> {
+  private addIfUnlisted(meetingId: string, self: MeetingSelfGuest, subject: string): Observable<MeetingSelfInviteResult> {
     return this.meetingService.getMeetingRegistrants(meetingId, false, undefined, true).pipe(
       take(1),
+      filter(() => this.subject() === subject),
       switchMap((roster) => {
         const selfUids = roster.filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
         this.meetingService.clearRemovalIfReinvited(meetingId, selfUids);

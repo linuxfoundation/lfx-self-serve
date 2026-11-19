@@ -496,6 +496,61 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
     expect(query).toEqual({ registrant_id: 'reg-1' });
   });
 
+  it('removes a saved UID before indexing using only the caller-token self endpoint', async () => {
+    const lookup = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', 'saved-self')).resolves.toEqual({
+      removed_registrant_ids: ['saved-self'],
+      remaining_registrant_ids: [],
+    });
+    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', true);
+    expect(proxyRequest).toHaveBeenCalledExactlyOnceWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg-1/registrants/self', 'DELETE', {
+      registrant_id: 'saved-self',
+    });
+  });
+
+  it('deduplicates indexed and hinted IDs while including every distinct registration', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-a', 'direct'), registrantRow('reg-a', 'direct')]);
+    proxyRequest.mockResolvedValue(undefined);
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', 'saved-self');
+    expect(result.removed_registrant_ids).toEqual(['reg-a', 'saved-self']);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not delete an indexed UID twice when it is also supplied as the saved hint', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-a', 'direct')]);
+    proxyRequest.mockResolvedValue(undefined);
+    await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', 'reg-a');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires a complete lookup even with a saved hint', async () => {
+    const error = new Error('incomplete lookup');
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockRejectedValueOnce(error);
+    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', 'saved-self')).rejects.toBe(error);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 404])('propagates an ownership or meeting-binding rejection (%s) without elevated retries', async (statusCode) => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([]);
+    const error = Object.assign(new Error('not the caller registration for this meeting'), { statusCode });
+    proxyRequest.mockRejectedValueOnce(error);
+    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', 'foreign-self')).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledExactlyOnceWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg-1/registrants/self', 'DELETE', {
+      registrant_id: 'foreign-self',
+    });
+  });
+
+  it('never counts a forbidden hint as removed when an indexed own row succeeds', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-a', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined).mockRejectedValueOnce(Object.assign(new Error('forbidden'), { statusCode: 403 }));
+    vi.spyOn(service, 'getRawMeetingRsvps').mockResolvedValueOnce([]);
+    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', 'foreign-self')).resolves.toMatchObject({
+      removed_registrant_ids: ['reg-a'],
+      remaining_registrant_ids: ['foreign-self'],
+    });
+  });
+
   it('looks the registrants up under the supplied M2M token and requires a complete result', async () => {
     const lookup = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
     proxyRequest.mockResolvedValueOnce(undefined);

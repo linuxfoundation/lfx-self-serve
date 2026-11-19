@@ -129,6 +129,12 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly initialRegistrantsFailed: InputSignal<boolean> = input<boolean>(false);
   /** The host already shows the viewer as a guest, for example right after adding them; hides "Add myself" while the roster catches up. */
   public readonly selfInvited: InputSignal<boolean> = input<boolean>(false);
+  /** A card-level self-invite is still pending; prevent a second write from this drawer. */
+  public readonly selfInvitePending = input(false);
+  /** Confirmed parent writes, retained independently of the drawer's own mutations and lagging reads. */
+  public readonly confirmedRegistrants = input<MeetingRegistrant[]>([]);
+  public readonly confirmedRemovedRegistrantIds = input<string[]>([]);
+  public readonly confirmedCountAdjustment = input(0);
   /** The occurrence the host is showing; lets a guest be invited to that date only. */
   public readonly occurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
 
@@ -147,6 +153,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly internalLoadFailed: WritableSignal<boolean> = signal(false);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
+  private readonly indexedConfirmedRegistrantIds = signal<Set<string>>(new Set());
   private readonly pendingSelfFocusContext = signal<string | null>(null);
   // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
   // disappears without waiting for the async refetch to complete.
@@ -321,6 +328,16 @@ export class MeetingRegistrantsDisplayComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((hosts) => this.resolvedHostsChange.emit(hosts));
 
+    effect(() => {
+      if (this.pastMeeting() || this.externallyManaged() || this.registrantsLoading() || this.internalLoadFailed()) return;
+      const base = (resolveMeetingBaseCount(this.meeting()) ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
+      // The merged roster acknowledges saved UIDs and excludes confirmed deletions before counting.
+      const additional = Math.max(this.registrants().length - base, this.additionalRegistrantsCount());
+      this.additionalRegistrantsCount.set(additional);
+      this.registrantsCountChange.emit(additional);
+      this.totalCountChange.emit(Math.max(0, base + additional));
+    });
+
     toObservable(this.inviteResponsesEnabled)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((enabled) => {
@@ -335,6 +352,7 @@ export class MeetingRegistrantsDisplayComponent {
       .subscribe(() => {
         this.optimisticRegistrants.set([]);
         this.deletedRegistrantUids.set(new Set());
+        this.indexedConfirmedRegistrantIds.set(new Set());
       });
 
     toObservable(
@@ -342,13 +360,17 @@ export class MeetingRegistrantsDisplayComponent {
         const self = this.selfGuest();
         return {
           fetched: this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.internalRegistrants(),
+          confirmed: this.confirmedRegistrants(),
           self,
           selfRemoved: !!self && this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id),
         };
       })
     )
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ fetched, self, selfRemoved }) => {
+      .subscribe(({ fetched, confirmed, self, selfRemoved }) => {
+        const fetchedIds = new Set(fetched.map((row) => row.uid));
+        const indexed = confirmed.filter((row) => fetchedIds.has(row.uid)).map((row) => row.uid);
+        this.indexedConfirmedRegistrantIds.update((known) => new Set([...known, ...indexed]));
         this.optimisticRegistrants.update((rows) => {
           if (selfRemoved && self) {
             const removedUids = [...fetched, ...rows].filter((row) => isMeetingSelfGuestListed(self, [row])).map((row) => row.uid);
@@ -704,7 +726,7 @@ export class MeetingRegistrantsDisplayComponent {
               this.refreshRequested.emit(response.summary.successful);
             } else {
               const meeting = this.meeting();
-              const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+              const baseCount = (resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
               const nextAdditionalCount = this.additionalRegistrantsCount() + response.summary.successful;
               this.optimisticRegistrants.update((list) => [...list, optimistic]);
               this.additionalRegistrantsCount.set(nextAdditionalCount);
@@ -771,11 +793,11 @@ export class MeetingRegistrantsDisplayComponent {
               this.refreshRequested.emit(-response.summary.successful);
             } else {
               const meeting = this.meeting();
-              const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+              const baseCount = (resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length) + this.confirmedCountAdjustment();
               // Capture the current total before decrementing additionalRegistrantsCount so we subtract
               // response.summary.successful exactly once from the emitted total, not twice.
               const currentTotal = baseCount + this.additionalRegistrantsCount();
-              const nextAdditionalCount = Math.max(0, this.additionalRegistrantsCount() - response.summary.successful);
+              const nextAdditionalCount = this.additionalRegistrantsCount() - response.summary.successful;
               this.additionalRegistrantsCount.set(nextAdditionalCount);
               this.registrantsCountChange.emit(nextAdditionalCount);
               this.totalCountChange.emit(Math.max(0, currentTotal - response.summary.successful));
@@ -827,17 +849,6 @@ export class MeetingRegistrantsDisplayComponent {
                   return of([]);
                 }),
                 map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
-                tap((registrants) => {
-                  const meeting = this.meeting();
-                  const resolvedBaseCount = resolveMeetingBaseCount(meeting);
-                  const hasBackendBaseCount = resolvedBaseCount !== undefined;
-                  const baseCount = hasBackendBaseCount ? resolvedBaseCount : (registrants?.length ?? 0);
-                  const fetchedAdditional = Math.max(0, (registrants?.length ?? 0) - baseCount);
-                  const additionalCount = hasBackendBaseCount ? Math.max(fetchedAdditional, this.additionalRegistrantsCount()) : fetchedAdditional;
-                  this.additionalRegistrantsCount.set(additionalCount);
-                  this.registrantsCountChange.emit(additionalCount);
-                  this.totalCountChange.emit(baseCount + additionalCount);
-                }),
                 finalize(() => this.internalLoading.set(false))
               );
             })
@@ -930,7 +941,7 @@ export class MeetingRegistrantsDisplayComponent {
 
   private initRegistrants(): Signal<MeetingRegistrant[]> {
     return computed(() => {
-      const deletedUids = this.deletedRegistrantUids();
+      const deletedUids = new Set([...this.deletedRegistrantUids(), ...this.confirmedRemovedRegistrantIds()]);
       let list: MeetingRegistrant[];
       if (this.externallyManaged()) {
         const seed = this.initialRegistrants() ?? [];
@@ -944,7 +955,14 @@ export class MeetingRegistrantsDisplayComponent {
       }
       // Real UIDs match exactly; UID-less hints reconcile only to the same email and invitation scope.
       const pending = filterUnindexedMeetingRegistrants(
-        this.optimisticRegistrants().filter((row) => !deletedUids.has(row.uid)),
+        [
+          ...new Map(
+            [...this.optimisticRegistrants(), ...this.confirmedRegistrants().filter((row) => !this.indexedConfirmedRegistrantIds().has(row.uid))].map((row) => [
+              row.uid,
+              row,
+            ])
+          ).values(),
+        ].filter((row) => !deletedUids.has(row.uid)),
         list
       );
       const merged = pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
@@ -1082,6 +1100,7 @@ export class MeetingRegistrantsDisplayComponent {
       const self = this.selfGuest();
       if (
         this.selfInvited() ||
+        this.selfInvitePending() ||
         !self?.first_name ||
         !self.last_name ||
         this.pastMeeting() ||

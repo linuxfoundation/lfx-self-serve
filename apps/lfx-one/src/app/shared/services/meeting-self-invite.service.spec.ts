@@ -34,6 +34,7 @@ describe('MeetingSelfInviteService', () => {
   let getMeetingRegistrants: ReturnType<typeof vi.fn>;
   let addMeetingRegistrants: ReturnType<typeof vi.fn>;
   let clearRemovedRegistration: ReturnType<typeof vi.fn>;
+  let clearRemovalIfReinvited: ReturnType<typeof vi.fn>;
   let removedIds: WritableSignal<ReadonlySet<string>>;
   let removedSelfRegistrantUids: Map<string, ReadonlySet<string>>;
 
@@ -56,8 +57,9 @@ describe('MeetingSelfInviteService', () => {
       MeetingService.prototype.stripMetadata.call({}, meetingId, registrant);
     // The real re-invite check, over the same removal state the service reads.
     const removalState = { removedRegistrationIds: removedIds, removedSelfRegistrantUids, clearRemovedRegistration };
-    const clearRemovalIfReinvited = (meetingId: string, selfUids: readonly string[]) =>
-      MeetingService.prototype.clearRemovalIfReinvited.call(removalState, meetingId, selfUids);
+    clearRemovalIfReinvited = vi.fn((meetingId: string, selfUids: readonly string[]) =>
+      MeetingService.prototype.clearRemovalIfReinvited.call(removalState, meetingId, selfUids)
+    );
 
     TestBed.configureTestingModule({
       providers: [
@@ -191,6 +193,24 @@ describe('MeetingSelfInviteService', () => {
     roster$.complete();
 
     await expect(emitted).resolves.toEqual([]);
+    expect(clearRemovedRegistration).not.toHaveBeenCalled();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    expect(clearRemovalIfReinvited).not.toHaveBeenCalled();
+  });
+
+  it('does not request the roster or invite after the viewer changes during profile resolution', async () => {
+    const profile$ = new Subject<MeetingSelfGuest | null>();
+    getMeetingSelfGuest.mockReturnValue(profile$);
+    const emitted = firstValueFrom(service.add$(MEETING_ID).pipe(toArray()));
+
+    user.set({ sub: 'synthetic-other-subject' } as User);
+    profile$.next(self);
+    profile$.complete();
+
+    await expect(emitted).resolves.toEqual([]);
+    expect(getMeetingRegistrants).not.toHaveBeenCalled();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    expect(clearRemovalIfReinvited).not.toHaveBeenCalled();
     expect(clearRemovedRegistration).not.toHaveBeenCalled();
   });
 

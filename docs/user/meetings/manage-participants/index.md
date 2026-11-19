@@ -4,7 +4,7 @@ description: How to invite guests, add a group, resend invitations, remove peopl
 audience: [all]
 product_area: Meetings
 tags: [meetings, participants, guests, invite, registrants, groups, resend invite, add myself]
-last_updated: 2026-11-18
+last_updated: 2026-11-19
 intercom_collection: Meetings
 ---
 
@@ -43,7 +43,7 @@ You're added as a regular guest with your profile details: your name, job title 
 - In a meeting card's or the join page's guest list for a recurring meeting, you're added to every occurrence, unless you've opened **Add Guest** and chosen **Only** that date under **Invite to**.
 - **Add myself** disappears once you're on the list, whether under your meeting-invitation, primary or sign-in email, or under another address listed with your LFID, as a group member's invitation is. For recurring meetings, this includes an invitation to just one occurrence. If you remove yourself, it comes back.
 
-On the meetings list, an upcoming meeting you organize but aren't invited to also shows **Add Myself** on its card. Selecting it invites you straight away, to every occurrence of a recurring meeting, and the button changes to **Remove Myself**. The card first checks the full guest list, so if you're already on it you're told so and nothing is sent twice. If the guest list can't be loaded, you see an error and you aren't added. If your profile is missing your first or last name, or your meeting-invitation email setting can't be loaded, the card opens the guest list on the **Add Guest** form so you can invite yourself there.
+On the meetings list, an upcoming meeting you organize but aren't invited to also shows **Add Myself** on its card. Selecting it invites you straight away, to every occurrence of a recurring meeting, and the button changes to **Remove Myself**. While the invitation is being saved, **Add myself** in the guest list is unavailable. After it is saved, you can remove yourself straight away, and the card and guest list keep the confirmed guest count. The card first checks the full guest list, so if you're already on it you're told so and nothing is sent twice. If the guest list can't be loaded, you see an error and you aren't added. If your profile is missing your first or last name, or your meeting-invitation email setting can't be loaded, the card opens the guest list on the **Add Guest** form so you can invite yourself there.
 
 ### Add a group
 

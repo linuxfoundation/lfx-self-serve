@@ -262,6 +262,16 @@ describe('MeetingService.removeMyMeetingRegistration', () => {
     expect(del.mock.calls[0][0]).toBe(`/api/meetings/${MEETING_UID}/registrants/self`);
   });
 
+  it('sends the saved UID as an optional query on the body-less self DELETE', () => {
+    service.removeMyMeetingRegistration(MEETING_UID, 'meeting-card', 'saved/self&uid').subscribe();
+
+    const options = del.mock.calls[0][1];
+    expect(options.params.get('registrant_id')).toBe('saved/self&uid');
+    expect(options.params.toString()).toContain('saved/self%26uid');
+    expect(options.body).toBeUndefined();
+    expect(options.headers.get('x-lfx-removal-source')).toBe('meeting-card');
+  });
+
   it.each(['meeting-card', 'meeting-join'] as const)('names the %s surface in the removal-source header', (source) => {
     service.removeMyMeetingRegistration(MEETING_UID, source).subscribe();
 

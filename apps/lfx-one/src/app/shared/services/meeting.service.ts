@@ -857,10 +857,11 @@ export class MeetingService {
     });
   }
 
-  public removeMyMeetingRegistration(meetingUid: string, source: MeetingRemovalSource): Observable<MeetingRegistrationRemovalResult> {
+  public removeMyMeetingRegistration(meetingUid: string, source: MeetingRemovalSource, registrantUid?: string): Observable<MeetingRegistrationRemovalResult> {
     const headers = new HttpHeaders({ [MEETING_REMOVAL_SOURCE_HEADER]: source });
+    const params = registrantUid ? new HttpParams().set('registrant_id', registrantUid) : undefined;
 
-    return this.http.delete<MeetingRegistrationRemovalResult>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`, { headers }).pipe(
+    return this.http.delete<MeetingRegistrationRemovalResult>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`, { headers, params }).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to remove current user from meeting ${meetingUid}:`, error);

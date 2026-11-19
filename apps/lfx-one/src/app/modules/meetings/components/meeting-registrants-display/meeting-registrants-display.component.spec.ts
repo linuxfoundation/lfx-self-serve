@@ -18,7 +18,7 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, Subject, take, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingRegistrantsDisplayComponent } from './meeting-registrants-display.component';
@@ -765,6 +765,111 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     fixture.componentRef.setInput('selfInvited', false);
     fixture.detectChanges();
     expect(button()).not.toBeNull();
+  });
+
+  it('blocks self-add while the card invite is pending and restores it after failure', async () => {
+    const { fixture, button } = await mount();
+    fixture.componentRef.setInput('selfInvitePending', true);
+    fixture.detectChanges();
+    expect(button()).toBeNull();
+    fixture.componentInstance.onAddSelf();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    fixture.componentRef.setInput('selfInvitePending', false);
+    fixture.detectChanges();
+    expect(button()).not.toBeNull();
+  });
+
+  it('merges a card-saved row, preserves its count through stale loads, and deduplicates indexed UIDs', async () => {
+    const roster$ = new BehaviorSubject<MeetingRegistrant[]>([listed('one@example.com'), listed('two@example.com'), listed('three@example.com')]);
+    const { fixture } = await mount({ fetched: roster$.pipe(take(1)), meeting: { id: 'meeting-1', timezone: 'UTC', registrant_count: 3 } as Meeting });
+    const saved = { ...listed(SELF_GUEST.email), uid: 'saved-self', meeting_id: 'meeting-1' };
+    const total = vi.fn();
+    const delta = vi.fn();
+    fixture.componentInstance.totalCountChange.subscribe(total);
+    fixture.componentInstance.registrantsCountChange.subscribe(delta);
+    fixture.componentRef.setInput('confirmedRegistrants', [saved]);
+    fixture.componentRef.setInput('confirmedCountAdjustment', 1);
+    fixture.componentRef.setInput('selfInvited', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(4);
+    expect(total).toHaveBeenLastCalledWith(4);
+    expect(delta).toHaveBeenLastCalledWith(0);
+
+    roster$.next([...roster$.value, saved]);
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants().filter((row) => row.uid === saved.uid)).toHaveLength(1);
+    expect(total).toHaveBeenLastCalledWith(4);
+
+    const extra = { ...listed('extra@example.com'), uid: 'saved-extra', meeting_id: 'meeting-1' };
+    addMeetingRegistrants.mockReturnValueOnce(of({ ...SUCCESS, successes: [extra] }));
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(extra.email));
+    form.addControl('first_name', new FormControl('Extra'));
+    form.addControl('last_name', new FormControl('Guest'));
+    fixture.componentInstance.onAddRegistrant();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(total).toHaveBeenLastCalledWith(5);
+    expect(delta).toHaveBeenLastCalledWith(1);
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    fixture.componentInstance.onRequestRemoveGuest(extra);
+    confirm.mock.calls[0][0].accept?.();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(total).toHaveBeenLastCalledWith(4);
+    expect(delta).toHaveBeenLastCalledWith(0);
+
+    fixture.componentRef.setInput('confirmedRegistrants', []);
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['saved-self']);
+    fixture.componentRef.setInput('confirmedCountAdjustment', 0);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(3);
+    expect(total).toHaveBeenLastCalledWith(3);
+    expect(delta).toHaveBeenLastCalledWith(0);
+  });
+
+  it.each([false, true])('preserves a card-confirmed deletion with a stale roster: %s', async (stale) => {
+    const removed = listed('removed@example.com');
+    const remaining = [listed('one@example.com'), listed('two@example.com')];
+    const { fixture } = await mount({
+      fetched: of(stale ? [...remaining, removed] : remaining),
+      meeting: { id: 'meeting-1', timezone: 'UTC', registrant_count: 3 } as Meeting,
+    });
+    const total = vi.fn();
+    const delta = vi.fn();
+    fixture.componentInstance.totalCountChange.subscribe(total);
+    fixture.componentInstance.registrantsCountChange.subscribe(delta);
+    fixture.componentRef.setInput('confirmedCountAdjustment', -1);
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', [removed.uid]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual(expect.arrayContaining(remaining));
+    expect(fixture.componentInstance.registrants()).toHaveLength(2);
+    expect(total).toHaveBeenLastCalledWith(2);
+    expect(delta).toHaveBeenLastCalledWith(0);
+  });
+
+  it('does not resurrect a parent-saved row after indexing acknowledged it and later drops it', async () => {
+    const saved = { ...listed(SELF_GUEST.email), uid: 'saved-self' };
+    const { fixture } = await mount();
+    fixture.componentRef.setInput('confirmedRegistrants', [saved]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([saved]);
+    fixture.componentRef.setInput('initialRegistrants', [saved]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([]);
   });
 
   it('is hidden when the drawer cannot add guests', async () => {

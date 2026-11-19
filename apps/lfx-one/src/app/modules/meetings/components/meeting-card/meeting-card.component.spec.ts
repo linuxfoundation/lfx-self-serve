@@ -682,7 +682,7 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.canLeaveMeeting()).toBe(true);
     expect(component.canResendInvite()).toBe(true);
     expect(removedIds().has('meeting-1')).toBe(false);
-    expect(meetings.getMeeting).toHaveBeenCalledTimes(1);
+    expect(meetings.getMeeting).not.toHaveBeenCalled();
     expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
     expect(http).not.toHaveBeenCalled();
     const freshFeed = users.getUserMeetings();
@@ -1460,6 +1460,46 @@ describe('MeetingCardComponent — add myself', () => {
     }
   );
 
+  it('keeps card confirmations separate from drawer count updates and forwards the saved UID on removal', async () => {
+    const saved = { uid: 'reg-self', meeting_id: 'meeting-1', email: 'synthetic@example.com' } as MeetingRegistrant;
+    add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'added', registrant: saved }));
+    const component = await mount();
+    component.addMyself();
+    component.showRegistrants.set(true);
+    // A stale drawer roster has no additional guests relative to its adjusted baseline.
+    component.additionalRegistrantsCount.set(0);
+    component.drawerGuestCount.set(4);
+    expect(component.confirmedSelfRegistrants()).toEqual([saved]);
+    expect(component.guestCount()).toBe(4);
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    expect(TestBed.inject(MeetingService).removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1', 'meeting-card', 'reg-self');
+    expect(component.confirmedSelfRegistrants()).toEqual([]);
+    component.additionalRegistrantsCount.set(0);
+    component.drawerGuestCount.set(3);
+    expect(component.guestCount()).toBe(3);
+  });
+
+  it('accounts for distinct removals across partial retries without stale detail reads', async () => {
+    const component = await mount({ ...ORGANIZER, invited: true, registrant_count: 5 } as Meeting);
+    const remove = vi.mocked(TestBed.inject(MeetingService).removeMyMeetingRegistration);
+    remove.mockReturnValueOnce(of({ removed_registrant_ids: ['reg-a', 'reg-b'], remaining_registrant_ids: ['reg-c'] }));
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    expect(component.guestCount()).toBe(3);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(getMeeting).not.toHaveBeenCalled();
+
+    remove.mockReturnValueOnce(of({ removed_registrant_ids: ['reg-a', 'reg-c', 'reg-c'], remaining_registrant_ids: [] }));
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[1][0].accept();
+    expect(component.guestCount()).toBe(2);
+    expect(component.confirmedRemovedRegistrantIds()).toEqual(['reg-a', 'reg-b', 'reg-c']);
+    expect(component.canAddMyself()).toBe(true);
+    expect(getMeeting).not.toHaveBeenCalled();
+  });
+
   it('only catches up, without counting a new guest, when the roster already lists the viewer', async () => {
     add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'already-listed' }));
     const component = await mount();
@@ -1511,7 +1551,7 @@ describe('MeetingCardComponent — add myself', () => {
     confirm.mock.calls[0][0].accept();
 
     expect(component.guestCount()).toBe(2);
-    expect(component.additionalRegistrantsCount()).toBe(-1);
+    expect(component.confirmedSelfCountDelta()).toBe(-1);
     expect(component.canAddMyself()).toBe(true);
   });
 

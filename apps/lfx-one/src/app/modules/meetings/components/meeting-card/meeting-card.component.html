@@ -407,7 +407,7 @@
               [pastMeeting]="pastMeeting()"
               [showAddButton]="!pastMeeting()"
               [showAttendeePreview]="true"
-              [additionalRegistrantsCount]="additionalRegistrantsCount()"
+              [additionalRegistrantsCount]="additionalRegistrantsCount() + confirmedSelfCountDelta()"
               (addClicked)="onInvitePeople()"
               (viewAllClicked)="showRegistrants.set(true)">
             </lfx-meeting-rsvp-details>
@@ -621,9 +621,13 @@
           [openAddFormOnShow]="openRegistrantsOnAddForm()"
           [occurrence]="occurrence()"
           [selfInvited]="isRegisteredAttendee()"
+          [selfInvitePending]="addingMyself()"
+          [confirmedRegistrants]="confirmedSelfRegistrants()"
+          [confirmedRemovedRegistrantIds]="confirmedRemovedRegistrantIds()"
+          [confirmedCountAdjustment]="confirmedSelfCountDelta()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
-          (selfAdded)="onSelfAdded($event.meeting_id)"
+          (selfAdded)="onSelfAdded($event.meeting_id, $event)"
           (selfRemoved)="onSelfRemoved($event)"
           (resolvedHostsChange)="drawerHosts.set($event)">
         </lfx-meeting-registrants-display>

@@ -1197,6 +1197,7 @@ export class MeetingController {
    * @description Removes the authenticated user as a registrant of the meeting. The caller's registrant
    * records are resolved server-side and the delete runs under the user's own token; the M2M token is
    * used only for the registrant lookup, after the caller's identity has been resolved from their session.
+   * An optional registrant_id query includes a saved UID before indexing; upstream still verifies its ownership and meeting.
    * The optional removal-source header only labels the log entries; an unrecognised value is logged as `unknown`.
    */
   public async removeMyMeetingRegistration(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -1215,6 +1216,19 @@ export class MeetingController {
         return;
       }
 
+      const rawRegistrantUid = req.query['registrant_id'];
+      if (rawRegistrantUid !== undefined && (typeof rawRegistrantUid !== 'string' || !rawRegistrantUid.trim())) {
+        next(
+          ServiceValidationError.forField('registrant_id', 'Registrant ID must be a non-empty string', {
+            operation: 'remove_my_meeting_registration',
+            service: 'meeting_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+      const registrantUid = typeof rawRegistrantUid === 'string' ? rawRegistrantUid.trim() : undefined;
+
       const userEmail = getEffectiveEmail(req) || undefined;
       const username = (await getUsernameFromAuth(req)) ?? undefined;
 
@@ -1230,7 +1244,7 @@ export class MeetingController {
       }
 
       const m2mToken = await generateM2MToken(req);
-      const result = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
+      const result = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken, registrantUid);
 
       logger.success(req, 'remove_my_meeting_registration', startTime, {
         meeting_id: uid,
