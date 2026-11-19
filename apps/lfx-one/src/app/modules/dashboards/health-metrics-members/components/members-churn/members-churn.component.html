@@ -220,28 +220,31 @@
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
         </div>
         <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
-        <table class="sr-only" data-testid="members-churn-chart-table">
-          <caption>
-            {{
-              view().trendTitle
-            }}
-            by year, oldest first
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Year</th>
-              <th scope="col">Churn rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (point of trend(); track point.year) {
+        <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+        <div class="sr-only">
+          <table data-testid="members-churn-chart-table">
+            <caption>
+              {{
+                view().trendTitle
+              }}
+              by year, oldest first
+            </caption>
+            <thead>
               <tr>
-                <th scope="row">{{ point.label }}</th>
-                <td>{{ point.valueLabel }}</td>
+                <th scope="col">Year</th>
+                <th scope="col">Churn rate</th>
               </tr>
-            }
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              @for (point of trend(); track point.year) {
+                <tr>
+                  <th scope="row">{{ point.label }}</th>
+                  <td>{{ point.valueLabel }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
       </div>
     }
   }

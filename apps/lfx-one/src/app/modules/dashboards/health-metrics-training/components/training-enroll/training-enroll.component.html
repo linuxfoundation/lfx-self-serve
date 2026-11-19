@@ -95,22 +95,25 @@
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
         </div>
         <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
-        <table class="sr-only" data-testid="training-enroll-trend-table">
-          <thead>
-            <tr>
-              <th scope="col">Year</th>
-              <th scope="col">Enrollments</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (row of view().trend; track row.year) {
+        <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+        <div class="sr-only">
+          <table data-testid="training-enroll-trend-table">
+            <thead>
               <tr>
-                <th scope="row">{{ row.yearLabel }}</th>
-                <td>{{ row.enrollmentsLabel }}</td>
+                <th scope="col">Year</th>
+                <th scope="col">Enrollments</th>
               </tr>
-            }
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              @for (row of view().trend; track row.year) {
+                <tr>
+                  <th scope="row">{{ row.yearLabel }}</th>
+                  <td>{{ row.enrollmentsLabel }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
       }
     </div>
   }

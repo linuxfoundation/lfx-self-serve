@@ -68,33 +68,36 @@
 
     <!-- The canvas is otherwise the only presentation of these values. `sr-only` keeps the table
          out of the visual layout without hiding it from assistive technology. -->
-    <table class="sr-only" data-testid="org-roi-projects-bar-table">
-      <caption>
-        Investment and return by project
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Project</th>
-          <th scope="col">Investment</th>
-          @for (column of categoryColumns(); track column.type) {
-            <th scope="col">{{ column.label }}</th>
-          }
-          <th scope="col">Return</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (row of tableRows(); track row.projectId) {
+    <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+    <div class="sr-only">
+      <table data-testid="org-roi-projects-bar-table">
+        <caption>
+          Investment and return by project
+        </caption>
+        <thead>
           <tr>
-            <th scope="row">{{ row.projectName }}</th>
-            <td>{{ row.investment }}</td>
-            @for (amount of row.categories; track $index) {
-              <td>{{ amount }}</td>
+            <th scope="col">Project</th>
+            <th scope="col">Investment</th>
+            @for (column of categoryColumns(); track column.type) {
+              <th scope="col">{{ column.label }}</th>
             }
-            <td>{{ row.return }}</td>
+            <th scope="col">Return</th>
           </tr>
-        }
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          @for (row of tableRows(); track row.projectId) {
+            <tr>
+              <th scope="row">{{ row.projectName }}</th>
+              <td>{{ row.investment }}</td>
+              @for (amount of row.categories; track $index) {
+                <td>{{ amount }}</td>
+              }
+              <td>{{ row.return }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
 
     <p class="text-xs text-gray-500" data-testid="org-roi-projects-bar-modelled-cost-note">{{ investmentExplanation }}</p>
   }

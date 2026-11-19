@@ -129,27 +129,30 @@
           >
         </div>
         <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
-        <table class="sr-only" data-testid="members-nps-chart-table">
-          <caption>
-            NPS score and response rate by survey wave, oldest first
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Quarter</th>
-              <th scope="col">NPS score</th>
-              <th scope="col">Response rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (point of trend(); track point.quarterStartDate) {
+        <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+        <div class="sr-only">
+          <table data-testid="members-nps-chart-table">
+            <caption>
+              NPS score and response rate by survey wave, oldest first
+            </caption>
+            <thead>
               <tr>
-                <th scope="row">{{ point.label }}</th>
-                <td>{{ point.scoreDescription }}</td>
-                <td>{{ point.rateLabel }}</td>
+                <th scope="col">Quarter</th>
+                <th scope="col">NPS score</th>
+                <th scope="col">Response rate</th>
               </tr>
-            }
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              @for (point of trend(); track point.quarterStartDate) {
+                <tr>
+                  <th scope="row">{{ point.label }}</th>
+                  <td>{{ point.scoreDescription }}</td>
+                  <td>{{ point.rateLabel }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
 
         @if (trendNote(); as note) {
           <p class="flex items-start gap-2 text-[12px] text-gray-500" data-testid="members-nps-trend-note">
