@@ -1,14 +1,14 @@
 ---
 title: Identities
-description: Link, verify, and remove the social and email identities used to attribute your work in LFX Self Serve; GitLab linking is coming soon
+description: Link, verify, and remove social and email identities in LFX Self Serve; GitLab linking is available in dev only
 audience: [all]
 product_area: Account
 tags: [account, identities, github, gitlab, email, verification, linux-com-alias, meeting-invitations, merge-accounts]
-last_updated: 2026-11-16
+last_updated: 2026-11-19
 intercom_collection: Account
 ---
 
-The **Identities** tab is where you manage the accounts used to identify you and attribute your contributions across Linux Foundation projects — your GitHub and social accounts and your verified email addresses. Keeping these linked and verified helps ensure accurate project affiliations and work history. It lives under the Profile & Account hub at `/profile/identities`. GitLab account linking is coming soon.
+The **Identities** tab is where you manage the accounts used to identify you and attribute your contributions across Linux Foundation projects — your GitHub and social accounts and your verified email addresses. Keeping these linked and verified helps ensure accurate project affiliations and work history. It lives under the Profile & Account hub at `/profile/identities`. GitLab account linking is available in the dev environment for rollout checks; it is still coming soon in staging and production.
 
 ## What you can do
 
@@ -42,7 +42,8 @@ The profile sidebar and the **Primary** badge use your current primary email. Ch
 1. Select **Add identity**.
 2. Choose a provider:
    - For a social account, select **Continue with GitHub**, **Continue with LinkedIn**, or **Continue with Google** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
-   - **Continue with GitLab** is disabled while GitLab account linking is being prepared. The GitLab row shows **Coming soon**, and hovering over or focusing the disabled button's surrounding area shows the same explanation. You cannot start a new GitLab connection from this dialog yet.
+   - In **dev**, select **Continue with GitLab** to start the existing provider sign-in and account-linking flow. The button is enabled with no **Coming soon** badge or tooltip. Live GitLab linking and CLA acceptance checks are still required before rollout is considered complete.
+   - In **staging and production**, **Continue with GitLab** remains disabled. The GitLab row shows **Coming soon**, and hovering over or focusing the disabled button's surrounding area shows the same explanation. You cannot start a new GitLab connection from this dialog in these environments yet.
    - If that social account is already connected to your own account, LFX confirms **This identity is already connected to your account.** instead of linking it again, and refreshes your identities. Nothing new is linked.
    - For an email address, select **Add email**, enter the address, and select **Send verification code**. The code-entry step says **Check [email] for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.**, with the address you entered in place of [email]. Enter that code and select **Verify email**. The code proves inbox ownership; it does not guarantee that the address can be linked. A wrong or expired code shows **Verification failed. Please try again or request a new code.** After the cooldown, use **Resend code** once if needed. The button shows **Requesting code…** and is disabled while the request is pending. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. After one successful resend request, the **Still waiting for your code?** callout directs you to **Contact support**, while code entry remains available. To correct the address, select **Use a different email** without closing the dialog; the action is disabled while requesting or verifying a code.
    - If the address turns out to be already connected to your own account, LFX still asks for the code — the code is what proves you own the inbox — and then confirms **This email is already connected to your account.** instead of adding it a second time. If the code is correct but the address is already linked to an LFX account, the dialog shows **You’ve verified this email address, but it’s already linked to an LFX account. Contact support for help with next steps.** with a **Contact support** link. The link opens a support chat with a message already filled in that names the address and asks for it to be added to your account; you can edit or delete it before sending. The address is not added, and a new code won't change the outcome.
