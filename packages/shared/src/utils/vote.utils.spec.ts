@@ -606,6 +606,17 @@ describe('mapVoteToCloneFormValue', () => {
     expect(form.title).toBe('Copy of Board election');
   });
 
+  it.each(['2025-06-01T00:00:00Z', '2025-04-01T00:00:00Z'])(
+    'maps a majority clone to plurality for deadline %s without changing the source method',
+    (endTime) => {
+      const source = vote({ poll_type: PollType.MAJORITY, end_time: endTime });
+
+      expect(mapVoteToCloneFormValue(source, NOW).poll_type).toBe(PollType.GENERIC);
+      expect(mapVoteToFormValue(source).poll_type).toBe(PollType.MAJORITY);
+      expect(source.poll_type).toBe(PollType.MAJORITY);
+    }
+  );
+
   it('carries the source vote allow_vote_change: false into the clone', () => {
     expect(mapVoteToCloneFormValue(vote({ allow_vote_change: false }), NOW).allow_vote_change).toBe(false);
   });

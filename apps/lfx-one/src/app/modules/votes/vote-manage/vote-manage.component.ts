@@ -1127,7 +1127,7 @@ export class VoteManageComponent {
   }
 
   /** Seeds the voting method from ?poll_type= (the Create Vote dropdown's choice) on create. Edit mode keeps
-   *  the vote's own method, and a clone keeps its source's. Unsupported values fall back to plurality.
+   *  the vote's own method, and a clone keeps its normalized creation method. Unsupported values fall back to plurality.
    *  Subscribed after initCloneFromQuery so a clone -> create transition seeds the form that transition
    *  just rebuilt. Changing the method afterwards is a normal form edit; the URL is not rewritten. */
   private initPollTypeFromQuery(): void {

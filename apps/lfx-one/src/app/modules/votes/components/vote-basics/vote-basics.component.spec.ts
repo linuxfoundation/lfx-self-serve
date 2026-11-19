@@ -387,6 +387,21 @@ describe('VoteBasicsComponent — voting method (#2921)', () => {
     expect(element('vote-method-description')?.textContent).toContain('Voters rank the options.');
   });
 
+  it.each([
+    [PollType.MAJORITY, 'Majority vote'],
+    [PollType.INSTANT_RUNOFF_VOTE, 'Instant runoff vote'],
+    [PollType.MEEK_STV, 'Meek STV'],
+  ])('shows the locked %s method even when it is not offered for creation', async (pollType, label) => {
+    form.get('poll_type')?.disable();
+    await render(pollType, { isEditMode: true });
+
+    expect(element('vote-method-select')?.textContent).toContain(label);
+    expect(element('vote-method-description')?.textContent?.trim()).not.toBe('');
+    expect(form.get('poll_type')?.disabled).toBe(true);
+    expect(form.get('poll_type')?.value).toBe(pollType);
+    expect(fixture.componentInstance.methodOptions.map((option) => option.value)).toEqual([PollType.GENERIC, PollType.CONDORCET_IRV]);
+  });
+
   it('warns when Condorcet IRV has fewer than three eligible voters', async () => {
     await render(PollType.CONDORCET_IRV, { eligibleVoterCountState: { status: 'loaded', count: 2 } });
 

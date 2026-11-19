@@ -278,6 +278,8 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
  * known, accepted tradeoff (not yet surfaced to the organizer) rather than an oversight — unlike the
  * poll-type/pseudo-anonymity guard below, which refuses to clone a source it can't faithfully represent,
  * electorate widening degrades silently. Revisit if this needs its own warning (GH-3781 review 3).
+ * The method is normalized to an available creation method (including legacy Majority to Plurality);
+ * the caller must still reject ranked and pseudo-anonymous sources before mapping them.
  * Two fields are deliberately mutated: the title gets a "Copy of " prefix (skipped if already present, and
  * clamped to VOTE_TITLE_MAX_LENGTH) so the organizer can tell the draft apart from the source vote, and a
  * deadline that has already elapsed resets to CLONE_VOTE_DEFAULT_DURATION_DAYS out in the organizer's own
@@ -295,6 +297,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
  */
 export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), fallbackTimezone: string = getUserTimezone()): VoteFormValue {
   const base = mapVoteToFormValue(vote);
+  base.poll_type = parseVoteMethodParam(base.poll_type);
   const title = base.title.startsWith(CLONE_VOTE_TITLE_PREFIX)
     ? base.title
     : truncateToUtf16Units(`${CLONE_VOTE_TITLE_PREFIX}${base.title}`, VOTE_TITLE_MAX_LENGTH);

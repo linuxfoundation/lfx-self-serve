@@ -8,7 +8,14 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
-import { COMMITTEE_LABEL, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL, VOTE_METHOD_OPTIONS, VOTE_RESPONSE_TYPES } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_LABEL,
+  VOTE_ELIGIBLE_PARTICIPANTS,
+  VOTE_LABEL,
+  VOTE_METHOD_LABELS,
+  VOTE_METHOD_OPTIONS,
+  VOTE_RESPONSE_TYPES,
+} from '@lfx-one/shared/constants';
 import { PollType } from '@lfx-one/shared/enums';
 import { CommitteeReference, VoteReviewCommentPrompt, VoteReviewQuestion } from '@lfx-one/shared/interfaces';
 import { combineDateTime, formatVoteDeadline, getLongTimezoneName, isNonBlankCommentPrompt, isRankedPollType } from '@lfx-one/shared/utils';
@@ -126,7 +133,7 @@ export class VoteReviewComponent {
   private initMethodLabel(): Signal<string> {
     return computed(() => {
       const pollType = this.pollType();
-      return VOTE_METHOD_OPTIONS.find((option) => option.value === pollType)?.label ?? pollType;
+      return VOTE_METHOD_OPTIONS.find((option) => option.value === pollType)?.label ?? VOTE_METHOD_LABELS[pollType] ?? pollType;
     });
   }
 

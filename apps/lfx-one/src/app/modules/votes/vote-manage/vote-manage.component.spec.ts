@@ -931,6 +931,33 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.form().disabled).toBe(false);
     });
 
+    it.each(['save', 'open'])('can %s a majority clone as a new plurality vote', async (action) => {
+      routeMock.snapshot.queryParamMap = convertToParamMap({ clone: CLONE_SOURCE_UID });
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ poll_type: PollType.MAJORITY, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('all');
+      const question = (form.get('questions') as FormArray).at(0) as FormGroup;
+      question.get('question')?.setValue('Approve the proposed budget?');
+      (question.get('options') as FormArray).at(0).setValue('Yes');
+      (question.get('options') as FormArray).at(1).setValue('No');
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      if (action === 'save') {
+        fixture.componentInstance.onSaveAsDraft();
+        expect(voteServiceMock.createVote).toHaveBeenCalledWith(expect.objectContaining({ poll_type: PollType.GENERIC }));
+      } else {
+        const confirm = vi.spyOn(TestBed.inject(ConfirmationService), 'confirm');
+        fixture.componentInstance.onSubmit();
+        expect(confirm).toHaveBeenCalled();
+        confirm.mock.calls.at(-1)?.[0].accept?.();
+        expect(voteServiceMock.confirmSpeculativeVote).toHaveBeenCalledWith(expect.objectContaining({ poll_type: PollType.GENERIC }));
+      }
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Voting method unavailable' }));
+    });
+
     // GH-3781 review round 3 (PRRT_kwDOPMiRQ86uDywE, dealako; pins the uAPFY/vote.utils.ts SSR fix):
     // cloning an ended vote resets its deadline through getUserTimezone() unless running on the
     // server, matching every other getUserTimezone() call site's isPlatformBrowser guard. Pins that

@@ -5,7 +5,7 @@ import { LowerCasePipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { PollType } from '@lfx-one/shared/enums';
-import { Committee, VoteEligibleVoterCountState } from '@lfx-one/shared/interfaces';
+import { Committee, VoteEligibleVoterCountState, VoteMethodOption } from '@lfx-one/shared/interfaces';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -22,6 +22,7 @@ import {
   VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS,
   VOTE_ELIGIBLE_PARTICIPANTS,
   VOTE_LABEL,
+  VOTE_METHOD_LABELS,
   VOTE_METHOD_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { buildTimezoneOptions, getTimezoneUtcOffsetString, parseTime12Hour, startOfTodayInTimezone } from '@lfx-one/shared/utils';
@@ -64,6 +65,8 @@ export class VoteBasicsComponent {
   public readonly allowAbstainOptions = [...VOTE_ALLOW_ABSTAIN_OPTIONS];
   public readonly allowVoteChangeOptions = [...VOTE_ALLOW_VOTE_CHANGE_OPTIONS];
   public readonly methodOptions = VOTE_METHOD_OPTIONS;
+  /** Includes an existing vote's method for display without offering it for new votes. */
+  public readonly methodDisplayOptions: Signal<VoteMethodOption[]> = this.initMethodDisplayOptions();
   public readonly selectedMethodDescription: Signal<string> = this.initSelectedMethodDescription();
   /** Set when Condorcet IRV's known eligible count is below the minimum — Next and Open Vote are blocked meanwhile. */
   public readonly minVotersWarning: Signal<string | null> = this.initMinVotersWarning();
@@ -82,10 +85,23 @@ export class VoteBasicsComponent {
     this.userPickedZone = zone;
   }
 
+  private initMethodDisplayOptions(): Signal<VoteMethodOption[]> {
+    return computed(() => {
+      const pollType = this.formValue()()['poll_type'] as PollType;
+      if (!this.isEditMode() || this.methodOptions.some((option) => option.value === pollType)) {
+        return this.methodOptions;
+      }
+      return [
+        ...this.methodOptions,
+        { label: VOTE_METHOD_LABELS[pollType] ?? pollType, value: pollType, description: 'This vote keeps its original voting method.', icon: '' },
+      ];
+    });
+  }
+
   private initSelectedMethodDescription(): Signal<string> {
     return computed(() => {
       const pollType = this.formValue()()['poll_type'] as PollType;
-      return this.methodOptions.find((option) => option.value === pollType)?.description ?? '';
+      return this.methodDisplayOptions().find((option) => option.value === pollType)?.description ?? '';
     });
   }
 
