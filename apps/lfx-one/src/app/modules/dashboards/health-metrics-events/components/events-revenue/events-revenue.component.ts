@@ -66,7 +66,6 @@ export class EventsRevenueComponent {
   protected readonly view: Signal<HealthMetricsEventsRevenueView> = computed(() =>
     buildHealthMetricsEventsRevenueView(this.response(), this.chrome.selectedRange())
   );
-  /** A new read or period starts the table on its first page. */
   /** No arrow by default: upcoming events soonest first, then past events latest first. */
   protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_EVENTS_REVENUE_SORT_COLUMNS, null);
   protected readonly rows = computed(() => sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue));

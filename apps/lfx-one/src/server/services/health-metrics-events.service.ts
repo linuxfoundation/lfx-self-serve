@@ -307,6 +307,8 @@ interface SpeakerProposalPageRow extends Omit<SpeakerProposalRow, 'PERIOD'> {
   ACCOUNT_ID: string | null;
   TOTAL_RECORDS: number | null;
   IS_PAGE_ROW: boolean | null;
+  /** Keeps the page's order after the joins; the mapper does not read it. */
+  PAGE_POSITION: number | null;
 }
 
 /** An event with proposals in the period. */
@@ -1626,7 +1628,8 @@ function speakerProposalSortColumns(): Record<HealthMetricsEventsSpeakerProposal
 /** Companies at events' columns as the server sorts them, each as its cell reads. Constants only, never request text. */
 function organizationSortColumns(): Record<HealthMetricsEventsOrganizationsSortKey, HealthMetricsSqlSortColumn> {
   return {
-    company: { expression: 'account_name', kind: 'text' },
+    // A company with no name shows its account id, so it sorts by that.
+    company: { expression: 'COALESCE(account_name, account_id)', kind: 'text' },
     // A non-member ranks lowest; a member with no tier, or a "Non-Member" one, reads "Member", an unnamed tier.
     membership: {
       expression: `CASE WHEN NOT COALESCE(is_member, FALSE) THEN 0 ELSE COALESCE(NULLIF(${healthMetricsTierRankSql('membership_tier')}, 0), 1) END`,

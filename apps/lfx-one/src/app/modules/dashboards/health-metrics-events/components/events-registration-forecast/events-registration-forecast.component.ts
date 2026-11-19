@@ -150,7 +150,6 @@ export class EventsRegistrationForecastComponent {
   protected readonly rowViews: Signal<HealthMetricsEventsForecastRowView[]> = computed(() =>
     sortHealthMetricsRows(buildHealthMetricsEventsForecastRowViews(this.response().events), this.sorting.order(), healthMetricsRowSortValue)
   );
-  /** A new read starts the table on its first page. */
   /** A new read or a new sort is a different order, so paging restarts. */
   protected readonly page = linkedSignal({ source: () => ({ response: this.response(), sort: this.sorting.sort() }), computation: () => 0 });
   protected readonly pageRows = computed(() => this.rowViews().slice(this.page() * this.pageSize, (this.page() + 1) * this.pageSize));

@@ -85,15 +85,13 @@ describe('EventsSpeakersComponent', () => {
 
   async function render(payload: HealthMetricsEventsSpeakers | Error = speakers()): Promise<void> {
     getEventsSpeakers = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
-    getEventsSpeakerProposals = vi
-      .fn()
-      .mockReturnValue(
-        of({
-          rows: [proposal({ proposalKey: 'p-9', jobTitle: 'Architect' }), proposal({ proposalKey: 'p-8', jobTitle: 'Builder' })],
-          totalRecords: 2,
-          events: null,
-        })
-      );
+    getEventsSpeakerProposals = vi.fn().mockReturnValue(
+      of({
+        rows: [proposal({ proposalKey: 'p-9', jobTitle: 'Architect' }), proposal({ proposalKey: 'p-8', jobTitle: 'Builder' })],
+        totalRecords: 2,
+        events: null,
+      })
+    );
 
     await TestBed.configureTestingModule({
       imports: [EventsSpeakersComponent],
@@ -164,6 +162,25 @@ describe('EventsSpeakersComponent', () => {
     });
     expect(rowKeys()).toEqual(['p-9', 'p-8']);
     expect(header('speaker').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+  });
+
+  it("never shows another period's sorted rows: a period change shows that period's own rows until its read lands", async () => {
+    await render();
+    const pending = new Subject<unknown>();
+    (query('events-speakers-sort-speaker')?.querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(rowKeys()).toEqual(['p-9', 'p-8']);
+
+    getEventsSpeakerProposals.mockReturnValue(pending);
+    await pickRange('COMPLETED_YEAR');
+    expect(rowKeys()).toEqual(['p-3']);
+    expect(getEventsSpeakerProposals).toHaveBeenLastCalledWith(
+      expect.objectContaining({ range: 'COMPLETED_YEAR', sort: { key: 'speaker', direction: 'asc' } })
+    );
+
+    pending.next({ rows: [proposal({ proposalKey: 'p-7', range: 'COMPLETED_YEAR' })], totalRecords: 1, events: null });
+    await settle();
+    expect(rowKeys()).toEqual(['p-7']);
   });
 
   it('falls back to the most recent first, arrow included, when the sorted read fails', async () => {

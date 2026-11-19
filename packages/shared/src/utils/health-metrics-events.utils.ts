@@ -782,12 +782,12 @@ function metricTrend(fraction: number | null): Pick<HealthMetricsMetricItem, 'tr
   return { trend: `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}%`, trendTone: rounded > 0 ? 'up' : 'down' };
 }
 
-/** A comparison-table change as the design's badge: success from 0 up ("+0%"), danger below; show-up rate in points. */
 /** A change as its badge shows it: whole percent, or points to one decimal. */
 function glanceChangeValue(fraction: number, unit: 'pct' | 'pp'): number {
   return unit === 'pct' ? Math.round(fraction * 100) : Math.round(fraction * 1000) / 10;
 }
 
+/** A comparison-table change as the design's badge: success from 0 up ("+0%"), danger below; show-up rate in points. */
 function glanceChange(fraction: number | null, unit: 'pct' | 'pp'): Pick<HealthMetricsEventsAtAGlanceRowView, 'change' | 'changeTone'> {
   if (fraction === null) return { change: null, changeTone: 'neutral' };
 

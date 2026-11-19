@@ -178,6 +178,26 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-row-rev-2')?.textContent).not.toContain('*');
   });
 
+  it('opens with no arrow, and sorts the whole list from page 1 on a picked column, a "—" amount last', async () => {
+    const events = Array.from({ length: 12 }, (_, index) => revenueEvent({ eventId: `evt-${index}`, sponsorshipUsd: index === 0 ? null : index * 1000 }));
+    await render(revenue({ events }));
+    const header = (key: string): HTMLElement => query(`events-revenue-sort-${key}`) as HTMLElement;
+    const ids = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('tr[data-testid^="events-revenue-row-"]')].map((row: Element) => row.getAttribute('data-testid') ?? '');
+
+    expect(['event', 'registration', 'sponsorship'].map((key) => header(key).closest('th')?.getAttribute('aria-sort'))).toEqual(['none', 'none', 'none']);
+    fixture.componentInstance['page'].set(1);
+    await settle();
+
+    (header('sponsorship').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(fixture.componentInstance['page']()).toBe(0);
+    expect(ids()[0]).toBe('events-revenue-row-evt-11');
+    fixture.componentInstance['page'].set(1);
+    await settle();
+    expect(ids().at(-1)).toBe('events-revenue-row-evt-0');
+  });
+
   it('pages the table at 10 events', async () => {
     const events = Array.from({ length: 12 }, (_, index) => revenueEvent({ eventId: `evt-${index}` }));
     await render(revenue({ events }));

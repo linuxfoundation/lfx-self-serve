@@ -69,7 +69,6 @@ export class EventsPastEventsComponent {
   /** No event closed in the period, or it was never measured; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.view().rows.length === 0);
 
-  /** A new read or period starts the table on its first page. */
   protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_EVENTS_PAST_SORT_COLUMNS, HEALTH_METRICS_EVENTS_PAST_DEFAULT_SORT);
   protected readonly rows = computed(() => sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue));
   /** A new view or a new sort is a different order, so paging restarts. */

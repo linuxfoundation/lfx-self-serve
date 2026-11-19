@@ -98,9 +98,22 @@ export class EventsSpeakersComponent {
     HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS,
     HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_DEFAULT_SORT
   );
-  /** The period's first proposals in the picked order; `null` on the default order, which the section's read already holds. */
-  private readonly sortedProposals: Signal<HealthMetricsEventsSpeakersProposalRowView[] | null> = this.initSortedProposals();
-  protected readonly proposals = computed(() => this.sortedProposals() ?? this.view().proposals);
+  /** The request a picked column reads: the foundation, the period and the sort. */
+  private readonly sortedRequest = computed(() => {
+    const selected = this.chrome.selectedRange();
+    const range = HEALTH_METRICS_L2_RANGES.find((candidate) => candidate === selected) ?? null;
+    return { foundationSlug: this.query().foundationSlug, range, sort: this.sorting.order() };
+  });
+  /** The period's first proposals in the picked order, with the request they answer; `null` on the default order. */
+  private readonly sortedProposals: Signal<{ key: string; rows: HealthMetricsEventsSpeakersProposalRowView[] } | null> = this.initSortedProposals();
+  /**
+   * Sorted rows only while they answer the current request; until a new period's read lands, the period's own default
+   * rows, which hold the same proposals, so the section never shows another period's.
+   */
+  protected readonly proposals = computed(() => {
+    const sorted = this.sortedProposals();
+    return sorted && sorted.key === JSON.stringify(this.sortedRequest()) ? sorted.rows : this.view().proposals;
+  });
 
   public constructor() {
     inject(DestroyRef).onDestroy(() => this.closeAllProposals());
@@ -185,18 +198,14 @@ export class EventsSpeakersComponent {
    * Reads the period's first proposals in a picked order, so the sort covers every proposal and not just the ten shown.
    * A failed read puts the table back on its default, the rows it is showing, so the arrow never claims another order.
    */
-  private initSortedProposals(): Signal<HealthMetricsEventsSpeakersProposalRowView[] | null> {
+  private initSortedProposals(): Signal<{ key: string; rows: HealthMetricsEventsSpeakersProposalRowView[] } | null> {
     if (!isPlatformBrowser(this.platformId)) return signal(null);
 
-    const request = computed(() => {
-      const selected = this.chrome.selectedRange();
-      const range = HEALTH_METRICS_L2_RANGES.find((candidate) => candidate === selected) ?? null;
-      return { foundationSlug: this.query().foundationSlug, range, sort: this.sorting.order() };
-    });
     return toSignal(
-      toObservable(request).pipe(
+      toObservable(this.sortedRequest).pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
-        switchMap(({ foundationSlug, range, sort }) => {
+        switchMap((request) => {
+          const { foundationSlug, range, sort } = request;
           if (!sort || !foundationSlug || !range) return of(null);
           const query = {
             foundationSlug,
@@ -209,7 +218,7 @@ export class EventsSpeakersComponent {
             sort,
           };
           return this.analyticsService.getEventsSpeakerProposals(query).pipe(
-            map((page) => page.rows.map(buildHealthMetricsEventsSpeakersProposalRowView)),
+            map((page) => ({ key: JSON.stringify(request), rows: page.rows.map(buildHealthMetricsEventsSpeakersProposalRowView) })),
             // `AnalyticsService` has already logged the error.
             catchError(() => {
               this.sorting.reset();
