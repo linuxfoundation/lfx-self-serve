@@ -5,6 +5,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { parseOrgScope, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
+import { redactProjectsForEmployeeView, redactWorkspacesForEmployeeView } from '../helpers/org-lens-projects-employee-view.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -40,7 +41,7 @@ export class OrgLensProjectsController {
       });
 
       res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
+      res.json(redactProjectsForEmployeeView(req, orgUid, response));
     } catch (error: unknown) {
       next(error);
     }
@@ -86,7 +87,7 @@ export class OrgLensProjectsController {
       });
 
       res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
+      res.json(redactWorkspacesForEmployeeView(req, orgUid, response));
     } catch (error: unknown) {
       next(error);
     }
