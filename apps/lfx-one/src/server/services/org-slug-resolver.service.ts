@@ -124,8 +124,13 @@ export class OrgSlugResolverService {
     }
     // The all employee view company is invisible to query-service, so it can share this slug with a company the caller CAN read. It must
     // take part in uniqueness and in the preference: otherwise the readable company silently wins the employee company's own address.
-    const employee = await this.employeeCandidateForSlug(req, segment);
+    const { employee, failed } = await this.employeeCandidateForSlug(req, segment);
     if (cached.outcome === 'hit') {
+      if (failed && prefer && prefer !== cached.org.uid && !(await this.lookupByUid(req, prefer))) {
+        // The employee check could not answer, and the caller's current selection is a company query-service does not show them: it
+        // may be the all employee view company sharing this slug. Do not switch them to the readable one on a guess.
+        return { outcome: 'ambiguous', cache };
+      }
       if (!employee || employee.orgUid === cached.org.uid) return { ...cached, cache };
       if (prefer === employee.orgUid) return { outcome: 'hit', org: this.toEmployeeResolution(employee), cache };
       return prefer === cached.org.uid ? { ...cached, cache } : { outcome: 'ambiguous', cache };
@@ -149,20 +154,33 @@ export class OrgSlugResolverService {
   }
 
   /**
-   * The all employee view company whose slug is `slug`, for the uniqueness check against a readable company; null when the flag is
-   * off, the caller is not an employee, or the lookup cannot answer. Fail-soft on purpose: it only adds a possible collision, so a
-   * failed lookup leaves the readable company's answer standing rather than failing an admin's page.
+   * The all employee view company whose slug is `slug`, for the uniqueness check against a readable company. `employee` is null when
+   * the flag is off, the caller is not an employee, or the lookup cannot answer; `failed` says it could not answer (an error or the
+   * {@link ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS} budget, since this rides a page-blocking guard). Fail-soft on purpose: it only adds a
+   * possible collision, so a failed lookup leaves the readable company's answer standing rather than failing an admin's page, except
+   * where the caller's own selection could be the company that could not be checked.
    */
-  private async employeeCandidateForSlug(req: Request, slug: string): Promise<OrgLensEmployeeViewGrant | null> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) return null;
+  private async employeeCandidateForSlug(req: Request, slug: string): Promise<{ employee: OrgLensEmployeeViewGrant | null; failed: boolean }> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) return { employee: null, failed: false };
+    let timer: NodeJS.Timeout | undefined;
     try {
-      const verdict = await this.employeeView.resolveReduced(req);
-      return verdict.eligible && verdict.org.orgSlug === slug ? verdict.org : null;
+      const verdict = await Promise.race([
+        this.employeeView.resolveReduced(req),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Employee-view slug check exceeded ${ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}ms budget`)),
+            ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS
+          );
+        }),
+      ]);
+      return { employee: verdict.eligible && verdict.org.orgSlug === slug ? verdict.org : null, failed: false };
     } catch (error) {
       logger.warning(req, 'resolve_employee_view_org', 'Could not check the employee-view company against a readable slug; keeping the readable answer', {
         err: error,
       });
-      return null;
+      return { employee: null, failed: true };
+    } finally {
+      clearTimeout(timer);
     }
   }
 

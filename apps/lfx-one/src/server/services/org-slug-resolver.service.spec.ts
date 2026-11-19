@@ -40,6 +40,8 @@ vi.mock('./org-cla-only-orgs.service', () => ({
   },
 }));
 
+const { ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS } = await import('@lfx-one/shared/constants');
+
 const req = { path: '/api/orgs/resolve/x' } as Request;
 const UID_A = '0014100000MgaAAAAA';
 const UID_B = '0014100000MgbBBBBB';
@@ -375,6 +377,35 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
 
       resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
       await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
+    });
+
+    it('does not switch the caller away from a selection query-service does not show when the employee check fails', async () => {
+      resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+      // prefer = B: not readable (the lookup by uid finds nothing), so it may be the employee company that could not be checked.
+      proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }])).mockResolvedValueOnce(page([]));
+
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_B)).resolves.toMatchObject({ outcome: 'ambiguous' });
+    });
+
+    it('keeps the readable company on a failed check when the caller\u2019s selection is itself readable', async () => {
+      resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+      proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }])).mockResolvedValueOnce(page([{ uid: UID_C, slug: 'other-slug' }]));
+
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_C)).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
+    });
+
+    it('does not wait on a hung employee check: it gives up after the slug lookup budget and keeps the readable company', async () => {
+      vi.useFakeTimers();
+      try {
+        resolveEmployeeView.mockReturnValue(new Promise(() => undefined));
+
+        const pending = new OrgSlugResolverService().resolveSegment(req, 'acme-inc');
+        await vi.advanceTimersByTimeAsync(ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS + 1);
+
+        await expect(pending).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('does not look at the employee view at all with the flag off', async () => {
