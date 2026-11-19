@@ -1655,6 +1655,45 @@ describe('UserService.enrichPastMeetingsWithUserAttendance', () => {
   });
 });
 
+describe('UserService.attachPastMeetingArtifacts', () => {
+  const req = {} as unknown as Request;
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+  });
+
+  it('flags project feed rows by meeting_and_occurrence_id, not by their past meeting uid', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'v1_past_meeting_recording') {
+        return queryPage([
+          { meeting_and_occurrence_id: 'm1:1', sessions: [{ uuid: 's', start_time: yesterday, total_size: 1, share_url: 'https://zoom.example/rec/1' }] },
+        ]);
+      }
+      if (params?.type === 'v1_past_meeting_summary')
+        return queryPage([{ id: 'summary-1', meeting_and_occurrence_id: 'm1:1', content: 'Notes', approved: true }]);
+      return queryPage([]);
+    });
+    const rows = [
+      { id: 'past-uid-1', meeting_and_occurrence_id: 'm1:1', start_time: yesterday },
+      { id: 'past-uid-2', meeting_and_occurrence_id: 'm2:1', start_time: yesterday },
+    ] as unknown as PastMeeting[];
+
+    await new UserService().attachPastMeetingArtifacts(req, rows);
+
+    expect(rows.map((m) => [m.has_recording, m.recording_share_url, m.has_ai_summary])).toEqual([
+      [true, 'https://zoom.example/rec/1', true],
+      [false, undefined, false],
+    ]);
+  });
+
+  it('makes no request for rows without an occurrence id', async () => {
+    await new UserService().attachPastMeetingArtifacts(req, [{ id: 'past-uid-1' } as unknown as PastMeeting]);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
 describe('UserService.getUserPastMeetings artifact flags', () => {
   const req = {} as unknown as Request;
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

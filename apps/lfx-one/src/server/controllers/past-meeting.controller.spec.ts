@@ -6,8 +6,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const PAST_MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock, enrichAttendanceMock, getEffectiveEmailMock } = vi.hoisted(() => ({
+const {
+  meetingSvc,
+  reconciliationSvc,
+  addAccessToResourceMock,
+  validateUidParameterMock,
+  enrichAttendanceMock,
+  getEffectiveEmailMock,
+  attachArtifactsMock,
+  attachAttendanceSummariesMock,
+} = vi.hoisted(() => ({
   enrichAttendanceMock: vi.fn(),
+  attachArtifactsMock: vi.fn(),
+  attachAttendanceSummariesMock: vi.fn(),
   getEffectiveEmailMock: vi.fn<() => string | null>(() => null),
   meetingSvc: {
     getMeetings: vi.fn(),
@@ -40,6 +51,7 @@ vi.mock('../helpers/meeting.helper', () => ({
   enrichMeetingsWithCreatedBy: vi.fn(async (_req: unknown, meetings: unknown[]) => meetings),
   stripHostKey: vi.fn(),
 }));
+vi.mock('../helpers/meeting-attendance.helper', () => ({ attachPastMeetingAttendanceSummaries: attachAttendanceSummariesMock }));
 vi.mock('../services/meeting.service', () => ({
   MeetingService: vi.fn(function () {
     return meetingSvc;
@@ -57,7 +69,7 @@ vi.mock('../services/access-check.service', () => ({
 }));
 vi.mock('../services/user.service', () => ({
   UserService: vi.fn(function () {
-    return { enrichPastMeetingsWithUserAttendance: enrichAttendanceMock };
+    return { enrichPastMeetingsWithUserAttendance: enrichAttendanceMock, attachPastMeetingArtifacts: attachArtifactsMock };
   }),
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: getEffectiveEmailMock }));
@@ -205,6 +217,49 @@ describe('PastMeetingController.getPastMeetings — viewer attendance enrichment
     await controller.getPastMeetings(buildListReq(true, { include_viewer_attendance: 'true', name: 'weekly' }), buildRes(), vi.fn());
 
     expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { name: 'weekly' }, 'v1_past_meeting');
+  });
+});
+
+describe('PastMeetingController.getPastMeetings — meetings home include', () => {
+  let controller: PastMeetingController;
+  const meetings = [buildPastMeeting()];
+  const withSummary = [{ ...meetings[0], attendance_summary: { invited: 4, attended: 3 } }];
+  const listReq = (query: Record<string, string>): any => ({ ...buildReq(true), query });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PastMeetingController();
+    meetingSvc.getMeetings.mockResolvedValue({ data: meetings, page_token: 'next' });
+    attachArtifactsMock.mockResolvedValue(undefined);
+    attachAttendanceSummariesMock.mockResolvedValue(withSummary);
+  });
+
+  it('adds artifacts and organizer attendance when both are included, without forwarding include upstream', async () => {
+    const res = buildRes();
+
+    await controller.getPastMeetings(listReq({ include: 'artifacts,attendance', name: 'weekly' }), res, vi.fn());
+
+    expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { name: 'weekly' }, 'v1_past_meeting');
+    expect(attachArtifactsMock).toHaveBeenCalledWith(expect.anything(), meetings);
+    expect(attachAttendanceSummariesMock).toHaveBeenCalledWith(expect.anything(), meetings);
+    expect(res.json).toHaveBeenCalledWith({ data: withSummary, page_token: 'next' });
+  });
+
+  it('runs neither lookup without include', async () => {
+    const res = buildRes();
+
+    await controller.getPastMeetings(listReq({}), res, vi.fn());
+
+    expect(attachArtifactsMock).not.toHaveBeenCalled();
+    expect(attachAttendanceSummariesMock).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ data: meetings, page_token: 'next' });
+  });
+
+  it('ignores unknown include values', async () => {
+    await controller.getPastMeetings(listReq({ include: 'everything' }), buildRes(), vi.fn());
+
+    expect(attachArtifactsMock).not.toHaveBeenCalled();
+    expect(attachAttendanceSummariesMock).not.toHaveBeenCalled();
   });
 });
 
