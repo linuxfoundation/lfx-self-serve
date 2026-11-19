@@ -58,6 +58,7 @@ export class SocialListeningService {
   public constructor() {
     // A same-lens foundation switch keeps the page mounted without rerunning the guard, so a group member's
     // grant is re-probed here for the new foundation; switchMap drops an answer for a foundation already left.
+    // A denial keeps the previous grant: it only applies to its own foundation, and keeping it lets later switches re-probe.
     toObservable(this.projectContextService.selectedFoundation)
       .pipe(
         switchMap((foundation) => {
@@ -66,7 +67,9 @@ export class SocialListeningService {
         })
       )
       .subscribe((access) => {
-        this.groupGrant.set(access.canView && access.foundation ? { foundation: access.foundation, foundationSfid: access.foundationSfid ?? null } : null);
+        if (access.canView && access.foundation) {
+          this.groupGrant.set({ foundation: access.foundation, foundationSfid: access.foundationSfid ?? null });
+        }
       });
   }
 

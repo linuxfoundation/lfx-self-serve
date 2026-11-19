@@ -13,6 +13,7 @@ import { SocialListeningService } from './social-listening.service';
 
 const foundationA: ProjectContext = { uid: 'a-uid', name: 'A', slug: 'a' };
 const foundationB: ProjectContext = { uid: 'b-uid', name: 'B', slug: 'b' };
+const foundationC: ProjectContext = { uid: 'c-uid', name: 'C', slug: 'c' };
 
 describe('SocialListeningService group grant', () => {
   const selectedFoundation = signal<ProjectContext | null>(foundationA);
@@ -56,6 +57,23 @@ describe('SocialListeningService group grant', () => {
 
     expect(service.groupGrant()?.foundation.uid).toBe('a-uid');
     expect(service.foundationSfid()).toBe('a-sfid');
+  });
+
+  it('keeps probing after a denied foundation, so a later opted-in foundation still gets its grant', () => {
+    const getAccess = vi
+      .spyOn(service, 'getAccess')
+      .mockReturnValueOnce(of({ canView: false, reason: 'none' }))
+      .mockReturnValueOnce(of({ canView: true, reason: 'group-member', foundation: foundationC, foundationSfid: 'c-sfid' }));
+
+    selectedFoundation.set(foundationB);
+    TestBed.tick();
+    expect(service.foundationSfid()).toBeNull();
+
+    selectedFoundation.set(foundationC);
+    TestBed.tick();
+
+    expect(getAccess).toHaveBeenLastCalledWith('c');
+    expect(service.foundationSfid()).toBe('c-sfid');
   });
 
   it('does not probe for a user without a group grant', () => {
