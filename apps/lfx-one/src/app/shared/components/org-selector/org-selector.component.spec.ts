@@ -5,7 +5,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
-import { Account, DisplayOrgItem, OrgItem, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import { Account, DisplayOrgItem, OrgItem, OrgRelatedCompanyRow, OrgRollUpFamily, OrgRollUpSetOrg, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
@@ -88,6 +88,7 @@ describe('OrgSelectorComponent.selectItem', () => {
             selectedRollUpFamily: signal(null),
             isRollUp: signal(false),
             rollUpOrganizationCount: signal(0),
+            relatedCompanies: signal([]),
             selectRollUp: vi.fn(() => false),
           },
         },
@@ -319,6 +320,7 @@ describe('OrgSelectorComponent navbar card', () => {
             selectedRollUpFamily: signal(null),
             isRollUp: signal(false),
             rollUpOrganizationCount: signal(0),
+            relatedCompanies: signal([]),
             selectRollUp: vi.fn(() => false),
           },
         },
@@ -471,6 +473,8 @@ describe('OrgSelectorComponent family roll-ups', () => {
     listIncomplete(): boolean;
     rollUpTriggerSubtitle(): string;
     selectRollUp(rootUid: string): void;
+    relatedRows(): OrgRelatedCompanyRow[];
+    displayedRows(): OrgSelectorRow[];
   }
 
   const selectRollUpSpy = vi.fn();
@@ -496,6 +500,9 @@ describe('OrgSelectorComponent family roll-ups', () => {
     familiesUnsettled?: boolean;
     /** The deferred CLA-only rows are still on their way. */
     claOnlyPending?: boolean;
+    staffSearch?: string;
+    related?: OrgRollUpSetOrg[];
+    canSelectFor?: boolean;
   }): Promise<RollUpView> => {
     selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
     navigateSpy.mockReset();
@@ -529,6 +536,8 @@ describe('OrgSelectorComponent family roll-ups', () => {
             selectedRollUpFamily: signal(opts.families.find((family) => family.rootUid === selectedRootUid) ?? null),
             isRollUp: signal(selectedRootUid !== null),
             rollUpOrganizationCount: signal(opts.count ?? 0),
+            relatedCompanies: signal(opts.related ?? []),
+            canSelectRollUpFor: vi.fn(() => opts.canSelectFor ?? false),
             selectRollUp: selectRollUpSpy,
           },
         },
@@ -541,7 +550,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
             loaded: signal(true),
             hasMore: signal(false),
             upstreamFailed: signal(false),
-            searchTerm: () => signal(''),
+            searchTerm: () => signal(opts.staffSearch ?? ''),
             setSearchTerm: vi.fn(),
             resetAndReload: vi.fn(),
             loadNextPage: vi.fn(),
@@ -550,7 +559,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
         {
           provide: OrgRoleGrantsService,
           useValue: {
-            isStaff: signal(false),
+            isStaff: signal(opts.staffSearch !== undefined),
             writerSet: signal(new Set<string>()),
             auditorSet: signal(new Set<string>()),
             inheritedWriterSet: signal(new Set<string>()),
@@ -682,6 +691,101 @@ describe('OrgSelectorComponent family roll-ups', () => {
   it('agrees with the noun at one company', async () => {
     const view = await create({ families: [], selectedRootUid: UID_A, count: 1 });
     expect(view.rollUpTriggerSubtitle()).toBe('1 company');
+  });
+
+  describe('roll-ups offered by a staff search (#5942)', () => {
+    const charlieSub: OrgItem = { uid: UID_D, accountId: UID_D, name: 'Charlie Labs', logoUrl: null, familyRootUid: UID_C, familyRootName: 'Charlie' };
+    const charlieTop: OrgItem = { uid: UID_C, accountId: UID_C, name: 'Charlie', logoUrl: null, familyRootUid: UID_C, familyRootName: 'Charlie' };
+    const solo: OrgItem = { uid: 'solo', accountId: 'solo', name: 'Charlie Solo', logoUrl: null };
+
+    it('offers one roll-up per family among the matches, and none for a standalone match', async () => {
+      const view = await create({ families: [], staffSearch: 'charlie', items: [charlieSub, solo, charlieTop] });
+
+      expect(view.rollUpRows()).toEqual([
+        { rootUid: UID_C, name: 'All Charlie Companies', subtitle: 'Combined view of related companies', organizationCount: 0, isSelected: false },
+      ]);
+      expect((await create({ families: [], staffSearch: 'charlie', items: [solo] })).showRollUpRow()).toBe(false);
+    });
+
+    it('does not repeat a roll-up the caller is already offered', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: 'charlie', items: [charlieSub] });
+
+      expect(view.rollUpRows().map((row) => row.rootUid)).toEqual([UID_C]);
+      expect(view.rollUpRows()[0].organizationCount).toBe(2);
+    });
+
+    it('offers nothing before a search runs', async () => {
+      const view = await create({ families: [], staffSearch: '', items: [charlieSub] });
+
+      expect(view.showRollUpRow()).toBe(false);
+    });
+
+    it('admits a picked search roll-up while its family is fetched, labelled with the family name', async () => {
+      const view = await create({ families: [], staffSearch: 'charlie', items: [charlieSub] });
+
+      view.selectRollUp(UID_C);
+
+      expect(selectRollUpSpy).toHaveBeenCalledWith(UID_C, { admitWhilePending: true, name: 'Charlie' });
+      expect(rollUpHomeSpy).toHaveBeenCalledWith(UID_C);
+    });
+
+    it('selects an already-offered family the usual way', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: 'charlie', items: [charlieSub], canSelectFor: true });
+
+      view.selectRollUp(UID_C);
+
+      expect(selectRollUpSpy).toHaveBeenCalledWith(UID_C);
+    });
+  });
+
+  describe('related companies of the selected family (#5942)', () => {
+    const related: OrgRollUpSetOrg[] = [
+      { uid: UID_C, accountId: UID_C, name: 'Charlie', logoUrl: null },
+      { uid: UID_D, accountId: UID_D, name: 'Charlie Labs', logoUrl: 'https://logo.example/labs.png' },
+    ];
+    const selectedD: Account = { accountId: UID_D, accountName: 'Charlie Labs', membershipTier: '', uid: UID_D };
+    const rowD: OrgItem = { uid: UID_D, accountId: UID_D, name: 'Charlie Labs', logoUrl: null, slug: 'charlie-labs', isAssigned: false };
+
+    it('lists the family with the selection marked', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD });
+
+      expect(view.relatedRows().map((row) => [row.org.uid, row.isSelected])).toEqual([
+        [UID_C, false],
+        [UID_D, true],
+      ]);
+    });
+
+    it('does not list a company twice when the organization rows already hold it', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD, items: [rowD, rowA] });
+
+      expect(view.displayedRows().map((row) => row.display.item.uid)).toEqual([UID_A]);
+    });
+
+    it('steps aside during a search, which lists its own matches', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: 'charlie', related, selected: selectedD, items: [rowD] });
+
+      expect(view.relatedRows()).toEqual([]);
+      expect(view.displayedRows().map((row) => row.display.item.uid)).toEqual([UID_D]);
+    });
+
+    it('switches to a picked company, carrying its organization row when the list has one', async () => {
+      const view = await create({ families: [charlieFamily], staffSearch: '', related, selected: selectedD, items: [rowD] });
+      const activate = (uid: string): boolean => {
+        const el = document.createElement('button');
+        el.dataset['optionKind'] = 'related';
+        el.dataset['orgUid'] = uid;
+        return view.activateOption(el);
+      };
+
+      expect(activate(UID_C)).toBe(true);
+      expect(setAccountSpy).toHaveBeenLastCalledWith(expect.objectContaining({ uid: UID_C, accountName: 'Charlie', slug: null }));
+      expect(navigateSpy).toHaveBeenCalledWith('switch');
+
+      setAccountSpy.mockClear();
+      expect(activate(UID_D)).toBe(true);
+      expect(setAccountSpy).not.toHaveBeenCalled();
+      expect(activate('nope')).toBe(false);
+    });
   });
 
   /**

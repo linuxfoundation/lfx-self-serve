@@ -14,7 +14,7 @@ import {
   ORG_NOT_FOUND_PATH,
   ROLLUP_MIN_ORGANIZATIONS,
 } from '@lfx-one/shared/constants';
-import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgRollUpFamily, OrgRollUpSetOrg } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, normalizeOrgSegment, orgRollUpAccount, orgRollUpRootUid, orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { filter, firstValueFrom, from, Subscription, switchMap, take } from 'rxjs';
@@ -163,6 +163,8 @@ export class AccountContextService {
 
   /** How many organizations the selected roll-up combines — 0 while its family is not known (yet). */
   public readonly rollUpOrganizationCount: Signal<number> = computed(() => this.selectedRollUpFamily()?.orgUids.length ?? 0);
+
+  public readonly relatedCompanies: Signal<OrgRollUpSetOrg[]> = computed(() => this.initRelatedCompanies());
 
   /**
    * True when the roll-up is the selection and the caller has stopped qualifying for it — the one
@@ -458,8 +460,7 @@ export class AccountContextService {
    * No-op when the caller holds fewer than `ROLLUP_MIN_ORGANIZATIONS` in that family, so a stale
    * cookie or a hand-typed address cannot put a caller into a mode built for several.
    */
-  public selectRollUp(rootUid: string, options?: { admitWhilePending?: boolean }): boolean {
-    // `admitWhilePending` is for an ADDRESS — a `/org/family-…` deep link the guard is activating.
+  public selectRollUp(rootUid: string, options?: { admitWhilePending?: boolean; name?: string | null }): boolean {
     // The count is a lower bound while the grants are unsettled, so refusing then would send a
     // genuine conglomerate admin to `/org/not-found`: a dead end later grants cannot repair,
     // because reconciliation stops once the roll-up is deselected and no default may leave
@@ -478,7 +479,7 @@ export class AccountContextService {
     if (!admissible) {
       return false;
     }
-    this.applyRollUpSelection(rootUid);
+    this.applyRollUpSelection(rootUid, options?.name);
     return true;
   }
 
@@ -968,9 +969,9 @@ export class AccountContextService {
   }
 
   /** Writes the family roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */
-  private applyRollUpSelection(rootUid: string): void {
+  private applyRollUpSelection(rootUid: string, name?: string | null): void {
     const family = this.rollUpFamilies().find((candidate) => candidate.rootUid === rootUid);
-    const account = orgRollUpAccount(rootUid, family?.name);
+    const account = orgRollUpAccount(rootUid, family?.name ?? name);
     this.selectedAccount.set(account);
     this.persistToStorage(account);
     this.addressedUid.set(account.uid ?? null);
@@ -985,6 +986,23 @@ export class AccountContextService {
       return;
     }
     this.selectedAccount.set({ ...current, accountName: named.accountName });
+  }
+
+  private initRelatedCompanies(): OrgRollUpSetOrg[] {
+    if (!this.orgRoleGrantsService.isStaff()) {
+      return [];
+    }
+    const rootUid = this.selectedRollUpRootUid();
+    const selectedUid = this.selectedAccount().uid;
+    const family = this.eligibleRollUpFamilies().find((candidate) =>
+      rootUid ? candidate.rootUid === rootUid : !!selectedUid && candidate.orgUids.includes(selectedUid)
+    );
+    if (!family) {
+      return [];
+    }
+    const orgsByUid = this.rollUpFamiliesService.orgsByUid();
+    const orgs = family.orgUids.map((uid) => orgsByUid.get(uid)).filter((org): org is OrgRollUpSetOrg => !!org);
+    return [...orgs.filter((org) => org.uid === family.rootUid), ...orgs.filter((org) => org.uid !== family.rootUid)];
   }
 
   private initStaffRollUpAnchor(): string | null {

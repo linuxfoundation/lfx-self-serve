@@ -30,7 +30,17 @@ import {
   ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
   ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
 } from '@lfx-one/shared/constants';
-import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgRollUpFamily, OrgRollUpSelectorRow, OrgSelectorRow } from '@lfx-one/shared/interfaces';
+import {
+  Account,
+  ContextSelectorVariant,
+  DisplayOrgItem,
+  OrgItem,
+  OrgRelatedCompanyRow,
+  OrgRollUpFamily,
+  OrgRollUpSelectorRow,
+  OrgRollUpSetOrg,
+  OrgSelectorRow,
+} from '@lfx-one/shared/interfaces';
 import { orgRollUpAccount, resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { ElementIdService } from '@services/element-id.service';
@@ -115,6 +125,8 @@ export class OrgSelectorComponent {
   protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Company');
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
 
+  private readonly searchRollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => this.initSearchRollUpRows());
+
   /**
    * The family roll-up entries (#4132) — one per Salesforce family the caller holds two or more
    * organizations in, so a caller whose grants reach two families gets two. Pinned above the
@@ -124,33 +136,7 @@ export class OrgSelectorComponent {
    * Not grants: they carry no persona badge and no `(Original)` / `(Inherited)` suffix, and they
    * leave the labelling on the real rows untouched.
    */
-  protected readonly rollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => {
-    const selectedRootUid = this.accountContextService.selectedRollUpRootUid();
-    const rows = this.accountContextService.eligibleRollUpFamilies().map((family: OrgRollUpFamily) => ({
-      rootUid: family.rootUid,
-      name: orgRollUpAccount(family.rootUid, family.name).accountName,
-      subtitle: `Combined view of related companies · ${organizationCountLabel(family.orgUids.length)}`,
-      organizationCount: family.orgUids.length,
-      isSelected: family.rootUid === selectedRootUid,
-    }));
-    // The selected roll-up keeps its row even while its family is not offered: the trigger already
-    // shows a cookie-restored roll-up before the grants and families settle (and again while they
-    // reload after Retry), and in the conglomerate case the count sits at 1 through that window.
-    // Without the row the panel offered only organizations, so picking one silently left roll-up
-    // mode (#4415, Cursor).
-    if (selectedRootUid && !rows.some((row) => row.rootUid === selectedRootUid)) {
-      const family = this.accountContextService.selectedRollUpFamily();
-      const count = family?.orgUids.length ?? 0;
-      rows.unshift({
-        rootUid: selectedRootUid,
-        name: orgRollUpAccount(selectedRootUid, family?.name ?? null).accountName,
-        subtitle: count > 0 ? `Combined view of related companies · ${organizationCountLabel(count)}` : 'Combined view of related companies',
-        organizationCount: count,
-        isSelected: true,
-      });
-    }
-    return rows;
-  });
+  protected readonly rollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => this.initRollUpRows());
   protected readonly showRollUpRow: Signal<boolean> = computed(() => this.rollUpRows().length > 0);
   protected readonly isRollUpSelected: Signal<boolean> = this.accountContextService.isRollUp;
   /**
@@ -337,6 +323,8 @@ export class OrgSelectorComponent {
     () => this.isStaff() && this.orgNavigationService.searchTerm()().trim().length >= ORG_CATALOGUE_SEARCH_MIN_CHARS
   );
 
+  protected readonly relatedRows: Signal<OrgRelatedCompanyRow[]> = computed(() => this.initRelatedRows());
+
   /**
    * Rows in BFF order (assigned first, then discovered), with a section heading attached to the first
    * row of each group. Sectioning turns on only during an active search, so a non-LF-team caller, an
@@ -344,27 +332,7 @@ export class OrgSelectorComponent {
    * keep today's single flat list. Attaching the heading to a row rather than rendering it from a
    * group count is what guarantees a heading can never appear above an empty group.
    */
-  protected readonly displayedRows: Signal<OrgSelectorRow[]> = computed(() => {
-    const rows = this.displayedItems();
-    const searchActive = this.searchActive();
-    const sectioned = searchActive && rows.some((row) => row.item.isAssigned === false);
-    if (!sectioned) {
-      return rows.map((display) => this.toRow(display, null, searchActive));
-    }
-
-    let assignedSeen = false;
-    let discoveredSeen = false;
-    return rows.map((display) => {
-      if (display.item.isAssigned === false) {
-        const heading = discoveredSeen ? null : 'All companies';
-        discoveredSeen = true;
-        return this.toRow(display, heading, searchActive);
-      }
-      const heading = assignedSeen ? null : 'Your companies';
-      assignedSeen = true;
-      return this.toRow(display, heading, searchActive);
-    });
-  });
+  protected readonly displayedRows: Signal<OrgSelectorRow[]> = computed(() => this.initDisplayedRows());
 
   protected readonly autoLoadTriggerIndex: Signal<number> = computed(() => Math.max(0, this.displayedItems().length - 8));
 
@@ -428,6 +396,12 @@ export class OrgSelectorComponent {
       this.selectRollUp(rootUid);
       return true;
     }
+    if (active.dataset['optionKind'] === 'related') {
+      const related = this.relatedRows().find((candidate) => candidate.org.uid === active.dataset['orgUid']);
+      if (!related) return false;
+      this.selectRelated(related.org);
+      return true;
+    }
     const uid = active.dataset['orgUid'];
     const row = this.displayedRows().find((candidate) => candidate.display.item.uid === uid);
     if (!row) return false;
@@ -453,7 +427,14 @@ export class OrgSelectorComponent {
       this.popoverRef()?.hide();
       return;
     }
-    if (!this.accountContextService.selectRollUp(rootUid)) {
+    const searchMatch =
+      this.searchRollUpRows().some((row) => row.rootUid === rootUid) && !this.accountContextService.canSelectRollUpFor(rootUid)
+        ? this.items().find((item) => item.familyRootUid === rootUid)
+        : undefined;
+    const admitted = searchMatch
+      ? this.accountContextService.selectRollUp(rootUid, { admitWhilePending: true, name: searchMatch.familyRootName ?? null })
+      : this.accountContextService.selectRollUp(rootUid);
+    if (!admitted) {
       return;
     }
     // #4133: a new roll-up pick lands on the family's Memberships page, not the page it was made from. Unlike
@@ -465,6 +446,11 @@ export class OrgSelectorComponent {
     // it a roll-up picked from the Me or Project lens stays an invisible selection change.
     this.rollUpSelected.emit();
     this.popoverRef()?.hide();
+  }
+
+  protected selectRelated(org: OrgRollUpSetOrg): void {
+    const listed = this.items().find((item) => item.uid === org.uid);
+    this.selectItem(listed ?? { uid: org.uid, accountId: org.accountId, name: org.name, logoUrl: org.logoUrl, isAssigned: false });
   }
 
   protected selectItem(item: OrgItem): void {
@@ -733,6 +719,85 @@ export class OrgSelectorComponent {
   private closeAndRestoreFocus(): void {
     this.popoverRef()?.hide();
     this.triggerRef()?.nativeElement.focus();
+  }
+
+  private initRollUpRows(): OrgRollUpSelectorRow[] {
+    const selectedRootUid = this.accountContextService.selectedRollUpRootUid();
+    const rows = this.accountContextService.eligibleRollUpFamilies().map((family: OrgRollUpFamily) => ({
+      rootUid: family.rootUid,
+      name: orgRollUpAccount(family.rootUid, family.name).accountName,
+      subtitle: `Combined view of related companies · ${organizationCountLabel(family.orgUids.length)}`,
+      organizationCount: family.orgUids.length,
+      isSelected: family.rootUid === selectedRootUid,
+    }));
+    // The selected roll-up keeps its row even while its family is not offered: the trigger already
+    // shows a cookie-restored roll-up before the grants and families settle (and again while they
+    // reload after Retry), and in the conglomerate case the count sits at 1 through that window.
+    // Without the row the panel offered only organizations, so picking one silently left roll-up
+    // mode (#4415, Cursor).
+    if (selectedRootUid && !rows.some((row) => row.rootUid === selectedRootUid)) {
+      const family = this.accountContextService.selectedRollUpFamily();
+      const count = family?.orgUids.length ?? 0;
+      rows.unshift({
+        rootUid: selectedRootUid,
+        name: orgRollUpAccount(selectedRootUid, family?.name ?? null).accountName,
+        subtitle: count > 0 ? `Combined view of related companies · ${organizationCountLabel(count)}` : 'Combined view of related companies',
+        organizationCount: count,
+        isSelected: true,
+      });
+    }
+    for (const row of this.searchRollUpRows()) {
+      if (!rows.some((offered) => offered.rootUid === row.rootUid)) rows.push(row);
+    }
+    return rows;
+  }
+
+  private initSearchRollUpRows(): OrgRollUpSelectorRow[] {
+    if (!this.searchActive()) {
+      return [];
+    }
+    const selectedRootUid = this.accountContextService.selectedRollUpRootUid();
+    const rows: OrgRollUpSelectorRow[] = [];
+    for (const item of this.items()) {
+      if (!item.familyRootUid || rows.some((row) => row.rootUid === item.familyRootUid)) continue;
+      rows.push({
+        rootUid: item.familyRootUid,
+        name: orgRollUpAccount(item.familyRootUid, item.familyRootName).accountName,
+        subtitle: 'Combined view of related companies',
+        organizationCount: 0,
+        isSelected: item.familyRootUid === selectedRootUid,
+      });
+    }
+    return rows;
+  }
+
+  private initRelatedRows(): OrgRelatedCompanyRow[] {
+    if (this.searchActive()) return [];
+    const selectedUid = this.selectedAccountUid();
+    return this.accountContextService.relatedCompanies().map((org) => ({ org, isSelected: org.uid === selectedUid }));
+  }
+
+  private initDisplayedRows(): OrgSelectorRow[] {
+    const relatedUids = new Set(this.relatedRows().map((row) => row.org.uid));
+    const rows = relatedUids.size === 0 ? this.displayedItems() : this.displayedItems().filter((display) => !relatedUids.has(display.item.uid));
+    const searchActive = this.searchActive();
+    const sectioned = searchActive && rows.some((row) => row.item.isAssigned === false);
+    if (!sectioned) {
+      return rows.map((display) => this.toRow(display, null, searchActive));
+    }
+
+    let assignedSeen = false;
+    let discoveredSeen = false;
+    return rows.map((display) => {
+      if (display.item.isAssigned === false) {
+        const heading = discoveredSeen ? null : 'All companies';
+        discoveredSeen = true;
+        return this.toRow(display, heading, searchActive);
+      }
+      const heading = assignedSeen ? null : 'Your companies';
+      assignedSeen = true;
+      return this.toRow(display, heading, searchActive);
+    });
   }
 
   /**
