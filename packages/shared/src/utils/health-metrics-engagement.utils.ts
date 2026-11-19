@@ -354,8 +354,8 @@ export function buildHealthMetricsEngagementOrgRowView(row: HealthMetricsEngagem
     lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : HEALTH_METRICS_TABLE_DASH,
     sortValues: {
       company: row.accountName,
-      // A non-member ranks lowest; a member whose tier is blank ranks as an unnamed tier.
-      membership: row.isMember ? (healthMetricsTierSortRank(tierName) ?? 1) : 0,
+      // A non-member ranks lowest; a member with a blank tier shows "—", so it is empty and sorts last.
+      membership: row.isMember ? healthMetricsTierSortRank(tierName) : 0,
       attended: share,
       reps: period?.avgReps ?? null,
       last: row.lastEngagedDate,

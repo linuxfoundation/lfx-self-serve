@@ -808,6 +808,16 @@ describe('buildHealthMetricsEngagementRepRowView', () => {
     });
   });
 
+  // Attended sorts on the share, so a never-attended seat is the lowest rated one, and its dashed date sorts last.
+  it('sorts a never-attended seat lowest on Attended, with no last attended date', () => {
+    expect(buildHealthMetricsEngagementRepRowView(base, 'COMPLETED_YEAR').sortValues).toEqual({
+      representative: 'Dana Fields',
+      group: 'Governing Board',
+      attended: 0,
+      last: null,
+    });
+  });
+
   it('reads an unresolved identity as such, with the company alone under it', () => {
     expect(buildHealthMetricsEngagementRepRowView({ ...base, identityUnresolved: true }, 'YTD')).toMatchObject({
       displayName: 'Unresolved identity',
@@ -1293,6 +1303,18 @@ describe('newsletter recipient rules', () => {
     const clickedBounce = recipient({ rank: 6, deliveryStatus: 'Failed', segment: 'failed', clicked: true });
     expect(countHealthMetricsEngagementRecipients([clickedBounce])).toEqual({ all: 1, opened: 0, clicked: 0, 'not-opened': 0, failed: 1 });
     expect(buildHealthMetricsEngagementRecipientRow(bounced, now).deliveryLabel).toBe('Failed');
+  });
+
+  it("sorts each column on what it shows, a failed delivery's dashed counts last", () => {
+    const bounced = recipient({ rank: 5, name: '  Recipient Echo ', deliveryStatus: 'Failed', segment: 'failed', opens: 4, clicks: 1 });
+    expect(buildHealthMetricsEngagementRecipientRow(bounced, now).sortValues).toEqual({
+      recipient: 'Recipient Echo',
+      delivery: 'Failed',
+      engagement: buildHealthMetricsEngagementRecipientRow(bounced, now).engagementLabel,
+      opens: null,
+      clicks: null,
+    });
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[0], now).sortValues).toMatchObject({ delivery: 'Delivered', opens: recipients[0].opens });
   });
 
   it('cuts by segment or click and searches name and organization, keeping the engagement order', () => {

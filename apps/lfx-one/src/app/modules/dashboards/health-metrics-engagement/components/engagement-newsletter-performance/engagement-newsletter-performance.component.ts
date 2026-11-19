@@ -115,11 +115,11 @@ export class EngagementNewsletterPerformanceComponent {
   protected readonly chart: Signal<HealthMetricsEngagementNewsletterChartView> = computed(() =>
     buildHealthMetricsEngagementNewsletterChart(this.points(), this.mode())
   );
-  // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
   /** The table's rows in the picked order; the chart keeps its own chronological order. */
   protected readonly rows: Signal<HealthMetricsEngagementNewsletterRowView[]> = computed(() =>
     sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue)
   );
+  // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
   protected readonly pageRows: Signal<HealthMetricsEngagementNewsletterRowView[]> = computed(() => {
     const rows = this.rows();
     const page = Math.min(this.page(), Math.max(0, Math.ceil(rows.length / this.size) - 1));

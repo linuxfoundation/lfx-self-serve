@@ -147,6 +147,25 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(names[1]).toContain('Acme Motors');
   });
 
+  it('marks the rank with the Meetings attended arrow and sorts the whole list from page 1 on a picked column', async () => {
+    const rows = [
+      nonMemberRow({ accountId: 'a-1', accountName: 'Acme Motors', periods: [{ range: 'YTD', meetingsAttended: 2, distinctPeople: 1, sortRank: 2 }] }),
+      nonMemberRow({ accountId: 'b-2', accountName: 'Vendor Corp', periods: [{ range: 'YTD', meetingsAttended: 9, distinctPeople: 4, sortRank: 1 }] }),
+    ];
+    await render(response({ rows, counts: periodCounts(2) }));
+    const header = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="engagement-non-member-participation-sort-${key}"]`);
+    const first = (): string => (fixture.nativeElement.querySelector('tbody tr') as HTMLElement).textContent ?? '';
+
+    expect(header('meetings').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+
+    fixture.componentInstance['page'].set(1);
+    (header('company').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['page']()).toBe(0);
+    expect(first()).toContain('Acme Motors');
+    expect(header('company').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+  });
+
   // Every row moves when the pill changes, so a reader left on page 8 would land on unrelated orgs.
   it('restarts paging when the period re-orders the table, without re-reading', async () => {
     const rows = Array.from({ length: 60 }, (_, index) =>

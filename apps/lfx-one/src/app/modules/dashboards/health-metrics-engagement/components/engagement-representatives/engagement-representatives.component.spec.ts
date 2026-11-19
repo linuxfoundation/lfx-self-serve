@@ -210,6 +210,42 @@ describe('EngagementRepresentativesComponent', () => {
     expect(query('ui-pagination-info')?.textContent?.trim()).toBe('Showing 1 to 10 of 23');
   });
 
+  it('opens on Attended, lowest first, and sorts the whole list from page 1 on a picked column, an empty date last', async () => {
+    const ytd = (attended: number, rank: number) => [
+      { range: 'YTD' as const, meetingsInvited: 6, meetingsAttended: attended, neverAttended: attended === 0, lapsed: false, sortRank: rank },
+    ];
+    const rows = [
+      repRow({ key: 'r-low', personName: 'Zara Low', lastAttendedDate: '2026-01-05', periods: ytd(1, 1) }),
+      ...Array.from({ length: 11 }, (_, index) =>
+        repRow({ key: `r-${index}`, personName: `Mid ${index}`, lastAttendedDate: '2026-03-01', periods: ytd(3, index + 2) })
+      ),
+      repRow({ key: 'r-top', personName: 'Abe Top', lastAttendedDate: null, periods: ytd(6, 20) }),
+    ];
+    await render(response({ rows, counts: counts(13, 0) }));
+    const keys = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid^="engagement-representatives-row-"]:not([data-testid$="-never"])')].map(
+        (row: Element) => row.getAttribute('data-testid') ?? ''
+      );
+    const header = (key: string): HTMLElement => query(`engagement-representatives-sort-${key}`) as HTMLElement;
+
+    expect(header('attended').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+    expect(keys()[0]).toBe('engagement-representatives-row-r-low');
+
+    fixture.componentInstance['page'].set(1);
+    (header('representative').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['page']()).toBe(0);
+    expect(keys()[0]).toBe('engagement-representatives-row-r-top');
+
+    (header('last').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    // Newest first, and the rep with no date at all goes to the very end of the list.
+    expect(header('last').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    fixture.componentInstance['page'].set(1);
+    fixture.detectChanges();
+    expect(keys().at(-1)).toBe('engagement-representatives-row-r-top');
+  });
+
   // The period pill projects the loaded rows, so switching it must not cost another request.
   it('re-projects the loaded rows when the period changes, without re-reading', async () => {
     await render();
