@@ -3,6 +3,7 @@
 
 import { ASSIGNED_COUNTRY_CODES } from './campaign.constants';
 import { lfxColors } from './colors.constants';
+import { HEALTH_METRICS_COUNTRY_NAME_EXTRAS } from './health-metrics-world-map.constants';
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type {
   HealthMetricsEventsAtAGlance,
@@ -351,8 +352,11 @@ export const HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES = 5;
 /** Outside the US counts every registration not from this country, as the design labels the metric. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_HOME_CODE = 'US';
 
-/** Codes that can key a country: every assigned ISO 3166-1 alpha-2 code, and XK for Kosovo, which the outlines draw. */
-export const HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES: ReadonlySet<string> = new Set([...ASSIGNED_COUNTRY_CODES, 'XK']);
+/** Codes that can key a country: every assigned ISO 3166-1 alpha-2 code, and the extra codes the map names, such as XK. */
+export const HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES: ReadonlySet<string> = new Set([
+  ...ASSIGNED_COUNTRY_CODES,
+  ...Object.keys(HEALTH_METRICS_COUNTRY_NAME_EXTRAS),
+]);
 
 /** The event dialog Snapshot's periods, as the design orders them. */
 export const HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS: readonly HealthMetricsEventsSnapshotPeriodOption[] = [
