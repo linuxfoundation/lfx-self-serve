@@ -18,6 +18,7 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES,
+  HEALTH_METRICS_EVENTS_SPEAKERS_INDIVIDUAL,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
@@ -30,6 +31,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql, healthMetricsTrimSql } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -45,9 +47,14 @@ import type {
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsForecastQuery,
+  HealthMetricsEventsGeography,
+  HealthMetricsEventsGeographyCountry,
+  HealthMetricsEventsGeographyPeriod,
+  HealthMetricsEventsGeographyQuery,
   HealthMetricsEventsOrganization,
   HealthMetricsEventsOrganizations,
   HealthMetricsEventsOrganizationsQuery,
+  HealthMetricsEventsOrganizationsSortKey,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsPastPeriod,
@@ -65,6 +72,7 @@ import type {
   HealthMetricsEventsSnapshotWeek,
   HealthMetricsEventsSpeakerProposals,
   HealthMetricsEventsSpeakerProposalsEvent,
+  HealthMetricsEventsSpeakerProposalSortKey,
   HealthMetricsEventsSpeakerProposalsQuery,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersOrganization,
@@ -72,14 +80,11 @@ import type {
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSpeakersStatusGroup,
-  HealthMetricsEventsGeography,
-  HealthMetricsEventsGeographyCountry,
-  HealthMetricsEventsGeographyPeriod,
-  HealthMetricsEventsGeographyQuery,
   HealthMetricsEventsSponsorship,
   HealthMetricsEventsSponsorshipPeriod,
   HealthMetricsEventsSponsorshipQuery,
   HealthMetricsL2Range,
+  HealthMetricsSqlSortColumn,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -302,6 +307,8 @@ interface SpeakerProposalPageRow extends Omit<SpeakerProposalRow, 'PERIOD'> {
   ACCOUNT_ID: string | null;
   TOTAL_RECORDS: number | null;
   IS_PAGE_ROW: boolean | null;
+  /** Keeps the page's order after the joins; the mapper does not read it. */
+  PAGE_POSITION: number | null;
 }
 
 /** An event with proposals in the period. */
@@ -794,6 +801,8 @@ export class HealthMetricsEventsService {
       binds.push(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[query.status].viewValue);
     }
     const matchClause = predicates.map((predicate) => `AND ${predicate}`).join(' ');
+    // A column the reader picked, over the whole period; with none, the most recent first. Only these expressions reach the SQL.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, speakerProposalSortColumns(), 'TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC');
 
     // The total is joined onto the page rather than read as `COUNT(*) OVER()`, so a page past the end still reports it.
     const sql = `
@@ -820,17 +829,18 @@ export class HealthMetricsEventsService {
         SELECT COUNT(*) AS total_records FROM matched
       ),
       page AS (
-        SELECT *, TRUE AS is_page_row
+        -- The row's place in the page's order, which the outer select keeps after the joins.
+        SELECT *, TRUE AS is_page_row, ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM matched
-        -- Day first, then key, as the recent proposals table sorts.
-        ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC
+        -- Day first, then key, as the recent proposals table sorts, unless the reader picked a column.
+        ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
       SELECT totals.*, page.*, NULLIF(TRIM(logos.logo_url), '') AS logo_url
       FROM totals
       LEFT JOIN page ON TRUE
       LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
-      ORDER BY TO_DATE(page.submission_date) DESC NULLS LAST, page.proposal_key ASC
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const [result, events] = await Promise.all([
@@ -860,7 +870,8 @@ export class HealthMetricsEventsService {
     // The suffix and column names come from constants, never from the request, so interpolating them is safe.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
     const active = ORGANIZATIONS_ACTIVITY_COLUMNS.map((column) => `${column}_${suffix} > 0`).join(' OR ');
-    const binds: string[] = [query.foundationSlug];
+    // The tier lookup's slug comes first in the text, then the scope's, then the search.
+    const binds: string[] = [query.foundationSlug, query.foundationSlug];
 
     const predicates: string[] = [];
     if (query.segment === 'members') predicates.push('is_member = TRUE');
@@ -874,9 +885,21 @@ export class HealthMetricsEventsService {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE, HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
 
+    // A column the reader picked, over every page; with none, the view's rank. Only these expressions reach the SQL.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, organizationSortColumns(), 'sort_rank ASC NULLS LAST, account_id ASC');
+
     // Totals are joined onto the page rather than read as `COUNT(*) OVER()`, so a page past the end still reports them.
+    // The tier joins before the cut, so Membership can sort every page.
     const sql = `
-      WITH scoped AS (
+      WITH tiers AS (
+        -- One row per company at the foundation's all-projects grain, as the Engagement read takes it; MAX only drops repeats.
+        SELECT account_id, MAX(NULLIF(TRIM(membership_tier), '')) AS membership_tier
+        FROM ${MEMBERSHIP_TIER_VIEW}
+        WHERE foundation_slug = ?
+          AND is_all_projects = TRUE
+        GROUP BY account_id
+      ),
+      scoped AS (
         SELECT
           account_id,
           account_name,
@@ -895,16 +918,17 @@ export class HealthMetricsEventsService {
           AND (${active})
       ),
       matched AS (
-        SELECT * FROM scoped ${matchClause}
+        SELECT * FROM (SELECT scoped.*, tiers.membership_tier FROM scoped LEFT JOIN tiers ON tiers.account_id = scoped.account_id) ${matchClause}
       ),
       totals AS (
         SELECT (SELECT COUNT(*) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
-        SELECT *, TRUE AS is_page_row
+        -- The row's place in the page's order, which the outer select keeps after the joins.
+        SELECT *, TRUE AS is_page_row, ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM matched
         -- account_id breaks any tie, and NULLS LAST pins placement against the session's null ordering.
-        ORDER BY sort_rank ASC NULLS LAST, account_id ASC
+        ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
       SELECT
@@ -916,7 +940,7 @@ export class HealthMetricsEventsService {
         -- The mapped logo first; the view's own is the fallback.
         COALESCE(NULLIF(TRIM(logos.logo_url), ''), NULLIF(TRIM(page.logo_url), '')) AS logo_url,
         page.is_member,
-        tiers.membership_tier,
+        page.membership_tier,
         page.registrations_count,
         page.sponsorship_revenue,
         page.proposals_count,
@@ -926,18 +950,8 @@ export class HealthMetricsEventsService {
       FROM totals
       LEFT JOIN page ON TRUE
       LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
-      -- One row per company at the foundation's all-projects grain, as the Engagement read takes it; MAX only drops repeats.
-      LEFT JOIN (
-        SELECT account_id, MAX(NULLIF(TRIM(membership_tier), '')) AS membership_tier
-        FROM ${MEMBERSHIP_TIER_VIEW}
-        WHERE foundation_slug = ?
-          AND is_all_projects = TRUE
-        GROUP BY account_id
-      ) tiers ON tiers.account_id = page.account_id
-      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC
+      ORDER BY page.page_position ASC NULLS LAST
     `;
-    // The tier lookup's slug comes last in the text, after the search.
-    binds.push(query.foundationSlug);
 
     const result = await executeSnowflakeViewRead<OrganizationRow>(this.snowflakeService, req, sql, binds, {
       view: ORGANIZATIONS_VIEW,
@@ -1589,6 +1603,44 @@ function mapOrganization(row: OrganizationRow): HealthMetricsEventsOrganization 
     proposals: toNullableNumber(row.PROPOSALS_COUNT),
     speakers: toNullableNumber(row.SPEAKERS_COUNT),
     events: toNullableNumber(row.EVENTS_COUNT),
+  };
+}
+
+/** The recent proposals table's columns as the server sorts them, each as its cell reads. Constants only, never request text. */
+function speakerProposalSortColumns(): Record<HealthMetricsEventsSpeakerProposalSortKey, HealthMetricsSqlSortColumn> {
+  const quote = (value: string): string => `'${value.replace(/'/g, "''")}'`;
+  const statusLabels = Object.values(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS)
+    .map((group) => `WHEN proposal_status_group = ${quote(group.viewValue)} THEN ${quote(group.label)}`)
+    .join(' ');
+  return {
+    // The speaker reads as the job title, or the session title without one.
+    speaker: { expression: `COALESCE(NULLIF(${healthMetricsTrimSql('job_title')}, ''), session_title)`, kind: 'text' },
+    company: {
+      expression: `CASE WHEN is_unaffiliated_proposal = TRUE THEN ${quote(HEALTH_METRICS_EVENTS_SPEAKERS_INDIVIDUAL)} ELSE account_name END`,
+      kind: 'text',
+    },
+    event: { expression: 'event_name', kind: 'text' },
+    submitted: { expression: 'TO_DATE(submission_date)', kind: 'date' },
+    status: { expression: `CASE ${statusLabels} ELSE COALESCE(submission_status_original, proposal_status_group) END`, kind: 'text' },
+  };
+}
+
+/** Companies at events' columns as the server sorts them, each as its cell reads. Constants only, never request text. */
+function organizationSortColumns(): Record<HealthMetricsEventsOrganizationsSortKey, HealthMetricsSqlSortColumn> {
+  return {
+    // A company with no name shows its account id, so it sorts by that.
+    company: { expression: 'COALESCE(account_name, account_id)', kind: 'text' },
+    // A non-member ranks lowest; a member with no tier, or a "Non-Member" one, reads "Member", an unnamed tier.
+    membership: {
+      expression: `CASE WHEN NOT COALESCE(is_member, FALSE) THEN 0 ELSE COALESCE(NULLIF(${healthMetricsTierRankSql('membership_tier')}, 0), 1) END`,
+      kind: 'number',
+    },
+    registrations: { expression: 'registrations_count', kind: 'number' },
+    // A zero sponsorship or proposal count reads "—", so it is empty.
+    sponsorship: { expression: 'NULLIF(sponsorship_revenue, 0)', kind: 'number' },
+    proposals: { expression: 'NULLIF(proposals_count, 0)', kind: 'number' },
+    speakers: { expression: 'speakers_count', kind: 'number' },
+    events: { expression: 'events_count', kind: 'number' },
   };
 }
 

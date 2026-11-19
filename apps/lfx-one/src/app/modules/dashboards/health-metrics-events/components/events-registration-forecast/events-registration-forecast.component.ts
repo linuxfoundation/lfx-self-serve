@@ -10,17 +10,27 @@ import { TableComponent } from '@components/table/table.component';
 import {
   getYearForRange,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
-  HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_FORECAST_DEFAULT_SORT,
+  HEALTH_METRICS_EVENTS_FORECAST_SORT_COLUMNS,
   HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED,
   HEALTH_METRICS_EVENTS_QUERY_PARAMS,
+  HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEventsForecastNote, buildHealthMetricsEventsForecastRowViews, buildHealthMetricsEventsForecastView } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsEventsForecastNote,
+  buildHealthMetricsEventsForecastRowViews,
+  buildHealthMetricsEventsForecastView,
+  healthMetricsRowSortValue,
+  sortHealthMetricsRows,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsEventTrendComponent } from '../../../components/health-metrics-event-trend/health-metrics-event-trend.component';
 import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
@@ -55,6 +65,7 @@ import type {
     HealthMetricsFootnoteComponent,
     HealthMetricsMetricsRowComponent,
     HealthMetricsProgressCellComponent,
+    HealthMetricsThComponent,
     Skeleton,
     TableComponent,
     UiPaginationComponent,
@@ -135,9 +146,12 @@ export class EventsRegistrationForecastComponent {
     return this.curveFailed() ? 'failed' : 'ready';
   });
 
-  protected readonly rowViews: Signal<HealthMetricsEventsForecastRowView[]> = computed(() => buildHealthMetricsEventsForecastRowViews(this.response().events));
-  /** A new read starts the table on its first page. */
-  protected readonly page = linkedSignal<HealthMetricsEventsForecast, number>({ source: this.response, computation: () => 0 });
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_EVENTS_FORECAST_SORT_COLUMNS, HEALTH_METRICS_EVENTS_FORECAST_DEFAULT_SORT);
+  protected readonly rowViews: Signal<HealthMetricsEventsForecastRowView[]> = computed(() =>
+    sortHealthMetricsRows(buildHealthMetricsEventsForecastRowViews(this.response().events), this.sorting.order(), healthMetricsRowSortValue)
+  );
+  /** A new read or a new sort is a different order, so paging restarts. */
+  protected readonly page = linkedSignal({ source: () => ({ response: this.response(), sort: this.sorting.sort() }), computation: () => 0 });
   protected readonly pageRows = computed(() => this.rowViews().slice(this.page() * this.pageSize, (this.page() + 1) * this.pageSize));
 
   private readonly picker = computed<HealthMetricsEventsForecastPicker>(() => {

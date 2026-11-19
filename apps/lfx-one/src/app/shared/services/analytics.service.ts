@@ -1315,6 +1315,7 @@ export class AnalyticsService {
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsEventsOrganizations>('/api/analytics/events-organizations', { params }).pipe(
@@ -1336,6 +1337,7 @@ export class AnalyticsService {
     if (query.eventId) params = params.set('eventId', query.eventId);
     if (query.status) params = params.set('status', query.status);
     if (query.includeEvents) params = params.set('includeEvents', 'true');
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the drawer shows its error state, not "no proposals".
     return this.http.get<HealthMetricsEventsSpeakerProposals>('/api/analytics/events-speaker-proposals', { params }).pipe(

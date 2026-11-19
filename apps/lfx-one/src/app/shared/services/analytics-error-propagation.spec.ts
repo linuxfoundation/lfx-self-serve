@@ -140,14 +140,23 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getEventsOrganizations',
       url: '/api/analytics/events-organizations',
       // A swallowed failure would read as a foundation with no organizations at its events.
-      call: () => service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25 }),
+      call: () => service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25, sort: null }),
     },
     {
       name: 'getEventsSpeakerProposals',
       url: '/api/analytics/events-speaker-proposals',
       // A swallowed failure would read as no proposal matching the drawer's filters.
       call: () =>
-        service.getEventsSpeakerProposals({ foundationSlug: 'aaif', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25, includeEvents: true }),
+        service.getEventsSpeakerProposals({
+          foundationSlug: 'aaif',
+          range: 'YTD',
+          eventId: '',
+          status: null,
+          offset: 0,
+          pageSize: 25,
+          includeEvents: true,
+          sort: null,
+        }),
     },
     {
       name: 'getEventsSponsorship',
@@ -340,7 +349,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
 
   // Angular's default codec leaves `+` bare, which Express's query parser reads as a space.
   it('getEventsOrganizations sends a typed plus sign encoded, not as a space', () => {
-    service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: 'A+E', offset: 0, pageSize: 25 }).subscribe();
+    service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: 'A+E', offset: 0, pageSize: 25, sort: null }).subscribe();
 
     const req = http.expectOne((request) => request.url === '/api/analytics/events-organizations');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
@@ -357,10 +366,11 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
         offset: 25,
         pageSize: 25,
         includeEvents: true,
+        sort: null,
       })
       .subscribe();
     service
-      .getEventsSpeakerProposals({ foundationSlug: 'aaif', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25, includeEvents: false })
+      .getEventsSpeakerProposals({ foundationSlug: 'aaif', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25, includeEvents: false, sort: null })
       .subscribe();
 
     const [filtered, unfiltered] = http.match((request) => request.url === '/api/analytics/events-speaker-proposals');

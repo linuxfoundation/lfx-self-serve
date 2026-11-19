@@ -9,6 +9,8 @@ import {
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_SORT_COLUMNS,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS,
   HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
@@ -4124,6 +4126,12 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_EVENTS_ORGANIZATIONS_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
@@ -4179,6 +4187,12 @@ export class AnalyticsController {
         offset,
         pageSize,
         includeEvents: getStringQueryParam(req, 'includeEvents') === 'true',
+        // Only an allowed column and a known direction pass; anything else is the most recent first.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       logger.success(req, 'get_events_speaker_proposals', startTime, {
