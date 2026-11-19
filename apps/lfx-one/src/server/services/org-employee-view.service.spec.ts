@@ -426,9 +426,9 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
     await expect(svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({ fullAccessOrgUid: ORG_UID });
   });
 
-  it('answers nothing, not an error, when the lookup fails or the caller does not qualify', async () => {
+  it('reports a failed lookup as failed, so the client can offer Retry, and answers nothing for a caller who does not qualify', async () => {
     const failing = build({ experiences: new Error('cdp down') });
-    await expect(failing.svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({});
+    await expect(failing.svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({ employeeViewLookup: 'failed' });
 
     OrgEmployeeViewService.clearCache();
     const none = build({ experiences: [] });

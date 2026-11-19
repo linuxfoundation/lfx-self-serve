@@ -193,9 +193,12 @@ export class OrgEmployeeViewService {
    * demonstrably holds no grant on a clean roster and is not staff (the same entry rule as the CLA-only and affiliation
    * lookups), so a caller who holds anything costs no extra upstream call. There is deliberately no affiliation pre-filter:
    * that verdict names one employer, and the strict lookup considers every present employer. Never throws and never blocks
-   * past the affiliation budget: a failed or slow lookup answers nothing, which the client reads as today's empty state.
+   * past the affiliation budget: a failed or slow lookup answers `employeeViewLookup: 'failed'`, so the client shows the retryable outage state, not "not an employee".
    */
-  public async getRoleGrantEmployeeView(req: Request, grants: RoleGrantsResponse): Promise<Pick<RoleGrantsResponse, 'employeeView' | 'fullAccessOrgUid'>> {
+  public async getRoleGrantEmployeeView(
+    req: Request,
+    grants: RoleGrantsResponse
+  ): Promise<Pick<RoleGrantsResponse, 'employeeView' | 'fullAccessOrgUid' | 'employeeViewLookup'>> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
       return {};
     }
@@ -220,8 +223,8 @@ export class OrgEmployeeViewService {
       // An authorizer-only reader who also qualifies is full, and the client needs to be told: it cannot see authorizer entitlements.
       return verdict.reason === 'holds-full-access' && verdict.org ? { fullAccessOrgUid: verdict.org.orgUid } : {};
     } catch (error) {
-      logger.warning(req, OPERATION, 'Employee-view lookup failed; reporting no employee view', { err: error });
-      return {};
+      logger.warning(req, OPERATION, 'Employee-view lookup failed; reporting the lookup as failed', { err: error });
+      return { employeeViewLookup: 'failed' };
     } finally {
       clearTimeout(timer);
     }

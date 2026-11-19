@@ -336,6 +336,55 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
     expect(cachePredicates().storable({ outcome: 'hit', org: { uid: UID_A, slug: null, name: 'x', employeeView: true } })).toBe(true);
   });
 
+  describe('when a readable company shares the slug (employee company B, readable company A)', () => {
+    const employeeB = { eligible: true, org: { orgUid: UID_B, orgName: 'Beta Works', orgSlug: 'acme-inc' } };
+
+    beforeEach(() => {
+      proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
+      resolveEmployeeView.mockResolvedValue(employeeB);
+    });
+
+    it('reports the slug as ambiguous instead of silently opening the readable company', async () => {
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'ambiguous' });
+    });
+
+    it('honors a preference for the employee company', async () => {
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_B)).resolves.toMatchObject({
+        outcome: 'hit',
+        org: { uid: UID_B, employeeView: true },
+      });
+    });
+
+    it('honors a preference for the readable company', async () => {
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_A)).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
+    });
+
+    it('applies the same tie-break when query-service already reports the readable slug as shared', async () => {
+      proxyRequest.mockResolvedValue(page([{ uid: UID_A }, { uid: UID_C }]));
+
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_B)).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_B } });
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'ambiguous' });
+    });
+
+    it('leaves the readable answer alone when the employee company is the same one, has another slug, or cannot be checked', async () => {
+      resolveEmployeeView.mockResolvedValue({ eligible: true, org: { orgUid: UID_A, orgName: 'Acme', orgSlug: 'acme-inc' } });
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
+
+      resolveEmployeeView.mockResolvedValue({ eligible: true, org: { orgUid: UID_B, orgName: 'Beta Works', orgSlug: 'beta-works' } });
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
+
+      resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
+    });
+
+    it('does not look at the employee view at all with the flag off', async () => {
+      delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+
+      await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A } });
+      expect(resolveEmployeeView).not.toHaveBeenCalled();
+    });
+  });
+
   it('is a miss for a slug or SFID that is not the caller’s employee company', async () => {
     proxyRequest.mockResolvedValue(page([]));
     resolveEmployeeView.mockResolvedValue(eligible);

@@ -22,7 +22,7 @@ The company is **found from the validated email** (`b2b_org` records tagged `is_
 
 **Planned, not in this release.** (a) When the individual profile has a concept of a **primary** employer (written through to CDP), it becomes a third requirement. (b) Once an email validation has a **freshness** concept, the view can expand to show several companies.
 
-The outcome is held 60 s **per caller** (not per requested company) in a cache shared by every `OrgEmployeeViewService` instance, so the role-grants, selector, read-gate and slug-resolver calls of one page share a single lookup. Anything unproven is a denial (403). A lookup that **fails** (work history, query service, token, auth-service) is a 503 `ROLE_GRANTS_UNAVAILABLE`, never "not an employee"; a failure is never kept.
+The outcome is held 60 s **per caller** (not per requested company) in a cache shared by every `OrgEmployeeViewService` instance, so the role-grants, selector, read-gate and slug-resolver calls of one page share a single lookup. Anything unproven is a denial (403). On `GET /api/orgs/me/role-grants` a lookup that fails or times out is reported as `employeeViewLookup: 'failed'` (never as "not an employee"), and the client shows the retryable outage state. A lookup that **fails** (work history, query service, token, auth-service) is a 503 `ROLE_GRANTS_UNAVAILABLE`, never "not an employee"; a failure is never kept.
 
 Employee access supersedes CLA-only classification for the same company (selector row, address resolver, client state); the caller's own CLA Manager scope is still asked by the EasyCLA gate. The resolver tries the employee view before the CLA scope and, if the employee lookup is unavailable and the CLA scope does not hit, answers a structured 503 `ROLE_GRANTS_UNAVAILABLE` (never a 404 the client would cache). Slug addresses fall back too.
 
@@ -66,6 +66,8 @@ Each page story applies these to **one** page. Nothing is exposed by default.
 ## Client
 
 `GET /api/orgs/me/role-grants` carries `employeeView?: { orgUid, orgName, orgSlug? }`, computed only for a caller with no grant and not staff. It is looked up for every grant-less, non-staff caller on a clean roster, with no affiliation pre-filter (that verdict names one employer; this lookup considers all present ones), so LF contractors take the same path, in parallel with the CLA-manager and affiliation lookups. `OrgRoleGrantsService.employeeViewOrgUid` holds it. `OrgLensViewModeService` answers `viewMode()` / `isEmployeeView()` for the selected company (`modeFor(uid)` for others); a real grant or staff always wins. The selector lists the company (`OrgItem.employeeView`), `/api/orgs/resolve/:segment` resolves its address (`OrgResolveResponse.employeeView`), and the empty state opens the lens instead of "no company linked". The client is UX only: the server refuses and redacts regardless.
+
+**Slug addresses.** The employee company is invisible to query-service, so it takes part in slug uniqueness and the `prefer` tie-break alongside a readable company that shares its slug: a shared slug is ambiguous unless `prefer` names one of them. That check is fail-soft (a failed lookup keeps the readable answer).
 
 ## Every `assertOrgLensRead` consumer
 

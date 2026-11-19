@@ -122,12 +122,20 @@ export class OrgSlugResolverService {
       const org = await this.resolveFallbackOrg(req, (employee) => employee.orgSlug === segment, null);
       return org ? { outcome: 'hit', org, cache } : { ...cached, cache };
     }
-    if (cached.outcome !== 'ambiguous') {
-      return { ...cached, cache };
+    // The all employee view company is invisible to query-service, so it can share this slug with a company the caller CAN read. It must
+    // take part in uniqueness and in the preference: otherwise the readable company silently wins the employee company's own address.
+    const employee = await this.employeeCandidateForSlug(req, segment);
+    if (cached.outcome === 'hit') {
+      if (!employee || employee.orgUid === cached.org.uid) return { ...cached, cache };
+      if (prefer === employee.orgUid) return { outcome: 'hit', org: this.toEmployeeResolution(employee), cache };
+      return prefer === cached.org.uid ? { ...cached, cache } : { outcome: 'ambiguous', cache };
     }
 
     if (!prefer) {
       return { outcome: 'ambiguous', cache };
+    }
+    if (employee && prefer === employee.orgUid) {
+      return { outcome: 'hit', org: this.toEmployeeResolution(employee), cache };
     }
 
     // Tie-break: the caller's current selection wins iff query-service confirms the caller can
@@ -138,6 +146,28 @@ export class OrgSlugResolverService {
       return { outcome: 'hit', org: preferred, cache };
     }
     return { outcome: 'ambiguous', cache };
+  }
+
+  /**
+   * The all employee view company whose slug is `slug`, for the uniqueness check against a readable company; null when the flag is
+   * off, the caller is not an employee, or the lookup cannot answer. Fail-soft on purpose: it only adds a possible collision, so a
+   * failed lookup leaves the readable company's answer standing rather than failing an admin's page.
+   */
+  private async employeeCandidateForSlug(req: Request, slug: string): Promise<OrgLensEmployeeViewGrant | null> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) return null;
+    try {
+      const verdict = await this.employeeView.resolveReduced(req);
+      return verdict.eligible && verdict.org.orgSlug === slug ? verdict.org : null;
+    } catch (error) {
+      logger.warning(req, 'resolve_employee_view_org', 'Could not check the employee-view company against a readable slug; keeping the readable answer', {
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  private toEmployeeResolution(employee: OrgLensEmployeeViewGrant): OrgResolveResponse {
+    return { uid: employee.orgUid, slug: employee.orgSlug ?? null, name: employee.orgName, employeeView: true };
   }
 
   /**

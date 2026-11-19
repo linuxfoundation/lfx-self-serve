@@ -52,6 +52,8 @@ export class OrgRoleGrantsService {
   // M3 — orgs reached only as a CLA Manager. The server fills it only when every grant set above is empty and the caller is not staff.
   private readonly claManagerOrgSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly claManagerLookupFailedInternal: WritableSignal<boolean> = signal<boolean>(false);
+  // Epic #5845 — the all employee view lookup could not answer, so a missing `employeeView` is unknown, not "not an employee".
+  private readonly employeeViewLookupFailedInternal: WritableSignal<boolean> = signal<boolean>(false);
   // #4225 — the caller's own employer is an LF member, so an empty Org Lens means "never granted
   // access", not "no organization". False whenever the server could not establish it, which keeps the
   // copy the user sees today rather than asserting a reason that may be wrong.
@@ -99,6 +101,8 @@ export class OrgRoleGrantsService {
   public readonly claManagerOrgSet: Signal<Set<string>> = this.claManagerOrgSetInternal.asReadonly();
   /** M3 — the server could not read the caller's `cla-manager` scopes, so an empty `claManagerOrgSet` is unknown. */
   public readonly claManagerLookupFailed: Signal<boolean> = this.claManagerLookupFailedInternal.asReadonly();
+  /** Epic #5845 — the server could not establish whether the caller is in the all employee view (a failed or slow lookup). */
+  public readonly employeeViewLookupFailed: Signal<boolean> = this.employeeViewLookupFailedInternal.asReadonly();
   /**
    * #4225 — the caller works for an organization that IS an LF member, and holds no grant on it.
    * True only on a completed server-side determination; an older server, a failed lookup, or a
@@ -183,6 +187,7 @@ export class OrgRoleGrantsService {
         this.correlationIdInternal.set(response.staffCheck === 'failed' && response.correlationId ? response.correlationId : null);
         this.claManagerOrgSetInternal.set(new Set(response.claManagerOrgs ?? []));
         this.claManagerLookupFailedInternal.set(response.claManagerLookup === 'failed');
+        this.employeeViewLookupFailedInternal.set(response.employeeViewLookup === 'failed');
         // Absent on an older server, or `lookup: 'failed'` ⇒ false: a rolling deploy and a broken
         // lookup both fall back to the no-organization copy rather than to a confident new reason.
         this.affiliatedToMemberInternal.set(response.affiliation?.lookup === 'ok' && response.affiliation.hasEmployer && response.affiliation.employerIsMember);
@@ -218,6 +223,7 @@ export class OrgRoleGrantsService {
         this.claManagerOrgSetInternal.set(new Set());
         // `lookupOutcome: 'failed'` already reports this outage.
         this.claManagerLookupFailedInternal.set(false);
+        this.employeeViewLookupFailedInternal.set(false);
         this.affiliatedToMemberInternal.set(false);
         this.employeeViewOrgUidInternal.set(null);
         this.fullAccessOrgUidInternal.set(null);
