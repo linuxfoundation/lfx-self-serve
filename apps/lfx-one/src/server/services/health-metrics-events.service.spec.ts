@@ -1724,7 +1724,8 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(kept).not.toContain("'UK'");
     expect(kept).not.toContain("'ZZ'");
     expect(countrySql).toContain("GROUP BY NULLIF(TRIM(country), '')");
-    expect(countrySql).toContain('GROUP BY COALESCE(country_code, country)');
+    // A name with no code folds by its words, so its spellings are one row.
+    expect(countrySql).toContain("GROUP BY COALESCE(country_code, LOWER(REPLACE(country, '_', ' ')))");
     for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
       expect(scopeSql).toContain(`countries_count_${suffix}`);
       expect(countrySql).toContain(`SUM(registration_count_${suffix}) AS registration_count_${suffix}`);
@@ -1759,6 +1760,21 @@ describe('HealthMetricsEventsService.getGeography', () => {
     });
     expect(byRange('COMPLETED_YEAR_2')).toMatchObject({ countries: 2, changes: null, registrationsByCountry: [] });
     expect(byRange('COMPLETED_YEAR_3')).toMatchObject({ countries: null, changes: null });
+  });
+
+  it("names a country by its code, never by the data's own spelling, and reads a name with no code as words", async () => {
+    mockReads(
+      [scopeRow],
+      [countryRow('us', 30, 0, 'US'), countryRow('united_kingdom', 20, 0, 'GB'), countryRow('kosovo', 5, 0, 'XK'), countryRow('north_atlantis', 3)]
+    );
+
+    const { periods } = await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
+    expect(periods.find((period) => period.range === 'YTD')?.registrationsByCountry.map((country) => country.country)).toEqual([
+      'United States',
+      'United Kingdom',
+      'Kosovo',
+      'North Atlantis',
+    ]);
   });
 
   it('returns no periods without a rollup row, skipping the country read', async () => {

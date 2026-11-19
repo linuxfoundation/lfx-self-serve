@@ -29,6 +29,8 @@ import {
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
+// Deep import, as across the server: the `utils` barrel loads `@angular/forms`, which throws in the Node spec runtime.
+import { formatHealthMetricsCountryName } from '@lfx-one/shared/utils/health-metrics-world-map.utils';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
 import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql, healthMetricsTrimSql } from '../helpers/health-metrics-sort.helper';
@@ -1159,7 +1161,9 @@ export class HealthMetricsEventsService {
         MAX(country) AS country,
         ${sums('by_name.')}
       FROM by_name
-      GROUP BY COALESCE(country_code, country)
+      -- A name with no code folds by its words, so "united_kingdom" and "United Kingdom" are one row; the label comes from
+      -- the code, or from the name read as words, never from whichever spelling sorts last.
+      GROUP BY COALESCE(country_code, LOWER(REPLACE(country, '_', ' ')))
     `;
 
     const result = await executeSnowflakeViewRead<GeographyCountryRow>(this.snowflakeService, req, sql, [foundationId], {
@@ -1536,14 +1540,15 @@ function mapSponsorshipPeriod(
 /** Countries with no registration in the period drop out; the rest rank by registrations, then name. */
 function mapGeographyPeriod(scope: GeographyScopeRow, rows: GeographyCountryRow[], range: HealthMetricsL2Range): HealthMetricsEventsGeographyPeriod {
   const ranked = rows
-    .map(
-      (row): HealthMetricsEventsGeographyCountry => ({
-        // Only an assigned ISO code (or Kosovo's XK) keys the map and the flag.
-        code: row.COUNTRY_CODE && HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES.has(row.COUNTRY_CODE) ? row.COUNTRY_CODE : null,
-        country: row.COUNTRY ?? '',
+    .map((row): HealthMetricsEventsGeographyCountry => {
+      // Only an assigned ISO code (or Kosovo's XK) keys the map and the flag, and names the country.
+      const code = row.COUNTRY_CODE && HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES.has(row.COUNTRY_CODE) ? row.COUNTRY_CODE : null;
+      return {
+        code,
+        country: formatHealthMetricsCountryName(code, row.COUNTRY ?? ''),
         registrations: toNullableNumber(row[periodColumn('registration_count', range)]) ?? 0,
-      })
-    )
+      };
+    })
     .filter((country) => country.country !== '' && country.registrations > 0)
     .sort((a, b) => b.registrations - a.registrations || a.country.localeCompare(b.country));
 
