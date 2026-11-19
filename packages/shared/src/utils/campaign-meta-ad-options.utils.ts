@@ -16,19 +16,21 @@ export function metaAdOptionApplies(field: MetaAdOptionField, objective: unknown
   return field.objectives === null || (field.objectives as readonly string[]).includes(resolved);
 }
 
+/** `raw` as a key-value record when it is a plain object, else `undefined`: the untrusted request body narrowed at runtime, not cast. */
+export function metaConfigRecord(raw: unknown): Record<string, unknown> | undefined {
+  return typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
+}
+
 /**
  * Why `raw`'s Meta ad choices cannot be sent with this objective, or `null`. Typed runtime checks, since the
  * create route has no body validator: an absent, null or blank key is "Not set". Values are matched ignoring
  * case, as campaign-service does. `manualBidding` is a `bidding.strategy` of `manual`, a link-click bid cap,
  * which campaign-service refuses with LANDING_PAGE_VIEWS.
  */
-export function metaAdOptionsRefusal(
-  raw: Record<string, unknown> | null | undefined,
-  objective: unknown,
-  manualBidding: boolean
-): MetaAudienceTargetingRefusal | null {
+export function metaAdOptionsRefusal(raw: unknown, objective: unknown, manualBidding: boolean): MetaAudienceTargetingRefusal | null {
+  const record = metaConfigRecord(raw);
   for (const field of META_AD_OPTION_FIELDS) {
-    const value = raw?.[field.key];
+    const value = record?.[field.key];
     if (value === undefined || value === null) continue;
     const name = `metaConfig.${field.key}`;
     if (typeof value !== 'string') return { field: name, message: `${field.label} must be text.` };
@@ -48,10 +50,11 @@ export function metaAdOptionsRefusal(
 }
 
 /** The choices a create sends for ACCEPTED options ({@link metaAdOptionsRefusal} is `null`): trimmed, upper case, every "Not set" key dropped. */
-export function compactMetaAdOptions(raw: Record<string, unknown> | null | undefined): MetaAdOptions {
+export function compactMetaAdOptions(raw: unknown): MetaAdOptions {
+  const record = metaConfigRecord(raw);
   const out: MetaAdOptions = {};
   for (const { key } of META_AD_OPTION_FIELDS) {
-    const value = raw?.[key];
+    const value = record?.[key];
     if (typeof value === 'string' && value.trim() !== '') out[key] = value.trim().toUpperCase();
   }
   return out;

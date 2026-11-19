@@ -60,7 +60,7 @@ import {
   metaAudienceTargetingRefusal,
   metaTargetingNamesCustomAudiences,
 } from '@lfx-one/shared/utils/campaign-meta-audience-targeting.utils';
-import { compactMetaAdOptions, metaAdOptionOffMessage, metaAdOptionsRefusal } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
+import { compactMetaAdOptions, metaAdOptionOffMessage, metaAdOptionsRefusal, metaConfigRecord } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
 import {
   googleDemandGenAudienceCarried,
   googleDemandGenAudiencesRefusal,
@@ -9528,7 +9528,7 @@ export class CampaignController {
    * - otherwise each value trimmed and upper-cased, a blank one dropped as "Not set".
    */
   private metaAdOptionsToForward(body: CampaignCreateRequest): MetaAdOptions {
-    const meta = body?.metaConfig as unknown as Record<string, unknown> | undefined;
+    const meta = metaConfigRecord(body?.metaConfig);
     if (!meta) return {};
     const operation = 'campaign_create';
     const enabled: Record<MetaAdOptionKey, () => boolean> = {

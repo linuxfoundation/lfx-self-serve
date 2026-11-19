@@ -23558,7 +23558,7 @@ describe('ImplementationTabComponent meta ad options', () => {
   }
 
   const choose = (f: ComponentFixture<ImplementationTabComponent>, key: string, value: string): void => {
-    c(f)['onMetaAdOptionChange'](key, { target: { value } });
+    c(f)['onMetaAdOptionChange'](key, value);
     f.detectChanges();
   };
   const objective = (f: ComponentFixture<ImplementationTabComponent>, value: string): void => {
@@ -23639,8 +23639,9 @@ describe('ImplementationTabComponent meta ad options', () => {
 
     expect(c(f)['createBlockedReason']()).toContain('manual bidding');
     expect(query(f, 'implementation-meta-ad-options-error')).not.toBeNull();
-    const option = query(f, 'implementation-meta-optimizationGoal')?.querySelector('option[value="LANDING_PAGE_VIEWS"]') as HTMLOptionElement;
-    expect(option.disabled).toBe(true);
+    const views: { key: string; options: { value: string; disabled: boolean }[] }[] = c(f)['metaAdOptionViews']();
+    const goal = views.find((view) => view.key === 'optimizationGoal');
+    expect(goal?.options.find((option) => option.value === 'LANDING_PAGE_VIEWS')?.disabled).toBe(true);
   });
 
   // An unanswered capability (the read loading or failed) is not a no: Create waits, and Clear is not offered.
@@ -23653,6 +23654,25 @@ describe('ImplementationTabComponent meta ad options', () => {
     expect(c(f)['createBlockedReason']()).toContain('call to action');
     expect(query(f, `implementation-meta-ad-options-block-${kind}`)).not.toBeNull();
     expect(query(f, 'implementation-meta-ad-options-clear')).toBeNull();
+  });
+
+  it('holds a restored choice on an unsaved brief, asking for a save instead of offering Clear', async () => {
+    const { f } = await mount({ callToAction: null }, { metaAdOptions: { callToAction: 'SIGN_UP' }, metaAdOptionsProject: 'tlf' });
+    f.componentRef.setInput('briefPersistence', { status: 'idle', briefId: null, message: null, approved: false });
+    f.detectChanges();
+
+    expect(c(f)['createBlockedReason']()).toContain('call to action');
+    expect(query(f, 'implementation-meta-ad-options-block-unsaved')).not.toBeNull();
+    expect(query(f, 'implementation-meta-ad-options-clear')).toBeNull();
+  });
+
+  it('asks the parent to retry the capability check from the failed hold', async () => {
+    const { f } = await mount({ callToAction: null }, { metaAdOptions: { callToAction: 'SIGN_UP' }, metaAdOptionsProject: 'tlf' }, 'failed');
+    const retry = vi.fn();
+    f.componentInstance.retryCreateCapabilities.subscribe(retry);
+
+    query(f, 'implementation-meta-ad-options-block-retry')?.querySelector('button')?.click();
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 
   it('holds a choice this deployment answered no to, offering Clear', async () => {

@@ -4584,21 +4584,17 @@
           @if (metaAdOptionViews().length > 0) {
             <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="implementation-meta-ad-options">
               @for (view of metaAdOptionViews(); track view.key) {
-                <div class="flex flex-col gap-1">
-                  <label class="text-xs font-medium text-gray-700" [for]="'meta-' + view.key">{{ view.label }}</label>
-                  <select
-                    [id]="'meta-' + view.key"
-                    (change)="onMetaAdOptionChange(view.key, $event)"
-                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    [attr.data-testid]="'implementation-meta-' + view.key">
-                    <option value="" [selected]="!metaAdOptions()[view.key]">{{ view.notSetLabel }}</option>
-                    @for (option of view.options; track option.value) {
-                      <option [value]="option.value" [selected]="option.value === metaAdOptions()[view.key]" [disabled]="option.disabled">
-                        {{ option.label }}
-                      </option>
-                    }
-                  </select>
-                </div>
+                <lfx-ui-select
+                  [label]="view.label"
+                  size="small"
+                  [value]="metaAdOptions()[view.key] ?? ''"
+                  (valueChange)="onMetaAdOptionChange(view.key, $event)"
+                  [attr.data-testid]="'implementation-meta-' + view.key">
+                  <lfx-ui-option value="" [label]="view.notSetLabel" />
+                  @for (option of view.options; track option.value) {
+                    <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="option.disabled" />
+                  }
+                </lfx-ui-select>
               }
             </div>
           }

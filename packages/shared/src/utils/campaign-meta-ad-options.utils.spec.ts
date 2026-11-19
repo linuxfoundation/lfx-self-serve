@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { compactMetaAdOptions, metaAdOptionLabel, metaAdOptionsRefusal } from './campaign-meta-ad-options.utils';
+import { compactMetaAdOptions, metaAdOptionLabel, metaAdOptionsRefusal, metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 describe('metaAdOptionsRefusal', () => {
   it.each([
@@ -38,5 +38,11 @@ describe('compactMetaAdOptions', () => {
 
   it('labels a value for the dropdown', () => {
     expect(metaAdOptionLabel('COMPLETE_REGISTRATION')).toBe('Complete registration');
+  });
+
+  it.each([[null], ['SIGN_UP'], [['SIGN_UP']], [42]])('treats a non-object body (%j) as no choices, never a cast', (raw) => {
+    expect(metaConfigRecord(raw)).toBeUndefined();
+    expect(metaAdOptionsRefusal(raw, 'traffic', false)).toBeNull();
+    expect(compactMetaAdOptions(raw)).toEqual({});
   });
 });

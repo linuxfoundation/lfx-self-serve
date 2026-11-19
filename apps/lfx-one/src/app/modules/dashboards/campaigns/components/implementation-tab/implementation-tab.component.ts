@@ -246,6 +246,7 @@ import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiMultiSelectComponent } from '@shared/uikit/multi-select/multi-select.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiTextareaComponent } from '@shared/uikit/textarea/textarea.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
@@ -578,6 +579,7 @@ let linkedInVariantKeySequence = 0;
     UiInputComponent,
     UiMultiSelectComponent,
     UiOptionComponent,
+    UiSelectComponent,
     UiTextareaComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
@@ -5642,11 +5644,10 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /** One Meta ad choice (#5934); the empty "Not set" option removes the key, so nothing is sent. */
-  protected onMetaAdOptionChange(key: MetaAdOptionKey, event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
+  protected onMetaAdOptionChange(key: MetaAdOptionKey, value: string | null): void {
     this.metaAdOptions.update((options) => {
       const next = { ...options };
-      if (value === '') delete next[key];
+      if (!value) delete next[key];
       else next[key] = value;
       return next;
     });
