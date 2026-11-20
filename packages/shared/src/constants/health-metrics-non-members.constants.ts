@@ -3,11 +3,14 @@
 
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type { HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
-import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
+import type { HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
 import type {
   HealthMetricsNonMembersConversion,
+  HealthMetricsNonMembersFitBand,
   HealthMetricsNonMembersOrgs,
   HealthMetricsNonMembersOrgsFilter,
+  HealthMetricsNonMembersOrgsFilterOption,
+  HealthMetricsNonMembersOrgsSortKey,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersQueryParams,
   HealthMetricsNonMembersSectionKey,
@@ -21,10 +24,9 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
   {
     key: 'orgs',
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
-    label: 'Company participation',
+    label: 'Companies',
     heading: 'Company participation',
-    description:
-      'Companies engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
+    description: 'Non-member companies already engaged with the foundation — your best leads.',
   },
   {
     key: 'people',
@@ -73,7 +75,8 @@ export const HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS = {
 /** Company participation's filters, and the allowlist the read validates against. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS = ['all', 'meetings', 'high-fit'] as const;
 
-export const HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS: readonly (FilterPillOption & { id: HealthMetricsNonMembersOrgsFilter })[] = [
+/** The header switch's choices, in the design's order. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS: readonly HealthMetricsNonMembersOrgsFilterOption[] = [
   { id: 'all', label: 'All' },
   { id: 'meetings', label: 'Attends meetings' },
   { id: 'high-fit', label: 'High fit' },
@@ -84,13 +87,10 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_UNMEASURED: HealthMetricsNonMembers
   rows: [],
   totalRecords: 0,
   scopeTotal: 0,
-  newCount: 0,
 };
 
-/** Rows per page, and the rows-per-page choices; the largest foundation has several hundred active organizations. */
+/** Rows per page, with the numbered pager; the largest foundation has several hundred active companies. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE = 10;
-
-export const HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
 
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE = 100;
@@ -99,21 +99,32 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 
-/** Under the table until the organization match is validated; the design's caution wording. */
-export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
-  'Company matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
+/** The Contributions header tip. The design's wording, with "company" for its "organization" (#5428). */
+export const HEALTH_METRICS_NON_MEMBERS_CONTRIBUTIONS_TIP =
+  "Code contributions (commits and pull requests) this company made to the foundation's projects in the selected period.";
 
-/** Last-activity dates ignore the period; the Organizations caution note says so instead of the headers. */
-export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged is all-time, not limited to the selected period.';
+/** The fit bands, highest first; the Fit column ranks them in this order. */
+export const HEALTH_METRICS_NON_MEMBERS_FIT_BANDS = ['High', 'Medium', 'Low'] as const;
 
-/** Fewer active organizations than this is too few to rank by fit, so Company participation flags it. */
-export const HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD = 5;
+/** The Fit badge's fill and ink per band, as the design colours them. */
+export const HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES: Readonly<Record<HealthMetricsNonMembersFitBand, string>> = {
+  High: 'bg-emerald-50 text-emerald-700',
+  Medium: 'bg-amber-50 text-amber-800',
+  Low: 'bg-red-50 text-red-700',
+};
 
-/** Fit band dot fills, as the design colours them; an unknown band falls back to the Low gray. */
-export const HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS: Readonly<Record<string, string>> = {
-  High: 'bg-emerald-600',
-  Medium: 'bg-amber-500',
-  Low: 'bg-gray-400',
+/** Company participation's sortable columns. Fit ranks its bands, so it sorts as a number, High first. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsNonMembersOrgsSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'meetings', kind: 'number' },
+  { key: 'contributions', kind: 'number' },
+  { key: 'fit', kind: 'number' },
+];
+
+/** Company participation opens on the view's rank: meetings attended, then contributions, then name. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsNonMembersOrgsSortKey> = {
+  key: 'meetings',
+  direction: 'desc',
 };
 
 /** Read-failed / no-foundation value: no individuals, so the section renders no rows. */

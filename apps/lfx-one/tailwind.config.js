@@ -36,7 +36,7 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
-  HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
+  HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES,
   HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
@@ -245,8 +245,8 @@ export default {
     ...Object.values(HEALTH_METRICS_BAR_CHART_LABEL_CLASSES),
     // Members NPS distribution segments (HEALTH_METRICS_MEMBERS_NPS_SEGMENTS in @lfx-one/shared) — applied via [class].
     ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
-    // Non-Members fit band dots (HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS),
+    // Non-Members fit badges (HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES).flatMap((c) => c.split(' ')),
     // Engagement attendance bar fills, per attendance tone — applied via [class].
     ...Object.values(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS),
     // Newsletter recipient status dots (HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS in @lfx-one/shared) — applied via [class].

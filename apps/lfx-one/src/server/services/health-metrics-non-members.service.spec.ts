@@ -42,13 +42,12 @@ describe('isSupportedNonMembersRange', () => {
 });
 
 describe('HealthMetricsNonMembersService.getOrgs', () => {
-  const query = { foundationSlug: 'acme', range: 'YTD' as const, filter: 'all' as const, search: '', offset: 0, pageSize: 10 };
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, filter: 'all' as const, search: '', offset: 0, pageSize: 10, sort: null };
 
   function orgRow(overrides: Record<string, unknown> = {}) {
     return {
       SCOPE_TOTAL: 1412,
       TOTAL_RECORDS: 1412,
-      NEW_COUNT: 37,
       IS_PAGE_ROW: true,
       ACCOUNT_ID: '0014100000AcmeAAAA',
       ACCOUNT_NAME: 'Acme Motors',
@@ -56,10 +55,10 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       MEETINGS_ATTENDED_COUNT: 42,
       DISTINCT_PEOPLE_COUNT: 9,
       CONTRIBUTIONS_COUNT: 1840,
-      IS_NEW: true,
       SORT_RANK: 1,
-      MEMBERSHIP_STATUS: 'Non-member',
       FIT_BAND: 'High',
+      PAGE_POSITION: 1,
+      LOGO_URL: 'https://logos.example/acme.png',
       ...overrides,
     };
   }
@@ -88,10 +87,11 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       expect(sql.match(/\?/g)).toHaveLength(binds.length);
       expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_COMPANY_PARTICIPATION p');
       expect(sql).not.toContain('NON_MEMBER_FIT_SCORE');
-      for (const column of ['meetings_attended_count', 'distinct_people_count', 'contributions_count', 'is_new', 'sort_rank']) {
+      for (const column of ['meetings_attended_count', 'distinct_people_count', 'contributions_count', 'sort_rank']) {
         expect(sql).toContain(`p.${column}_${suffix} AS ${column}`);
       }
-      expect(sql).toContain('p.membership_status,');
+      // The count line and the Membership column are gone, so neither is read.
+      expect(sql).not.toMatch(/is_new|membership_status|new_count/);
       expect(sql).toContain('p.fit_band,');
       expect(sql).toContain("COALESCE(p.fit_band = 'High', FALSE) AS is_high_fit");
       expect(sql).not.toMatch(/FROM scoped WHERE/);
@@ -125,11 +125,27 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     expect(scoped).toContain("AND p.account_id <> ''");
     expect(scoped).toContain('AND (COALESCE(p.meetings_attended_count_ytd, 0) > 0 OR COALESCE(p.contributions_count_ytd, 0) > 0)');
     expect(sql).toContain('(SELECT COUNT(*) FROM scoped) AS scope_total');
-    expect(sql).toContain('(SELECT COUNT_IF(is_new) FROM scoped) AS new_count');
     expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
+    expect(sql).toContain('ROW_NUMBER() OVER (ORDER BY sort_rank ASC NULLS LAST, account_id ASC) AS page_position');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC\n        LIMIT 10 OFFSET 0');
-    expect(sql).toContain('ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC');
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).toContain("NULLIF(TRIM(logos.logo_url), '') AS logo_url");
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+  });
+
+  it.each([
+    ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(account_name, ''), account_id)"],
+    ['meetings', 'asc', 'NULLIF(meetings_attended_count, 0) ASC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC'],
+    ['contributions', 'desc', 'NULLIF(contributions_count, 0) DESC NULLS LAST, sort_rank ASC NULLS LAST'],
+    ['fit', 'desc', "CASE TRIM(fit_band) WHEN 'High' THEN 3 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 1 END DESC NULLS LAST"],
+  ] as const)("sorts %s %s across every page, then the view's rank", async (key, direction, expected) => {
+    await new HealthMetricsNonMembersService().getOrgs(req, { ...query, sort: { key, direction } });
+
+    const [sql, binds] = orgsRead();
+    expect(sql).toContain(expected);
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY ${expected.split(' ASC')[0].split(' DESC')[0]}`);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
   });
 
   it('clamps an oversized page and offset before interpolating them', async () => {
@@ -147,10 +163,9 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
           ACCOUNT_NAME: '',
           MEETINGS_ATTENDED_COUNT: null,
           DISTINCT_PEOPLE_COUNT: null,
-          IS_NEW: null,
           LAST_ENGAGED_DATE: null,
-          MEMBERSHIP_STATUS: '',
           FIT_BAND: null,
+          LOGO_URL: null,
         }),
       ],
     });
@@ -160,28 +175,25 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     expect(response).toEqual({
       totalRecords: 1412,
       scopeTotal: 1412,
-      newCount: 37,
       rows: [
         {
           accountId: '0014100000AcmeAAAA',
           accountName: 'Acme Motors',
+          logoUrl: 'https://logos.example/acme.png',
           lastEngagedDate: '2026-03-14',
           meetingsAttended: 42,
           distinctPeople: 9,
           contributions: 1840,
-          isNew: true,
-          membershipStatus: 'Non-member',
           fitBand: 'High',
         },
         {
           accountId: '0014100000AcmeAAAA',
           accountName: '0014100000AcmeAAAA',
+          logoUrl: null,
           lastEngagedDate: null,
           meetingsAttended: null,
           distinctPeople: null,
           contributions: 1840,
-          isNew: false,
-          membershipStatus: null,
           fitBand: null,
         },
       ],
@@ -189,11 +201,11 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
   });
 
   it('keeps the totals when the page is past the end', async () => {
-    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 1412, TOTAL_RECORDS: 30, NEW_COUNT: 37, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 1412, TOTAL_RECORDS: 30, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
 
     const response = await new HealthMetricsNonMembersService().getOrgs(req, { ...query, offset: 500 });
 
-    expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: 1412, newCount: 37 });
+    expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: 1412 });
   });
 });
 
