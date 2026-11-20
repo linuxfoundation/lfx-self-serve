@@ -9,6 +9,7 @@ import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/ro
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { getLocalDayKey } from '@lfx-one/shared/utils';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { AppService } from '@services/app.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
@@ -203,6 +204,7 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, `meetings-redesign-folded-${block}`)).toBeTruthy();
     }
     expect(query(fixture, 'meetings-redesign-rail-pending-rsvps')).toBeNull();
+    expect(query(fixture, 'meetings-redesign-mini-calendar')).toBeNull();
   });
 
   it('paints the Last meeting card from the latest-past feed without waiting for the past list', async () => {
@@ -1013,6 +1015,46 @@ describe('MeetingsRedesignComponent', () => {
       canWriteMeetings.set(false);
       fixture.detectChanges();
       expect(query(fixture, 'meetings-home-create')).toBeNull();
+    });
+
+    it('shows the mini calendar in its own right column', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-project-column')?.querySelector('[data-testid="meetings-redesign-mini-calendar"]')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-project-column')?.className).toContain('min-[1025px]:flex');
+    });
+
+    it('lists a past day picked on the calendar on the Past tab, scrolled below the tabs and flashed', async () => {
+      const start = new Date(Date.now() - 3 * DAY_MS);
+      const pastMeeting = { ...buildMeeting(7, { start_time: start.toISOString(), title: 'Board Review' }), occurrence_id: '' } as PastMeeting;
+      TestBed.overrideProvider(MeetingService, {
+        useValue: {
+          removedRegistrationMeetingIds: signal(new Set<string>()),
+          getPastMeetingSummary: () => of(null),
+          getPastMeetingRecording: () => of(null),
+          getProjectMeetingsForHome: () => projectUpcoming$,
+          getProjectPastMeetingsForHome: () => of({ meetings: [pastMeeting] }),
+          getRollupFilterOptions: () => of({ projects: [], groups: [], complete: true }),
+        },
+      });
+      const fixture = render();
+      projectUpcoming$.next([]);
+      await fixture.whenStable();
+      const day = getLocalDayKey(start);
+
+      fixture.nativeElement.querySelector(`[data-testid="meetings-redesign-mini-calendar"] [data-day="${day}"]`)?.click();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-list-past')?.hidden).toBe(false);
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { time: 'past' } }));
+      const row = fixture.nativeElement.querySelector(`[data-testid="meetings-home-day-group-row"][data-day="${day}"]`);
+      expect(row).toBeTruthy();
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      // jsdom lays out at 0: the row goes to 36px below the header and the tabs bar, each measured 80px.
+      expect(elementScrollBy).toHaveBeenLastCalledWith({ top: -(HEADER_HEIGHT * 2 + 36), behavior: 'smooth' });
+      expect(row.classList).toContain('motion-safe:animate-meetings-row-flash');
     });
 
     it('uses the project copy for an empty Upcoming tab', async () => {

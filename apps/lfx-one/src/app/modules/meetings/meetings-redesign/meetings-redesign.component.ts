@@ -21,8 +21,14 @@ import {
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DAY_HEADING_GAP_PX, PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
-import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
+import {
+  IMPERSONATION_BANNER_HEIGHT_PX,
+  MEETINGS_HOME_DAY_HEADING_GAP_PX,
+  MEETINGS_HOME_DAY_SCROLL_DELAY_MS,
+  MEETINGS_HOME_DAY_SCROLL_OFFSET_PX,
+  PHONE_MEDIA_QUERY,
+} from '@lfx-one/shared/constants';
+import { MeetingDashboardView, MeetingHomeRow, MeetingMiniCalendarDay, UiTabItem } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
 import { AppService } from '@services/app.service';
@@ -38,12 +44,13 @@ import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
-import { EMPTY, Observable, skip, switchMap } from 'rxjs';
+import { debounceTime, EMPTY, filter, Observable, skip, switchMap } from 'rxjs';
 
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
 import { MeetingHomeActionsComponent } from './components/meeting-home-actions/meeting-home-actions.component';
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
+import { MeetingsMiniCalendarComponent } from './components/meetings-mini-calendar/meetings-mini-calendar.component';
 import { NextMeetingCardComponent } from './components/next-meeting-card/next-meeting-card.component';
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
 import { MeetingsHomeDeleteService } from './services/meetings-home-delete.service';
@@ -79,6 +86,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     MeetingsDayGroupComponent,
     MeetingHomeActionsComponent,
     MeetingsFiltersComponent,
+    MeetingsMiniCalendarComponent,
     LastMeetingCardComponent,
     NextMeetingCardComponent,
     PendingRsvpsComponent,
@@ -119,6 +127,8 @@ export class MeetingsRedesignComponent {
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
   /** Takes focus when the last filter chip is removed. */
   protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
+  // A literal here so Tailwind generates it; the rows get it from the DOM to restart the flash.
+  private readonly rowFlashClass = 'motion-safe:animate-meetings-row-flash';
 
   protected readonly idPrefix = 'meetings-redesign';
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
@@ -192,6 +202,15 @@ export class MeetingsRedesignComponent {
       this.store.filters();
       untracked(() => this.scrollToListStart());
     });
+    // A day picked on the calendar scrolls into view once its rows render; a later pick within the delay replaces it.
+    toObservable(this.store.revealedDay)
+      .pipe(filter(Boolean), debounceTime(MEETINGS_HOME_DAY_SCROLL_DELAY_MS), takeUntilDestroyed())
+      .subscribe((day) => {
+        // A tab, search or filter change in the meantime cancelled it.
+        if (this.store.revealedDay() !== day) return;
+        this.store.completeReveal();
+        this.scrollToDay(day);
+      });
     // The composer saves in place, so refetch to show the new or edited meeting; skip(1) drops the replayed count.
     toObservable(this.composer.saveCount)
       .pipe(skip(1), takeUntilDestroyed())
@@ -215,12 +234,13 @@ export class MeetingsRedesignComponent {
     const tab: MeetingDashboardView = value === 'past' ? 'past' : 'upcoming';
     if (tab === this.store.tab()) return;
     this.store.setTab(tab);
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { time: tab === 'past' ? 'past' : null },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
+    this.syncTabParam(tab);
+  }
+
+  /** Lists every meeting of a day picked on the mini calendar, on its tab, with search and filters cleared. */
+  protected showDay(day: MeetingMiniCalendarDay): void {
+    this.store.showDay(day.key, day.tab);
+    this.syncTabParam(day.tab);
   }
 
   protected createMeeting(): void {
@@ -298,6 +318,34 @@ export class MeetingsRedesignComponent {
 
   private tabItem(value: MeetingDashboardView, label: string, unknown: boolean, count: number): UiTabItem {
     return unknown ? { value, label } : { value, label, count, countLabel: `${count} ${count === 1 ? 'meeting' : 'meetings'}` };
+  }
+
+  private syncTabParam(tab: MeetingDashboardView): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { time: tab === 'past' ? 'past' : null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  /** Scrolls the first row of `day` to just below the sticky tabs bar and flashes every row of that day. */
+  private scrollToDay(day: string): void {
+    const centre = this.centre()?.nativeElement;
+    const rows = centre ? Array.from(centre.querySelectorAll<HTMLElement>(`[data-day="${day}"]`)) : [];
+    if (!centre || !rows.length) return;
+
+    const desktop = this.columnHeight() !== null;
+    const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
+    const top = rows[0].getBoundingClientRect().top - (stickyEdge + this.headerHeight() + this.tabsBarHeight() + MEETINGS_HOME_DAY_SCROLL_OFFSET_PX);
+    if (desktop) centre.scrollBy({ top, behavior: 'smooth' });
+    else window.scrollBy({ top, behavior: 'smooth' });
+    for (const row of rows) {
+      row.classList.remove(this.rowFlashClass);
+      // Reading layout restarts the animation when the class comes back.
+      void row.offsetWidth;
+      row.classList.add(this.rowFlashClass);
+    }
   }
 
   /** Scrolls the chips or list back up to just below the sticky tabs bar when they have scrolled under it. */
