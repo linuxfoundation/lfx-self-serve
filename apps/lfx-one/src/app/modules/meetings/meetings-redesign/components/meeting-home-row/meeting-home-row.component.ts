@@ -76,7 +76,7 @@ export class MeetingHomeRowComponent {
   private readonly store = inject(MeetingsHomeStore);
   private readonly joinService = inject(MeetingsHomeJoinService);
   private readonly details = inject(MeetingsHomeDetailsService);
-  // A project or foundation's list names no project on its rows; the drawer still does.
+  // A single project's list names no project on its rows; the drawer still does.
   private readonly feed = inject(MeetingsHomeFeed, { optional: true });
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');

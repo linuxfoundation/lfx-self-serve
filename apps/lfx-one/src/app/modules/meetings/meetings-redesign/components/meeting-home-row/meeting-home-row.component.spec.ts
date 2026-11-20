@@ -71,7 +71,7 @@ function buildRow(meeting: Meeting, overrides: Partial<MeetingHomeRow> = {}): Me
 }
 
 describe('MeetingHomeRowComponent', () => {
-  const feedScope = { scope: 'me', showsProject: signal(true) };
+  const feedScope = { showsProject: signal(true) };
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
@@ -130,6 +130,7 @@ describe('MeetingHomeRowComponent', () => {
   });
 
   afterEach(() => {
+    feedScope.showsProject.set(true);
     vi.unstubAllGlobals();
   });
 
@@ -143,10 +144,14 @@ describe('MeetingHomeRowComponent', () => {
       expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
     });
 
-    it('names the sub-project on a foundation list', async () => {
-      feedScope.scope = 'project';
+    it('names the project once the list starts naming them, as on a foundation', async () => {
+      feedScope.showsProject.set(false);
       const fixture = await render(buildRow(buildMeeting()));
-      feedScope.scope = 'me';
+      expect(query(fixture, 'meetings-home-row-project')).toBeNull();
+
+      feedScope.showsProject.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
 
       expect(text(fixture, 'meetings-home-row-project-name')).toBe('Kubernetes');
     });

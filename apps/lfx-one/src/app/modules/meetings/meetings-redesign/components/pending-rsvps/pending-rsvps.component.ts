@@ -74,7 +74,7 @@ export class PendingRsvpsComponent {
   private readonly resize = inject(MeetingsHomeResizeService);
   private readonly details = inject(MeetingsHomeDetailsService);
   private readonly destroyRef = inject(DestroyRef);
-  // A project or foundation's list names no project on its items.
+  // A single project's list names no project on its items.
   private readonly feed = inject(MeetingsHomeFeed, { optional: true });
   private readonly drawerTemplate = viewChild.required<TemplateRef<unknown>>('drawer');
   private readonly panelList = viewChild<ElementRef<HTMLElement>>('panelList');
