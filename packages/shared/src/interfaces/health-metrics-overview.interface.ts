@@ -5,6 +5,7 @@ import type { Signal } from '@angular/core';
 
 import type { HealthMetricsEventsForecast, HealthMetricsEventsForecastCurve } from './health-metrics-events.interface';
 import type { HealthMetricsChartTipView, HealthMetricsL2Range } from './health-metrics-l2.interface';
+import type { HealthMetricsMembersReservedTier } from './health-metrics-members.interface';
 import type { UiBadgeTone, UiBadgeVariant } from './uikit.interface';
 
 /** Every Overview card read is foundation-wide and carries all four periods, so a period change never re-reads. */
@@ -381,6 +382,8 @@ export interface HealthMetricsOverviewNpsView {
 export interface HealthMetricsOverviewChurnTierView {
   key: string;
   label: string;
+  /** The tier icon for Diamond, Platinum, Gold and Silver. */
+  tier: HealthMetricsMembersReservedTier | null;
   rateLabel: string;
   rateWidthPct: number;
   lostLabel: string;

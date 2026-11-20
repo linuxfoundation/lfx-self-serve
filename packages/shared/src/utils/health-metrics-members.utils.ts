@@ -5,7 +5,9 @@ import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
-  HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES,
+  HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_TIPS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
   HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS,
   HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
   HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES,
@@ -23,24 +25,31 @@ import {
   HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
   HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
-  HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS,
+  HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_MEMBERS_RESERVED_TIERS,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
 import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
-import { formatHealthMetricsPercent, formatHealthMetricsSmallPercent, healthMetricsShownPercent } from './health-metrics-table.utils';
+import {
+  formatHealthMetricsPercent,
+  formatHealthMetricsSmallPercent,
+  healthMetricsShownPercent,
+  resolveHealthMetricsMembersTier,
+} from './health-metrics-table.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
-import type { HealthMetricsChartTipRowView, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsChartTipRowView, HealthMetricsL2Section, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskAging,
-  HealthMetricsMembersAtRiskAgingView,
+  HealthMetricsMembersAtRiskBucket,
+  HealthMetricsMembersAtRiskFilter,
   HealthMetricsMembersAtRiskMember,
   HealthMetricsMembersAtRiskRowView,
   HealthMetricsMembersAtRiskSummary,
-  HealthMetricsMembersAtRiskSummaryView,
   HealthMetricsMembersBoardCohort,
   HealthMetricsMembersBoardCohortSummary,
   HealthMetricsMembersBoardMeeting,
@@ -68,7 +77,6 @@ import type {
   HealthMetricsMembersGrowthColumnView,
   HealthMetricsMembersGrowthLineView,
   HealthMetricsMembersGrowthView,
-  HealthMetricsMembersSectionKey,
   HealthMetricsMembersNpsAudience,
   HealthMetricsMembersNpsAudienceOption,
   HealthMetricsMembersNpsQuarter,
@@ -79,11 +87,12 @@ import type {
   HealthMetricsMembersRenewal,
   HealthMetricsMembersRenewalRowView,
   HealthMetricsMembersRenewalsSummary,
-  HealthMetricsMembersRenewalsSummaryView,
+  HealthMetricsMembersRenewalsWindow,
   HealthMetricsMembersReservedTier,
+  HealthMetricsMembersSectionKey,
   HealthMetricsMembersSubNavItem,
-  HealthMetricsMembersTiers,
   HealthMetricsMembersTierYear,
+  HealthMetricsMembersTiers,
 } from '../interfaces/health-metrics-members.interface';
 
 /** Sub-nav items for the Members tab; a section notes only once it reports a note. */
@@ -277,47 +286,51 @@ export function buildHealthMetricsMembersDirectoryRows(rows: HealthMetricsMember
   });
 }
 
-/** A tier as Members shows it: without a trailing "Membership" or "Member", with Diamond, Platinum, Gold and Silver marked for their icon. */
-export function resolveHealthMetricsMembersTier(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
-  const trimmed = raw.trim();
-  const suffix = [' membership', ' member'].find((candidate) => trimmed.toLowerCase().endsWith(candidate));
-  const label = (suffix ? trimmed.slice(0, -suffix.length).trim() : trimmed) || trimmed;
-  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === label.toLowerCase()) ?? null;
-  return { label: reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved] : label, reserved };
+/**
+ * The at-risk metrics: the outstanding balance with its members, then High (90+ days) and Medium (60–89) risk. With
+ * one bucket switched on, only the outstanding balance shows, for that bucket. An unset total is a dash.
+ */
+export function buildHealthMetricsMembersAtRiskMetrics(
+  response: HealthMetricsMembersAtRisk,
+  bucket: HealthMetricsMembersAtRiskFilter
+): HealthMetricsMetricItem[] {
+  const totals = (key: HealthMetricsMembersAtRiskBucket): HealthMetricsMembersAtRiskAging | null =>
+    response.aging.find((entry) => entry.bucket === key) ?? null;
+  const picked = bucket === 'all' ? null : totals(bucket);
+  const outstanding = bucket === 'all' ? response.summary.outstandingBalanceUsd : (picked?.balanceUsd ?? null);
+  const members = bucket === 'all' ? response.summary.memberCount : (picked?.memberCount ?? null);
+  const items: HealthMetricsMetricItem[] = [
+    { key: 'outstanding', label: 'Outstanding balance', value: formatUsd(outstanding), description: `${formatMemberCount(members)} at risk` },
+  ];
+  if (bucket !== 'all') return items;
+
+  const risk = (key: HealthMetricsMembersAtRiskBucket, label: string): HealthMetricsMetricItem => ({
+    key,
+    label,
+    value: formatUsd(totals(key)?.balanceUsd ?? null),
+    description: formatMemberCount(totals(key)?.memberCount ?? null),
+    dotClass: HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES[key],
+    tip: HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_TIPS[key],
+  });
+  return [...items, risk('90_plus_days', 'High risk'), risk('60_89_days', 'Medium risk')];
 }
 
-/** The at-risk hero: the outstanding balance, its High / Medium split, and the member count; an unset total is a dash. */
-export function buildHealthMetricsMembersAtRiskSummary(summary: HealthMetricsMembersAtRiskSummary): HealthMetricsMembersAtRiskSummaryView {
-  return {
-    outstandingLabel: formatUsd(summary.outstandingBalanceUsd),
-    highRiskLabel: formatUsd(summary.highRiskBalanceUsd),
-    mediumRiskLabel: formatUsd(summary.mediumRiskBalanceUsd),
-    memberCountLabel: formatCount(summary.memberCount),
-  };
-}
-
-/** Aging bars, each sized against the largest bucket balance; a bucket with no members is left out, an unset one kept. */
-export function buildHealthMetricsMembersAtRiskAging(aging: HealthMetricsMembersAtRiskAging[]): HealthMetricsMembersAtRiskAgingView[] {
-  const shown = aging.filter((bucket) => bucket.memberCount === null || bucket.memberCount > 0);
-  const max = Math.max(0, ...shown.map((bucket) => bucket.balanceUsd ?? 0));
-  return shown.map((bucket) => ({
-    bucket: bucket.bucket,
-    label: `${HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[bucket.bucket]} · ${bucket.memberCount === null ? '—' : pluralize(bucket.memberCount, 'member')}`,
-    balanceLabel: formatUsd(bucket.balanceUsd),
-    widthPct: max > 0 && bucket.balanceUsd !== null ? Math.min(100, Math.max(0, (bucket.balanceUsd / max) * 100)) : 0,
-  }));
-}
-
-/** At-risk rows; a missing tier, balance, age or engagement date renders as a dash. */
+/** At-risk rows: the company with its last engaged date, the tier, the balance and its age; a missing value is a dash. */
 export function buildHealthMetricsMembersAtRiskRows(rows: HealthMetricsMembersAtRiskMember[]): HealthMetricsMembersAtRiskRowView[] {
-  return rows.map((row) => ({
-    accountId: row.accountId,
-    accountName: row.accountName,
-    tierLabel: row.membershipTier ?? '—',
-    overdueLabel: formatUsd(row.outstandingBalanceUsd),
-    ageLabel: row.daysOverdue === null ? '—' : pluralize(Math.round(row.daysOverdue), 'day'),
-    lastEngagedLabel: formatIsoDate(row.lastEngagedDate),
-  }));
+  return rows.map((row) => {
+    const tier = row.membershipTier?.trim() ? resolveHealthMetricsMembersTier(row.membershipTier) : null;
+    return {
+      accountId: row.accountId,
+      name: row.accountName,
+      logoUrl: row.logoUrl,
+      lastEngagedLabel: row.lastEngagedDate ? `Last engaged ${formatIsoDateLabel(row.lastEngagedDate)}` : '',
+      membershipLabel: tier?.label ?? '—',
+      tier: tier?.reserved ?? null,
+      overdueLabel: formatUsd(row.outstandingBalanceUsd),
+      ageLabel: row.daysOverdue === null ? '—' : pluralize(Math.round(row.daysOverdue), 'day'),
+      ageDotClass: row.agingBucket ? HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES[row.agingBucket] : '',
+    };
+  });
 }
 
 /** The sub-nav note, "12 overdue · $480K"; empty while no member is at risk or either total is unset. */
@@ -326,37 +339,38 @@ export function buildHealthMetricsMembersAtRiskNote(summary: HealthMetricsMember
   return `${summary.memberCount.toLocaleString('en-US')} overdue · ${formatCurrency(summary.outstandingBalanceUsd)}`;
 }
 
-/** The "N members" line beside the bucket pills. */
-export function buildHealthMetricsMembersAtRiskCountLabel(totalRecords: number): string {
-  return pluralize(totalRecords, 'member');
-}
-
-/** The renewals hero: the known dues up for renewal, the count, and how many renewals have no dues on record. */
-export function buildHealthMetricsMembersRenewalsSummary(summary: HealthMetricsMembersRenewalsSummary): HealthMetricsMembersRenewalsSummaryView {
-  const withoutDues = summary.withoutDuesCount ?? 0;
-  return {
-    valueLabel: formatUsd(summary.valueUsd),
-    renewalCountLabel: formatCount(summary.renewalCount),
-    coverageNote: withoutDues > 0 ? `${pluralize(withoutDues, 'renewal')} without dues on record, so the value counts only the known dues.` : '',
-  };
+/** The renewals metrics: the known dues up for renewal, and how many renew in the window. */
+export function buildHealthMetricsMembersRenewalsMetrics(summary: HealthMetricsMembersRenewalsSummary): HealthMetricsMetricItem[] {
+  return [
+    { key: 'value', label: 'Value up for renewal', value: formatUsd(summary.valueUsd) },
+    { key: 'due', label: 'Renewals due', value: formatCount(summary.renewalCount) },
+  ];
 }
 
 /** Renewal rows; a missing tier, date or dues renders as a dash, never $0. */
 export function buildHealthMetricsMembersRenewalRows(rows: HealthMetricsMembersRenewal[]): HealthMetricsMembersRenewalRowView[] {
-  return rows.map((row) => ({
-    accountId: row.accountId,
-    accountName: row.accountName,
-    tierLabel: row.membershipTier ?? '—',
-    renewalDateLabel: formatIsoDate(row.renewalDate),
-    duesLabel: formatUsd(row.duesUsd),
-    hasOutstandingBalance: row.hasOutstandingBalance,
-    hasRenewed: row.hasRenewed,
-  }));
+  return rows.map((row) => {
+    const tier = row.membershipTier?.trim() ? resolveHealthMetricsMembersTier(row.membershipTier) : null;
+    return {
+      accountId: row.accountId,
+      name: row.accountName,
+      logoUrl: row.logoUrl,
+      membershipLabel: tier?.label ?? '—',
+      tier: tier?.reserved ?? null,
+      renewalDateLabel: formatIsoDate(row.renewalDate),
+      duesLabel: formatUsd(row.duesUsd),
+    };
+  });
 }
 
-/** The "N renewals" line over the table. */
-export function buildHealthMetricsMembersRenewalsCountLabel(totalRecords: number): string {
-  return pluralize(totalRecords, 'renewal');
+/** The at-risk bucket a URL value names; anything else is "All at risk". */
+export function parseHealthMetricsMembersAtRiskFilter(value: string | null): HealthMetricsMembersAtRiskFilter {
+  return HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS.find((option) => option.id === value)?.id ?? 'all';
+}
+
+/** The renewals window a URL value names; anything else is the first, the next 90 days. */
+export function parseHealthMetricsMembersRenewalsWindow(value: string | null): HealthMetricsMembersRenewalsWindow {
+  return HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS.find((window) => window === value) ?? HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS[0];
 }
 
 /** The board hero for the selected cohort, with the other cohort's latest share beside it. */
@@ -806,6 +820,11 @@ function directoryEngagement(row: HealthMetricsMembersDirectoryMember): HealthMe
       ],
     },
   };
+}
+
+/** "{N} members", or a dash for an unset count. */
+function formatMemberCount(count: number | null): string {
+  return count === null ? '—' : pluralize(count, 'member');
 }
 
 function formatCount(value: number | null): string {

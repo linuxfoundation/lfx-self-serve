@@ -43,6 +43,7 @@ import type {
   HealthMetricsMembersAtRiskBucket,
   HealthMetricsMembersAtRiskMember,
   HealthMetricsMembersAtRiskQuery,
+  HealthMetricsMembersAtRiskSortKey,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardAttendanceQuery,
   HealthMetricsMembersBoardCohort,
@@ -74,6 +75,7 @@ import type {
   HealthMetricsMembersRenewal,
   HealthMetricsMembersRenewals,
   HealthMetricsMembersRenewalsQuery,
+  HealthMetricsMembersRenewalsSortKey,
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsMembersTierYear,
   HealthMetricsMembersTiers,
@@ -152,11 +154,12 @@ type AtRiskBucketTotals = Record<`FOUNDATION_${Uppercase<HealthMetricsMembersAtR
 interface AtRiskRow extends AtRiskBucketTotals {
   TOTAL_RECORDS: number | null;
   SCOPED_RECORDS: number | null;
-  FOUNDATION_HIGH_RISK_BALANCE_USD: number | null;
-  FOUNDATION_MEDIUM_RISK_BALANCE_USD: number | null;
   IS_PAGE_ROW: boolean | null;
+  /** The row's place in the picked order, which the outer select keeps after the logo join. */
+  PAGE_POSITION: number | null;
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
+  LOGO_URL: string | null;
   MEMBERSHIP_TIER: string | null;
   OUTSTANDING_BALANCE_USD: number | null;
   DAYS_OVERDUE: number | null;
@@ -171,16 +174,15 @@ interface RenewalRow {
   TOTAL_RECORDS: number | null;
   RENEWALS_COUNT: number | null;
   VALUE_USD: number | null;
-  WITHOUT_DUES_COUNT: number | null;
   IS_PAGE_ROW: boolean | null;
+  /** The row's place in the picked order, which the outer select keeps after the logo join. */
+  PAGE_POSITION: number | null;
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
+  LOGO_URL: string | null;
   MEMBERSHIP_TIER: string | null;
   RENEWAL_DATE: Date | string | null;
-  DAYS_UNTIL_RENEWAL: number | null;
   DUES_USD: number | null;
-  HAS_OUTSTANDING_BALANCE: boolean | null;
-  HAS_RENEWED: boolean | null;
 }
 
 interface BoardCohortRow {
@@ -438,8 +440,8 @@ export class HealthMetricsMembersService {
   }
 
   /**
-   * One page of the foundation's members whose balance is 60+ days overdue, in the view's `sort_rank`
-   * order, with the hero and aging totals over every such member whatever the bucket filter.
+   * One page of the foundation's members whose balance is 60+ days overdue, in the view's `sort_rank` order or a
+   * column the reader picked, with the balance and each bucket's totals over every such member whatever the switch.
    */
   public async getAtRisk(req: Request, query: HealthMetricsMembersAtRiskQuery): Promise<HealthMetricsMembersAtRisk> {
     const binds: string[] = [query.foundationSlug, ...HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS];
@@ -451,6 +453,8 @@ export class HealthMetricsMembersService {
 
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+    // A column the reader picked, over every page; with none, the view's rank. Only these expressions reach the SQL.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, atRiskSortColumns(), 'sort_rank ASC NULLS LAST, account_id ASC');
     const bucketPlaceholders = HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map(() => '?').join(', ');
     // The model repeats its foundation totals on every row, so any one row carries them; bucket ids are constants.
     const bucketColumns = HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.flatMap((bucket) => [
@@ -470,14 +474,12 @@ export class HealthMetricsMembersService {
           churn_risk,
           last_engaged_date,
           sort_rank,
-          foundation_high_risk_balance_usd,
-          foundation_medium_risk_balance_usd,
           ${bucketColumns.join(',\n          ')}
         FROM ${MEMBERSHIP_AT_RISK_VIEW}
         WHERE foundation_slug = ?
           AND account_id IS NOT NULL
           AND account_id <> ''
-          -- Balances under 60 days are not yet at risk, so they stay out of the hero, the aging and the table.
+          -- Balances under 60 days are not yet at risk, so they stay out of the metrics and the table.
           AND aging_bucket IN (${bucketPlaceholders})
       ),
       matched AS (
@@ -487,8 +489,6 @@ export class HealthMetricsMembersService {
         SELECT
           (SELECT COUNT(*) FROM matched) AS total_records,
           COUNT(*) AS scoped_records,
-          ANY_VALUE(foundation_high_risk_balance_usd) AS foundation_high_risk_balance_usd,
-          ANY_VALUE(foundation_medium_risk_balance_usd) AS foundation_medium_risk_balance_usd,
           ${bucketColumns.map((column) => `ANY_VALUE(${column}) AS ${column}`).join(',\n          ')}
         FROM scoped
       ),
@@ -503,16 +503,20 @@ export class HealthMetricsMembersService {
           churn_risk,
           last_engaged_date,
           sort_rank,
-          TRUE AS is_page_row
+          TRUE AS is_page_row,
+          -- The row's place in the page's order, which the outer select keeps after the logo join.
+          ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM matched
-        ORDER BY sort_rank ASC NULLS LAST, account_id ASC
+        -- account_id breaks any tie, and NULLS LAST pins placement against the session's null ordering.
+        ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
-      SELECT totals.*, page.*
+      SELECT totals.*, page.*, ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<AtRiskRow>(this.snowflakeService, req, sql, binds, {
@@ -535,11 +539,9 @@ export class HealthMetricsMembersService {
     return {
       rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapAtRiskMember),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
-      // The model's foundation-wide total counts balances under 60 days too, so the hero adds up the buckets shown.
+      // The model's foundation-wide total counts balances under 60 days too, so the balance adds up the buckets shown.
       summary: {
         outstandingBalanceUsd: sumMeasured(aging.map((bucket) => bucket.balanceUsd)),
-        highRiskBalanceUsd: total(first?.FOUNDATION_HIGH_RISK_BALANCE_USD),
-        mediumRiskBalanceUsd: total(first?.FOUNDATION_MEDIUM_RISK_BALANCE_USD),
         memberCount: sumMeasured(aging.map((bucket) => bucket.memberCount)),
       },
       aging,
@@ -547,13 +549,15 @@ export class HealthMetricsMembersService {
   }
 
   /**
-   * Renewals in the window, soonest first, with the model's own window totals. A renewal already done stays in, marked,
-   * since those totals count it; `renewal_status` has no source and is never read.
+   * Renewals in the window, highest dues first or in a column the reader picked, with the model's own window totals. A
+   * renewal already done stays in, since those totals count it; `renewal_status` has no source and is never read.
    */
   public async getRenewals(req: Request, query: HealthMetricsMembersRenewalsQuery): Promise<HealthMetricsMembersRenewals> {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
     const columns = RENEWALS_WINDOW_COLUMNS[query.window];
+    // A column the reader picked, over every page; with none, the highest dues first. Only these expressions reach the SQL.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, renewalsSortColumns(), 'dues_usd DESC NULLS LAST, renewal_date ASC NULLS LAST, account_id ASC');
 
     const sql = `
       WITH scoped AS (
@@ -562,10 +566,7 @@ export class HealthMetricsMembersService {
           account_name,
           NULLIF(TRIM(membership_tier), '') AS membership_tier,
           renewal_date,
-          days_until_renewal,
           dues_usd,
-          has_outstanding_balance,
-          has_renewed,
           COALESCE(${columns.flag}, FALSE) AS in_window,
           ${columns.totals}_renewals_count AS renewals_count,
           ${columns.totals}_dues_usd AS window_dues_usd
@@ -580,8 +581,7 @@ export class HealthMetricsMembersService {
           COUNT_IF(in_window) AS total_records,
           -- The model repeats its foundation totals on every row, so an empty window still reads them off the others.
           ANY_VALUE(renewals_count) AS renewals_count,
-          ANY_VALUE(window_dues_usd) AS value_usd,
-          COUNT_IF(in_window AND dues_usd IS NULL) AS without_dues_count
+          ANY_VALUE(window_dues_usd) AS value_usd
         FROM scoped
       ),
       page AS (
@@ -590,21 +590,22 @@ export class HealthMetricsMembersService {
           account_name,
           membership_tier,
           renewal_date,
-          days_until_renewal,
           dues_usd,
-          has_outstanding_balance,
-          has_renewed,
-          TRUE AS is_page_row
+          TRUE AS is_page_row,
+          -- The row's place in the page's order, which the outer select keeps after the logo join.
+          ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM scoped
         WHERE in_window
-        ORDER BY renewal_date ASC NULLS LAST, dues_usd DESC NULLS LAST, account_id ASC
+        -- account_id breaks any tie, and NULLS LAST pins placement against the session's null ordering.
+        ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
-      SELECT totals.*, page.*
+      SELECT totals.*, page.*, ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.renewal_date ASC NULLS LAST, page.dues_usd DESC NULLS LAST, page.account_id ASC
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<RenewalRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
@@ -622,7 +623,6 @@ export class HealthMetricsMembersService {
       summary: {
         renewalCount: modelled ? toNullableNumber(first?.RENEWALS_COUNT) : 0,
         valueUsd: modelled ? toNullableNumber(first?.VALUE_USD) : 0,
-        withoutDuesCount: Number(first?.WITHOUT_DUES_COUNT ?? 0),
       },
     };
   }
@@ -1052,6 +1052,25 @@ function directorySortColumns(): Record<HealthMetricsMembersDirectorySortKey, He
   };
 }
 
+/** Each column as the cell shows it: a company with no name shows its account id, and the tier sorts by rank. */
+function atRiskSortColumns(): Record<HealthMetricsMembersAtRiskSortKey, HealthMetricsSqlSortColumn> {
+  return {
+    company: { expression: "COALESCE(NULLIF(account_name, ''), account_id)", kind: 'text' },
+    membership: { expression: 'membership_tier', kind: 'tier' },
+    overdue: { expression: 'outstanding_balance_usd', kind: 'number' },
+    age: { expression: 'days_overdue', kind: 'number' },
+  };
+}
+
+function renewalsSortColumns(): Record<HealthMetricsMembersRenewalsSortKey, HealthMetricsSqlSortColumn> {
+  return {
+    company: { expression: "COALESCE(NULLIF(account_name, ''), account_id)", kind: 'text' },
+    membership: { expression: 'membership_tier', kind: 'tier' },
+    date: { expression: 'renewal_date', kind: 'date' },
+    dues: { expression: 'dues_usd', kind: 'number' },
+  };
+}
+
 function mapDirectoryMember(row: DirectoryRow): HealthMetricsMembersDirectoryMember[] {
   if (!row.ACCOUNT_ID) return [];
 
@@ -1086,6 +1105,7 @@ function mapAtRiskMember(row: AtRiskRow): HealthMetricsMembersAtRiskMember[] {
     {
       accountId: row.ACCOUNT_ID,
       accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      logoUrl: row.LOGO_URL ?? '',
       membershipTier: row.MEMBERSHIP_TIER || null,
       outstandingBalanceUsd: toNullableNumber(row.OUTSTANDING_BALANCE_USD),
       daysOverdue: toNullableNumber(row.DAYS_OVERDUE),
@@ -1103,12 +1123,10 @@ function mapRenewal(row: RenewalRow): HealthMetricsMembersRenewal[] {
     {
       accountId: row.ACCOUNT_ID,
       accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      logoUrl: row.LOGO_URL ?? '',
       membershipTier: row.MEMBERSHIP_TIER || null,
       renewalDate: toIsoDate(row.RENEWAL_DATE),
-      daysUntilRenewal: toNullableNumber(row.DAYS_UNTIL_RENEWAL),
       duesUsd: toNullableNumber(row.DUES_USD),
-      hasOutstandingBalance: row.HAS_OUTSTANDING_BALANCE === true,
-      hasRenewed: row.HAS_RENEWED === true,
     },
   ];
 }

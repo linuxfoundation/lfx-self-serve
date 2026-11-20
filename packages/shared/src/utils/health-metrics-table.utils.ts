@@ -8,7 +8,9 @@ import {
   HEALTH_METRICS_TABLE_MIN_WIDTH_CAP_PX,
   HEALTH_METRICS_VALUE_BAR_FILL,
 } from '../constants/health-metrics-table.constants';
+import { HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS, HEALTH_METRICS_MEMBERS_RESERVED_TIERS } from '../constants/health-metrics-members.constants';
 
+import type { HealthMetricsMembersReservedTier } from '../interfaces/health-metrics-members.interface';
 import type {
   HealthMetricsBarFillRule,
   HealthMetricsColumnSort,
@@ -171,4 +173,13 @@ function normalizeTierName(tier: string): string {
 /** The one-decimal value a share under 1% shows: at least 0.1, rounding up to 1 at the top. */
 function smallPercentTenths(pct: number): number {
   return Math.min(1, Math.max(0.1, Math.round(pct * 10) / 10));
+}
+
+/** A tier as Members shows it: without a trailing "Membership" or "Member", with Diamond, Platinum, Gold and Silver marked for their icon. */
+export function resolveHealthMetricsMembersTier(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
+  const trimmed = raw.trim();
+  const suffix = [' membership', ' member'].find((candidate) => trimmed.toLowerCase().endsWith(candidate));
+  const label = (suffix ? trimmed.slice(0, -suffix.length).trim() : trimmed) || trimmed;
+  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === label.toLowerCase()) ?? null;
+  return { label: reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved] : label, reserved };
 }

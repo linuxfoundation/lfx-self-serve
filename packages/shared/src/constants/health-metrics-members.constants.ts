@@ -15,6 +15,7 @@ import type { HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces
 import type {
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskBucket,
+  HealthMetricsMembersAtRiskSortKey,
   HealthMetricsMembersAtRiskFilterOption,
   HealthMetricsMembersBreakdownTableClasses,
   HealthMetricsMembersBoardAttendance,
@@ -34,6 +35,7 @@ import type {
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersQueryParams,
   HealthMetricsMembersRenewals,
+  HealthMetricsMembersRenewalsSortKey,
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsMembersReservedTier,
   HealthMetricsMembersTierIcon,
@@ -75,23 +77,14 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-file-invoice-dollar', source: HEALTH_METRICS_L2_EMPTY_SOURCES.invoice, snapshot: true },
     label: 'At-risk & balance',
     heading: 'At-risk & outstanding balance',
-    description: 'Act-now view. Sorted by dues at risk rather than days overdue — the ED needs the money order, not the calendar order.',
+    description: 'Members with unpaid invoices who may not renew.',
   },
   {
     key: 'renewals',
     empty: { icon: 'fa-light fa-arrow-trend-down', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Renewals',
     heading: 'Renewals',
-    description: 'The forward-looking view: what is up for renewal and what it is worth, while there is still time to act.',
-    note: {
-      tone: 'caution',
-      parts: [
-        { text: 'Company, tier, dues and renewal date', bold: true },
-        {
-          text: ' come from the membership record — the term end date PCC shows as "Period". Renewal status (Confirmed / In discussion / Unconfirmed) is a CRM pipeline stage no system we read carries, so it is left out rather than every row reading Unconfirmed.',
-        },
-      ],
-    },
+    description: 'Memberships coming up for renewal, and their value.',
   },
   {
     key: 'board',
@@ -342,13 +335,13 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES: Record<H
 /** `MEMBERSHIP_AT_RISK`'s buckets past 60 days, oldest last; the section leaves out balances under 60 days. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS = ['60_89_days', '90_plus_days'] as const;
 
-/** The design's label for each aging bucket, on its pill and its aging bar. */
+/** The design's label for each aging bucket, on its switch option. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS: Record<HealthMetricsMembersAtRiskBucket, string> = {
   '60_89_days': '60–89 days',
   '90_plus_days': '90+ days',
 };
 
-/** The bucket pills over the hero; the first is the default. */
+/** The bucket switch in the card header; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS: readonly HealthMetricsMembersAtRiskFilterOption[] = [
   { id: 'all', label: 'All at risk' },
   ...HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map((bucket) => ({ id: bucket, label: HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[bucket] })),
@@ -361,7 +354,7 @@ export const HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISKS = ['High', 'Medium', 'Lo
 export const HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED: HealthMetricsMembersAtRisk = {
   rows: [],
   totalRecords: 0,
-  summary: { outstandingBalanceUsd: 0, highRiskBalanceUsd: 0, mediumRiskBalanceUsd: 0, memberCount: 0 },
+  summary: { outstandingBalanceUsd: 0, memberCount: 0 },
   aging: [],
 };
 
@@ -371,20 +364,40 @@ export const HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE = 10;
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE = 100;
 
-/** The aging bars' fill. */
-export const HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS = 'bg-red-600';
+/** The at-risk table's sortable columns. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersAtRiskSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'membership', kind: 'tier' },
+  { key: 'overdue', kind: 'number' },
+  { key: 'age', kind: 'number' },
+];
+
+/** At-risk opens on the view's rank, the largest balance overdue first. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersAtRiskSortKey> = { key: 'overdue', direction: 'desc' };
+
+/** The dot before each row's age, and before the High and Medium risk metrics: red at 90+ days, amber at 60–89. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES: Record<HealthMetricsMembersAtRiskBucket, string> = {
+  '90_plus_days': 'bg-red-400',
+  '60_89_days': 'bg-amber-400',
+};
+
+/** The High and Medium risk metrics' question-mark tips. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_TIPS: Record<HealthMetricsMembersAtRiskBucket, string> = {
+  '90_plus_days': 'Dues overdue for 90 days or more. These members are the most likely to churn.',
+  '60_89_days': 'Dues overdue for 60 to 89 days. Still recoverable with a timely follow-up.',
+};
 
 /** Read-failed / no-foundation value: no renewals, and no figures rather than zeros. */
 export const HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED: HealthMetricsMembersRenewals = {
   rows: [],
   totalRecords: 0,
-  summary: { renewalCount: null, valueUsd: null, withoutDuesCount: null },
+  summary: { renewalCount: null, valueUsd: null },
 };
 
 /** `MEMBERSHIP_RENEWALS`' windows, one per `is_renewing_*` flag; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS = ['90_days', '180_days', 'this_year'] as const;
 
-/** The window pills over the hero. */
+/** The window switch in the card header; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_OPTIONS: readonly HealthMetricsMembersRenewalsWindowOption[] = [
   { id: '90_days', label: 'Next 90 days' },
   { id: '180_days', label: 'Next 180 days' },
@@ -404,19 +417,16 @@ export const HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE = 10;
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE = 100;
 
-/** The MEM-02 marker beside a renewing member with an outstanding balance, in the Needs action colour. */
-export const HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER = {
-  label: 'Balance outstanding',
-  icon: 'fa-light fa-circle-exclamation',
-  textClass: 'text-red-600',
-} as const;
+/** The renewals table's sortable columns. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersRenewalsSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'membership', kind: 'tier' },
+  { key: 'date', kind: 'date' },
+  { key: 'dues', kind: 'number' },
+];
 
-/** The marker beside a member who already renewed; the model's window totals still count the renewal. */
-export const HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER = {
-  label: 'Renewed',
-  icon: 'fa-light fa-circle-check',
-  textClass: 'text-emerald-700',
-} as const;
+/** Renewals open on the highest dues first, as the design orders them. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersRenewalsSortKey> = { key: 'dues', direction: 'desc' };
 
 /** `MEMBERSHIP_BOARD_ATTENDANCE`'s cohorts; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_BOARD_COHORTS = ['board', 'voting_members'] as const;

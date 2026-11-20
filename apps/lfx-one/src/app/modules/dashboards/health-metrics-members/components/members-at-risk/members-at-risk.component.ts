@@ -2,50 +2,53 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import {
-  HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
-  HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_DEFAULT_SORT,
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_AT_RISK_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
-import {
-  buildHealthMetricsMembersAtRiskAging,
-  buildHealthMetricsMembersAtRiskCountLabel,
-  buildHealthMetricsMembersAtRiskNote,
-  buildHealthMetricsMembersAtRiskRows,
-  buildHealthMetricsMembersAtRiskSummary,
-} from '@lfx-one/shared/utils';
+import { buildHealthMetricsMembersAtRiskMetrics, buildHealthMetricsMembersAtRiskNote, buildHealthMetricsMembersAtRiskRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
+
 import type {
-  FilterPillOption,
   HealthMetricsMembersAtRisk,
-  HealthMetricsMembersAtRiskAgingView,
   HealthMetricsMembersAtRiskFilter,
   HealthMetricsMembersAtRiskQuery,
   HealthMetricsMembersAtRiskRowView,
-  HealthMetricsMembersAtRiskSummaryView,
+  HealthMetricsMetricItem,
 } from '@lfx-one/shared/interfaces';
-import type { TablePageEvent } from 'primeng/table';
 
 /**
- * `#risk` — members 60+ days overdue on dues in the view's own dues-at-risk order, with the foundation's aging and risk totals.
- * A snapshot of now, so the period picker does not apply; paged server-side in the view's own order.
+ * `#risk` — members 60+ days overdue on dues, largest balance first, with the foundation's balance and its High and Medium
+ * risk split. A snapshot of now, so the period picker does not apply; paged and sorted server-side.
  */
 @Component({
   selector: 'lfx-members-at-risk',
-  imports: [EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
+    Skeleton,
+    TableComponent,
+    UiPaginationComponent,
+  ],
   templateUrl: './members-at-risk.component.html',
 })
 export class MembersAtRiskComponent {
@@ -62,41 +65,39 @@ export class MembersAtRiskComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  /** The header's bucket switch lives in the page's section controls, so the page owns the cut. */
+  public readonly bucket = model<HealthMetricsMembersAtRiskFilter>('all');
+
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
-  protected readonly filterOptions: FilterPillOption[] = [...HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS];
-  protected readonly barClass = HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS;
-  protected readonly tierPillClass = HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS;
   protected readonly size = HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE;
-  protected readonly bucket = signal<HealthMetricsMembersAtRiskFilter>(this.toBucket(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.atRiskBucket)));
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a foundation with no one at risk, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
   /** The foundation the shown response belongs to, so a new foundation's read holds the skeleton, not the old figures. */
   private readonly responseSlug = signal<string | null>(null);
 
-  /** A new foundation or bucket restarts paging, since a page from a wider cut can sit past the end of a narrower one. */
+  /** Sorted on the server across every page; the default keeps the view's rank. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_MEMBERS_AT_RISK_SORT_COLUMNS, HEALTH_METRICS_MEMBERS_AT_RISK_DEFAULT_SORT);
+  /** Zero-based, as the pager counts. A new foundation, bucket or order restarts paging, since a wider cut's page can sit past a narrower one's end. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.bucket()}`),
-    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.bucket()}|${JSON.stringify(this.sorting.sort())}`),
+    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 0),
   });
 
   protected readonly query: Signal<HealthMetricsMembersAtRiskQuery> = this.initQuery();
   protected readonly response: Signal<HealthMetricsMembersAtRisk> = this.initResponse();
 
-  protected readonly summary: Signal<HealthMetricsMembersAtRiskSummaryView> = computed(() => buildHealthMetricsMembersAtRiskSummary(this.response().summary));
-  protected readonly aging: Signal<HealthMetricsMembersAtRiskAgingView[]> = computed(() => buildHealthMetricsMembersAtRiskAging(this.response().aging));
+  protected readonly metrics: Signal<HealthMetricsMetricItem[]> = computed(() => buildHealthMetricsMembersAtRiskMetrics(this.response(), this.bucket()));
   protected readonly rowViews: Signal<HealthMetricsMembersAtRiskRowView[]> = computed(() => buildHealthMetricsMembersAtRiskRows(this.response().rows));
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly countLabel = computed(() => buildHealthMetricsMembersAtRiskCountLabel(this.totalRecords()));
-  protected readonly first = computed(() => (this.page() - 1) * this.size);
   /** Holds the skeleton until a foundation's first read lands; later reads keep the figures and load in the table. */
   protected readonly firstRead = computed(
     () =>
       this.loading() &&
       (this.response() === HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED || this.responseSlug() !== (this.projectContextService.selectedFoundation()?.slug ?? ''))
   );
-  /** The hero counts the whole foundation whatever the pill, so only its measured zero can say no one is at risk. */
+  /** The balance counts the whole foundation whatever the switch, so only its measured zero can say no one is at risk. */
   protected readonly noneAtRisk = computed(() => this.response().summary.memberCount === 0);
   /** No member is at risk; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.noneAtRisk());
@@ -114,20 +115,13 @@ export class MembersAtRiskComponent {
     }
   }
 
-  protected onBucketChange(id: string): void {
-    this.bucket.set(this.toBucket(id));
-  }
-
-  protected onTablePage(event: TablePageEvent): void {
-    this.page.set(Math.floor((event.first ?? 0) / this.size) + 1);
-  }
-
   private initQuery(): Signal<HealthMetricsMembersAtRiskQuery> {
     return computed(() => ({
       foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
       bucket: this.bucket(),
-      offset: (this.page() - 1) * this.size,
+      offset: this.page() * this.size,
       pageSize: this.size,
+      sort: this.sorting.order(),
     }));
   }
 
@@ -139,7 +133,7 @@ export class MembersAtRiskComponent {
 
     // Latches on the first non-empty slug so an unresolved foundation holds the skeleton.
     let foundationSeen = false;
-    // The note sums the whole foundation, so only a new foundation blanks it; paging and the pill keep it.
+    // The note sums the whole foundation, so only a new foundation blanks it; paging, the switch and the sort keep it.
     let noteScope: string | null = null;
 
     return toSignal(
@@ -188,7 +182,8 @@ export class MembersAtRiskComponent {
       relativeTo: this.route,
       queryParams: {
         [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.atRiskBucket]: this.bucket() === 'all' ? null : this.bucket(),
-        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.atRiskPage]: page > 1 ? page : null,
+        // The URL counts pages from 1.
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.atRiskPage]: page > 0 ? page + 1 : null,
       },
       queryParamsHandling: 'merge',
       preserveFragment: true,
@@ -201,8 +196,8 @@ export class MembersAtRiskComponent {
    * the last page with rows, writing it back since the clamp can precede the sync's first emission.
    */
   private clampPage(response: HealthMetricsMembersAtRisk): boolean {
-    const lastPage = Math.max(1, Math.ceil(response.totalRecords / this.size));
-    // The sentinel's zero is no count, so a failed read keeps the page; an empty bucket moves to page 1.
+    const lastPage = Math.max(0, Math.ceil(response.totalRecords / this.size) - 1);
+    // The sentinel's zero is no count, so a failed read keeps the page; an empty bucket moves to the first page.
     if (response === HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED || this.page() <= lastPage) return false;
 
     this.page.set(lastPage);
@@ -210,12 +205,9 @@ export class MembersAtRiskComponent {
     return true;
   }
 
+  /** The URL's 1-based page as the pager's 0-based one. */
   private parseInitialPage(): number {
     const page = Number(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.atRiskPage));
-    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
-  }
-
-  private toBucket(value: string | null): HealthMetricsMembersAtRiskFilter {
-    return HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS.find((option) => option.id === value)?.id ?? 'all';
+    return Number.isFinite(page) && page > 1 ? Math.floor(page) - 1 : 0;
   }
 }

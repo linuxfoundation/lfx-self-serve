@@ -316,6 +316,7 @@ describe('AnalyticsController.getMembersAtRisk', () => {
       bucket: 'all',
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED);
   });
@@ -323,7 +324,15 @@ describe('AnalyticsController.getMembersAtRisk', () => {
   it('passes the bucket and page', async () => {
     await call({ ...valid, bucket: '90_plus_days', offset: '10', pageSize: '10' }, 'getMembersAtRisk').promise;
 
-    expect(getAtRisk).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', bucket: '90_plus_days', offset: 10, pageSize: 10 });
+    expect(getAtRisk).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', bucket: '90_plus_days', offset: 10, pageSize: 10, sort: null });
+  });
+
+  it('passes an allowed sort, and drops an unknown column or direction', async () => {
+    await call({ ...valid, sortKey: 'age', sortDir: 'asc' }, 'getMembersAtRisk').promise;
+    expect(getAtRisk).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'age', direction: 'asc' } }));
+
+    await call({ ...valid, sortKey: 'days_overdue', sortDir: 'asc' }, 'getMembersAtRisk').promise;
+    expect(getAtRisk).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it('falls back to the default page size past the cap', async () => {
@@ -374,6 +383,7 @@ describe('AnalyticsController.getMembersRenewals', () => {
       window: '90_days',
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
   });
@@ -381,7 +391,15 @@ describe('AnalyticsController.getMembersRenewals', () => {
   it('passes the window and the page', async () => {
     await call({ ...valid, window: 'this_year', offset: '10', pageSize: '10' }, 'getMembersRenewals').promise;
 
-    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', window: 'this_year', offset: 10, pageSize: 10 });
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', window: 'this_year', offset: 10, pageSize: 10, sort: null });
+  });
+
+  it('passes an allowed sort, and drops an unknown column or direction', async () => {
+    await call({ ...valid, sortKey: 'date', sortDir: 'desc' }, 'getMembersRenewals').promise;
+    expect(getRenewals).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'date', direction: 'desc' } }));
+
+    await call({ ...valid, sortKey: 'dues', sortDir: 'up' }, 'getMembersRenewals').promise;
+    expect(getRenewals).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it.each(['30_days', 'THIS_YEAR'])('rejects window %o', async (window) => {

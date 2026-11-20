@@ -20,11 +20,34 @@
   <ng-template lfxHealthMetricsL2Section="list">
     <lfx-members-directory (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="risk">
+    <lfx-ui-switch size="small" ariaLabel="Overdue age" [value]="riskBucket()" (valueChange)="onRiskBucketChange($event)" data-testid="members-at-risk-bucket">
+      @for (filter of riskFilters; track filter.id) {
+        <lfx-ui-switch-option [value]="filter.id" [label]="filter.label" [attr.data-testid]="'members-at-risk-bucket-' + filter.id" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="risk">
-    <lfx-members-at-risk (noteChange)="riskNote.set($event)" (reading)="shell.sectionReading('risk')" (settled)="shell.sectionSettled('risk', $event)" />
+    <lfx-members-at-risk
+      [(bucket)]="riskBucket"
+      (noteChange)="riskNote.set($event)"
+      (reading)="shell.sectionReading('risk')"
+      (settled)="shell.sectionSettled('risk', $event)" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="renewals">
+    <lfx-ui-switch
+      size="small"
+      ariaLabel="Renewal window"
+      [value]="renewalsWindow()"
+      (valueChange)="onRenewalsWindowChange($event)"
+      data-testid="members-renewals-window">
+      @for (window of renewalsWindows; track window.id) {
+        <lfx-ui-switch-option [value]="window.id" [label]="window.label" [attr.data-testid]="'members-renewals-window-' + window.id" />
+      }
+    </lfx-ui-switch>
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="renewals">
-    <lfx-members-renewals (reading)="shell.sectionReading('renewals')" (settled)="shell.sectionSettled('renewals', $event)" />
+    <lfx-members-renewals [(window)]="renewalsWindow" (reading)="shell.sectionReading('renewals')" (settled)="shell.sectionSettled('renewals', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="board">
     <lfx-members-board-attendance
