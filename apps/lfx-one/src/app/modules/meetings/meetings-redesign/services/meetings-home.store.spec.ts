@@ -1116,6 +1116,47 @@ describe('MeetingsHomeStore', () => {
       expect(store.pastPageFailed()).toBe(true);
     });
 
+    it('keeps Retry on Upcoming from putting a loaded Past list into its error state', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+      store.setTab('upcoming');
+      upcoming$.error(new Error('upcoming failed'));
+      TestBed.tick();
+
+      store.retry();
+      TestBed.tick();
+      pastPages[pastPages.length - 1].error(new Error('past reload failed'));
+      store.setTab('past');
+      TestBed.tick();
+
+      expect(store.failed()).toBe(false);
+      expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+    });
+
+    it('shows no error while a new search debounces after a failed page', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      store.setSearch('nothing loaded matches this');
+      TestBed.tick();
+
+      expect(store.failed()).toBe(false);
+    });
+
     it('does not request a next page on the upcoming tab', () => {
       const store = createPaged();
       pastPages[0].next(pastPage('a', 1, 'cursor-1'));

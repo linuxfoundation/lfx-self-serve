@@ -171,9 +171,15 @@ export class MeetingsHomeStore {
     this.tab() === 'past' ? this.pastLoading() || (this.pastLoadingMore() && this.filteredRows().length === 0) : this.upcomingLoading()
   );
   /** The active tab's feed failed to load; its rows are empty but not confirmed empty. */
-  public readonly failed: Signal<boolean> = computed(() =>
-    // A failed next past page with nothing to show reads as a failed list, so the viewer gets Retry.
-    this.tab() === 'past' ? this.pastFailed() || (this.pastPageFailedState() && this.filteredRows().length === 0) : this.upcomingFailed()
+  public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastShowsError() : this.upcomingFailed()));
+  /**
+   * The past list is in its error state: its load failed, or, on the Past tab, a next page failed for the current search
+   * with nothing to show, so the viewer gets Retry.
+   */
+  public readonly pastShowsError: Signal<boolean> = computed(
+    () =>
+      this.pastFailed() ||
+      (this.tab() === 'past' && this.pastPageFailedState() && this.search().trim() === this.pastQuery() && this.filteredRows().length === 0)
   );
   /** The active tab's rows before search and filters. */
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
@@ -286,8 +292,8 @@ export class MeetingsHomeStore {
 
   /** Re-requests every feed after a failure. */
   public retry(): void {
-    // Hands a failed next page's error state to the reload, so a reload that fails returns to it.
-    if (this.pastPageFailedState()) this.pastFailedState.set(this.pastFailedState() || this.failed());
+    // Hands the past list's error state to the reload, so a reload that fails returns to it.
+    if (this.pastShowsError()) this.pastFailedState.set(true);
     this.pastPageFailedState.set(false);
     this.retry$.next();
   }

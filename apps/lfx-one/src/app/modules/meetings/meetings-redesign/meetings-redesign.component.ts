@@ -258,7 +258,7 @@ export class MeetingsRedesignComponent {
   private initTabs(): Signal<UiTabItem[]> {
     return computed(() => [
       this.tabItem('upcoming', 'Upcoming', this.store.upcomingLoading() || this.store.upcomingFailed(), this.store.upcomingRows().length),
-      this.tabItem('past', 'Past', this.store.pastLoading() || this.store.pastFailed(), this.store.pastRows().length),
+      this.tabItem('past', 'Past', this.store.pastLoading() || this.store.pastShowsError(), this.store.pastRows().length),
     ]);
   }
 
