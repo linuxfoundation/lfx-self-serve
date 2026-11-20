@@ -136,7 +136,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
   });
 
   it.each([
-    ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(account_name, ''), account_id)"],
+    ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(TRIM(account_name, '"],
     ['memberships', 'desc', 'IFF(other_membership_count > 0, other_top_tier_rank * 1000 + other_membership_count, NULL) DESC NULLS LAST'],
     ['meetings', 'asc', 'NULLIF(meetings_attended_count, 0) ASC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC'],
     ['contributions', 'desc', 'NULLIF(contributions_count, 0) DESC NULLS LAST, sort_rank ASC NULLS LAST'],
@@ -373,7 +373,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
 
   it.each([
     ['person', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(person_display_name, ''), 'Unnamed individual')"],
-    ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(account_name, ''), account_id)"],
+    ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(TRIM(account_name, '"],
     ['meetings', 'asc', 'NULLIF(meetings_attended_count, 0) ASC NULLS LAST, sort_rank ASC NULLS LAST, person_key ASC'],
     ['lastAttended', 'desc', 'last_attended_date DESC NULLS LAST, sort_rank ASC NULLS LAST'],
   ] as const)("sorts %s %s across every page, then the view's rank", async (key, direction, expected) => {

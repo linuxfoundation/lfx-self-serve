@@ -16,7 +16,7 @@ import {
 import { toIsoDate } from '../helpers/date-format.helper';
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
 import { healthMetricsAccountLogoJoinSql, healthMetricsAccountLogoSql } from '../helpers/health-metrics-logo.helper';
-import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql } from '../helpers/health-metrics-sort.helper';
+import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql, healthMetricsTrimSql } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -466,8 +466,8 @@ function mapOrg(row: OrgRow): HealthMetricsNonMembersOrg[] {
 function orgSortColumns(): Record<HealthMetricsNonMembersOrgsSortKey, HealthMetricsSqlSortColumn> {
   const bands = HEALTH_METRICS_NON_MEMBERS_FIT_BANDS;
   return {
-    // A company with no name shows its account id, so it sorts by that.
-    company: { expression: "COALESCE(NULLIF(account_name, ''), account_id)", kind: 'text' },
+    // A company with no name, blank once trimmed as the cell trims it, shows its account id, so it sorts by that.
+    company: { expression: `COALESCE(NULLIF(${healthMetricsTrimSql('account_name')}, ''), account_id)`, kind: 'text' },
     // The highest tier held, then how many (the rank leads by a factor no count reaches); none reads "—", so it is empty.
     memberships: { expression: 'IFF(other_membership_count > 0, other_top_tier_rank * 1000 + other_membership_count, NULL)', kind: 'number' },
     meetings: { expression: 'NULLIF(meetings_attended_count, 0)', kind: 'number' },
@@ -481,7 +481,8 @@ function orgSortColumns(): Record<HealthMetricsNonMembersOrgsSortKey, HealthMetr
 function personSortColumns(): Record<HealthMetricsNonMembersPeopleSortKey, HealthMetricsSqlSortColumn> {
   return {
     person: { expression: "COALESCE(NULLIF(person_display_name, ''), 'Unnamed individual')", kind: 'text' },
-    company: { expression: "COALESCE(NULLIF(account_name, ''), account_id)", kind: 'text' },
+    // Trimmed as the cell trims it: a blank name shows the account id, so it sorts by that.
+    company: { expression: `COALESCE(NULLIF(${healthMetricsTrimSql('account_name')}, ''), account_id)`, kind: 'text' },
     meetings: { expression: 'NULLIF(meetings_attended_count, 0)', kind: 'number' },
     lastAttended: { expression: 'last_attended_date', kind: 'date' },
   };
