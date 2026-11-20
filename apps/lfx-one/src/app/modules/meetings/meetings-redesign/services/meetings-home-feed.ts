@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, Provider, Signal } from '@angular/core';
-import { LATEST_PAST_MEETINGS_FETCH_SIZE, LATEST_PAST_MEETINGS_RETURN_LIMIT } from '@lfx-one/shared/constants';
+import { ActivatedRoute } from '@angular/router';
 import { Meeting, MeetingProjectQueryOptions, MeetingsHomePastPage, PastMeeting } from '@lfx-one/shared/interfaces';
 import { parseToInt } from '@lfx-one/shared/utils';
-import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -19,6 +18,8 @@ import { map, Observable, of, startWith, switchMap } from 'rxjs';
 export abstract class MeetingsHomeFeed {
   /** Changes with the viewer or the scope; the store reloads its feeds and resets search and filters when it does. */
   public abstract readonly key: Signal<string>;
+  /** `me` lists the viewer's meetings across projects; `project` one project's or foundation's, without project labels. */
+  public abstract readonly scope: 'me' | 'project';
   /** Past meetings come a page at a time and are searched on the server. */
   public abstract readonly pagedPast: boolean;
   public abstract readonly upcomingRefresh$: Observable<void>;
@@ -36,6 +37,7 @@ export class UserMeetingsHomeFeed extends MeetingsHomeFeed {
   private readonly userService = inject(UserService);
 
   public readonly key: Signal<string> = this.userService.meetingFeedIdentity;
+  public readonly scope = 'me';
   public readonly pagedPast = false;
   public readonly upcomingRefresh$: Observable<void> = this.userService.meetingsRefresh$;
   public readonly pastRefresh$: Observable<void> = this.userService.pastMeetingsRefresh$;
@@ -66,6 +68,7 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
   public readonly key: Signal<string> = computed(
     () => `${this.userService.meetingFeedIdentity()}\0${this.projectContext.activeContextUid()}\0${this.projectContext.isFoundationContext()}`
   );
+  public readonly scope = 'project';
   public readonly pagedPast = true;
   public readonly upcomingRefresh$: Observable<void> = this.userService.meetingsRefresh$;
   public readonly pastRefresh$: Observable<void> = this.userService.pastMeetingsRefresh$;
@@ -82,16 +85,9 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
       .pipe(map((page) => ({ ...page, meetings: this.ended(page.meetings) })));
   }
 
+  // shortcut: the project lens has no Last meeting card, so nothing loads. revisit: when its right column shows one.
   public latestPast(): Observable<PastMeeting[]> {
-    // Over-fetched: the index lists a meeting once it starts, and running ones are dropped.
-    return this.followRefresh(
-      this.pastRefresh$,
-      (projectUid, options) =>
-        this.meetingService
-          .getProjectPastMeetingsForHome(projectUid, '', undefined, LATEST_PAST_MEETINGS_FETCH_SIZE, options)
-          .pipe(map((page) => this.ended(page.meetings).slice(0, LATEST_PAST_MEETINGS_RETURN_LIMIT))),
-      []
-    );
+    return of([]);
   }
 
   /** A foundation lists its sub-projects' meetings too; a project only its own. */
@@ -132,14 +128,22 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
   }
 }
 
-/** The Me lens reads the viewer's meetings; a project or foundation lens reads that project's. */
+/**
+ * `/project/meetings` and `/foundation/meetings` read that project's meetings; the flat `/meetings` reads the viewer's.
+ * @description Chosen from the route's `lens` data, as the page's gate is, not from the active lens, which can lag a deep link.
+ */
 export function provideMeetingsHomeFeed(): Provider[] {
   return [
     UserMeetingsHomeFeed,
     ProjectMeetingsHomeFeed,
     {
       provide: MeetingsHomeFeed,
-      useFactory: (): MeetingsHomeFeed => (inject(LensService).activeLens() === 'me' ? inject(UserMeetingsHomeFeed) : inject(ProjectMeetingsHomeFeed)),
+      useFactory: (): MeetingsHomeFeed => {
+        const lens = inject(ActivatedRoute)
+          .snapshot.pathFromRoot.map((route) => route.data?.['lens'])
+          .find(Boolean);
+        return lens === 'project' || lens === 'foundation' ? inject(ProjectMeetingsHomeFeed) : inject(UserMeetingsHomeFeed);
+      },
     },
   ];
 }

@@ -23,9 +23,9 @@ apps/lfx-one/src/app/modules/
 │   ├── maintainer/             # Maintainer dashboard
 │   └── components/             # Dashboard-specific components (drawers, cards)
 ├── meetings/                   # Meetings management
-│   ├── meetings-entry/         # Route entry for /meetings: picks the dashboard or the redesign (flag + Me lens)
-│   ├── meetings-dashboard/     # Existing meetings page (also the only page at /foundation/meetings and /project/meetings)
-│   ├── meetings-redesign/      # Me lens meetings home page redesign (flag-gated)
+│   ├── meetings-entry/         # Route entry for the meetings lists: picks the dashboard or the redesign (flag; Me lens on /meetings)
+│   ├── meetings-dashboard/     # Existing meetings page, shown wherever the redesign flag is off
+│   ├── meetings-redesign/      # Meetings home redesign for the Me, project and foundation lists (flag-gated)
 │   ├── meeting-composer/       # Create/edit composer, a drawer over the current page
 │   ├── meeting-join/           # Public meeting join page
 │   ├── meeting-not-found/      # Meeting 404 page
@@ -223,7 +223,7 @@ Every main lens page (Me, Foundation, Project, Org) opens with `<lfx-page-header
 - **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters to the right of the title; they wrap below it when the row runs out of room. `eyebrow` adds an uppercase label above the title (Marketing Kit).
 - **Test ids.** `titleTestId` and `descriptionTestId` keep page-specific test ids. They default to `page-header-title` and `page-header-description`.
 
-Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 12px subtitle and pins the tab bar inside the header. The Me lens meetings and groups redesigns (`meetings-redesign` behind `MEETINGS_REDESIGN_FLAG`, `groups-redesign` behind `GROUPS_REDESIGN_FLAG`) are the others: each hand-builds a sticky header with the same type spec, and its fade and tabs bar stick to the measured header height.
+Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 12px subtitle and pins the tab bar inside the header. The meetings redesign (`meetings-redesign` behind `MEETINGS_REDESIGN_FLAG`, on the Me, project and foundation lists) and the Me lens groups redesign (`groups-redesign` behind `GROUPS_REDESIGN_FLAG`) are the others: each hand-builds a sticky header with the same type spec, and its fade and tabs bar stick to the measured header height.
 
 ### Tab shells: signal state vs. child routes
 
@@ -505,7 +505,7 @@ AppComponent
     └── MainLayoutComponent (authGuard protected, provides header + sidebar + content area)
         ├── /                    → DashboardComponent (role-based dashboard)
         ├── /projects            → HomeComponent (project listing)
-        ├── /meetings            → MeetingsEntryComponent (lazy loaded; renders MeetingsDashboardComponent or, behind `meetings-redesign` in the Me lens, MeetingsRedesignComponent)
+        ├── /meetings            → MeetingsEntryComponent (lazy loaded; renders MeetingsDashboardComponent or, behind `meetings-redesign` in the Me lens, MeetingsRedesignComponent; `/project/meetings` and `/foundation/meetings` do the same in their lens)
         ├── /groups              → GroupsEntryComponent (lazy loaded; renders CommitteeDashboardComponent or, behind `groups-redesign` in the Me lens, GroupsRedesignComponent)
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)

@@ -12,7 +12,8 @@ const ANONYMOUS_FLAG_CONTEXT = { key: 'anonymous-meeting-visitor', anonymous: tr
 
 /**
  * Evaluates the flags an SSR render needs before Angular picks a route.
- * @description Only `/meetings/:id` (and `/meetings/not-found`) asks LaunchDarkly; every other render gets none. A signed-out
+ * @description Only `/meetings/:id` (and `/meetings/not-found`) and the `/project/meetings` and `/foundation/meetings` lists ask
+ * LaunchDarkly; every other render gets none. A signed-out
  * visitor is evaluated as an anonymous context. `user` must already carry the impersonation override, so the context
  * matches the one `FeatureFlagService` builds in the browser from the same user.
  */
@@ -20,7 +21,8 @@ export async function resolveSsrFlags(req: Request, user: User | null): Promise<
   // The SSR handler is mounted at `/**`, which leaves `req.path` as `/`; the original URL keeps the route.
   const segments = new URL(req.originalUrl, 'http://ssr').pathname.split('/').filter(Boolean);
   const meetingPage = segments.length === 2 && segments[0] === 'meetings' && segments[1] !== 'create';
-  if (!meetingPage) {
+  const lensMeetingsList = segments.length === 2 && (segments[0] === 'project' || segments[0] === 'foundation') && segments[1] === 'meetings';
+  if (!meetingPage && !lensMeetingsList) {
     return {};
   }
   if (!user) {

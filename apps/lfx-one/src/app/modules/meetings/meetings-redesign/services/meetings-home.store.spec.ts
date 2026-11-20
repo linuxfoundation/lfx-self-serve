@@ -836,6 +836,7 @@ describe('MeetingsHomeStore', () => {
       });
       const feed: MeetingsHomeFeed = {
         key: identity,
+        scope: 'project',
         pagedPast: true,
         upcomingRefresh$: meetingsRefresh$,
         pastRefresh$: pastMeetingsRefresh$,
@@ -1170,6 +1171,17 @@ describe('MeetingsHomeStore', () => {
       TestBed.tick();
 
       expect(store.pastCountUnknown()).toBe(true);
+    });
+
+    it('keeps a meeting on a project list after the viewer removes their registration, without it', () => {
+      const store = createPaged();
+      upcoming$.next([buildMeeting({ id: 'public-1', organizer: false, my_rsvp: rsvp({ meeting_id: 'public-1' }) })]);
+      removed.set(new Set(['public-1']));
+      TestBed.tick();
+
+      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['public-1']);
+      expect(store.upcomingRows()[0].meeting.invited).toBe(false);
+      expect(store.upcomingRows()[0].meeting.my_rsvp).toBeNull();
     });
 
     it('does not request a next page on the upcoming tab', () => {

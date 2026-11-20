@@ -88,7 +88,7 @@ async function resolveFlag(featureFlagService: FeatureFlagService): Promise<bool
 }
 
 // The server can't read local storage, so the QA override travels as a cookie; ignored in production like the original.
-function readCookieOverride(request: Request | null): boolean | undefined {
+export function readCookieOverride(request: Request | null): boolean | undefined {
   if (environment.production || !request) {
     return undefined;
   }
@@ -108,7 +108,7 @@ function readCookieOverride(request: Request | null): boolean | undefined {
   }
 }
 
-function mirrorOverridesToCookie(): void {
+export function mirrorOverridesToCookie(): void {
   if (environment.production) {
     return;
   }

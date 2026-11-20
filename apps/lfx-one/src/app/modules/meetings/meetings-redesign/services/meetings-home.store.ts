@@ -497,10 +497,11 @@ export class MeetingsHomeStore {
   private initUpcomingRows(): Signal<MeetingHomeRow[]> {
     return computed(() => {
       const removed = this.meetingService.removedRegistrationMeetingIds();
-      // Organizers keep their meetings after removing their own registration, without the registration.
+      // Organizers, and every viewer of a project's list, keep a meeting after removing their own registration, without it.
       const deleted = this.deletedMeetingIds();
+      const keepsRemoved = this.feed.scope === 'project';
       const meetings = this.upcomingMeetings()
-        .filter((meeting) => !deleted.has(meeting.id) && (meeting.organizer || !removed.has(meeting.id)))
+        .filter((meeting) => !deleted.has(meeting.id) && (meeting.organizer || keepsRemoved || !removed.has(meeting.id)))
         .map((meeting) => this.withLocalCancellations(meeting))
         .map((meeting) => (removed.has(meeting.id) ? { ...meeting, invited: false, my_registrant_ids: [], my_rsvp: null, my_rsvps: [] } : meeting))
         .map((meeting) => this.withCurrentRsvps(meeting));

@@ -20,6 +20,7 @@ import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.s
 import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
 
 const START = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -70,6 +71,7 @@ function buildRow(meeting: Meeting, overrides: Partial<MeetingHomeRow> = {}): Me
 }
 
 describe('MeetingHomeRowComponent', () => {
+  const feedScope: { scope: 'me' | 'project' } = { scope: 'me' };
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
@@ -112,6 +114,7 @@ describe('MeetingHomeRowComponent', () => {
       providers: [
         { provide: Router, useValue: { navigateByUrl, navigate } },
         { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null), approvedSummaries: signal(new Map()), now: signal(new Date()) } },
+        { provide: MeetingsHomeFeed, useValue: feedScope },
         { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getPublicMeetingJoinUrl } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
@@ -131,6 +134,15 @@ describe('MeetingHomeRowComponent', () => {
   });
 
   describe('upcoming', () => {
+    it('names no project on a project or foundation list', async () => {
+      feedScope.scope = 'project';
+      const fixture = await render(buildRow(buildMeeting()));
+      feedScope.scope = 'me';
+
+      expect(query(fixture, 'meetings-home-row-project')).toBeNull();
+      expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
+    });
+
     it('renders the date tile, project, title and meta line', async () => {
       const fixture = await render(buildRow(buildMeeting()));
 
