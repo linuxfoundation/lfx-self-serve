@@ -5,10 +5,19 @@ import {
   DEFAULT_META_OBJECTIVE,
   META_LEAD_FORM_CALL_TO_ACTIONS,
   META_LEAD_FORM_ID_PATTERN,
+  META_LEAD_FORM_UNAVAILABLE_REFUSAL,
   META_OBJECTIVE_LABELS,
   META_SELECTABLE_OBJECTIVES,
 } from '../constants/campaign.constants';
-import type { MetaConfigRefusal, MetaLeadFormChoice, MetaLeadFormDraft, MetaLeadFormOption, MetaObjective } from '../interfaces/campaign.interface';
+import type {
+  MetaConfigRefusal,
+  MetaLeadFormChoice,
+  MetaLeadFormDraft,
+  MetaLeadFormOption,
+  MetaLeadFormPickerView,
+  MetaLeadFormRestore,
+  MetaObjective,
+} from '../interfaces/campaign.interface';
 import { metaAdOptionLabel, metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
@@ -105,14 +114,41 @@ export function metaCallToActionAllowedWithLeadForm(callToAction: string, withLe
 }
 
 /**
- * Why the Implement tab's Meta draft cannot be created with its lead form, or `null`. Only while lead forms are
- * enabled for this caller: `leads` then needs a form, so self-serve never sends the traffic-mapped `leads`, and the
- * form must pass the create route's own rules ({@link metaLeadFormRefusal}). While they are off nothing is checked
- * here and no form is sent.
+ * Why the Implement tab's Meta draft cannot be created with its lead form, or `null`. While lead forms are enabled
+ * for this caller, `leads` needs a form, so self-serve never sends the traffic-mapped `leads`, and the form must pass
+ * the create route's own rules ({@link metaLeadFormRefusal}). While they are off (or not yet read) no form is sent,
+ * so a `leads` draft that holds one is held rather than sent as traffic; a `leads` draft without one (saved before
+ * lead forms existed) is left as it always was.
  */
 export function metaLeadFormDraftRefusal(draft: MetaLeadFormDraft): MetaConfigRefusal | null {
-  if (!draft.leadFormsEnabled || draft.objective !== 'leads') return null;
+  if (draft.objective !== 'leads') return null;
   const leadFormId = draft.leadFormId.trim();
+  if (!draft.leadFormsEnabled) {
+    return leadFormId === '' ? null : { field: 'metaConfig.leadFormId', message: META_LEAD_FORM_UNAVAILABLE_REFUSAL };
+  }
   if (leadFormId === '') return { field: 'metaConfig.leadFormId', message: 'Choose a lead form for the Leads objective.' };
   return metaLeadFormRefusal({ leadFormId, objective: draft.objective, callToAction: draft.callToAction }, draft.manualBidding);
+}
+
+/**
+ * The objective and form a saved draft restores to under `activeProject`. A form is restored only under the
+ * foundation it was picked under. A draft whose form was saved under another foundation also drops `leads` to the
+ * default, as an in-place foundation switch does ({@link metaObjectiveAfterFoundationSwitch}): leaving the tab,
+ * switching foundation and coming back must not bring `leads` back without its form. `leadFormId` is `null` when
+ * the draft has nothing to restore, so the current form is kept. An unknown active foundation (`''`) changes nothing.
+ */
+export function metaLeadFormRestore(saved: { objective: MetaObjective; leadFormId?: string; project?: string }, activeProject: string): MetaLeadFormRestore {
+  if (saved.leadFormId === undefined || activeProject === '') return { objective: saved.objective, leadFormId: null };
+  if (saved.project !== activeProject) return { objective: metaObjectiveAfterFoundationSwitch(saved.objective), leadFormId: '' };
+  return { objective: saved.objective, leadFormId: metaLeadFormForObjective(saved.objective, saved.leadFormId) };
+}
+
+/**
+ * What the lead form picker shows once the Page's forms are read. A held id the list does not show (a typed or
+ * restored one) stays on screen in the select, even when the list is empty, so it can be seen and cleared rather
+ * than sent unseen.
+ */
+export function metaLeadFormPickerView(choices: readonly MetaLeadFormChoice[], heldId: string): MetaLeadFormPickerView {
+  const heldIdUnlisted = heldId !== '' && !choices.some((choice) => choice.value === heldId);
+  return { empty: choices.length === 0, select: choices.length > 0 || heldIdUnlisted, heldIdUnlisted };
 }

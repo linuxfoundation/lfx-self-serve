@@ -7,9 +7,10 @@
       <p class="text-xs text-gray-500" data-testid="meta-lead-form-picker-loading">{{ loadingText }}</p>
     }
     @case ('loaded') {
-      @if (picker().choices.length === 0) {
+      @if (view().empty) {
         <p class="text-xs text-gray-500" data-testid="meta-lead-form-picker-empty">{{ emptyText }}</p>
-      } @else {
+      }
+      @if (view().select) {
         <lfx-ui-select
           label="Lead form"
           size="small"
@@ -18,7 +19,7 @@
           hint="Forms are made in Meta Ads Manager on the project's Facebook Page. Only active forms can be used."
           data-testid="meta-lead-form-picker-select">
           <lfx-ui-option value="" label="Choose a lead form" />
-          @if (heldIdUnlisted()) {
+          @if (view().heldIdUnlisted) {
             <lfx-ui-option [value]="leadFormId()" [label]="'Form ' + leadFormId() + ' (not listed)'" />
           }
           @for (choice of picker().choices; track choice.value) {

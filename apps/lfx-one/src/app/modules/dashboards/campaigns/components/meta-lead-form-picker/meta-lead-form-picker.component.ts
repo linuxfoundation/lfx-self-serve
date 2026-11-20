@@ -5,8 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, model, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { META_LEAD_FORM_PICKER_EMPTY, META_LEAD_FORM_PICKER_LOADING, META_LEAD_FORM_PICKER_REASONS } from '@lfx-one/shared/constants';
-import type { MetaLeadFormPickerState } from '@lfx-one/shared/interfaces';
-import { metaLeadFormChoices } from '@lfx-one/shared/utils';
+import type { MetaLeadFormPickerState, MetaLeadFormPickerView } from '@lfx-one/shared/interfaces';
+import { metaLeadFormChoices, metaLeadFormPickerView } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
@@ -35,11 +35,8 @@ export class MetaLeadFormPickerComponent {
   protected readonly emptyText = META_LEAD_FORM_PICKER_EMPTY;
 
   protected readonly picker: Signal<MetaLeadFormPickerState> = this.initPicker();
-  /** Whether the held id is one the list does not show, such as a typed one: kept on screen so it can be seen and changed. */
-  protected readonly heldIdUnlisted = computed<boolean>(() => {
-    const id = this.leadFormId();
-    return id !== '' && !this.picker().choices.some((choice) => choice.value === id);
-  });
+  /** What a read list shows; a held id the list does not show (typed or restored) stays on screen, even on an empty list, so it can be seen and cleared. */
+  protected readonly view = computed<MetaLeadFormPickerView>(() => metaLeadFormPickerView(this.picker().choices, this.leadFormId()));
 
   protected onPick(value: string | null): void {
     this.leadFormId.set(value ?? '');

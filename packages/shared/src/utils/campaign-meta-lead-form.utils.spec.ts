@@ -10,7 +10,9 @@ import {
   metaLeadFormDraftRefusal,
   metaLeadFormForObjective,
   metaLeadFormId,
+  metaLeadFormPickerView,
   metaLeadFormRefusal,
+  metaLeadFormRestore,
   metaObjectiveAfterFoundationSwitch,
   metaObjectiveChoices,
 } from './campaign-meta-lead-form.utils';
@@ -117,7 +119,8 @@ describe('metaLeadFormDraftRefusal', () => {
   const draft = { leadFormsEnabled: true, objective: 'leads' as const, leadFormId: '111', manualBidding: false };
 
   it.each([
-    ['lead forms off', { ...draft, leadFormsEnabled: false, leadFormId: '' }],
+    ['lead forms off, on leads without a form (a draft from before lead forms)', { ...draft, leadFormsEnabled: false, leadFormId: '' }],
+    ['lead forms off, on another objective', { ...draft, leadFormsEnabled: false, objective: 'traffic' as const, leadFormId: '' }],
     ['another objective', { ...draft, objective: 'traffic' as const, leadFormId: '' }],
     ['a form on leads', draft],
     ['a form with a call to action it can carry', { ...draft, callToAction: 'SIGN_UP' }],
@@ -127,6 +130,7 @@ describe('metaLeadFormDraftRefusal', () => {
 
   it.each([
     ['leads with no form', { ...draft, leadFormId: '  ' }, 'metaConfig.leadFormId'],
+    ['a form held while lead forms are off', { ...draft, leadFormsEnabled: false }, 'metaConfig.leadFormId'],
     ['a typed id that is not digits', { ...draft, leadFormId: 'abc' }, 'metaConfig.leadFormId'],
     ['manual bidding', { ...draft, manualBidding: true }, 'metaConfig.leadFormId'],
     ['a call to action a form cannot carry', { ...draft, callToAction: 'BUY_TICKETS' }, 'metaConfig.callToAction'],
@@ -139,5 +143,37 @@ describe('metaObjectiveAfterFoundationSwitch', () => {
   it('drops leads to the default and keeps every other objective', () => {
     expect(metaObjectiveAfterFoundationSwitch('leads')).toBe('traffic');
     expect(metaObjectiveAfterFoundationSwitch('conversions')).toBe('conversions');
+  });
+});
+
+describe('metaLeadFormRestore', () => {
+  it('restores the form only under the foundation it was picked under, and only on leads', () => {
+    expect(metaLeadFormRestore({ objective: 'leads', leadFormId: '111', project: 'tlf' }, 'tlf')).toEqual({ objective: 'leads', leadFormId: '111' });
+    expect(metaLeadFormRestore({ objective: 'traffic', leadFormId: '111', project: 'tlf' }, 'tlf')).toEqual({ objective: 'traffic', leadFormId: '' });
+  });
+
+  it('drops leads and the form when the draft was saved under another foundation', () => {
+    expect(metaLeadFormRestore({ objective: 'leads', leadFormId: '111', project: 'tlf' }, 'cncf')).toEqual({ objective: 'traffic', leadFormId: '' });
+    expect(metaLeadFormRestore({ objective: 'conversions', leadFormId: '', project: 'tlf' }, 'cncf')).toEqual({ objective: 'conversions', leadFormId: '' });
+  });
+
+  it('changes nothing for a draft without a saved form, or while the foundation is unknown', () => {
+    expect(metaLeadFormRestore({ objective: 'leads' }, 'cncf')).toEqual({ objective: 'leads', leadFormId: null });
+    expect(metaLeadFormRestore({ objective: 'leads', leadFormId: '111', project: 'tlf' }, '')).toEqual({ objective: 'leads', leadFormId: null });
+  });
+});
+
+describe('metaLeadFormPickerView', () => {
+  const choices = [{ value: '111', label: 'Registrations', disabled: false }];
+
+  it('shows the select for listed forms, with a held id the list does not show as its own option', () => {
+    expect(metaLeadFormPickerView(choices, '')).toEqual({ empty: false, select: true, heldIdUnlisted: false });
+    expect(metaLeadFormPickerView(choices, '111')).toEqual({ empty: false, select: true, heldIdUnlisted: false });
+    expect(metaLeadFormPickerView(choices, '999')).toEqual({ empty: false, select: true, heldIdUnlisted: true });
+  });
+
+  it('keeps a held id visible when the Page has no forms, and shows only the empty text otherwise', () => {
+    expect(metaLeadFormPickerView([], '999')).toEqual({ empty: true, select: true, heldIdUnlisted: true });
+    expect(metaLeadFormPickerView([], '')).toEqual({ empty: true, select: false, heldIdUnlisted: false });
   });
 });

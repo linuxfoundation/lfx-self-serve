@@ -19,7 +19,8 @@ stubCreativeLibraryUpload();
 /**
  * Wiring only (#5940). Which objectives are offered, when a form holds Create and which call to action a form
  * may carry are rules in `campaign-meta-lead-form.utils.ts`, tested there; the picker is tested in its own spec.
- * Here: the input reaches the objective list, and the helper's answer reaches Create and the request.
+ * Here: the input reaches the objective list, the helper's answer reaches Create and the request, and a foundation
+ * switch reaches the reset.
  */
 describe('ImplementationTabComponent meta lead form', () => {
   let createCampaign: ReturnType<typeof vi.fn>;
@@ -98,5 +99,15 @@ describe('ImplementationTabComponent meta lead form', () => {
     c(f)['submit']();
     await f.whenStable();
     expect(createCampaign.mock.calls.at(-1)?.[0]['metaConfig']).toMatchObject({ objective: 'leads', leadFormId: '111' });
+  });
+
+  it('drops Leads and the form on a foundation switch', async () => {
+    const f = await mount(true);
+    c(f)['onMetaLeadFormChange']('111');
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-cncf', slug: 'cncf', name: 'cncf' } as ProjectContext, false);
+    f.detectChanges();
+    await f.whenStable();
+    expect(c(f)['metaObjective']()).toBe('traffic');
+    expect(c(f)['metaLeadFormId']()).toBe('');
   });
 });

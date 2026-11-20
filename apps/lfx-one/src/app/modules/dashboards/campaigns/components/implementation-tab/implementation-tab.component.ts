@@ -482,6 +482,7 @@ import {
   metaCallToActionAllowedWithLeadForm,
   metaLeadFormDraftRefusal,
   metaLeadFormForObjective,
+  metaLeadFormRestore,
   metaObjectiveAfterFoundationSwitch,
   metaObjectiveChoices,
 } from '@lfx-one/shared/utils';
@@ -8907,9 +8908,16 @@ export class ImplementationTabComponent implements OnInit {
       this.metaAdOptions.set(compactMetaAdOptions(draft.metaAdOptions));
       this.dropInapplicableMetaAdOptions();
     }
-    // The lead form (#5940) on the same foundation rule, and only if the restored objective takes one.
-    if (draft.metaLeadFormId !== undefined && draft.metaLeadFormProject === this.activeFoundationSlug()) {
-      this.metaLeadFormId.set(metaLeadFormForObjective(this.metaObjective(), draft.metaLeadFormId));
+    // The lead form (#5940) on the same foundation rule, and only if the restored objective takes one. A draft
+    // saved under another foundation also drops `leads`, as the in-place switch does: this component may be new
+    // since the switch (left the tab and came back), so that handler never ran for it.
+    const leadFormRestore = metaLeadFormRestore(
+      { objective: this.metaObjective(), leadFormId: draft.metaLeadFormId, project: draft.metaLeadFormProject },
+      this.activeFoundationSlug()
+    );
+    this.metaObjective.set(leadFormRestore.objective);
+    if (leadFormRestore.leadFormId !== null) {
+      this.metaLeadFormId.set(leadFormRestore.leadFormId);
     }
     if (draft.metaGeoTargets !== undefined) {
       this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));

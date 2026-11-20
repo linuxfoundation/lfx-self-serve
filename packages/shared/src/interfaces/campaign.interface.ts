@@ -2541,6 +2541,20 @@ export interface MetaLeadFormPickerState {
   reason: string | null;
 }
 
+/** What a saved Implement-tab draft restores for the Meta lead form (#5940); `leadFormId` `null` keeps the current one. */
+export interface MetaLeadFormRestore {
+  objective: MetaObjective;
+  leadFormId: string | null;
+}
+/** What the lead form picker shows once the forms are read (#5940). */
+export interface MetaLeadFormPickerView {
+  /** The Page has no forms: show the empty text. */
+  empty: boolean;
+  /** Show the select: there are forms, or a held id the list does not show. */
+  select: boolean;
+  /** The held id is not in the list, so it gets its own option. */
+  heldIdUnlisted: boolean;
+}
 /** What the Implement tab's lead form check reads: the Meta draft as the screen holds it (#5940). */
 export interface MetaLeadFormDraft {
   /** Whether this caller may send a lead form: `CampaignListResult.metaLeadFormsEnabled` is an explicit yes. */

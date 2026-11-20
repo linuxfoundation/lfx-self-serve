@@ -1015,6 +1015,8 @@ export const META_LEAD_FORM_PICKER_REASONS = {
   unavailable: "The lead form picker isn't available here. Enter the form id from Meta Ads Manager instead.",
   failed: "The lead forms couldn't be read from this project's Facebook Page. Enter the form id from Meta Ads Manager instead.",
 } as const;
+/** Why a `leads` draft holding a form is held when lead forms are off for this caller or foundation (#5940). */
+export const META_LEAD_FORM_UNAVAILABLE_REFUSAL = "Lead forms aren't available for this foundation. Choose another objective.";
 export const META_LEAD_FORM_PICKER_LOADING = "Loading the Page's lead forms…";
 export const META_LEAD_FORM_PICKER_EMPTY = 'This Facebook Page has no lead forms. Create one in Meta Ads Manager, then reload.';
 
