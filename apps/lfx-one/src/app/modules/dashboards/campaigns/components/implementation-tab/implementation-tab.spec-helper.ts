@@ -3,29 +3,17 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Component, EnvironmentProviders, input, output, Provider } from '@angular/core';
+import { EnvironmentProviders, Provider } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefOutput, CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
+import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { NEVER } from 'rxjs';
 import { beforeEach, vi } from 'vitest';
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { ImplementationTabComponent } from './implementation-tab.component';
-
-/**
- * The library upload reads the service's queue and the library quota as soon as a brief is saved.
- * Every implementation-tab suite mocks `CampaignService` for the tab's own calls only, so the child
- * is stubbed in every spec file; its own behaviour is covered by its spec.
- */
-@Component({ selector: 'lfx-creative-library-upload', template: '' })
-export class CreativeLibraryUploadStubComponent {
-  public readonly projectSlug = input('');
-  public readonly briefId = input('');
-  public readonly available = input<boolean | null>(null);
-  public readonly reloadToken = input(0);
-  public readonly libraryChanged = output<number>();
-}
 
 /** One usable keyword, so a Search create is not held for having none (#4848). */
 export const SEED_KEYWORD = { term: 'cloud native conference', matchType: 'Phrase', intentLevel: 'High', notes: '' };
@@ -128,12 +116,24 @@ export const DISPLAY_COMPLETE = {
   squareMarketingImages: 'https://example.com/square.png',
 };
 
-/** Swaps the library upload child for a stub before each test; call once at the top of a spec file. */
+/**
+ * Stubs the library upload child before each test; call once at the top of a spec file.
+ *
+ * The library upload reads the service's upload queue and the library as soon as a brief is saved, and
+ * every implementation-tab suite mocks `CampaignService` for the tab's own calls only. So the child gets an
+ * empty template and its own `CampaignService` stub; its behaviour is covered by its own spec.
+ *
+ * The CHILD is overridden, never `ImplementationTabComponent`: TestBed drops overrides after each test, and
+ * overriding the tab would recompile its whole template on every test (about 250 ms each, #5980).
+ */
 export function stubCreativeLibraryUpload(): void {
   beforeEach(() => {
-    TestBed.overrideComponent(ImplementationTabComponent, {
-      remove: { imports: [CreativeLibraryUploadComponent] },
-      add: { imports: [CreativeLibraryUploadStubComponent] },
+    TestBed.overrideComponent(CreativeLibraryUploadComponent, {
+      set: {
+        template: '',
+        imports: [],
+        providers: [{ provide: CampaignService, useValue: { creativeAssetUploadQueue: () => [], listCreativeAssets: () => NEVER } }],
+      },
     });
   });
 }

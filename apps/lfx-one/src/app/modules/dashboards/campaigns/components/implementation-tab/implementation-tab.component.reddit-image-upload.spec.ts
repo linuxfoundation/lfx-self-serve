@@ -14,7 +14,8 @@ import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { CreativeLibraryUploadStubComponent, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
+import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
 
@@ -183,12 +184,12 @@ describe('ImplementationTabComponent reddit image upload', () => {
   // grid's answer, and the Google slots' library, stale.
   it('mounts the library upload for the saved brief and re-reads the library each time it stores an image', async () => {
     const f = (await mount(true)).fixture;
-    const upload = f.debugElement.query(By.directive(CreativeLibraryUploadStubComponent)).componentInstance as CreativeLibraryUploadStubComponent;
+    const upload = f.debugElement.query(By.directive(CreativeLibraryUploadComponent)).componentInstance as CreativeLibraryUploadComponent;
     expect(upload.briefId()).toBe(BRIEF_ID);
     expect(upload.available()).toBe(true);
     const before = at(f).creativeLibraryRevision();
 
-    upload.libraryChanged.emit(1);
+    f.debugElement.query(By.directive(CreativeLibraryUploadComponent)).triggerEventHandler('libraryChanged', 1);
     f.detectChanges();
 
     expect(at(f).creativeLibraryRevision()).toBe(before + 1);
@@ -199,8 +200,8 @@ describe('ImplementationTabComponent reddit image upload', () => {
   // Unknown is not no: a capability read still pending must not tell the operator uploads are off.
   it('reads the library upload as unknown until every capability says no', async () => {
     const f = (await mount(false)).fixture;
-    const upload = (): CreativeLibraryUploadStubComponent =>
-      f.debugElement.query(By.directive(CreativeLibraryUploadStubComponent)).componentInstance as CreativeLibraryUploadStubComponent;
+    const upload = (): CreativeLibraryUploadComponent =>
+      f.debugElement.query(By.directive(CreativeLibraryUploadComponent)).componentInstance as CreativeLibraryUploadComponent;
     expect(upload().available()).toBeNull();
 
     for (const flag of ['metaAssetUploadEnabled', 'linkedInAssetUploadEnabled', 'googleAssetUploadEnabled', 'microsoftAssetUploadEnabled']) {
@@ -223,7 +224,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     }
     f.componentRef.setInput('twitterCreateEnabled', true);
     f.detectChanges();
-    const upload = f.debugElement.query(By.directive(CreativeLibraryUploadStubComponent)).componentInstance as CreativeLibraryUploadStubComponent;
+    const upload = f.debugElement.query(By.directive(CreativeLibraryUploadComponent)).componentInstance as CreativeLibraryUploadComponent;
     expect(upload.available()).toBe(true);
   });
 
