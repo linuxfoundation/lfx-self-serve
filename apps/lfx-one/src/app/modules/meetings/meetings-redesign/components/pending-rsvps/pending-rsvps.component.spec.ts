@@ -43,7 +43,7 @@ function buildRow(id: string, overrides: Partial<Meeting> = {}): MeetingHomeRow 
 }
 
 describe('PendingRsvpsComponent', () => {
-  const feedScope: { scope: 'me' | 'project' } = { scope: 'me' };
+  const feedScope = { scope: 'me', showsProject: signal(true) };
   let fixture: ComponentFixture<PendingRsvpsComponent>;
   let fallback: HTMLButtonElement;
   let submit: ReturnType<typeof vi.fn>;
@@ -169,13 +169,22 @@ describe('PendingRsvpsComponent', () => {
     expect(openDrawer).toHaveBeenCalledTimes(1);
   });
 
-  it('names no project on the items of a project or foundation list', async () => {
-    feedScope.scope = 'project';
+  it('names no project on the items of a single project list', async () => {
+    feedScope.showsProject.set(false);
     await render([buildRow('a')]);
-    feedScope.scope = 'me';
     await open();
+    feedScope.showsProject.set(true);
 
     expect(all('meetings-home-pending-rsvps-row')[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-project"]')).toBeNull();
+  });
+
+  it('names the sub-project on the items of a foundation list', async () => {
+    feedScope.scope = 'project';
+    await render([buildRow('a')]);
+    await open();
+    feedScope.scope = 'me';
+
+    expect(all('meetings-home-pending-rsvps-row')[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-project"]')).toBeTruthy();
   });
 
   it('lists each pending date with its date tile, project, title, time and 28px RSVP buttons', async () => {

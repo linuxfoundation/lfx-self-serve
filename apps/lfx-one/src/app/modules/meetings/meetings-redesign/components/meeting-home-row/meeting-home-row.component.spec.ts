@@ -71,7 +71,7 @@ function buildRow(meeting: Meeting, overrides: Partial<MeetingHomeRow> = {}): Me
 }
 
 describe('MeetingHomeRowComponent', () => {
-  const feedScope: { scope: 'me' | 'project' } = { scope: 'me' };
+  const feedScope = { scope: 'me', showsProject: signal(true) };
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
@@ -134,13 +134,21 @@ describe('MeetingHomeRowComponent', () => {
   });
 
   describe('upcoming', () => {
-    it('names no project on a project or foundation list', async () => {
+    it('names no project on a single project list', async () => {
+      feedScope.showsProject.set(false);
+      const fixture = await render(buildRow(buildMeeting()));
+      feedScope.showsProject.set(true);
+
+      expect(query(fixture, 'meetings-home-row-project')).toBeNull();
+      expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
+    });
+
+    it('names the sub-project on a foundation list', async () => {
       feedScope.scope = 'project';
       const fixture = await render(buildRow(buildMeeting()));
       feedScope.scope = 'me';
 
-      expect(query(fixture, 'meetings-home-row-project')).toBeNull();
-      expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
+      expect(text(fixture, 'meetings-home-row-project-name')).toBe('Kubernetes');
     });
 
     it('renders the date tile, project, title and meta line', async () => {

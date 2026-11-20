@@ -77,7 +77,7 @@ export class MeetingHomeRowComponent {
   private readonly joinService = inject(MeetingsHomeJoinService);
   private readonly details = inject(MeetingsHomeDetailsService);
   // A project or foundation's list names no project on its rows; the drawer still does.
-  private readonly projectScope = inject(MeetingsHomeFeed, { optional: true })?.scope === 'project';
+  private readonly feed = inject(MeetingsHomeFeed, { optional: true });
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
 
@@ -92,7 +92,9 @@ export class MeetingHomeRowComponent {
   protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() =>
     getMeetingVisibilityBadges(this.row().meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC)
   );
-  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => (this.projectScope ? null : getMeetingHomeRowProject(this.row().meeting)));
+  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() =>
+    this.feed?.showsProject() === false ? null : getMeetingHomeRowProject(this.row().meeting)
+  );
   protected readonly when: Signal<string[]> = this.initWhen();
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
   protected readonly groups: Signal<string[]> = computed(() => getMeetingGroupNames(this.row().meeting));

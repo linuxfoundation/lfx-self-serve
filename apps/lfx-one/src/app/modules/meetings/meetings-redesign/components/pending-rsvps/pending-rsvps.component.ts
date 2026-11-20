@@ -75,7 +75,7 @@ export class PendingRsvpsComponent {
   private readonly details = inject(MeetingsHomeDetailsService);
   private readonly destroyRef = inject(DestroyRef);
   // A project or foundation's list names no project on its items.
-  private readonly projectScope = inject(MeetingsHomeFeed, { optional: true })?.scope === 'project';
+  private readonly feed = inject(MeetingsHomeFeed, { optional: true });
   private readonly drawerTemplate = viewChild.required<TemplateRef<unknown>>('drawer');
   private readonly panelList = viewChild<ElementRef<HTMLElement>>('panelList');
   private readonly rowElements = viewChildren<ElementRef<HTMLElement>>('rowElement');
@@ -191,7 +191,7 @@ export class PendingRsvpsComponent {
   private toItem(row: MeetingHomeRow): MeetingPendingRsvpItem {
     return {
       row,
-      project: this.projectScope ? null : getMeetingHomeRowProject(row.meeting),
+      project: this.feed?.showsProject() === false ? null : getMeetingHomeRowProject(row.meeting),
       link: getMeetingHomeRowLink(row, 'upcoming'),
       // Public is the default, so only Private and Restricted get a badge.
       visibilityBadges: getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC),

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, inject, Injectable, Provider, Signal } from '@angular/core';
+import { computed, inject, Injectable, Provider, signal, Signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import {
   Meeting,
@@ -25,8 +25,10 @@ import { map, Observable, of, startWith, switchMap } from 'rxjs';
 export abstract class MeetingsHomeFeed {
   /** Changes with the viewer or the scope; the store reloads its feeds and resets search and filters when it does. */
   public abstract readonly key: Signal<string>;
-  /** `me` lists the viewer's meetings across projects; `project` one project's or foundation's, without project labels. */
+  /** `me` lists the viewer's meetings across projects; `project` one project's or foundation's. */
   public abstract readonly scope: 'me' | 'project';
+  /** Rows name their project: across projects, and on a foundation, whose sub-projects share the list; not on one project's. */
+  public abstract readonly showsProject: Signal<boolean>;
   /** Past meetings come a page at a time and are searched on the server. */
   public abstract readonly pagedPast: boolean;
   public abstract readonly upcomingRefresh$: Observable<void>;
@@ -47,6 +49,7 @@ export class UserMeetingsHomeFeed extends MeetingsHomeFeed {
 
   public readonly key: Signal<string> = this.userService.meetingFeedIdentity;
   public readonly scope = 'me';
+  public readonly showsProject: Signal<boolean> = signal(true);
   public readonly pagedPast = false;
   public readonly upcomingRefresh$: Observable<void> = this.userService.meetingsRefresh$;
   public readonly pastRefresh$: Observable<void> = this.userService.pastMeetingsRefresh$;
@@ -82,6 +85,7 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
     () => `${this.userService.meetingFeedIdentity()}\0${this.projectContext.activeContextUid()}\0${this.projectContext.isFoundationContext()}`
   );
   public readonly scope = 'project';
+  public readonly showsProject: Signal<boolean> = this.projectContext.isFoundationContext;
   public readonly pagedPast = true;
   public readonly upcomingRefresh$: Observable<void> = this.userService.meetingsRefresh$;
   public readonly pastRefresh$: Observable<void> = this.userService.pastMeetingsRefresh$;

@@ -167,6 +167,18 @@ describe('MeetingsHomeFeed', () => {
     expect(meetingService.getProjectMeetingsForHome).toHaveBeenCalledWith('project-1', { includeSubProjects: true });
   });
 
+  it('names the project on rows across projects and on a foundation, not on one project', () => {
+    lens.set('me');
+    expect(inject().showsProject()).toBe(true);
+    TestBed.resetTestingModule();
+    lens.set('project');
+    const feed = inject();
+
+    expect(feed.showsProject()).toBe(false);
+    foundation.set(true);
+    expect(feed.showsProject()).toBe(true);
+  });
+
   it('leaves meetings still running out of the past feed', async () => {
     const feed = inject();
 
