@@ -108,10 +108,11 @@ describe('SocialListeningAccessService.getAccess', () => {
     expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'TLF');
   });
 
-  it('denies a group member when the group has not opted in (the default)', async () => {
+  it('denies a group member when the group has not opted in (the default), without the M2M project read', async () => {
     canGroupMemberViewSocialListening.mockResolvedValue(false);
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
+    expect(getProjectWithM2M).not.toHaveBeenCalled();
   });
 
   it('denies a non-ED caller when no foundation is named — group access is always foundation-scoped', async () => {
@@ -130,8 +131,8 @@ describe('SocialListeningAccessService.getAccess', () => {
     computeIsFoundation.mockReturnValue(false);
 
     await expect(service.getAccess(req, 'child')).resolves.toEqual({ canView: false, reason: 'none' });
+    expect(canGroupMemberViewSocialListening).toHaveBeenCalledWith(req, 'child-uid');
     expect(getProjectWithM2M).toHaveBeenCalledWith(req, 'child-uid');
-    expect(canGroupMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
   it('denies an unknown foundation', async () => {

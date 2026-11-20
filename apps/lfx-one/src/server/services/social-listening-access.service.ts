@@ -71,15 +71,17 @@ export class SocialListeningAccessService {
         }
         // foundationSlug is caller-supplied: only a foundation's own groups grant access, so a child
         // project's opted-in group must not pass by naming the child's slug.
-        const record = await this.projectService.getProjectWithM2M(req, project.uid);
-        const canView = computeIsFoundation(record) && (await this.committeeService.canGroupMemberViewSocialListening(req, project.uid));
-        const grant: SocialListeningGroupGrant | null = canView
-          ? {
-              foundation: { uid: record.uid, name: record.name, slug: record.slug, parent_uid: record.parent_uid, logoUrl: record.logo_url },
-              // NATS mapping lookup, not viewer-gated like /api/projects/:uid/sfid.
-              foundationSfid: await this.projectService.getProjectSfidByUid(req, project.uid),
-            }
-          : null;
+        // Membership and the setting come first: the M2M project read only runs for a caller already authorised by them.
+        const isOptedInMember = await this.committeeService.canGroupMemberViewSocialListening(req, project.uid);
+        const record = isOptedInMember ? await this.projectService.getProjectWithM2M(req, project.uid) : null;
+        const grant: SocialListeningGroupGrant | null =
+          record && computeIsFoundation(record)
+            ? {
+                foundation: { uid: record.uid, name: record.name, slug: record.slug, parent_uid: record.parent_uid, logoUrl: record.logo_url },
+                // NATS mapping lookup, not viewer-gated like /api/projects/:uid/sfid.
+                foundationSfid: await this.projectService.getProjectSfidByUid(req, project.uid),
+              }
+            : null;
         // A grant whose Salesforce ID lookup failed (transient NATS error) is not remembered, so the next probe retries it.
         if (!grant || grant.foundationSfid) {
           this.remember(cacheKey, grant);
