@@ -206,7 +206,8 @@ describe('MeetingsCalendarDialogComponent', () => {
 
     query(fixture, 'meetings-calendar-dialog-view')?.querySelectorAll('input')[1]?.click();
     await fixture.whenStable();
-    expect(showPastFrom).toHaveBeenLastCalledWith('2026-07-26');
+    // The week of Aug 1 starts on Sunday Jul 26; its Saturday before can run past midnight into it.
+    expect(showPastFrom).toHaveBeenLastCalledWith('2026-07-25');
     const calls = showPastFrom.mock.calls.length;
 
     // A month after today holds no past meetings to ask for.

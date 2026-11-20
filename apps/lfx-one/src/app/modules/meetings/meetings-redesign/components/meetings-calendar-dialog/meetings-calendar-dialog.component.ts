@@ -82,9 +82,12 @@ export class MeetingsCalendarDialogComponent {
   /** Week view: the seven day columns. */
   protected readonly weekDays: Signal<MeetingCalendarDialogDay[]> = this.initWeekDays();
 
-  /** First day shown while it is not after today, so the past meetings from it can load; null for a later period. */
+  /** First day whose meetings can show while it is not after today, so past meetings from it load; null for a later period. */
   private readonly pastShownFrom: Signal<string | null> = computed(() => {
-    const first = getLocalDayKey(this.view() === 'month' ? getMeetingCalendarMonthDates(this.focus())[0] : this.weekStart());
+    const start = this.weekStart();
+    // A week's Sunday shows meetings that started the Saturday before and ran past midnight.
+    const week = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1);
+    const first = getLocalDayKey(this.view() === 'month' ? getMeetingCalendarMonthDates(this.focus())[0] : week);
     return first <= getLocalDayKey(this.data.now()) ? first : null;
   });
   /** Older past meetings for the shown period failed to load, so its earlier days may be missing some. */
