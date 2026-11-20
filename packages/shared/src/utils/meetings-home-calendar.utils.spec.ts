@@ -205,18 +205,28 @@ describe('meetings home calendar utils', () => {
       }
     });
 
-    it('keeps a carry-over from the day before to its real end, so it shares no lane with a meeting after it', () => {
+    it('keeps a carry-over to its real end, and never draws two events of one lane over each other', () => {
       const days = groupMeetingCalendarEntries(
-        [typed('overnight', new Date(2026, 9, 3, 23, 50), 'Board', 15), typed('early', new Date(2026, 9, 4, 0, 10), 'Board', 60)],
+        [
+          typed('overnight', new Date(2026, 9, 3, 23, 50), 'Board', 15),
+          typed('early', new Date(2026, 9, 4, 0, 10), 'Board', 60),
+          typed('later', new Date(2026, 9, 4, 3), 'Board', 60),
+        ],
         []
       );
 
       const [sunday] = buildMeetingCalendarDialogDays([new Date(2026, 9, 4)], days, new Date(2026, 9, 1), null, 0);
 
-      expect(sunday.events.map((event) => [event.key, event.top, event.lane, event.lanes])).toEqual([
-        ['overnight', 0, 0, 1],
-        ['early', 8, 0, 1],
+      // The five minutes after midnight are drawn 22px tall, past the 00:10 meeting's top, so they sit side by side.
+      expect(sunday.events.map((event) => [event.key, event.top, event.height, event.lane, event.lanes])).toEqual([
+        ['overnight', 0, 22, 0, 2],
+        ['early', 8, 46, 1, 2],
+        ['later', 144, 46, 0, 1],
       ]);
+      for (const lane of new Set(sunday.events.map((event) => event.lane))) {
+        const boxes = sunday.events.filter((event) => event.lane === lane).sort((a, b) => a.top - b.top);
+        boxes.slice(1).forEach((box, index) => expect(box.top).toBeGreaterThanOrEqual(boxes[index].top + boxes[index].height));
+      }
     });
 
     it('does not carry a short meeting that ends by midnight into the next day', () => {

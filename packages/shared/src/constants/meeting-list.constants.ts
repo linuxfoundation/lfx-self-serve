@@ -223,6 +223,9 @@ export const MEETINGS_HOME_CALENDAR_WEEKDAY_NAMES: readonly string[] = RECURRENC
 /** Height of one hour in the calendar dialog's week view. */
 export const MEETINGS_HOME_CALENDAR_HOUR_PX = 48;
 
+/** Least height a week view event is drawn at, so its time stays readable. */
+export const MEETINGS_HOME_CALENDAR_EVENT_MIN_HEIGHT_PX = 22;
+
 /** Hour the week view opens scrolled to. */
 export const MEETINGS_HOME_CALENDAR_START_HOUR = 8;
 
