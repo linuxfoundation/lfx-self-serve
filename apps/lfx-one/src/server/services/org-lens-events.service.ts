@@ -354,8 +354,8 @@ export class OrgLensEventsService {
     const foundationFilter = filters.foundation ? 'AND oe.FOUNDATION_ID = ?' : '';
     const sql = `
       SELECT
-        COUNT(DISTINCT CASE WHEN oe.IS_PAST_EVENT = TRUE ${orgEventsRangeWindow('oe.EVENT_DATE', filters.range)} THEN oe.EVENT_ID END) AS PAST_EVENTS,
-        COUNT(DISTINCT CASE WHEN oe.IS_PAST_EVENT = FALSE THEN oe.EVENT_ID END) AS UPCOMING_EVENTS
+        COUNT(CASE WHEN oe.IS_PAST_EVENT = TRUE ${orgEventsRangeWindow('oe.EVENT_DATE', filters.range)} THEN 1 END) AS PAST_EVENTS,
+        COUNT(CASE WHEN oe.IS_PAST_EVENT = FALSE THEN 1 END) AS UPCOMING_EVENTS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
       WHERE oe.FAMILY_ACCOUNT_ID = ?
         AND oe.ACCOUNT_ID IN (${placeholders(accounts)})
@@ -368,7 +368,7 @@ export class OrgLensEventsService {
     try {
       const rows = await withOrgCache(
         scope.rollUpKey,
-        `events-summary-family:v2:${paramSignature([...accounts, filters.scope, filters.foundation, filters.range])}`,
+        `events-summary-family:v3:${paramSignature([...accounts, filters.scope, filters.foundation, filters.range])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventsSummaryRow>(sql, binds)).rows,
         isObjectRowArray

@@ -752,7 +752,7 @@ describe('OrgLensEventsService family roll-up', () => {
     return service.familyScope(rollUp(), company);
   }
 
-  it('lists one row per (event, company), ordered by company within an event, while the tiles count each event once', async () => {
+  it('lists one row per (event, company), ordered by company within an event, and the tiles count those rows', async () => {
     addEvent({ eventId: 'shared', isPast: true, account: ACCOUNT });
     addEvent({ eventId: 'shared', isPast: true, account: OTHER_ACCOUNT });
     addEvent({ eventId: 'own', isPast: true, account: OTHER_ACCOUNT });
@@ -760,8 +760,8 @@ describe('OrgLensEventsService family roll-up', () => {
     const summary = await service.getFamilyOrgEventsSummary(REQ, family(), FILTERS);
     const list = await service.getFamilyOrgEvents(REQ, family(), listOptions({ isPast: true }));
 
-    expect(summary).toMatchObject({ pastEvents: 2, upcomingEvents: 0, totalEvents: 2 });
-    expect(list.total).toBe(3);
+    expect(summary).toMatchObject({ pastEvents: 3, upcomingEvents: 0, totalEvents: 3 });
+    expect(list.total).toBe(summary.pastEvents);
     expect(list.data.map((event) => [event.eventId, event.organization])).toEqual([
       ['own', SUBSIDIARY_CO],
       ['shared', PARENT_CO],
@@ -874,7 +874,7 @@ describe('OrgLensEventsService family roll-up', () => {
       ['foundation-only', PARENT_CO],
       ['foundation-only', SUBSIDIARY_CO],
     ]);
-    expect([summary.upcomingEvents, everything.total]).toEqual([2, 3]);
+    expect([summary.upcomingEvents, everything.total]).toEqual([3, 3]);
     expect(activity.data.map((event) => [event.eventId, event.organization])).toEqual([['active', SUBSIDIARY_CO]]);
   });
 
