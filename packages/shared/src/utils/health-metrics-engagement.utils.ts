@@ -30,13 +30,7 @@ import { HEALTH_METRICS_TABLE_DASH, HEALTH_METRICS_VALUE_BAR_FILL } from '../con
 import { formatIsoDateLabel } from './date-time.utils';
 import { buildHealthMetricsLineChart, healthMetricsLineChartCountCeiling } from './health-metrics-line-chart.utils';
 import { formatHealthMetricsNewsletterGrowthSince } from './health-metrics-overview.utils';
-import {
-  formatHealthMetricsPercent,
-  formatHealthMetricsSmallPercent,
-  healthMetricsBarFillClass,
-  healthMetricsShownPercent,
-  healthMetricsTierSortRank,
-} from './health-metrics-table.utils';
+import { formatHealthMetricsPercent, healthMetricsBarFillClass, healthMetricsShownPercent, healthMetricsTierSortRank } from './health-metrics-table.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
@@ -770,7 +764,7 @@ function attendanceMonthName(month: HealthMetricsEngagementAttendanceMonth): str
   return MONTH_NAMES[Number(month.monthStartDate.slice(5, 7)) - 1] ?? month.monthStartDate.slice(0, 7);
 }
 
-/** A rated month's rate as a whole percent, for the change in points; the labels format the rate itself. */
+/** A rated month's rate as a whole percent: changes stay in whole points, as the design writes trends; labels format the rate. */
 function attendanceWholePct(month: HealthMetricsEngagementAttendanceMonth): number {
   return Math.round((month.attendancePct as number) * 100);
 }

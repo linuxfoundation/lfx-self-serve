@@ -764,7 +764,7 @@ describe('buildHealthMetricsMembersBoardTrend', () => {
     expect(unmeasured).toMatchObject({ label: '—', dateLabel: '—', committeeName: '—', pct: null, pctLabel: '—' });
     expect(over).toMatchObject({ pct: 100, pctLabel: '100%' });
 
-    // A share under 1% reads to one decimal, while the bar keeps its whole percent.
+    // A share under 1% reads to one decimal, and the bar is drawn to the same value.
     const [faint] = buildHealthMetricsMembersBoardTrend([
       {
         meetingId: 'm-4',
@@ -776,7 +776,7 @@ describe('buildHealthMetricsMembersBoardTrend', () => {
         isLatestMeeting: false,
       },
     ]);
-    expect(faint).toMatchObject({ pct: 0, pctLabel: '0.4%' });
+    expect(faint).toMatchObject({ pct: 0.4, pctLabel: '0.4%' });
   });
 });
 
@@ -1021,6 +1021,20 @@ describe('members nps', () => {
   it('flags a rising score whose last reportable rate is below the floor', () => {
     const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.36), quarter('2025-07-01', 51, 0.34)]);
     expect(buildHealthMetricsMembersNpsTrendNote(points)).toMatchObject({ kind: 'diverging', scoreChangeLabel: '1 point' });
+  });
+
+  it('plots a rate under 1% as shown and flags its fall under a rising score', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.004), quarter('2025-07-01', 58, 0.001)]);
+    expect(points.map((point) => [point.ratePct, point.rateLabel])).toEqual([
+      [0.4, '0.4%'],
+      [0.1, '0.1%'],
+    ]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({
+      kind: 'diverging',
+      scoreChangeLabel: '8 points',
+      fromRateLabel: '0.4%',
+      toRateLabel: '0.1%',
+    });
   });
 
   it('never says a rising rate fell, sending one still below the floor to the floor note', () => {

@@ -248,6 +248,13 @@ describe('group attendance rows', () => {
     expect(view).toMatchObject({ meetings: '—', lastMetLabel: '—', dormant: true, attendanceLabel: '—', attendancePct: null });
   });
 
+  // The bar width stays a whole percent; the server sorts this table.
+  it('labels a rate under 1% to one decimal', () => {
+    const periods = row.periods.map((period) => (period.range === 'YTD' ? { ...period, attendancePct: 0.004 } : period));
+
+    expect(buildHealthMetricsEngagementGroupRowView({ ...row, periods }, 'YTD')).toMatchObject({ attendanceLabel: '0.4%', attendancePct: 0 });
+  });
+
   // Too few meetings to rate reads as no rate, not as a percentage built on one or two meetings.
   it('drops the rate below the minimum meetings', () => {
     const periods = row.periods.map((period) =>
@@ -1012,6 +1019,24 @@ describe('buildHealthMetricsEngagementAttendanceTrendView', () => {
       tip: 'Difference in attendance rate between January and August of the selected year, in percentage points.',
     });
     expect(view.chart?.paths[0].d).not.toContain('600.0');
+  });
+
+  // Rates under 1% read to one decimal; the change stays in whole points, as the design writes trends.
+  it('shows rates under 1% to one decimal in the metrics', () => {
+    const small: Record<number, number> = { 0: 0.4, 8: 0.9 };
+    const view = buildHealthMetricsEngagementAttendanceTrendView(
+      months(
+        2026,
+        design.map(([pct, meetings], index): [number, number] => [small[index] ?? pct, meetings])
+      ),
+      'YTD',
+      2026,
+      today
+    );
+
+    expect(view.metrics[0]).toMatchObject({ value: '0.9%', descriptionLead: '−11pp', description: 'vs August' });
+    expect(view.metrics[1]).toMatchObject({ value: '+1pp', description: '0.4% in Jan → 0.9% in Sep' });
+    expect(view.metrics[3]).toMatchObject({ value: '0.4%', description: 'January 2026' });
   });
 
   it('leaves the comparison out when the month before the last full month is thin', () => {

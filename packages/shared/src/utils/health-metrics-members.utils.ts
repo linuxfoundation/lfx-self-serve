@@ -28,7 +28,7 @@ import {
 } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
 import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
-import { formatHealthMetricsPercent, formatHealthMetricsSmallPercent } from './health-metrics-table.utils';
+import { formatHealthMetricsPercent, formatHealthMetricsSmallPercent, healthMetricsShownPercent } from './health-metrics-table.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
@@ -426,7 +426,7 @@ export function buildHealthMetricsMembersBoardMeetingRows(
 /** Trend bars, labelled by short date; the rate is clamped like the table's. */
 export function buildHealthMetricsMembersBoardTrend(trend: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardTrendBarView[] {
   return trend.map((meeting) => {
-    const pct = toWholePct(meeting.attendancePct);
+    const pct = toShownPct(meeting.attendancePct);
     return {
       meetingId: meeting.meetingId,
       label: formatIsoDateShortLabel(meeting.meetingDate) ?? '—',
@@ -521,7 +521,7 @@ export function buildHealthMetricsMembersNpsSegments(audience: HealthMetricsMemb
 export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsMembersNpsTrendPointView[] {
   return trend.map((quarter) => {
     const score = quarter.npsScore;
-    const ratePct = toWholePct(quarter.responseRatePct);
+    const ratePct = toShownPct(quarter.responseRatePct);
     const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
     const isLowConfidence = score !== null && (ratePct === null ? quarter.isSampleTooSmall === true : isRateBelowFloor);
     const scoreLabel = score === null ? '—' : formatSignedScore(score);
@@ -777,6 +777,11 @@ function activityCell(key: string, value: number | null, format: (value: number 
 
 function toWholePct(share: number | null): number | null {
   return share === null ? null : Math.min(100, Math.max(0, Math.round(share * 100)));
+}
+
+/** The percent a label shows (one decimal under 1%), so a plotted point or trend note matches its label. */
+function toShownPct(share: number | null): number | null {
+  return share === null ? null : Math.min(100, Math.max(0, healthMetricsShownPercent(share * 100)));
 }
 
 function formatIsoDate(value: string | null): string {

@@ -162,6 +162,13 @@ describe('MembersBoardAttendanceComponent', () => {
     ]);
   });
 
+  it('labels the tooltip with the same rate as the table, to one decimal under 1%', async () => {
+    await render(response({ trend: [meeting({ meetingId: 'm-0', attendancePct: 0.004 }), meeting({ isLatestMeeting: true })] }));
+
+    const label = fixture.componentInstance['chartOptions'].plugins?.tooltip?.callbacks?.label as (item: { dataIndex: number }) => string;
+    expect([label({ dataIndex: 0 }), label({ dataIndex: 1 }), label({ dataIndex: 5 })]).toEqual(['0.4%', '82%', '']);
+  });
+
   it("highlights the view's latest meeting, not the last bar, when meetings share a date", async () => {
     const sameDay = [meeting({ meetingId: 'm-a', isLatestMeeting: true }), meeting({ meetingId: 'm-b' })];
     await render(response({ trend: sameDay, cohorts: { board: cohort({ latestAttendancePct: 0.95, isBelowExpectedLevel: false }), voting_members: null } }));
