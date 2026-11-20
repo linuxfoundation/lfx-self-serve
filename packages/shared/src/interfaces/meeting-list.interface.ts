@@ -651,4 +651,8 @@ export interface MeetingCalendarDialogData {
   logoUrl: string;
   /** Opens the meeting details drawer above the dialog. */
   openMeeting: (row: MeetingHomeRow) => void;
+  /** Asks for past meetings back to a local day (`YYYY-MM-DD`), the first one shown, so its past meetings can load. */
+  showPastFrom: (day: string) => void;
+  /** A date in the month to open on; the current month without one. */
+  month?: Date;
 }
