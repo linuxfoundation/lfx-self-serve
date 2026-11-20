@@ -300,6 +300,7 @@ export class HealthMetricsOverviewService {
         NULLIF(TRIM(person_job_title), '') AS person_job_title,
         NULLIF(TRIM(account_name), '') AS account_name,
         NULLIF(TRIM(logo_url), '') AS logo_url,
+        NULLIF(TRIM(person_photo_url), '') AS person_photo_url,
         last_attended_date,
         ${memberColumns.join(',\n        ')}
       FROM ${BOARD_MEMBERS_VIEW}
@@ -670,6 +671,7 @@ function mapBoardMember(row: WideRow): HealthMetricsOverviewBoardMember {
     jobTitle: jobTitle && jobTitle.toLowerCase() !== 'unavailable' ? jobTitle : null,
     organization: typeof row['ACCOUNT_NAME'] === 'string' ? row['ACCOUNT_NAME'] : null,
     logoUrl: typeof row['LOGO_URL'] === 'string' ? row['LOGO_URL'] : null,
+    photoUrl: typeof row['PERSON_PHOTO_URL'] === 'string' ? row['PERSON_PHOTO_URL'] : null,
     lastAttendedDate: toIsoDate(row['LAST_ATTENDED_DATE'] as Date | string | null),
     attendance,
   };

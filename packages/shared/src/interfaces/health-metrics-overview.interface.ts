@@ -167,6 +167,8 @@ export interface HealthMetricsOverviewBoardMember {
   jobTitle: string | null;
   organization: string | null;
   logoUrl: string | null;
+  /** `null` keeps the initials avatar. */
+  photoUrl: string | null;
   /** `YYYY-MM-DD`. */
   lastAttendedDate: string | null;
   attendance: Partial<Record<HealthMetricsL2Range, HealthMetricsOverviewBoardAttendance>>;
@@ -633,6 +635,8 @@ export interface HealthMetricsOverviewBoardRowView {
   key: string;
   name: string;
   initials: string;
+  /** Empty keeps the initials. */
+  photoUrl: string;
   title: string;
   organization: string;
   organizationInitial: string;

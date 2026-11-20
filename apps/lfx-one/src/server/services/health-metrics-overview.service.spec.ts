@@ -410,6 +410,7 @@ describe('HealthMetricsOverviewService.getBoard', () => {
       PERSON_JOB_TITLE: 'CTO',
       ACCOUNT_NAME: 'Acme Corp',
       LOGO_URL: 'https://logos.example/acme.png',
+      PERSON_PHOTO_URL: 'https://photos.example/pat.jpg',
       LAST_ATTENDED_DATE: '2026-09-03',
       ...wide({ MEETINGS_INVITED_COUNT: 0, MEETINGS_ATTENDED_COUNT: 0, ATTENDANCE_PCT: 0 }),
       ...overrides,
@@ -430,6 +431,7 @@ describe('HealthMetricsOverviewService.getBoard', () => {
     expectBinds(summarySql, ['acme', 'board']);
     expectBinds(membersSql, ['acme']);
     for (const [, suffix] of SUFFIXES) expect(sql(membersSql)).toContain(`meetings_invited_count_${suffix} > 0`);
+    expect(sql(membersSql)).toContain("NULLIF(TRIM(person_photo_url), '') AS person_photo_url");
     expect(sql(membersSql)).toContain(`LIMIT ${HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP + 1}`);
   });
 
@@ -445,7 +447,14 @@ describe('HealthMetricsOverviewService.getBoard', () => {
       ],
       [
         member({ MEETINGS_INVITED_COUNT_YTD: 3, MEETINGS_ATTENDED_COUNT_YTD: 2, ATTENDANCE_PCT_YTD: '0.666667' }),
-        member({ MEMBER_KEY: 'k2', PERSON_JOB_TITLE: 'Unavailable', LOGO_URL: null, LAST_ATTENDED_DATE: null, MEETINGS_INVITED_COUNT_COMPLETED_YEAR: 4 }),
+        member({
+          MEMBER_KEY: 'k2',
+          PERSON_JOB_TITLE: 'Unavailable',
+          LOGO_URL: null,
+          PERSON_PHOTO_URL: null,
+          LAST_ATTENDED_DATE: null,
+          MEETINGS_INVITED_COUNT_COMPLETED_YEAR: 4,
+        }),
       ]
     );
 
@@ -458,12 +467,14 @@ describe('HealthMetricsOverviewService.getBoard', () => {
       jobTitle: 'CTO',
       organization: 'Acme Corp',
       logoUrl: 'https://logos.example/acme.png',
+      photoUrl: 'https://photos.example/pat.jpg',
       lastAttendedDate: '2026-09-03',
       attendance: { YTD: { invited: 3, attended: 2, attendancePct: 0.666667 } },
     });
     expect(board.members[1]).toMatchObject({
       jobTitle: null,
       logoUrl: null,
+      photoUrl: null,
       lastAttendedDate: null,
       attendance: { COMPLETED_YEAR: { invited: 4, attended: 0, attendancePct: 0 } },
     });

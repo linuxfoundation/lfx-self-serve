@@ -479,6 +479,7 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
       key: member.key,
       name: member.name,
       initials: buildInitials(member.name),
+      photoUrl: member.photoUrl ?? '',
       title: member.jobTitle ?? '',
       organization: member.organization ?? NOT_AVAILABLE,
       organizationInitial: member.organization?.charAt(0).toUpperCase() ?? '',

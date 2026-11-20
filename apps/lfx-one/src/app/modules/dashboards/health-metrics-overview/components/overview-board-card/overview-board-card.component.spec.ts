@@ -22,6 +22,7 @@ function member(key: string, name: string, attended: number, invited = 3): Healt
     jobTitle: null,
     organization: 'Acme Corp',
     logoUrl: null,
+    photoUrl: null,
     lastAttendedDate: null,
     attendance: { YTD: { invited, attended, attendancePct: attended / invited } },
   };
@@ -30,7 +31,7 @@ function member(key: string, name: string, attended: number, invited = 3): Healt
 const PERIOD = { meetings: 3, meetingsChangePct: 0.25, avgAttendancePct: 0.38, avgAttendanceChangePct: -0.1 };
 const BOARD: HealthMetricsOverviewBoard = {
   periods: { YTD: PERIOD, COMPLETED_YEAR: null, COMPLETED_YEAR_2: PERIOD, COMPLETED_YEAR_3: PERIOD },
-  members: [member('k1', 'Pat Doe', 3), member('k2', 'Sam Roe', 0), member('k3', 'Alex Moe', 1)],
+  members: [{ ...member('k1', 'Pat Doe', 3), photoUrl: 'https://photos.example/pat.jpg' }, member('k2', 'Sam Roe', 0), member('k3', 'Alex Moe', 1)],
 };
 
 describe('OverviewBoardCardComponent', () => {
@@ -73,7 +74,7 @@ describe('OverviewBoardCardComponent', () => {
     expect(query('overview-board-sort-attended')?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
   });
 
-  it('heads the second column Company and gives each member an initials avatar', async () => {
+  it('heads the second column Company and gives a member without a photo an initials avatar', async () => {
     await render();
 
     expect([...(query('overview-board-table')?.querySelectorAll('[role="columnheader"]') ?? [])].map((cell) => cell.textContent?.trim())).toEqual([
@@ -82,7 +83,15 @@ describe('OverviewBoardCardComponent', () => {
       'Attended',
       'Last attended',
     ]);
-    expect(query('overview-board-row-k1')?.querySelector('[data-testid="overview-board-avatar"]')?.textContent?.trim()).toBe('PD');
+    expect(query('overview-board-row-k2')?.querySelector('[data-testid="overview-board-avatar"]')?.textContent?.trim()).toBe('SR');
+  });
+
+  it("shows a member's photo, keeping the initials for one without", async () => {
+    await render();
+
+    const photo = (key: string) => query(`overview-board-row-${key}`)?.querySelector('[data-testid="ui-avatar-image"]');
+    expect(photo('k1')?.getAttribute('src')).toBe('https://photos.example/pat.jpg');
+    expect(photo('k2')).toBeNull();
   });
 
   it('lets the keyboard reach the full company behind its truncation', async () => {

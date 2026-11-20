@@ -982,6 +982,7 @@ describe('buildHealthMetricsOverviewBoardView', () => {
         jobTitle: 'CTO',
         organization: 'Acme Corp',
         logoUrl: null,
+        photoUrl: 'https://photos.example/pat.jpg',
         lastAttendedDate: '2025-12-09',
         attendance: { YTD: { invited: 3, attended: 3, attendancePct: 1 } },
       },
@@ -991,6 +992,7 @@ describe('buildHealthMetricsOverviewBoardView', () => {
         jobTitle: null,
         organization: null,
         logoUrl: 'https://logos.example/r.png',
+        photoUrl: null,
         lastAttendedDate: null,
         attendance: { YTD: { invited: 3, attended: 0, attendancePct: 0 } },
       },
@@ -1000,6 +1002,7 @@ describe('buildHealthMetricsOverviewBoardView', () => {
         jobTitle: null,
         organization: 'Moe Inc',
         logoUrl: null,
+        photoUrl: null,
         lastAttendedDate: null,
         attendance: { YTD: { invited: 2, attended: 1, attendancePct: null } },
       },
@@ -1009,6 +1012,7 @@ describe('buildHealthMetricsOverviewBoardView', () => {
         jobTitle: null,
         organization: 'Lee Co',
         logoUrl: null,
+        photoUrl: null,
         lastAttendedDate: null,
         attendance: { COMPLETED_YEAR: { invited: 1, attended: 1, attendancePct: 1 } },
       },
@@ -1032,8 +1036,8 @@ describe('buildHealthMetricsOverviewBoardView', () => {
       ['Alex Moe', '1 of 2', '50%', 'bg-amber-400'],
       ['Pat Doe', '3 of 3', '100%', 'bg-emerald-500'],
     ]);
-    expect(rows[2]).toMatchObject({ initials: 'PD', title: 'CTO', organizationInitial: 'A', lastAttendedLabel: 'Dec 9, 2025' });
-    expect(rows[0]).toMatchObject({ organization: '—', organizationInitial: '', lastAttendedLabel: '—' });
+    expect(rows[2]).toMatchObject({ initials: 'PD', photoUrl: 'https://photos.example/pat.jpg', title: 'CTO', organizationInitial: 'A', lastAttendedLabel: 'Dec 9, 2025' });
+    expect(rows[0]).toMatchObject({ photoUrl: '', organization: '—', organizationInitial: '', lastAttendedLabel: '—' });
   });
 
   it('sorts by name or attendance either way', () => {
