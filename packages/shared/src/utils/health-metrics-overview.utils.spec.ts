@@ -14,7 +14,7 @@ import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-even
 import { HEALTH_METRICS_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
 import { HEALTH_METRICS_OVERVIEW_EMPTY_COPY, HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS } from '../constants/health-metrics-overview.constants';
-import { HEALTH_METRICS_TRAINING_SECTIONS } from '../constants/health-metrics-training.constants';
+import { HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED, HEALTH_METRICS_TRAINING_SECTIONS } from '../constants/health-metrics-training.constants';
 import {
   buildHealthMetricsOverviewAddPastMeetingUrl,
   buildHealthMetricsOverviewBalanceView,
@@ -69,7 +69,11 @@ import type {
   HealthMetricsOverviewParticipatingOrgs,
   HealthMetricsOverviewParticipatingOrgsPeriod,
 } from '../interfaces/health-metrics-overview.interface';
-import type { HealthMetricsTrainingEnrollment, HealthMetricsTrainingEnrollmentPeriod } from '../interfaces/health-metrics-training.interface';
+import type {
+  HealthMetricsTrainingEnrollment,
+  HealthMetricsTrainingEnrollmentGoals,
+  HealthMetricsTrainingEnrollmentPeriod,
+} from '../interfaces/health-metrics-training.interface';
 
 /** The same value under every period, with per-period overrides. */
 function everyPeriod<T>(value: T, overrides: Partial<Record<HealthMetricsL2Range, T>> = {}): Record<HealthMetricsL2Range, T> {
@@ -707,7 +711,7 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     measured: true,
     periods: everyPeriod(period),
     trend: [],
-    goals: { enrollments: 150000, revenueUsd: 5000000, enrollmentsProgressYtd: null, revenueProgressYtd: null },
+    goals: everyPeriod<HealthMetricsTrainingEnrollmentGoals>({ enrollments: 150000, revenueUsd: 5000000, enrollmentsProgress: null, revenueProgress: null }),
   };
 
   it('ranks the listed enrollment programs against the largest one', () => {
@@ -723,8 +727,8 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     expect(view.progressPath).not.toBe('');
   });
 
-  it("prefers the view's modelled progress for YTD over the plain share of the goal", () => {
-    const modelled = { ...enrollment, goals: { ...enrollment.goals, enrollmentsProgressYtd: 1 } };
+  it("prefers the view's progress over the plain share of the goal", () => {
+    const modelled = { ...enrollment, goals: { ...enrollment.goals, YTD: { ...enrollment.goals.YTD, enrollmentsProgress: 1 } } };
 
     expect(buildHealthMetricsOverviewTrainingView(modelled, 'YTD', 'enrollments').goalLabel).toBe('100% of 150K goal');
   });
@@ -748,22 +752,33 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     ]);
   });
 
-  it('draws no goal outside YTD, where the view models none', () => {
-    const view = buildHealthMetricsOverviewTrainingView(enrollment, 'COMPLETED_YEAR', 'enrollments');
+  it("reads a past year's own goal and progress", () => {
+    const pastGoal = { enrollments: 120000, revenueUsd: null, enrollmentsProgress: 1.0, revenueProgress: null };
+    const view = buildHealthMetricsOverviewTrainingView({ ...enrollment, goals: { ...enrollment.goals, COMPLETED_YEAR: pastGoal } }, 'COMPLETED_YEAR', 'enrollments');
 
-    expect(view.goalLabel).toBeNull();
+    expect(view.goalLabel).toBe('100% of 120K goal');
     expect(view.noGoal).toBe(false);
-    expect(view.progressPath).toBe('');
-    expect(view.ariaLabel).toBe('Enrollments 131.5K');
+    expect(view.progressPath).not.toBe('');
+    expect(view.ariaLabel).toBe('Enrollments 131.5K of 120K goal');
   });
 
-  it('says no goal is set in YTD when the measure has none', () => {
-    const view = buildHealthMetricsOverviewTrainingView({ ...enrollment, goals: { ...enrollment.goals, revenueUsd: null } }, 'YTD', 'revenue');
+  it('says no goal is set for any period whose measure has none', () => {
+    const view = buildHealthMetricsOverviewTrainingView(
+      { ...enrollment, goals: { ...enrollment.goals, YTD: { ...enrollment.goals.YTD, revenueUsd: null } } },
+      'YTD',
+      'revenue'
+    );
+    const past = buildHealthMetricsOverviewTrainingView(
+      { ...enrollment, goals: { ...enrollment.goals, COMPLETED_YEAR_2: HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED.goals.COMPLETED_YEAR_2 } },
+      'COMPLETED_YEAR_2',
+      'enrollments'
+    );
 
     expect(view.goalLabel).toBe('No goal set');
     expect(view.noGoal).toBe(true);
     expect(view.progressPath).toBe('');
     expect(view.ariaLabel).toBe('Revenue $4.3M, no goal set');
+    expect([past.goalLabel, past.noGoal, past.progressPath]).toEqual(['No goal set', true, '']);
     expect(buildHealthMetricsOverviewTrainingView(enrollment, 'YTD', 'enrollments').noGoal).toBe(false);
   });
 

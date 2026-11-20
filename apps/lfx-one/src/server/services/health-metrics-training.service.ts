@@ -23,6 +23,7 @@ import type {
   HealthMetricsTrainingCourses,
   HealthMetricsTrainingCoursesQuery,
   HealthMetricsTrainingEnrollment,
+  HealthMetricsTrainingEnrollmentGoals,
   HealthMetricsTrainingEnrollmentPeriod,
   HealthMetricsTrainingEnrollmentQuery,
   HealthMetricsTrainingEnrollmentTotals,
@@ -86,6 +87,10 @@ export class HealthMetricsTrainingService {
         `certifications_earned_count_${suffix} AS certifications_${range}`,
         `revenue_usd_${suffix} AS revenue_usd_${range}`,
         `sort_rank_${suffix} AS sort_rank_${range}`,
+        `enrollment_goal_${suffix} AS enrollment_goal_${range}`,
+        `enrollment_goal_progress_${suffix} AS enrollment_goal_progress_${range}`,
+        `revenue_goal_usd_${suffix} AS revenue_goal_usd_${range}`,
+        `revenue_goal_progress_${suffix} AS revenue_goal_progress_${range}`,
       ];
     });
 
@@ -97,11 +102,7 @@ export class HealthMetricsTrainingService {
         ${periodColumns.join(',\n        ')},
         enrollment_count_change_pct,
         certifications_change_pct,
-        revenue_change_pct,
-        enrollment_goal,
-        enrollment_goal_progress_ytd,
-        revenue_goal_usd,
-        revenue_goal_progress_ytd
+        revenue_change_pct
       FROM ${TRAINING_SUMMARY_VIEW}
       WHERE foundation_slug = ?
     `;
@@ -132,12 +133,10 @@ export class HealthMetricsTrainingService {
       periods,
       trend: trend.rows.map((row) => ({ year: Number(row.ENROLLMENT_YEAR), enrollments: toNullableNumber(row.ENROLLMENT_COUNT) })),
       // Goals ride on the `All` row only; a goal of zero or less is no goal.
-      goals: {
-        enrollments: toPositiveOrNull(all['ENROLLMENT_GOAL']),
-        revenueUsd: toPositiveOrNull(all['REVENUE_GOAL_USD']),
-        enrollmentsProgressYtd: toNullableNumber(all['ENROLLMENT_GOAL_PROGRESS_YTD']),
-        revenueProgressYtd: toNullableNumber(all['REVENUE_GOAL_PROGRESS_YTD']),
-      },
+      goals: Object.fromEntries(HEALTH_METRICS_L2_RANGES.map((range) => [range, toGoals(all, range)])) as Record<
+        HealthMetricsL2Range,
+        HealthMetricsTrainingEnrollmentGoals
+      >,
     };
   }
 
@@ -260,6 +259,15 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
 
 function toTotals(enrollments: unknown, certifications: unknown, revenueUsd: unknown): HealthMetricsTrainingEnrollmentTotals {
   return { enrollments: toNullableNumber(enrollments), certifications: toNullableNumber(certifications), revenueUsd: toNullableNumber(revenueUsd) };
+}
+
+function toGoals(all: SummaryRow, range: HealthMetricsL2Range): HealthMetricsTrainingEnrollmentGoals {
+  return {
+    enrollments: toPositiveOrNull(all[`ENROLLMENT_GOAL_${range}`]),
+    revenueUsd: toPositiveOrNull(all[`REVENUE_GOAL_USD_${range}`]),
+    enrollmentsProgress: toNullableNumber(all[`ENROLLMENT_GOAL_PROGRESS_${range}`]),
+    revenueProgress: toNullableNumber(all[`REVENUE_GOAL_PROGRESS_${range}`]),
+  };
 }
 
 function toPositiveOrNull(value: unknown): number | null {

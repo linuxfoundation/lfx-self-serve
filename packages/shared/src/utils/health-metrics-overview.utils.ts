@@ -358,7 +358,7 @@ export function buildHealthMetricsOverviewEventsView(
   };
 }
 
-/** The training total against its goal, and each program's share; the goal is modelled for YTD only. */
+/** The training total against the period's goal, and each program's share. */
 export function buildHealthMetricsOverviewTrainingView(
   enrollment: HealthMetricsTrainingEnrollment,
   range: HealthMetricsRange,
@@ -368,10 +368,9 @@ export function buildHealthMetricsOverviewTrainingView(
   const period = l2 ? enrollment.periods[l2] : null;
   const isRevenue = metric === 'revenue';
   const total = (isRevenue ? period?.totals.revenueUsd : period?.totals.enrollments) ?? null;
-  const goals = trainingGoal(enrollment, range, isRevenue);
+  const goals = trainingGoal(enrollment, l2, isRevenue);
   const goal = goals.goal;
-  // Goals are read for YTD only, so a past year has no goal to show rather than none set.
-  const noGoal = range === 'YTD' && !goal;
+  const noGoal = l2 !== null && !goal;
   const format = (value: number | null): string => formatTrainingValue(value, isRevenue);
   const fraction = goals.progress ?? (goal && total !== null ? total / goal : 0);
   const metricLabel = isRevenue ? 'Revenue' : 'Enrollments';
@@ -1380,15 +1379,16 @@ function formatEventDates(start: string | null, end: string | null): string {
   return `${monthDay(start)}–${Number(end.slice(8, 10))}, ${endYear}`;
 }
 
-/** The year's goal and its modelled progress, which the view carries for YTD only. */
+/** The period's goal and the view's progress against it; a past year with no goal reads as none set. */
 function trainingGoal(
   enrollment: HealthMetricsTrainingEnrollment,
-  range: HealthMetricsRange,
+  range: HealthMetricsL2Range | null,
   isRevenue: boolean
 ): { goal: number | null; progress: number | null } {
-  if (range !== 'YTD') return { goal: null, progress: null };
-  if (isRevenue) return { goal: enrollment.goals.revenueUsd, progress: enrollment.goals.revenueUsd ? enrollment.goals.revenueProgressYtd : null };
-  return { goal: enrollment.goals.enrollments, progress: enrollment.goals.enrollments ? enrollment.goals.enrollmentsProgressYtd : null };
+  const goals = range ? enrollment.goals[range] : null;
+  if (!goals) return { goal: null, progress: null };
+  if (isRevenue) return { goal: goals.revenueUsd, progress: goals.revenueUsd ? goals.revenueProgress : null };
+  return { goal: goals.enrollments, progress: goals.enrollments ? goals.enrollmentsProgress : null };
 }
 
 function trainingGoalLabel(goal: number | null, noGoal: boolean, fraction: number, format: (value: number | null) => string): string | null {
