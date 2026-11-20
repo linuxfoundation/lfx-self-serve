@@ -864,6 +864,24 @@ describe('MeetingsRedesignComponent', () => {
       attachedHost = null;
     });
 
+    it('stays open when text is typed while it is closing', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      await escape(fixture);
+
+      fixture.componentInstance['store'].setSearch('Board');
+      await closeDelay();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-search')?.classList.contains('is-closing')).toBe(false);
+      fixture.componentInstance['store'].setSearch('');
+      await blur(fixture);
+      await closeDelay();
+      await fixture.whenStable();
+      expect(searchButton(fixture)).toBeTruthy();
+    });
+
     it('starts as a tertiary Search button with a magnifier, before Filters', async () => {
       const fixture = render();
       await loadFeeds(fixture, [buildMeeting(0)]);
