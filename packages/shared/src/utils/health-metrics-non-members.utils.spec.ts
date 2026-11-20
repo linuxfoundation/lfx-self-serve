@@ -114,11 +114,13 @@ describe('buildHealthMetricsNonMembersOtherMemberships', () => {
       membership('cncf', 'Cloud Native Computing Foundation', 'Platinum Membership'),
       membership('alpha-foundation', 'Alpha Foundation', 'Silver'),
       membership('openssf', 'Open Source Security Foundation', 'Associate'),
+      membership('beta-foundation', 'Beta Foundation', 'Silver (100 - 499)'),
     ]);
 
     expect(views).toEqual([
       { key: 'cncf', label: 'CNCF', tierLabel: 'Platinum membership' },
       { key: 'alpha-foundation', label: 'Alpha Foundation', tierLabel: 'Silver membership' },
+      { key: 'beta-foundation', label: 'Beta Foundation', tierLabel: 'Silver (100 - 499) membership' },
       { key: 'zeta-foundation', label: 'Zeta Foundation', tierLabel: 'Silver membership' },
       { key: 'openssf', label: 'OpenSSF', tierLabel: 'Associate membership' },
     ]);

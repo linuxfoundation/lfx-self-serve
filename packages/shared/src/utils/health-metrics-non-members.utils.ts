@@ -123,9 +123,12 @@ export function buildHealthMetricsNonMembersConversionView(conversion: HealthMet
   };
 }
 
-// The four reserved tiers keep their rank; every other tier, or none, shares the lowest, so those badges run A–Z.
+// Silver and up keep the sort's rank, which reads warehouse forms such as "Silver (100 - 499)"; every other tier, or none,
+// shares the lowest, so those badges run A–Z.
 function badgeOrderRank(tier: string | null): number {
-  return tier?.trim() && resolveHealthMetricsMembersTier(tier).reserved ? (healthMetricsTierSortRank(tier) ?? 0) : 0;
+  const rank = healthMetricsTierSortRank(tier);
+  const silver = healthMetricsTierSortRank('Silver') ?? Number.POSITIVE_INFINITY;
+  return rank !== null && rank >= silver ? rank : 0;
 }
 
 // Own keys only, so a slug such as `constructor` falls back to its name rather than to Object's prototype.
