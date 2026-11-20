@@ -621,13 +621,20 @@ export class EventsService {
     return { data };
   }
 
-  public async getUpcomingCountries(req: Request): Promise<GetUpcomingCountriesResponse> {
-    logger.debug(req, 'get_upcoming_countries', 'Fetching distinct countries for upcoming events');
+  /** Countries for the location filter. For travel funding they come from the same events and rule as the picker list. */
+  public async getUpcomingCountries(req: Request, requestType?: RequestType): Promise<GetUpcomingCountriesResponse> {
+    logger.debug(req, 'get_upcoming_countries', 'Fetching distinct countries for upcoming events', { request_type: requestType });
+
+    const source =
+      requestType === 'travel-fund'
+        ? `${TRAVEL_FUND_EVENTS_TABLE}
+      WHERE ${this.travelFundOpenEventSql()}`
+        : `ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      WHERE NOT (${this.isPastEventSql()})`;
 
     const sql = `
       SELECT DISTINCT EVENT_COUNTRY
-      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-      WHERE NOT (${this.isPastEventSql()})
+      FROM ${source}
         AND EVENT_COUNTRY IS NOT NULL
       ORDER BY EVENT_COUNTRY
     `;
@@ -1148,7 +1155,10 @@ export class EventsService {
                  ELSE IS_PAST_EVENT END`;
   }
 
-  /** Event-level rule shared by the picker and the submit check; valid only against TRAVEL_FUND_EVENTS_TABLE. */
+  /**
+   * Event-level rule shared by the picker, its country filter and the submit check; valid only against TRAVEL_FUND_EVENTS_TABLE.
+   * Uses the table's EVENT_IS_PAST as-is: the backfill correction in isPastEventSql() is not needed, backfill events never offer funding.
+   */
   private travelFundOpenEventSql(): string {
     const statuses = TRAVEL_FUND_EVENT_STATUSES.map((status) => `'${status}'`).join(', ');
     return `IS_TRAVEL_FUND_ACCEPTED = TRUE

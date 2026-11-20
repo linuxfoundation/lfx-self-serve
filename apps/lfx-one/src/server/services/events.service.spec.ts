@@ -519,6 +519,15 @@ describe('EventsService filter options use the same past-event predicate', () =>
     expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
     expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
   });
+
+  it('lists travel fund countries from the same events and rule as the picker', async () => {
+    await service.getUpcomingCountries({} as never, 'travel-fund');
+
+    expect(lastSql()).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.EVENTS');
+    expect(lastSql()).not.toContain('EVENT_REGISTRATIONS');
+    expect(lastSql()).toContain("EVENT_STATUS IN ('Active', 'Pending')");
+    expect(lastSql()).toContain('AND EVENT_COUNTRY IS NOT NULL');
+  });
 });
 
 describe('EventsService past and request lists match email case-insensitively', () => {
