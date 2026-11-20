@@ -133,3 +133,9 @@ export const MEMBER_IMPORT_RETRY_AFTER_MAX_MS = 120_000;
 
 /** Shortest single automatic pause, so a zero or past Retry-After never resubmits immediately. */
 export const MEMBER_IMPORT_RETRY_AFTER_MIN_MS = 1_000;
+
+/** Refetches after an import settles while indexed member totals catch up to the run's confirmed target (#5731). */
+export const MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS = 6;
+
+/** Delay between reconciliation refetches. */
+export const MEMBER_IMPORT_RECONCILE_INTERVAL_MS = 400;

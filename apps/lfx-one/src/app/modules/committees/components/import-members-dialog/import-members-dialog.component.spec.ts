@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // CSV member import dialog lifecycle (GH-3849), submitted in bulk chunks with pause and resume (GH-5111).
+// Closing or destroying the view only hides it; the service-owned run continues and is reopened (#5731).
 // All people, organizations and domains are synthetic.
 
 import { HttpErrorResponse, HttpHeaders, provideHttpClient } from '@angular/common/http';
@@ -22,6 +23,7 @@ import {
 import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Observable, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -99,6 +101,7 @@ describe('ImportMembersDialogComponent', () => {
         { provide: DynamicDialogRef, useValue: dialogRef },
         { provide: CommitteeService, useValue: committeeService },
         { provide: UserService, useValue: { user } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     }).compileComponents();
     await createDialog();
@@ -109,6 +112,14 @@ describe('ImportMembersDialogComponent', () => {
     fixture = TestBed.createComponent(ImportMembersDialogComponent);
     component = fixture.componentInstance;
     await fixture.whenStable();
+  }
+
+  /** Replaces the view with one that reattaches to the group's retained run, as the status surfaces do. */
+  async function reattach(): Promise<void> {
+    fixture.destroy();
+    const config = TestBed.inject(DynamicDialogConfig);
+    config.data = { ...config.data, attach: true };
+    await createDialog();
   }
 
   async function upload(csv: BlobPart, name = 'members.csv'): Promise<void> {
@@ -408,7 +419,7 @@ describe('ImportMembersDialogComponent', () => {
     it('returns zero counts when the preview is cancelled', async () => {
       await upload('email\nada@example.com');
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0 });
+      expect(dialogRef.close).toHaveBeenCalledWith();
       expectNothingWritten();
     });
   });
@@ -772,7 +783,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.phase()).toBe('results');
       expect(component.addedCount()).toBe(30);
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 30, conflicts: 0, baselineMemberCount: 0 });
+      expect(dialogRef.close).toHaveBeenCalledWith();
     });
 
     it('shows an inline spinner and only confirmed processed rows until results arrive', async () => {
@@ -881,7 +892,9 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.rows()).toHaveLength(2);
       expect(component.canChooseFile()).toBe(false);
       expect(component.form.controls.send_notification.disabled).toBe(true);
-      expect((query('import-members-close-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      // Only hiding is offered while rows are in flight; it never cancels them.
+      expect(query('import-members-close-btn')).toBeNull();
+      expect(query('import-members-background-btn')).not.toBeNull();
     });
 
     it('stops after the in-flight batch and leaves later rows unsent for Retry', async () => {
@@ -907,7 +920,7 @@ describe('ImportMembersDialogComponent', () => {
       const stoppingButton = query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement;
       expect(stoppingButton.textContent).toContain('Stopping…');
       expect(stoppingButton.disabled).toBe(true);
-      expect((query('import-members-close-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      expect(query('import-members-close-btn')).toBeNull();
       component.stopImport();
       expect(component.stopReason()).toBe('You stopped the import.');
 
@@ -924,7 +937,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('import-members-stop-btn')).toBeNull();
       expect(query('import-members-retry-btn')?.textContent).toContain('Retry 35');
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 25, conflicts: 0, baselineMemberCount: 0 });
+      expect(dialogRef.close).toHaveBeenCalledWith();
     });
 
     it('clears the manual stopping state before retrying unsent rows', async () => {
@@ -1008,7 +1021,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('import-members-retry-help')).not.toBeNull();
       expect(component.canRetry()).toBe(false);
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 1, conflicts: 1, baselineMemberCount: 0 });
+      expect(dialogRef.close).toHaveBeenCalledWith();
     });
 
     it('pauses for Retry-After on a 429, then resubmits the throttled chunk', async () => {
@@ -1142,7 +1155,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.pauseCount()).toBe(0);
       failBulk(4, 403);
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true, baselineMemberCount: 0 });
+      expect(dialogRef.close).toHaveBeenCalledWith();
     });
 
     it('stops during a pause without sending anything else', async () => {
@@ -1187,7 +1200,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('filter-pill-unknown')?.textContent).toContain('Outcome unknown (25)');
       expect(query('filter-pill-not_submitted')?.textContent).toContain('Not yet submitted (5)');
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true, baselineMemberCount: 0 });
+      expect(dialogRef.close).toHaveBeenCalledWith();
       vi.advanceTimersByTime(120_000);
       expect(pending).toHaveLength(1);
     });
@@ -1243,7 +1256,7 @@ describe('ImportMembersDialogComponent', () => {
       failBulk(1, 403);
       expect(component.rows()[0]).toMatchObject({ status: 'unknown', uncertain: true });
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true, baselineMemberCount: 0 });
+      expect(dialogRef.close).toHaveBeenCalledWith();
     });
 
     it.each([
@@ -1297,7 +1310,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.canRetry()).toBe(false);
     });
 
-    it('stops resubmitting when the dialog is destroyed mid-pause', async () => {
+    it('keeps resuming after the dialog is destroyed mid-pause', async () => {
       await upload('email\nada@example.com');
       vi.useFakeTimers();
       component.startImport();
@@ -1305,24 +1318,112 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.retryNotBefore()).toBeGreaterThan(0);
       fixture.destroy();
 
-      vi.advanceTimersByTime(120_000);
-      expect(pending).toHaveLength(1);
+      vi.advanceTimersByTime(5_000);
+      expect(pending).toHaveLength(2);
+      respond(1);
       const run = TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid);
-      expect(run).toMatchObject({ status: 'settled', stopReason: 'You stopped the import.' });
-      expect(run?.rows[0].status).toBe('not_submitted');
+      expect(run).toMatchObject({ status: 'settled', stopReason: null });
+      expect(run?.rows[0].status).toBe('added');
     });
 
-    it('lets the in-flight batch settle but sends no later chunk after the dialog is destroyed', async () => {
+    it('sends the next chunk after the dialog is hidden or destroyed mid-import', async () => {
       await upload(`email\n${emails(30)}`);
       component.startImport();
+      await render();
+      query('import-members-background-btn')?.querySelector('button')?.click();
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
       fixture.destroy();
 
       respond(0);
-      expect(pending).toHaveLength(1);
+      expect(pending).toHaveLength(2);
+      respond(1);
       const run = TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid);
       expect(run?.status).toBe('settled');
-      expect(run?.rows.filter((row) => row.status === 'added')).toHaveLength(25);
-      expect(run?.rows.filter((row) => row.status === 'not_submitted')).toHaveLength(5);
+      expect(run?.rows.filter((row) => row.status === 'added')).toHaveLength(30);
+    });
+
+    it('offers Continue in background with same-tab guidance only while importing', async () => {
+      await upload(`email\n${emails(30)}`);
+      expect(query('import-members-background-btn')).toBeNull();
+      component.startImport();
+      await render();
+
+      expect(query('import-members-background-notice')?.textContent).toContain(
+        'You can keep working in LFX. Keep this tab open; refreshing or closing it interrupts the import.'
+      );
+      expect(query('import-members-close-btn')).toBeNull();
+      expect(query('import-members-stop-btn')).not.toBeNull();
+      expect(query('import-members-run-source')?.textContent).toContain('members.csv');
+
+      respond(0);
+      respond(1);
+      await render();
+      expect(query('import-members-background-btn')).toBeNull();
+      expect(query('import-members-background-notice')).toBeNull();
+      expect(query('import-members-close-btn')?.textContent).toContain('Close');
+    });
+
+    it('ignores Escape while a file is previewed, so the parsed rows are kept', async () => {
+      await upload(`email\n${emails(3)}`);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+      expect(dialogRef.close).not.toHaveBeenCalled();
+      expect(component.phase()).toBe('preview');
+      expect(component.rows()).toHaveLength(3);
+      expectNothingWritten();
+    });
+
+    it('hides a running import on Escape without stopping it, then hides its report', async () => {
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
+
+      fixture.destroy();
+      respond(0);
+      expect(pending).toHaveLength(2);
+      respond(1);
+
+      await createDialog();
+      expect(component.phase()).toBe('results');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(dialogRef.close).toHaveBeenCalledTimes(2);
+      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)?.status).toBe('settled');
+    });
+
+    it("reopens a run with the rules its rows were validated against, not the group's current settings", async () => {
+      await upload(`email\n${emails(3)}`);
+      component.startImport();
+      const confirmedRules = component.rules;
+      fixture.destroy();
+
+      const config = TestBed.inject(DynamicDialogConfig);
+      config.data = { ...config.data, committee: VOTING_GROUP, attach: true };
+      await createDialog();
+
+      expect(component.rules).toEqual(confirmedRules);
+      expect(component.rules.votingEnabled).toBe(false);
+      expect(component.fieldGuide.map(({ column }) => column)).not.toContain('voting_status');
+    });
+
+    it('closes a reattached view without offering a new preview when no run is retained', async () => {
+      await reattach();
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
+      expect(component.phase()).toBe('select');
+      expect(pending).toHaveLength(0);
+    });
+
+    it('closes instead of reverting to the sent preview when the run is revoked', async () => {
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      await render();
+      TestBed.inject(CommitteeMemberImportService).revoke(OPEN_GROUP.uid);
+      await render();
+
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
+      expect(component.rows()).toEqual([]);
+      component.startImport();
+      expect(pending).toHaveLength(1);
     });
 
     it('shows a retained run when reopened instead of resubmitting it', async () => {
@@ -1330,6 +1431,8 @@ describe('ImportMembersDialogComponent', () => {
       component.form.controls.send_notification.setValue(true);
       component.startImport();
       fixture.destroy();
+      // The hidden run keeps going until Stop import ends it after the in-flight batch.
+      TestBed.inject(CommitteeMemberImportService).stop(OPEN_GROUP.uid);
       respond(0);
 
       // The host reopens with a fresh roster that already includes the run's own additions.
@@ -1353,7 +1456,8 @@ describe('ImportMembersDialogComponent', () => {
       expect(pending[1].options).toEqual({ skipNotification: false });
       respond(1);
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 30, conflicts: 0, baselineMemberCount: 0 });
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
+      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)).toMatchObject({ status: 'settled', reconciliationTarget: 30 });
     });
 
     it('unlocks notifications when a retry settles before phase emissions observe it', async () => {
@@ -1381,7 +1485,7 @@ describe('ImportMembersDialogComponent', () => {
       component.startImport();
       fixture.destroy();
 
-      // Attach while the stopped run still awaits its in-flight batch; do not flush effects yet.
+      // Attach while the hidden run still awaits its in-flight batch; do not flush effects yet.
       fixture = TestBed.createComponent(ImportMembersDialogComponent);
       component = fixture.componentInstance;
       expect(component.form.controls.send_notification.disabled).toBe(true);
@@ -1409,7 +1513,8 @@ describe('ImportMembersDialogComponent', () => {
       component.close();
       await render();
 
-      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)).toBeUndefined();
+      // Close only hides the report; the retained run keeps it for a later view.
+      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)?.status).toBe('settled');
       expect(component.phase()).toBe('results');
       expect(component.rows()).toEqual(results);
       expect(query('import-members-summary')).not.toBeNull();
@@ -1423,7 +1528,7 @@ describe('ImportMembersDialogComponent', () => {
       component.close();
       expect(pending).toHaveLength(1);
       expect(component.form.controls.send_notification.disabled).toBe(true);
-      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith({ added: 1, conflicts: 0, uncertain: true, baselineMemberCount: 0 });
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('discards the closing snapshot when the observed user changes', async () => {
@@ -1441,13 +1546,24 @@ describe('ImportMembersDialogComponent', () => {
       expect(pending).toHaveLength(1);
     });
 
-    it('dismisses the settled run on Close so the next import of the group starts fresh', async () => {
+    it('keeps the report after Close until it is dismissed, then the next import starts fresh', async () => {
       await upload('email\nada@example.com');
       component.startImport();
       respond(0);
       component.close();
-      expect(dialogRef.close).toHaveBeenCalledWith({ added: 1, conflicts: 0, baselineMemberCount: 0 });
-      expect(TestBed.inject(CommitteeMemberImportService).getRun(OPEN_GROUP.uid)).toBeUndefined();
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
+      const importService = TestBed.inject(CommitteeMemberImportService);
+      expect(importService.getRun(OPEN_GROUP.uid)?.status).toBe('settled');
+
+      fixture.destroy();
+      await createDialog();
+      expect(component.phase()).toBe('results');
+      expect(component.addedCount()).toBe(1);
+
+      // Dismissal from the Members tab closes a view still showing the report.
+      importService.dismiss(OPEN_GROUP.uid);
+      await render();
+      expect(dialogRef.close).toHaveBeenCalledTimes(2);
 
       fixture.destroy();
       await createDialog();
@@ -1455,9 +1571,6 @@ describe('ImportMembersDialogComponent', () => {
       await upload('email\ngrace@example.com');
       component.startImport();
       expect(sentEmails(1)).toEqual(['grace@example.com']);
-      respond(1);
-      component.close();
-      expect(dialogRef.close).toHaveBeenLastCalledWith({ added: 1, conflicts: 0, baselineMemberCount: 0 });
     });
 
     it('closes without a result and resubmits nothing when the observed user changes', async () => {
@@ -1528,7 +1641,7 @@ describe('ImportMembersDialogComponent', () => {
         expect(component.phase()).toBe('results');
         expect(component.addedCount()).toBe(0);
         component.close();
-        expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 1, baselineMemberCount: 0 });
+        expect(dialogRef.close).toHaveBeenCalledWith();
       }
     );
 

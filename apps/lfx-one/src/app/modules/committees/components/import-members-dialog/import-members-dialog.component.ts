@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -26,7 +26,6 @@ import {
   FilterPillOption,
   MemberImportDialogData,
   MemberImportDialogPhase,
-  MemberImportDialogResult,
   MemberImportFieldGuide,
   MemberImportGroupRules,
   MemberImportRow,
@@ -59,14 +58,16 @@ import { pairwise } from 'rxjs';
  *
  * The file is read and validated locally into a read-only preview; nothing is written until the
  * user confirms. CommitteeMemberImportService then runs the confirmed rows against the committee bulk
- * member route (GH-5111) and retains the run per group (#5730); this dialog projects that run. Each
- * row keeps its own outcome; Retry resubmits rows that were not sent and failures that can still
- * succeed, and Close returns confirmed counts and any unresolved attempt so the roster refreshes, then
- * dismisses the settled run. Reopening the dialog for a group with a retained run shows that run
- * instead of starting another. Until hide/reopen controls exist (#5731), destroying the dialog stops
- * its active run after the in-flight batch. An inline spinner stays active through automatic recovery;
- * processed counts come only from results. Never resolves organizations, creates invitations, or
- * changes permissions.
+ * member route (GH-5111) and retains the run per group (#5730); this dialog only projects that run.
+ * Each row keeps its own outcome; Retry resubmits rows that were not sent and failures that can still
+ * succeed. Continue in background, Close, Escape and navigation only hide the view (#5731): the run
+ * keeps going in this tab, and its report stays until it is dismissed from the Members tab. Escape is
+ * handled here, because PrimeNG ignores `closeOnEscape` on a dialog that is not `closable`; it hides a
+ * running import or a report and is ignored while choosing or previewing a file, so a keystroke never
+ * discards a parsed file. Reopening (`attach`) shows the retained run, with the rules its rows were
+ * validated against, instead of a new preview, and closes if that run is gone. Stop
+ * import is separate. An inline spinner stays active through automatic recovery; processed counts
+ * come only from results. Never resolves organizations, creates invitations, or changes permissions.
  * In collect-only mode, confirmation returns validated member requests to the create or edit wizard
  * instead of writing them; the wizard saves them with Done or Update Group.
  */
@@ -84,12 +85,12 @@ import { pairwise } from 'rxjs';
   ],
   templateUrl: './import-members-dialog.component.html',
   styleUrl: './import-members-dialog.component.scss',
+  host: { '(document:keydown.escape)': 'onEscape()' },
 })
 export class ImportMembersDialogComponent {
   private readonly importService = inject(CommitteeMemberImportService);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
   /** The subject that opened the dialog; a different observed subject closes it without a result. */
@@ -102,10 +103,8 @@ export class ImportMembersDialogComponent {
   private readonly committeeUid: string = this.data.committee.uid;
   public readonly committeeName: string = this.data.committee.name;
   public readonly collectOnly = !!this.data.collectOnly;
-  public readonly rules: MemberImportGroupRules = {
-    requiresOrganization: committeeRequiresOrganization(this.data.committee),
-    votingEnabled: !!this.data.committee.enable_voting,
-  };
+  /** A retained run keeps the rules its rows were validated against; only a new preview uses the group's current rules. */
+  public readonly rules: MemberImportGroupRules = this.initRules();
   public readonly fieldGuide: MemberImportFieldGuide[] = getMemberImportFieldGuide(this.rules);
   public readonly maxRecords = MEMBER_IMPORT_MAX_RECORDS;
   public readonly maxFileMegabytes = MEMBER_IMPORT_MAX_FILE_BYTES / (1024 * 1024);
@@ -134,13 +133,13 @@ export class ImportMembersDialogComponent {
   private readonly previewPhase = signal<'select' | 'preview'>('select');
   private readonly previewRows = signal<MemberImportRow[]>([]);
   private readonly closing = signal(false);
-  /** Keep the final projection until the closing view is destroyed, after the service run is dismissed. */
-  private readonly closingRun = signal<MemberImportRun | undefined>(undefined);
 
   /** This subject's retained run for the pinned group; wizard collection never starts or shows one. */
   private readonly run: Signal<MemberImportRun | undefined> = this.initRun();
   public readonly phase: Signal<MemberImportDialogPhase> = this.initPhase();
   public readonly rows: Signal<MemberImportRow[]> = computed(() => this.run()?.rows ?? this.previewRows());
+  /** The confirmed file, kept with the run so a reopened view still names it. */
+  public readonly runFileName = computed(() => this.run()?.fileName ?? null);
   /** Set when auth/not-found, the pause cap, an excessive server cooldown or Stop import ends the run. */
   public readonly stopReason = computed(() => this.run()?.stopReason ?? null);
   public readonly batchTotal = computed(() => this.run()?.batchTotal ?? 0);
@@ -200,12 +199,7 @@ export class ImportMembersDialogComponent {
     this.initRunNotification();
     this.initRunTransitions();
     this.initSubjectChange();
-    // Until the dependent hide/reopen issue (#5731), a torn-down view schedules no later chunk or retry.
-    this.destroyRef.onDestroy(() => {
-      if (this.run()?.status === 'importing') {
-        this.importService.stop(this.committeeUid);
-      }
-    });
+    this.initRunLoss();
   }
 
   public downloadTemplate(): void {
@@ -340,29 +334,39 @@ export class ImportMembersDialogComponent {
     this.importService.stop(this.committeeUid);
   }
 
+  /** Cancels a preview before any write, or hides a settled report; neither dismisses the retained run. */
   public close(): void {
     if (this.busy()) {
       return;
     }
-    this.closing.set(true);
-    this.form.controls.send_notification.disable();
-    if (this.collectOnly) {
-      this.dialogRef.close();
+    this.detach();
+  }
+
+  /** Hides the running import; the service keeps sending its rows while this tab stays open. */
+  public continueInBackground(): void {
+    if (this.closing() || this.phase() !== 'importing') {
       return;
     }
-    const run = this.run();
-    const result: MemberImportDialogResult = {
-      added: this.addedCount(),
-      conflicts: this.conflictCount(),
-      ...(this.rows().some((row) => row.uncertain) ? { uncertain: true } : {}),
-      ...(run ? { baselineMemberCount: run.baselineMemberCount } : {}),
-    };
-    this.closingRun.set(run);
-    this.previewRows.set([]);
-    this.previewPhase.set('select');
-    this.dialogRef.close(result);
-    // The result above is captured; the settled run no longer blocks the next import into this group.
-    this.importService.dismiss(this.committeeUid);
+    this.detach();
+  }
+
+  /** Escape hides a running import or a report; file selection and preview ignore it, so a preview is never lost to a keystroke. */
+  public onEscape(): void {
+    if (this.phase() === 'importing') {
+      this.continueInBackground();
+    } else if (this.phase() === 'results') {
+      this.close();
+    }
+  }
+
+  private initRules(): MemberImportGroupRules {
+    const retained = this.collectOnly ? undefined : this.importService.getRun(this.committeeUid);
+    return (
+      retained?.rules ?? {
+        requiresOrganization: committeeRequiresOrganization(this.data.committee),
+        votingEnabled: !!this.data.committee.enable_voting,
+      }
+    );
   }
 
   private initPendingInvites(invites: CommitteeInvite[]): Record<string, string> {
@@ -379,7 +383,7 @@ export class ImportMembersDialogComponent {
   private initRun(): Signal<MemberImportRun | undefined> {
     return computed(() => {
       if (this.collectOnly || this.importService.viewerSubject() !== this.viewerSubject) return undefined;
-      return this.closingRun() ?? this.importService.getRun(this.committeeUid);
+      return this.importService.getRun(this.committeeUid);
     });
   }
 
@@ -499,11 +503,26 @@ export class ImportMembersDialogComponent {
       .pipe(takeUntilDestroyed())
       .subscribe((subject) => {
         if (subject === this.viewerSubject) return;
-        this.closingRun.set(undefined);
-        this.previewRows.set([]);
-        this.previewPhase.set('select');
         this.fileName.set(null);
-        this.dialogRef.close();
+        this.detach();
+      });
+  }
+
+  /**
+   * A reattached view without a retained run, or a view whose run was revoked or dismissed elsewhere, closes
+   * rather than falling back to a preview whose rows could be sent a second time.
+   */
+  private initRunLoss(): void {
+    if (this.collectOnly) return;
+    let observed = !!this.data.attach;
+    toObservable(this.run)
+      .pipe(takeUntilDestroyed())
+      .subscribe((run) => {
+        if (run) {
+          observed = true;
+        } else if (observed && !this.closing()) {
+          this.detach();
+        }
       });
   }
 
@@ -562,6 +581,18 @@ export class ImportMembersDialogComponent {
     }
     this.previewRows.set(prepareMemberImportRows(parsed.records, this.rules, this.existingMemberEmails));
     this.previewPhase.set('preview');
+  }
+
+  /** Closes only this view and clears its local preview; the retained run and its report are untouched. */
+  private detach(): void {
+    if (this.closing()) {
+      return;
+    }
+    this.closing.set(true);
+    this.form.controls.send_notification.disable();
+    this.previewRows.set([]);
+    this.previewPhase.set('select');
+    this.dialogRef.close();
   }
 
   private countRows(status: MemberImportRow['status']): number {
