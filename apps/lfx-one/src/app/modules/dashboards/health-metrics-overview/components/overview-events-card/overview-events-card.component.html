@@ -97,11 +97,32 @@
               class="border-b border-gray-200 pb-[8px] text-[12px] text-gray-500 whitespace-nowrap"
               [class]="gridClasses + ' hidden @[561px]/evtbl:grid'"
               role="row">
-              <span role="columnheader">Event</span>
-              <span class="inline-flex items-center gap-[6px]" role="columnheader">Registrations<lfx-overview-info-tip [text]="info.registrations" /></span>
-              <span class="inline-flex items-center gap-[6px]" role="columnheader"
-                >Accepted speaking proposals<lfx-overview-info-tip [text]="info.talks"
-              /></span>
+              <span role="columnheader" [attr.aria-sort]="sorting.headers().event.ariaSort">
+                <lfx-health-metrics-th
+                  label="Event"
+                  [sort]="sorting.headers().event.state"
+                  (sorted)="sorting.toggle('event')"
+                  data-testid="overview-events-sort-event" />
+              </span>
+              <!-- Exact px, not rem: the design's 6px between a header and its tip. -->
+              <span role="columnheader" [attr.aria-sort]="sorting.headers().registrations.ariaSort">
+                <lfx-health-metrics-th
+                  label="Registrations"
+                  [sort]="sorting.headers().registrations.state"
+                  (sorted)="sorting.toggle('registrations')"
+                  data-testid="overview-events-sort-registrations"
+                  ><lfx-overview-info-tip lfxHealthMetricsThTip class="ml-[6px]" [text]="info.registrations"
+                /></lfx-health-metrics-th>
+              </span>
+              <span role="columnheader" [attr.aria-sort]="sorting.headers().talks.ariaSort">
+                <lfx-health-metrics-th
+                  label="Accepted speaking proposals"
+                  [sort]="sorting.headers().talks.state"
+                  (sorted)="sorting.toggle('talks')"
+                  data-testid="overview-events-sort-talks"
+                  ><lfx-overview-info-tip lfxHealthMetricsThTip class="ml-[6px]" [text]="info.talks"
+                /></lfx-health-metrics-th>
+              </span>
               <span class="hidden @[912px]/evtbl:block" role="columnheader"><span class="sr-only">Actions</span></span>
             </div>
             @for (row of visibleRows(); track row.eventId) {

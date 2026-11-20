@@ -51,13 +51,55 @@
       data-testid="engagement-newsletter-performance-table">
       <ng-template #header>
         <tr>
-          <th scope="col">Newsletter</th>
-          <th scope="col" class="text-right">Recipients</th>
-          <th scope="col" class="text-right">Unique opens</th>
-          <th scope="col" class="text-right">Open rate</th>
-          <th scope="col" class="text-right">Unique clicks</th>
-          <th scope="col" class="text-right">Click rate</th>
-          <th scope="col" class="text-right">Click-to-open</th>
+          <th scope="col" [attr.aria-sort]="sorting.headers().newsletter.ariaSort">
+            <lfx-health-metrics-th
+              label="Newsletter"
+              [sort]="sorting.headers().newsletter.state"
+              (sorted)="sorting.toggle('newsletter')"
+              data-testid="engagement-newsletter-performance-sort-newsletter" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().recipients.ariaSort">
+            <lfx-health-metrics-th
+              label="Recipients"
+              [sort]="sorting.headers().recipients.state"
+              (sorted)="sorting.toggle('recipients')"
+              data-testid="engagement-newsletter-performance-sort-recipients" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().opens.ariaSort">
+            <lfx-health-metrics-th
+              label="Unique opens"
+              [sort]="sorting.headers().opens.state"
+              (sorted)="sorting.toggle('opens')"
+              data-testid="engagement-newsletter-performance-sort-opens" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().openRate.ariaSort">
+            <lfx-health-metrics-th
+              label="Open rate"
+              [sort]="sorting.headers().openRate.state"
+              (sorted)="sorting.toggle('openRate')"
+              data-testid="engagement-newsletter-performance-sort-openRate" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().clicks.ariaSort">
+            <lfx-health-metrics-th
+              label="Unique clicks"
+              [sort]="sorting.headers().clicks.state"
+              (sorted)="sorting.toggle('clicks')"
+              data-testid="engagement-newsletter-performance-sort-clicks" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().clickRate.ariaSort">
+            <lfx-health-metrics-th
+              label="Click rate"
+              [sort]="sorting.headers().clickRate.state"
+              (sorted)="sorting.toggle('clickRate')"
+              data-testid="engagement-newsletter-performance-sort-clickRate" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().clickToOpen.ariaSort">
+            <lfx-health-metrics-th
+              label="Click-to-open"
+              [sort]="sorting.headers().clickToOpen.state"
+              (sorted)="sorting.toggle('clickToOpen')"
+              data-testid="engagement-newsletter-performance-sort-clickToOpen" />
+          </th>
         </tr>
       </ng-template>
 
@@ -88,6 +130,6 @@
       </ng-template>
     </lfx-table>
 
-    <lfx-ui-pagination [total]="view().rows.length" [pageSize]="size" [(page)]="page" />
+    <lfx-ui-pagination [total]="rows().length" [pageSize]="size" [(page)]="page" />
   }
 </div>

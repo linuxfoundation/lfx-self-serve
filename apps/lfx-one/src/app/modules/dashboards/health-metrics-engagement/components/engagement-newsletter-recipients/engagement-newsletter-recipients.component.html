@@ -62,12 +62,42 @@
         data-testid="engagement-newsletter-recipients-table">
         <ng-template #header>
           <tr>
-            <th scope="col">Recipient</th>
+            <th scope="col" [attr.aria-sort]="sorting.headers().recipient.ariaSort">
+              <lfx-health-metrics-th
+                label="Recipient"
+                [sort]="sorting.headers().recipient.state"
+                (sorted)="sorting.toggle('recipient')"
+                data-testid="engagement-newsletter-recipients-sort-recipient" />
+            </th>
             <!-- Exact %: the design's 0.7 / 0.8 / 0.9 / 0.9 shares of the columns after Recipient. -->
-            <th scope="col" class="w-[13%]">Delivery</th>
-            <th scope="col" class="w-[15%]">Engagement</th>
-            <th scope="col" class="w-[17%] text-right">Opens</th>
-            <th scope="col" class="w-[17%] text-right">Clicks</th>
+            <th scope="col" class="w-[13%]" [attr.aria-sort]="sorting.headers().delivery.ariaSort">
+              <lfx-health-metrics-th
+                label="Delivery"
+                [sort]="sorting.headers().delivery.state"
+                (sorted)="sorting.toggle('delivery')"
+                data-testid="engagement-newsletter-recipients-sort-delivery" />
+            </th>
+            <th scope="col" class="w-[15%]" [attr.aria-sort]="sorting.headers().engagement.ariaSort">
+              <lfx-health-metrics-th
+                label="Engagement"
+                [sort]="sorting.headers().engagement.state"
+                (sorted)="sorting.toggle('engagement')"
+                data-testid="engagement-newsletter-recipients-sort-engagement" />
+            </th>
+            <th scope="col" class="w-[17%] text-right" [attr.aria-sort]="sorting.headers().opens.ariaSort">
+              <lfx-health-metrics-th
+                label="Opens"
+                [sort]="sorting.headers().opens.state"
+                (sorted)="sorting.toggle('opens')"
+                data-testid="engagement-newsletter-recipients-sort-opens" />
+            </th>
+            <th scope="col" class="w-[17%] text-right" [attr.aria-sort]="sorting.headers().clicks.ariaSort">
+              <lfx-health-metrics-th
+                label="Clicks"
+                [sort]="sorting.headers().clicks.state"
+                (sorted)="sorting.toggle('clicks')"
+                data-testid="engagement-newsletter-recipients-sort-clicks" />
+            </th>
           </tr>
         </ng-template>
 

@@ -1023,6 +1023,10 @@ export class AnalyticsService {
       page: String(query.page),
       size: String(query.size),
     };
+    if (query.sort) {
+      params['sortKey'] = query.sort.key;
+      params['sortDir'] = query.sort.direction;
+    }
 
     // Errors propagate: the section's empty state asserts this foundation has no matching groups, so
     // a swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.

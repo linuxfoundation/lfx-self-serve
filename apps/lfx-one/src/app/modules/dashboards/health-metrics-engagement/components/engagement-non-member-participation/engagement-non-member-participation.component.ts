@@ -8,16 +8,25 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_CAUTION,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_DEFAULT_SORT,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_SORT_COLUMNS,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEngagementNonMemberRowView, filterHealthMetricsEngagementNonMemberRows } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsEngagementNonMemberRowView,
+  filterHealthMetricsEngagementNonMemberRows,
+  healthMetricsRowSortValue,
+  sortHealthMetricsRows,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
@@ -35,7 +44,7 @@ import type {
  */
 @Component({
   selector: 'lfx-engagement-non-member-participation',
-  imports: [EmptyStateComponent, HealthMetricsCellComponent, TableComponent, UiNoteComponent, UiPaginationComponent],
+  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsThComponent, TableComponent, UiNoteComponent, UiPaginationComponent],
   templateUrl: './engagement-non-member-participation.component.html',
 })
 export class EngagementNonMemberParticipationComponent {
@@ -58,15 +67,24 @@ export class EngagementNonMemberParticipationComponent {
   protected readonly query: Signal<HealthMetricsEngagementNonMemberQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementNonMemberParticipation> = this.initResponse();
 
+  protected readonly sorting = injectHealthMetricsTableSort(
+    HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_SORT_COLUMNS,
+    HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_DEFAULT_SORT
+  );
   /** Re-sorting the table must land the reader on rows, so any change to the order restarts paging. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}`),
+    source: computed(
+      () => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}|${JSON.stringify(this.sorting.sort())}`
+    ),
     computation: () => 0,
   });
 
   protected readonly rowViews = computed<HealthMetricsEngagementNonMemberRowView[]>(() => {
     const range = this.chrome.selectedRange();
-    return filterHealthMetricsEngagementNonMemberRows(this.response().rows, range).map((row) => buildHealthMetricsEngagementNonMemberRowView(row, range));
+    const views = filterHealthMetricsEngagementNonMemberRows(this.response().rows, range).map((row) =>
+      buildHealthMetricsEngagementNonMemberRowView(row, range)
+    );
+    return sortHealthMetricsRows(views, this.sorting.order(), healthMetricsRowSortValue);
   });
   // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
   protected readonly pageRows = computed(() => {

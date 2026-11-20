@@ -8,18 +8,27 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import {
+  HEALTH_METRICS_ENGAGEMENT_ORG_DEFAULT_SORT,
   HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_ORG_SORT_COLUMNS,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
   HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEngagementOrgRowView, filterHealthMetricsEngagementOrgRows } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsEngagementOrgRowView,
+  filterHealthMetricsEngagementOrgRows,
+  healthMetricsRowSortValue,
+  sortHealthMetricsRows,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { catchError, debounce, distinctUntilChanged, of, skip, switchMap, tap, timer } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsProgressCellComponent } from '../../../components/health-metrics-progress-cell/health-metrics-progress-cell.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -39,7 +48,15 @@ import type {
  */
 @Component({
   selector: 'lfx-engagement-org-participation',
-  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsProgressCellComponent, TableComponent, UiPaginationComponent, UiSearchInputComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsProgressCellComponent,
+    HealthMetricsThComponent,
+    TableComponent,
+    UiPaginationComponent,
+    UiSearchInputComponent,
+  ],
   templateUrl: './engagement-org-participation.component.html',
 })
 export class EngagementOrgParticipationComponent {
@@ -78,9 +95,13 @@ export class EngagementOrgParticipationComponent {
   protected readonly query: Signal<HealthMetricsEngagementOrgQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementOrgParticipation> = this.initResponse();
 
-  /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_ENGAGEMENT_ORG_SORT_COLUMNS, HEALTH_METRICS_ENGAGEMENT_ORG_DEFAULT_SORT);
+  /** Narrowing or re-sorting the table must land the reader on rows, so any change to the cut or the order restarts paging. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`),
+    source: computed(
+      () =>
+        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}|${JSON.stringify(this.sorting.sort())}`
+    ),
     computation: () => 0,
   });
 
@@ -94,9 +115,10 @@ export class EngagementOrgParticipationComponent {
   // The cut narrows rows the views are already built for, so a keystroke only filters and sorts.
   protected readonly rowViews = computed<HealthMetricsEngagementOrgRowView[]>(() => {
     const views = this.rowViewsByRow();
-    return filterHealthMetricsEngagementOrgRows(this.response().rows, this.filter(), this.search(), this.chrome.selectedRange())
+    const filtered = filterHealthMetricsEngagementOrgRows(this.response().rows, this.filter(), this.search(), this.chrome.selectedRange())
       .map((row) => views.get(row))
       .filter((view) => view !== undefined);
+    return sortHealthMetricsRows(filtered, this.sorting.order(), healthMetricsRowSortValue);
   });
   // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
   protected readonly pageRows = computed(() => {

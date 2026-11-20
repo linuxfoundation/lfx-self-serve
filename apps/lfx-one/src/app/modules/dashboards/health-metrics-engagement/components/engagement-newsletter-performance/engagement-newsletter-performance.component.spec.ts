@@ -151,6 +151,38 @@ describe('EngagementNewsletterPerformanceComponent', () => {
     expect(query('engagement-newsletter-performance-row-n2')).not.toBeNull();
   });
 
+  it('opens on the latest send with the Newsletter arrow, and sorts a rate highest first, a newsletter with no engagement data last', async () => {
+    const quiet = { ...LATEST, key: 'n0', name: 'Monthly: Quiet', sentDate: `${YEAR}-08-01`, hasEngagementData: false };
+    await render({ ...PERFORMANCE, newsletters: [...PERFORMANCE.newsletters, quiet] });
+    const keys = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid="engagement-newsletter-performance-table"] tbody tr')].map(
+        (row: Element) => row.getAttribute('data-testid') ?? ''
+      );
+    const header = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="engagement-newsletter-performance-sort-${key}"]`);
+
+    expect(header('newsletter').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    expect(keys()).toEqual([
+      'engagement-newsletter-performance-row-n2',
+      'engagement-newsletter-performance-row-n1',
+      'engagement-newsletter-performance-row-n0',
+    ]);
+
+    (header('openRate').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(keys()).toEqual([
+      'engagement-newsletter-performance-row-n2',
+      'engagement-newsletter-performance-row-n1',
+      'engagement-newsletter-performance-row-n0',
+    ]);
+    (header('openRate').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(keys()).toEqual([
+      'engagement-newsletter-performance-row-n1',
+      'engagement-newsletter-performance-row-n2',
+      'engagement-newsletter-performance-row-n0',
+    ]);
+  });
+
   it('pages ten newsletters at a time with the numbered pager', async () => {
     const many = Array.from({ length: 12 }, (_, index) => ({ ...LATEST, key: `n${index}`, sentDate: `${YEAR}-0${(index % 9) + 1}-02` }));
     await render({ ...PERFORMANCE, newsletters: many });

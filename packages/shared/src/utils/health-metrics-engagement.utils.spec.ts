@@ -344,6 +344,7 @@ describe('participation period selection and delta formatting', () => {
       attendanceLabel: '86%',
       attendancePct: 86,
       fillRule: HEALTH_METRICS_ENGAGEMENT_BOARD_BAR_FILL,
+      sortValues: { type: 'Board', meetings: 7, attendance: 86 },
     });
   });
 
@@ -470,6 +471,7 @@ describe('organization participation rules', () => {
       attendedFillClass: 'bg-blue-500',
       avgRepsLabel: '1.8',
       lastEngagedLabel: 'Aug 14, 2026',
+      sortValues: { company: 'Acme Motors', membership: 5, attended: 78, reps: 1.75, last: '2026-08-14' },
     });
     expect(buildHealthMetricsEngagementOrgRowView(orgRow('Acme Motors', 1), 'COMPLETED_YEAR')).toMatchObject({
       attendedPct: 33,
@@ -562,6 +564,7 @@ describe('non-member participation rules', () => {
       logoUrl: 'https://logo.example/v.png',
       meetings: '8',
       people: '3',
+      sortValues: { company: 'Vendor Corp', meetings: 8, people: 3 },
     });
   });
 
@@ -788,6 +791,7 @@ describe('buildHealthMetricsEngagementRepRowView', () => {
       attendedLabel: '2 / 6',
       neverAttended: false,
       lastAttendedLabel: 'Aug 14, 2026',
+      sortValues: { representative: 'Dana Fields', group: 'Governing Board', attended: 2 / 6, last: '2026-08-14' },
     });
   });
 
@@ -801,6 +805,26 @@ describe('buildHealthMetricsEngagementRepRowView', () => {
       attendedLabel: '0 / 4',
       neverAttended: true,
       lastAttendedLabel: '—',
+    });
+  });
+
+  // Attended sorts on the share, so a never-attended seat is the lowest rated one, and its dashed date sorts last.
+  it('sorts an Attended cell with a missing count as empty, as its "—" shows', () => {
+    const missing = {
+      ...base,
+      periods: [{ range: 'YTD' as const, meetingsInvited: 6, meetingsAttended: null, neverAttended: false, lapsed: false, sortRank: 1 }],
+    };
+    const view = buildHealthMetricsEngagementRepRowView(missing, 'YTD');
+    expect(view.attendedLabel).toBe('—');
+    expect(view.sortValues.attended).toBeNull();
+  });
+
+  it('sorts a never-attended seat lowest on Attended, with no last attended date', () => {
+    expect(buildHealthMetricsEngagementRepRowView(base, 'COMPLETED_YEAR').sortValues).toEqual({
+      representative: 'Dana Fields',
+      group: 'Governing Board',
+      attended: 0,
+      last: null,
     });
   });
 
@@ -1289,6 +1313,18 @@ describe('newsletter recipient rules', () => {
     const clickedBounce = recipient({ rank: 6, deliveryStatus: 'Failed', segment: 'failed', clicked: true });
     expect(countHealthMetricsEngagementRecipients([clickedBounce])).toEqual({ all: 1, opened: 0, clicked: 0, 'not-opened': 0, failed: 1 });
     expect(buildHealthMetricsEngagementRecipientRow(bounced, now).deliveryLabel).toBe('Failed');
+  });
+
+  it("sorts each column on what it shows, a failed delivery's dashed counts last", () => {
+    const bounced = recipient({ rank: 5, name: '  Recipient Echo ', deliveryStatus: 'Failed', segment: 'failed', opens: 4, clicks: 1 });
+    expect(buildHealthMetricsEngagementRecipientRow(bounced, now).sortValues).toEqual({
+      recipient: 'Recipient Echo',
+      delivery: 'Failed',
+      engagement: buildHealthMetricsEngagementRecipientRow(bounced, now).engagementLabel,
+      opens: null,
+      clicks: null,
+    });
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[0], now).sortValues).toMatchObject({ delivery: 'Delivered', opens: recipients[0].opens });
   });
 
   it('cuts by segment or click and searches name and organization, keeping the engagement order', () => {

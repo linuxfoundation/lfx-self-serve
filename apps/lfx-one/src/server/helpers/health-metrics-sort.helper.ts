@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_METRICS_TABLE_DASH } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_SORT_TRIM_CODE_POINTS, HEALTH_METRICS_TABLE_DASH } from '@lfx-one/shared/constants';
 // Deep import, as across the server: the `utils` barrel loads `@angular/forms`, which throws in the Node spec runtime.
 import { healthMetricsTierSortRanks } from '@lfx-one/shared/utils/health-metrics-table.utils';
 
@@ -39,9 +39,10 @@ function sortExpression(column: HealthMetricsSqlSortColumn): string {
   return column.expression;
 }
 
-/** Trims spaces, tabs and line breaks, as the client's `trim()` does. */
+/** Trims the whitespace the client's `trim()` does, written as Snowflake `\uXXXX` escapes so the SQL stays ASCII. */
 function trimmedSql(expression: string): string {
-  return `TRIM(${expression}, ' \\t\\n\\r')`;
+  const characters = HEALTH_METRICS_SORT_TRIM_CODE_POINTS.map((code) => `\\u${code.toString(16).padStart(4, '0')}`).join('');
+  return `TRIM(${expression}, '${characters}')`;
 }
 
 function emptyTextSql(trimmed: string): string {

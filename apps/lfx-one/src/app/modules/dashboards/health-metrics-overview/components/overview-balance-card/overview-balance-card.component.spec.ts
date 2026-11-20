@@ -3,6 +3,7 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HEALTH_METRICS_OVERVIEW_FILL_CLASSES } from '@lfx-one/shared/constants';
 import { provideRouter } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -61,6 +62,30 @@ describe('OverviewBalanceCardComponent', () => {
     expect(cells('overview-balance-high')).toEqual(['High risk90+ days overdue', '18', '$1,083,250']);
     expect(fixture.nativeElement.querySelectorAll('[data-testid="overview-balance-bar"] span')).toHaveLength(2);
     expect(fixture.nativeElement.querySelector('[data-testid="overview-balance-explore"]').getAttribute('href')).toContain('/members#risk');
+  });
+
+  it('heads the first column Risk and opens on the largest amount, keeping the bar in risk order', async () => {
+    await render({ ...BALANCE, highRiskUsd: 10000, mediumRiskUsd: 22000 });
+    const rows = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[role="row"][data-testid^="overview-balance-"]')].map(
+        (row: Element) => row.getAttribute('data-testid') ?? ''
+      );
+    const header = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="overview-balance-sort-${key}"]`);
+
+    expect(header('risk').textContent?.trim()).toBe('Risk');
+    expect(header('risk').closest('[role="columnheader"]')?.querySelector('.sr-only')).toBeNull();
+    expect(header('amount').parentElement?.getAttribute('aria-sort')).toBe('descending');
+    expect(rows()).toEqual(['overview-balance-medium', 'overview-balance-high']);
+    // The table is medium first; the bar stays high, then medium.
+    expect([...fixture.nativeElement.querySelectorAll('[data-testid="overview-balance-bar"] span')].map((bar: Element) => bar.className)).toEqual([
+      HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low,
+      HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium,
+    ]);
+
+    (header('risk').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(rows()).toEqual(['overview-balance-high', 'overview-balance-medium']);
+    expect(header('risk').parentElement?.getAttribute('aria-sort')).toBe('ascending');
   });
 
   it('reads as good news when nothing is overdue', async () => {

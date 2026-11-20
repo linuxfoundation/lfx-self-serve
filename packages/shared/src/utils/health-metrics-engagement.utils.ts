@@ -30,7 +30,7 @@ import { HEALTH_METRICS_TABLE_DASH, HEALTH_METRICS_VALUE_BAR_FILL } from '../con
 import { formatIsoDateLabel } from './date-time.utils';
 import { buildHealthMetricsLineChart, healthMetricsLineChartCountCeiling } from './health-metrics-line-chart.utils';
 import { formatHealthMetricsNewsletterGrowthSince } from './health-metrics-overview.utils';
-import { healthMetricsBarFillClass } from './health-metrics-table.utils';
+import { healthMetricsBarFillClass, healthMetricsTierSortRank } from './health-metrics-table.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
@@ -218,6 +218,7 @@ export function buildHealthMetricsEngagementParticipationRowView(
     attendanceLabel: pct === null ? HEALTH_METRICS_TABLE_DASH : `${pct}%`,
     attendancePct: pct,
     fillRule: Object.hasOwn(fills, group) ? fills[group] : HEALTH_METRICS_VALUE_BAR_FILL,
+    sortValues: { type: group || row.label, meetings: period?.meetingsHeld ?? null, attendance: pct },
   };
 }
 
@@ -351,6 +352,14 @@ export function buildHealthMetricsEngagementOrgRowView(row: HealthMetricsEngagem
     attendedFillClass: share === null ? '' : healthMetricsBarFillClass(share),
     avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
     lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : HEALTH_METRICS_TABLE_DASH,
+    sortValues: {
+      company: row.accountName,
+      // A non-member ranks lowest; a member with a blank tier shows "—", so it is empty and sorts last.
+      membership: row.isMember ? healthMetricsTierSortRank(tierName) : 0,
+      attended: share,
+      reps: period?.avgReps ?? null,
+      last: row.lastEngagedDate,
+    },
   };
 }
 
@@ -366,6 +375,7 @@ export function buildHealthMetricsEngagementNonMemberRowView(
     logoUrl: row.logoUrl,
     meetings: formatHealthMetricsEngagementCount(period?.meetingsAttended ?? null),
     people: formatHealthMetricsEngagementCount(period?.distinctPeople ?? null),
+    sortValues: { company: row.accountName, meetings: period?.meetingsAttended ?? null, people: period?.distinctPeople ?? null },
   };
 }
 
@@ -459,6 +469,8 @@ export function buildHealthMetricsEngagementRepRowView(
   const period = selectPeriod(row.periods, range);
   const unresolved = isUnresolvedRep(row);
   const neverAttended = period?.neverAttended ?? false;
+  const invited = period?.meetingsInvited ?? null;
+  const attended = period?.meetingsAttended ?? null;
   const title = unresolved ? '' : (row.jobTitle?.trim() ?? '');
 
   return {
@@ -470,6 +482,13 @@ export function buildHealthMetricsEngagementRepRowView(
     attendedLabel: formatHealthMetricsEngagementRatio(period?.meetingsAttended ?? null, period?.meetingsInvited ?? null),
     neverAttended,
     lastAttendedLabel: neverAttended ? HEALTH_METRICS_TABLE_DASH : lastAttendedLabel,
+    sortValues: {
+      representative: repDisplayName(row),
+      group: row.committeeName,
+      // The share of meetings attended, so a never-attended seat (0) is the lowest; a "—" cell is empty.
+      attended: attended !== null && invited !== null && invited > 0 ? attended / invited : null,
+      last: neverAttended ? null : row.lastAttendedDate,
+    },
   };
 }
 
@@ -675,6 +694,14 @@ export function buildHealthMetricsEngagementRecipientRow(recipient: HealthMetric
     opensDescription: age('Last opened', recipient.lastOpenedAt),
     clicksLabel: failed ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsEngagementCount(recipient.clicks),
     clicksDescription: age('Last clicked', recipient.lastClickedAt),
+    // Each column sorts on what it shows; a failed delivery's "—" cells sort last.
+    sortValues: {
+      recipient: recipient.name?.trim() || null,
+      delivery: recipientDeliveryLabel(failed, pending),
+      engagement: recipientEngagementLabel(failed, opened),
+      opens: failed ? null : recipient.opens,
+      clicks: failed ? null : recipient.clicks,
+    },
   };
 }
 
@@ -894,6 +921,16 @@ function buildNewsletterRow(newsletter: HealthMetricsEngagementNewsletter): Heal
     totalClicksLabel: total(newsletter.totalClicks),
     clickRateLabel: formatNewsletterRate(engaged ? newsletter.clickRate : null),
     clickToOpenLabel: formatNewsletterRate(engaged ? newsletter.clickToOpenRate : null),
+    // Without engagement data every engagement column is empty, so those rows sort last.
+    sortValues: {
+      newsletter: newsletter.sentDate,
+      recipients: newsletter.recipients,
+      opens: engaged ? newsletter.uniqueOpens : null,
+      openRate: engaged ? newsletter.openRate : null,
+      clicks: engaged ? newsletter.uniqueClicks : null,
+      clickRate: engaged ? newsletter.clickRate : null,
+      clickToOpen: engaged ? newsletter.clickToOpenRate : null,
+    },
   };
 }
 

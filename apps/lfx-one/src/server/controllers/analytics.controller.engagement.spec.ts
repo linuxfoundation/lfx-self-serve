@@ -109,12 +109,22 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
       range: 'YTD',
       page: 1,
       size: 10,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
   });
 
   it('forwards every supplied param, coercing page and size to numbers', async () => {
-    const { promise } = call({ foundationSlug: 'acme', projectSlug: 'acme-core', groupType: 'wg', range: 'COMPLETED_YEAR', page: '3', size: '50' });
+    const { promise } = call({
+      foundationSlug: 'acme',
+      projectSlug: 'acme-core',
+      groupType: 'wg',
+      range: 'COMPLETED_YEAR',
+      page: '3',
+      size: '50',
+      sortKey: 'last',
+      sortDir: 'desc',
+    });
     await promise;
 
     expect(getGroupAttendance).toHaveBeenCalledWith(expect.anything(), {
@@ -124,7 +134,21 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
       range: 'COMPLETED_YEAR',
       page: 3,
       size: 50,
+      sort: { key: 'last', direction: 'desc' },
     });
+  });
+
+  it("keeps the view's rank for a sort column or direction the table does not allow", async () => {
+    for (const [sortKey, sortDir] of [
+      ['committee_name; DROP TABLE x', 'asc'],
+      ['last', 'sideways'],
+      ['toString', 'asc'],
+    ]) {
+      getGroupAttendance.mockClear();
+      const { promise } = call({ foundationSlug: 'acme', sortKey, sortDir });
+      await promise;
+      expect(getGroupAttendance).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
+    }
   });
 
   it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {

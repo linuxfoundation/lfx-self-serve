@@ -3,6 +3,7 @@
 
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_SORT_COLUMNS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
@@ -19,15 +20,15 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
-  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
@@ -42,6 +43,8 @@ import {
   HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
+// Deep import, as across the server: the `utils` barrel loads `@angular/forms`, which throws in the Node spec runtime.
+import { parseHealthMetricsTableSort } from '@lfx-one/shared/utils/health-metrics-table.utils';
 import type {
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEventsOrganizationsSegment,
@@ -3227,6 +3230,12 @@ export class AnalyticsController {
         range,
         page: Number(getStringQueryParam(req, 'page')) || 1,
         size: Number(getStringQueryParam(req, 'size')) || HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_ENGAGEMENT_GROUP_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       logger.success(req, 'get_engagement_group_attendance', startTime, {

@@ -8,8 +8,8 @@ import { healthMetricsSortIcon } from '@lfx-one/shared/utils';
 import type { HealthMetricsColumnSort } from '@lfx-one/shared/interfaces';
 
 /**
- * A Health Metrics table header's content, inside its `th`: the label, an optional question-mark tip, then a sortable
- * column's 10px arrow. The `th` owns the alignment and its `aria-sort`; a click on the label or the arrow emits `sorted`.
+ * A table header's content in its `th`: the label, a tip (or a projected `[lfxHealthMetricsThTip]`), then a sortable
+ * column's 10px arrow. The `th` owns alignment and `aria-sort`; a click on the label or the arrow emits `sorted`.
  */
 @Component({
   selector: 'lfx-health-metrics-th',
