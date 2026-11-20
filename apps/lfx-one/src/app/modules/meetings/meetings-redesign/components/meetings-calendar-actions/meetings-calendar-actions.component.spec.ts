@@ -65,6 +65,8 @@ describe('MeetingsCalendarActionsComponent', () => {
     expect(query(fixture, 'meetings-calendar-actions-description')?.textContent).toContain(
       "A shareable page where anyone can see this project's public meetings, no sign-in needed."
     );
+    // One tone darker than the design's helper gray, for legibility.
+    expect(query(fixture, 'meetings-calendar-actions-description')?.className).toContain('text-gray-500');
   });
 
   it('copies the public calendar link with a toast', async () => {
