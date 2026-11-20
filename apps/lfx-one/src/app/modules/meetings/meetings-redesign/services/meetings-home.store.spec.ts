@@ -1097,6 +1097,25 @@ describe('MeetingsHomeStore', () => {
       expect(store.hasMore()).toBe(false);
     });
 
+    it('does not mark Past failed when its next page fails while Upcoming is shown', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      store.setTab('upcoming');
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      store.setTab('past');
+      TestBed.tick();
+
+      expect(store.failed()).toBe(false);
+      expect(store.pastPageFailed()).toBe(true);
+    });
+
     it('does not request a next page on the upcoming tab', () => {
       const store = createPaged();
       pastPages[0].next(pastPage('a', 1, 'cursor-1'));

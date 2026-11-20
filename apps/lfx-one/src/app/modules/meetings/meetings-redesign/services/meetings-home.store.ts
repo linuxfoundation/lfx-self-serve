@@ -171,7 +171,10 @@ export class MeetingsHomeStore {
     this.tab() === 'past' ? this.pastLoading() || (this.pastLoadingMore() && this.filteredRows().length === 0) : this.upcomingLoading()
   );
   /** The active tab's feed failed to load; its rows are empty but not confirmed empty. */
-  public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastFailed() : this.upcomingFailed()));
+  public readonly failed: Signal<boolean> = computed(() =>
+    // A failed next past page with nothing to show reads as a failed list, so the viewer gets Retry.
+    this.tab() === 'past' ? this.pastFailed() || (this.pastPageFailedState() && this.filteredRows().length === 0) : this.upcomingFailed()
+  );
   /** The active tab's rows before search and filters. */
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
   /** The soonest date not yet over, else the soonest one, whatever the search and filters; it anchors the Next meeting card. */
@@ -283,6 +286,9 @@ export class MeetingsHomeStore {
 
   /** Re-requests every feed after a failure. */
   public retry(): void {
+    // Hands a failed next page's error state to the reload, so a reload that fails returns to it.
+    if (this.pastPageFailedState()) this.pastFailedState.set(this.pastFailedState() || this.failed());
+    this.pastPageFailedState.set(false);
     this.retry$.next();
   }
 
@@ -448,10 +454,8 @@ export class MeetingsHomeStore {
           if (version !== this.pastQueryVersion) return;
           console.error('Failed to load more past meetings for the meetings home page:', error);
           this.pastLoadingMore.set(false);
-          // The cursor stays, so Load more (or Retry, with nothing to show) can ask for the page again.
+          // The cursor stays; the list then offers Load more meetings, or Retry while nothing is shown.
           this.pastPageFailedState.set(true);
-          if (this.filteredRows().length === 0) this.pastFailedState.set(true);
-          else this.showRefreshFailedToast();
         },
       });
   }
