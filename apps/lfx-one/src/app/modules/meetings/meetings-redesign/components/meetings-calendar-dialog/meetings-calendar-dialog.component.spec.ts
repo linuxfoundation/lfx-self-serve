@@ -281,4 +281,39 @@ describe('MeetingsCalendarDialogComponent', () => {
     await click(fixture, 'meetings-calendar-dialog-past-retry');
     expect(retryPast).toHaveBeenCalledWith('2026-09-27');
   });
+
+  it("opens Week on today's week when opened on the current month", async () => {
+    month = new Date(2026, 9, 1);
+    const fixture = await render();
+
+    query(fixture, 'meetings-calendar-dialog-view')?.querySelectorAll('input')[1]?.click();
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-calendar-dialog-period')?.textContent?.trim()).toBe('Oct 4 – 10, 2026');
+    expect(query(fixture, 'meetings-calendar-dialog-today')).toBeNull();
+  });
+
+  it('anchors a chip tooltip to the part of a long event the body shows, opening below it near the top', async () => {
+    upcoming.set([row('long', new Date(2026, 9, 8, 6), 'Board', 240)]);
+    const fixture = await render();
+    query(fixture, 'meetings-calendar-dialog-view')?.querySelectorAll('input')[1]?.click();
+    await fixture.whenStable();
+    const event = query(fixture, 'meetings-calendar-dialog-event') as HTMLElement;
+    const body = query(fixture, 'meetings-calendar-dialog-body') as HTMLElement;
+    const rect = (top: number, bottom: number): DOMRect =>
+      ({ top, bottom, left: 400, right: 500, width: 100, height: bottom - top, x: 400, y: top }) as DOMRect;
+    vi.spyOn(event, 'getBoundingClientRect').mockReturnValue(rect(-100, 200));
+
+    vi.spyOn(body, 'getBoundingClientRect').mockReturnValue(rect(150, 700));
+    event.dispatchEvent(new MouseEvent('mouseenter'));
+    await fixture.whenStable();
+    let tooltip = query(fixture, 'meetings-calendar-dialog-tooltip');
+    expect([tooltip?.style.top, tooltip?.className.includes('-translate-y-full')]).toEqual(['144px', true]);
+
+    vi.spyOn(body, 'getBoundingClientRect').mockReturnValue(rect(40, 700));
+    event.dispatchEvent(new MouseEvent('mouseenter'));
+    await fixture.whenStable();
+    tooltip = query(fixture, 'meetings-calendar-dialog-tooltip');
+    expect([tooltip?.style.top, tooltip?.className.includes('-translate-y-full')]).toEqual(['206px', false]);
+  });
 });

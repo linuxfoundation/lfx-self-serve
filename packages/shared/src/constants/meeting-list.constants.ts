@@ -195,6 +195,9 @@ export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX = 152;
 /** Room a full mini calendar tooltip needs above its day; with less, and more room below, it opens below the day. */
 export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_MAX_HEIGHT_PX = 220;
 
+/** Room a calendar dialog chip tooltip (title and detail) needs above its chip; with less it opens below. */
+export const MEETINGS_HOME_CALENDAR_CHIP_TOOLTIP_HEIGHT_PX = 72;
+
 /** Delay before a mini calendar tooltip closes once the pointer leaves its day, so the pointer can move onto it. */
 export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS = 120;
 

@@ -217,9 +217,10 @@
 @if (tooltip(); as tip) {
   <div
     role="tooltip"
-    class="pointer-events-none fixed z-[2147483000] flex max-w-[280px] -translate-x-1/2 -translate-y-full flex-col gap-[2px] rounded-ui-sm bg-gray-900 px-[10px] py-[8px] text-[12px] leading-[16px] text-white shadow-medium"
+    class="pointer-events-none fixed z-[2147483000] flex max-w-[280px] -translate-x-1/2 flex-col gap-[2px] rounded-ui-sm bg-gray-900 px-[10px] py-[8px] text-[12px] leading-[16px] text-white shadow-medium"
     [style.left.px]="tip.left"
     [style.top.px]="tip.top"
+    [class.-translate-y-full]="tip.above"
     data-testid="meetings-calendar-dialog-tooltip">
     <span class="font-medium">{{ tip.title }}</span>
     <span class="text-gray-300">{{ tip.detail }}</span>
