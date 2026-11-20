@@ -67,6 +67,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { healthMetricsAccountLogoJoinSql, healthMetricsAccountLogoSql } from '../helpers/health-metrics-logo.helper';
 import { buildHealthMetricsSortOrderBy } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger } from '../helpers/validation.helper';
@@ -82,8 +83,6 @@ const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETIN
 const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 const NON_MEMBER_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION';
 const REPRESENTATIVES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES';
-/** One row per Salesforce account, so a left join on `account_id` adds its logo without adding rows. */
-const ACCOUNT_LOGO_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING';
 
 /** The summary's per-period columns this section reads, each suffixed by period. */
 const NEWSLETTER_SUMMARY_COLUMNS = [
@@ -508,10 +507,10 @@ export class HealthMetricsEngagementService {
         v.is_lapsed_180d,
         v.scope_orgs_count,
         v.scope_lapsed_orgs_count,
-        logos.logo_url,
+        ${healthMetricsAccountLogoSql('logos')} AS logo_url,
         ${periodColumns}
       FROM ${ORG_PARTICIPATION_VIEW} v
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = v.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'v.account_id')}
       WHERE v.foundation_slug = ?
         AND ${PROJECT_SCOPE_PREDICATE}
       ORDER BY ${bestSortRank} ASC, v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST
@@ -566,10 +565,10 @@ export class HealthMetricsEngagementService {
       SELECT
         v.account_id,
         v.account_name,
-        logos.logo_url,
+        ${healthMetricsAccountLogoSql('logos')} AS logo_url,
         ${periodColumns}
       FROM ${NON_MEMBER_PARTICIPATION_VIEW} v
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = v.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'v.account_id')}
       WHERE v.foundation_slug = ?
       ORDER BY ${bestSortRank} ASC, v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP + 1}

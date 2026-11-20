@@ -33,6 +33,7 @@ import {
 import { formatHealthMetricsCountryName } from '@lfx-one/shared/utils/health-metrics-world-map.utils';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { healthMetricsAccountLogoJoinSql, healthMetricsAccountLogoSql } from '../helpers/health-metrics-logo.helper';
 import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql, healthMetricsTrimSql } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
@@ -105,7 +106,6 @@ const REGISTRATION_COUNTRY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_RE
 const WEEK_OVER_WEEK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS_WEEK_OVER_WEEK';
 const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER';
 const EVENT_REGISTRATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS';
-const ACCOUNT_LOGO_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING';
 /** Each company's current membership tier; the events views carry membership but no tier. */
 const MEMBERSHIP_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 
@@ -838,10 +838,10 @@ export class HealthMetricsEventsService {
         ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
-      SELECT totals.*, page.*, NULLIF(TRIM(logos.logo_url), '') AS logo_url
+      SELECT totals.*, page.*, ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM totals
       LEFT JOIN page ON TRUE
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
       ORDER BY page.page_position ASC NULLS LAST
     `;
 
@@ -940,7 +940,7 @@ export class HealthMetricsEventsService {
         page.account_id,
         page.account_name,
         -- The mapped logo first; the view's own is the fallback.
-        COALESCE(NULLIF(TRIM(logos.logo_url), ''), NULLIF(TRIM(page.logo_url), '')) AS logo_url,
+        ${healthMetricsAccountLogoSql('logos', 'page.logo_url')} AS logo_url,
         page.is_member,
         page.membership_tier,
         page.registrations_count,
@@ -951,7 +951,7 @@ export class HealthMetricsEventsService {
         page.sort_rank
       FROM totals
       LEFT JOIN page ON TRUE
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
       ORDER BY page.page_position ASC NULLS LAST
     `;
 
@@ -1209,10 +1209,10 @@ export class HealthMetricsEventsService {
         d.account_name,
         d.is_all_organizations,
         d.is_unaffiliated_organization,
-        NULLIF(TRIM(logos.logo_url), '') AS logo_url,
+        ${healthMetricsAccountLogoSql('logos')} AS logo_url,
         ${periodColumns}
       FROM ${SPEAKERS_DRILLDOWN_VIEW} d
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = d.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'd.account_id')}
       WHERE d.foundation_slug = ?
         AND d.is_all_projects = TRUE
         AND (d.is_all_organizations = TRUE OR ${ranked})
@@ -1249,9 +1249,9 @@ export class HealthMetricsEventsService {
         p.submission_status_original,
         p.proposal_status_group,
         p.is_unaffiliated_proposal,
-        NULLIF(TRIM(logos.logo_url), '') AS logo_url
+        ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM ${SPEAKERS_LIST_VIEW} p
-      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = p.account_id
+      ${healthMetricsAccountLogoJoinSql('logos', 'p.account_id')}
       WHERE p.foundation_slug = ?
         AND p.is_all_projects = TRUE
         AND (${inAnyPeriod})
