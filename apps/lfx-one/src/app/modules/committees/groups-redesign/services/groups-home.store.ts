@@ -233,7 +233,6 @@ export class GroupsHomeStore {
                   this.importService.viewerSubject() === owner &&
                   !this.loading() &&
                   !this.failed() &&
-                  (summary.added > 0 || summary.unknown > 0) &&
                   this.groups().some((group) => group.uid === summary.committeeUid) &&
                   !seen.has(`${summary.runId}:${summary.attempt}`)
               )

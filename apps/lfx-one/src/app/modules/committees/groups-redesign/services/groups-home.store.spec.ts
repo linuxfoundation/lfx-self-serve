@@ -110,6 +110,22 @@ describe('GroupsHomeStore', () => {
     expect(store.groups()[0].total_members).toBe(3);
   });
 
+  it('refreshes skipped-only recovery once without extra polling or optimistic additions', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    groups$ = of([group('a', 'Board')]);
+    const store = create();
+    groups$ = of([group('a', 'Board', { total_members: 5 })]);
+    const skipped = { ...report(), added: 0, unknown: 0, reconciliationTarget: 3 };
+    summaries.set(new Map([['a', skipped]]));
+    settlements.next({ key: 'import-1:1', summary: skipped });
+    TestBed.tick();
+    expect(store.groups()[0].total_members).toBe(5);
+    expect(getGroups).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(10_000);
+    TestBed.tick();
+    expect(getGroups).toHaveBeenCalledTimes(2);
+  });
+
   it('updates indexed counts in place once the retained import target is reached', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
     groups$ = of([group('a', 'Board')]);

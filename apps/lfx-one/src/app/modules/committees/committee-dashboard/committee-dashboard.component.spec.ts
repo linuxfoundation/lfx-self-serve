@@ -516,10 +516,17 @@ describe('CSV import count reconciliation (#5731)', () => {
     expect(fetches()).toBe(3 + 6 + 1);
   });
 
-  it.each([
-    ['a group that is not shown', { committeeUid: 'other-group' }],
-    ['nothing confirmed or uncertain', { added: 0, unknown: 0 }],
-  ])('ignores a settlement for %s', async (_label, patch) => {
+  it('refreshes skipped-only recovery once without polling or treating skipped rows as confirmed additions', async () => {
+    await setup('me', [3, 5]);
+    settle({ added: 0, unknown: 0, baselineMemberCount: 3, reconciliationTarget: 3 });
+    await step();
+    expect(fetches()).toBe(1);
+    expect(shownTotal()).toBe(5);
+    await step(10_000);
+    expect(fetches()).toBe(1);
+  });
+
+  it.each([['a group that is not shown', { committeeUid: 'other-group' }]])('ignores a settlement for %s', async (_label, patch) => {
     await setup('me', [3]);
     settle(patch);
     await step(10_000);

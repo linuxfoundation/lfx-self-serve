@@ -474,7 +474,6 @@ export class CommitteeDashboardComponent {
                 (summary) =>
                   this.importScopeKey() === scopeKey &&
                   this.loadedListScope() === scopeKey &&
-                  (summary.added > 0 || summary.unknown > 0) &&
                   this.shownCommittees().some((committee) => committee.uid === summary.committeeUid) &&
                   !seen.has(`${summary.runId}:${summary.attempt}`)
               )
