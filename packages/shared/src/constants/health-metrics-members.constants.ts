@@ -53,15 +53,14 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-chart-line', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members, snapshot: true },
     label: 'Member growth by year',
     heading: 'Member growth by year',
-    description: 'New members each month, this year against last year.',
+    description: 'Are new members joining faster than last year?',
   },
   {
     key: 'breakdown',
     empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Membership breakdown by tier',
     heading: 'Membership breakdown by tier',
-    // `{year}` is the running year, filled in by `buildHealthMetricsMembersSections`.
-    description: 'Members per tier at each year end. {year} is year to date.',
+    description: 'How the mix of membership levels has changed.',
   },
   {
     key: 'list',
@@ -215,12 +214,12 @@ export const HEALTH_METRICS_MEMBERS_CHART_TIP_ROOM_PX = 292;
  */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES: HealthMetricsMembersBreakdownTableClasses = {
   label: {
-    tier: 'text-[13px] font-medium text-gray-900',
-    total: 'text-[13px] font-semibold text-gray-900',
+    tier: 'text-[14px] font-medium text-gray-900',
+    total: 'text-[14px] font-semibold text-gray-900',
   },
   cell: {
-    tier: 'text-[13px] font-normal text-gray-900',
-    total: 'text-[13px] font-semibold text-gray-900',
+    tier: 'text-[14px] font-normal text-gray-900',
+    total: 'text-[14px] font-semibold text-gray-900',
   },
   stripe: 'bg-gray-50',
   totalFill: 'bg-blue-100',
@@ -229,6 +228,12 @@ export const HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES: HealthMetricsMember
   cellRule: 'border-l border-[color:var(--ui-neutral-alpha-100)]',
   totalRule: 'border-t border-gray-900',
 };
+
+/** A year column's least width: "2026 YTD" at 12px, its 10px sort arrow and 10px padding each side; narrower tables scroll. */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_YEAR_MIN_PX = 92;
+
+/** The breakdown opens on the view's tier rank, highest-paying first; it is not paged, so it sorts in the browser. */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_DEFAULT_SORT: HealthMetricsTableSort = { key: 'tier', direction: 'desc' };
 
 /** The directory's filter, search and page state in the URL; each key is namespaced to the section. */
 export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {

@@ -4,7 +4,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import {
-  getYearForRange,
   HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
   HEALTH_METRICS_MEMBERS_BLANK,
   HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
@@ -12,9 +11,9 @@ import {
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
   HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_OPTIONS,
   HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX,
+  HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '@lfx-one/shared/constants';
 import {
-  buildHealthMetricsMembersSections,
   buildHealthMetricsMembersSubNavItems,
   parseHealthMetricsMembersAtRiskFilter,
   parseHealthMetricsMembersBoardCohort,
@@ -70,7 +69,7 @@ import type {
 export class HealthMetricsMembersComponent {
   private readonly route = inject(ActivatedRoute);
 
-  protected readonly sections = buildHealthMetricsMembersSections(getYearForRange('YTD'));
+  protected readonly sections = HEALTH_METRICS_MEMBERS_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_MEMBERS_DATA_SECTIONS;
   protected readonly blank = HEALTH_METRICS_MEMBERS_BLANK;

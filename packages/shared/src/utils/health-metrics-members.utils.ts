@@ -53,7 +53,7 @@ import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsBarChartLabelTone, HealthMetricsBarChartView } from '../interfaces/health-metrics-bar-chart.interface';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
-import type { HealthMetricsChartTipRowView, HealthMetricsL2Section, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsChartTipRowView, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskAging,
@@ -98,15 +98,11 @@ import type {
   HealthMetricsMembersTierYear,
   HealthMetricsMembersTiers,
 } from '../interfaces/health-metrics-members.interface';
+import type { HealthMetricsSortColumn } from '../interfaces/health-metrics-table.interface';
 
 /** Sub-nav items for the Members tab; a section notes only once it reports a note. */
 export function buildHealthMetricsMembersSubNavItems(notes: Partial<Record<HealthMetricsMembersSectionKey, string>> = {}): HealthMetricsMembersSubNavItem[] {
   return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: notes[section.key] ?? '' }));
-}
-
-/** The Members sections, with the running year in any copy that names it. */
-export function buildHealthMetricsMembersSections(year: number): HealthMetricsL2Section[] {
-  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ ...section, description: section.description.replace('{year}', String(year)) }));
 }
 
 /**
@@ -124,26 +120,40 @@ export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembe
   const totals = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.memberCount)));
   const revenue = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.revenueUsd)));
 
-  const tierRows = collectBreakdownTiers(rows).map(
-    (tier, index): HealthMetricsMembersBreakdownRowView => ({
+  const ranked = collectBreakdownTiers(rows);
+  const lowestRank = Math.max(...ranked.map((tier) => tier.rank));
+  const tierRows = ranked.map(
+    (tier): HealthMetricsMembersBreakdownRowView => ({
       key: `tier-${tier.label}`,
       label: tier.label,
       kind: 'tier',
       icon: tier.reserved,
-      striped: index % 2 === 1,
       cells: years.map((year) => formatCount(tier.members.get(year) ?? null)),
+      // The view's rank as a score, so Tier ↓ is its own order even for tiers the app does not know; equal ranks tie.
+      sortValues: Object.fromEntries([['tier', lowestRank - tier.rank], ...years.map((year) => [breakdownSortKey(year), tier.members.get(year) ?? null])]),
     })
   );
 
   return {
     measured: true,
-    columns: years.map((year): HealthMetricsMembersBreakdownColumnView => ({ year, label: year === currentYear ? `${year} YTD` : String(year) })),
+    columns: years.map(
+      (year): HealthMetricsMembersBreakdownColumnView => ({ year, label: year === currentYear ? `${year} YTD` : String(year), sortKey: breakdownSortKey(year) })
+    ),
     rows: [
       ...tierRows,
-      { key: 'members', label: 'Total members', kind: 'total', icon: null, striped: false, cells: totals.map((total) => formatCount(total)) },
-      { key: 'revenue', label: 'Total revenue', kind: 'total', icon: null, striped: false, cells: revenue.map((value) => formatUsd(value)) },
+      { key: 'members', label: 'Total members', kind: 'total', icon: null, cells: totals.map((total) => formatCount(total)), sortValues: {} },
+      { key: 'revenue', label: 'Total revenue', kind: 'total', icon: null, cells: revenue.map((value) => formatUsd(value)), sortValues: {} },
     ],
   };
+}
+
+/** The breakdown's sortable columns: the tier, then every year it can show, from its first year to the running one. */
+export function buildHealthMetricsMembersBreakdownSortColumns(currentYear: number): HealthMetricsSortColumn[] {
+  const years = Array.from(
+    { length: Math.max(0, currentYear - HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR + 1) },
+    (_, index) => HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR + index
+  );
+  return [{ key: 'tier', kind: 'tier' }, ...years.map((year): HealthMetricsSortColumn => ({ key: breakdownSortKey(year), kind: 'number' }))];
 }
 
 /**
@@ -199,8 +209,8 @@ export function buildHealthMetricsMembersGrowthView(
   );
 
   const columns = MONTH_NAMES.map((label, month): HealthMetricsMembersGrowthColumnView => {
-    const rows: HealthMetricsChartTipRowView[] = [...lines]
-      .reverse()
+    // Oldest year down to the newest, as the design's popup reads.
+    const rows: HealthMetricsChartTipRowView[] = lines
       .filter((line) => month < line.points.length)
       .map((line) => ({ label: String(line.year), value: line.points[month].label, color: line.color, separated: false }));
     return {
@@ -219,13 +229,14 @@ export function buildHealthMetricsMembersGrowthView(
     measured: true,
     yMax: formatCount(top),
     lines,
+    legend: [...lines].reverse(),
     columns,
     ariaLabel: `Cumulative new members by month, one line per year, ${first === last ? first : `${first} to ${last}`}`,
   };
 }
 
 function emptyGrowthView(): HealthMetricsMembersGrowthView {
-  return { measured: false, yMax: '', lines: [], columns: [], ariaLabel: '' };
+  return { measured: false, yMax: '', lines: [], legend: [], columns: [], ariaLabel: '' };
 }
 
 /**
@@ -964,6 +975,10 @@ interface BreakdownTier {
   reserved: HealthMetricsMembersReservedTier | null;
   rank: number;
   members: Map<number, number | null>;
+}
+
+function breakdownSortKey(year: number): string {
+  return `y${year}`;
 }
 
 /** Tiers with a member in any year shown, highest-paying first; rows with the same label merge. */

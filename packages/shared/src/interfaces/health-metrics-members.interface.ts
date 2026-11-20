@@ -16,7 +16,7 @@ import type { HealthMetricsBarChartView } from './health-metrics-bar-chart.inter
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
 import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
-import type { HealthMetricsSortValue, HealthMetricsTableSort } from './health-metrics-table.interface';
+import type { HealthMetricsSortHeaderView, HealthMetricsSortValue, HealthMetricsTableSort } from './health-metrics-table.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECTIONS)[number]['key'];
@@ -62,9 +62,16 @@ export interface HealthMetricsMembersTierIcon {
 export interface HealthMetricsMembersBreakdownColumnView {
   year: number;
   label: string;
+  /** The column's key in the table's sort, `y{year}`. */
+  sortKey: string;
 }
 
 export type HealthMetricsMembersBreakdownRowKind = 'tier' | 'total';
+
+/** A year column's header as drawn: the column with its sort state. */
+export interface HealthMetricsMembersBreakdownHeaderView extends HealthMetricsMembersBreakdownColumnView {
+  header: HealthMetricsSortHeaderView;
+}
 
 /** One row of the table: a tier, or a total under the tiers. */
 export interface HealthMetricsMembersBreakdownRowView {
@@ -72,10 +79,10 @@ export interface HealthMetricsMembersBreakdownRowView {
   label: string;
   kind: HealthMetricsMembersBreakdownRowKind;
   icon: HealthMetricsMembersReservedTier | null;
-  /** Every other tier row is tinted, as the design stripes them. */
-  striped: boolean;
   /** One per year, in the columns' order. */
   cells: string[];
+  /** `tier` is the view's rank, highest-paying highest; `y{year}` that year's members. Totals carry none and stay last. */
+  sortValues: Record<string, HealthMetricsSortValue>;
 }
 
 /** The breakdown table's class strings, by row kind where they differ. */
@@ -159,8 +166,10 @@ export interface HealthMetricsMembersGrowthView {
   measured: boolean;
   /** The y axis's top label; the bottom is 0. */
   yMax: string;
-  /** Oldest year first, so the newest draws on top; the legend reads in the same order. */
+  /** Oldest year first, so the newest draws on top. */
   lines: HealthMetricsMembersGrowthLineView[];
+  /** The same lines, newest year first, as the design's legend reads. */
+  legend: HealthMetricsMembersGrowthLineView[];
   columns: HealthMetricsMembersGrowthColumnView[];
   ariaLabel: string;
 }
