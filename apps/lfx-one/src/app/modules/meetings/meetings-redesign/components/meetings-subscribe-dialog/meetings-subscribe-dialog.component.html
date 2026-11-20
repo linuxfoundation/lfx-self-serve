@@ -1,0 +1,62 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<lfx-ui-modal
+  heading="Subscribe to calendar"
+  [subtitle]="'Add ' + data.name + ' meetings to your calendar. New and updated meetings sync automatically.'"
+  [width]="520"
+  closable
+  data-testid="meetings-subscribe-dialog">
+  <div class="flex flex-col gap-[20px]">
+    <div class="flex flex-col gap-[6px]">
+      <span class="text-[13px] font-medium leading-[18px] text-gray-900" aria-hidden="true">Calendar feed URL</span>
+      <div class="flex items-center gap-[8px]">
+        <!-- Read-only so the URL can be focused and selected; it keeps a resting look with no hover or focus ring. -->
+        <lfx-ui-input
+          class="min-w-0 flex-auto [&_[data-testid=ui-input-wrapper]]:!bg-gray-50 [&_[data-testid=ui-input-wrapper]]:!shadow-[inset_0_0_0_1px_theme(colors.gray.300)] [&_input]:!text-gray-600"
+          size="medium"
+          ariaLabel="Calendar feed URL"
+          prefixIcon="fa-light fa-link"
+          readonly
+          [value]="data.feedUrl"
+          data-testid="meetings-subscribe-dialog-feed" />
+        <lfx-ui-button
+          variant="secondary"
+          size="large"
+          icon="fa-light fa-copy"
+          iconOnly
+          ariaLabel="Copy feed URL"
+          lfxUiTooltip="Copy feed URL"
+          (click)="copyFeedUrl()"
+          data-testid="meetings-subscribe-dialog-copy" />
+      </div>
+    </div>
+
+    <div class="flex items-center gap-[12px] text-[12px] leading-[16px] text-gray-500" role="separator" aria-label="or add to your calendar">
+      <span class="h-px flex-auto bg-gray-200" aria-hidden="true"></span>
+      <span aria-hidden="true">or add to your calendar</span>
+      <span class="h-px flex-auto bg-gray-200" aria-hidden="true"></span>
+    </div>
+
+    <ul class="grid grid-cols-4 gap-[8px]">
+      @for (item of apps; track item.app.key) {
+        <li class="flex min-w-0">
+          <a
+            class="group flex w-full flex-col items-center gap-[8px] rounded-ui-md text-center text-[12px] leading-[16px] text-gray-700 no-underline focus-visible:outline-none"
+            [href]="item.href"
+            [attr.target]="item.newTab ? '_blank' : null"
+            [attr.rel]="item.newTab ? 'noopener noreferrer' : null"
+            [attr.data-testid]="'meetings-subscribe-dialog-app-' + item.app.key">
+            <span
+              class="grid h-[56px] w-[56px] place-items-center rounded-ui-md transition-colors duration-150 group-hover:bg-gray-50 group-focus-visible:bg-gray-50 group-focus-visible:ring-2 group-focus-visible:ring-blue-600 motion-reduce:transition-none"
+              aria-hidden="true">
+              <i class="text-[30px]" [class]="item.app.icon" [style.color]="item.app.color"></i>
+            </span>
+            {{ item.app.label }}
+          </a>
+        </li>
+      }
+    </ul>
+  </div>
+</lfx-ui-modal>

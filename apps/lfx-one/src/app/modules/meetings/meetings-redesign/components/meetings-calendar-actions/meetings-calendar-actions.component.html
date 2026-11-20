@@ -1,0 +1,30 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (feedUrl()) {
+  <lfx-ui-button variant="secondary" icon="fa-light fa-rss" fullWidth (click)="subscribe()" data-testid="meetings-calendar-actions-subscribe"
+    >Subscribe</lfx-ui-button
+  >
+}
+@if (publicCalendarPath(); as path) {
+  <lfx-ui-button
+    variant="tertiary-accent"
+    icon="fa-light fa-globe"
+    fullWidth
+    [href]="path"
+    target="_blank"
+    data-testid="meetings-calendar-actions-public-calendar">
+    Public Calendar
+  </lfx-ui-button>
+  <p class="-mt-[4px] text-center text-[11px] leading-[15px] text-gray-400" data-testid="meetings-calendar-actions-description">
+    A shareable page where anyone can see this project's public meetings, no sign-in needed.
+    <button
+      type="button"
+      class="cursor-pointer whitespace-nowrap border-0 bg-transparent p-0 text-gray-700 underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+      (click)="copyPublicCalendarLink()"
+      data-testid="meetings-calendar-actions-share">
+      <i class="fa-light fa-copy mr-[3px] inline-block" aria-hidden="true"></i>Share link
+    </button>
+  </p>
+}

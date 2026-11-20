@@ -50,6 +50,7 @@ import { debounceTime, EMPTY, filter, Observable, skip, switchMap, take } from '
 
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
 import { MeetingHomeActionsComponent } from './components/meeting-home-actions/meeting-home-actions.component';
+import { MeetingsCalendarActionsComponent } from './components/meetings-calendar-actions/meetings-calendar-actions.component';
 import { MeetingsCalendarDialogComponent } from './components/meetings-calendar-dialog/meetings-calendar-dialog.component';
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
@@ -90,6 +91,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     MeetingHomeActionsComponent,
     MeetingsFiltersComponent,
     MeetingsMiniCalendarComponent,
+    MeetingsCalendarActionsComponent,
     LastMeetingCardComponent,
     NextMeetingCardComponent,
     PendingRsvpsComponent,
