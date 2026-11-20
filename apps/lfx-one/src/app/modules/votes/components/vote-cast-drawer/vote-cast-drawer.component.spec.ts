@@ -485,8 +485,8 @@ describe('VoteCastDrawerComponent — locked review of a final ballot (#4331)', 
 
   it.each([true, undefined, null])('hides private Review content during impersonation (privacy %s)', async (privacy) => {
     const getMyVoteBallot = vi.fn().mockReturnValue(of(BALLOT));
-    const submitMyResponse = vi.fn();
-    await setup(vi.fn().mockReturnValue(of({ ...REVIEW_VOTE, pseudo_anonymity: privacy })), { getMyVoteBallot, submitMyResponse });
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await setup(vi.fn().mockReturnValue(of({ ...REVIEW_VOTE, pseudo_anonymity: privacy })), { getMyVoteBallot, updateMyResponse });
     impersonating.set(true);
     fixture.componentRef.setInput('changeMode', true);
     await openWithoutListVote();
@@ -496,7 +496,7 @@ describe('VoteCastDrawerComponent — locked review of a final ballot (#4331)', 
     expect(fixture.componentInstance['drawerPt']()).toEqual({ footer: { class: 'hidden' } });
     expect(submitButton()).toBeNull();
     fixture.componentInstance['onSubmit']();
-    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(updateMyResponse).not.toHaveBeenCalled();
   });
 
   it('allows locked named Review during impersonation', async () => {
@@ -672,13 +672,13 @@ describe('VoteCastDrawerComponent — locked review of a final ballot (#4331)', 
   });
 
   it('cannot submit a review even when the submit handler is invoked directly', async () => {
-    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
-    await openReview(REVIEW_VOTE, vi.fn().mockReturnValue(of(BALLOT)), { submitMyResponse });
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await openReview(REVIEW_VOTE, vi.fn().mockReturnValue(of(BALLOT)), { updateMyResponse });
     const component = fixture.componentInstance;
     const emitted = vi.spyOn(component.voteSubmitted, 'emit');
 
     component['onSubmit']();
-    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(updateMyResponse).not.toHaveBeenCalled();
     expect(emitted).not.toHaveBeenCalled();
     expect(TestBed.inject(MessageService).add).not.toHaveBeenCalled();
     expect(component['submitDisabled']()).toBe(true);

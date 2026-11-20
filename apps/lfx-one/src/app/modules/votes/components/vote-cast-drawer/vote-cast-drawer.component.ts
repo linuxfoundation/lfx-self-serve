@@ -695,7 +695,7 @@ export class VoteCastDrawerComponent {
 
   /**
    * Displays the recorded ballot in the same controls used for voting (#4331). Reapply after a
-   * ballot or control-shape change, keeping all controls locked throughout loading and review.
+   * ballot or control-shape change, keeping controls locked while loading and whenever ballotReadOnly holds.
    */
   private applyBallotPrefill(): void {
     const vote = this.vote();
@@ -722,7 +722,7 @@ export class VoteCastDrawerComponent {
     for (const [questionId, value] of Object.entries(prefill.answers)) {
       this.form.get(questionId)?.setValue(value, { emitEvent: false });
     }
-    // Emitting updates the displayed abstention while syncControls keeps review locked.
+    // Emitting updates the displayed abstention while syncControls applies the current lock state.
     this.abstainControl.setValue(prefill.abstain);
     for (const [promptId, text] of Object.entries(prefill.comments)) {
       this.commentForm.get(promptId)?.setValue(text, { emitEvent: false });
