@@ -308,14 +308,17 @@ export const VOTE_BALLOT_NOT_FOUND = "We couldn't find your submitted ballot. Re
 /** Shown when a ballot read or write is rate limited (429), so the voter knows to retry shortly (#5964). */
 export const VOTE_RATE_LIMITED_MESSAGE = 'Too many requests. Please wait a moment and try again.';
 
+/** Shown when the initial vote-link ballot read is throttled; refreshing cannot reuse the consumed token (#5964). */
+export const VOTE_LINK_RATE_LIMITED_READ_MESSAGE = 'Too many requests. Please wait a moment, then reopen your ballot link.';
+
 /** Vote-link requests allowed per IP per window: covers a shared office of voters plus reloads and retries (#5964). */
 export const VOTE_LINK_RATE_LIMIT_MAX = 300;
 
 /** Window for the vote-link rate limiter (#5964). */
 export const VOTE_LINK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
-/** Mount-relative `/public/api` paths metered by the vote-link limiter instead of the public API limiter (#5964). */
-export const VOTE_LINK_RATE_LIMITED_PATHS = ['/votes/link-ballot', '/votes/link-responses'] as const;
+/** Exact methods and mount-relative `/public/api` paths metered by the vote-link limiter instead of the public API limiter (#5964). */
+export const VOTE_LINK_RATE_LIMITED_REQUESTS = ['POST /votes/link-ballot', 'POST /votes/link-responses', 'PUT /votes/link-responses'] as const;
 
 /** Pre-submit notice on every first-submit surface when the vote makes submitted ballots final (#4723). */
 export const VOTE_BALLOT_FINAL_NOTICE = "Once you submit, your vote can't be changed.";

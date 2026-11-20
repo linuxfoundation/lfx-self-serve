@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VOTE_LINK_RATE_LIMITED_PATHS } from '@lfx-one/shared/constants';
+import { VOTE_LINK_RATE_LIMITED_REQUESTS } from '@lfx-one/shared/constants';
 import express from 'express';
 import type { NextFunction, Response } from 'express';
 import type { Server } from 'node:http';
@@ -65,9 +65,13 @@ describe('public vote-link routes rate limiting (#5964)', () => {
     expect(getLinkBallot).not.toHaveBeenCalled();
   });
 
-  it('mounts exactly the paths publicApiRateLimiter skips', () => {
-    const mounted = new Set((router.stack as { route?: { path: string } }[]).flatMap((layer) => (layer.route ? [`/votes${layer.route.path}`] : [])));
+  it('mounts exactly the method/path pairs publicApiRateLimiter skips', () => {
+    const mounted = (router.stack as { route?: { path: string; methods: Record<string, boolean> } }[]).flatMap((layer) => {
+      if (!layer.route) return [];
+      const { path, methods } = layer.route;
+      return Object.keys(methods).map((method) => `${method.toUpperCase()} /votes${path}`);
+    });
 
-    expect([...mounted].sort()).toEqual([...VOTE_LINK_RATE_LIMITED_PATHS].sort());
+    expect(mounted.sort()).toEqual([...VOTE_LINK_RATE_LIMITED_REQUESTS].sort());
   });
 });

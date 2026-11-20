@@ -16,6 +16,7 @@ import {
   VOTE_LAST_VOTER_CONFIRMATION,
   VOTE_LINK_NOT_AWAITING_RESPONSE,
   VOTE_LINK_NOT_RESPONDED,
+  VOTE_LINK_RATE_LIMITED_READ_MESSAGE,
   VOTE_LINK_TOKEN_FRAGMENT_PARAM,
   VOTE_RATE_LIMITED_MESSAGE,
   VOTE_UPSTREAM_ENDED,
@@ -289,9 +290,10 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       return;
     }
     if (err.status === 429) {
-      // Throttled (#5964): say so and keep the form after a submit, so the voter can retry in a moment.
-      this.errorMessage.set(VOTE_RATE_LIMITED_MESSAGE);
-      this.state.set(this.state() === 'loading' ? 'error' : 'ready');
+      // The initial read consumed the URL token, so retrying requires reopening the link; a submit keeps the form.
+      const loading = this.state() === 'loading';
+      this.errorMessage.set(loading ? VOTE_LINK_RATE_LIMITED_READ_MESSAGE : VOTE_RATE_LIMITED_MESSAGE);
+      this.state.set(loading ? 'error' : 'ready');
       return;
     }
     if (err.status === 404) {

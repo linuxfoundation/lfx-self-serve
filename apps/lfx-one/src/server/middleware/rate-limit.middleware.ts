@@ -18,7 +18,7 @@ import {
   SELF_RESEND_INVITE_RATE_LIMIT_WINDOW_MS,
   VOTE_LINK_RATE_LIMIT_MAX,
   VOTE_LINK_RATE_LIMIT_WINDOW_MS,
-  VOTE_LINK_RATE_LIMITED_PATHS,
+  VOTE_LINK_RATE_LIMITED_REQUESTS,
 } from '@lfx-one/shared/constants';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
@@ -58,7 +58,7 @@ export const publicApiRateLimiter = rateLimit({
   max: 100, // limit each IP to 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => (VOTE_LINK_RATE_LIMITED_PATHS as readonly string[]).includes(req.path),
+  skip: (req) => VOTE_LINK_RATE_LIMITED_REQUESTS.some((request) => request === `${req.method} ${req.path}`),
 });
 
 /**

@@ -61,10 +61,11 @@ function testIpv6Prefix(): string {
 }
 
 // Minimal Express stand-ins include headers for the default IP-key validations.
-function buildReq(opts: { sub?: string; ip?: string; email?: unknown; path?: string }): Request {
+function buildReq(opts: { sub?: string; ip?: string; email?: unknown; path?: string; method?: string }): Request {
   return {
     ip: opts.ip ?? '203.0.113.10',
     path: opts.path ?? '/',
+    method: opts.method ?? 'POST',
     headers: {},
     app: { get: () => undefined },
     body: { email: opts.email },
@@ -102,7 +103,7 @@ function buildRes(): Response & { statusCode?: number; headers: Record<string, s
 
 /** Drives the limiter once and reports whether the request was allowed through. */
 async function request(
-  opts: { sub?: string; ip?: string; email?: unknown; path?: string; downstreamStatus?: number } = {},
+  opts: { sub?: string; ip?: string; email?: unknown; path?: string; method?: string; downstreamStatus?: number } = {},
   limiter: typeof aiRateLimiter = aiRateLimiter
 ): Promise<{
   allowed: boolean;
@@ -365,11 +366,29 @@ describe('voteLinkRateLimiter (#5964)', () => {
 describe('publicApiRateLimiter skip (#5964)', () => {
   const PUBLIC_API_LIMIT = 100;
 
-  it.each(['/votes/link-ballot', '/votes/link-responses'])('does not count %s, which voteLinkRateLimiter meters', async (path) => {
+  it.each([
+    ['POST', '/votes/link-ballot'],
+    ['POST', '/votes/link-responses'],
+    ['PUT', '/votes/link-responses'],
+  ])('does not count %s %s, which voteLinkRateLimiter meters', async (method, path) => {
     const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
     for (let attempt = 0; attempt <= PUBLIC_API_LIMIT; attempt++) {
-      expect((await request({ ip, path }, publicApiRateLimiter)).allowed, `vote-link call ${attempt}`).toBe(true);
+      expect((await request({ ip, path, method }, publicApiRateLimiter)).allowed, `vote-link call ${attempt}`).toBe(true);
     }
+  });
+
+  it.each([
+    ...['GET', 'HEAD', 'DELETE', 'PATCH', 'OPTIONS'].flatMap((method) => ['/votes/link-ballot', '/votes/link-responses'].map((path) => [method, path])),
+    ['PUT', '/votes/link-ballot'],
+  ])('still counts unsupported %s %s requests', async (method, path) => {
+    const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
+    for (let attempt = 0; attempt < PUBLIC_API_LIMIT; attempt++) {
+      expect((await request({ ip, path, method }, publicApiRateLimiter)).allowed, `public call ${attempt}`).toBe(true);
+    }
+
+    const rejected = await request({ ip, path, method }, publicApiRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
   });
 
   it('still counts other public routes, such as the project-summary branding lookup', async () => {
