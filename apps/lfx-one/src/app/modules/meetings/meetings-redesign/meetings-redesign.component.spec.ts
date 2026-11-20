@@ -32,6 +32,7 @@ import { BehaviorSubject, map, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
@@ -1397,6 +1398,8 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(fixture.componentInstance['store'].failed()).toBe(true);
       expect(query(fixture, 'meetings-home-no-results')).toBeNull();
+      // The list is replaced by Retry, so no toast says it was kept.
+      expect(TestBed.inject(UiToastService).toasts()).toEqual([]);
     });
 
     it('shows no results with a reset, not an empty tab, when a server search matches nothing', async () => {
