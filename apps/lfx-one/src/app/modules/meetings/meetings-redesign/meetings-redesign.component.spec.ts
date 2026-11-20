@@ -914,6 +914,23 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
       expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+      // It stays as it is, without growing in again under the text being composed.
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-opening');
+    });
+
+    it('stays open, empty, when Filters beside it is pressed, so the Filters popover keeps its anchor', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      const filters = query(fixture, 'meetings-redesign-search')?.nextElementSibling as HTMLElement;
+
+      filters.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      searchInput(fixture)?.blur();
+      document.dispatchEvent(new PointerEvent('pointerup'));
+      await closeDelay();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
     });
 
     it('waits for a pressed pointer to be released before closing, so the control under it is not moved', async () => {
@@ -1360,6 +1377,26 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-redesign-search-button')).toBeTruthy();
       expect(query(fixture, 'meetings-home-no-results')).toBeNull();
       expect(query(fixture, 'meetings-home-empty-past')).toBeNull();
+    });
+
+    it('offers Retry when the reload after clearing a search fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      queryParamMap$.next(convertToParamMap({ time: 'past' }));
+      const fixture = render();
+      await fixture.whenStable();
+      pastPage$.next({ data: [{ ...buildMeeting(0, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting] });
+      fixture.componentInstance['store'].setSearch('nothing matches');
+      await searchDebounce();
+      pastPage$.next({ data: [] });
+      await fixture.whenStable();
+
+      fixture.componentInstance['store'].setSearch('');
+      await searchDebounce();
+      pastPage$.error(new Error('reload failed'));
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance['store'].failed()).toBe(true);
+      expect(query(fixture, 'meetings-home-no-results')).toBeNull();
     });
 
     it('shows no results with a reset, not an empty tab, when a server search matches nothing', async () => {

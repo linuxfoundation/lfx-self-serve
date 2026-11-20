@@ -102,7 +102,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     class: 'block -mx-5 -my-6 md:-mx-8',
     '(window:resize)': 'measure()',
     '(window:scroll)': 'updateScroll()',
-    '(document:pointerdown)': 'pointerHeld = true',
+    '(document:pointerdown)': 'onPointerDown($event)',
     '(document:pointerup)': 'releasePointer()',
     '(document:pointercancel)': 'releasePointer()',
   },
@@ -136,6 +136,7 @@ export class MeetingsRedesignComponent {
   private readonly searchField = viewChild(UiSearchInputComponent);
   private readonly searchFieldHost = viewChild(UiSearchInputComponent, { read: ElementRef });
   private readonly searchButton = viewChild<UiButtonComponent>('searchButton');
+  private readonly searchTools = viewChild<ElementRef<HTMLElement>>('searchTools');
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
   /** Takes focus when the last filter chip is removed. */
@@ -170,6 +171,8 @@ export class MeetingsRedesignComponent {
   protected readonly searchOpen: WritableSignal<boolean> = signal(false);
   /** True while the field plays its closing animation, before the button takes its place back. */
   protected readonly searchClosing: WritableSignal<boolean> = signal(false);
+  /** A close was called off, so the field stays as it is rather than playing its opening animation again. */
+  protected readonly searchKept: WritableSignal<boolean> = signal(false);
   /** The field shows while opened, while it has text, or while it closes. */
   protected readonly searchExpanded: Signal<boolean> = computed(() => this.searchOpen() || !!this.store.search().trim() || this.searchClosing());
   /** Where the day headings stick: below the sticky header and tabs bar. */
@@ -213,7 +216,9 @@ export class MeetingsRedesignComponent {
 
   private searchCloseTimer: ReturnType<typeof setTimeout> | undefined;
   /** A pointer is down; a focus-out it causes closes the search on release, so the control under it keeps its place. */
-  protected pointerHeld = false;
+  private pointerHeld = false;
+  // The press is on another control beside the search, such as Filters, whose popover anchors to where it is now.
+  private pressedInTools = false;
   private closeOnRelease = false;
 
   public constructor() {
@@ -275,6 +280,7 @@ export class MeetingsRedesignComponent {
   }
 
   protected openSearch(): void {
+    this.searchKept.set(false);
     this.searchOpen.set(true);
     afterNextRender(() => this.searchField()?.focus(), { injector: this.injector });
   }
@@ -283,8 +289,15 @@ export class MeetingsRedesignComponent {
   protected onSearchFocusOut(event: FocusEvent): void {
     if ((event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) return;
     if (this.store.search().trim()) return;
+    // An empty field stays open beside a control the viewer moved to, so that control and its popover do not shift.
+    if (this.searchTools()?.nativeElement.contains(event.relatedTarget as Node | null) || (this.pointerHeld && this.pressedInTools)) return;
     if (this.pointerHeld) this.closeOnRelease = true;
     else this.closeSearch(false);
+  }
+
+  protected onPointerDown(event: PointerEvent): void {
+    this.pointerHeld = true;
+    this.pressedInTools = !!this.searchTools()?.nativeElement.contains(event.target as Node | null);
   }
 
   protected releasePointer(): void {
@@ -298,6 +311,7 @@ export class MeetingsRedesignComponent {
   protected cancelSearchClose(): void {
     if (!this.searchClosing()) return;
     clearTimeout(this.searchCloseTimer);
+    this.searchKept.set(true);
     this.searchClosing.set(false);
     this.searchOpen.set(true);
   }
@@ -316,6 +330,7 @@ export class MeetingsRedesignComponent {
       this.searchClosing.set(false);
       // Text typed while it was closing keeps the field open.
       if (this.store.search().trim()) {
+        this.searchKept.set(true);
         this.searchOpen.set(true);
         return;
       }
