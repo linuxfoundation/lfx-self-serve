@@ -1193,6 +1193,8 @@ describe('members churn', () => {
     expect(buildHealthMetricsMembersChurnView(noOpening, 'YTD').metrics[0].value).toBe('0%');
     const missing: HealthMetricsMembersChurn = { years: [churnYear(2026, { revenueNotRenewedRate: null })], tiers: [] };
     expect(buildHealthMetricsMembersChurnView(missing, 'YTD').metrics[0].value).toBe('—');
+    const unmeasuredDues: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: 0, duesLostUsd: null, revenueNotRenewedRate: null })], tiers: [] };
+    expect(buildHealthMetricsMembersChurnView(unmeasuredDues, 'YTD').metrics[0].value).toBe('—');
 
     const unmeasured: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: null })], tiers: [] };
     expect(buildHealthMetricsMembersChurnView(unmeasured, 'YTD').yearMeasured).toBe(false);

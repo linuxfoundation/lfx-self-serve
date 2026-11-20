@@ -621,7 +621,8 @@ export function buildHealthMetricsMembersChurnDepartureRows(rows: HealthMetricsM
 function revenueChurnRate(row: HealthMetricsMembersChurnYear | null): number | null {
   if (!row) return null;
   if (row.revenueNotRenewedRate !== null) return row.revenueNotRenewedRate;
-  return row.lostCount === 0 && (row.duesLostUsd ?? 0) === 0 ? 0 : null;
+  // Both must be recorded zeros; unmeasured dues keep the rate unmeasured.
+  return row.lostCount === 0 && row.duesLostUsd === 0 ? 0 : null;
 }
 
 function churnDifference(current: number | null, previous: number | null): number | null {
