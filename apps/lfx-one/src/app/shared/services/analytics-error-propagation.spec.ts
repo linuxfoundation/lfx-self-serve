@@ -234,7 +234,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getNonMembersOrgs',
       url: '/api/analytics/non-members-orgs',
       // A swallowed failure would read as a foundation no non-member organization engages with.
-      call: () => service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10 }),
+      call: () => service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10, sort: null }),
     },
     {
       name: 'getNonMembersPeople',
@@ -433,12 +433,24 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
   });
 
   it('getNonMembersOrgs sends a typed plus sign encoded and leaves the default filter out', () => {
-    service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: 'A+E', offset: 0, pageSize: 10 }).subscribe();
+    service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: 'A+E', offset: 0, pageSize: 10, sort: null }).subscribe();
 
     const req = http.expectOne((request) => request.url === '/api/analytics/non-members-orgs');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
     expect(req.request.params.has('filter')).toBe(false);
-    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, newCount: 0 });
+    expect(req.request.params.has('sortKey')).toBe(false);
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
+  it('getNonMembersOrgs sends a picked sort as its key and direction', () => {
+    service
+      .getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10, sort: { key: 'fit', direction: 'asc' } })
+      .subscribe();
+
+    const req = http.expectOne((request) => request.url === '/api/analytics/non-members-orgs');
+    expect(req.request.params.get('sortKey')).toBe('fit');
+    expect(req.request.params.get('sortDir')).toBe('asc');
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 
   it('getNonMembersPeople sends a typed plus sign encoded and leaves an empty search out', () => {

@@ -5,6 +5,7 @@ import {
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
   HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT,
+  HEALTH_METRICS_NON_MEMBERS_FIT_BANDS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
@@ -14,6 +15,8 @@ import {
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { healthMetricsAccountLogoJoinSql, healthMetricsAccountLogoSql } from '../helpers/health-metrics-logo.helper';
+import { buildHealthMetricsSortOrderBy } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -25,10 +28,12 @@ import type {
   HealthMetricsNonMembersOrg,
   HealthMetricsNonMembersOrgs,
   HealthMetricsNonMembersOrgsQuery,
+  HealthMetricsNonMembersOrgsSortKey,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersPeopleQuery,
   HealthMetricsNonMembersPerson,
   HealthMetricsNonMembersWarmOrg,
+  HealthMetricsSqlSortColumn,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -40,7 +45,6 @@ const NON_MEMBER_PEOPLE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_PEOPLE';
 interface OrgRow {
   SCOPE_TOTAL: number | null;
   TOTAL_RECORDS: number | null;
-  NEW_COUNT: number | null;
   IS_PAGE_ROW: boolean | null;
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
@@ -48,11 +52,12 @@ interface OrgRow {
   MEETINGS_ATTENDED_COUNT: number | null;
   DISTINCT_PEOPLE_COUNT: number | null;
   CONTRIBUTIONS_COUNT: number | null;
-  IS_NEW: boolean | null;
   SORT_RANK: number | null;
-  MEMBERSHIP_STATUS: string | null;
   FIT_BAND: string | null;
   IS_HIGH_FIT: boolean | null;
+  /** The row's place in the picked order, which the outer select keeps after the logo join. */
+  PAGE_POSITION: number | null;
+  LOGO_URL: string | null;
 }
 
 interface PersonRow {
@@ -99,7 +104,7 @@ export class HealthMetricsNonMembersService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** One page of the period's active non-member organizations, in the view's meetings-first rank. */
+  /** One page of the period's active non-member companies, in the view's meetings-first rank or a column the reader picked. */
   public async getOrgs(req: Request, query: HealthMetricsNonMembersOrgsQuery): Promise<HealthMetricsNonMembersOrgs> {
     // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
@@ -117,6 +122,9 @@ export class HealthMetricsNonMembersService {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE, HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
 
+    // A column the reader picked, over every page; with none, the view's rank. Only these expressions reach the SQL.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, orgSortColumns(), 'sort_rank ASC NULLS LAST, account_id ASC');
+
     const sql = `
       WITH scoped AS (
         SELECT
@@ -126,9 +134,7 @@ export class HealthMetricsNonMembersService {
           p.meetings_attended_count_${suffix} AS meetings_attended_count,
           p.distinct_people_count_${suffix} AS distinct_people_count,
           p.contributions_count_${suffix} AS contributions_count,
-          p.is_new_${suffix} AS is_new,
           p.sort_rank_${suffix} AS sort_rank,
-          p.membership_status,
           p.fit_band,
           -- High band among active rows: the set high_fit_org_count counts.
           COALESCE(p.fit_band = 'High', FALSE) AS is_high_fit
@@ -144,23 +150,22 @@ export class HealthMetricsNonMembersService {
         SELECT * FROM scoped ${matchClause}
       ),
       totals AS (
-        SELECT
-          (SELECT COUNT(*) FROM scoped) AS scope_total,
-          (SELECT COUNT_IF(is_new) FROM scoped) AS new_count,
-          (SELECT COUNT(*) FROM matched) AS total_records
+        SELECT (SELECT COUNT(*) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
-        SELECT *, TRUE AS is_page_row
+        -- The row's place in the page's order, which the outer select keeps after the logo join.
+        SELECT *, TRUE AS is_page_row, ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM matched
         -- account_id breaks any tie, and NULLS LAST pins placement against the session's null ordering.
-        ORDER BY sort_rank ASC NULLS LAST, account_id ASC
+        ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
-      SELECT totals.*, page.*
+      SELECT totals.*, page.*, ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<OrgRow>(this.snowflakeService, req, sql, binds, {
@@ -174,7 +179,6 @@ export class HealthMetricsNonMembersService {
       rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapOrg),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
-      newCount: Number(first?.NEW_COUNT ?? 0),
     };
   }
 
@@ -346,15 +350,27 @@ function mapOrg(row: OrgRow): HealthMetricsNonMembersOrg[] {
     {
       accountId: row.ACCOUNT_ID,
       accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      logoUrl: row.LOGO_URL || null,
       lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
       meetingsAttended: toNullableNumber(row.MEETINGS_ATTENDED_COUNT),
       distinctPeople: toNullableNumber(row.DISTINCT_PEOPLE_COUNT),
       contributions: toNullableNumber(row.CONTRIBUTIONS_COUNT),
-      isNew: row.IS_NEW === true,
-      membershipStatus: row.MEMBERSHIP_STATUS || null,
       fitBand: row.FIT_BAND || null,
     },
   ];
+}
+
+/** Each column as its cell shows it: a dashed count is empty, and Fit ranks the bands High first, unscored last. */
+function orgSortColumns(): Record<HealthMetricsNonMembersOrgsSortKey, HealthMetricsSqlSortColumn> {
+  const bands = HEALTH_METRICS_NON_MEMBERS_FIT_BANDS;
+  return {
+    // A company with no name shows its account id, so it sorts by that.
+    company: { expression: "COALESCE(NULLIF(account_name, ''), account_id)", kind: 'text' },
+    meetings: { expression: 'NULLIF(meetings_attended_count, 0)', kind: 'number' },
+    contributions: { expression: 'NULLIF(contributions_count, 0)', kind: 'number' },
+    // The bands are constants, never request input.
+    fit: { expression: `CASE TRIM(fit_band) ${bands.map((band, index) => `WHEN '${band}' THEN ${bands.length - index}`).join(' ')} END`, kind: 'number' },
+  };
 }
 
 function toNullableNumber(value: unknown): number | null {

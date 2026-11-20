@@ -139,6 +139,14 @@ describe('UiInputComponent', () => {
     expect(field().getAttribute('autocomplete')).toBe('email');
   });
 
+  it('caps the field at a max length only when one is set', async () => {
+    expect(field().hasAttribute('maxlength')).toBe(false);
+
+    await set('maxlength', 100);
+
+    expect(field().maxLength).toBe(100);
+  });
+
   it('zeroes the input padding next to an unstyled affix only', async () => {
     await set('prefixText', '$');
     await set('suffixText', 'USD');

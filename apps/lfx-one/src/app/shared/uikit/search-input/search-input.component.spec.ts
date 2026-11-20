@@ -47,6 +47,14 @@ describe('UiSearchInputComponent', () => {
     expect(input().getAttribute('aria-label')).toBe('Search meetings');
   });
 
+  it('passes a max length to the field, and leaves it uncapped by default', async () => {
+    expect(input().hasAttribute('maxlength')).toBe(false);
+
+    await set('maxlength', 100);
+
+    expect(input().maxLength).toBe(100);
+  });
+
   it('defaults the placeholder and accessible name to Search', () => {
     expect(input().placeholder).toBe('Search');
     expect(input().getAttribute('aria-label')).toBe('Search');

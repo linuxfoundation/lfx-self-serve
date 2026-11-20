@@ -40,6 +40,7 @@ import {
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
@@ -4281,6 +4282,11 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.

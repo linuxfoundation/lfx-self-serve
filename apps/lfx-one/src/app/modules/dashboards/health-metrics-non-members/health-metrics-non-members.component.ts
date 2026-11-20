@@ -1,22 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import {
   HEALTH_METRICS_NON_MEMBERS_BLANK,
   HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS,
+  HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS,
   HEALTH_METRICS_NON_MEMBERS_SECTIONS,
   HEALTH_METRICS_NON_MEMBERS_SECTION_ID_PREFIX,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsNonMembersSubNavItems } from '@lfx-one/shared/utils';
+import { buildHealthMetricsNonMembersSubNavItems, parseHealthMetricsNonMembersOrgsFilter } from '@lfx-one/shared/utils';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 
+import { HealthMetricsL2SectionControlsDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section-controls.directive';
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
 import { NonMembersConversionComponent } from './components/non-members-conversion/non-members-conversion.component';
 import { NonMembersOrgsComponent } from './components/non-members-orgs/non-members-orgs.component';
 import { NonMembersPeopleComponent } from './components/non-members-people/non-members-people.component';
 
-import type { HealthMetricsNonMembersSubNavItem } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsNonMembersOrgsFilter, HealthMetricsNonMembersSubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
  * Non-Members (Level 2) — three anchored sections in the shared Level 2 shell, each reading its
@@ -24,13 +30,33 @@ import type { HealthMetricsNonMembersSubNavItem } from '@lfx-one/shared/interfac
  */
 @Component({
   selector: 'lfx-health-metrics-non-members',
-  imports: [HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, NonMembersConversionComponent, NonMembersOrgsComponent, NonMembersPeopleComponent],
+  imports: [
+    HealthMetricsL2SectionControlsDirective,
+    HealthMetricsL2SectionDirective,
+    HealthMetricsL2ShellComponent,
+    NonMembersConversionComponent,
+    NonMembersOrgsComponent,
+    NonMembersPeopleComponent,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
+  ],
   templateUrl: './health-metrics-non-members.component.html',
 })
 export class HealthMetricsNonMembersComponent {
+  private readonly route = inject(ActivatedRoute);
+
   protected readonly sections = HEALTH_METRICS_NON_MEMBERS_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_NON_MEMBERS_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS;
   protected readonly blank = HEALTH_METRICS_NON_MEMBERS_BLANK;
   protected readonly subNavItems: HealthMetricsNonMembersSubNavItem[] = buildHealthMetricsNonMembersSubNavItems();
+  protected readonly orgsFilters = HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS;
+  // The header switch lives in the section's controls, so the page owns the cut; the section keeps it in the URL.
+  protected readonly orgsFilter = signal<HealthMetricsNonMembersOrgsFilter>(
+    parseHealthMetricsNonMembersOrgsFilter(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsFilter))
+  );
+
+  protected onOrgsFilterChange(value: string | null): void {
+    this.orgsFilter.set(parseHealthMetricsNonMembersOrgsFilter(value));
+  }
 }

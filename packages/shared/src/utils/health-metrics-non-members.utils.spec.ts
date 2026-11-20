@@ -8,11 +8,10 @@ import { HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED } from '../constants/h
 import {
   buildHealthMetricsNonMembersConversionView,
   buildHealthMetricsNonMembersOrgRows,
-  buildHealthMetricsNonMembersOrgsLowConfidence,
-  buildHealthMetricsNonMembersOrgsSummary,
   buildHealthMetricsNonMembersPeopleCountLabel,
   buildHealthMetricsNonMembersPersonRows,
   buildHealthMetricsNonMembersSubNavItems,
+  parseHealthMetricsNonMembersOrgsFilter,
 } from './health-metrics-non-members.utils';
 
 import type {
@@ -24,12 +23,11 @@ import type {
 const ORG: HealthMetricsNonMembersOrg = {
   accountId: '0014100000AcmeAAAA',
   accountName: 'Acme Motors',
+  logoUrl: 'https://logos.example/acme.png',
   lastEngagedDate: '2026-03-14',
   meetingsAttended: 12,
   distinctPeople: 3,
   contributions: 1840,
-  isNew: false,
-  membershipStatus: 'Non-member',
   fitBand: 'High',
 };
 
@@ -68,65 +66,46 @@ describe('buildHealthMetricsNonMembersSubNavItems', () => {
 });
 
 describe('buildHealthMetricsNonMembersOrgRows', () => {
-  it('formats the counts and the last engaged date', () => {
+  it('formats the counts, the people under the meetings and the last engaged date under the name', () => {
     const [row] = buildHealthMetricsNonMembersOrgRows([ORG]);
 
     expect(row).toEqual({
       accountId: ORG.accountId,
       accountName: 'Acme Motors',
+      logoUrl: 'https://logos.example/acme.png',
+      lastEngagedLabel: 'Last engaged Mar 14, 2026',
       meetingsLabel: '12',
-      peopleLabel: '3',
+      peopleLabel: '3 people',
       contributionsLabel: '1,840',
-      lastEngagedLabel: 'Mar 14, 2026',
-      membershipLabel: 'Non-member',
       fitLabel: 'High',
-      fitDotClass: 'bg-emerald-600',
+      fitBadgeClass: 'bg-emerald-50 text-emerald-700',
     });
   });
 
-  it('renders a dash for a zero or NULL count or a missing date', () => {
-    const [row] = buildHealthMetricsNonMembersOrgRows([{ ...ORG, meetingsAttended: null, distinctPeople: null, contributions: 0, lastEngagedDate: null }]);
-
-    expect(row.meetingsLabel).toBe('—');
-    expect(row.peopleLabel).toBe('—');
-    expect(row.contributionsLabel).toBe('—');
-    expect(row.lastEngagedLabel).toBe('—');
+  it('says one person in the singular', () => {
+    expect(buildHealthMetricsNonMembersOrgRows([{ ...ORG, distinctPeople: 1 }])[0].peopleLabel).toBe('1 person');
   });
 
-  it("shows the model's membership status and colours each fit band as the design does", () => {
-    const view = (overrides: Partial<HealthMetricsNonMembersOrg>) => buildHealthMetricsNonMembersOrgRows([{ ...ORG, ...overrides }])[0];
+  it('renders a dash with no people line for no meetings, a dash for no contributions, and no date line without a date', () => {
+    const [row] = buildHealthMetricsNonMembersOrgRows([{ ...ORG, meetingsAttended: 0, distinctPeople: 2, contributions: null, lastEngagedDate: null }]);
 
-    expect(view({ membershipStatus: 'Former member' }).membershipLabel).toBe('Former member');
-    expect(view({ fitBand: 'Medium' })).toMatchObject({ fitLabel: 'Medium', fitDotClass: 'bg-amber-500' });
-    expect(view({ fitBand: 'Low' })).toMatchObject({ fitLabel: 'Low', fitDotClass: 'bg-gray-400' });
-    expect(view({ fitBand: 'Unrated' })).toMatchObject({ fitLabel: 'Unrated', fitDotClass: 'bg-gray-400' });
-    expect(view({ fitBand: 'constructor' }).fitDotClass).toBe('bg-gray-400');
+    expect(row).toMatchObject({ meetingsLabel: '—', peopleLabel: '', contributionsLabel: '—', lastEngagedLabel: '' });
   });
 
-  it('falls back to Non-member and a dash, with no dot, when the model leaves them unset', () => {
-    const row = buildHealthMetricsNonMembersOrgRows([{ ...ORG, membershipStatus: null, fitBand: '  ' }])[0];
+  it('badges each scored fit band as the design colours it, and dashes anything else', () => {
+    const view = (fitBand: string | null) => buildHealthMetricsNonMembersOrgRows([{ ...ORG, fitBand }])[0];
 
-    expect(row).toMatchObject({ membershipLabel: 'Non-member', fitLabel: '—', fitDotClass: null });
+    expect(view('Medium')).toMatchObject({ fitLabel: 'Medium', fitBadgeClass: 'bg-amber-50 text-amber-800' });
+    expect(view(' Low ')).toMatchObject({ fitLabel: 'Low', fitBadgeClass: 'bg-red-50 text-red-700' });
+    for (const band of [null, '  ', 'Unrated', 'constructor']) expect(view(band)).toMatchObject({ fitLabel: '—', fitBadgeClass: null });
   });
 });
 
-describe('buildHealthMetricsNonMembersOrgsSummary', () => {
-  it('counts the organizations and the new ones', () => {
-    expect(buildHealthMetricsNonMembersOrgsSummary(1412, 37)).toBe('1,412 companies · 37 new this period');
-    expect(buildHealthMetricsNonMembersOrgsSummary(1, 0)).toBe('1 company · 0 new this period');
-  });
-});
-
-describe('buildHealthMetricsNonMembersOrgsLowConfidence', () => {
-  it('flags fewer than five active organizations, singular for one', () => {
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(4)).toBe('Only 4 active companies — too early to rank by fit.');
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(1)).toBe('Only 1 active company — too early to rank by fit.');
-  });
-
-  it('stays quiet at the threshold and above, and with no active organization', () => {
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(5)).toBeNull();
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(412)).toBeNull();
-    expect(buildHealthMetricsNonMembersOrgsLowConfidence(0)).toBeNull();
+describe('parseHealthMetricsNonMembersOrgsFilter', () => {
+  it('keeps a known cut and falls back to All', () => {
+    expect(parseHealthMetricsNonMembersOrgsFilter('meetings')).toBe('meetings');
+    expect(parseHealthMetricsNonMembersOrgsFilter('high-fit')).toBe('high-fit');
+    for (const value of [null, undefined, '', 'High', 'constructor']) expect(parseHealthMetricsNonMembersOrgsFilter(value)).toBe('all');
   });
 });
 

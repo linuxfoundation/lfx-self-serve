@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
+  HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES,
+  HEALTH_METRICS_NON_MEMBERS_FIT_BANDS,
   HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE,
-  HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
   HEALTH_METRICS_NON_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-non-members.constants';
 import { formatIsoDateLabel } from './date-time.utils';
@@ -15,6 +16,7 @@ import type {
   HealthMetricsNonMembersConversionView,
   HealthMetricsNonMembersOrg,
   HealthMetricsNonMembersOrgRowView,
+  HealthMetricsNonMembersOrgsFilter,
   HealthMetricsNonMembersPerson,
   HealthMetricsNonMembersPersonRowView,
   HealthMetricsNonMembersSubNavItem,
@@ -27,29 +29,27 @@ export function buildHealthMetricsNonMembersSubNavItems(): HealthMetricsNonMembe
   return HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '' }));
 }
 
-/** Company participation rows. A zero or NULL count renders a dash. */
+/** Company participation rows. A zero or NULL count renders a dash, and a dashed meetings count carries no people line. */
 export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMembersOrg[]): HealthMetricsNonMembersOrgRowView[] {
-  return rows.map((row) => ({
-    accountId: row.accountId,
-    accountName: row.accountName,
-    meetingsLabel: formatCount(row.meetingsAttended),
-    peopleLabel: formatCount(row.distinctPeople),
-    contributionsLabel: formatCount(row.contributions),
-    lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
-    membershipLabel: row.membershipStatus?.trim() || 'Non-member',
-    ...buildFit(row.fitBand),
-  }));
+  return rows.map((row) => {
+    const meetingsLabel = formatCount(row.meetingsAttended);
+    const people = row.distinctPeople === null ? 0 : Math.round(row.distinctPeople);
+    return {
+      accountId: row.accountId,
+      accountName: row.accountName,
+      logoUrl: row.logoUrl,
+      lastEngagedLabel: row.lastEngagedDate ? `Last engaged ${formatIsoDateLabel(row.lastEngagedDate)}` : '',
+      meetingsLabel,
+      peopleLabel: meetingsLabel === '—' || people <= 0 ? '' : pluralize(people, 'person', 'people'),
+      contributionsLabel: formatCount(row.contributions),
+      ...buildFit(row.fitBand),
+    };
+  });
 }
 
-/** The unfiltered count line: "412 organizations · 37 new this period". */
-export function buildHealthMetricsNonMembersOrgsSummary(scopeTotal: number, newCount: number): string {
-  return `${pluralize(scopeTotal, 'company', 'companies')} · ${newCount.toLocaleString('en-US')} new this period`;
-}
-
-/** The amber chip when too few organizations are active to rank by fit; `null` at or above the threshold, or with none. */
-export function buildHealthMetricsNonMembersOrgsLowConfidence(scopeTotal: number): string | null {
-  if (scopeTotal <= 0 || scopeTotal >= HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD) return null;
-  return `Only ${pluralize(scopeTotal, 'active company', 'active companies')} — too early to rank by fit.`;
+/** The header switch's value from the URL or the switch; anything else is All. */
+export function parseHealthMetricsNonMembersOrgsFilter(value: string | null | undefined): HealthMetricsNonMembersOrgsFilter {
+  return HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS.find((filter) => filter === value) ?? 'all';
 }
 
 /** People rows. A person with no matched organization, or no attended date, renders a dash. */
@@ -112,9 +112,8 @@ function formatStat(value: number | null): string {
   return value === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : Math.round(value).toLocaleString('en-US');
 }
 
-function buildFit(fitBand: string | null): Pick<HealthMetricsNonMembersOrgRowView, 'fitLabel' | 'fitDotClass'> {
-  const band = fitBand?.trim();
-  if (!band) return { fitLabel: '—', fitDotClass: null };
-  const dots = HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS;
-  return { fitLabel: band, fitDotClass: Object.hasOwn(dots, band) ? dots[band] : dots['Low'] };
+// Only a band the model scores gets a badge; unscored reads "—", which the Fit sort puts last too.
+function buildFit(fitBand: string | null): Pick<HealthMetricsNonMembersOrgRowView, 'fitLabel' | 'fitBadgeClass'> {
+  const band = HEALTH_METRICS_NON_MEMBERS_FIT_BANDS.find((candidate) => candidate === fitBand?.trim());
+  return band ? { fitLabel: band, fitBadgeClass: HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES[band] } : { fitLabel: '—', fitBadgeClass: null };
 }
