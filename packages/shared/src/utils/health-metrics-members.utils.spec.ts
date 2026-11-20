@@ -14,6 +14,7 @@ import {
   buildHealthMetricsMembersBoardMeetingRows,
   buildHealthMetricsMembersBoardMetrics,
   buildHealthMetricsMembersBoardNote,
+  buildHealthMetricsMembersBreakdownSortColumns,
   buildHealthMetricsMembersBreakdownView,
   buildHealthMetricsMembersChurnDepartureRows,
   buildHealthMetricsMembersChurnView,
@@ -26,7 +27,6 @@ import {
   buildHealthMetricsMembersNpsSegments,
   buildHealthMetricsMembersRenewalRows,
   buildHealthMetricsMembersRenewalsMetrics,
-  buildHealthMetricsMembersSections,
   buildHealthMetricsMembersSubNavItems,
   parseHealthMetricsMembersAtRiskFilter,
   parseHealthMetricsMembersBoardCohort,
@@ -215,18 +215,31 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     ]);
 
     expect(view.columns.map((column) => column.label)).toEqual(['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026 YTD']);
-    expect(view.rows.map((row) => [row.label, row.kind, row.icon, row.striped])).toEqual([
-      ['Diamond', 'tier', 'diamond', false],
-      ['Platinum', 'tier', 'platinum', true],
-      ['Gold', 'tier', 'gold', false],
-      ['Silver', 'tier', 'silver', true],
-      ['Associate', 'tier', null, false],
-      ['Total members', 'total', null, false],
-      ['Total revenue', 'total', null, false],
+    expect(view.rows.map((row) => [row.label, row.kind, row.icon])).toEqual([
+      ['Diamond', 'tier', 'diamond'],
+      ['Platinum', 'tier', 'platinum'],
+      ['Gold', 'tier', 'gold'],
+      ['Silver', 'tier', 'silver'],
+      ['Associate', 'tier', null],
+      ['Total members', 'total', null],
+      ['Total revenue', 'total', null],
     ]);
     expect(view.rows[1].cells).toEqual(['110', '118', '124', '131', '138', '142', '150', '158']);
+    // Tier sorts on the view's rank, highest-paying highest; each year on its members. Totals carry no sort value.
+    expect(view.columns[7].sortKey).toBe('y2026');
+    expect(view.rows.map((row) => row.sortValues['tier'] ?? null)).toEqual([5, 4, 3, 2, 1, null, null]);
+    expect(view.rows[1].sortValues['y2026']).toBe(158);
     expect(view.rows[5].cells[7]).toBe('2,352');
     expect(view.rows[6].cells[7]).toBe('$2.4M');
+  });
+
+  it('lists the tier and every year it can show as sortable columns', () => {
+    expect(buildHealthMetricsMembersBreakdownSortColumns(2021).map((column) => [column.key, column.kind])).toEqual([
+      ['tier', 'tier'],
+      ['y2019', 'number'],
+      ['y2020', 'number'],
+      ['y2021', 'number'],
+    ]);
   });
 
   it('keeps a foundation’s own tiers, without grouping any as Others', () => {
@@ -361,21 +374,22 @@ describe('buildHealthMetricsMembersGrowthView', () => {
     }
   });
 
-  it('lists each month’s years newest first, leaving out this year past today', () => {
+  it('lists each month’s years oldest first, leaving out this year past today, and the legend newest first', () => {
     const columns = build().columns;
 
     expect(columns).toHaveLength(12);
     expect(columns[10].tip.title).toBe('November');
     expect(columns[10].tip.rows.map((row) => [row.label, row.value])).toEqual([
-      ['2026', '801'],
-      ['2025', '410'],
-      ['2024', '420'],
-      ['2019', '335'],
-      ['2018', '404'],
       ['2017', '209'],
+      ['2018', '404'],
+      ['2019', '335'],
+      ['2024', '420'],
+      ['2025', '410'],
+      ['2026', '801'],
     ]);
-    expect(columns[11].tip.rows[0].label).toBe('2025');
-    expect(columns[10].ariaLabel).toBe('November. 2026: 801, 2025: 410, 2024: 420, 2019: 335, 2018: 404, 2017: 209');
+    expect(columns[11].tip.rows.at(-1)?.label).toBe('2025');
+    expect(columns[10].ariaLabel).toBe('November. 2017: 209, 2018: 404, 2019: 335, 2024: 420, 2025: 410, 2026: 801');
+    expect(build().legend.map((line) => line.year)).toEqual([2026, 2025, 2024, 2019, 2018, 2017]);
     expect(columns[0].widthPct).toBeCloseTo(92 / 11, 5);
   });
 
@@ -398,14 +412,6 @@ describe('buildHealthMetricsMembersGrowthView', () => {
   it('is unmeasured when no year has a measured month', () => {
     expect(build('YTD', { 2026: [null, null] }).measured).toBe(false);
     expect(build('YTD', {}).lines).toEqual([]);
-  });
-});
-
-describe('buildHealthMetricsMembersSections', () => {
-  it('names the running year in the breakdown description', () => {
-    const breakdown = buildHealthMetricsMembersSections(2026).find((section) => section.key === 'breakdown')!;
-
-    expect(breakdown.description).toBe('Members per tier at each year end. 2026 is year to date.');
   });
 });
 

@@ -112,7 +112,8 @@ describe('MembersGrowthComponent', () => {
     expect(years()).toEqual(['2018', '2024', '2025', '2026']);
     expect(solid()).toEqual(['2026']);
     expect(text('members-growth-y-max')).toBe('1,000');
-    expect([...(query('members-growth-legend')?.children ?? [])].map((item) => item.textContent?.trim())).toEqual(['2018', '2024', '2025', '2026']);
+    // The legend reads newest first, as the design orders it.
+    expect([...(query('members-growth-legend')?.children ?? [])].map((item) => item.textContent?.trim())).toEqual(['2026', '2025', '2024', '2018']);
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
@@ -184,8 +185,8 @@ describe('MembersGrowthComponent', () => {
       [...month.querySelectorAll('[data-testid="health-metrics-chart-tip-row"]')].map((row) =>
         [...row.children].map((side) => side.textContent?.trim()).join(' ')
       )
-    ).toEqual(['2026 801', '2025 410', '2024 420', '2018 404']);
-    expect(month.getAttribute('aria-label')).toBe('November. 2026: 801, 2025: 410, 2024: 420, 2018: 404');
+    ).toEqual(['2018 404', '2024 420', '2025 410', '2026 801']);
+    expect(month.getAttribute('aria-label')).toBe('November. 2018: 404, 2024: 420, 2025: 410, 2026: 801');
 
     month.dispatchEvent(new Event('mouseleave'));
     await settle();

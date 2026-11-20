@@ -5,16 +5,29 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES, HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED } from '@lfx-one/shared/constants';
-import { buildHealthMetricsMembersBreakdownView } from '@lfx-one/shared/utils';
+import {
+  getYearForRange,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_DEFAULT_SORT,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
+  HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
+} from '@lfx-one/shared/constants';
+import {
+  buildHealthMetricsMembersBreakdownSortColumns,
+  buildHealthMetricsMembersBreakdownView,
+  healthMetricsRowSortValue,
+  sortHealthMetricsRows,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsTierIconComponent } from '../../../components/health-metrics-tier-icon/health-metrics-tier-icon.component';
 
 import type {
+  HealthMetricsMembersBreakdownRowView,
   HealthMetricsMembersBreakdownTableRow,
   HealthMetricsMembersBreakdownView,
   HealthMetricsMembersTiers,
@@ -23,11 +36,11 @@ import type {
 
 /**
  * `#breakdown` — members per tier at each year's end as PCC tables it, with the totals and revenue under them. One
- * read carries every year, so a period change leaves it as it is.
+ * read carries every year, so a period change leaves it as it is; it sorts in the browser, totals kept last.
  */
 @Component({
   selector: 'lfx-members-breakdown',
-  imports: [EmptyStateComponent, HealthMetricsTierIconComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsThComponent, HealthMetricsTierIconComponent, Skeleton],
   templateUrl: './members-breakdown.component.html',
 })
 export class MembersBreakdownComponent {
@@ -50,21 +63,30 @@ export class MembersBreakdownComponent {
   protected readonly view: Signal<HealthMetricsMembersBreakdownView> = computed(() => buildHealthMetricsMembersBreakdownView(this.response()));
   /** No membership was measured; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.view().measured);
+  /** Every year the table can show is a column, so the sort knows them all before a read lands. */
+  protected readonly sorting = injectHealthMetricsTableSort(
+    buildHealthMetricsMembersBreakdownSortColumns(getYearForRange('YTD')),
+    HEALTH_METRICS_MEMBERS_BREAKDOWN_DEFAULT_SORT
+  );
+  /** The tiers in the reader's order; Total members and Total revenue stay at the bottom whatever the sort. */
+  private readonly sortedRows: Signal<HealthMetricsMembersBreakdownRowView[]> = computed(() =>
+    sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue, (row) => row.kind === 'total')
+  );
   protected readonly gridColumns = computed(() => `minmax(170px, 1.8fr) repeat(${this.view().columns.length}, minmax(0, 1fr))`);
   protected readonly tableRows: Signal<HealthMetricsMembersBreakdownTableRow[]> = this.initTableRows();
 
   /**
-   * Each row's rules and fill, and each cell's type: a stripe on every other tier, the accent on the totals, and the
-   * dark rule above the first total in place of the row's own below.
+   * Each row's rules and fill, and each cell's type: a stripe on every other tier as shown, the accent on the totals,
+   * and the dark rule above the first total in place of the row's own below.
    */
   private initTableRows(): Signal<HealthMetricsMembersBreakdownTableRow[]> {
     return computed(() => {
       const classes = HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES;
-      const rows = this.view().rows;
+      const rows = this.sortedRows();
       return rows.map((row, index) => {
         const opensTotals = row.kind === 'total' && rows[index - 1]?.kind !== 'total';
         const closesTiers = row.kind !== 'total' && rows[index + 1]?.kind === 'total';
-        const fill = row.kind === 'total' ? classes.totalFill : rowStripe(row.striped);
+        const fill = row.kind === 'total' ? classes.totalFill : rowStripe(index % 2 === 1);
         return {
           key: row.key,
           label: row.label,

@@ -149,6 +149,33 @@ describe('MembersBreakdownComponent', () => {
     expect(query('members-breakdown-chart')).toBeNull();
   });
 
+  it('sorts in the browser by a year or the tier, keeping the totals at the bottom and re-striping as shown', async () => {
+    await render();
+    const order = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid^="members-breakdown-row-"]')].map(
+        (row: Element) => row.getAttribute('data-testid')?.replace('members-breakdown-row-', '') ?? ''
+      );
+    const sortBy = async (testId: string): Promise<void> => {
+      (query(testId)?.querySelector('button') as HTMLButtonElement).click();
+      await settle();
+    };
+
+    expect(query('members-breakdown-sort-tier')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+
+    await sortBy('members-breakdown-sort-2026');
+    expect(order()).toEqual(['tier-Silver', 'tier-Gold', 'tier-Associate', 'tier-Platinum', 'tier-End User Supporter', 'members', 'revenue']);
+    expect(query('members-breakdown-sort-2026')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+    expect(query('members-breakdown-row-tier-Gold')?.className).toContain('bg-gray-50');
+    expect(query('members-breakdown-row-tier-Silver')?.className).not.toContain('bg-gray-50');
+
+    // Tier opens highest-paying first, the view's own order; a second click flips it.
+    await sortBy('members-breakdown-sort-tier');
+    expect(order()).toEqual(['tier-Platinum', 'tier-Gold', 'tier-Silver', 'tier-Associate', 'tier-End User Supporter', 'members', 'revenue']);
+    await sortBy('members-breakdown-sort-tier');
+    expect(order()).toEqual(['tier-End User Supporter', 'tier-Associate', 'tier-Silver', 'tier-Gold', 'tier-Platinum', 'members', 'revenue']);
+    expect(query('members-breakdown-sort-tier')?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
+  });
+
   it('settles empty, with no body, for a foundation with no tier rows', async () => {
     await render({ rows: [] });
 
