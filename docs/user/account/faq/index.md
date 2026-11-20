@@ -5,7 +5,7 @@ audience: [all]
 product_area: Account
 tags:
   [account, faq, api, mcp, settings, sidebar, theme, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid, merge-accounts]
-last_updated: 2026-11-17
+last_updated: 2026-11-20
 intercom_collection: Account
 ---
 
@@ -137,10 +137,14 @@ Not from LFX Self Serve — the **Transactions** tab (`/profile/transactions`) l
 
 - **Training courses, certification exams, bundles, and subscriptions** — contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) and include your order ID.
 - **Individual Supporter memberships** — Individual Supporter purchases are paid by credit card at checkout, so we don’t issue separate invoices for them. A receipt is emailed to you automatically when the payment goes through, and it serves as your proof of payment.
-- **Event registrations** — download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. If you can't find the email, contact LFX support.
+- **Event registrations** — download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. If you can't find the email, contact the event team using the contact information on the event's website. For a VAT-compliant invoice, see [My event invoice is missing a VAT number or has the wrong billing details](#my-event-invoice-is-missing-a-vat-number-or-has-the-wrong-billing-details).
 - **Anything else** — contact LFX support.
 
 See [Get a receipt or invoice](../transactions/#get-a-receipt-or-invoice).
+
+## My event invoice is missing a VAT number or has the wrong billing details
+
+The invoice receipt PDF from your event registration confirmation email is a pro forma invoice, not a VAT invoice. To get a VAT-compliant invoice — for example, one that shows the supplier's VAT number or a different billing name or address — use the request link printed on that PDF, or contact the event team using the contact information on the event's website. LFX Self Serve can't change or reissue event invoices.
 
 ## Why is a purchase missing from my transaction history?
 
