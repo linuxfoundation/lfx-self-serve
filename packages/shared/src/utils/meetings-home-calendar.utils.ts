@@ -138,9 +138,11 @@ function getMeetingCalendarDayMinutes(entry: MeetingCalendarEntry, day: Date, mi
 export function layoutMeetingCalendarWeekDay(entries: readonly MeetingCalendarEntry[], day?: Date): MeetingCalendarWeekEvent[] {
   const placed = entries
     .map((entry) => {
-      const minutes = getMeetingCalendarDayMinutes(entry, day ?? new Date(entry.row.startTime));
+      const minutes = getMeetingCalendarDayMinutes(entry, day ?? new Date(entry.row.startTime), 0);
       const start = Math.max(0, minutes.start);
-      return { entry, start, duration: Math.min(1440, minutes.end) - start, lane: 0, lanes: 1 };
+      // The 30-minute floor is for meetings that start this day; a carry-over keeps its real end, so it takes no extra lanes.
+      const end = minutes.start < 0 ? minutes.end : Math.max(minutes.end, start + 30);
+      return { entry, start, duration: Math.min(1440, end) - start, lane: 0, lanes: 1 };
     })
     .sort((a, b) => a.start - b.start);
 

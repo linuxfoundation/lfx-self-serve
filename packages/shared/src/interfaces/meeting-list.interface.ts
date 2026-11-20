@@ -659,6 +659,9 @@ export interface MeetingCalendarDialogData {
   pastFailed: Signal<boolean>;
   /** Retries the failed past meetings, back to a local day (`YYYY-MM-DD`). */
   retryPast: (day: string) => void;
+  /** The upcoming meetings failed to load. */
+  upcomingFailed: Signal<boolean>;
+  retryUpcoming: () => void;
   /** A date in the month to open on; the current month without one. */
   month?: Date;
 }

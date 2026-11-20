@@ -205,6 +205,20 @@ describe('meetings home calendar utils', () => {
       }
     });
 
+    it('keeps a carry-over from the day before to its real end, so it shares no lane with a meeting after it', () => {
+      const days = groupMeetingCalendarEntries(
+        [typed('overnight', new Date(2026, 9, 3, 23, 50), 'Board', 15), typed('early', new Date(2026, 9, 4, 0, 10), 'Board', 60)],
+        []
+      );
+
+      const [sunday] = buildMeetingCalendarDialogDays([new Date(2026, 9, 4)], days, new Date(2026, 9, 1), null, 0);
+
+      expect(sunday.events.map((event) => [event.key, event.top, event.lane, event.lanes])).toEqual([
+        ['overnight', 0, 0, 1],
+        ['early', 8, 0, 1],
+      ]);
+    });
+
     it('does not carry a short meeting that ends by midnight into the next day', () => {
       const days = groupMeetingCalendarEntries([typed('short', new Date(2026, 9, 3, 23, 45), 'Board', 15)], []);
 

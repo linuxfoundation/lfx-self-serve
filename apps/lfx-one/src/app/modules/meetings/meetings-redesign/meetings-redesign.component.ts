@@ -265,6 +265,8 @@ export class MeetingsRedesignComponent {
       showPastFrom: (day) => this.store.showPastFrom(day),
       pastFailed: this.store.calendarPastFailed,
       retryPast: (day) => this.store.retryCalendarPast(day),
+      upcomingFailed: this.store.upcomingFailed,
+      retryUpcoming: () => this.store.retry(),
       month,
     };
     // Below an impersonation banner, as the drawers sit, so Stop impersonating stays reachable.

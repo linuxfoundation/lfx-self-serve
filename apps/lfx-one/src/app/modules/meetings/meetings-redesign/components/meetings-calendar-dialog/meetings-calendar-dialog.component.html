@@ -69,6 +69,15 @@
   </div>
 
   <!-- Above the scrolling body, so the week view's 8 AM scroll never hides it. -->
+  @if (upcomingFailed()) {
+    <div
+      class="mb-[8px] flex items-center gap-[8px] text-[12px] leading-[16px] text-gray-600"
+      role="status"
+      data-testid="meetings-calendar-dialog-upcoming-failed">
+      <span>Couldn't load upcoming meetings.</span>
+      <lfx-ui-button variant="tertiary" size="tiny" label="Retry" (click)="data.retryUpcoming()" data-testid="meetings-calendar-dialog-upcoming-retry" />
+    </div>
+  }
   @if (pastFailed()) {
     <div class="mb-[8px] flex items-center gap-[8px] text-[12px] leading-[16px] text-gray-600" role="status" data-testid="meetings-calendar-dialog-past-failed">
       <span>Couldn't load older meetings.</span>
@@ -180,9 +189,9 @@
               [attr.aria-label]="event.title + ', ' + event.detail"
               (click)="open(event)"
               (mouseenter)="showTooltip(event, $event.currentTarget)"
-              (mouseleave)="tooltip.set(null)"
+              (mouseleave)="scheduleHideTooltip()"
               (focus)="showTooltip(event, $event.currentTarget)"
-              (blur)="tooltip.set(null)"
+              (blur)="hideTooltip()"
               data-testid="meetings-calendar-dialog-event">
               <span class="absolute bottom-[4px] left-[6px] top-[4px] w-[3px] rounded-full" [style.background]="event.bar" aria-hidden="true"></span>
               <span class="whitespace-nowrap font-semibold">{{ event.time }}</span>
@@ -204,9 +213,9 @@
     [attr.aria-label]="chip.title + ', ' + chip.detail"
     (click)="open(chip)"
     (mouseenter)="showTooltip(chip, $event.currentTarget)"
-    (mouseleave)="tooltip.set(null)"
+    (mouseleave)="scheduleHideTooltip()"
     (focus)="showTooltip(chip, $event.currentTarget)"
-    (blur)="tooltip.set(null)"
+    (blur)="hideTooltip()"
     data-testid="meetings-calendar-dialog-chip">
     <span class="absolute bottom-[4px] left-[6px] top-[4px] w-[3px] rounded-full" [style.background]="chip.bar" aria-hidden="true"></span>
     <span class="flex-none font-semibold">{{ chip.time }}</span>
@@ -217,10 +226,12 @@
 @if (tooltip(); as tip) {
   <div
     role="tooltip"
-    class="pointer-events-none fixed z-[2147483000] flex max-w-[280px] -translate-x-1/2 flex-col gap-[2px] rounded-ui-sm bg-gray-900 px-[10px] py-[8px] text-[12px] leading-[16px] text-white shadow-medium"
+    class="fixed z-[2147483000] flex max-w-[280px] -translate-x-1/2 flex-col gap-[2px] rounded-ui-sm bg-gray-900 px-[10px] py-[8px] text-[12px] leading-[16px] text-white shadow-medium"
     [style.left.px]="tip.left"
     [style.top.px]="tip.top"
     [class.-translate-y-full]="tip.above"
+    (mouseenter)="keepTooltip()"
+    (mouseleave)="hideTooltip()"
     data-testid="meetings-calendar-dialog-tooltip">
     <span class="font-medium">{{ tip.title }}</span>
     <span class="text-gray-300">{{ tip.detail }}</span>
