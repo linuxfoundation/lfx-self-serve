@@ -8,9 +8,12 @@ import {
   capHealthMetricsTableMinWidthPx,
   clampHealthMetricsPct,
   compareHealthMetricsSortValues,
+  formatHealthMetricsPercent,
+  formatHealthMetricsSmallPercent,
   healthMetricsAriaSort,
   healthMetricsBarFillClass,
   healthMetricsColumnSortState,
+  healthMetricsShownPercent,
   healthMetricsSortIcon,
   healthMetricsTierSortRank,
   nextHealthMetricsSort,
@@ -146,5 +149,32 @@ describe('health metrics table sorting', () => {
     expect(parseHealthMetricsTableSort('company', 'sideways', allowed)).toBeNull();
     expect(parseHealthMetricsTableSort(['company'], 'asc', allowed)).toBeNull();
     expect(parseHealthMetricsTableSort(undefined, undefined, allowed)).toBeNull();
+  });
+});
+
+describe('health metrics percentages', () => {
+  it('reads whole percents from 1%, one decimal under it, never 0% above zero', () => {
+    expect([0, 0.01, 0.04, 0.14, 0.5, 0.94, 0.96, 1, 1.4, 43.5, 100].map(formatHealthMetricsPercent)).toEqual([
+      '0%',
+      '0.1%',
+      '0.1%',
+      '0.1%',
+      '0.5%',
+      '0.9%',
+      '1%',
+      '1%',
+      '1%',
+      '44%',
+      '100%',
+    ]);
+  });
+
+  it('leaves zero and anything from 1% up to the caller, so a one-decimal format keeps its own style there', () => {
+    expect([0, 1, 5.7, -2].map(formatHealthMetricsSmallPercent)).toEqual([null, null, null, null]);
+    expect(formatHealthMetricsSmallPercent(0.04)).toBe('0.1%');
+  });
+
+  it('gives the number the label shows, so a column sorts on what its cell reads', () => {
+    expect([0, 0.04, 0.46, 0.97, 43.5].map(healthMetricsShownPercent)).toEqual([0, 0.1, 0.5, 1, 44]);
   });
 });

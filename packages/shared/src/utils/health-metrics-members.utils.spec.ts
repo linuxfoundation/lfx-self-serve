@@ -763,6 +763,20 @@ describe('buildHealthMetricsMembersBoardTrend', () => {
     ]);
     expect(unmeasured).toMatchObject({ label: '—', dateLabel: '—', committeeName: '—', pct: null, pctLabel: '—' });
     expect(over).toMatchObject({ pct: 100, pctLabel: '100%' });
+
+    // A share under 1% reads to one decimal, and the bar is drawn to the same value.
+    const [faint] = buildHealthMetricsMembersBoardTrend([
+      {
+        meetingId: 'm-4',
+        committeeName: 'Acme Board',
+        meetingDate: '2026-10-01',
+        attendedCount: 1,
+        invitedCount: 250,
+        attendancePct: 0.004,
+        isLatestMeeting: false,
+      },
+    ]);
+    expect(faint).toMatchObject({ pct: 0.4, pctLabel: '0.4%' });
   });
 });
 
@@ -1009,6 +1023,20 @@ describe('members nps', () => {
     expect(buildHealthMetricsMembersNpsTrendNote(points)).toMatchObject({ kind: 'diverging', scoreChangeLabel: '1 point' });
   });
 
+  it('plots a rate under 1% as shown and flags its fall under a rising score', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.004), quarter('2025-07-01', 58, 0.001)]);
+    expect(points.map((point) => [point.ratePct, point.rateLabel])).toEqual([
+      [0.4, '0.4%'],
+      [0.1, '0.1%'],
+    ]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({
+      kind: 'diverging',
+      scoreChangeLabel: '8 points',
+      fromRateLabel: '0.4%',
+      toRateLabel: '0.1%',
+    });
+  });
+
   it('never says a rising rate fell, sending one still below the floor to the floor note', () => {
     const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.2), quarter('2025-07-01', 58, 0.3)]);
     expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({ kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '30%' });
@@ -1143,7 +1171,10 @@ describe('members churn', () => {
     expect(tiers.map((row) => row.tier)).toEqual(['Gold', 'Silver', 'Associate', 'Bronze']);
     expect(tiers.map((row) => row.isHighRate)).toEqual([true, true, false, false]);
     expect(tiers.map((row) => row.shareWidthPct)).toEqual([66.7, 33.3, 1, 0]);
-    expect(tiers.map((row) => row.shareLabel)).toEqual(['67%', '33%', '<1%', '0%']);
+    expect(tiers.map((row) => row.shareLabel)).toEqual(['67%', '33%', '0.3%', '0%']);
+    // A churn rate under 1% reads to one decimal, never 0%; above it the rate keeps its own decimal.
+    const faint = buildHealthMetricsMembersChurnView({ ...CHURN, tiers: [tier(2026, 'Gold', 1, 1, 1_000, 100, 0.04)] }, 'YTD', 'revenue').tiers;
+    expect(faint.map((row) => row.rateLabel)).toEqual(['0.1%']);
     expect(tiers[0]).toMatchObject({ lostLabel: '2', rateLabel: '40%', duesLabel: '$1M', shareLabel: '67%' });
   });
 

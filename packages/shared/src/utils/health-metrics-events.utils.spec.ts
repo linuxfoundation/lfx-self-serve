@@ -500,6 +500,14 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
     expect(last.metrics.find((item) => item.key === 'events')?.description).toBe('14 past');
   });
 
+  it('reads a show-up rate under 1% to one decimal, and sorts it on that shown figure', () => {
+    const periods = [glancePeriod({ showUpRate: 0.004 }), glancePeriod({ range: 'COMPLETED_YEAR', showUpRate: 0.75 })];
+    const view = buildHealthMetricsEventsAtAGlanceView(glance({ periods }), 'YTD');
+    const showUp = view.rows.find((row) => row.key === 'show-up-rate');
+    expect(showUp?.value).toBe('0.4%');
+    expect(showUp?.sortValues.period).toBe(0.4);
+  });
+
   it('lists each figure against the comparison period, with its change as a badge, the show-up rate in points', () => {
     // Each comparison value is the one its change implies, as the view measures year to date against the whole last year.
     const changes = {
@@ -876,6 +884,11 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     expect(view.metrics[3].tip).toContain('A speaker with several talks counts once');
   });
 
+  it('reads an acceptance rate under 1% to one decimal, never 0%', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers({ periods: [speakersPeriod({ acceptanceRate: 0.003 })] }), 'YTD');
+    expect(view.metrics.find((metric) => metric.key === 'accepted')?.description).toBe('0.3% acceptance rate');
+  });
+
   it('leaves Unique speakers without a change for an uncompared period', () => {
     expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR_3').metrics[3].trend).toBeUndefined();
   });
@@ -1108,6 +1121,11 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
 
     expect(view.metrics[1]).toEqual({ key: 'goal', label: 'Goal', value: '—' });
     expect(view.metrics[0].trend).toBeUndefined();
+  });
+
+  it('reads progress to goal under 1% to one decimal, never 0% reached', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ progressToGoal: 0.004 })), 'YTD');
+    expect(view.metrics.find((metric) => metric.key === 'goal')?.description).toBe('0.4% reached');
   });
 
   it('draws each tier as a bar against the most sold, with the tier icon for Diamond to Silver and the ticket for any other package', () => {

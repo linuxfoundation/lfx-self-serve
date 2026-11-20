@@ -50,6 +50,26 @@ export function healthMetricsSortIcon(sort: HealthMetricsColumnSort): string {
   return 'fa-light fa-arrow-up-arrow-down';
 }
 
+/**
+ * A 0–100 percentage under 1% as Health Metrics shows it: one decimal, "0.1%" to "0.9%", never "0%" above zero (a share
+ * that rounds to 1.0 reads "1%"). `null` for zero, negatives and anything from 1% up, which each caller formats its way.
+ */
+export function formatHealthMetricsSmallPercent(pct: number): string | null {
+  if (!(pct > 0 && pct < 1)) return null;
+  const tenths = smallPercentTenths(pct);
+  return tenths >= 1 ? '1%' : `${tenths.toFixed(1)}%`;
+}
+
+/** A 0–100 percentage as Health Metrics shows it: whole from 1% and at 0, one decimal between them. */
+export function formatHealthMetricsPercent(pct: number): string {
+  return formatHealthMetricsSmallPercent(pct) ?? `${Math.round(pct)}%`;
+}
+
+/** The number `formatHealthMetricsPercent` shows, so a column sorts on what its cell reads. */
+export function healthMetricsShownPercent(pct: number): number {
+  return pct > 0 && pct < 1 ? smallPercentTenths(pct) : Math.round(pct);
+}
+
 /** The sort after a header click: the sorted column flips; any other starts A to Z for text, highest or newest first otherwise. */
 export function nextHealthMetricsSort<K extends string>(
   current: HealthMetricsTableSort<K> | null,
@@ -146,4 +166,9 @@ function isEmptySortValue(value: HealthMetricsSortValue): boolean {
 /** Letters only, so "Non-Member" and "non member" both read `nonmember`. */
 function normalizeTierName(tier: string): string {
   return tier.toLowerCase().replace(/[^a-z]/g, '');
+}
+
+/** The one-decimal value a share under 1% shows: at least 0.1, rounding up to 1 at the top. */
+function smallPercentTenths(pct: number): number {
+  return Math.min(1, Math.max(0.1, Math.round(pct * 10) / 10));
 }

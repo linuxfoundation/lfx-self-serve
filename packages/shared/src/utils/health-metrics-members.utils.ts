@@ -28,6 +28,7 @@ import {
 } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
 import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
+import { formatHealthMetricsPercent, formatHealthMetricsSmallPercent, healthMetricsShownPercent } from './health-metrics-table.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
@@ -416,7 +417,7 @@ export function buildHealthMetricsMembersBoardMeetingRows(
       dateLabel: formatIsoDate(row.meetingDate),
       attendedLabel: row.attendedCount === null || row.invitedCount === null ? '—' : `${formatCount(row.attendedCount)} / ${formatCount(row.invitedCount)}`,
       ratePct,
-      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      rateLabel: formatPct(row.attendancePct),
       rateFillClass: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[resolveHealthMetricsEngagementAttendanceTone(row.attendancePct, rule)],
     };
   });
@@ -425,14 +426,14 @@ export function buildHealthMetricsMembersBoardMeetingRows(
 /** Trend bars, labelled by short date; the rate is clamped like the table's. */
 export function buildHealthMetricsMembersBoardTrend(trend: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardTrendBarView[] {
   return trend.map((meeting) => {
-    const pct = toWholePct(meeting.attendancePct);
+    const pct = toShownPct(meeting.attendancePct);
     return {
       meetingId: meeting.meetingId,
       label: formatIsoDateShortLabel(meeting.meetingDate) ?? '—',
       dateLabel: formatIsoDate(meeting.meetingDate),
       committeeName: meeting.committeeName ?? '—',
       pct,
-      pctLabel: pct === null ? '—' : `${pct}%`,
+      pctLabel: formatPct(meeting.attendancePct),
       isLatest: meeting.isLatestMeeting,
     };
   });
@@ -463,7 +464,7 @@ export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembe
   const isSampleTooSmall = ratePct === null ? audience?.isSampleTooSmall === true : isRateBelowFloor;
   const change = isUnscored ? null : (audience?.scoreChangePp ?? null);
   const respondedLabel = responses === null || recipients === null ? '—' : `${formatCount(responses)} of ${formatCount(recipients)}`;
-  const rateLabel = ratePct === null ? '—' : `${ratePct}%`;
+  const rateLabel = formatPct(audience?.responseRatePct ?? null);
 
   return {
     isUnscored,
@@ -520,7 +521,7 @@ export function buildHealthMetricsMembersNpsSegments(audience: HealthMetricsMemb
 export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsMembersNpsTrendPointView[] {
   return trend.map((quarter) => {
     const score = quarter.npsScore;
-    const ratePct = toWholePct(quarter.responseRatePct);
+    const ratePct = toShownPct(quarter.responseRatePct);
     const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
     const isLowConfidence = score !== null && (ratePct === null ? quarter.isSampleTooSmall === true : isRateBelowFloor);
     const scoreLabel = score === null ? '—' : formatSignedScore(score);
@@ -531,7 +532,7 @@ export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNps
       scoreLabel,
       scoreDescription: isLowConfidence ? `${scoreLabel} (low response)` : scoreLabel,
       ratePct,
-      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      rateLabel: formatPct(quarter.responseRatePct),
       isRateBelowFloor,
       isLowConfidence,
     };
@@ -690,14 +691,13 @@ function buildChurnTierRows(tiers: HealthMetricsMembersChurnTier[]): HealthMetri
     .sort((a, b) => (b.duesLostUsd ?? -1) - (a.duesLostUsd ?? -1) || a.tierSortRank - b.tierSortRank || a.tier.localeCompare(b.tier, 'en-US'))
     .map((row) => {
       const raw = row.shareOfLossPct === null ? null : Math.min(100, Math.max(0, row.shareOfLossPct));
-      const share = raw === null ? null : Math.round(raw);
       return {
         tier: row.tier,
         lostLabel: formatCount(row.lostCount),
         rateLabel: formatChurnRate(row.churnRate),
         isHighRate: row.churnRate !== null && row.churnRate >= HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
         duesLabel: formatUsd(row.duesLostUsd),
-        shareLabel: formatChurnShare(raw, share),
+        shareLabel: formatChurnShare(raw),
         shareWidthPct: raw === null || raw === 0 ? 0 : Math.max(raw, 1),
       };
     });
@@ -741,21 +741,21 @@ function buildChurnTrend(
         year: row.year,
         label: String(row.year),
         value,
-        valueLabel: value === null ? '—' : `${Math.round(value)}%`,
+        valueLabel: value === null ? '—' : formatHealthMetricsPercent(value),
         isSelected: row.year === year,
       };
     });
 }
 
-/** A percentage to one decimal, dropping a trailing `.0`. */
+/** A percentage to one decimal, dropping a trailing `.0`; under 1% never reads "0%" above zero. */
 function formatChurnRate(pct: number | null): string {
-  return pct === null ? '—' : `${pct.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+  if (pct === null) return '—';
+  return formatHealthMetricsSmallPercent(pct) ?? `${pct.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
 }
 
-/** A whole-percent share; a loss too small to round up still reads as one. */
-function formatChurnShare(raw: number | null, share: number | null): string {
-  if (raw === null || share === null) return '—';
-  return raw > 0 && share === 0 ? '<1%' : `${share}%`;
+/** A share of the loss: whole from 1%, one decimal under it, so a small loss never reads "0%". */
+function formatChurnShare(raw: number | null): string {
+  return raw === null ? '—' : formatHealthMetricsPercent(raw);
 }
 
 /** A point change to one decimal with its sign, e.g. `+1.4pp`. */
@@ -779,6 +779,11 @@ function toWholePct(share: number | null): number | null {
   return share === null ? null : Math.min(100, Math.max(0, Math.round(share * 100)));
 }
 
+/** The percent a label shows (one decimal under 1%), so a plotted point or trend note matches its label. */
+function toShownPct(share: number | null): number | null {
+  return share === null ? null : Math.min(100, Math.max(0, healthMetricsShownPercent(share * 100)));
+}
+
 function formatIsoDate(value: string | null): string {
   return value ? formatIsoDateLabel(value) : '—';
 }
@@ -791,9 +796,9 @@ function formatUsd(value: number | null): string {
   return value === null ? '—' : formatCurrency(value);
 }
 
+/** A 0–1 share as Health Metrics shows a percentage: whole from 1%, one decimal under it, held to 0–100%. */
 function formatPct(fraction: number | null): string {
-  const pct = toWholePct(fraction);
-  return pct === null ? '—' : `${pct}%`;
+  return fraction === null ? '—' : formatHealthMetricsPercent(Math.min(100, Math.max(0, fraction * 100)));
 }
 
 function pluralize(count: number, noun: string, plural = `${noun}s`): string {

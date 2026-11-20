@@ -496,7 +496,7 @@ export interface HealthMetricsMembersBoardMeetingRowView {
   rateFillClass: string;
 }
 
-/** One bar of the trend chart, oldest first; `pct` is a whole percent, `null` when unmeasured. */
+/** One bar of the trend chart, oldest first; `pct` is the shown percent (one decimal under 1%), `null` when unmeasured. */
 export interface HealthMetricsMembersBoardTrendBarView {
   meetingId: string;
   label: string;
@@ -590,7 +590,7 @@ export interface HealthMetricsMembersNpsSegmentView {
   colorClass: string;
 }
 
-/** One wave of the trend chart; `ratePct` is a whole percent, `null` when unmeasured. */
+/** One wave of the trend chart; `ratePct` is the shown percent (one decimal under 1%), `null` when unmeasured. */
 export interface HealthMetricsMembersNpsTrendPointView {
   quarterStartDate: string;
   label: string;
