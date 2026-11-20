@@ -19,7 +19,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
+import { VOTE_CANCEL_CONFIRMATION, VOTE_CLOSE_CONFIRMATION, VOTE_DELETE_ENDED, VOTE_DELETE_ENDED_MESSAGE } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
@@ -59,7 +59,7 @@ import { VoteSummarySendService } from '@services/vote-summary-send.service';
 import { VoteService } from '@services/vote.service';
 import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
-import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService, type ToastMessageOptions } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -146,6 +146,8 @@ export class VotesTableComponent {
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
   // Group links carry state so the group page returns to this list instead of Groups, and restores the Me lens when that is where the user was.
   public readonly isMeLens = input<boolean>(false);
+  /** Opt-in: show ⋮ → Cancel vote to the vote's writers. Project/foundation lens Votes page and group Votes tab only; never the Me lens (#5968). */
+  public readonly canCancelVotes = input<boolean>(false);
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
   public readonly scopeActive = input<boolean>(false);
@@ -208,6 +210,8 @@ export class VotesTableComponent {
    * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
    */
   private readonly closingUids = signal<Set<string>>(new Set());
+  /** Votes with a cancel (delete) request in flight, so a repeated confirm cannot queue a duplicate (#5968). */
+  private readonly cancellingUids = signal<Set<string>>(new Set());
   private readonly closedVotes = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
   /**
    * Overlays a just-extended deadline onto its row (GH-3661) — `extendVote()`'s success response lands
@@ -370,6 +374,16 @@ export class VotesTableComponent {
         command: () => this.sendMailingListReminder(vote),
       });
       items.push({ label: 'Close vote', icon: 'fa-light fa-lock', command: () => this.onCloseVote(vote) });
+      // Cancel deletes the open vote and every response (#5968); only hosts that opt in offer it, never the Me lens.
+      if (this.canCancelVotes()) {
+        items.push({
+          label: 'Cancel vote',
+          icon: 'fa-light fa-trash',
+          styleClass: 'text-red-500',
+          disabled: this.cancellingUids().has(vote.uid),
+          command: () => this.onCancelVote(vote),
+        });
+      }
     }
     // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
     if (vote.writer === true && vote.status === PollStatus.ENDED) {
@@ -563,6 +577,21 @@ export class VotesTableComponent {
     });
   }
 
+  /** Cancel from the row menu (#5968): asks first, and an accept for a row that has left the list or ended is ignored. */
+  protected onCancelVote(vote: Vote): void {
+    const uid = vote.uid;
+    this.confirmationService.confirm({
+      ...VOTE_CANCEL_CONFIRMATION,
+      message: `Cancel the vote "${vote.name}"? The vote and all responses will be permanently deleted, and invited voters will be notified that it was cancelled. This can't be undone.`,
+      accept: () => {
+        // Still listed, still open, and not already being cancelled: a second accept must not queue another delete.
+        const row = this.displayedVotes().find((r) => r.uid === uid);
+        if (row?.status !== PollStatus.ACTIVE || this.cancellingUids().has(uid)) return;
+        this.cancelVote(uid);
+      },
+    });
+  }
+
   // === Private Initializers ===
   private initGroupLinkState(): Signal<GroupLinkState> {
     return computed(() => ({ backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: this.isMeLens() }));
@@ -711,6 +740,57 @@ export class VotesTableComponent {
           });
         },
       });
+  }
+
+  /**
+   * Deletes an open vote (#5968). Success, an "already ended" conflict and an "already removed" 404 refresh the host list so
+   * the row disappears or shows its ended state; any other failure leaves the row as it was.
+   */
+  private cancelVote(uid: string): void {
+    this.cancellingUids.update((ids) => new Set(ids).add(uid));
+    this.voteService
+      .deleteVote(uid)
+      .pipe(
+        take(1),
+        finalize(() =>
+          this.cancellingUids.update((ids) => {
+            const next = new Set(ids);
+            next.delete(uid);
+            return next;
+          })
+        )
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Vote cancelled' });
+          this.refresh.emit();
+        },
+        error: (error: unknown) => {
+          this.messageService.add(this.cancelErrorToast(error));
+          if (this.isCancelStateError(error)) this.refresh.emit();
+        },
+      });
+  }
+
+  /** Toast for a failed cancel: an ended vote and a removed vote are explained; anything else is an actionable error. */
+  private cancelErrorToast(error: unknown): ToastMessageOptions {
+    const status = error instanceof HttpErrorResponse ? error.status : null;
+    const body = error instanceof HttpErrorResponse ? (error.error as { error?: unknown; code?: unknown } | null) : null;
+    const serverMessage = typeof body?.error === 'string' && body.error ? body.error : null;
+    if (status === 409 && body?.code === VOTE_DELETE_ENDED) {
+      return { severity: 'warn', summary: 'Vote already ended', detail: serverMessage ?? VOTE_DELETE_ENDED_MESSAGE, life: 8000 };
+    }
+    if (status === 404) {
+      return { severity: 'info', summary: 'Vote already removed', detail: 'This vote no longer exists. The list has been refreshed.' };
+    }
+    return { severity: 'error', summary: 'Unable to cancel the vote', detail: serverMessage ?? "We couldn't cancel the vote. Please try again.", life: 8000 };
+  }
+
+  /** A cancel that failed because the vote ended or was already removed: the displayed row is stale, so the list refreshes. */
+  private isCancelStateError(error: unknown): boolean {
+    if (!(error instanceof HttpErrorResponse)) return false;
+    const code = (error.error as { code?: unknown } | null)?.code;
+    return error.status === 404 || (error.status === 409 && code === VOTE_DELETE_ENDED);
   }
 
   /** The upstream message when the BFF passed one through (409 not started, 400 past its end time), else a plain fallback. */

@@ -11,7 +11,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
-import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
+import { VOTE_CLOSE_CONFIRMATION, VOTE_DELETE_ENDED, VOTE_DELETE_ENDED_MESSAGE } from '@lfx-one/shared/constants';
 import { SendVoteSummaryResponse, VoteSummaryPreviewResponse } from '@lfx-one/shared/interfaces';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -1937,6 +1937,179 @@ describe('VotesTableComponent — Close vote (#4740)', () => {
     (confirm.mock.calls[0][0] as Confirmation).accept!();
 
     expect(endVote).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+  });
+});
+
+describe('VotesTableComponent — Cancel vote (#5968)', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  let deleteVote: ReturnType<typeof vi.fn>;
+  let add: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
+  let refreshed: ReturnType<typeof vi.fn<() => void>>;
+  const ROWS = [
+    vote('active', { writer: true }),
+    vote('other', { writer: false }),
+    vote('unknown'),
+    vote('ended', { status: PollStatus.ENDED, writer: true }),
+    vote('draft', { status: PollStatus.DISABLED, writer: true }),
+  ];
+
+  const menuLabels = async (uid: string): Promise<string[]> => {
+    const more = fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`) as HTMLButtonElement | null;
+    if (!more) return []; // drafts have no row menu at all
+    more.click();
+    await settle();
+    return table['rowActionMenuItems']().map((item) => item.label as string);
+  };
+  const cancelItem = async (uid: string) => {
+    await menuLabels(uid);
+    return table['rowActionMenuItems']().find((item) => item.label === 'Cancel vote');
+  };
+  const acceptCancel = async (): Promise<() => void> => {
+    (await cancelItem('active'))!.command!({});
+    const confirmation = confirm.mock.calls[0][0] as Confirmation;
+    return () => confirmation.accept!();
+  };
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(async () => {
+    deleteVote = vi.fn().mockReturnValue(of(undefined));
+    add = vi.fn();
+    refreshed = vi.fn<() => void>();
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { deleteVote, isAwaitingInvitationCount: () => false } },
+        { provide: MessageService, useValue: { add } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    table.refresh.subscribe(() => refreshed());
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.componentRef.setInput('canCancelVotes', true);
+    fixture.detectChanges();
+    confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm') as unknown as ReturnType<typeof vi.fn>;
+    await settle();
+  });
+  afterEach(() => fixture?.destroy());
+
+  it('offers Cancel vote beside Close vote on an active row the viewer can manage, even without project write access', async () => {
+    expect(await menuLabels('active')).toEqual(expect.arrayContaining(['Close vote', 'Cancel vote']));
+
+    fixture.componentRef.setInput('hasPMOAccess', false);
+    await settle();
+    expect(await menuLabels('active')).toContain('Cancel vote');
+  });
+
+  it('hides Cancel vote from non-managers, ended and draft votes, and hosts that do not opt in', async () => {
+    expect(await menuLabels('other')).not.toContain('Cancel vote');
+    expect(await menuLabels('unknown')).not.toContain('Cancel vote');
+    expect(await menuLabels('ended')).not.toContain('Cancel vote');
+    expect(await menuLabels('draft')).toEqual([]);
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-delete-draft"]')).not.toBeNull();
+
+    fixture.componentRef.setInput('canCancelVotes', false);
+    await settle();
+    expect(await menuLabels('active')).not.toContain('Cancel vote');
+    expect(await menuLabels('active')).toContain('Close vote');
+  });
+
+  it('asks first, naming the vote and the permanent deletion, and sends nothing when the manager keeps the vote', async () => {
+    (await cancelItem('active'))!.command!({});
+
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Cancel vote', acceptLabel: 'Cancel vote', rejectLabel: 'Keep vote' }));
+    const message = (confirm.mock.calls[0][0] as Confirmation).message!;
+    expect(message).toContain('"Board active"');
+    expect(message).toContain('permanently deleted');
+    expect(message).toContain("can't be undone");
+    (confirm.mock.calls[0][0] as Confirmation).reject?.();
+    expect(deleteVote).not.toHaveBeenCalled();
+  });
+
+  it('deletes once on accept, toasts and refreshes the list', async () => {
+    (await acceptCancel())();
+    await settle();
+
+    expect(deleteVote).toHaveBeenCalledTimes(1);
+    expect(deleteVote).toHaveBeenCalledWith('active');
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Vote cancelled' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a second accept while the first cancel is in flight', async () => {
+    const pending = new Subject<void>();
+    deleteVote.mockReturnValue(pending);
+    const accept = await acceptCancel();
+    accept();
+    accept();
+    expect(deleteVote).toHaveBeenCalledTimes(1);
+    expect((await cancelItem('active'))!.disabled).toBe(true);
+
+    pending.next();
+    pending.complete();
+    await settle();
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains a vote that ended first and refreshes the list without reporting success', async () => {
+    deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: VOTE_DELETE_ENDED_MESSAGE, code: VOTE_DELETE_ENDED } })));
+    (await acceptCancel())();
+    await settle();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE }));
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the manager a vote that is already gone and refreshes the list', async () => {
+    deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Not found' } })));
+    (await acceptCancel())();
+    await settle();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Vote already removed' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an actionable error on any other failure and leaves the row in place', async () => {
+    deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: {} })));
+    (await acceptCancel())();
+    await settle();
+
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: 'Unable to cancel the vote', detail: "We couldn't cancel the vote. Please try again." })
+    );
+    expect(refreshed).not.toHaveBeenCalled();
+    expect(table['displayedVotes']().some((row) => row.uid === 'active')).toBe(true);
+  });
+
+  it('ignores an accept for a row that has ended or left the list', async () => {
+    const accept = await acceptCancel();
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, status: PollStatus.ENDED } : row))
+    );
+    fixture.detectChanges();
+    accept();
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.filter((row) => row.uid !== 'active')
+    );
+    fixture.detectChanges();
+    accept();
+
+    expect(deleteVote).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
   });
 });

@@ -160,6 +160,20 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(table.showParticipationProgress()).toBe(true);
   });
 
+  it('offers row-menu Cancel vote on the project and foundation lens, never the Me lens (#5968)', async () => {
+    expect(table.canCancelVotes()).toBe(false);
+
+    await management('project');
+    expect(table.canCancelVotes()).toBe(true);
+    await management('foundation');
+    expect(table.canCancelVotes()).toBe(true);
+
+    activeLens.set('me');
+    await settle();
+    table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
+    expect(table.canCancelVotes()).toBe(false);
+  });
+
   it('re-fetches the page and counts while a just-opened vote is still counting invitations (GH-4078)', async () => {
     const service = TestBed.inject(VoteService);
     await management();

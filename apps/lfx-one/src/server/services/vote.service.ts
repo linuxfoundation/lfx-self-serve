@@ -11,6 +11,8 @@ import {
   VOTE_SEND_BALLOTS_BATCH_SIZE,
   VOTE_SUMMARY_NOT_ENDED,
   VOTE_SUMMARY_PRECHECK_FAILED,
+  VOTE_DELETE_ENDED,
+  VOTE_DELETE_ENDED_MESSAGE,
   VOTE_SUMMARY_SEND_FAILED,
   VOTE_VOTERS_DRAFT,
 } from '@lfx-one/shared/constants';
@@ -464,14 +466,24 @@ export class VoteService {
   }
 
   /**
-   * Deletes a vote directly via microservice proxy
+   * Deletes a vote directly via microservice proxy. Upstream deletes draft and active votes (cancelling an active one
+   * notifies its voters and removes every response) and rejects an ended vote with a 400, surfaced here as a 409
+   * `VOTE_DELETE_ENDED` (#5968). The uid is validated before the call, so a 400 on this request can only mean "ended".
+   * The caller must hold `vote#writer`, enforced upstream by the gateway.
    */
   public async deleteVote(req: Request, voteUid: string): Promise<void> {
     logger.debug(req, 'delete_vote', 'Deleting vote', {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'DELETE');
+    try {
+      await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'DELETE');
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 400) {
+        throw new ConflictError(VOTE_DELETE_ENDED_MESSAGE, VOTE_DELETE_ENDED, { operation: 'delete_vote', service: 'vote_service' });
+      }
+      throw error;
+    }
 
     // Poll the query service until the vote is removed from the index, on the shared fine grid —
     // see voteIndexPoll* for the budget rationale and the filters-on-vote_uid (never tags) invariant.

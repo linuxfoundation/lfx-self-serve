@@ -82,6 +82,12 @@ export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 /** The voter list (#3911) rejects a draft or unrecognized-status vote with this state-conflict code. */
 export const VOTE_VOTERS_DRAFT = 'VOTE_VOTERS_DRAFT';
 
+/** Deleting (cancelling) a vote that has already ended is rejected with this state-conflict code (#5968). */
+export const VOTE_DELETE_ENDED = 'VOTE_DELETE_ENDED';
+
+/** Client message for a VOTE_DELETE_ENDED rejection: BFF-owned so upstream copy drift never reaches the user (#5968). */
+export const VOTE_DELETE_ENDED_MESSAGE = "This vote has already ended, so it can't be cancelled.";
+
 /** No reminders were sent because at least one selected recipient is no longer eligible. */
 export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
 
@@ -299,6 +305,16 @@ export const VOTE_CLOSE_CONFIRMATION = {
   message: 'Close the vote now? Members can no longer cast or change ballots.',
   acceptLabel: 'Close vote',
   rejectLabel: 'Cancel',
+  acceptButtonStyleClass: 'p-button-danger p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;
+
+/** Cancel-vote confirmation (votes-table row menu); the message names the vote, so the table supplies it. */
+export const VOTE_CANCEL_CONFIRMATION = {
+  header: 'Cancel vote',
+  acceptLabel: 'Cancel vote',
+  rejectLabel: 'Keep vote',
+  defaultFocus: 'reject',
   acceptButtonStyleClass: 'p-button-danger p-button-sm',
   rejectButtonStyleClass: 'p-button-outlined p-button-sm',
 } as const;
