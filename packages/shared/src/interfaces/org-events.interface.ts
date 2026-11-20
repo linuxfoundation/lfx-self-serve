@@ -56,6 +56,7 @@ export type OrgEventsResponse = OffsetPaginatedResponse<OrgEvent>;
 /** Org event row with presentation fields pre-baked for template rendering (avoids method calls in template). */
 export interface OrgEventRowVm extends OrgEvent {
   readonly dateRange: string;
+  readonly rowKey: string;
 }
 
 /** Frontend query params for GET /api/orgs/:accountId/lens/events. */
@@ -75,6 +76,15 @@ export interface GetOrgEventsParams {
   readonly foundation?: string;
   /** Applies to the Past tab only; omitted means the default. */
   readonly range?: OrgLensTimeRange;
+  readonly company?: string;
+}
+
+export interface OrgEventsPageCopy {
+  readonly description: string;
+  readonly upcomingEmpty: string;
+  readonly pastEmpty: string;
+  readonly attendeesOwner: string;
+  readonly loadError: string;
 }
 
 /** Summary counts for the Org Events stat strip. */

@@ -31,12 +31,14 @@ export class EventAttendeesDrawerComponent {
   public readonly eventName = input<string>('');
   public readonly attendeeCount = input<number>(0);
   public readonly participation = input<OrgEventsParticipation>(DEFAULT_ORG_EVENTS_PARTICIPATION);
+  public readonly company = input<string>('');
+  public readonly companyLabel = input<string>('');
 
   protected readonly searchTerm = signal('');
   protected readonly loading = signal(false);
   // A failed read is not a count of zero: the opener's count stays and the list says it could not load.
   protected readonly loadFailed = signal(false);
-  protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
+  protected readonly companyName = computed(() => this.companyLabel() || (this.accountContext.selectedAccount().accountName ?? ''));
 
   // The status badge on every row says what the drawer counts: Registered, Attended, or Registered or attended.
   protected readonly participationLabel = computed(() => ORG_EVENTS_PARTICIPATION_BADGE_LABEL[this.participation()]);
@@ -55,16 +57,16 @@ export class EventAttendeesDrawerComponent {
 
   private initAttendeesData() {
     return toSignal(
-      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.participation)]).pipe(
+      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.participation), toObservable(this.company)]).pipe(
         skip(1),
-        switchMap(([isVisible, currentEventId, participation]) => {
+        switchMap(([isVisible, currentEventId, participation, company]) => {
           if (!isVisible || !currentEventId) return of(null);
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);
           this.searchTerm.set('');
           this.loadFailed.set(false);
           this.loading.set(true);
-          return this.eventsService.getEventAttendees(accountId, currentEventId, { participation }).pipe(
+          return this.eventsService.getEventAttendees(accountId, currentEventId, { participation, company }).pipe(
             catchError(() => {
               this.loadFailed.set(true);
               return of(null);

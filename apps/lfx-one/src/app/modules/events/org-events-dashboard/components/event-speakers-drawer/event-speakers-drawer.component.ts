@@ -30,11 +30,13 @@ export class EventSpeakersDrawerComponent {
   public readonly eventName = input<string>('');
   public readonly acceptedCount = input<number>(0);
   public readonly submittedCount = input<number>(0);
+  public readonly company = input<string>('');
+  public readonly companyLabel = input<string>('');
 
   protected readonly searchTerm = signal('');
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
-  protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
+  protected readonly companyName = computed(() => this.companyLabel() || (this.accountContext.selectedAccount().accountName ?? ''));
 
   private readonly speakersData = this.initSpeakersData();
 
@@ -47,16 +49,16 @@ export class EventSpeakersDrawerComponent {
 
   private initSpeakersData() {
     return toSignal(
-      combineLatest([toObservable(this.visible), toObservable(this.eventId)]).pipe(
+      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.company)]).pipe(
         skip(1),
-        switchMap(([isVisible, currentEventId]) => {
+        switchMap(([isVisible, currentEventId, company]) => {
           if (!isVisible || !currentEventId) return of(null);
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);
           this.searchTerm.set('');
           this.loadFailed.set(false);
           this.loading.set(true);
-          return this.eventsService.getEventSpeakers(accountId, currentEventId).pipe(
+          return this.eventsService.getEventSpeakers(accountId, currentEventId, { company }).pipe(
             catchError((error: unknown) => {
               console.error('Failed to load event speakers', error);
               this.loadFailed.set(true);
