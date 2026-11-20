@@ -13,7 +13,6 @@
   } @else if (loading()) {
     <p-skeleton height="26rem" borderRadius="0.5rem" data-testid="members-breakdown-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    @let breakdown = view();
     <!-- Only the table scrolls sideways below 560px. -->
     <div class="min-w-0 overflow-x-auto" data-testid="members-breakdown-table">
       <div class="flex min-w-[560px] flex-col" role="table" aria-label="Members per tier by year">
@@ -29,15 +28,16 @@
               (sorted)="sorting.toggle('tier')"
               data-testid="members-breakdown-sort-tier" />
           </span>
-          @for (column of breakdown.columns; track column.year) {
+          @for (column of yearHeaders(); track column.year) {
+            <!-- Clipped like the cells below, so a label too wide for a narrow column never spills into the next. -->
             <span
-              class="flex min-w-0 items-center justify-end whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
+              class="flex min-w-0 items-center justify-end overflow-hidden whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
               role="columnheader"
-              [attr.aria-sort]="sorting.headers()[column.sortKey].ariaSort">
+              [attr.aria-sort]="column.header.ariaSort">
               <lfx-health-metrics-th
                 class="min-w-0"
                 [label]="column.label"
-                [sort]="sorting.headers()[column.sortKey].state"
+                [sort]="column.header.state"
                 (sorted)="sorting.toggle(column.sortKey)"
                 [attr.data-testid]="'members-breakdown-sort-' + column.year" />
             </span>

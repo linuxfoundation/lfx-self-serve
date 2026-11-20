@@ -105,7 +105,6 @@ export function buildHealthMetricsMembersSubNavItems(notes: Partial<Record<Healt
   return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: notes[section.key] ?? '' }));
 }
 
-/** The Members sections, with the running year in any copy that names it. */
 /**
  * `#breakdown` — members per tier at each year's end, from the first year shown to the running one, as PCC tables it:
  * every tier with a member in a year shown, in rank order, then the totals. Nothing here follows the period.

@@ -27,11 +27,13 @@ import { HealthMetricsThComponent } from '../../../components/health-metrics-th/
 import { HealthMetricsTierIconComponent } from '../../../components/health-metrics-tier-icon/health-metrics-tier-icon.component';
 
 import type {
+  HealthMetricsMembersBreakdownHeaderView,
   HealthMetricsMembersBreakdownRowView,
   HealthMetricsMembersBreakdownTableRow,
   HealthMetricsMembersBreakdownView,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
+  HealthMetricsSortHeaderView,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -63,11 +65,16 @@ export class MembersBreakdownComponent {
   protected readonly view: Signal<HealthMetricsMembersBreakdownView> = computed(() => buildHealthMetricsMembersBreakdownView(this.response()));
   /** No membership was measured; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.view().measured);
-  /** Every year the table can show is a column, so the sort knows them all before a read lands. */
+  /** Every year the table can show is a column, so the sort knows them all before a read lands; next year covers a tab left open past New Year. */
   protected readonly sorting = injectHealthMetricsTableSort(
-    buildHealthMetricsMembersBreakdownSortColumns(getYearForRange('YTD')),
+    buildHealthMetricsMembersBreakdownSortColumns(getYearForRange('YTD') + 1),
     HEALTH_METRICS_MEMBERS_BREAKDOWN_DEFAULT_SORT
   );
+  /** Each year column with its sort state; a column the sort does not know reads unsorted rather than failing to render. */
+  protected readonly yearHeaders: Signal<HealthMetricsMembersBreakdownHeaderView[]> = computed(() => {
+    const headers = this.sorting.headers();
+    return this.view().columns.map((column) => ({ ...column, header: headers[column.sortKey] ?? UNSORTED_HEADER }));
+  });
   /** The tiers in the reader's order; Total members and Total revenue stay at the bottom whatever the sort. */
   private readonly sortedRows: Signal<HealthMetricsMembersBreakdownRowView[]> = computed(() =>
     sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue, (row) => row.kind === 'total')
@@ -136,6 +143,8 @@ export class MembersBreakdownComponent {
     );
   }
 }
+
+const UNSORTED_HEADER: HealthMetricsSortHeaderView = { state: 'none', ariaSort: 'none' };
 
 function rowStripe(striped: boolean): string {
   return striped ? HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES.stripe : '';
