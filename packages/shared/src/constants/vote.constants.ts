@@ -287,6 +287,36 @@ export const VOTE_LINK_NOT_RESPONDED = 'not responded';
 /** Upstream 409 message (lowercased substring) when a ballot update hits a vote that makes submitted ballots final (#4723). */
 export const VOTE_CHANGE_NOT_ALLOWED = 'does not allow changing a submitted vote';
 
+/** Upstream 400 message (lowercased substring) when a ballot write hits a vote that has ended (#5964). */
+export const VOTE_UPSTREAM_ENDED = 'ended';
+
+/** Upstream 4xx message (lowercased substring) when a vote link's voter was removed from the vote (#5964). */
+export const VOTE_UPSTREAM_REMOVED = 'removed';
+
+/** BFF 404 `code` when a ballot update finds the caller's voter row missing or removed, distinct from the generic `NOT_FOUND` (#5964). */
+export const VOTE_VOTER_REMOVED_ERROR_CODE = 'VOTE_VOTER_REMOVED';
+
+/** Shown when a ballot update is rejected because the vote has ended (#5964). */
+export const VOTE_BALLOT_ENDED_STATE = "This vote has ended, so your ballot can't be changed.";
+
+/** Shown when a ballot update is rejected because the caller was removed from the vote (#5964). */
+export const VOTE_BALLOT_REMOVED_STATE = "You're no longer a voter on this vote, so your ballot can't be changed.";
+
+/** Shown when a ballot update cannot find the caller's submitted ballot (#5964). */
+export const VOTE_BALLOT_NOT_FOUND = "We couldn't find your submitted ballot. Refresh the list and try again.";
+
+/** Shown when a ballot read or write is rate limited (429), so the voter knows to retry shortly (#5964). */
+export const VOTE_RATE_LIMITED_MESSAGE = 'Too many requests. Please wait a moment and try again.';
+
+/** Vote-link requests allowed per IP per window: covers a shared office of voters plus reloads and retries (#5964). */
+export const VOTE_LINK_RATE_LIMIT_MAX = 300;
+
+/** Window for the vote-link rate limiter (#5964). */
+export const VOTE_LINK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+/** Mount-relative `/public/api` paths metered by the vote-link limiter instead of the public API limiter (#5964). */
+export const VOTE_LINK_RATE_LIMITED_PATHS = ['/votes/link-ballot', '/votes/link-responses'] as const;
+
 /** Pre-submit notice on every first-submit surface when the vote makes submitted ballots final (#4723). */
 export const VOTE_BALLOT_FINAL_NOTICE = "Once you submit, your vote can't be changed.";
 

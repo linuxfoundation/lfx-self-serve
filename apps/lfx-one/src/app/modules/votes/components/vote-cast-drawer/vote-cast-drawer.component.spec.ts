@@ -9,7 +9,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { VOTE_LAST_VOTER_CONFIRMATION } from '@lfx-one/shared/constants';
+import {
+  VOTE_BALLOT_ENDED_STATE,
+  VOTE_BALLOT_NOT_FOUND,
+  VOTE_BALLOT_REMOVED_STATE,
+  VOTE_LAST_VOTER_CONFIRMATION,
+  VOTE_RATE_LIMITED_MESSAGE,
+  VOTE_VOTER_REMOVED_ERROR_CODE,
+} from '@lfx-one/shared/constants';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { MyVoteBallot, Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
@@ -1344,6 +1351,104 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(fixture.componentInstance['submitDisabled']()).toBe(false);
     fixture.componentInstance['onSubmit']();
     expect(updateMyResponse).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['the vote has ended', { status: 400, error: { error: 'poll has ended' } }, 'warn', 'This vote has ended', VOTE_BALLOT_ENDED_STATE],
+    [
+      'the voter was removed',
+      { status: 404, error: { error: 'not found', code: VOTE_VOTER_REMOVED_ERROR_CODE } },
+      'warn',
+      "You're no longer a voter",
+      VOTE_BALLOT_REMOVED_STATE,
+    ],
+  ])('closes, refreshes the host and locks review when an update is rejected because %s (#5964)', async (_label, init, severity, summary, detail) => {
+    const updateMyResponse = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse(init)));
+    await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
+    const component = fixture.componentInstance;
+    const success = vi.fn();
+    const unavailable = vi.fn();
+    component.voteSubmitted.subscribe(success);
+    component.ballotUnavailable.subscribe(unavailable);
+
+    component['onSubmit']();
+
+    expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity, summary, detail }));
+    expect(component.visible()).toBe(false);
+    expect(unavailable).toHaveBeenCalledExactlyOnceWith(VOTE.uid);
+    expect(success).not.toHaveBeenCalled();
+
+    await fixture.whenStable();
+    component.visible.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el('vote-cast-submit-button')).toBeNull();
+    component['onSubmit']();
+    expect(updateMyResponse).toHaveBeenCalledOnce();
+  });
+
+  it('closes and refreshes the host without locking review when the submitted ballot is not found (#5964)', async () => {
+    const updateMyResponse = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'not found', code: 'NOT_FOUND' } })))
+      .mockReturnValue(of(undefined));
+    await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
+    const component = fixture.componentInstance;
+    const unavailable = vi.fn();
+    component.ballotUnavailable.subscribe(unavailable);
+
+    component['onSubmit']();
+
+    expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: 'Unable to update vote', detail: VOTE_BALLOT_NOT_FOUND })
+    );
+    expect(component.visible()).toBe(false);
+    expect(unavailable).toHaveBeenCalledExactlyOnceWith(VOTE.uid);
+
+    await fixture.whenStable();
+    component.visible.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el('vote-cast-submit-button')).not.toBeNull();
+    component['onSubmit']();
+    expect(updateMyResponse).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the drawer open and editable with a rate-limit toast when an update is throttled (#5964)', async () => {
+    const updateMyResponse = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 429 })));
+    await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
+    const component = fixture.componentInstance;
+    const success = vi.fn();
+    const unavailable = vi.fn();
+    component.voteSubmitted.subscribe(success);
+    component.ballotUnavailable.subscribe(unavailable);
+
+    component['onSubmit']();
+
+    expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'warn', summary: 'Too many requests', detail: VOTE_RATE_LIMITED_MESSAGE })
+    );
+    expect(component.visible()).toBe(true);
+    expect(unavailable).not.toHaveBeenCalled();
+    expect(success).not.toHaveBeenCalled();
+    expect(component['submitDisabled']()).toBe(false);
+  });
+
+  it('shows a rate-limit toast and keeps the drawer open when a first ballot is throttled (#5964)', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 429 })));
+    await open(CHANGE_VOTE, { submitMyResponse });
+    (fixture.componentInstance.form.get('q1') as unknown as FormControl<string | null>).setValue('c1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).toHaveBeenCalledOnce();
+    expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'warn', summary: 'Too many requests', detail: VOTE_RATE_LIMITED_MESSAGE })
+    );
+    expect(fixture.componentInstance.visible()).toBe(true);
   });
 
   it('shows the pre-submit final notice on a first ballot of a locked vote', async () => {

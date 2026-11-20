@@ -22,6 +22,7 @@ import {
   VOTE_SUMMARY_NOT_ENDED,
   VOTE_SUMMARY_PRECHECK_FAILED,
   VOTE_SUMMARY_SEND_FAILED,
+  VOTE_VOTER_REMOVED_ERROR_CODE,
   VOTE_VOTERS_DRAFT,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
@@ -2502,13 +2503,13 @@ describe('VoteService', () => {
     });
 
     it.each([
-      ['no row', null],
-      ['a removed row', ownRow({ voter_removed: true })],
-      ['an awaiting row', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE })],
-    ])('returns 404 without calling upstream for %s', async (_label, row) => {
+      ['no row', null, VOTE_VOTER_REMOVED_ERROR_CODE],
+      ['a removed row', ownRow({ voter_removed: true }), VOTE_VOTER_REMOVED_ERROR_CODE],
+      ['an awaiting row', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE }), 'NOT_FOUND'],
+    ])('returns 404 without calling upstream for %s (#5964 code %s)', async (_label, row, code) => {
       vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row);
 
-      await expect(service.updateMyVoteResponse(req, VOTE_UID, payload)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(service.updateMyVoteResponse(req, VOTE_UID, payload)).rejects.toMatchObject({ statusCode: 404, code });
       expect(proxyRequest).not.toHaveBeenCalled();
     });
 

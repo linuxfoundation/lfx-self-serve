@@ -17,6 +17,9 @@ import {
   VOTE_LINK_NOT_AWAITING_RESPONSE,
   VOTE_LINK_NOT_RESPONDED,
   VOTE_LINK_TOKEN_FRAGMENT_PARAM,
+  VOTE_RATE_LIMITED_MESSAGE,
+  VOTE_UPSTREAM_ENDED,
+  VOTE_UPSTREAM_REMOVED,
 } from '@lfx-one/shared/constants';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
 import { buildVoteAnswerSummary, canChangeSubmittedBallot, isVoteChangeAllowed, normalizePollStatus } from '@lfx-one/shared/utils';
@@ -285,6 +288,12 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       this.state.set('error');
       return;
     }
+    if (err.status === 429) {
+      // Throttled (#5964): say so and keep the form after a submit, so the voter can retry in a moment.
+      this.errorMessage.set(VOTE_RATE_LIMITED_MESSAGE);
+      this.state.set(this.state() === 'loading' ? 'error' : 'ready');
+      return;
+    }
     if (err.status === 404) {
       this.state.set('invalid');
     } else if (err.status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
@@ -293,9 +302,9 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       this.editing.set(false);
       this.errorMessage.set(VOTE_BALLOT_FINAL_STATE);
       this.reloadBallot();
-    } else if (err.status === 400 && message.includes('ended')) {
+    } else if (err.status === 400 && message.includes(VOTE_UPSTREAM_ENDED)) {
       this.state.set('ended');
-    } else if (err.status === 400 && message.includes('removed')) {
+    } else if (err.status === 400 && message.includes(VOTE_UPSTREAM_REMOVED)) {
       this.state.set('removed');
     } else if (err.status === 400 && message) {
       // Surface the upstream reason; the form stays so the voter can correct it.

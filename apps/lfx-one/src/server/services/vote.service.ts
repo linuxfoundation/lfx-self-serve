@@ -12,6 +12,7 @@ import {
   VOTE_SUMMARY_NOT_ENDED,
   VOTE_SUMMARY_PRECHECK_FAILED,
   VOTE_SUMMARY_SEND_FAILED,
+  VOTE_VOTER_REMOVED_ERROR_CODE,
   VOTE_VOTERS_DRAFT,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
@@ -671,11 +672,20 @@ export class VoteService {
    * Changes the caller's own submitted ballot via PUT /vote_responses/{uid} using the user's bearer token (#4723).
    * @description The response uid comes only from the caller's identity-matched row (`getMyVoteResponse`), never from
    * the client, so a caller cannot target another voter's ballot. Upstream 409 (the vote makes ballots final) and 400
-   * (the vote ended) propagate unchanged.
+   * (the vote ended) propagate unchanged. Two distinct 404s (#5964): a missing or removed voter row carries
+   * `code: VOTE_VOTER_REMOVED_ERROR_CODE`, so the client can say the caller is no longer a voter; a row that is not
+   * RESPONDED keeps the generic `NOT_FOUND`.
    */
   public async updateMyVoteResponse(req: Request, voteUid: string, payload: UpdateMyVoteResponseRequest): Promise<void> {
     const row = await this.getMyVoteResponse(req, voteUid);
-    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) {
+    if (!row || row.voter_removed) {
+      throw new ResourceNotFoundError('Vote ballot', voteUid, {
+        operation: 'update_my_vote_response',
+        service: 'vote_service',
+        code: VOTE_VOTER_REMOVED_ERROR_CODE,
+      });
+    }
+    if (row.vote_status !== IndexedVoteResponseStatus.RESPONDED) {
       throw new ResourceNotFoundError('Vote ballot', voteUid, {
         operation: 'update_my_vote_response',
         service: 'vote_service',
