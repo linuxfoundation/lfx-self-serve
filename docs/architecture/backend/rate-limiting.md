@@ -43,14 +43,14 @@ router.post('/generate-agenda', aiRateLimiter, (req, res, next) => meetingContro
 - `app.use(prefix, limiter)` applies the limiter to every request matching the prefix.
 - The explicit `.get()` registrations on the Auth0 callbacks layer the limiter in front of the callback-specific handler so it runs before any token exchange work.
 - Public routes are rate-limited **before** the generic `/api/` limiter would match, because `/public/api/*` has the stricter budget.
-- A route-scoped limiter like `aiRateLimiter` is registered in its own router rather than `server.ts`, and runs _after_ the prefix limiter — both budgets have to allow the request.
+- A route-scoped limiter like `aiRateLimiter` is registered in its own router rather than `server.ts`, and runs _after_ the prefix limiter — both budgets have to allow the request, unless the prefix limiter skips the route (`publicApiRateLimiter` skips the `voteLinkRateLimiter` routes, so only the route-scoped budget applies there).
 
 ## Behavior on limit hit
 
 - Returns **HTTP 429** with the standard `RateLimit-*` headers indicating remaining budget and reset time.
 - A rejected request also carries `Retry-After` (seconds until the window resets), because `standardHeaders: true` makes express-rate-limit set it. Upstream `429` responses also retain a validated `Retry-After` through `ApiClientService`, `MicroserviceError`, and `apiErrorHandler`; no arbitrary upstream response headers are forwarded. Both delay-seconds and HTTP-date cooldowns reach the Members-tab CSV import.
 - The CSV import never shortens a valid server minimum. It pauses and resubmits throttled rows automatically at most 3 times per run, but stops automatic recovery when a cooldown exceeds its two-minute single-pause budget. The known deadline remains a lower bound for manual Retry, including after Stop import or pause-budget exhaustion. Unreadable/missing cooldowns use the bounded default pause.
-- `apiRateLimiter`, `newsletterInviteRateLimiter`, `emailSendCodeUserRateLimiter` and `emailSendCodeTargetRateLimiter` answer in the app's `{ error, code: 'RATE_LIMITED' }` envelope; the others send the library default body. Clients should surface "too many requests, please retry" to the user.
+- `apiRateLimiter`, `voteLinkRateLimiter`, `newsletterInviteRateLimiter`, `emailSendCodeUserRateLimiter` and `emailSendCodeTargetRateLimiter` answer in the app's `{ error, code: 'RATE_LIMITED' }` envelope; the others send the library default body. Clients should surface "too many requests, please retry" to the user.
 - Limiters count per-IP using the default `req.ip` key unless they declare a `keyGenerator`. `aiRateLimiter`, `voteWriteRateLimiter`, `newsletterInviteRateLimiter` and `emailSendCodeUserRateLimiter` key on the authenticated user; `emailSendCodeTargetRateLimiter` keys on the normalized target address with the fallback described above. In production behind load balancers, ensure Express `trust proxy` is configured upstream so the correct client IP is used.
 
 ## Adding a new limiter

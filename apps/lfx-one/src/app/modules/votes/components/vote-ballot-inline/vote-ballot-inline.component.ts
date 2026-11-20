@@ -14,6 +14,7 @@ import {
   VOTE_COMMENT_RESPONSE_MAX_LENGTH,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
   VOTE_LAST_VOTER_CONFIRMATION,
+  VOTE_RATE_LIMITED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { CommentResponseFormData, CommentResponseInput, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import { buildCommentResponses, getCommentPromptsData, isVoteChangeAllowed, reconcileCommentFormControls } from '@lfx-one/shared/utils';
@@ -185,6 +186,10 @@ export class VoteBallotInlineComponent {
           this.voteSubmitted.emit(vote.uid);
         },
         error: (err: unknown) => {
+          if (err instanceof HttpErrorResponse && err.status === 429) {
+            this.messageService.add({ severity: 'warn', summary: 'Too many requests', detail: VOTE_RATE_LIMITED_MESSAGE, life: 5000 });
+            return;
+          }
           const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
           this.messageService.add({
             severity: 'error',

@@ -290,7 +290,7 @@ export const VOTE_CHANGE_NOT_ALLOWED = 'does not allow changing a submitted vote
 /** Upstream 400 message (lowercased substring) when a ballot write hits a vote that has ended (#5964). */
 export const VOTE_UPSTREAM_ENDED = 'ended';
 
-/** Upstream 4xx message (lowercased substring) when a vote link's voter was removed from the vote (#5964). */
+/** Upstream 400 message (lowercased substring) when a vote link's voter was removed from the vote (#5964). */
 export const VOTE_UPSTREAM_REMOVED = 'removed';
 
 /** BFF 404 `code` when a ballot update finds the caller's voter row missing or removed, distinct from the generic `NOT_FOUND` (#5964). */

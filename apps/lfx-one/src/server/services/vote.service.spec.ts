@@ -2503,10 +2503,10 @@ describe('VoteService', () => {
     });
 
     it.each([
-      ['no row', null, VOTE_VOTER_REMOVED_ERROR_CODE],
-      ['a removed row', ownRow({ voter_removed: true }), VOTE_VOTER_REMOVED_ERROR_CODE],
-      ['an awaiting row', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE }), 'NOT_FOUND'],
-    ])('returns 404 without calling upstream for %s (#5964 code %s)', async (_label, row, code) => {
+      ['no row', VOTE_VOTER_REMOVED_ERROR_CODE, null],
+      ['a removed row', VOTE_VOTER_REMOVED_ERROR_CODE, ownRow({ voter_removed: true })],
+      ['an awaiting row', 'NOT_FOUND', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE })],
+    ])('returns 404 without calling upstream for %s (#5964 code %s)', async (_label, code, row) => {
       vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row);
 
       await expect(service.updateMyVoteResponse(req, VOTE_UID, payload)).rejects.toMatchObject({ statusCode: 404, code });
