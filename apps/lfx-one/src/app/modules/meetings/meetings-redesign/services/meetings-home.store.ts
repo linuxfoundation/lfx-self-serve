@@ -163,6 +163,7 @@ export class MeetingsHomeStore {
   private pastNextPage: Subscription | null = null;
   // Bumped whenever the first past page is requested, so a next page for an older query is dropped.
   private pastQueryVersion = 0;
+  private pastChangedSearchFailed = false;
   // Search and filters the first past page was loaded with; its cursor only continues that query.
   private readonly pastQuery: WritableSignal<string> = signal('');
   private readonly pastFilters: WritableSignal<MeetingsHomePastFilters> = signal(MEETINGS_HOME_NO_PAST_FILTERS);
@@ -182,8 +183,8 @@ export class MeetingsHomeStore {
     this.pastLoadingState,
     this.pastFailedState,
     this.initPastReloads(),
-    // A failed changed search shows the error state, not a toast about keeping a list that no longer matches.
-    () => this.pastSearchFailed()
+    // A failed changed search leaves no list to keep, so no toast says one was kept.
+    () => this.pastChangedSearchFailed
   );
   private readonly pastNextPages: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.pastFirstPage, computation: () => [] as PastMeeting[] });
   private readonly pastMeetings: Signal<PastMeeting[]> = computed(() => [...this.pastFirstPage(), ...this.pastNextPages()]);
@@ -672,7 +673,13 @@ export class MeetingsHomeStore {
         },
       }),
       // A failed refresh of the loaded search keeps its rows; only a changed search is left without a list.
-      tap({ error: () => this.feed.pagedPast && version === this.pastQueryVersion && query !== this.pastQuery() && this.pastFailedQuery.set(query) }),
+      tap({
+        error: () => {
+          // Judged on the query that failed, not on what the field holds by now.
+          this.pastChangedSearchFailed = this.feed.pagedPast && query !== this.pastQuery();
+          if (this.pastChangedSearchFailed && version === this.pastQueryVersion) this.pastFailedQuery.set(query);
+        },
+      }),
       map((page) => page.meetings)
     );
   }
