@@ -20,6 +20,7 @@ import {
   formatMeetingWhenFull,
   getMeetingWhenParts,
   getMeetingDayBucket,
+  getMeetingGroupCategories,
   getMeetingGroupNames,
   getMeetingGroupType,
   getMeetingGroupTypes,
@@ -562,6 +563,17 @@ describe('buildMeetingFilterChips', () => {
     ]);
     expect(buildMeetingFilterChips(filters({ group: 'c-1' }), grouped, true)).toEqual([{ key: 'group', prefix: 'Group:', label: 'c-1' }]);
   });
+
+  it('names projects and groups from the scope options first, for picks not on the loaded rows', () => {
+    const scope = {
+      projects: [{ uid: 'p-9', name: 'Old Project', slug: 'old' }],
+      groups: [{ uid: 'c-9', name: 'Old WG', category: null, project_uid: 'p-9' }],
+    };
+    expect(buildMeetingFilterChips(filters({ project: 'p-9', group: 'c-9' }), rows, true, scope)).toEqual([
+      { key: 'project', prefix: 'Project:', label: 'Old Project' },
+      { key: 'group', prefix: 'Group:', label: 'Old WG' },
+    ]);
+  });
 });
 
 describe('getMeetingGroupNames', () => {
@@ -599,11 +611,28 @@ describe('getMeetingGroupType', () => {
     ['Outreach Committee', 'Committee'],
     ['Governance Council', 'Committee'],
     ['Cloud Native Ambassadors', 'Ambassador'],
+    ['Onboarding WG', 'Working Group'],
+    ['Dashboard Council', 'Committee'],
+    ['Protocol Team', 'Other'],
+    ['Tech Stack Maintainers', 'Other'],
+    ['Contact Desk', 'Other'],
     ['Maintainers', 'Other'],
     ['', 'Other'],
   ])('reads "%s" as %s without a category', (name, type) => {
     expect(getMeetingGroupType(name, null)).toBe(type);
     expect(getMeetingGroupType(name, '  ')).toBe(type);
+  });
+});
+
+describe('getMeetingGroupCategories', () => {
+  it('maps groups with a category by UID, trimmed, and leaves the rest out', () => {
+    expect(
+      getMeetingGroupCategories([
+        { uid: 'c-1', category: ' Board ' },
+        { uid: 'c-2', category: null },
+        { uid: 'c-3', category: '  ' },
+      ])
+    ).toEqual(new Map([['c-1', 'Board']]));
   });
 });
 

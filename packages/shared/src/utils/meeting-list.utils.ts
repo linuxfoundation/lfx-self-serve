@@ -26,6 +26,8 @@ import type {
   MeetingOccurrence,
   MeetingPageCancelledLink,
   MeetingResponseFilter,
+  MeetingRollupFilterOptions,
+  MeetingRollupGroupOption,
   MeetingRsvp,
   MeetingsHomeFilters,
   MeetingVisibilityInfo,
@@ -254,18 +256,26 @@ export function countAppliedMeetingFilters(filters: MeetingsHomeFilters): number
 }
 
 /**
- * One chip per applied filter, in popover order, keyed like "Project:"; foundation, project and group chips take the name from `rows`, else the UID.
- * The Foundation/Project chip reads "Foundation:" when its pick is a foundation, except in a project or foundation lens (`projectScope`).
+ * One chip per applied filter, in popover order, keyed like "Project:"; foundation, project and group chips take the name from
+ * `scopeOptions`, then `rows`, else the UID. The Foundation/Project chip reads "Foundation:" when its pick is a foundation, except in a
+ * project or foundation lens (`projectScope`).
  */
-export function buildMeetingFilterChips(filters: MeetingsHomeFilters, rows: readonly MeetingHomeRow[], projectScope = false): MeetingFilterChip[] {
+export function buildMeetingFilterChips(
+  filters: MeetingsHomeFilters,
+  rows: readonly MeetingHomeRow[],
+  projectScope = false,
+  scopeOptions?: Pick<MeetingRollupFilterOptions, 'projects' | 'groups'>
+): MeetingFilterChip[] {
   const chips: MeetingFilterChip[] = [];
   const meetingOf = (uid: string) => rows.find((row) => row.meeting.project_uid === uid)?.meeting;
-  const nameOf = (uid: string): string => meetingOf(uid)?.project_name || uid;
+  const nameOf = (uid: string): string => scopeOptions?.projects.find((project) => project.uid === uid)?.name || meetingOf(uid)?.project_name || uid;
   const groupNameOf = (uid: string): string =>
+    scopeOptions?.groups.find((group) => group.uid === uid)?.name ||
     rows
       .flatMap((row) => row.meeting.committees ?? [])
       .find((committee) => committee.uid === uid && committee.name?.trim())
-      ?.name?.trim() || uid;
+      ?.name?.trim() ||
+    uid;
 
   if (filters.foundation) {
     chips.push({ key: 'foundation', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.foundation}:`, label: nameOf(filters.foundation) });
@@ -467,6 +477,11 @@ export function getMeetingGroupType(name: string, category?: string | null): str
   const set = category?.trim();
   if (set) return set;
   return MEETING_GROUP_TYPE_PATTERNS.find(({ pattern }) => pattern.test(name))?.type ?? MEETING_GROUP_TYPE_OTHER;
+}
+
+/** Category of each group that has one, by committee UID. */
+export function getMeetingGroupCategories(groups: readonly Pick<MeetingRollupGroupOption, 'uid' | 'category'>[]): Map<string, string> {
+  return new Map(groups.flatMap((group) => (group.category?.trim() ? [[group.uid, group.category.trim()] as const] : [])));
 }
 
 /** Types of the groups a meeting belongs to, without repeats; categories come from `groupCategories` by committee UID. */

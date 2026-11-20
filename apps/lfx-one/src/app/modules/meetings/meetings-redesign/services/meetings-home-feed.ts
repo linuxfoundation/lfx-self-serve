@@ -6,7 +6,7 @@ import { ActivatedRoute } from '@angular/router';
 import {
   Meeting,
   MeetingProjectQueryOptions,
-  MeetingRollupGroupOption,
+  MeetingRollupFilterOptions,
   MeetingsHomePastFilters,
   MeetingsHomePastPage,
   PastMeeting,
@@ -36,8 +36,8 @@ export abstract class MeetingsHomeFeed {
   public abstract past(search: string, filters: MeetingsHomePastFilters, pageToken?: string): Observable<MeetingsHomePastPage>;
   /** The few most recent past meetings, for the Last meeting card. */
   public abstract latestPast(): Observable<PastMeeting[]>;
-  /** The groups in scope with their categories, for the Group type filter; none in the Me lens. */
-  public abstract groups(): Observable<MeetingRollupGroupOption[]>;
+  /** The projects and groups in scope (groups with their categories), for the project filters; none in the Me lens. */
+  public abstract filterOptions(): Observable<MeetingRollupFilterOptions>;
 }
 
 /** The viewer's meetings across every project, loaded whole. */
@@ -63,8 +63,8 @@ export class UserMeetingsHomeFeed extends MeetingsHomeFeed {
     return this.userService.getUserLatestPastMeetings();
   }
 
-  public groups(): Observable<MeetingRollupGroupOption[]> {
-    return of([]);
+  public filterOptions(): Observable<MeetingRollupFilterOptions> {
+    return of({ projects: [], groups: [], complete: false });
   }
 }
 
@@ -104,10 +104,14 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
     return of([]);
   }
 
-  /** Errors yield no groups (the service logs them), so group types are then read from the group names. */
-  public groups(): Observable<MeetingRollupGroupOption[]> {
+  /** Errors yield no options (the service logs them), so the filters fall back to the rows; a project keeps only its own groups. */
+  public filterOptions(): Observable<MeetingRollupFilterOptions> {
     const projectUid = this.projectContext.activeContextUid();
-    return projectUid ? this.meetingService.getRollupFilterOptions(projectUid).pipe(map((options) => options.groups)) : of([]);
+    if (!projectUid) return of({ projects: [], groups: [], complete: false });
+    const foundation = this.projectContext.isFoundationContext();
+    return this.meetingService
+      .getRollupFilterOptions(projectUid)
+      .pipe(map((options) => (foundation ? options : { ...options, groups: options.groups.filter((group) => group.project_uid === projectUid) })));
   }
 
   /** A foundation lists its sub-projects' meetings too; a project only its own. */

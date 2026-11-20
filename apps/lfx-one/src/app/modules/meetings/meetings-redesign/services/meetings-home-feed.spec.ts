@@ -59,7 +59,14 @@ describe('MeetingsHomeFeed', () => {
       getProjectMeetingsForHome: vi.fn(() => of([{ id: 'm-1' }])),
       getProjectPastMeetingsForHome: vi.fn(() => of({ meetings: [ended('m-1:1'), running('m-2:1')], pageToken: 'next' })),
       getRollupFilterOptions: vi.fn(() =>
-        of({ projects: [], groups: [{ uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'project-1' }] })
+        of({
+          projects: [{ uid: 'project-2', name: 'Child', slug: 'child' }],
+          groups: [
+            { uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'project-1' },
+            { uid: 'c-2', name: 'Child WG', category: null, project_uid: 'project-2' },
+          ],
+          complete: true,
+        })
       ),
     };
     userService = {
@@ -132,15 +139,23 @@ describe('MeetingsHomeFeed', () => {
     );
   });
 
-  it('reads the groups in scope from the roll-up filter options, and none in the Me lens', async () => {
-    await expect(firstValueFrom(inject().groups())).resolves.toEqual([
-      { uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'project-1' },
-    ]);
+  it("reads a project's own groups from the roll-up filter options", async () => {
+    await expect(firstValueFrom(inject().filterOptions())).resolves.toEqual({
+      projects: [{ uid: 'project-2', name: 'Child', slug: 'child' }],
+      groups: [{ uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'project-1' }],
+      complete: true,
+    });
     expect(meetingService.getRollupFilterOptions).toHaveBeenCalledWith('project-1');
+  });
+
+  it("reads a foundation's whole roll-up, and nothing in the Me lens", async () => {
+    foundation.set(true);
+    const options = await firstValueFrom(inject().filterOptions());
+    expect(options.groups.map((group) => group.uid)).toEqual(['c-1', 'c-2']);
 
     TestBed.resetTestingModule();
     lens.set('me');
-    await expect(firstValueFrom(inject().groups())).resolves.toEqual([]);
+    await expect(firstValueFrom(inject().filterOptions())).resolves.toEqual({ projects: [], groups: [], complete: false });
   });
 
   it('includes sub-projects for a foundation', async () => {
@@ -191,7 +206,7 @@ describe('MeetingsHomeFeed', () => {
 
     await expect(firstValueFrom(feed.upcoming())).resolves.toEqual([]);
     await expect(firstValueFrom(feed.past('', MEETINGS_HOME_NO_PAST_FILTERS))).resolves.toEqual({ meetings: [] });
-    await expect(firstValueFrom(feed.groups())).resolves.toEqual([]);
+    await expect(firstValueFrom(feed.filterOptions())).resolves.toEqual({ projects: [], groups: [], complete: false });
     await expect(firstValueFrom(feed.latestPast())).resolves.toEqual([]);
     expect(meetingService.getProjectMeetingsForHome).not.toHaveBeenCalled();
   });

@@ -8,7 +8,7 @@ import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_NO_PAST_FILTERS, MEETINGS_
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import {
   Meeting,
-  MeetingRollupGroupOption,
+  MeetingRollupFilterOptions,
   MeetingRsvp,
   MeetingsHomePastFilters,
   MeetingsHomePastPage,
@@ -835,11 +835,11 @@ describe('MeetingsHomeStore', () => {
   describe('paged past feed', () => {
     let pastPages: Subject<MeetingsHomePastPage>[];
     let past: ReturnType<typeof vi.fn<(search: string, filters: MeetingsHomePastFilters, pageToken?: string) => Subject<MeetingsHomePastPage>>>;
-    let groups$: Subject<MeetingRollupGroupOption[]>;
+    let scope$: Subject<MeetingRollupFilterOptions>;
 
     const createPaged = (): MeetingsHomeStore => {
       pastPages = [];
-      groups$ = new Subject();
+      scope$ = new Subject();
       past = vi.fn<(search: string, filters: MeetingsHomePastFilters, pageToken?: string) => Subject<MeetingsHomePastPage>>(() => {
         const page$ = new Subject<MeetingsHomePastPage>();
         pastPages.push(page$);
@@ -854,7 +854,7 @@ describe('MeetingsHomeStore', () => {
         upcoming: () => upcoming$,
         past,
         latestPast: () => latestPast$,
-        groups: () => groups$,
+        filterOptions: () => scope$,
       };
       TestBed.configureTestingModule({
         providers: [
@@ -952,7 +952,7 @@ describe('MeetingsHomeStore', () => {
 
       it('reloads the past list from its first page with the filters the server can apply, and continues cursors with them', () => {
         const store = createPaged();
-        groups$.next([{ uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'p-1' }]);
+        scope$.next({ projects: [], groups: [{ uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'p-1' }], complete: true });
         loadPast(store);
 
         store.setFilters({
@@ -990,9 +990,28 @@ describe('MeetingsHomeStore', () => {
         expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
       });
 
+      it('keeps a category on the client when an uncategorised group in scope reads as the same type', () => {
+        const store = createPaged();
+        scope$.next({
+          projects: [],
+          groups: [
+            { uid: 'c-1', name: 'TSC', category: 'Working Group', project_uid: 'p-1' },
+            { uid: 'c-2', name: 'Docs WG', category: null, project_uid: 'p-1' },
+          ],
+          complete: true,
+        });
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Working Group' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['a', 'b']);
+      });
+
       it('filters a group type read from group names on the loaded rows only', () => {
         const store = createPaged();
-        groups$.next([]);
+        scope$.next({ projects: [], groups: [], complete: true });
         loadPast(store);
 
         store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Working Group' });
@@ -1004,7 +1023,7 @@ describe('MeetingsHomeStore', () => {
 
       it('matches group types by category from the groups in scope', () => {
         const store = createPaged();
-        groups$.next([{ uid: 'c-2', name: 'Docs WG', category: 'Special Interest Group', project_uid: 'p-1' }]);
+        scope$.next({ projects: [], groups: [{ uid: 'c-2', name: 'Docs WG', category: 'Special Interest Group', project_uid: 'p-1' }], complete: true });
         loadPast(store);
 
         expect(store.groupCategories()).toEqual(new Map([['c-2', 'Special Interest Group']]));

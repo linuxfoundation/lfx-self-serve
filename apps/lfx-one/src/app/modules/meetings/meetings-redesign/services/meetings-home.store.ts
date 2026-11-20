@@ -12,6 +12,7 @@ import {
   MeetingDayGroup,
   MeetingFilterChip,
   MeetingHomeRow,
+  MeetingRollupFilterOptions,
   MeetingRsvp,
   MeetingsHomeFilters,
   MeetingsHomePastFilters,
@@ -26,6 +27,8 @@ import {
   expandMeetingOccurrences,
   filterMeetingsHome,
   getLargestSessionShareUrl,
+  getMeetingGroupCategories,
+  getMeetingGroupType,
   getMeetingSeriesUid,
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
@@ -111,8 +114,10 @@ export class MeetingsHomeStore {
   public readonly pastFailed: Signal<boolean> = this.pastFailedState.asReadonly();
   public readonly lastMeetingLoading: Signal<boolean> = this.lastMeetingLoadingState.asReadonly();
   public readonly lastMeetingFailed: Signal<boolean> = this.lastMeetingFailedState.asReadonly();
-  /** Category of each group in scope by committee UID, for the Group type filter; empty in the Me lens. */
-  public readonly groupCategories: Signal<ReadonlyMap<string, string>> = this.initGroupCategories();
+  /** Projects and groups in scope, for the project filters' options; empty in the Me lens or when they fail to load. */
+  public readonly scopeOptions: Signal<MeetingRollupFilterOptions> = this.initScopeOptions();
+  /** Category of each group in scope by committee UID, for the Group type filter. */
+  public readonly groupCategories: Signal<ReadonlyMap<string, string>> = computed(() => getMeetingGroupCategories(this.scopeOptions().groups));
   /** Filters a paged past feed applies on the server while the Past tab is open; none for a whole feed. */
   private readonly pastServerFilters: Signal<MeetingsHomePastFilters> = this.initPastServerFilters();
 
@@ -261,7 +266,7 @@ export class MeetingsHomeStore {
   public readonly hasActiveQuery: Signal<boolean> = computed(() => this.search().trim() !== '' || countAppliedMeetingFilters(this.filters()) > 0);
   /** One chip per applied filter. */
   public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() =>
-    buildMeetingFilterChips(this.filters(), this.filterOptionRows(), this.feed.scope === 'project')
+    buildMeetingFilterChips(this.filters(), this.filterOptionRows(), this.feed.scope === 'project', this.scopeOptions())
   );
 
   public constructor() {
@@ -420,24 +425,26 @@ export class MeetingsHomeStore {
     return merge(combineLatest([search$, filters$]), this.feed.pastRefresh$);
   }
 
-  private initGroupCategories(): Signal<ReadonlyMap<string, string>> {
-    if (!isPlatformBrowser(this.platformId)) return signal(new Map());
-    return toSignal(
-      toObservable(this.feed.key).pipe(
-        switchMap(() => this.feed.groups()),
-        map((groups) => new Map(groups.flatMap((group) => (group.category ? [[group.uid, group.category] as const] : []))))
-      ),
-      { initialValue: new Map() }
-    );
+  private initScopeOptions(): Signal<MeetingRollupFilterOptions> {
+    const empty: MeetingRollupFilterOptions = { projects: [], groups: [], complete: false };
+    if (!isPlatformBrowser(this.platformId)) return signal(empty);
+    return toSignal(toObservable(this.feed.key).pipe(switchMap(() => this.feed.filterOptions().pipe(startWith(empty)))), { initialValue: empty });
   }
 
-  /** A group type goes to the server only when it is a category; one read from group names has no server match. */
+  /**
+   * The server matches a group type on categories only, so it gets one only when it is a category and no uncategorised group in
+   * scope reads as the same type; otherwise the loaded rows are filtered and further pages load as needed.
+   */
   private initPastServerFilters(): Signal<MeetingsHomePastFilters> {
     return computed(() => {
       if (!this.feed.pagedPast || this.tab() !== 'past') return MEETINGS_HOME_NO_PAST_FILTERS;
       const { project, group, groupType, meetingType } = this.filters();
-      const isCategory = !!groupType && [...this.groupCategories().values()].includes(groupType);
-      return { projectUid: project, committeeUid: group, groupType: isCategory ? groupType : null, meetingType };
+      const groups = this.scopeOptions().groups;
+      const serverType =
+        !!groupType &&
+        [...this.groupCategories().values()].includes(groupType) &&
+        !groups.some((scoped) => !this.groupCategories().has(scoped.uid) && getMeetingGroupType(scoped.name) === groupType);
+      return { projectUid: project, committeeUid: group, groupType: serverType ? groupType : null, meetingType };
     });
   }
 

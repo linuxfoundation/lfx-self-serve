@@ -109,7 +109,7 @@
           (valueChange)="setMeetingType($event)"
           data-testid="meetings-home-filters-type">
           <lfx-ui-option value="" label="All types" />
-          @for (option of meetingTypeOptions(); track option.value) {
+          @for (option of meetingTypeOptions; track option.value) {
             <lfx-ui-option [value]="option.value" [label]="option.label" />
           }
         </lfx-ui-select>

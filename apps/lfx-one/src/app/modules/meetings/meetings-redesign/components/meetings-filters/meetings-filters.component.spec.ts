@@ -5,7 +5,7 @@ import { BreakpointObserver } from '@angular/cdk/layout';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS } from '@lfx-one/shared/constants';
-import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingsHomeFilters } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingRollupFilterOptions, MeetingsHomeFilters } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -64,12 +64,12 @@ describe('MeetingsFiltersComponent', () => {
     filters: MeetingsHomeFilters = MEETINGS_HOME_DEFAULT_FILTERS,
     tab: MeetingDashboardView = 'upcoming',
     rows: MeetingHomeRow[] = ROWS,
-    groupCategories: ReadonlyMap<string, string> = new Map()
+    scopeOptions: MeetingRollupFilterOptions = { projects: [], groups: [], complete: true }
   ): Promise<void> => {
     fixture = TestBed.createComponent(MeetingsFiltersComponent);
     fixture.componentRef.setInput('tab', tab);
     fixture.componentRef.setInput('rows', rows);
-    fixture.componentRef.setInput('groupCategories', groupCategories);
+    fixture.componentRef.setInput('scopeOptions', scopeOptions);
     fixture.componentRef.setInput('filters', filters);
     emitted = [];
     fixture.componentInstance.filters.subscribe((value) => emitted.push(value));
@@ -240,7 +240,7 @@ describe('MeetingsFiltersComponent', () => {
       expect(sections()).toEqual(['meetings-home-filters-group', 'meetings-home-filters-group-type', 'meetings-home-filters-type']);
       expect(await optionLabels('meetings-home-filters-group')).toEqual(['All groups', 'Docs WG', 'Governing Board', 'TOC']);
       expect(await optionLabels('meetings-home-filters-group-type')).toEqual(['All group types', 'Board', 'Technical Advisory Committee', 'Working Group']);
-      expect(await optionLabels('meetings-home-filters-type')).toEqual(['All types', 'Board', 'Technical']);
+      expect(await optionLabels('meetings-home-filters-type')).toEqual(['All types', 'Board', 'Maintainers', 'Marketing', 'Technical', 'Legal', 'Other']);
     });
 
     it('adds Project first for a foundation, listing the projects with meetings', async () => {
@@ -258,10 +258,42 @@ describe('MeetingsFiltersComponent', () => {
     });
 
     it('names group types by category when the group has one', async () => {
-      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', PROJECT_ROWS, new Map([['c-1', 'Technical Oversight Committee']]));
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', PROJECT_ROWS, {
+        projects: [],
+        groups: [{ uid: 'c-1', name: 'TOC', category: 'Technical Oversight Committee', project_uid: 'p-1' }],
+        complete: true,
+      });
       await open();
 
       expect(await optionLabels('meetings-home-filters-group-type')).toEqual(['All group types', 'Board', 'Technical Oversight Committee', 'Working Group']);
+    });
+
+    it('adds the projects, groups and group types in scope that no loaded meeting has', async () => {
+      foundationContext.set(true);
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'past', PROJECT_ROWS, {
+        projects: [
+          { uid: 'p-1', name: 'Kubernetes', slug: 'k8s' },
+          { uid: 'p-9', name: 'Archived Project', slug: 'archived' },
+        ],
+        groups: [
+          { uid: 'c-1', name: 'TOC', category: null, project_uid: 'p-1' },
+          { uid: 'c-9', name: 'Outreach Council', category: null, project_uid: 'p-9' },
+          { uid: 'c-8', name: 'Legal', category: 'Legal Committee', project_uid: 'p-9' },
+        ],
+        complete: true,
+      });
+      await open();
+
+      expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'Archived Project', 'CNCF', 'Envoy', 'Kubernetes']);
+      expect(await optionLabels('meetings-home-filters-group')).toEqual(['All groups', 'Docs WG', 'Governing Board', 'Legal', 'Outreach Council', 'TOC']);
+      expect(await optionLabels('meetings-home-filters-group-type')).toEqual([
+        'All group types',
+        'Board',
+        'Committee',
+        'Legal Committee',
+        'Technical Advisory Committee',
+        'Working Group',
+      ]);
     });
 
     it('applies the picked project, group, group type and meeting type', async () => {

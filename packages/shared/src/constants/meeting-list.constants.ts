@@ -73,12 +73,12 @@ export const MEETINGS_HOME_FILTER_CHIP_LABELS = {
 
 /** Group types read from a group's name when it has no category, first match wins. */
 export const MEETING_GROUP_TYPE_PATTERNS: readonly MeetingGroupTypePattern[] = [
-  { pattern: /Board/i, type: 'Board' },
-  { pattern: /\bWG\b|Working Group|Workstream/i, type: 'Working Group' },
-  { pattern: /\bSIG\b|Special Interest/i, type: 'Special Interest Group' },
-  { pattern: /TAC|TOC|Technical|Steering/i, type: 'Technical Advisory Committee' },
-  { pattern: /Committee|Council/i, type: 'Committee' },
-  { pattern: /Ambassador/i, type: 'Ambassador' },
+  { pattern: /\bBoard\b/i, type: 'Board' },
+  { pattern: /\bWG\b|\bWorking Group\b|\bWorkstreams?\b/i, type: 'Working Group' },
+  { pattern: /\bSIG\b|\bSpecial Interest\b/i, type: 'Special Interest Group' },
+  { pattern: /\b(?:TAC|TOC)\b|\bTechnical\b|\bSteering\b/i, type: 'Technical Advisory Committee' },
+  { pattern: /\bCommittee\b|\bCouncil\b/i, type: 'Committee' },
+  { pattern: /\bAmbassadors?\b/i, type: 'Ambassador' },
 ];
 
 /** Type of a group without a category whose name matches no {@link MEETING_GROUP_TYPE_PATTERNS}. */
