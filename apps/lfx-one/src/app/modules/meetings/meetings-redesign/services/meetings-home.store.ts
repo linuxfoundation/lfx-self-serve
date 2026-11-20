@@ -117,7 +117,8 @@ export class MeetingsHomeStore {
     this.upcomingFailedState
   );
   /** Cursor of a paged past feed's next server page; undefined once it is exhausted or for a whole feed. */
-  private readonly pastPageToken: WritableSignal<string | undefined> = signal(undefined);
+  // A cursor belongs to one viewer and scope, so a new feed key drops it even before its first page answers.
+  private readonly pastPageToken: WritableSignal<string | undefined> = linkedSignal({ source: this.feed.key, computation: () => undefined });
   private readonly pastLoadingMore: WritableSignal<boolean> = signal(false);
   private pastNextPage: Subscription | null = null;
   // Bumped whenever the first past page is requested, so a next page for an older query is dropped.
@@ -431,7 +432,9 @@ export class MeetingsHomeStore {
           this.pastLoadingMore.set(false);
           // Stops loading this query, so a broken page is not requested again; a reload starts over.
           this.pastPageToken.set(undefined);
-          this.showRefreshFailedToast();
+          // With nothing to show, the list's error state offers Retry, which reloads the query.
+          if (this.pastMeetings().length === 0) this.pastFailedState.set(true);
+          else this.showRefreshFailedToast();
         },
       });
   }

@@ -984,6 +984,36 @@ describe('MeetingsHomeStore', () => {
       expect(store.hasMore()).toBe(true);
     });
 
+    it('drops the cursor when the viewer or scope changes, even if the new first page fails', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-a'));
+      TestBed.tick();
+
+      identity.set('viewer-b');
+      TestBed.tick();
+      pastPages[pastPages.length - 1].error(new Error('first page failed'));
+      TestBed.tick();
+
+      expect(past).not.toHaveBeenCalledWith('', 'cursor-a');
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('shows the error state with Retry when a next page fails and no past rows are loaded', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      expect(store.failed()).toBe(true);
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
     it('does not request a next page on the upcoming tab', () => {
       const store = createPaged();
       pastPages[0].next(pastPage('a', 1, 'cursor-1'));
