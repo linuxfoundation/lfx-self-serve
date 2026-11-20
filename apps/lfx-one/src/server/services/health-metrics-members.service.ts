@@ -1044,8 +1044,11 @@ function directorySortColumns(): Record<HealthMetricsMembersDirectorySortKey, He
     renewal: { expression: 'renewal_date', kind: 'date' },
     // $0 reads "—", so it is empty.
     sponsorship: { expression: 'NULLIF(sponsorship_usd, 0)', kind: 'number' },
-    // The badge's one-decimal score; with no level the cell reads "—".
-    engagement: { expression: 'IFF(engagement_level IS NULL, NULL, ROUND(engagement_score, 1))', kind: 'number' },
+    // The badge's one-decimal score. A level the mapper drops reads "—", so it is empty too; the levels are constants.
+    engagement: {
+      expression: `IFF(engagement_level IN (${HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS.map((level) => `'${level}'`).join(', ')}), ROUND(engagement_score, 1), NULL)`,
+      kind: 'number',
+    },
   };
 }
 

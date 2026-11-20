@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MembersEngagementBadgeComponent } from './members-engagement-badge.component';
 
@@ -26,11 +26,14 @@ describe('MembersEngagementBadgeComponent', () => {
   let fixture: ComponentFixture<MembersEngagementBadgeComponent>;
 
   beforeEach(async () => {
+    vi.useFakeTimers();
     await TestBed.configureTestingModule({ imports: [MembersEngagementBadgeComponent] }).compileComponents();
     fixture = TestBed.createComponent(MembersEngagementBadgeComponent);
     fixture.componentRef.setInput('engagement', ENGAGEMENT);
     fixture.detectChanges();
   });
+
+  afterEach(() => vi.useRealTimers());
 
   function badge(): HTMLElement {
     return fixture.nativeElement.querySelector('[data-testid="members-engagement-badge"]');
@@ -50,6 +53,44 @@ describe('MembersEngagementBadgeComponent', () => {
     );
   });
 
+  it('stays open while the pointer crosses onto the popup, and closes once it leaves both', () => {
+    badge().dispatchEvent(new MouseEvent('mouseenter'));
+    fixture.detectChanges();
+    badge().dispatchEvent(new MouseEvent('mouseleave'));
+    tip()?.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(200);
+    fixture.detectChanges();
+    expect(tip()).not.toBeNull();
+
+    tip()?.dispatchEvent(new MouseEvent('mouseleave'));
+    vi.advanceTimersByTime(200);
+    fixture.detectChanges();
+    expect(tip()).toBeNull();
+  });
+
+  it('stays open for keyboard focus when the pointer leaves, and closes once focus moves on', () => {
+    badge().dispatchEvent(new FocusEvent('focus'));
+    badge().dispatchEvent(new MouseEvent('mouseenter'));
+    fixture.detectChanges();
+    badge().dispatchEvent(new MouseEvent('mouseleave'));
+    vi.advanceTimersByTime(200);
+    fixture.detectChanges();
+    expect(tip()).not.toBeNull();
+
+    badge().dispatchEvent(new FocusEvent('blur'));
+    fixture.detectChanges();
+    expect(tip()).toBeNull();
+  });
+
+  it('closes on Escape pressed anywhere while the popup shows', () => {
+    badge().dispatchEvent(new MouseEvent('mouseenter'));
+    fixture.detectChanges();
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(tip()).toBeNull();
+  });
+
   it('opens the chart-style popup on hover and focus, and closes it on leave, blur and Escape', () => {
     expect(tip()).toBeNull();
 
@@ -59,6 +100,7 @@ describe('MembersEngagementBadgeComponent', () => {
     expect(tip()?.querySelectorAll('[data-testid="health-metrics-chart-tip-row"]')).toHaveLength(4);
 
     badge().dispatchEvent(new MouseEvent('mouseleave'));
+    vi.advanceTimersByTime(200);
     fixture.detectChanges();
     expect(tip()).toBeNull();
 

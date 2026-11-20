@@ -9,11 +9,11 @@
   class="inline-flex h-[24px] cursor-default items-center whitespace-nowrap rounded-[6px] px-[8px] text-[12px] font-medium leading-[16px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
   [class]="engagement().badgeClass"
   [attr.aria-describedby]="tipId"
-  (mouseenter)="open.set(true)"
-  (mouseleave)="open.set(false)"
-  (focus)="open.set(true)"
-  (blur)="open.set(false)"
-  (keydown.escape)="open.set(false)"
+  (mouseenter)="onPointerEnter()"
+  (mouseleave)="onPointerLeave()"
+  (focus)="onFocus()"
+  (blur)="onBlur()"
+  (keydown.escape)="dismiss()"
   data-testid="members-engagement-badge"
   >{{ engagement().label }}</span
 >
@@ -32,6 +32,13 @@
   [cdkConnectedOverlayPositions]="positions"
   [cdkConnectedOverlayPush]="true"
   [cdkConnectedOverlayViewportMargin]="8"
-  (detach)="open.set(false)">
-  <lfx-health-metrics-chart-tip class="pointer-events-none" aria-hidden="true" [tip]="engagement().tip" data-testid="members-engagement-tip" />
+  (overlayKeydown)="onOverlayKeydown($event)"
+  (detach)="dismiss()">
+  <!-- Hoverable, so a magnified view can move onto it; Escape closes it from anywhere. -->
+  <lfx-health-metrics-chart-tip
+    aria-hidden="true"
+    [tip]="engagement().tip"
+    (mouseenter)="onPointerEnter()"
+    (mouseleave)="onPointerLeave()"
+    data-testid="members-engagement-tip" />
 </ng-template>

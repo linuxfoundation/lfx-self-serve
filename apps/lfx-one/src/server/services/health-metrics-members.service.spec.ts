@@ -312,7 +312,7 @@ describe('HealthMetricsMembersService.getDirectory', () => {
     ['membership', 'asc', 'annual_dues_usd ASC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC'],
     ['renewal', 'desc', 'renewal_date DESC NULLS LAST, sort_rank ASC NULLS LAST'],
     ['sponsorship', 'desc', 'NULLIF(sponsorship_usd, 0) DESC NULLS LAST'],
-    ['engagement', 'asc', 'IFF(engagement_level IS NULL, NULL, ROUND(engagement_score, 1)) ASC NULLS LAST'],
+    ['engagement', 'asc', "IFF(engagement_level IN ('High', 'Medium', 'Low'), ROUND(engagement_score, 1), NULL) ASC NULLS LAST"],
   ] as const)("sorts %s %s across every page, then the view's rank", async (key, direction, expected) => {
     await new HealthMetricsMembersService().getDirectory(req, { ...query, sort: { key, direction } });
 
