@@ -13,6 +13,8 @@ import {
   MIN_CUSTOM_DURATION,
   MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME,
   MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME,
+  MEETINGS_INCLUDE_VIEWER_RSVP,
+  USER_MEETINGS_INCLUDE_ATTENDANCE,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
@@ -48,6 +50,7 @@ import {
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
+import { attachMeetingRsvpSummaries } from '../helpers/meeting-attendance.helper';
 import { parseRollupProjectsPreference, readRollupProjectsPreferenceRequest, setRollupProjectsPreference } from '../helpers/meeting-rollup-preference.helper';
 import { readRollupRootUid } from '../helpers/meeting-rollup.helper';
 import { settleInBatches } from '../helpers/settle-in-batches.helper';
@@ -82,6 +85,9 @@ export class MeetingController {
    * viewport. The `invited` flag is computed from a single batched registrant lookup
    * against the current user's email/username — replaces the previous N-parallel
    * per-meeting invite checks.
+   *
+   * `include` (comma-separated, opt-in) adds the meetings home fields: `viewer_rsvp` sets the viewer's `my_rsvp` /
+   * `my_rsvps` / `my_registrant_ids`, `attendance` sets `rsvp_summary` on the meetings the viewer organizes.
    */
   public async getMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_meetings', {
@@ -90,21 +96,24 @@ export class MeetingController {
 
     try {
       const userEmail = getEffectiveEmail(req) || '';
-      // Strip `skip_registrants` — legacy flag the client still sets for some committee views;
-      // forwarding it to /query/resources would send an unsupported param upstream.
+      const include = (getStringQueryParam(req, 'include') ?? '').split(',').map((value) => value.trim());
+      // Strip controller-only params: `skip_registrants` is a legacy client flag and `include` is read here, neither is valid upstream.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { skip_registrants: _skipRegistrants, ...meetingQuery } = req.query as Record<string, any>;
+      const { skip_registrants: _skipRegistrants, include: _include, ...meetingQuery } = req.query as Record<string, any>;
       const [{ data: meetings, page_token }, registrations] = await Promise.all([
         this.meetingService.getMeetings(req, meetingQuery, 'v1_meeting', true),
         this.userService.getUserMeetingRegistrations(req, userEmail),
       ]);
 
       // List cards never surface the host key — strip it from every item unconditionally.
-      const result = meetings.map((m) => {
+      let result: Meeting[] = meetings.map((m) => {
         const meeting = { ...m, invited: registrations.has(m.id), invited_via_committee: registrations.get(m.id) === true };
         stripHostKey(meeting);
         return meeting;
       });
+      // shortcut: each page re-walks the viewer's registrations and RSVPs. revisit: when a client pages viewer_rsvp past one page.
+      if (include.includes(MEETINGS_INCLUDE_VIEWER_RSVP)) await this.userService.attachViewerRsvps(req, result, 'get_meetings');
+      if (include.includes(USER_MEETINGS_INCLUDE_ATTENDANCE)) result = await attachMeetingRsvpSummaries(req, result);
 
       logger.success(req, 'get_meetings', startTime, {
         meeting_count: result.length,

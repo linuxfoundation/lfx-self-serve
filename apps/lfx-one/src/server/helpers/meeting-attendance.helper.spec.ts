@@ -223,6 +223,16 @@ describe('attachPastMeetingAttendanceSummaries', () => {
     expect(dedupe).toHaveBeenCalledTimes(1);
   });
 
+  it('matches project feed rows, whose id is the past meeting uid, by meeting_and_occurrence_id', async () => {
+    serveRows({ participants: [participant('m1:1', true), participant('m1:1', false)] });
+    const projectRow = { id: 'past-uid-1', meeting_and_occurrence_id: 'm1:1', organizer: true } as unknown as PastMeeting;
+
+    const [result] = await attachPastMeetingAttendanceSummaries(req, [projectRow]);
+
+    expect(proxyRequest.mock.calls[0][4].tags).toEqual(['meeting_and_occurrence_id:m1:1']);
+    expect(result).toEqual({ ...projectRow, attendance_summary: { invited: 2, attended: 1 } });
+  });
+
   it('returns the feed unchanged when the participant query fails', async () => {
     proxyRequest.mockRejectedValue(new Error('upstream down'));
     const meetings = [past('p1', true)];

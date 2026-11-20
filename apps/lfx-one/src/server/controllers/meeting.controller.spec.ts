@@ -18,8 +18,20 @@ const V1_COMMITTEE_SFID = 'a09v1SFIDaaaa';
 const USER_TOKEN = 'user-bearer-token';
 const M2M_TOKEN = 'm2m-bearer-token';
 
-const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, resolveCommitteeV2UidMappingsMock, generateM2MTokenMock } = vi.hoisted(() => ({
+const {
+  meetingSvc,
+  aiSvc,
+  committeeSvc,
+  userSvc,
+  attachRsvpSummariesMock,
+  resolveCommitteeV2UidsToV1IdsMock,
+  resolveCommitteeV2UidMappingsMock,
+  generateM2MTokenMock,
+} = vi.hoisted(() => ({
+  userSvc: { getUserMeetingRegistrations: vi.fn(), attachViewerRsvps: vi.fn() },
+  attachRsvpSummariesMock: vi.fn(),
   meetingSvc: {
+    getMeetings: vi.fn(),
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
     assertCommitteeAttributionAllowed: vi.fn(),
@@ -79,6 +91,8 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join', 'meetings-home'],
   MIN_CUSTOM_DURATION: 5,
   MAX_MEETING_DURATION: 600,
+  MEETINGS_INCLUDE_VIEWER_RSVP: 'viewer_rsvp',
+  USER_MEETINGS_INCLUDE_ATTENDANCE: 'attendance',
 }));
 // `truncateToUtf16Units` is the real implementation: the truncation assertions below are about what
 // the controller sends upstream, so stubbing it would test the stub. `string.utils` has no imports of
@@ -134,9 +148,10 @@ vi.mock('../services/nats.service', () => ({
 }));
 vi.mock('../services/user.service', () => ({
   UserService: vi.fn(function () {
-    return {};
+    return userSvc;
   }),
 }));
+vi.mock('../helpers/meeting-attendance.helper', () => ({ attachMeetingRsvpSummaries: attachRsvpSummariesMock }));
 vi.mock('../services/access-check.service', () => ({
   AccessCheckService: vi.fn(function () {
     return {};
@@ -1586,6 +1601,40 @@ describe('MeetingController', () => {
       await controller.uploadMeetingAttachment(buildUploadReq(), buildRes(), next);
 
       expect(meetingSvc.uploadMeetingAttachment.mock.calls[0][3]).not.toHaveProperty('occurrence_id');
+    });
+  });
+
+  describe('getMeetings — meetings home include', () => {
+    const listed = [{ id: 'meeting-a', organizer: true }];
+    const summarized = [{ id: 'meeting-a', organizer: true, invited: true, invited_via_committee: false, rsvp_summary: { yes: 1 } }];
+
+    beforeEach(() => {
+      meetingSvc.getMeetings.mockResolvedValue({ data: listed, page_token: 'next' });
+      userSvc.getUserMeetingRegistrations.mockResolvedValue(new Map([['meeting-a', false]]));
+      userSvc.attachViewerRsvps.mockResolvedValue(new Set());
+      attachRsvpSummariesMock.mockResolvedValue(summarized);
+    });
+
+    it('adds the viewer RSVP and organizer summaries when included, without forwarding include upstream', async () => {
+      const res = buildRes();
+
+      await controller.getMeetings(buildReq({ query: { include: 'viewer_rsvp, attendance', project_uid: 'p1' } }), res, next);
+
+      expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { project_uid: 'p1' }, 'v1_meeting', true);
+      const rows = [{ id: 'meeting-a', organizer: true, invited: true, invited_via_committee: false }];
+      expect(userSvc.attachViewerRsvps).toHaveBeenCalledWith(expect.anything(), rows, 'get_meetings');
+      expect(attachRsvpSummariesMock).toHaveBeenCalledWith(expect.anything(), rows);
+      expect(res.json).toHaveBeenCalledWith({ data: summarized, page_token: 'next' });
+    });
+
+    it('runs neither lookup without include', async () => {
+      const res = buildRes();
+
+      await controller.getMeetings(buildReq({ query: {} }), res, next);
+
+      expect(userSvc.attachViewerRsvps).not.toHaveBeenCalled();
+      expect(attachRsvpSummariesMock).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ data: [{ id: 'meeting-a', organizer: true, invited: true, invited_via_committee: false }], page_token: 'next' });
     });
   });
 });
