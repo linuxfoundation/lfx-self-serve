@@ -25,6 +25,7 @@ const EVENT: HealthMetricsOverviewEvent = {
   registrations: 328,
   registrationsGoal: 1000,
   compScore: 'medium',
+  proposalsCompScore: null,
   acceptedTalks: 0,
   totalProposals: 185,
   cfpStatus: 'Review Complete',

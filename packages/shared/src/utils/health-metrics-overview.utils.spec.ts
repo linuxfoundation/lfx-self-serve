@@ -395,7 +395,10 @@ describe('buildHealthMetricsOverviewBalanceView', () => {
   };
 
   /** `ytd` in the year to date; every past year holds `past`. */
-  function balance(ytd: Partial<HealthMetricsOverviewBalancePeriod> = {}, past: Partial<HealthMetricsOverviewBalancePeriod> = {}): HealthMetricsOverviewOutstandingBalance {
+  function balance(
+    ytd: Partial<HealthMetricsOverviewBalancePeriod> = {},
+    past: Partial<HealthMetricsOverviewBalancePeriod> = {}
+  ): HealthMetricsOverviewOutstandingBalance {
     const year = { ...figures, ...past };
     return { measured: true, periods: { YTD: { ...figures, ...ytd }, COMPLETED_YEAR: year, COMPLETED_YEAR_2: year, COMPLETED_YEAR_3: year } };
   }
@@ -454,6 +457,7 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       registrations: 328,
       registrationsGoal: 1000,
       compScore: 'medium',
+      proposalsCompScore: null,
       acceptedTalks: 0,
       totalProposals: 185,
       cfpStatus: 'Review Complete',
@@ -583,15 +587,29 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       sideValue: '185',
       widthPct: 0,
       barClass: 'bg-blue-500',
+      statusLabel: null,
       neutral: false,
       gauge: { tone: 'accent', level: null, empty: false, unmeasured: false },
       note: 'N/A',
       compactValue: '0 (Received: 185)',
-      // No rule rates upcoming proposals, so their line stays grey.
+      // With no proposals rating, the bar stays blue and the line grey.
       lineClass: 'border-l-gray-200',
     });
     expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP In Review', compactValue: 'CFP In Review', lineClass: 'border-l-gray-200' });
     expect(none.talks.note).toBe('N/A');
+  });
+
+  it("colours an upcoming event's proposals by their rating, as registrations are by theirs", () => {
+    const rated = (proposalsCompScore: string | null) =>
+      buildHealthMetricsOverviewEventsView(glance, sponsorship, { ...events, upcoming: [event({ proposalsCompScore, acceptedTalks: 40 })] }, 'YTD').rows[0]
+        .talks;
+
+    expect([rated('high'), rated('medium'), rated('low')].map((talks) => [talks.barClass, talks.statusLabel, talks.gauge.level, talks.lineClass])).toEqual([
+      ['bg-emerald-500', 'On track', 'high', 'border-l-emerald-500'],
+      ['bg-amber-400', 'At risk', 'mid', 'border-l-amber-400'],
+      ['bg-red-400', 'Action required', 'low', 'border-l-red-400'],
+    ]);
+    expect(rated(null)).toMatchObject({ barClass: 'bg-blue-500', statusLabel: null, lineClass: 'border-l-gray-200' });
   });
 
   it("lists a past year's events, colored by their share of the goal, with green submitted proposals", () => {
@@ -754,7 +772,11 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
 
   it("reads a past year's own goal and progress", () => {
     const pastGoal = { enrollments: 120000, revenueUsd: null, enrollmentsProgress: 1.0, revenueProgress: null };
-    const view = buildHealthMetricsOverviewTrainingView({ ...enrollment, goals: { ...enrollment.goals, COMPLETED_YEAR: pastGoal } }, 'COMPLETED_YEAR', 'enrollments');
+    const view = buildHealthMetricsOverviewTrainingView(
+      { ...enrollment, goals: { ...enrollment.goals, COMPLETED_YEAR: pastGoal } },
+      'COMPLETED_YEAR',
+      'enrollments'
+    );
 
     expect(view.goalLabel).toBe('100% of 120K goal');
     expect(view.noGoal).toBe(false);
@@ -1051,7 +1073,13 @@ describe('buildHealthMetricsOverviewBoardView', () => {
       ['Alex Moe', '1 of 2', '50%', 'bg-amber-400'],
       ['Pat Doe', '3 of 3', '100%', 'bg-emerald-500'],
     ]);
-    expect(rows[2]).toMatchObject({ initials: 'PD', photoUrl: 'https://photos.example/pat.jpg', title: 'CTO', organizationInitial: 'A', lastAttendedLabel: 'Dec 9, 2025' });
+    expect(rows[2]).toMatchObject({
+      initials: 'PD',
+      photoUrl: 'https://photos.example/pat.jpg',
+      title: 'CTO',
+      organizationInitial: 'A',
+      lastAttendedLabel: 'Dec 9, 2025',
+    });
     expect(rows[0]).toMatchObject({ photoUrl: '', organization: '—', organizationInitial: '', lastAttendedLabel: '—' });
   });
 

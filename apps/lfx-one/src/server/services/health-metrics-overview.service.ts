@@ -74,6 +74,7 @@ interface EventRowBase {
 
 interface UpcomingEventRow extends EventRowBase {
   COMP_SCORE: string | null;
+  PROPOSALS_COMP_SCORE: string | null;
 }
 
 interface PastEventRow extends EventRowBase {
@@ -463,6 +464,7 @@ export class HealthMetricsOverviewService {
         r.count_registrations_all_time AS registrations,
         r.event_registrations_goal AS registrations_goal,
         NULLIF(TRIM(r.comp_score), '') AS comp_score,
+        NULLIF(TRIM(r.proposals_comp_score), '') AS proposals_comp_score,
         r.accepted_speaker_proposals_all_time AS accepted_talks,
         r.total_speaker_proposals_all_time AS total_proposals,
         NULLIF(TRIM(r.cfp_status), '') AS cfp_status
@@ -597,7 +599,7 @@ function mapChurnTier(row: WideRow, range: HealthMetricsL2Range): HealthMetricsO
 }
 
 /** The fields both lists share. */
-function mapEventBase(row: EventRowBase): Omit<HealthMetricsOverviewEvent, 'registrationsGoal' | 'compScore' | 'ranges'> {
+function mapEventBase(row: EventRowBase): Omit<HealthMetricsOverviewEvent, 'registrationsGoal' | 'compScore' | 'proposalsCompScore' | 'ranges'> {
   const eventId = String(row.EVENT_ID);
   return {
     eventId,
@@ -618,6 +620,7 @@ function mapUpcomingEvent(row: UpcomingEventRow): HealthMetricsOverviewEvent {
     ...mapEventBase(row),
     registrationsGoal: positiveOrNull(toNullableNumber(row.REGISTRATIONS_GOAL)),
     compScore: row.COMP_SCORE?.toLowerCase() ?? null,
+    proposalsCompScore: row.PROPOSALS_COMP_SCORE?.toLowerCase() ?? null,
     ranges: [],
   };
 }
@@ -628,6 +631,7 @@ function mapPastEvent(row: PastEventRow): HealthMetricsOverviewEvent {
     ...mapEventBase(row),
     registrationsGoal: row.HAS_GOAL === true ? toNullableNumber(row.REGISTRATIONS_GOAL) : null,
     compScore: null,
+    proposalsCompScore: null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[`IS_IN_PERIOD_${range}`] === true),
   };
 }

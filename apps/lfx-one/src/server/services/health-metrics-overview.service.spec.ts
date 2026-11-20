@@ -282,6 +282,7 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       REGISTRATIONS: 313,
       REGISTRATIONS_GOAL: 700,
       COMP_SCORE: 'High',
+      PROPOSALS_COMP_SCORE: 'Low',
       ACCEPTED_TALKS: 0,
       TOTAL_PROPOSALS: 185,
       CFP_STATUS: 'Review Complete',
@@ -330,6 +331,7 @@ describe('HealthMetricsOverviewService.getEvents', () => {
     const index = readIndex('upcoming');
     expect(sql(index)).toContain('INNER JOIN foundation f ON r.project_id = f.foundation_id');
     expect(sql(index)).toContain('AND r.event_is_past = FALSE');
+    expect(sql(index)).toContain("NULLIF(TRIM(r.proposals_comp_score), '') AS proposals_comp_score");
     expect(sql(index)).toContain('ORDER BY r.event_start_date ASC NULLS LAST');
     expect(sql(index)).toContain(`LIMIT ${HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1}`);
     expectBinds(index, ['acme']);
@@ -349,7 +351,10 @@ describe('HealthMetricsOverviewService.getEvents', () => {
   });
 
   it("maps an upcoming event's goal and pace, treating a zero goal as none", async () => {
-    mockReads([upcoming({}), upcoming({ EVENT_ID: 'e2', EVENT_NAME: null, REGISTRATIONS_GOAL: 0, COMP_SCORE: null, EVENT_CITY: null })], []);
+    mockReads(
+      [upcoming({}), upcoming({ EVENT_ID: 'e2', EVENT_NAME: null, REGISTRATIONS_GOAL: 0, COMP_SCORE: null, PROPOSALS_COMP_SCORE: null, EVENT_CITY: null })],
+      []
+    );
 
     const events = await new HealthMetricsOverviewService().getEvents(req, query);
 
@@ -362,12 +367,13 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       registrations: 313,
       registrationsGoal: 700,
       compScore: 'high',
+      proposalsCompScore: 'low',
       acceptedTalks: 0,
       totalProposals: 185,
       cfpStatus: 'Review Complete',
       ranges: [],
     });
-    expect(events.upcoming[1]).toMatchObject({ eventName: 'e2', registrationsGoal: null, compScore: null, city: null });
+    expect(events.upcoming[1]).toMatchObject({ eventName: 'e2', registrationsGoal: null, compScore: null, proposalsCompScore: null, city: null });
     expect(events.truncated).toBe(false);
   });
 
@@ -381,6 +387,7 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       registrations: 900,
       registrationsGoal: 800,
       compScore: null,
+      proposalsCompScore: null,
       ranges: ['COMPLETED_YEAR'],
     });
     expect(rows[1]).toMatchObject({ eventId: 'p2', registrationsGoal: null, ranges: ['COMPLETED_YEAR', 'YTD'] });

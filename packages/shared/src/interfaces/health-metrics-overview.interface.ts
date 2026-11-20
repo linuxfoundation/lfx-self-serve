@@ -129,6 +129,11 @@ export interface HealthMetricsOverviewEvent {
   registrationsGoal: number | null;
   /** Upcoming only: the view's pace against last year (`high`, `medium` or `low`). */
   compScore: string | null;
+  /**
+   * Upcoming only: the proposals' pace against last year's edition, on the same scale. `null` with no previous
+   * edition, no proposals yet, or once the event has started.
+   */
+  proposalsCompScore: string | null;
   acceptedTalks: number | null;
   totalProposals: number | null;
   /** The call for proposals' stage, e.g. `In Review`. */
@@ -471,6 +476,8 @@ export interface HealthMetricsOverviewEventRegistrationsView extends HealthMetri
 export interface HealthMetricsOverviewEventTalksView extends HealthMetricsOverviewEventBarView {
   hasProposals: boolean;
   note: string;
+  /** An upcoming event's proposals pace, named for screen readers; `null` without one. */
+  statusLabel: string | null;
 }
 
 export interface HealthMetricsOverviewEventRowView {

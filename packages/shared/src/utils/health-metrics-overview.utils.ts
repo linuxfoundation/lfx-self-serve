@@ -274,7 +274,10 @@ export function buildHealthMetricsOverviewChurnView(churn: HealthMetricsOverview
 }
 
 /** The period's overdue invoices, split into the high and medium risk bands. */
-export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOverviewOutstandingBalance, range: HealthMetricsRange): HealthMetricsOverviewBalanceView {
+export function buildHealthMetricsOverviewBalanceView(
+  balance: HealthMetricsOverviewOutstandingBalance,
+  range: HealthMetricsRange
+): HealthMetricsOverviewBalanceView {
   const l2 = toHealthMetricsOverviewRange(range);
   const period = balance.measured && l2 ? balance.periods[l2] : null;
   const high = period?.highRiskUsd ?? 0;
@@ -1274,7 +1277,11 @@ function buildTalksBar(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
   const proposals = event.totalProposals ?? 0;
   const hasProposals = proposals > 0;
   const note = event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A';
-  const gauge: HealthMetricsOverviewEventGaugeView = isPast ? { ...ACCENT_GAUGE, tone: 'level', level: 'high' } : ACCENT_GAUGE;
+  // Past proposals are green, as the design draws them; upcoming ones take their pace, as registrations do.
+  const status = isPast
+    ? { barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high, statusLabel: null, gauge: { ...ACCENT_GAUGE, tone: 'level' as const, level: 'high' as const } }
+    : statusFields(paceStatus(event.proposalsCompScore));
+  const gauge = status.gauge;
 
   return {
     hasProposals,
@@ -1282,8 +1289,8 @@ function buildTalksBar(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
     sideLabel: 'Received:',
     sideValue: formatCount(proposals),
     widthPct: hasProposals ? clampPct((accepted / proposals) * 100) : 0,
-    // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
-    barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
+    barClass: status.barClass,
+    statusLabel: hasProposals ? status.statusLabel : null,
     neutral: false,
     gauge,
     note,

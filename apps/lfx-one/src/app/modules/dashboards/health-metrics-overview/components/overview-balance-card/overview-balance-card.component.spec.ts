@@ -28,7 +28,10 @@ const PERIOD: HealthMetricsOverviewBalancePeriod = {
 };
 
 /** The same figures in every period, with `ytd` and `lastYear` overriding the year to date and last year. */
-function balance(ytd: Partial<HealthMetricsOverviewBalancePeriod> = {}, lastYear: Partial<HealthMetricsOverviewBalancePeriod> = {}): HealthMetricsOverviewOutstandingBalance {
+function balance(
+  ytd: Partial<HealthMetricsOverviewBalancePeriod> = {},
+  lastYear: Partial<HealthMetricsOverviewBalancePeriod> = {}
+): HealthMetricsOverviewOutstandingBalance {
   return {
     measured: true,
     periods: { YTD: { ...PERIOD, ...ytd }, COMPLETED_YEAR: { ...PERIOD, ...lastYear }, COMPLETED_YEAR_2: PERIOD, COMPLETED_YEAR_3: PERIOD },
