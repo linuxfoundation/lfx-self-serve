@@ -1282,10 +1282,10 @@ describe('buildHealthMetricsEngagementNewsletterChart', () => {
     expect(chart.area?.color).toBe('#009AFF');
     expect(chart.ticks.map((tick) => tick.label)).toEqual(['Jan', 'Feb']);
     expect(chart.ariaLabel).toBe('Open, click and click-to-open rate by newsletter');
-    expect(legend.map((item) => [item.label, item.color])).toEqual([
-      ['Open rate', '#009AFF'],
-      ['Click rate', '#AD46FF'],
-      ['Click-to-open rate', '#00BC7D'],
+    expect(legend.map((item) => [item.label, item.color, item.dashed])).toEqual([
+      ['Open rate', '#009AFF', false],
+      ['Click rate', '#AD46FF', false],
+      ['Click-to-open rate', '#00BC7D', true],
     ]);
   });
 

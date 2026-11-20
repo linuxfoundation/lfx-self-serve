@@ -633,7 +633,7 @@ export function buildHealthMetricsEngagementNewsletterChart(
       })),
       ariaLabel: audience ? 'Recipients and unique opens by newsletter' : 'Open, click and click-to-open rate by newsletter',
     }),
-    legend: series.map((line) => ({ key: line.key, label: line.label, color: line.color })),
+    legend: series.map((line) => ({ key: line.key, label: line.label, color: line.color, dashed: line.dashed === true })),
   };
 }
 
