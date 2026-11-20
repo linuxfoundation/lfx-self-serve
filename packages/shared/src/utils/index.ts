@@ -20,6 +20,7 @@ export * from './iso-timestamp.utils';
 export * from './keyboard.utils';
 export * from './mailing-list.utils';
 export * from './meeting-attachment.utils';
+export * from './calendar-subscribe.utils';
 export * from './meeting-calendar.utils';
 export * from './meeting.utils';
 export * from './meeting-list.utils';

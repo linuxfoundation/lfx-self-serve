@@ -3,6 +3,7 @@
 
 import { environment } from '@environments/environment';
 import { Committee } from '@lfx-one/shared/interfaces';
+import { getProjectCalendarFeedUrl } from '@lfx-one/shared/utils';
 import { DialogService } from 'primeng/dynamicdialog';
 
 import { IcalSubscribeDialogComponent } from '../components/ical-subscribe-dialog/ical-subscribe-dialog.component';
@@ -15,7 +16,7 @@ export function openIcalSubscribeDialog(dialogService: DialogService, committee:
 
 /** Opens the shared iCal Subscribe dialog for a project's calendar feed. */
 export function openProjectIcalSubscribeDialog(dialogService: DialogService, projectUid: string, name: string): void {
-  const feedUrl = `${environment.urls.home}/public/api/projects/${encodeURIComponent(projectUid)}/calendar.ics`;
+  const feedUrl = getProjectCalendarFeedUrl(environment.urls.home, projectUid);
   openSubscribeDialog(dialogService, feedUrl, name);
 }
 

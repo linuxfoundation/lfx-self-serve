@@ -1325,6 +1325,7 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(query(fixture, 'meetings-redesign-project-column')?.querySelector('[data-testid="meetings-redesign-mini-calendar"]')).toBeTruthy();
       expect(query(fixture, 'meetings-redesign-project-column')?.className).toContain('min-[1025px]:flex');
+      expect(query(fixture, 'meetings-redesign-project-column')?.querySelector('[data-testid="meetings-calendar-actions-subscribe"]')).toBeTruthy();
     });
 
     it('does not create the calendar, or load past pages for it, while its column is hidden', async () => {
