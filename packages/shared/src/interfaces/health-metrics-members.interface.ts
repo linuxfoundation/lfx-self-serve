@@ -707,7 +707,7 @@ export interface HealthMetricsMembersChurnTierRowView {
   sortValues: Record<HealthMetricsMembersChurnTierSortKey, HealthMetricsSortValue>;
 }
 
-/** One year of the churn trend, oldest first; `value` is the mode's rate, `null` when unmeasured. */
+/** One year of the churn trend, oldest first; `value` is the year's revenue churn, `null` when unmeasured. */
 export interface HealthMetricsMembersChurnTrendPointView {
   year: number;
   label: string;
@@ -723,8 +723,6 @@ export interface HealthMetricsMembersChurnView {
   /** The selected period's year has churn figures. */
   yearMeasured: boolean;
   year: number;
-  /** The year lost at least one membership. */
-  hasChurn: boolean;
   /** Revenue churn, logo churn and the dues lost, whatever the view switch. */
   metrics: HealthMetricsMetricItem[];
   /** Most dues lost first. */

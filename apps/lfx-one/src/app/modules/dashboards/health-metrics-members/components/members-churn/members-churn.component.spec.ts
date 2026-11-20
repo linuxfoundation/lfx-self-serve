@@ -324,6 +324,11 @@ describe('MembersChurnComponent', () => {
     section('tiers');
     await settle();
     expect(text('members-churn-tiers-empty')).toBe('Nothing matches this view.');
+
+    // One measured year leaves nothing to trend.
+    section('trend');
+    await settle();
+    expect(text('members-churn-trend-empty')).toBe('Nothing matches this view.');
   });
 
   it('holds the skeleton, not the old figures, while a newly selected foundation reads', async () => {

@@ -27,11 +27,10 @@ import {
   buildHealthMetricsMembersRenewalsMetrics,
   buildHealthMetricsMembersSections,
   buildHealthMetricsMembersSubNavItems,
-  healthMetricsMembersChurnTierSortValue,
   parseHealthMetricsMembersAtRiskFilter,
   parseHealthMetricsMembersRenewalsWindow,
 } from './health-metrics-members.utils';
-import { resolveHealthMetricsMembersTier, sortHealthMetricsRows } from './health-metrics-table.utils';
+import { healthMetricsRowSortValue, resolveHealthMetricsMembersTier, sortHealthMetricsRows } from './health-metrics-table.utils';
 
 import type {
   HealthMetricsMembersAtRisk,
@@ -1103,7 +1102,7 @@ describe('members churn', () => {
   it('reads revenue churn with its change, logo churn with its memberships, and the dues lost for the running year', () => {
     const view = buildHealthMetricsMembersChurnView(CHURN, 'YTD');
 
-    expect(view).toMatchObject({ measured: true, yearMeasured: true, year: 2026, hasChurn: true });
+    expect(view).toMatchObject({ measured: true, yearMeasured: true, year: 2026 });
     expect(view.metrics).toEqual([
       { key: 'revenue', label: 'Revenue churn', value: '16.0%', descriptionLead: '+4.6pp', descriptionLeadTone: 'down', description: ' vs 2025' },
       { key: 'logo', label: 'Logo churn', value: '10%', description: '12 of 120 memberships' },
@@ -1146,12 +1145,24 @@ describe('members churn', () => {
   it('sorts By tier by tier rank, and by the rate and share each cell shows', () => {
     const { tiers } = buildHealthMetricsMembersChurnView(CHURN, 'YTD');
     const sorted = (key: HealthMetricsMembersChurnTierSortKey, direction: 'asc' | 'desc') =>
-      sortHealthMetricsRows(tiers, { key, direction }, healthMetricsMembersChurnTierSortValue).map((row) => row.membershipLabel);
+      sortHealthMetricsRows(tiers, { key, direction }, healthMetricsRowSortValue).map((row) => row.membershipLabel);
 
     expect(sorted('membership', 'desc')).toEqual(['Gold', 'Silver', 'Associate', 'Bronze']);
     expect(sorted('lost', 'desc')).toEqual(['Silver', 'Gold', 'Associate', 'Bronze']);
     expect(sorted('share', 'asc')).toEqual(['Bronze', 'Associate', 'Silver', 'Gold']);
     expect(tiers[2].sortValues).toMatchObject({ rate: 2, share: 0.3 });
+  });
+
+  it('sorts a rate under 1% by the tenth it shows, above a real 0%', () => {
+    const { tiers } = buildHealthMetricsMembersChurnView(
+      { ...CHURN, tiers: [tier(2026, 'Gold', 1, 1, 10, 50, 0.04), tier(2026, 'Silver', 2, 0, 0, 0, 0)] },
+      'YTD'
+    );
+
+    expect(tiers.map((row) => [row.rateLabel, row.sortValues.rate])).toEqual([
+      ['0.1%', 0.1],
+      ['0%', 0],
+    ]);
   });
 
   it('plots the revenue churn trend ending at the selected year and warns when churn rose', () => {
@@ -1172,11 +1183,11 @@ describe('members churn', () => {
       tiers: [],
     };
     const view = buildHealthMetricsMembersChurnView(quiet, 'YTD');
-    expect(view).toMatchObject({ yearMeasured: true, hasChurn: false });
+    expect(view.yearMeasured).toBe(true);
     expect(view.metrics.map((item) => item.value)).toEqual(['0%', '0%', '$0']);
 
     const unmeasured: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: null })], tiers: [] };
-    expect(buildHealthMetricsMembersChurnView(unmeasured, 'YTD')).toMatchObject({ yearMeasured: false, hasChurn: false });
+    expect(buildHealthMetricsMembersChurnView(unmeasured, 'YTD').yearMeasured).toBe(false);
     expect(buildHealthMetricsMembersChurnView({ years: [], tiers: [] }, 'YTD')).toMatchObject({ measured: false, yearMeasured: false, trend: [] });
   });
 

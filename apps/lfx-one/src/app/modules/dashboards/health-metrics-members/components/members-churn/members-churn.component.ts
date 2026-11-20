@@ -25,7 +25,7 @@ import {
 import {
   buildHealthMetricsMembersChurnDepartureRows,
   buildHealthMetricsMembersChurnView,
-  healthMetricsMembersChurnTierSortValue,
+  healthMetricsRowSortValue,
   sortHealthMetricsRows,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -144,7 +144,7 @@ export class MembersChurnComponent {
     buildHealthMetricsMembersChurnDepartureRows(this.departures().rows)
   );
   protected readonly tierRows: Signal<HealthMetricsMembersChurnTierRowView[]> = computed(() =>
-    sortHealthMetricsRows(this.view().tiers, this.tierSorting.sort(), healthMetricsMembersChurnTierSortValue)
+    sortHealthMetricsRows(this.view().tiers, this.tierSorting.order(), healthMetricsRowSortValue)
   );
   protected readonly totalRecords = computed(() => this.departures().totalRecords);
   /** Holds the skeleton until a foundation's first read lands; a period change re-projects in place. */

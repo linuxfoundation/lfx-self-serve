@@ -652,7 +652,7 @@ export class HealthMetricsMembersService {
 
   /**
    * Every year's churn off `MEMBERSHIP_CHURN`: the all-tiers row and each tier's row. All years come back
-   * at once, so a period or mode change re-projects without a re-read.
+   * at once, so a period change re-projects without a re-read.
    */
   public async getChurn(req: Request, query: HealthMetricsMembersChurnQuery): Promise<HealthMetricsMembersChurn> {
     const sql = `

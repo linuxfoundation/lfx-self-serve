@@ -65,7 +65,6 @@ import type {
   HealthMetricsMembersChurnDepartureRowView,
   HealthMetricsMembersChurnTier,
   HealthMetricsMembersChurnTierRowView,
-  HealthMetricsMembersChurnTierSortKey,
   HealthMetricsMembersChurnTrendPointView,
   HealthMetricsMembersChurnView,
   HealthMetricsMembersChurnYear,
@@ -93,7 +92,6 @@ import type {
   HealthMetricsMembersTierYear,
   HealthMetricsMembersTiers,
 } from '../interfaces/health-metrics-members.interface';
-import type { HealthMetricsSortValue } from '../interfaces/health-metrics-table.interface';
 
 /** Sub-nav items for the Members tab; a section notes only once it reports a note. */
 export function buildHealthMetricsMembersSubNavItems(notes: Partial<Record<HealthMetricsMembersSectionKey, string>> = {}): HealthMetricsMembersSubNavItem[] {
@@ -589,7 +587,6 @@ export function buildHealthMetricsMembersChurnView(churn: HealthMetricsMembersCh
     // A null count is unmeasured, so it must not read as "no churn".
     yearMeasured: current !== null && current.lostCount !== null,
     year,
-    hasChurn: Math.round(current?.lostCount ?? 0) > 0,
     metrics: buildChurnMetrics(current, year, change),
     tiers: buildChurnTierRows(churn.tiers.filter((row) => row.year === year)),
     trend: buildChurnTrend(churn.years, year, (row) => row?.revenueNotRenewedRate ?? null),
@@ -614,14 +611,6 @@ export function buildHealthMetricsMembersChurnDepartureRows(rows: HealthMetricsM
       lastEngagedLabel: formatIsoDate(row.lastEngagedDate),
     };
   });
-}
-
-/** By tier's sort value; Membership follows the tier's rank, the rest the value each cell shows. */
-export function healthMetricsMembersChurnTierSortValue(
-  row: HealthMetricsMembersChurnTierRowView,
-  key: HealthMetricsMembersChurnTierSortKey
-): HealthMetricsSortValue {
-  return row.sortValues[key];
 }
 
 function churnDifference(current: number | null, previous: number | null): number | null {
@@ -681,7 +670,7 @@ function buildChurnTierRows(tiers: HealthMetricsMembersChurnTier[]): HealthMetri
         sortValues: {
           membership: healthMetricsTierSortRank(row.tier),
           lost: row.lostCount,
-          rate: row.churnRate === null ? null : Math.round(row.churnRate * 10) / 10,
+          rate: row.churnRate === null ? null : shownChurnRate(row.churnRate),
           dues: row.duesLostUsd,
           share: share === null ? null : healthMetricsShownPercent(share),
         },
@@ -714,6 +703,12 @@ function buildChurnTrend(
 function formatChurnRate(pct: number | null): string {
   if (pct === null) return '—';
   return formatHealthMetricsSmallPercent(pct) ?? `${pct.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+}
+
+/** A churn rate as its cell shows it: one decimal, with the small-percent rule under 1%, so the sort matches the label. */
+function shownChurnRate(pct: number): number {
+  if (pct > 0 && pct < 1) return healthMetricsShownPercent(pct);
+  return Math.round(pct * 10) / 10;
 }
 
 /** A share of the loss: whole from 1%, one decimal under it, so a small loss never reads "0%". */
