@@ -509,6 +509,8 @@ describe('VoteCastDrawerComponent — locked review of a final ballot (#4331)', 
     expect(fixture.componentInstance.form.get('q1')?.value).toBe('c2');
     expect(fixture.componentInstance.form.disabled).toBe(true);
     expect(el('vote-cast-impersonation-notice')?.textContent).toContain('Ballots are read-only');
+    expect(el('vote-cast-review-notice')?.textContent?.trim()).toBe('Your vote has been recorded.');
+    expect(el('vote-cast-ballot-final')).toBeNull();
     expect(submitButton()).toBeNull();
   });
 
@@ -1112,6 +1114,7 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(fixture.componentInstance.form.disabled).toBe(true);
     expect(el('vote-cast-submit-button')).toBeNull();
     expect(el('vote-cast-ballot-final')).toBeNull();
+    expect(el('vote-cast-review-notice')?.textContent?.trim()).toBe('Your vote has been recorded.');
     expect(el('vote-cast-impersonation-notice')).not.toBeNull();
     fixture.componentInstance['onSubmit']();
     expect(updateMyResponse).not.toHaveBeenCalled();

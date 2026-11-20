@@ -658,7 +658,7 @@ describe('VoteDetailComponent', () => {
     voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
     const fixture = await setup();
 
-    // The stubbed drawer records every bound input, so binding change mode here fails this test.
+    // setup() strips child imports under NO_ERRORS_SCHEMA, so any [changeMode] binding on the drawer element lands in its properties and fails this test.
     const drawer = fixture.debugElement.query(By.css('lfx-vote-cast-drawer'));
     expect(drawer).not.toBeNull();
     expect(drawer.properties['changeMode']).toBeUndefined();
