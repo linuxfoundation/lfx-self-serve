@@ -3,13 +3,14 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, Signal, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, ElementRef, inject, Signal, signal, untracked, viewChild } from '@angular/core';
 import {
   MEETINGS_HOME_CALENDAR_HOUR_PX,
   MEETINGS_HOME_CALENDAR_MONTH_CHIPS,
   MEETINGS_HOME_CALENDAR_START_HOUR,
   MEETINGS_HOME_CALENDAR_TYPE_COLORS,
   MEETINGS_HOME_CALENDAR_WEEKDAY_NAMES,
+  MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX,
 } from '@lfx-one/shared/constants';
 import {
   MeetingCalendarChip,
@@ -64,7 +65,7 @@ export class MeetingsCalendarDialogComponent {
 
   protected readonly view = signal<MeetingCalendarView>('month');
   /** A date in the shown month or week. */
-  protected readonly focus = signal<Date>(this.data.now());
+  protected readonly focus = signal<Date>(this.data.month ?? this.data.now());
   protected readonly scrolled = signal(false);
   protected readonly tooltip = signal<MeetingCalendarChipTooltip | null>(null);
 
@@ -79,10 +80,20 @@ export class MeetingsCalendarDialogComponent {
   /** Week view: the seven day columns. */
   protected readonly weekDays: Signal<MeetingCalendarDialogDay[]> = this.initWeekDays();
 
+  /** First day shown while it is not after today, so the past meetings from it can load; null for a later period. */
+  private readonly pastShownFrom: Signal<string | null> = computed(() => {
+    const first = getLocalDayKey(this.view() === 'month' ? getMeetingCalendarMonthDates(this.focus())[0] : this.weekStart());
+    return first <= getLocalDayKey(this.data.now()) ? first : null;
+  });
+
   private scrollTimer: ReturnType<typeof setTimeout> | undefined;
 
   public constructor() {
     this.destroyRef.onDestroy(() => clearTimeout(this.scrollTimer));
+    effect(() => {
+      const from = this.pastShownFrom();
+      if (from) untracked(() => this.data.showPastFrom(from));
+    });
   }
 
   protected close(): void {
@@ -94,7 +105,14 @@ export class MeetingsCalendarDialogComponent {
     if (view === this.view()) return;
     this.view.set(view);
     this.tooltip.set(null);
-    if (view === 'week') this.scrollToStartHour();
+    if (view === 'week') {
+      this.scrollToStartHour();
+      return;
+    }
+    // The month starts at its top, not at the week's 8 AM.
+    clearTimeout(this.scrollTimer);
+    this.body().nativeElement.scrollTop = 0;
+    this.scrolled.set(false);
   }
 
   protected step(direction: -1 | 1): void {
@@ -128,7 +146,9 @@ export class MeetingsCalendarDialogComponent {
   protected showTooltip(chip: MeetingCalendarChip, target: EventTarget | null): void {
     if (!(target instanceof HTMLElement)) return;
     const rect = target.getBoundingClientRect();
-    this.tooltip.set({ left: Math.round(rect.left + rect.width / 2), top: Math.round(rect.top - 6), title: chip.title, detail: chip.detail });
+    const edge = MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX;
+    const left = Math.max(edge, Math.min(window.innerWidth - edge, rect.left + rect.width / 2));
+    this.tooltip.set({ left: Math.round(left), top: Math.round(rect.top - 6), title: chip.title, detail: chip.detail });
   }
 
   protected onScroll(): void {

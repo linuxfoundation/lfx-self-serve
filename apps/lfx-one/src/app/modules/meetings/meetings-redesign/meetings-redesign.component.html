@@ -194,7 +194,7 @@
           [loading]="store.upcomingLoading() || store.pastLoading()"
           (daySelected)="showDay($event)"
           (olderMonthShown)="store.showPastFrom($event)"
-          (expand)="openCalendar()"
+          (expand)="openCalendar($event)"
           data-testid="meetings-redesign-mini-calendar" />
       }
     </aside>

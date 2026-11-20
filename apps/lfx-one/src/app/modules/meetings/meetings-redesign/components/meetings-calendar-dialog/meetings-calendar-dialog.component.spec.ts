@@ -26,12 +26,19 @@ describe('MeetingsCalendarDialogComponent', () => {
   let openMeeting: ReturnType<typeof vi.fn<(row: MeetingHomeRow) => void>>;
   let upcoming: ReturnType<typeof signal<MeetingHomeRow[]>>;
   let past: ReturnType<typeof signal<MeetingHomeRow[]>>;
+  let showPastFrom: ReturnType<typeof vi.fn<(day: string) => void>>;
+  let month: Date | undefined;
 
   beforeEach(() => {
     close = vi.fn();
     openMeeting = vi.fn<(row: MeetingHomeRow) => void>();
     upcoming = signal<MeetingHomeRow[]>([]);
     past = signal<MeetingHomeRow[]>([]);
+    showPastFrom = vi.fn<(day: string) => void>();
+    month = undefined;
+  });
+
+  const configure = (): void => {
     const data: MeetingCalendarDialogData = {
       upcomingRows: upcoming,
       pastRows: past,
@@ -39,6 +46,8 @@ describe('MeetingsCalendarDialogComponent', () => {
       name: 'Synthetic Foundation',
       logoUrl: '',
       openMeeting,
+      showPastFrom,
+      month,
     };
     TestBed.configureTestingModule({
       providers: [
@@ -46,9 +55,10 @@ describe('MeetingsCalendarDialogComponent', () => {
         { provide: DialogRef, useValue: { id: 'calendar-dialog', close } },
       ],
     });
-  });
+  };
 
   const render = async (): Promise<ComponentFixture<MeetingsCalendarDialogComponent>> => {
+    configure();
     const fixture = TestBed.createComponent(MeetingsCalendarDialogComponent);
     await fixture.whenStable();
     return fixture;
@@ -179,5 +189,74 @@ describe('MeetingsCalendarDialogComponent', () => {
     await fixture.whenStable();
 
     expect(query(fixture, 'meetings-calendar-dialog-fade')?.className).not.toContain('opacity-0');
+  });
+
+  it('opens on the month it was given and asks for past meetings from the first day shown, as it pages back', async () => {
+    month = new Date(2026, 8, 15);
+    const fixture = await render();
+
+    expect(query(fixture, 'meetings-calendar-dialog-period')?.textContent?.trim()).toBe('September 2026');
+    expect(showPastFrom).toHaveBeenLastCalledWith('2026-08-30');
+
+    await click(fixture, 'meetings-calendar-dialog-previous');
+    expect(showPastFrom).toHaveBeenLastCalledWith('2026-07-26');
+
+    query(fixture, 'meetings-calendar-dialog-view')?.querySelectorAll('input')[1]?.click();
+    await fixture.whenStable();
+    expect(showPastFrom).toHaveBeenLastCalledWith('2026-07-26');
+    const calls = showPastFrom.mock.calls.length;
+
+    // A month after today holds no past meetings to ask for.
+    await click(fixture, 'meetings-calendar-dialog-today');
+    query(fixture, 'meetings-calendar-dialog-view')?.querySelectorAll('input')[0]?.click();
+    await fixture.whenStable();
+    showPastFrom.mockClear();
+    await click(fixture, 'meetings-calendar-dialog-next');
+    expect(showPastFrom).not.toHaveBeenCalled();
+    expect(calls).toBeGreaterThan(0);
+  });
+
+  it('goes back to the top when switching from Week to Month', async () => {
+    const fixture = await render();
+    const body = query(fixture, 'meetings-calendar-dialog-body') as HTMLElement;
+    query(fixture, 'meetings-calendar-dialog-view')?.querySelectorAll('input')[1]?.click();
+    await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(body.scrollTop).toBe(376);
+
+    query(fixture, 'meetings-calendar-dialog-view')?.querySelectorAll('input')[0]?.click();
+    await fixture.whenStable();
+
+    expect(body.scrollTop).toBe(0);
+  });
+
+  it('keeps a chip tooltip inside the window', async () => {
+    past.set([row('a', new Date(2026, 9, 4, 10))]);
+    const fixture = await render();
+    const chip = query(fixture, 'meetings-calendar-dialog-chip') as HTMLElement;
+    vi.spyOn(chip, 'getBoundingClientRect').mockReturnValue({ top: 300, bottom: 320, left: 20, right: 60, width: 40, height: 20, x: 20, y: 300 } as DOMRect);
+
+    chip.dispatchEvent(new MouseEvent('mouseenter'));
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-calendar-dialog-tooltip')?.style.left).toBe('152px');
+  });
+
+  it('names each week column after its day', async () => {
+    const fixture = await render();
+    query(fixture, 'meetings-calendar-dialog-view')?.querySelectorAll('input')[1]?.click();
+    await fixture.whenStable();
+
+    const columns = all(fixture, 'meetings-calendar-dialog-week-day');
+    expect(columns[0].getAttribute('role')).toBe('group');
+    expect(columns.map((column) => column.getAttribute('aria-label'))).toEqual([
+      'Sun, Oct 4',
+      'Mon, Oct 5',
+      'Tue, Oct 6',
+      'Wed, Oct 7',
+      'Thu, Oct 8',
+      'Fri, Oct 9',
+      'Sat, Oct 10',
+    ]);
   });
 });
