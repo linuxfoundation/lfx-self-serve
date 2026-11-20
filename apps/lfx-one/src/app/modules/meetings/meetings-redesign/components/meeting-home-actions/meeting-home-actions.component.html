@@ -22,6 +22,11 @@
         >Resend Invite</lfx-ui-menu-item
       >
     }
+    @if (canRefreshInvitation()) {
+      <lfx-ui-menu-item icon="fa-light fa-arrows-rotate" (triggered)="refreshInvitation()" data-testid="meetings-home-row-actions-refresh-invitation">
+        Refresh invitation
+      </lfx-ui-menu-item>
+    }
     @if (canRemove()) {
       <lfx-ui-menu-item icon="fa-light fa-user-minus" (triggered)="confirmRemove()" data-testid="meetings-home-row-actions-remove"
         >Remove Myself</lfx-ui-menu-item

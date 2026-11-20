@@ -65,6 +65,7 @@ describe('MeetingRsvpControlsComponent', () => {
   let removed: ReturnType<typeof signal<ReadonlySet<string>>>;
   let submitting: ReturnType<typeof signal<ReadonlySet<string>>>;
   let selfInvite: ReturnType<typeof signal<readonly string[] | undefined>>;
+  let retrySelfInvites: ReturnType<typeof vi.fn>;
 
   const render = async (row: MeetingHomeRow): Promise<ComponentFixture<MeetingRsvpControlsComponent>> => {
     const fixture = TestBed.createComponent(MeetingRsvpControlsComponent);
@@ -91,11 +92,12 @@ describe('MeetingRsvpControlsComponent', () => {
     removed = signal<ReadonlySet<string>>(new Set());
     submitting = signal<ReadonlySet<string>>(new Set());
     selfInvite = signal(undefined);
+    retrySelfInvites = vi.fn();
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingRsvpService, useValue: { submit$: submit, submittingMeetingIds: submitting } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: removed } },
-        { provide: MeetingsHomeStore, useValue: { selfInviteOf: () => selfInvite() } },
+        { provide: MeetingsHomeStore, useValue: { selfInviteOf: () => selfInvite(), retrySelfInvites } },
         { provide: UiModalService, useValue: { open: openModal } },
         { provide: UiToastService, useValue: { show: showToast } },
       ],
@@ -104,7 +106,7 @@ describe('MeetingRsvpControlsComponent', () => {
 
   it.each(['list', 'drawer'])('disables RSVP while a confirmed self-invite is syncing in the %s', async (host) => {
     if (host === 'drawer') {
-      TestBed.configureTestingModule({ providers: [{ provide: MeetingDetailsSource, useValue: { selfInviteOf: () => selfInvite() } }] });
+      TestBed.configureTestingModule({ providers: [{ provide: MeetingDetailsSource, useValue: { selfInviteOf: () => selfInvite(), retrySelfInvites } }] });
       TestBed.overrideProvider(MeetingsHomeStore, { useValue: null });
     }
     selfInvite.set([]);
@@ -112,10 +114,14 @@ describe('MeetingRsvpControlsComponent', () => {
     expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(true);
     (fixture.componentInstance as unknown as { choose: (response: string) => void }).choose('accepted');
     expect(submit).not.toHaveBeenCalled();
+    await press(fixture, 'meetings-home-invitation-refresh');
+    expect(retrySelfInvites).toHaveBeenCalledTimes(1);
+    expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(true);
 
     selfInvite.set(undefined);
     await fixture.whenStable();
     expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(false);
+    expect(query(fixture, 'meetings-home-invitation-refresh')).toBeNull();
     await press(fixture, 'meetings-home-rsvp-accepted');
     expect(submit).toHaveBeenCalledTimes(1);
   });

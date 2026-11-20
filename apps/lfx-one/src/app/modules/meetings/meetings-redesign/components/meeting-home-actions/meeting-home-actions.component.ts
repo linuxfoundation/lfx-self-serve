@@ -73,6 +73,9 @@ export class MeetingHomeActionsComponent {
   protected readonly canResend: Signal<boolean> = computed(
     () => this.canRemove() && this.hasOwnRegistration() && this.store?.selfInviteOf(this.row().meeting.id) === undefined
   );
+  protected readonly canRefreshInvitation: Signal<boolean> = computed(
+    () => this.view() === 'upcoming' && this.userService.authenticated() && this.store?.selfInviteOf(this.row().meeting.id) !== undefined
+  );
   /** The other half of Remove Myself, for whoever can manage the guests (legacy `canAddMyself`); the service checks the roster first. */
   protected readonly canAddSelf: Signal<boolean> = this.initCanAddSelf();
   protected readonly removalQuestion: Signal<string> = computed(() => getMeetingSelfRemovalQuestion(this.row().title));
@@ -119,6 +122,10 @@ export class MeetingHomeActionsComponent {
 
   protected deleteMeeting(): void {
     this.deleteService.delete(this.row());
+  }
+
+  protected refreshInvitation(): void {
+    if (this.canRefreshInvitation()) this.store?.retrySelfInvites();
   }
 
   /** Invites the viewer to every date, as the legacy card's Add Myself does; the row turns invited without waiting for the index. */

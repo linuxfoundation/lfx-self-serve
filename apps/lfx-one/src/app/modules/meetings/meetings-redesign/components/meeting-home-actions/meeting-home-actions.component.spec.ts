@@ -72,6 +72,7 @@ describe('MeetingHomeActionsComponent', () => {
   let markSelfInvited: ReturnType<typeof vi.fn>;
   let forgetSelfInvite: ReturnType<typeof vi.fn>;
   let selfInvites: Map<string, readonly string[]>;
+  let retrySelfInvites: ReturnType<typeof vi.fn>;
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -133,6 +134,7 @@ describe('MeetingHomeActionsComponent', () => {
     selfInvites = new Map();
     markSelfInvited = vi.fn((meetingId: string, uids: readonly string[]) => selfInvites.set(meetingId, uids));
     forgetSelfInvite = vi.fn();
+    retrySelfInvites = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
@@ -153,7 +155,7 @@ describe('MeetingHomeActionsComponent', () => {
         },
         {
           provide: MeetingsHomeStore,
-          useValue: { markSelfInvited, forgetSelfInvite, selfInviteOf: (meetingId: string) => selfInvites.get(meetingId) },
+          useValue: { markSelfInvited, forgetSelfInvite, retrySelfInvites, selfInviteOf: (meetingId: string) => selfInvites.get(meetingId) },
         },
       ],
     });
@@ -316,6 +318,18 @@ describe('MeetingHomeActionsComponent', () => {
   });
 
   describe('Resend Invite', () => {
+    it('offers a confirmation refresh while syncing and removes it after indexing', async () => {
+      selfInvites.set(INVITEE.id, []);
+      await render(row(INVITEE));
+      await choose('meetings-home-row-actions-refresh-invitation');
+      expect(retrySelfInvites).toHaveBeenCalledTimes(1);
+      expect(remove$).not.toHaveBeenCalled();
+      selfInvites.delete(INVITEE.id);
+      fixture.componentRef.setInput('row', row(INVITEE));
+      await settle();
+      expect(await openMenu()).not.toContain('Refresh invitation');
+    });
+
     it('keeps removal available but hides resend until the self-invite is indexed', async () => {
       selfInvites.set(INVITEE.id, ['synthetic-self-reg']);
       await render(row(INVITEE));

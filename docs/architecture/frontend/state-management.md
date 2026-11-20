@@ -49,6 +49,12 @@ export class DataService {
 - **Simplicity**: Easier to understand than RxJS for simple state
 - **Debugging**: Clear state flow and mutations
 
+### Meetings home self-invite confirmation
+
+The feature-flagged meetings home keeps successful self-invites in viewer/feed-scoped `MeetingsHomeStore` state until the feed confirms their registration IDs. An empty UID list means the write succeeded without returning an ID; removed IDs cannot confirm a re-add. `MeetingDetailsSource` forwards both that state and `retrySelfInvites` to the drawer, so a stale drawer roster cannot duplicate an invitation. Index-dependent RSVP and resend actions wait for confirmation; row removal can use a saved UID.
+
+A stale first refresh gets bounded upcoming-feed refreshes at approximately 1, 5 and 15 seconds, with the gaps defined by `MEETING_SELF_INVITE_RECONCILIATION_DELAYS_MS`. Confirmation, removal, viewer/feed changes and store destruction stop the scheduled work. Exhaustion leaves the invitation explicitly syncing rather than clearing confirmed state: the row menu and RSVP area expose **Refresh invitation**, and a toast also offers it. An explicit retry refreshes immediately and starts another bounded window; no unbounded polling or invitation write retry occurs.
+
 ### Vote summary send lifetime
 
 `VoteSummarySendService` owns each initiated summary POST independently of its dialog. It retains the reviewed preview and the pending, successful, or failed attempt per vote in memory. **Hide while sending** closes only the view: the host's `onClose` event cannot dismiss a pending attempt, so reopening observes the same request without another preview or POST and other table actions remain usable. Successful detailed results and ambiguous errors remain inspectable until explicit dismissal through the footer **Close** or header **X**. The host's `onClose` event clears settled attempts; destroying the view during navigation does not. Clear pre-send rejections are dismissed after the dialog reports them, permitting a new attempt. The dialog observes a per-vote computed attempt through `toObservable` with `takeUntilDestroyed`, so another vote's map updates do not repeat result transitions or move focus.

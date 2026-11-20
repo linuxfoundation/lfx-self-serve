@@ -21,7 +21,7 @@ import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { getLocalDayKey } from '@lfx-one/shared/utils';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeFeed, UserMeetingsHomeFeed } from './meetings-home-feed';
 import { MeetingsHomeStore } from './meetings-home.store';
@@ -168,8 +168,92 @@ describe('MeetingsHomeStore', () => {
       confirmedMeetingRsvps: vi.fn(() => confirmed()),
       isMeetingRsvpCurrent: vi.fn(() => true),
       authenticated: signal(true),
+      refreshUserMeetings: vi.fn(() => meetingsRefresh$.next()),
       meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }),
     };
+  });
+
+  describe('self-invite reconciliation', () => {
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }));
+    afterEach(() => {
+      TestBed.resetTestingModule();
+      vi.useRealTimers();
+    });
+
+    it.each([[], ['reg-new']])('recovers from a stale initial refresh without an unrelated mutation: %j', (...uids) => {
+      const store = create();
+      const stale = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([stale]);
+      store.markSelfInvited('organized', uids);
+      upcoming$.next([stale]);
+      TestBed.tick();
+      const refresh = userService['refreshUserMeetings'] as ReturnType<typeof vi.fn>;
+      refresh.mockImplementation(() => upcoming$.next([{ ...stale, invited: true, my_registrant_ids: refresh.mock.calls.length === 1 ? [] : ['reg-new'] }]));
+
+      vi.advanceTimersByTime(1000);
+      TestBed.tick();
+      expect(store.selfInviteOf('organized')).toEqual(uids);
+      vi.advanceTimersByTime(4000);
+      TestBed.tick();
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      vi.advanceTimersByTime(60000);
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(toast.show).not.toHaveBeenCalledWith(expect.objectContaining({ message: 'Invitation syncing' }));
+    });
+
+    it('bounds stale confirmation reads and lets an explicit retry start a new bounded window', () => {
+      const store = create();
+      const stale = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([stale]);
+      store.markSelfInvited('organized', []);
+      TestBed.tick();
+      const refresh = userService['refreshUserMeetings'] as ReturnType<typeof vi.fn>;
+      refresh.mockImplementation(() => upcoming$.next([stale]));
+
+      for (const delay of [1000, 4000, 10000]) {
+        vi.advanceTimersByTime(delay);
+        TestBed.tick();
+      }
+      expect(refresh).toHaveBeenCalledTimes(3);
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      expect(toast.show).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Invitation syncing', actions: [expect.objectContaining({ label: 'Refresh invitation' })] })
+      );
+      vi.advanceTimersByTime(60000);
+      expect(refresh).toHaveBeenCalledTimes(3);
+
+      store.retrySelfInvites();
+      expect(refresh).toHaveBeenCalledTimes(4);
+      for (const delay of [1000, 4000, 10000]) {
+        vi.advanceTimersByTime(delay);
+        TestBed.tick();
+      }
+      expect(refresh).toHaveBeenCalledTimes(7);
+      vi.advanceTimersByTime(60000);
+      expect(refresh).toHaveBeenCalledTimes(7);
+    });
+
+    it.each(['removal', 'viewer', 'destruction'])('stops delayed work after %s', (change) => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-new']);
+      TestBed.tick();
+      if (change === 'removal') removed.set(new Set(['organized']));
+      if (change === 'viewer') identity.set('viewer-b');
+      if (change === 'destruction') TestBed.resetTestingModule();
+      else TestBed.tick();
+      vi.advanceTimersByTime(60000);
+      expect(userService['refreshUserMeetings']).not.toHaveBeenCalled();
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    it('does not schedule or retry confirmation reads during SSR', () => {
+      const store = create('server');
+      store.markSelfInvited('organized', []);
+      store.retrySelfInvites();
+      vi.advanceTimersByTime(60000);
+      expect(userService['refreshUserMeetings']).not.toHaveBeenCalled();
+    });
   });
 
   describe('loading', () => {

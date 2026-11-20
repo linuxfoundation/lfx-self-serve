@@ -112,6 +112,12 @@ export class MeetingRsvpControlsComponent {
   /** 112×28 per the design in a row, matching the small RSVP buttons; the card's badge spans it at 32px. */
   protected readonly badgeClass: Signal<string> = computed(() => (this.fullWidth() ? 'w-full !h-ui-small' : 'w-[112px] !h-ui-xsmall'));
 
+  protected refreshInvitation(): void {
+    if (!this.invitationSyncing()) return;
+    if (this.source?.retrySelfInvites) this.source.retrySelfInvites();
+    else this.store?.retrySelfInvites();
+  }
+
   protected choose(response: RsvpResponse): void {
     const row = this.row();
     // A recurring answer can be re-picked to change the dates it covers.

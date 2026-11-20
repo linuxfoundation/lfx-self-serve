@@ -5,7 +5,12 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_NO_PAST_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import {
+  MEETING_SELF_INVITE_RECONCILIATION_DELAYS_MS,
+  MEETINGS_HOME_DEFAULT_FILTERS,
+  MEETINGS_HOME_NO_PAST_FILTERS,
+  MEETINGS_HOME_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
 import {
   Meeting,
   MeetingDashboardView,
@@ -45,10 +50,13 @@ import { UiToastService } from '@shared/uikit/toast/toast.service';
 import {
   catchError,
   combineLatest,
+  concatMap,
   debounceTime,
   defer,
   distinctUntilChanged,
+  EMPTY,
   filter,
+  from,
   interval,
   map,
   merge,
@@ -61,6 +69,7 @@ import {
   switchMap,
   take,
   tap,
+  timer,
 } from 'rxjs';
 
 import { MeetingsHomeFeed } from './meetings-home-feed';
@@ -98,6 +107,8 @@ export class MeetingsHomeStore {
   private readonly lastMeetingFailedState: WritableSignal<boolean> = signal(false);
   private readonly retry$ = new Subject<void>();
   private refreshFailedToast: UiToastRef | null = null;
+  private readonly selfInviteRetry$ = new Subject<void>();
+  private selfInviteSyncToast: UiToastRef | null = null;
   // Kept for the page's lifetime, so a refetch that still lists a deleted meeting or cancelled date does not bring it back.
   private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
   private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
@@ -307,6 +318,7 @@ export class MeetingsHomeStore {
 
   public constructor() {
     this.initPastAutoLoad();
+    this.initSelfInviteReconciliation();
   }
 
   /** Switches tab and clears the filters; search is kept. */
@@ -391,6 +403,13 @@ export class MeetingsHomeStore {
     this.cancelledOccurrenceIds.update((ids) => new Map(ids).set(meetingId, [...(ids.get(meetingId) ?? []), occurrenceId]));
   }
 
+  /** Refreshes pending invitations now and starts another bounded reconciliation window. */
+  public retrySelfInvites(): void {
+    if (this.destroyRef.destroyed || !isPlatformBrowser(this.platformId) || !this.pendingSelfInviteKey()) return;
+    this.selfInviteRetry$.next();
+    this.userService.refreshUserMeetings();
+  }
+
   /** Marks the viewer invited to a meeting they just added themselves to, with the registrations the add confirmed. */
   public markSelfInvited(meetingId: string, registrantUids: readonly string[]): void {
     const removed = this.removedSelfRegistrantIds().get(meetingId);
@@ -437,6 +456,59 @@ export class MeetingsHomeStore {
   private initClock(): Signal<Date> {
     if (!isPlatformBrowser(this.platformId)) return signal(new Date());
     return toSignal(interval(60_000).pipe(map(() => new Date())), { initialValue: new Date() });
+  }
+
+  /** A stale initial refresh gets three delayed follow-ups, never an unbounded poll. */
+  private initSelfInviteReconciliation(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const pending = computed(() => this.pendingSelfInviteKey());
+    combineLatest([toObservable(pending), this.selfInviteRetry$.pipe(startWith(undefined))])
+      .pipe(
+        tap(() => {
+          this.selfInviteSyncToast?.dismiss();
+          this.selfInviteSyncToast = null;
+        }),
+        switchMap(([key]) =>
+          key
+            ? from(MEETING_SELF_INVITE_RECONCILIATION_DELAYS_MS).pipe(
+                concatMap((delayMs) => timer(delayMs)),
+                tap({
+                  next: () => this.userService.refreshUserMeetings(),
+                  complete: () => this.showSelfInviteSyncToast(),
+                })
+              )
+            : EMPTY
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
+    this.destroyRef.onDestroy(() => this.selfInviteSyncToast?.dismiss());
+  }
+
+  /** Scope belongs to this viewer/feed and only invitations not subsequently removed. */
+  private pendingSelfInviteKey(): string | null {
+    const removed = this.meetingService.removedRegistrationMeetingIds();
+    const ids = [...this.selfInvitedIds().keys()].filter((meetingId) => !removed.has(meetingId));
+    return ids.length ? JSON.stringify([this.feed.key(), ids]) : null;
+  }
+
+  private showSelfInviteSyncToast(): void {
+    const key = this.pendingSelfInviteKey();
+    if (!key) return;
+    this.selfInviteSyncToast = this.toast.show({
+      variant: 'warning',
+      position: 'bottom-center',
+      message: 'Invitation syncing',
+      description: 'Your invitation is saved but has not appeared yet. Refresh to try again.',
+      actions: [
+        {
+          label: 'Refresh invitation',
+          run: () => {
+            if (this.pendingSelfInviteKey() === key) this.retrySelfInvites();
+          },
+        },
+      ],
+    });
   }
 
   /**
