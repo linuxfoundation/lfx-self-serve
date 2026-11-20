@@ -28,6 +28,9 @@ export const MEETINGS_HOME_PAGE_SIZE = 20;
 /** Gap in px between the tabs rule and a day heading; must match the day-group separator's -mt-[20px] and pt-[20px]. */
 export const MEETINGS_HOME_DAY_HEADING_GAP_PX = 20;
 
+/** How long the meetings home search field takes to collapse back into its button; must match its closing animation. */
+export const MEETINGS_HOME_SEARCH_CLOSE_MS = 180;
+
 /** Filters with nothing applied. */
 export const MEETINGS_HOME_DEFAULT_FILTERS: MeetingsHomeFilters = {
   foundation: null,
