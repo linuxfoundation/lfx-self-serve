@@ -125,6 +125,8 @@ interface DirectoryRow {
   SCOPE_TOTAL: number | null;
   TOTAL_RECORDS: number | null;
   IS_PAGE_ROW: boolean | null;
+  /** The row's place in the picked order, which the outer select keeps after the logo join. */
+  PAGE_POSITION: number | null;
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
   LOGO_URL: string | null;
