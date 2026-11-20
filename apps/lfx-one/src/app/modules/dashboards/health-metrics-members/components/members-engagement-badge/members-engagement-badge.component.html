@@ -1,0 +1,37 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px from the design: the 24px badge at 12px/500; the 14px root makes the rem scale undershoot them. -->
+<span
+  cdkOverlayOrigin
+  #origin="cdkOverlayOrigin"
+  tabindex="0"
+  class="inline-flex h-[24px] cursor-default items-center whitespace-nowrap rounded-[6px] px-[8px] text-[12px] font-medium leading-[16px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+  [class]="engagement().badgeClass"
+  [attr.aria-describedby]="tipId"
+  (mouseenter)="open.set(true)"
+  (mouseleave)="open.set(false)"
+  (focus)="open.set(true)"
+  (blur)="open.set(false)"
+  (keydown.escape)="open.set(false)"
+  data-testid="members-engagement-badge"
+  >{{ engagement().label }}</span
+>
+<!-- The popup is mouse-and-sight only; its rows reach screen readers through this description. -->
+<span class="sr-only" [id]="tipId">
+  {{ engagement().tip.title }}.
+  @for (row of engagement().tip.rows; track row.label) {
+    {{ row.label }}: {{ row.value }}.
+  }
+</span>
+
+<ng-template
+  cdkConnectedOverlay
+  [cdkConnectedOverlayOrigin]="origin"
+  [cdkConnectedOverlayOpen]="open()"
+  [cdkConnectedOverlayPositions]="positions"
+  [cdkConnectedOverlayPush]="true"
+  [cdkConnectedOverlayViewportMargin]="8"
+  (detach)="open.set(false)">
+  <lfx-health-metrics-chart-tip class="pointer-events-none" aria-hidden="true" [tip]="engagement().tip" data-testid="members-engagement-tip" />
+</ng-template>

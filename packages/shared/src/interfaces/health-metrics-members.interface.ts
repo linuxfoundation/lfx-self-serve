@@ -15,6 +15,7 @@ import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
 import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsTableSort } from './health-metrics-table.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECTIONS)[number]['key'];
@@ -179,17 +180,26 @@ export interface HealthMetricsMembersDirectoryQuery {
   search: string;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, sorted on the server across every page; `null` keeps the view's rank. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersDirectorySortKey> | null;
 }
+
+/** The All members table's sortable columns. */
+export type HealthMetricsMembersDirectorySortKey = 'name' | 'membership' | 'renewal' | 'sponsorship' | 'engagement';
 
 /** One `MEMBERSHIP_DIRECTORY` row. Dates are ISO `YYYY-MM-DD`; `null` is not tracked, never zero. */
 export interface HealthMetricsMembersDirectoryMember {
   accountId: string;
   accountName: string;
+  /** The mapped company logo; empty falls back to the first letter. */
+  logoUrl: string;
   membershipTier: string | null;
   annualDuesUsd: number | null;
   engagementLevel: HealthMetricsMembersEngagementLevel | null;
   engagementScore: number | null;
   npsCategory: HealthMetricsMembersNpsCategory | null;
+  /** The member's latest NPS answer, 0–10 or the survey's score; `null` without one. */
+  npsScore: number | null;
   isAtRisk: boolean;
   renewalDate: string | null;
   renewalDuesUsd: number | null;
@@ -207,8 +217,6 @@ export interface HealthMetricsMembersDirectory {
   totalRecords: number;
   /** Every member of the foundation; the unfiltered count. */
   scopeTotal: number;
-  /** At-risk members across the whole foundation, whatever the filters. */
-  atRiskCount: number;
 }
 
 /** `GET /api/analytics/members-directory-tiers` — read once per foundation, not per page. */
@@ -226,29 +234,34 @@ export interface HealthMetricsMembersDirectoryTierOption extends FilterOption<st
   disabled?: boolean;
 }
 
-/** One member row as the directory table renders it. */
+/** One member row as the All members table renders it. */
 export interface HealthMetricsMembersDirectoryRowView {
   accountId: string;
-  accountName: string;
-  npsLabel: string | null;
-  npsClass: string;
+  name: string;
+  logoUrl: string;
   isAtRisk: boolean;
-  tierLabel: string;
-  duesLabel: string;
-  engagementLabel: string;
-  engagementDotClass: string;
-  scoreLabel: string;
-  renewsLabel: string;
+  /** "Promoter · NPS 9", "Promoter" or "No NPS response". */
+  npsLabel: string;
+  /** The description's leading dot, e.g. `fa-solid fa-circle-small text-emerald-500`. */
+  npsIconClass: string;
+  membershipLabel: string;
+  /** The tier icon for Diamond, Platinum, Gold and Silver. */
+  tier: HealthMetricsMembersReservedTier | null;
+  renewalLabel: string;
+  /** "{dues} dues" when the renewal dues differ from the annual dues; empty otherwise. */
   renewalDuesLabel: string;
-  lastEngagedLabel: string;
-  activity: HealthMetricsMembersDirectoryCellView[];
+  sponsorshipLabel: string;
+  /** `null` with no engagement level: the cell reads "—" and has no popup. */
+  engagement: HealthMetricsMembersDirectoryEngagementView | null;
 }
 
-/** An activity cell; `tracked` false renders the not-tracked dash, never 0. */
-export interface HealthMetricsMembersDirectoryCellView {
-  key: string;
+/** The Engagement badge and the popup it opens. */
+export interface HealthMetricsMembersDirectoryEngagementView {
+  /** "Low 2.3". */
   label: string;
-  tracked: boolean;
+  /** The badge's background and text classes. */
+  badgeClass: string;
+  tip: HealthMetricsChartTipView;
 }
 
 /** Each section's filter and page state in the URL; `null` clears a param the URL already carries. */

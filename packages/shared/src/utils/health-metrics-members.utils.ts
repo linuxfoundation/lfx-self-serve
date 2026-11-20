@@ -14,8 +14,9 @@ import {
   HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR,
   HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
   HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES,
   HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
   HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS,
   HEALTH_METRICS_MEMBERS_GROWTH_PLOT,
@@ -60,7 +61,7 @@ import type {
   HealthMetricsMembersChurnTrendPointView,
   HealthMetricsMembersChurnView,
   HealthMetricsMembersChurnYear,
-  HealthMetricsMembersDirectoryCellView,
+  HealthMetricsMembersDirectoryEngagementView,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersDirectoryRowView,
   HealthMetricsMembersGrowth,
@@ -252,41 +253,37 @@ function growthCurve(points: [number, number][]): string {
   return d;
 }
 
-/** Directory rows. A NULL activity count is not tracked for the foundation and renders as a dash, never 0. */
+/** All members rows: the company with its NPS line, the tier, the renewal, the period's sponsorship and the engagement badge. */
 export function buildHealthMetricsMembersDirectoryRows(rows: HealthMetricsMembersDirectoryMember[]): HealthMetricsMembersDirectoryRowView[] {
-  return rows.map((row) => ({
-    accountId: row.accountId,
-    accountName: row.accountName,
-    npsLabel: row.npsCategory,
-    npsClass: row.npsCategory ? HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES[row.npsCategory] : '',
-    isAtRisk: row.isAtRisk,
-    tierLabel: row.membershipTier ?? '—',
-    duesLabel: formatUsd(row.annualDuesUsd),
-    engagementLabel: row.engagementLevel ?? '—',
-    engagementDotClass: row.engagementLevel ? HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES[row.engagementLevel] : '',
-    scoreLabel: row.engagementScore === null ? '—' : row.engagementScore.toFixed(1),
-    renewsLabel: formatIsoDate(row.renewalDate),
-    renewalDuesLabel: formatUsd(row.renewalDuesUsd),
-    lastEngagedLabel: formatIsoDate(row.lastEngagedDate),
-    activity: [
-      activityCell('contribution', row.contributionCount, formatCount),
-      activityCell('sponsorship', row.sponsorshipUsd, (value) => formatUsd(value === null ? null : Math.round(value))),
-      activityCell('training', row.trainingEnrollmentCount, formatCount),
-      activityCell('events', row.eventRegistrationCount, formatCount),
-    ],
-  }));
+  return rows.map((row) => {
+    const tier = row.membershipTier?.trim() ? resolveHealthMetricsMembersTier(row.membershipTier) : null;
+    // Renewal dues show only when they differ from the annual dues.
+    const renewalDiffers = row.renewalDuesUsd !== null && row.renewalDuesUsd !== row.annualDuesUsd;
+    return {
+      accountId: row.accountId,
+      name: row.accountName,
+      logoUrl: row.logoUrl,
+      isAtRisk: row.isAtRisk,
+      npsLabel: directoryNpsLabel(row),
+      npsIconClass: row.npsCategory ? HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES[row.npsCategory] : HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS,
+      membershipLabel: tier?.label ?? '—',
+      tier: tier?.reserved ?? null,
+      renewalLabel: formatIsoDate(row.renewalDate),
+      renewalDuesLabel: renewalDiffers ? `${formatUsd(row.renewalDuesUsd)} dues` : '',
+      // $0 and not tracked both read "—".
+      sponsorshipLabel: row.sponsorshipUsd ? formatUsd(Math.round(row.sponsorshipUsd)) : '—',
+      engagement: directoryEngagement(row),
+    };
+  });
 }
 
-/** The unfiltered count line: "725 members · 12 at risk · highest dues first". */
-export function buildHealthMetricsMembersDirectorySummary(scopeTotal: number, atRiskCount: number): string {
-  return [pluralize(scopeTotal, 'member'), atRiskCount > 0 ? `${atRiskCount.toLocaleString('en-US')} at risk` : null, 'highest dues first']
-    .filter((part): part is string => part !== null)
-    .join(' · ');
-}
-
-/** The search box placeholder, sized to the whole foundation. */
-export function buildHealthMetricsMembersDirectorySearchPlaceholder(scopeTotal: number): string {
-  return `Search ${pluralize(scopeTotal, 'member')}…`;
+/** A tier as Members shows it: without a trailing "Membership" or "Member", with Diamond, Platinum, Gold and Silver marked for their icon. */
+export function resolveHealthMetricsMembersTier(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
+  const trimmed = raw.trim();
+  const suffix = [' membership', ' member'].find((candidate) => trimmed.toLowerCase().endsWith(candidate));
+  const label = (suffix ? trimmed.slice(0, -suffix.length).trim() : trimmed) || trimmed;
+  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === label.toLowerCase()) ?? null;
+  return { label: reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved] : label, reserved };
 }
 
 /** The at-risk hero: the outstanding balance, its High / Medium split, and the member count; an unset total is a dash. */
@@ -771,10 +768,6 @@ function churnChangeTone(pp: number | null): HealthMetricsMembersChurnView['chan
   return pp > 0 ? 'bad' : 'good';
 }
 
-function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
-  return { key, label: format(value), tracked: value !== null };
-}
-
 function toWholePct(share: number | null): number | null {
   return share === null ? null : Math.min(100, Math.max(0, Math.round(share * 100)));
 }
@@ -786,6 +779,33 @@ function toShownPct(share: number | null): number | null {
 
 function formatIsoDate(value: string | null): string {
   return value ? formatIsoDateLabel(value) : '—';
+}
+
+/** "Promoter · NPS 9", the category alone without a score, or "No NPS response". */
+function directoryNpsLabel(row: HealthMetricsMembersDirectoryMember): string {
+  if (!row.npsCategory) return 'No NPS response';
+  return row.npsScore === null ? row.npsCategory : `${row.npsCategory} · NPS ${Math.round(row.npsScore)}`;
+}
+
+/** The badge and its popup; with no level the cell reads "—" and has none. A zero or untracked count reads "—". */
+function directoryEngagement(row: HealthMetricsMembersDirectoryMember): HealthMetricsMembersDirectoryEngagementView | null {
+  const level = row.engagementLevel;
+  if (!level) return null;
+  const score = row.engagementScore === null ? null : row.engagementScore.toFixed(1);
+  const count = (value: number | null): string => formatCount(value || null);
+  return {
+    label: score === null ? level : `${level} ${score}`,
+    badgeClass: HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES[level],
+    tip: {
+      title: score === null ? `${level} engagement` : `${level} engagement · ${score}`,
+      rows: [
+        { label: 'Contribution', value: count(row.contributionCount), color: null, separated: false },
+        { label: 'Training', value: count(row.trainingEnrollmentCount), color: null, separated: false },
+        { label: 'Events', value: count(row.eventRegistrationCount), color: null, separated: false },
+        { label: 'Last engaged', value: formatIsoDate(row.lastEngagedDate), color: null, separated: false },
+      ],
+    },
+  };
 }
 
 function formatCount(value: number | null): string {
@@ -826,20 +846,11 @@ interface BreakdownTier {
   members: Map<number, number | null>;
 }
 
-/** The tier's name without a trailing "Membership" or "Member", so "Platinum Membership" reads as Platinum. */
-function breakdownTierLabel(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
-  const trimmed = raw.trim();
-  const suffix = [' membership', ' member'].find((candidate) => trimmed.toLowerCase().endsWith(candidate));
-  const label = (suffix ? trimmed.slice(0, -suffix.length).trim() : trimmed) || trimmed;
-  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === label.toLowerCase()) ?? null;
-  return { label: reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved] : label, reserved };
-}
-
 /** Tiers with a member in any year shown, highest-paying first; rows with the same label merge. */
 function collectBreakdownTiers(rows: HealthMetricsMembersTierYear[]): BreakdownTier[] {
   const byLabel = new Map<string, BreakdownTier>();
   for (const row of rows) {
-    const { label, reserved } = breakdownTierLabel(row.tier);
+    const { label, reserved } = resolveHealthMetricsMembersTier(row.tier);
     const tier = byLabel.get(label) ?? { label, reserved, rank: row.sortRank, members: new Map<number, number | null>() };
     tier.rank = Math.min(tier.rank, row.sortRank);
     tier.members.set(row.year, sumNullable([tier.members.get(row.year) ?? null, row.memberCount]));

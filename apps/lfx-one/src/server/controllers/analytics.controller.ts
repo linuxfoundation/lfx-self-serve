@@ -27,6 +27,7 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
@@ -3852,6 +3853,12 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_DIRECTORY_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match member names, which the request URL also logs.
