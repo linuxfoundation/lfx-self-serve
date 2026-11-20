@@ -272,39 +272,39 @@ export class OrgLensEventsService {
   public async getEventSpeakers(req: Request, accountId: string, eventId: string, searchQuery?: string): Promise<OrgEventSpeakersResponse> {
     logger.debug(req, 'get_event_speakers', 'Fetching event speakers', { account_id: accountId, event_id: eventId });
 
-    const searchFilter = searchQuery ? 'AND UPPER(es.DISPLAY_NAME) LIKE UPPER(?)' : '';
+    // A name field holding an address is not a name; the search matches names only, as the attendees drawer does.
+    const speakerName = `CASE WHEN TRIM(es.SPEAKER_FIRST_NAME || ' ' || es.SPEAKER_LAST_NAME) LIKE '%@%' THEN NULL ELSE NULLIF(TRIM(es.SPEAKER_FIRST_NAME || ' ' || es.SPEAKER_LAST_NAME), '') END`;
+    const searchFilter = searchQuery ? `AND UPPER(${speakerName}) LIKE UPPER(?)` : '';
 
     const sql = `
       SELECT
-        CAST(es.SPEAKER_REF AS VARCHAR) AS SPEAKER_ID,
-        es.DISPLAY_NAME                 AS NAME,
-        es.JOB_TITLE,
-        es.IS_SPEAKER_ACCEPTED          AS IS_ACCEPTED
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_SPEAKERS es
-      WHERE es.ACCOUNT_ID = ?
-        AND es.EVENT_ID = ?
+        es.SPEAKER_ID                                         AS SPEAKER_ID,
+        MAX(${speakerName})                                   AS NAME,
+        MAX(es.JOB_TITLE)                                     AS JOB_TITLE,
+        MAX(CASE WHEN es.SPEAKER_STATUS = 'Accepted' THEN 1 ELSE 0 END) AS IS_ACCEPTED,
+        MAX(es.EVENT_NAME)                                    AS EVENT_NAME
+      FROM ANALYTICS.SILVER_FACT.EVENT_SPEAKERS es
+      WHERE es.EVENT_ID = ?
+        AND es.ACCOUNT_ID = ?
         ${searchFilter}
+      GROUP BY es.SPEAKER_ID
       ORDER BY NAME ASC NULLS LAST, SPEAKER_ID ASC
     `;
 
-    const binds: string[] = [accountId, eventId];
+    const binds: string[] = [eventId, accountId];
     if (searchQuery) {
       binds.push(`%${searchQuery}%`);
     }
 
     let rows: OrgEventSpeakersDrawerRow[];
-    let header: OrgEventDrawerHeaderRow | undefined;
     try {
-      [rows, header] = await Promise.all([
-        withOrgCache(
-          accountId,
-          `event-speakers:v4:${paramSignature([eventId, searchQuery ?? null])}`,
-          VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
-          async () => (await this.snowflakeService.execute<OrgEventSpeakersDrawerRow>(sql, binds)).rows,
-          isSpeakerRowArray
-        ),
-        this.readDrawerHeader(accountId, eventId),
-      ]);
+      rows = await withOrgCache(
+        accountId,
+        `event-speakers:v3:${paramSignature([eventId, searchQuery ?? null])}`,
+        VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
+        async () => (await this.snowflakeService.execute<OrgEventSpeakersDrawerRow>(sql, binds)).rows,
+        isSpeakerRowArray
+      );
     } catch (error) {
       logger.warning(req, 'get_event_speakers', 'Snowflake query failed', {
         err: error,
@@ -314,7 +314,7 @@ export class OrgLensEventsService {
       throw error;
     }
 
-    const eventName = header?.EVENT_NAME ?? '';
+    const eventName = rows[0]?.EVENT_NAME ?? '';
     // Positional ids, like the attendees drawer: the warehouse key stays server-side.
     const data: OrgEventSpeaker[] = rows.map((row, index) => ({
       contactId: String(index),

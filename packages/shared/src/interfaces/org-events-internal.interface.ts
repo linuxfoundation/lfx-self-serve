@@ -55,7 +55,8 @@ export interface OrgEventSpeakersDrawerRow {
   SPEAKER_ID: string;
   NAME: string | null;
   JOB_TITLE: string | null;
-  IS_ACCEPTED: boolean;
+  IS_ACCEPTED: number;
+  EVENT_NAME: string | null;
 }
 
 /** Person × event row from `ORG_EVENT_PARTICIPATION` (attendee predicate, ended events, range window); everyone credited is listed. */

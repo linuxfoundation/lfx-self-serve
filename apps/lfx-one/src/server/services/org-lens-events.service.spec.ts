@@ -225,25 +225,22 @@ function addSpeaker(
   speakerId: string,
   first: string | null,
   last: string | null,
+  email: string,
   status: 'Accepted' | 'Submitted',
   eventId = 'event-one',
   account = ACCOUNT
 ): void {
-  const name = [first, last].filter(Boolean).join(' ') || null;
-  // The warehouse's speaker grain: one row per organization, event and speaker; titles only for roster-linked speakers.
-  database
-    .prepare(
-      `INSERT INTO ORG_EVENT_SPEAKERS VALUES (?, ?, ?, ?, ?, ?, NULL)
-       ON CONFLICT (ACCOUNT_ID, EVENT_ID, SPEAKER_REF) DO UPDATE SET IS_SPEAKER_ACCEPTED = MAX(IS_SPEAKER_ACCEPTED, excluded.IS_SPEAKER_ACCEPTED)`
-    )
-    .run(account, ACCOUNT, eventId, speakerRef(speakerId), status === 'Accepted' ? 1 : 0, name?.includes('@') ? null : name);
-}
-
-const speakerRefs = new Map<string, number>();
-
-function speakerRef(speakerId: string): number {
-  if (!speakerRefs.has(speakerId)) speakerRefs.set(speakerId, 1048576 + speakerRefs.size);
-  return speakerRefs.get(speakerId) ?? 0;
+  insert('EVENT_SPEAKERS', {
+    ACCOUNT_ID: account,
+    EVENT_ID: eventId,
+    SPEAKER_ID: speakerId,
+    SPEAKER_FIRST_NAME: first,
+    SPEAKER_LAST_NAME: last,
+    SPEAKER_EMAIL: email,
+    JOB_TITLE: 'Staff Engineer',
+    SPEAKER_STATUS: status,
+    EVENT_NAME: 'Community Summit',
+  });
 }
 
 let database: SqlDatabase;
@@ -271,9 +268,9 @@ beforeEach(() => {
     )`
   );
   database.exec(
-    `CREATE TABLE ORG_EVENT_SPEAKERS (
-      ACCOUNT_ID TEXT, FAMILY_ACCOUNT_ID TEXT, EVENT_ID TEXT, SPEAKER_REF INTEGER, IS_SPEAKER_ACCEPTED INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
-      PRIMARY KEY (ACCOUNT_ID, EVENT_ID, SPEAKER_REF)
+    `CREATE TABLE EVENT_SPEAKERS (
+      ACCOUNT_ID TEXT, EVENT_ID TEXT, SPEAKER_ID TEXT, SPEAKER_FIRST_NAME TEXT, SPEAKER_LAST_NAME TEXT,
+      SPEAKER_EMAIL TEXT, JOB_TITLE TEXT, SPEAKER_STATUS TEXT, EVENT_NAME TEXT
     )`
   );
 
@@ -281,6 +278,7 @@ beforeEach(() => {
   execute.mockImplementation(async (query: string, binds: string[]) => {
     const translated = query
       .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
+      .replaceAll('ANALYTICS.SILVER_FACT.', '')
       .replaceAll(/DATEADD\(day, -(\d+), CURRENT_DATE\(\)\)/g, "date('now', '-$1 day')")
       .replaceAll('CURRENT_DATE()', "date('now')")
       .replaceAll('ILIKE', 'LIKE');
@@ -605,9 +603,9 @@ describe('OrgLensEventsService speakers drawer', () => {
   });
 
   it('returns a neutral label rather than an address and never searches by address', async () => {
-    addSpeaker('speaker-1', 'Ada', 'Lovelace', 'Accepted');
-    addSpeaker('speaker-2', null, null, 'Submitted');
-    addSpeaker('speaker-3', 'grace@company.test', '', 'Submitted');
+    addSpeaker('speaker-1', 'Ada', 'Lovelace', 'ada@company.test', 'Accepted');
+    addSpeaker('speaker-2', null, null, 'nameless@company.test', 'Submitted');
+    addSpeaker('speaker-3', 'grace@company.test', '', 'grace@company.test', 'Submitted');
 
     const drawer = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one');
     const byAddress = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one', 'nameless@');
@@ -888,9 +886,9 @@ describe('OrgLensEventsService family roll-up', () => {
   it("lists one company's speakers with the accepted flag of that company's own row, and a name search narrows them", async () => {
     addEvent({ eventId: 'shared', account: ACCOUNT });
     addEvent({ eventId: 'shared', account: OTHER_ACCOUNT });
-    addSpeaker('spk-1', 'Grace', 'Hopper', 'Submitted', 'shared', ACCOUNT);
-    addSpeaker('spk-1', 'Grace', 'Hopper', 'Accepted', 'shared', OTHER_ACCOUNT);
-    addSpeaker('spk-2', 'Alan', 'Turing', 'Submitted', 'shared', OTHER_ACCOUNT);
+    addSpeaker('spk-1', 'Grace', 'Hopper', 'grace@company.test', 'Submitted', 'shared', ACCOUNT);
+    addSpeaker('spk-1', 'Grace', 'Hopper', 'grace@company.test', 'Accepted', 'shared', OTHER_ACCOUNT);
+    addSpeaker('spk-2', 'Alan', 'Turing', 'alan@company.test', 'Submitted', 'shared', OTHER_ACCOUNT);
 
     const subsidiary = await service.getEventSpeakers(REQ, OTHER_ACCOUNT, 'shared');
     const searched = await service.getEventSpeakers(REQ, OTHER_ACCOUNT, 'shared', 'hopper');
@@ -958,12 +956,5 @@ describe('OrgLensEventsService family roll-up', () => {
     expect(summary.pastEvents).toBe(2);
     expect(list.total).toBe(2);
     expect(foundations.data.map((foundation) => foundation.id)).toEqual(['foundation-one']);
-  });
-
-  it('rejects the speakers drawer, rather than answering with no speakers, while the warehouse speaker table is missing', async () => {
-    addEvent();
-    database.exec('DROP TABLE ORG_EVENT_SPEAKERS');
-
-    await expect(service.getEventSpeakers(REQ, ACCOUNT, 'event-one')).rejects.toThrow(/ORG_EVENT_SPEAKERS/);
   });
 });
