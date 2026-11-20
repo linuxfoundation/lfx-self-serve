@@ -4,7 +4,6 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { lfxColors } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { isObservable, Observable, of, Subject, throwError } from 'rxjs';
@@ -264,24 +263,17 @@ describe('MembersChurnComponent', () => {
     expect(order).toEqual(['members-churn-tier-Silver', 'members-churn-tier-Gold']);
   });
 
-  it('draws the trend ending at the selected year, red when churn rose, with a screen-reader table', async () => {
+  it('draws the trend ending at the selected year, revenue churn as bars and logo churn as a dashed line', async () => {
     await render(CHURN, DEPARTURES, { churnView: 'trend' });
 
-    const rows = [...(query('members-churn-chart-table')?.querySelectorAll('tbody tr') ?? [])].map((row) =>
-      [...row.querySelectorAll('th, td')].map((cell) => cell.textContent?.trim())
+    const values = [...fixture.nativeElement.querySelectorAll('[data-testid^="members-churn-chart-value-"]')].map((label: Element) =>
+      label.textContent?.trim()
     );
-    expect(rows).toEqual([
-      ['2023', '6%'],
-      ['2024', '8%'],
-      ['2025', '11%'],
-      ['2026', '16%'],
-    ]);
-    expect(fixture.componentInstance['chartData']().datasets[0].backgroundColor).toEqual([
-      lfxColors.blue[200],
-      lfxColors.blue[200],
-      lfxColors.blue[200],
-      lfxColors.red[600],
-    ]);
+    expect(values).toEqual(['6%', '8%', '11%', '16%']);
+    expect(query('members-churn-chart-fill-2026')?.style.opacity).toBe('1');
+    expect(query('members-churn-chart-fill-2025')?.style.opacity).toBe('0.3');
+    expect(query('members-churn-chart-line')).not.toBeNull();
+    expect(query('members-churn-chart-bar-2025')?.getAttribute('aria-label')).toBe('2025, Revenue churn 11%, Logo churn 13%');
   });
 
   it('separates a failed churn read from a year without churn', async () => {

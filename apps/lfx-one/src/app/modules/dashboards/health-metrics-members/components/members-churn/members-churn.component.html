@@ -206,32 +206,7 @@
       @case ('trend') {
         <div class="flex flex-col gap-[8px]" data-testid="members-churn-trend">
           @if (showTrend()) {
-            <div class="h-56 w-full" role="img" [attr.aria-label]="chartLabel()" data-testid="members-churn-chart">
-              <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
-            </div>
-            <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
-            <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
-            <div class="sr-only">
-              <table data-testid="members-churn-chart-table">
-                <caption>
-                  Revenue churn by year, oldest first
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Year</th>
-                    <th scope="col">Revenue churn</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (point of trend(); track point.year) {
-                    <tr>
-                      <th scope="row">{{ point.label }}</th>
-                      <td>{{ point.valueLabel }}</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
+            <lfx-health-metrics-bar-chart [chart]="view().trendChart" testId="members-churn-chart" />
           } @else {
             <p class="m-0 py-[24px] text-center text-[13px] text-gray-500" data-testid="members-churn-trend-empty">Nothing matches this view.</p>
           }

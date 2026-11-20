@@ -12,6 +12,7 @@ import type {
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
+import type { HealthMetricsBarChartView } from './health-metrics-bar-chart.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
 import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
@@ -707,12 +708,14 @@ export interface HealthMetricsMembersChurnTierRowView {
   sortValues: Record<HealthMetricsMembersChurnTierSortKey, HealthMetricsSortValue>;
 }
 
-/** One year of the churn trend, oldest first; `value` is the year's revenue churn, `null` when unmeasured. */
+/** One year of the churn trend, oldest first; `value` is the year's revenue churn and `logoValue` its logo churn, `null` when unmeasured. */
 export interface HealthMetricsMembersChurnTrendPointView {
   year: number;
   label: string;
   value: number | null;
   valueLabel: string;
+  logoValue: number | null;
+  logoValueLabel: string;
   isSelected: boolean;
 }
 
@@ -728,8 +731,8 @@ export interface HealthMetricsMembersChurnView {
   /** Most dues lost first. */
   tiers: HealthMetricsMembersChurnTierRowView[];
   trend: HealthMetricsMembersChurnTrendPointView[];
-  /** The selected year's churn rose on the year before, so its bar warns. */
-  trendRose: boolean;
+  /** Revenue churn as bars, the selected year solid, with logo churn as a dashed line on the same axis. */
+  trendChart: HealthMetricsBarChartView;
 }
 
 /** One lost membership in Members lost; an organization appears once per lost term. */

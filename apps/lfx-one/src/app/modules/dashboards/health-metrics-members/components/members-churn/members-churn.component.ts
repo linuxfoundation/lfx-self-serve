@@ -5,7 +5,6 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import {
@@ -20,7 +19,6 @@ import {
   HEALTH_METRICS_MEMBERS_CHURN_TIER_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED,
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
-  lfxColors,
 } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsMembersChurnDepartureRows,
@@ -37,13 +35,13 @@ import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsBarChartComponent } from '../../../components/health-metrics-bar-chart/health-metrics-bar-chart.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
 import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type { ChartData, ChartOptions } from 'chart.js';
 import type {
   HealthMetricsL2Range,
   HealthMetricsMembersChurn,
@@ -52,7 +50,6 @@ import type {
   HealthMetricsMembersChurnDeparturesQuery,
   HealthMetricsMembersChurnSection,
   HealthMetricsMembersChurnTierRowView,
-  HealthMetricsMembersChurnTrendPointView,
   HealthMetricsMembersChurnView,
 } from '@lfx-one/shared/interfaces';
 
@@ -63,8 +60,8 @@ import type {
 @Component({
   selector: 'lfx-members-churn',
   imports: [
-    ChartComponent,
     EmptyStateComponent,
+    HealthMetricsBarChartComponent,
     HealthMetricsCellComponent,
     HealthMetricsMetricsRowComponent,
     HealthMetricsThComponent,
@@ -154,32 +151,8 @@ export class MembersChurnComponent {
   protected readonly firstRead = computed(
     () => this.loading() && (this.response() === HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED || this.responseFoundation() !== this.foundationSlug())
   );
-  protected readonly trend: Signal<HealthMetricsMembersChurnTrendPointView[]> = computed(() => this.view().trend);
-  protected readonly showTrend = computed(() => this.trend().filter((point) => point.value !== null).length > 1);
-  protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.trend(), this.view().trendRose));
-  protected readonly chartLabel = computed(() => `Revenue churn over ${this.trend().length} years, oldest first. The following table lists the same values.`);
-  protected readonly chartOptions: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        enabled: true,
-        callbacks: {
-          label: (item) => this.trend()[item.dataIndex]?.valueLabel ?? '',
-        },
-      },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: lfxColors.gray[500], font: { size: 10 } } },
-      y: {
-        beginAtZero: true,
-        grid: { color: lfxColors.gray[200] },
-        border: { display: false },
-        ticks: { color: lfxColors.gray[500], font: { size: 10 }, callback: (value) => `${value}%` },
-      },
-    },
-  };
+  /** Two years with either rate make a trend; one bar alone is no line. */
+  protected readonly showTrend = computed(() => this.view().trend.filter((point) => point.value !== null || point.logoValue !== null).length > 1);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -285,23 +258,6 @@ export class MembersChurnComponent {
 
     // A failed churn read keeps its error on screen, so it never settles empty; a failed Members lost read only shows under its view.
     this.settled.emit(!this.loadFailed() && !buildHealthMetricsMembersChurnView(churn, this.range()).yearMeasured);
-  }
-
-  /** Earlier years pale, the selected one solid — red when its churn rose on the year before. */
-  private buildChart(points: HealthMetricsMembersChurnTrendPointView[], rose: boolean): ChartData<'bar'> {
-    const selectedColor = rose ? lfxColors.red[600] : lfxColors.blue[500];
-    return {
-      labels: points.map((point) => point.label),
-      datasets: [
-        {
-          label: 'Revenue churn',
-          data: points.map((point) => point.value),
-          backgroundColor: points.map((point) => (point.isSelected ? selectedColor : lfxColors.blue[200])),
-          borderRadius: 2,
-          maxBarThickness: 52,
-        },
-      ],
-    } as ChartData<'bar'>;
   }
 
   private syncUrl(): void {
