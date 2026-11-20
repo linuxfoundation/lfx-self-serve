@@ -345,13 +345,6 @@ export class MultiPersonaDashboardComponent {
   }
 
   private getRowRole(project: EnrichedPersonaProject): string {
-    // For foundations, check board_member/committee_member detection extras
-    if (project.isFoundation) {
-      return this.getHighestRole(project);
-    }
-    // For projects, derive from persona type
-    if (project.personas.includes('maintainer')) return 'Maintainer';
-    if (project.personas.includes('contributor')) return 'Contributor';
     return this.getHighestRole(project);
   }
 
@@ -373,12 +366,21 @@ export class MultiPersonaDashboardComponent {
     if (project.personas.includes('executive-director')) {
       roles.push('Executive Director');
     }
+    if (project.personas.includes('maintainer')) {
+      roles.push('Maintainer');
+    }
+    if (project.personas.includes('contributor')) {
+      roles.push('Contributor');
+    }
     if (roles.length === 0) return 'Group Member';
     return this.pickByPriority(roles, ROLE_PRIORITY) ?? roles[0];
   }
 
   private normalizeRole(role: string): string {
-    return role === 'Member' ? 'Group Member' : role;
+    if (!role || role === 'None' || role === 'Member') {
+      return 'Group Member';
+    }
+    return role;
   }
 
   private getHighestVotingStatus(project: EnrichedPersonaProject): string | null {

@@ -101,6 +101,73 @@ describe('ProfileAffiliationsComponent — transformToProjectGroups', () => {
 
     expect(result).toHaveLength(0);
   });
+
+  it('correctly detects Maintainer when it appears after Contributor or in different casing (#5765)', () => {
+    const affiliation: CdpProjectAffiliation = {
+      id: 'slug-multi',
+      projectSlug: 'slug-multi',
+      projectLogo: '',
+      projectName: 'Multi Role Project',
+      contributionCount: 5,
+      roles: [
+        { id: 'r1', role: 'Contributor', startDate: '', endDate: '', repoUrl: '', repoFileUrl: '' },
+        { id: 'r2', role: 'maintainer', startDate: '', endDate: '', repoUrl: '', repoFileUrl: 'https://github.com/org/repo/MAINTAINERS.md' },
+      ],
+      affiliations: [
+        {
+          id: 'aff-1',
+          type: 'project',
+          organizationId: 'org-1',
+          organizationName: 'Linux Foundation',
+          organizationLogo: '',
+          startDate: '2023-01-01',
+          endDate: '',
+          verified: true,
+          verifiedBy: '',
+          source: 'cdp',
+        },
+      ],
+    };
+
+    const result = transform([affiliation], null);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].segments).toHaveLength(1);
+    expect(result[0].segments[0].role).toBe('Maintainer');
+    expect(result[0].segments[0].roleSource).toBe('repo-file');
+  });
+
+  it('correctly resolves to Contributor when roles list does not contain Maintainer', () => {
+    const affiliation: CdpProjectAffiliation = {
+      id: 'slug-contrib-only',
+      projectSlug: 'slug-contrib-only',
+      projectLogo: '',
+      projectName: 'Contributor Project',
+      contributionCount: 2,
+      roles: [{ id: 'r1', role: 'Contributor', startDate: '', endDate: '', repoUrl: '', repoFileUrl: '' }],
+      affiliations: [
+        {
+          id: 'aff-2',
+          type: 'project',
+          organizationId: 'org-2',
+          organizationName: 'Acme',
+          organizationLogo: '',
+          startDate: '2023-01-01',
+          endDate: '',
+          verified: true,
+          verifiedBy: '',
+          source: 'cdp',
+        },
+      ],
+    };
+
+    const result = transform([affiliation], null);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].segments).toHaveLength(1);
+    expect(result[0].segments[0].role).toBe('Contributor');
+    expect(result[0].segments[0].roleSource).toBe('cdp-detected');
+  });
 });
 
 describe('ProfileAffiliationsComponent — primary email does not count as a connected identity (#4123)', () => {
