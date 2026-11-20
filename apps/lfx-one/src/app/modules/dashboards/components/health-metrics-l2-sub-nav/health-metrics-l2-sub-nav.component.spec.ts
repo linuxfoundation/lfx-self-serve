@@ -106,6 +106,25 @@ describe('HealthMetricsL2SubNavComponent', () => {
     expect(host.classList).not.toContain('hmn-closed');
   });
 
+  it('reopens on the next hover after a keyboard pick made with the pointer elsewhere', () => {
+    item('orgs').focus();
+    item('orgs').click();
+    fixture.detectChanges();
+    expect(host.classList).toContain('hmn-closed');
+
+    host.dispatchEvent(new MouseEvent('mouseenter'));
+    fixture.detectChanges();
+
+    expect(host.classList).not.toContain('hmn-closed');
+  });
+
+  it('leaves Escape alone while the panel is neither hovered nor focused', () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
+    expect(host.classList).not.toContain('hmn-closed');
+  });
+
   it('opens from a tap on the rail by focusing the current item, and Escape shuts it again', () => {
     (host.querySelector('[data-testid="engagement-sub-nav-rail"]') as HTMLElement).click();
     fixture.detectChanges();

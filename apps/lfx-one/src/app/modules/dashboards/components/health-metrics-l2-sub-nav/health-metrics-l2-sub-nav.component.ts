@@ -22,10 +22,12 @@ import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
     '[attr.data-testid]': "testIdPrefix() + '-sub-nav'",
     '[class.hmn-closed]': 'closed()',
     '[style.--hmn-top]': "topPx() + 'px'",
+    '(mouseenter)': 'closed.set(false)',
     '(mouseleave)': 'closed.set(false)',
     '(focusin)': 'closed.set(false)',
     '(click)': 'openFromRail($event)',
-    '(keydown.escape)': 'dismiss()',
+    // On the document, so Escape also shuts a panel that hover opened while focus was elsewhere.
+    '(document:keydown.escape)': 'onEscape()',
   },
 })
 export class HealthMetricsL2SubNavComponent {
@@ -41,7 +43,7 @@ export class HealthMetricsL2SubNavComponent {
 
   public readonly sectionPicked = output<string>();
 
-  /** Keeps the collapsed panel shut after a pick until the pointer leaves, as hover would reopen it at once. */
+  /** Keeps the panel shut after a pick or Escape until the pointer next enters, as hover would reopen it at once. */
   protected readonly closed = signal(false);
 
   protected pick(key: string, event: Event): void {
@@ -54,6 +56,12 @@ export class HealthMetricsL2SubNavComponent {
     if (!(event.target as HTMLElement).closest('.hmn-rail')) return;
     this.closed.set(false);
     this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-item[aria-current]')?.focus();
+  }
+
+  /** Escape shuts the panel only while it is open, by hover or by focus inside it. */
+  protected onEscape(): void {
+    const host = this.elementRef.nativeElement;
+    if (host.matches(':hover') || host.contains(document.activeElement)) this.dismiss();
   }
 
   /** Shuts the panel and lets go of the focused item, which would otherwise hold it open. */

@@ -772,6 +772,7 @@ describe('HealthMetricsL2ShellComponent', () => {
 
     expect(activeKey()).toBe('beta');
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('test-section-beta');
 
     child('beta').settled.emit(false);
     await flush();

@@ -267,6 +267,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   public scrollToSection(key: string): void {
     this.clearPendingSection();
     this.scrollTo(key);
+    // Focus follows the jump, so a keyboard reader carries on from the picked section.
+    if (isPlatformBrowser(this.platformId)) this.sectionElement(key)?.focus({ preventScroll: true });
   }
 
   private updateReadEmpty(key: string, isEmpty: boolean | null | undefined): void {
