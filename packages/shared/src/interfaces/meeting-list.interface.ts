@@ -13,6 +13,7 @@ import type {
   MeetingResponseFilter,
   MeetingRsvp,
   OccurrenceNavItem,
+  PastMeeting,
   PastMeetingSummary,
   RsvpResponse,
   RsvpScope,
@@ -506,4 +507,10 @@ export interface MeetingReconcileDialogData {
   pastMeetingId: string;
   /** Called after attendee records change, so the opener reloads its participants. */
   onChange: () => void;
+}
+
+/** One page of the meetings home past feed; `pageToken` continues it when the feed is paged on the server. */
+export interface MeetingsHomePastPage {
+  meetings: PastMeeting[];
+  pageToken?: string;
 }

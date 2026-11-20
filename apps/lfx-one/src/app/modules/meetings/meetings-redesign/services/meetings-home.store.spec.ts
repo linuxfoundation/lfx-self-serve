@@ -6,13 +6,14 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingRsvp, MeetingsHomePastPage, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeFeed, UserMeetingsHomeFeed } from './meetings-home-feed';
 import { MeetingsHomeStore } from './meetings-home.store';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -103,6 +104,7 @@ describe('MeetingsHomeStore', () => {
     TestBed.configureTestingModule({
       providers: [
         MeetingsHomeStore,
+        { provide: MeetingsHomeFeed, useClass: UserMeetingsHomeFeed },
         { provide: PLATFORM_ID, useValue: platform },
         { provide: UserService, useValue: userService },
         { provide: MeetingService, useValue: meetingService },
@@ -818,6 +820,367 @@ describe('MeetingsHomeStore', () => {
       expect(store.lastMeetingSummary()).toBeNull();
       expect(store.lastMeetingRecordingUrl()).toBeNull();
       expect(logged).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('paged past feed', () => {
+    let pastPages: Subject<MeetingsHomePastPage>[];
+    let past: ReturnType<typeof vi.fn<(search: string, pageToken?: string) => Subject<MeetingsHomePastPage>>>;
+
+    const createPaged = (): MeetingsHomeStore => {
+      pastPages = [];
+      past = vi.fn<(search: string, pageToken?: string) => Subject<MeetingsHomePastPage>>(() => {
+        const page$ = new Subject<MeetingsHomePastPage>();
+        pastPages.push(page$);
+        return page$;
+      });
+      const feed: MeetingsHomeFeed = {
+        key: identity,
+        pagedPast: true,
+        upcomingRefresh$: meetingsRefresh$,
+        pastRefresh$: pastMeetingsRefresh$,
+        upcoming: () => upcoming$,
+        past,
+        latestPast: () => latestPast$,
+      };
+      TestBed.configureTestingModule({
+        providers: [
+          MeetingsHomeStore,
+          { provide: MeetingsHomeFeed, useValue: feed },
+          { provide: PLATFORM_ID, useValue: 'browser' },
+          { provide: UserService, useValue: userService },
+          { provide: MeetingService, useValue: meetingService },
+          { provide: UiToastService, useValue: toast },
+        ],
+      });
+      const store = TestBed.inject(MeetingsHomeStore);
+      TestBed.tick();
+      return store;
+    };
+    const pastPage = (prefix: string, count: number, pageToken?: string): MeetingsHomePastPage => ({
+      meetings: Array.from({ length: count }, (_, index) => buildPastMeeting(`${prefix}${index}`, inDays(-1 - index))),
+      pageToken,
+    });
+
+    it('loads the next server page once the loaded rows are shown, and stops when the cursor ends', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      expect(store.hasMore()).toBe(true);
+      store.loadMore();
+      TestBed.tick();
+      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+
+      pastPages[1].next(pastPage('b', 5));
+      TestBed.tick();
+      expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE + 5);
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('reloads from the first page with the search, and drops a next page of the earlier query', async () => {
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        store.setTab('past');
+        pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+        TestBed.tick();
+        store.loadMore();
+        TestBed.tick();
+        TestBed.tick();
+
+        store.setSearch(' weekly ');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        expect(past).toHaveBeenLastCalledWith('weekly');
+
+        pastPages[1].next(pastPage('stale', 3));
+        pastPages[2].next(pastPage('w', 2));
+        TestBed.tick();
+        expect(store.pastRows().map((row) => row.meeting.id)).toEqual(['w0', 'w1']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('reloads a paged past feed from its first page on refresh', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].next(pastPage('b', MEETINGS_HOME_PAGE_SIZE, 'cursor-2'));
+      TestBed.tick();
+
+      pastMeetingsRefresh$.next();
+      pastPages[2].next(pastPage('c', 1));
+      TestBed.tick();
+
+      expect(past).toHaveBeenCalledTimes(3);
+      expect(store.pastRows().map((row) => row.meeting.id)).toEqual(['c0']);
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('keeps loading server pages while none of the loaded rows can be shown', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+
+      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+      expect(store.loading()).toBe(true);
+      pastPages[1].next(pastPage('b', 3));
+      TestBed.tick();
+      expect(store.pastRows()).toHaveLength(3);
+      expect(store.loading()).toBe(false);
+    });
+
+    it('ignores a Load more while a page is loading', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      const count = store.visibleCount();
+
+      store.loadMore();
+
+      expect(store.visibleCount()).toBe(count);
+      expect(past).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops the failure of a next page the query has moved on from, and keeps the cursor when a reload fails', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+
+      pastMeetingsRefresh$.next();
+      pastPages[1].error(new Error('stale'));
+      expect(toast.show).not.toHaveBeenCalled();
+      pastPages[2].error(new Error('reload failed'));
+      TestBed.tick();
+
+      expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+      expect(store.hasMore()).toBe(true);
+    });
+
+    it('drops the cursor when the viewer or scope changes, even if the new first page fails', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-a'));
+      TestBed.tick();
+
+      identity.set('viewer-b');
+      TestBed.tick();
+      pastPages[pastPages.length - 1].error(new Error('first page failed'));
+      TestBed.tick();
+
+      expect(past).not.toHaveBeenCalledWith('', 'cursor-a');
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('shows the error state with Retry when a next page fails and no past rows are loaded', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      expect(store.failed()).toBe(true);
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    it('does not page the previous search while a new one is debouncing', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      store.setSearch('nothing loaded matches this');
+      TestBed.tick();
+
+      expect(past).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers to load more after a next page fails with rows shown, and retries the same cursor', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      expect(store.pastPageFailed()).toBe(true);
+      expect(store.hasMore()).toBe(false);
+      expect(past).toHaveBeenCalledTimes(2);
+      store.retryPastPage();
+      TestBed.tick();
+      expect(store.pastPageFailed()).toBe(false);
+      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+    });
+
+    it('keeps showing more upcoming rows while a past page is loading', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      store.setTab('upcoming');
+      upcoming$.next(
+        Array.from({ length: MEETINGS_HOME_PAGE_SIZE + 5 }, (_, index) => buildMeeting({ id: `u-${index}`, start_time: inDays(index + 1).toISOString() }))
+      );
+      TestBed.tick();
+
+      store.loadMore();
+
+      expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE * 2);
+    });
+
+    it('stays on the error state when Retry after a failed empty past list fails again', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+      expect(store.failed()).toBe(true);
+
+      store.retry();
+      TestBed.tick();
+      pastPages[pastPages.length - 1].error(new Error('reload failed'));
+      TestBed.tick();
+
+      expect(store.failed()).toBe(true);
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    it('shows the error state when a next page fails and the filters hide every loaded row', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, meetingType: 'Board' });
+      TestBed.tick();
+
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      expect(store.failed()).toBe(true);
+    });
+
+    it('offers no more rows while the cursor belongs to a search still debouncing', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      store.setSearch('Past a1');
+      TestBed.tick();
+
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('does not mark Past failed when its next page fails while Upcoming is shown', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      store.setTab('upcoming');
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      store.setTab('past');
+      TestBed.tick();
+
+      expect(store.failed()).toBe(false);
+      expect(store.pastPageFailed()).toBe(true);
+    });
+
+    it('keeps Retry on Upcoming from putting a loaded Past list into its error state', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+      store.setTab('upcoming');
+      upcoming$.error(new Error('upcoming failed'));
+      TestBed.tick();
+
+      store.retry();
+      TestBed.tick();
+      pastPages[pastPages.length - 1].error(new Error('past reload failed'));
+      store.setTab('past');
+      TestBed.tick();
+
+      expect(store.failed()).toBe(false);
+      expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+    });
+
+    it('shows no error while a new search debounces after a failed page', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      store.setSearch('nothing loaded matches this');
+      TestBed.tick();
+
+      expect(store.failed()).toBe(false);
+    });
+
+    it('treats the past count as unknown on any tab when a next page failed with nothing loaded', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      store.setTab('upcoming');
+      TestBed.tick();
+
+      expect(store.pastCountUnknown()).toBe(true);
+    });
+
+    it('does not request a next page on the upcoming tab', () => {
+      const store = createPaged();
+      pastPages[0].next(pastPage('a', 1, 'cursor-1'));
+      TestBed.tick();
+
+      store.loadMore();
+      TestBed.tick();
+
+      expect(past).toHaveBeenCalledTimes(1);
     });
   });
 });

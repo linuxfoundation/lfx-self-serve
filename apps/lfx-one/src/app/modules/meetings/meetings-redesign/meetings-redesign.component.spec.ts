@@ -15,11 +15,13 @@ import { CreateArtifactDialogService } from '@services/create-artifact-dialog.se
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
+import { LensService } from '@services/lens.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { PersonaService } from '@services/persona.service';
 import { PlausibleService } from '@services/plausible.service';
 import { SegmentService } from '@services/segment.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, of, Subject } from 'rxjs';
+import { BehaviorSubject, map, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -169,6 +171,7 @@ describe('MeetingsRedesignComponent', () => {
         },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded, hasBoardRole: signal(false), hasProjectRole: signal(true) } },
+        { provide: LensService, useValue: { activeLens: signal('me') } },
         { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
         { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
@@ -953,6 +956,40 @@ describe('MeetingsRedesignComponent', () => {
       query(fixture, 'ui-tab-upcoming')?.click();
       await fixture.whenStable();
       expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { time: null } }));
+    });
+  });
+
+  describe('paged past feed', () => {
+    let pastPage$: Subject<{ data: PastMeeting[]; page_token?: string }>;
+
+    beforeEach(() => {
+      pastPage$ = new Subject();
+      TestBed.overrideProvider(LensService, { useValue: { activeLens: signal('project') } });
+      TestBed.overrideProvider(ProjectContextService, {
+        useValue: { activeContextUid: signal('project-1'), isFoundationContext: signal(false) },
+      });
+      TestBed.overrideProvider(MeetingService, {
+        useValue: {
+          removedRegistrationMeetingIds: signal(new Set<string>()),
+          getPastMeetingSummary: () => of(null),
+          getPastMeetingRecording: () => of(null),
+          getProjectMeetingsForHome: () => of([]),
+          getProjectPastMeetingsForHome: () => pastPage$.pipe(map((page) => ({ meetings: page.data, pageToken: page.page_token }))),
+        },
+      });
+    });
+
+    it('shows no results with a reset, not an empty tab, when a server search matches nothing', async () => {
+      queryParamMap$.next(convertToParamMap({ time: 'past' }));
+      const fixture = render();
+      await fixture.whenStable();
+      fixture.componentInstance['store'].setSearch('nothing matches');
+      pastPage$.next({ data: [] });
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-home-no-results')).toBeTruthy();
+      expect(query(fixture, 'meetings-home-no-results-reset')).toBeTruthy();
+      expect(query(fixture, 'meetings-home-empty-past')).toBeNull();
     });
   });
 });

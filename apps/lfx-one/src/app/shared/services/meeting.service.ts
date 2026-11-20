@@ -10,9 +10,15 @@ import {
   MEETING_PASSWORD_HEADER,
   MEETING_REGISTRANT_CLIENT_CHUNK_SIZE,
   MEETING_REMOVAL_SOURCE_HEADER,
+  MEETINGS_HOME_PROJECT_MAX_UPCOMING_PAGES,
+  MEETINGS_HOME_PROJECT_PAST_PAGE_SIZE,
+  MEETINGS_INCLUDE_VIEWER_RSVP,
   PAST_MEETING_RECORDING_CACHE_TTL_MS,
   PAST_MEETING_SORT,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
   RECENTLY_CREATED_MEETING_WINDOW_MS,
+  USER_MEETINGS_INCLUDE_ATTENDANCE,
+  USER_PAST_MEETINGS_INCLUDE_ARTIFACTS,
 } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
@@ -34,6 +40,7 @@ import {
   MeetingAttachmentChangesByMeeting,
   MeetingJoinURL,
   MeetingProjectQueryOptions,
+  MeetingsHomePastPage,
   MeetingRollupFilterOptions,
   MeetingRollupProjectsPreference,
   MeetingRollupProjectsPreferenceRequest,
@@ -67,7 +74,7 @@ import {
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
 import { isBatchRegistrantOperationResponse, mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
-import { catchError, concatMap, from, identity, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
+import { catchError, concatMap, EMPTY, expand, from, identity, map, Observable, of, reduce, shareReplay, take, tap, throwError, toArray } from 'rxjs';
 
 import { extractErrorMessage, retryPropagationLag } from '@shared/utils/http-error.utils';
 
@@ -267,6 +274,59 @@ export class MeetingService {
       map((response) => response.data),
       catchError((error) => {
         console.error('Failed to load past project meetings:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Every meeting of a project for its meetings home, with the viewer's RSVP and organizer counts. It reads up to
+   * {@link MEETINGS_HOME_PROJECT_MAX_UPCOMING_PAGES} max-size pages; errors propagate so the page shows its error state.
+   */
+  public getProjectMeetingsForHome(projectUid: string, options: MeetingProjectQueryOptions = {}): Observable<Meeting[]> {
+    const fetchPage = (pageToken?: string): Observable<PaginatedResponse<Meeting>> => {
+      let params = this.projectScopeParams(projectUid, { ...options, pageSize: QUERY_SERVICE_MAX_PAGE_SIZE }).set(
+        'include',
+        `${MEETINGS_INCLUDE_VIEWER_RSVP},${USER_MEETINGS_INCLUDE_ATTENDANCE}`
+      );
+      if (pageToken) params = params.set('page_token', pageToken);
+      return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params });
+    };
+    return fetchPage().pipe(
+      expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
+      take(MEETINGS_HOME_PROJECT_MAX_UPCOMING_PAGES),
+      reduce((meetings: Meeting[], response) => [...meetings, ...response.data], []),
+      catchError((error) => {
+        console.error('Failed to load project meetings for the meetings home:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * One page of a project's past meetings for its meetings home, most recent first, with artifacts, organizer
+   * attendance and the viewer's own attendance. Rows take `meeting_and_occurrence_id` as their id, as the user feed's do.
+   */
+  public getProjectPastMeetingsForHome(
+    projectUid: string,
+    search: string,
+    pageToken?: string,
+    pageSize: number = MEETINGS_HOME_PROJECT_PAST_PAGE_SIZE,
+    options: MeetingProjectQueryOptions = {}
+  ): Observable<MeetingsHomePastPage> {
+    let params = this.projectScopeParams(projectUid, { ...options, pageSize })
+      .set('sort', PAST_MEETING_SORT.NAME_DESC)
+      .set('include', `${USER_PAST_MEETINGS_INCLUDE_ARTIFACTS},${USER_MEETINGS_INCLUDE_ATTENDANCE}`)
+      .set('include_viewer_attendance', 'true');
+    if (search) params = params.set('name', search);
+    if (pageToken) params = params.set('page_token', pageToken);
+    return this.http.get<PaginatedResponse<PastMeeting>>('/api/past-meetings', { params }).pipe(
+      map((response) => ({
+        meetings: response.data.flatMap((meeting) => (meeting.meeting_and_occurrence_id ? [{ ...meeting, id: meeting.meeting_and_occurrence_id }] : [])),
+        pageToken: response.page_token,
+      })),
+      catchError((error) => {
+        console.error('Failed to load past project meetings for the meetings home:', error);
         return throwError(() => error);
       })
     );

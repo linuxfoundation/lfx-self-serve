@@ -3,8 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { computed, DestroyRef, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   Meeting,
@@ -37,14 +37,35 @@ import {
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { catchError, combineLatest, defer, interval, map, Observable, of, retry, startWith, Subject, switchMap, tap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  debounceTime,
+  defer,
+  distinctUntilChanged,
+  filter,
+  interval,
+  map,
+  merge,
+  Observable,
+  of,
+  retry,
+  startWith,
+  Subject,
+  Subscription,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs';
 
+import { MeetingsHomeFeed } from './meetings-home-feed';
 import { MeetingsHomeJoinService } from './meetings-home-join.service';
 
 /**
- * State of the Me lens meetings home list, provided by the page component.
+ * State of the meetings home list, provided by the page component over a {@link MeetingsHomeFeed}.
  * @description Loads the upcoming and past feeds up front so both tab counts show, expands upcoming meetings into one
  * row per date, then applies search and filters, groups by day and pages {@link MEETINGS_HOME_PAGE_SIZE} rows at a time.
+ * A paged past feed loads its next server page when the list runs out, and reloads from the first page on search.
  */
 @Injectable()
 export class MeetingsHomeStore {
@@ -53,12 +74,14 @@ export class MeetingsHomeStore {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly toast = inject(UiToastService);
   private readonly joinService = inject(MeetingsHomeJoinService);
+  private readonly feed = inject(MeetingsHomeFeed);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly tabState: WritableSignal<MeetingDashboardView> = signal<MeetingDashboardView>('upcoming');
   // Search and filters go back to their defaults when the viewer changes (login, impersonation).
-  private readonly searchState: WritableSignal<string> = linkedSignal({ source: this.userService.meetingFeedIdentity, computation: () => '' });
+  private readonly searchState: WritableSignal<string> = linkedSignal({ source: this.feed.key, computation: () => '' });
   private readonly filtersState: WritableSignal<MeetingsHomeFilters> = linkedSignal({
-    source: this.userService.meetingFeedIdentity,
+    source: this.feed.key,
     computation: () => MEETINGS_HOME_DEFAULT_FILTERS,
   });
   private readonly upcomingLoadingState: WritableSignal<boolean> = signal(true);
@@ -73,7 +96,7 @@ export class MeetingsHomeStore {
   private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
   private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
   /** Key of the concurrent date picked on the Next meeting card; the first one when it is not among them. */
-  private readonly nextCardKey: WritableSignal<string | null> = linkedSignal({ source: this.userService.meetingFeedIdentity, computation: () => null });
+  private readonly nextCardKey: WritableSignal<string | null> = linkedSignal({ source: this.feed.key, computation: () => null });
   /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
   public readonly now: Signal<Date> = this.initClock();
 
@@ -88,22 +111,35 @@ export class MeetingsHomeStore {
   public readonly lastMeetingFailed: Signal<boolean> = this.lastMeetingFailedState.asReadonly();
 
   private readonly upcomingMeetings: Signal<Meeting[]> = this.initFeed(
-    () => this.userService.getUserMeetings({ includeAttendance: true }),
-    this.userService.meetingsRefresh$,
+    () => this.feed.upcoming(),
+    this.feed.upcomingRefresh$,
     this.upcomingLoadingState,
     this.upcomingFailedState
   );
+  /** Cursor of a paged past feed's next server page; undefined once it is exhausted or for a whole feed. */
+  // A cursor belongs to one viewer and scope, so a new feed key drops it even before its first page answers.
+  private readonly pastPageToken: WritableSignal<string | undefined> = linkedSignal({ source: this.feed.key, computation: () => undefined });
+  private readonly pastLoadingMore: WritableSignal<boolean> = signal(false);
+  private pastNextPage: Subscription | null = null;
+  // Bumped whenever the first past page is requested, so a next page for an older query is dropped.
+  private pastQueryVersion = 0;
+  // Search the first past page was loaded with; its cursor only continues that query.
+  private readonly pastQuery: WritableSignal<string> = signal('');
+  private readonly pastPageFailedState: WritableSignal<boolean> = signal(false);
   // Carries `recording_share_url` / `has_ai_summary` for the Recording and AI Summary buttons, and organizer attendance.
-  private readonly pastMeetings: Signal<PastMeeting[]> = this.initFeed(
-    () => this.userService.getUserPastMeetings({ includeArtifactsAndAttendance: true }),
-    this.userService.pastMeetingsRefresh$,
+  private readonly pastFirstPage: Signal<PastMeeting[]> = this.initFeed(
+    () => this.loadFirstPastPage(),
+    this.feed.pastRefresh$,
     this.pastLoadingState,
-    this.pastFailedState
+    this.pastFailedState,
+    this.initPastReloads()
   );
+  private readonly pastNextPages: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.pastFirstPage, computation: () => [] as PastMeeting[] });
+  private readonly pastMeetings: Signal<PastMeeting[]> = computed(() => [...this.pastFirstPage(), ...this.pastNextPages()]);
   // The fast latest-past feed paints the Last meeting card before the full past list arrives.
   private readonly latestPastMeetings: Signal<PastMeeting[]> = this.initFeed(
-    () => this.userService.getUserLatestPastMeetings(),
-    this.userService.pastMeetingsRefresh$,
+    () => this.feed.latestPast(),
+    this.feed.pastRefresh$,
     this.lastMeetingLoadingState,
     this.lastMeetingFailedState
   );
@@ -118,7 +154,7 @@ export class MeetingsHomeStore {
     computation: () => new Set<string>(),
   });
   private readonly visibleCountState: WritableSignal<number> = linkedSignal({
-    source: () => ({ tab: this.tab(), search: this.search(), filters: this.filters(), identity: this.userService.meetingFeedIdentity() }),
+    source: () => ({ tab: this.tab(), search: this.search(), filters: this.filters(), identity: this.feed.key() }),
     computation: () => MEETINGS_HOME_PAGE_SIZE,
   });
 
@@ -128,9 +164,25 @@ export class MeetingsHomeStore {
   public readonly pastRows: Signal<MeetingHomeRow[]> = this.initPastRows();
   /** Upcoming dates the viewer can still answer, soonest first, whatever the search and filters. */
   public readonly pendingRsvpRows: Signal<MeetingHomeRow[]> = this.initPendingRsvpRows();
-  public readonly loading: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastLoading() : this.upcomingLoading()));
+  /** Past meetings come a page at a time and are searched on the server. */
+  public readonly pagedPast: boolean = this.feed.pagedPast;
+  /** The active tab's first load, or, on a paged past feed, more pages while none of the loaded rows match. */
+  public readonly loading: Signal<boolean> = computed(() =>
+    this.tab() === 'past' ? this.pastLoading() || (this.pastLoadingMore() && this.filteredRows().length === 0) : this.upcomingLoading()
+  );
   /** The active tab's feed failed to load; its rows are empty but not confirmed empty. */
-  public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastFailed() : this.upcomingFailed()));
+  public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastShowsError() : this.upcomingFailed()));
+  /** The past count is unknown: its load failed, or a next page failed with no past meetings loaded, whatever the tab. */
+  public readonly pastCountUnknown: Signal<boolean> = computed(() => this.pastFailed() || (this.pastPageFailedState() && this.pastMeetings().length === 0));
+  /**
+   * The past list is in its error state: its load failed, or, on the Past tab, a next page failed for the current search
+   * with nothing to show, so the viewer gets Retry.
+   */
+  public readonly pastShowsError: Signal<boolean> = computed(
+    () =>
+      this.pastFailed() ||
+      (this.tab() === 'past' && this.pastPageFailedState() && this.search().trim() === this.pastQuery() && this.filteredRows().length === 0)
+  );
   /** The active tab's rows before search and filters. */
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
   /** The soonest date not yet over, else the soonest one, whatever the search and filters; it anchors the Next meeting card. */
@@ -159,8 +211,16 @@ export class MeetingsHomeStore {
   public readonly groups: Signal<MeetingDayGroup[]> = computed(() =>
     groupMeetingsByDayBucket(this.filteredRows(), this.tab(), this.now(), this.visibleCount())
   );
-  public readonly hasMore: Signal<boolean> = computed(() => this.visibleCount() < this.filteredRows().length);
-  /** Most recent ended meeting the viewer has a direct grant on (invited, organizer or participant), as on the legacy dashboard card. */
+  /** A next past page failed on the past tab; the list offers to load more instead of retrying on its own. */
+  public readonly pastPageFailed: Signal<boolean> = computed(() => this.tab() === 'past' && this.pastPageFailedState() && this.filteredRows().length > 0);
+  /** More rows to show, loaded or still on the server for a paged past feed. */
+  public readonly hasMore: Signal<boolean> = computed(
+    () =>
+      this.visibleCount() < this.filteredRows().length ||
+      // Server pages only count while the cursor's search is the current one and its last page did not fail.
+      (this.tab() === 'past' && this.pastPageToken() !== undefined && !this.pastPageFailedState() && this.search().trim() === this.pastQuery())
+  );
+  /** Most recent ended meeting of the feed: one the viewer has a direct grant on in the Me lens, the scope's in a project lens. */
   public readonly lastMeeting: Signal<MeetingHomeRow | null> = computed(
     () =>
       this.latestPastMeetings()
@@ -191,6 +251,10 @@ export class MeetingsHomeStore {
   /** One chip per applied filter. */
   public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() => buildMeetingFilterChips(this.filters(), this.tabRows()));
 
+  public constructor() {
+    this.initPastAutoLoad();
+  }
+
   /** Switches tab and clears the filters; search is kept. */
   public setTab(tab: MeetingDashboardView): void {
     if (tab === this.tab()) return;
@@ -211,8 +275,15 @@ export class MeetingsHomeStore {
     this.filtersState.update((filters) => ({ ...filters, [key]: MEETINGS_HOME_DEFAULT_FILTERS[key] }));
   }
 
+  /** Shows another page of rows; on a paged past feed the store loads server pages until they fill it. */
   public loadMore(): void {
-    if (this.hasMore()) this.visibleCountState.update((count) => count + MEETINGS_HOME_PAGE_SIZE);
+    if (!this.hasMore() || (this.tab() === 'past' && this.pastLoadingMore())) return;
+    this.visibleCountState.update((count) => count + MEETINGS_HOME_PAGE_SIZE);
+  }
+
+  /** Asks again for the past page that failed, with its cursor and query. */
+  public retryPastPage(): void {
+    this.pastPageFailedState.set(false);
   }
 
   /** Clears both filters and search. */
@@ -223,6 +294,9 @@ export class MeetingsHomeStore {
 
   /** Re-requests every feed after a failure. */
   public retry(): void {
+    // Hands the past list's error state to the reload, so a reload that fails returns to it.
+    if (this.pastShowsError()) this.pastFailedState.set(true);
+    this.pastPageFailedState.set(false);
     this.retry$.next();
   }
 
@@ -270,31 +344,35 @@ export class MeetingsHomeStore {
     load: () => Observable<T[]>,
     refresh$: Observable<void>,
     loading: WritableSignal<boolean>,
-    failed: WritableSignal<boolean>
+    failed: WritableSignal<boolean>,
+    reload$: Observable<unknown> = of(undefined)
   ): Signal<T[]> {
     if (!isPlatformBrowser(this.platformId)) return signal<T[]>([]);
     let previousIdentity: string | null = null;
     let loaded = false;
 
     return toSignal(
-      combineLatest([toObservable(this.userService.meetingFeedIdentity), this.retry$.pipe(startWith(undefined))]).pipe(
+      combineLatest([toObservable(this.feed.key), this.retry$.pipe(startWith(undefined)), reload$]).pipe(
         switchMap(([identity]) => {
           const identityChanged = previousIdentity !== null && identity !== previousIdentity;
           previousIdentity = identity;
           if (identityChanged) loaded = false;
+          // A reload from the error state (Retry) returns to it on failure, rather than a toast over an empty list.
+          let fromError = failed();
           loading.set(true);
           failed.set(false);
           const request$ = defer(load).pipe(
             tap({
               next: () => {
                 loaded = true;
+                fromError = false;
                 loading.set(false);
                 failed.set(false);
               },
               error: (error: unknown) => {
                 console.error('Failed to load meetings for the meetings home page:', error);
                 loading.set(false);
-                if (loaded) this.showRefreshFailedToast();
+                if (loaded && !fromError) this.showRefreshFailedToast();
                 else failed.set(true);
               },
             }),
@@ -319,6 +397,75 @@ export class MeetingsHomeStore {
       description: 'Showing the list as it was last loaded.',
       duration: 5000,
     });
+  }
+
+  /** Emits when a paged past feed's search settles on a new value or the feed is refreshed; never for a whole feed. */
+  private initPastReloads(): Observable<unknown> {
+    if (!this.feed.pagedPast) return of(undefined);
+    const search$ = toObservable(computed(() => this.search().trim())).pipe(debounceTime(300), startWith(''), distinctUntilChanged());
+    return merge(search$, this.feed.pastRefresh$);
+  }
+
+  /** The cursor and its query change only when a first page succeeds, so a failed reload keeps the rows and cursor it had. */
+  private loadFirstPastPage(): Observable<PastMeeting[]> {
+    const version = ++this.pastQueryVersion;
+    const query = this.search().trim();
+    this.pastNextPage?.unsubscribe();
+    this.pastLoadingMore.set(false);
+    return this.feed.past(query).pipe(
+      tap((page) => {
+        if (version !== this.pastQueryVersion) return;
+        this.pastQuery.set(query);
+        this.pastPageFailedState.set(false);
+        this.pastPageToken.set(page.pageToken);
+      }),
+      map((page) => page.meetings)
+    );
+  }
+
+  /** Loads server pages while the list shows fewer matching past rows than it asks for and the feed has more. */
+  private initPastAutoLoad(): void {
+    if (!this.feed.pagedPast || !isPlatformBrowser(this.platformId)) return;
+    toObservable(
+      computed(
+        () =>
+          this.tab() === 'past' &&
+          !this.pastLoading() &&
+          !this.pastLoadingMore() &&
+          !this.pastPageFailedState() &&
+          this.pastPageToken() !== undefined &&
+          // The cursor continues the last loaded search; a newer one waits for its own first page.
+          this.search().trim() === this.pastQuery() &&
+          this.filteredRows().length < this.visibleCount()
+      )
+    )
+      .pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.loadNextPastPage());
+  }
+
+  private loadNextPastPage(): void {
+    const pageToken = this.pastPageToken();
+    if (!pageToken || this.pastLoadingMore()) return;
+    const version = this.pastQueryVersion;
+    this.pastLoadingMore.set(true);
+    this.pastNextPage = this.feed
+      .past(this.pastQuery(), pageToken)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (page) => {
+          if (version !== this.pastQueryVersion) return;
+          this.pastLoadingMore.set(false);
+          this.pastNextPages.update((meetings) => [...meetings, ...page.meetings]);
+          this.pastPageToken.set(page.pageToken);
+        },
+        error: (error: unknown) => {
+          if (version !== this.pastQueryVersion) return;
+          console.error('Failed to load more past meetings for the meetings home page:', error);
+          this.pastLoadingMore.set(false);
+          // The cursor stays; the list then offers Load more meetings, or Retry while nothing is shown.
+          this.pastPageFailedState.set(true);
+        },
+      });
   }
 
   private initNextRow(): Signal<MeetingHomeRow | null> {

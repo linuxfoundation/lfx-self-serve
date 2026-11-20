@@ -149,3 +149,9 @@ export const MEETING_ROLLUP_PROJECTS_PREFERENCE_VALUE_MAX_LENGTH = 16_000;
 
 /** `projects` URL value (and saved-choice marker) for every project of a meetings roll-up; the root alone is the default. */
 export const MEETING_ROLLUP_ALL_PROJECTS = 'all';
+
+/** Past meetings per request on a project's meetings home, which pages its past feed on the server. */
+export const MEETINGS_HOME_PROJECT_PAST_PAGE_SIZE = 50;
+
+/** Most max-size pages a project's meetings home reads for its upcoming feed, as the legacy calendar does. */
+export const MEETINGS_HOME_PROJECT_MAX_UPCOMING_PAGES = 10;

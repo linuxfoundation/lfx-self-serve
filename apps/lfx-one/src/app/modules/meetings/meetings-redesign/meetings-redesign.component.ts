@@ -48,6 +48,7 @@ import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.
 import { MeetingsHomeDeleteService } from './services/meetings-home-delete.service';
 import { MeetingsHomeDetailsService } from './services/meetings-home-details.service';
 import { MeetingsHomeEditService } from './services/meetings-home-edit.service';
+import { provideMeetingsHomeFeed } from './services/meetings-home-feed';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
@@ -83,7 +84,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     AppFooterComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
-  providers: [MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService, MeetingsHomeDetailsService],
+  providers: [...provideMeetingsHomeFeed(), MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService, MeetingsHomeDetailsService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block -mx-5 -my-6 md:-mx-8',
@@ -152,7 +153,10 @@ export class MeetingsRedesignComponent {
     return row ? [row] : [];
   });
   /** The active tab has no meetings at all. */
-  protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
+  protected readonly tabEmpty: Signal<boolean> = computed(
+    // A paged past feed searches on the server, so its empty rows under a query are no results, not an empty tab.
+    () => !this.store.loading() && this.store.tabRows().length === 0 && !(this.store.pagedPast && this.store.tab() === 'past' && this.store.hasActiveQuery())
+  );
   /** The active tab has meetings, but none match the search and filters. */
   protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
   /** No-results copy: search only, filters only, or both. */
@@ -254,7 +258,7 @@ export class MeetingsRedesignComponent {
   private initTabs(): Signal<UiTabItem[]> {
     return computed(() => [
       this.tabItem('upcoming', 'Upcoming', this.store.upcomingLoading() || this.store.upcomingFailed(), this.store.upcomingRows().length),
-      this.tabItem('past', 'Past', this.store.pastLoading() || this.store.pastFailed(), this.store.pastRows().length),
+      this.tabItem('past', 'Past', this.store.pastLoading() || this.store.pastShowsError() || this.store.pastCountUnknown(), this.store.pastRows().length),
     ]);
   }
 

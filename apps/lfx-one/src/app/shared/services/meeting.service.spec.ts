@@ -889,3 +889,67 @@ describe('MeetingService project-lens meeting fetchers (#4964)', () => {
     });
   });
 });
+
+describe('MeetingService project meetings home fetchers', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+  const params = (call = 0): HttpParams => get.mock.calls[call][1].params;
+
+  beforeEach(() => {
+    get = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('reads every upcoming page at the max page size with the home fields', async () => {
+    get.mockReturnValueOnce(of({ data: [{ id: 'm-1' }], page_token: 'next' })).mockReturnValueOnce(of({ data: [{ id: 'm-2' }], page_token: undefined }));
+
+    await expect(firstValueFrom(service.getProjectMeetingsForHome('project-1'))).resolves.toEqual([{ id: 'm-1' }, { id: 'm-2' }]);
+    expect(get.mock.calls[0][0]).toBe('/api/meetings');
+    expect(params().get('tags')).toBe('project_uid:project-1');
+    expect(params().get('page_size')).toBe('1000');
+    expect(params().get('include')).toBe('viewer_rsvp,attendance');
+    expect(params(1).get('page_token')).toBe('next');
+  });
+
+  it('propagates a failed upcoming page so the page can show its error', async () => {
+    const failure = new HttpErrorResponse({ status: 502 });
+    get.mockReturnValue(throwError(() => failure));
+
+    await expect(firstValueFrom(service.getProjectMeetingsForHome('project-1'))).rejects.toBe(failure);
+  });
+
+  it('reads one past page with search, cursor and home fields, keyed by occurrence and without unkeyed rows', async () => {
+    get.mockReturnValue(
+      of({
+        data: [
+          { id: 'past-uid-1', meeting_and_occurrence_id: 'm-1:1' },
+          { id: 'past-uid-2', meeting_and_occurrence_id: undefined },
+        ],
+        page_token: 'next',
+      })
+    );
+
+    await expect(firstValueFrom(service.getProjectPastMeetingsForHome('project-1', 'weekly', 'cursor'))).resolves.toEqual({
+      meetings: [{ id: 'm-1:1', meeting_and_occurrence_id: 'm-1:1' }],
+      pageToken: 'next',
+    });
+    expect(get.mock.calls[0][0]).toBe('/api/past-meetings');
+    expect(params().get('sort')).toBe('name_desc');
+    expect(params().get('include')).toBe('artifacts,attendance');
+    expect(params().get('include_viewer_attendance')).toBe('true');
+    expect(params().get('name')).toBe('weekly');
+    expect(params().get('page_token')).toBe('cursor');
+    expect(params().get('page_size')).toBe('50');
+  });
+
+  it('leaves out search and cursor when there are none', async () => {
+    get.mockReturnValue(of({ data: [], page_token: undefined }));
+
+    await firstValueFrom(service.getProjectPastMeetingsForHome('project-1', ''));
+
+    expect(params().has('name')).toBe(false);
+    expect(params().has('page_token')).toBe(false);
+  });
+});

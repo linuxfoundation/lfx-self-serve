@@ -313,7 +313,13 @@
       @for (group of store.groups(); track group.label) {
         <lfx-meetings-day-group [group]="group" [view]="store.tab()" [stickyTop]="dayHeadingTop()" data-testid="meetings-home-day-group" />
       }
-      @if (store.hasMore()) {
+      @if (store.pastPageFailed()) {
+        <div class="flex justify-center py-[16px]">
+          <lfx-ui-button variant="secondary" icon="fa-light fa-arrow-rotate-right" (click)="store.retryPastPage()" data-testid="meetings-home-load-more-retry">
+            Load more meetings
+          </lfx-ui-button>
+        </div>
+      } @else if (store.hasMore()) {
         <!-- Re-created per page so a trigger still in view after a page loads fires again. -->
         @for (page of [store.visibleCount()]; track page) {
           <span
