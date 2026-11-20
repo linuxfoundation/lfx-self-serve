@@ -76,7 +76,7 @@
           }
         </lfx-ui-select>
       </div>
-      @if (tab() === 'upcoming') {
+      @if (tab() === 'upcoming' && !projectScope) {
         <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
           <lfx-ui-select label="RSVP" size="small" [value]="draft().rsvp" (valueChange)="setRsvp($event)" data-testid="meetings-home-filters-rsvp">
             @for (option of rsvpOptions; track option.value) {

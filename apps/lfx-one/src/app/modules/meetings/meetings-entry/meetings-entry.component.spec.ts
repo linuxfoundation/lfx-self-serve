@@ -110,28 +110,51 @@ describe('MeetingsEntryComponent', () => {
   });
 
   for (const prefix of ['foundation', 'project']) {
-    it(`renders the existing dashboard on /${prefix}/meetings even in the Me lens`, async () => {
+    it(`renders the redesign on /${prefix}/meetings when the flag is on`, async () => {
       flagValue.set(true);
+      activeLens.set(prefix);
+      TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: prefix }] }, { url: [{ path: 'meetings' }] }] } } });
+
+      const fixture = await create();
+
+      expect(has(fixture, 'stub-redesign')).toBe(true);
+      expect(has(fixture, 'stub-v1')).toBe(false);
+    });
+
+    it(`keeps the existing dashboard on /${prefix}/meetings when the flag is off`, async () => {
+      activeLens.set(prefix);
       TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: prefix }] }, { url: [{ path: 'meetings' }] }] } } });
 
       const fixture = await create();
 
       expect(has(fixture, 'stub-v1')).toBe(true);
       expect(has(fixture, 'stub-redesign')).toBe(false);
-      expect(getFlagOverride).not.toHaveBeenCalled();
-      expect(waitForReady).not.toHaveBeenCalled();
-      expect(getBooleanFlag).not.toHaveBeenCalled();
     });
   }
 
-  it('resolves a prefixed URL straight to the existing dashboard even while the provider is not ready', async () => {
-    providerReady.set(false);
-    TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: 'project' }] }, { url: [{ path: 'meetings' }] }] } } });
+  it('renders the existing dashboard at once on a URL the redesign does not cover', async () => {
+    flagValue.set(true);
+    TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: 'org' }] }, { url: [{ path: 'meetings' }] }] } } });
 
     const fixture = await create();
 
     expect(has(fixture, 'stub-v1')).toBe(true);
-    expect(has(fixture, 'meetings-entry-loading')).toBe(false);
+    expect(getBooleanFlag).not.toHaveBeenCalled();
+  });
+
+  it('keeps a prefixed URL on the loader until the provider answers, then falls back when it never does', async () => {
+    providerReady.set(false);
+    flagValue.set(true);
+    TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: 'project' }] }, { url: [{ path: 'meetings' }] }] } } });
+
+    const fixture = await create();
+    expect(has(fixture, 'meetings-entry-loading')).toBe(true);
+
+    resolveReady(false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(has(fixture, 'stub-v1')).toBe(true);
   });
 
   it('reads the flag once the provider becomes ready', async () => {
@@ -165,14 +188,14 @@ describe('MeetingsEntryComponent', () => {
     expect(has(fixture, 'stub-v1')).toBe(false);
   });
 
-  it('renders the existing dashboard on the server for a prefixed URL, with no loader', async () => {
+  it('only renders the loading state on the server for a prefixed URL', async () => {
     flagValue.set(true);
     TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: 'project' }] }, { url: [{ path: 'meetings' }] }] } } });
 
     const fixture = await create('server');
 
-    expect(has(fixture, 'stub-v1')).toBe(true);
-    expect(has(fixture, 'meetings-entry-loading')).toBe(false);
+    expect(has(fixture, 'meetings-entry-loading')).toBe(true);
+    expect(has(fixture, 'stub-v1')).toBe(false);
     expect(getFlagOverride).not.toHaveBeenCalled();
   });
 

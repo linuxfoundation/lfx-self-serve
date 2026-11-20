@@ -836,6 +836,7 @@ describe('MeetingsHomeStore', () => {
       });
       const feed: MeetingsHomeFeed = {
         key: identity,
+        scope: 'project',
         pagedPast: true,
         upcomingRefresh$: meetingsRefresh$,
         pastRefresh$: pastMeetingsRefresh$,

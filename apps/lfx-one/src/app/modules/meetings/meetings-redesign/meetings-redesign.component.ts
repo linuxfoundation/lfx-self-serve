@@ -28,6 +28,7 @@ import { AppFooterComponent } from '@components/app-footer/app-footer.component'
 import { AppService } from '@services/app.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
@@ -48,6 +49,7 @@ import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.
 import { MeetingsHomeDeleteService } from './services/meetings-home-delete.service';
 import { MeetingsHomeDetailsService } from './services/meetings-home-details.service';
 import { MeetingsHomeEditService } from './services/meetings-home-edit.service';
+import { MeetingsHomeFeed } from './services/meetings-home-feed';
 import { provideMeetingsHomeFeed } from './services/meetings-home-feed';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
@@ -104,6 +106,9 @@ export class MeetingsRedesignComponent {
   private readonly composer = inject(MeetingComposerService);
   private readonly appService = inject(AppService);
   protected readonly store = inject(MeetingsHomeStore);
+  private readonly projectContext = inject(ProjectContextService);
+  /** A project or foundation's list: no Next/Last cards or project labels, and its own copy. */
+  protected readonly projectScope: boolean = inject(MeetingsHomeFeed).scope === 'project';
 
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
@@ -142,6 +147,13 @@ export class MeetingsRedesignComponent {
   /** Where the day headings stick: below the sticky header and tabs bar. */
   protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
+  /** Anyone can start from the Me lens picker; a project's list offers Create only to those who can write its meetings. */
+  protected readonly canCreate: Signal<boolean> = computed(() => !this.projectScope || this.projectContext.canWriteMeetings());
+  protected readonly description: Signal<string> = computed(() =>
+    this.projectScope
+      ? `Coordinate decisions, align stakeholders, and maintain transparent governance in ${this.projectContext.activeContext()?.name ?? 'this project'}.`
+      : "Meetings you're invited to or organizing, across all your projects."
+  );
   /** The Next meeting card's date as a one-item list, so its menu is keyed by row. */
   protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
     const row = this.store.nextCardRow();
@@ -213,7 +225,9 @@ export class MeetingsRedesignComponent {
   }
 
   protected createMeeting(): void {
-    this.createArtifactDialog.open('meeting');
+    // The project lens already knows the project, so it skips the picker, as the legacy page's Advanced create did.
+    if (this.projectScope) this.composer.open({ mode: 'create', projectUid: this.projectContext.activeContextUid() || undefined });
+    else this.createArtifactDialog.open('meeting');
   }
 
   protected measure(): void {

@@ -28,15 +28,18 @@ export class MeetingsEntryComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly platformId = inject(PLATFORM_ID);
 
-  private readonly isFlatMeetingsUrl: boolean = this.route.snapshot.pathFromRoot.flatMap((s) => s.url.map((u) => u.path)).join('/') === 'meetings';
-  /** `null` until resolved (always on the server). Non-flat URLs start at `false`, so they render the dashboard at once. Fixed once resolved. */
-  private readonly showRedesign: WritableSignal<boolean | null> = signal(this.isFlatMeetingsUrl ? null : false);
+  private readonly path: string = this.route.snapshot.pathFromRoot.flatMap((s) => s.url.map((u) => u.path)).join('/');
+  private readonly isFlatMeetingsUrl: boolean = this.path === 'meetings';
+  /** The list pages the redesign covers: the Me lens list and the project and foundation lists. */
+  private readonly isListUrl: boolean = this.isFlatMeetingsUrl || this.path === 'project/meetings' || this.path === 'foundation/meetings';
+  /** `null` until resolved (always on the server). Other URLs start at `false`, so they render the dashboard at once. Fixed once resolved. */
+  private readonly showRedesign: WritableSignal<boolean | null> = signal(this.isListUrl ? null : false);
 
   protected readonly view: Signal<'loading' | 'v1' | 'redesign'> = this.initView();
 
   public constructor() {
-    // LaunchDarkly is browser-only: on the server the flat URL stays on the loading state.
-    if (this.isFlatMeetingsUrl && isPlatformBrowser(this.platformId)) {
+    // LaunchDarkly is browser-only: on the server a list URL stays on the loading state.
+    if (this.isListUrl && isPlatformBrowser(this.platformId)) {
       afterNextRender(() => void this.resolveFlag());
     }
   }
@@ -68,7 +71,7 @@ export class MeetingsEntryComponent {
   }
 
   private resolve(flagOn: boolean): void {
-    // Read the lens once, untracked: a later lens change must not swap the page.
-    this.showRedesign.set(flagOn && untracked(() => this.lensService.activeLens()) === 'me');
+    // Read the lens once, untracked: a later lens change must not swap the page. The flat URL is the Me lens list only.
+    this.showRedesign.set(flagOn && (!this.isFlatMeetingsUrl || untracked(() => this.lensService.activeLens()) === 'me'));
   }
 }

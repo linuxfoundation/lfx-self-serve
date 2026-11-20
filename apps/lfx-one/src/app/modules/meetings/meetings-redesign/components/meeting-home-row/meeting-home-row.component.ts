@@ -35,6 +35,7 @@ import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
+import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
 import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
 import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
@@ -75,6 +76,8 @@ export class MeetingHomeRowComponent {
   private readonly store = inject(MeetingsHomeStore);
   private readonly joinService = inject(MeetingsHomeJoinService);
   private readonly details = inject(MeetingsHomeDetailsService);
+  // A project or foundation's list names no project on its rows; the drawer still does.
+  private readonly projectScope = inject(MeetingsHomeFeed, { optional: true })?.scope === 'project';
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
 
@@ -89,7 +92,7 @@ export class MeetingHomeRowComponent {
   protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() =>
     getMeetingVisibilityBadges(this.row().meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC)
   );
-  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
+  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => (this.projectScope ? null : getMeetingHomeRowProject(this.row().meeting)));
   protected readonly when: Signal<string[]> = this.initWhen();
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
   protected readonly groups: Signal<string[]> = computed(() => getMeetingGroupNames(this.row().meeting));

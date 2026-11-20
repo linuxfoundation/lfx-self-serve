@@ -19,6 +19,8 @@ import { map, Observable, of, startWith, switchMap } from 'rxjs';
 export abstract class MeetingsHomeFeed {
   /** Changes with the viewer or the scope; the store reloads its feeds and resets search and filters when it does. */
   public abstract readonly key: Signal<string>;
+  /** `me` lists the viewer's meetings across projects; `project` one project's or foundation's, without project labels. */
+  public abstract readonly scope: 'me' | 'project';
   /** Past meetings come a page at a time and are searched on the server. */
   public abstract readonly pagedPast: boolean;
   public abstract readonly upcomingRefresh$: Observable<void>;
@@ -36,6 +38,7 @@ export class UserMeetingsHomeFeed extends MeetingsHomeFeed {
   private readonly userService = inject(UserService);
 
   public readonly key: Signal<string> = this.userService.meetingFeedIdentity;
+  public readonly scope = 'me';
   public readonly pagedPast = false;
   public readonly upcomingRefresh$: Observable<void> = this.userService.meetingsRefresh$;
   public readonly pastRefresh$: Observable<void> = this.userService.pastMeetingsRefresh$;
@@ -66,6 +69,7 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
   public readonly key: Signal<string> = computed(
     () => `${this.userService.meetingFeedIdentity()}\0${this.projectContext.activeContextUid()}\0${this.projectContext.isFoundationContext()}`
   );
+  public readonly scope = 'project';
   public readonly pagedPast = true;
   public readonly upcomingRefresh$: Observable<void> = this.userService.meetingsRefresh$;
   public readonly pastRefresh$: Observable<void> = this.userService.pastMeetingsRefresh$;

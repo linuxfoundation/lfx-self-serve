@@ -36,7 +36,7 @@
           <!-- Hidden at 1024px and below, per the design. -->
           @if (personaLoaded()) {
             <p class="hidden text-[13px] text-gray-500 min-[1025px]:block" data-testid="meetings-redesign-description">
-              Meetings you're invited to or organizing, across all your projects.
+              {{ description() }}
             </p>
           } @else {
             <div class="hidden min-[1025px]:block" data-testid="meetings-home-persona-loading">
@@ -50,10 +50,10 @@
           [class.hidden]="!store.pendingRsvpRows().length && !personaLoaded()"
           data-testid="meetings-redesign-header-actions">
           <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="createButton() ?? heading" />
-          @if (personaLoaded()) {
+          @if (personaLoaded() && canCreate()) {
             <lfx-ui-button
               #createButton
-              [variant]="phone() ? 'secondary-accent' : 'tertiary-accent'"
+              variant="secondary-accent"
               icon="fa-light fa-plus"
               [iconOnly]="phone()"
               [ariaLabel]="phone() ? 'Create Meeting' : ''"
@@ -69,9 +69,11 @@
       </div>
 
       <!-- Right column content, folded into the centre at 1024px and below: two columns, one in a centre of 620px or less; none on phones -->
-      <div class="mb-[20px] grid grid-cols-1 gap-[20px] max-sm:hidden @[621px]:grid-cols-2 min-[1025px]:hidden" data-testid="meetings-redesign-folded-rail">
-        <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'folded' }" />
-      </div>
+      @if (!projectScope) {
+        <div class="mb-[20px] grid grid-cols-1 gap-[20px] max-sm:hidden @[621px]:grid-cols-2 min-[1025px]:hidden" data-testid="meetings-redesign-folded-rail">
+          <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'folded' }" />
+        </div>
+      }
 
       <!-- Sticky tabs bar; the fade moves here from the header once it is stuck, then below a stuck day heading -->
       <div #tabsBar class="sticky z-[5] -mt-[4px] bg-white pt-[4px]" [style.top.px]="stickyTop() + headerHeight()" data-testid="meetings-redesign-tabs-bar">
@@ -147,14 +149,16 @@
     <lfx-app-footer class="mt-auto block shrink-0 px-[32px]" data-testid="meetings-redesign-footer" />
   </div>
 
-  <!-- Right column: fixed 360px, 24px padding -->
-  <aside
-    class="hidden w-[360px] flex-none flex-col gap-[24px] border-l border-gray-200 p-[24px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:flex min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    tabindex="0"
-    aria-label="Meeting highlights"
-    data-testid="meetings-redesign-right-column">
-    <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'rail' }" />
-  </aside>
+  <!-- Right column: fixed 360px, 24px padding; the project lens's own column comes with its calendar -->
+  @if (!projectScope) {
+    <aside
+      class="hidden w-[360px] flex-none flex-col gap-[24px] border-l border-gray-200 p-[24px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:flex min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      tabindex="0"
+      aria-label="Meeting highlights"
+      data-testid="meetings-redesign-right-column">
+      <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'rail' }" />
+    </aside>
+  }
 </div>
 
 <ng-template #railTemplate let-scope>
@@ -259,7 +263,7 @@
     <lfx-ui-empty-state
       class="mt-[16px]"
       icon="fa-light fa-triangle-exclamation"
-      heading="Couldn't load your meetings"
+      [heading]="projectScope ? 'Couldn\'t load the meetings' : 'Couldn\'t load your meetings'"
       description="Something went wrong. Try again."
       data-testid="meetings-home-error">
       <lfx-ui-button
@@ -278,14 +282,14 @@
         class="mt-[16px]"
         icon="fa-light fa-clock-rotate-left"
         heading="No past meetings"
-        description="Your past meetings will appear here."
+        [description]="projectScope ? 'Past meetings will appear here once they have occurred.' : 'Your past meetings will appear here.'"
         data-testid="meetings-home-empty-past" />
     } @else {
       <lfx-ui-empty-state
         class="mt-[16px]"
         icon="fa-light fa-calendar"
-        heading="No upcoming meetings"
-        description="Meetings from your committees and projects will appear here."
+        [heading]="projectScope ? 'No meetings yet' : 'No upcoming meetings'"
+        [description]="projectScope ? 'Schedule a meeting to get started.' : 'Meetings from your committees and projects will appear here.'"
         data-testid="meetings-home-empty-upcoming" />
     }
   } @else if (noResults()) {

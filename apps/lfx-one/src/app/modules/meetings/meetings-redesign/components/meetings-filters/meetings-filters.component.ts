@@ -16,6 +16,8 @@ import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiToggleComponent } from '@shared/uikit/toggle/toggle.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 
+import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
+
 /**
  * Filters button of the meetings home page, with the applied-filter count, and its popover.
  * @description The popover edits a draft: nothing applies until Apply, and closing it any other way discards the draft. Upcoming has Foundation,
@@ -42,6 +44,8 @@ import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 })
 export class MeetingsFiltersComponent implements UiFocusable {
   private readonly personaService = inject(PersonaService);
+  // A project or foundation's list has no cross-project or RSVP filters.
+  protected readonly projectScope = inject(MeetingsHomeFeed, { optional: true })?.scope === 'project';
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly button = viewChild(UiButtonComponent);
   private readonly phone = injectIsMobileViewport(PHONE_MEDIA_QUERY);
@@ -63,9 +67,13 @@ export class MeetingsFiltersComponent implements UiFocusable {
   protected readonly appliedCount: Signal<number> = computed(() => countAppliedMeetingFilters(this.filters()));
   protected readonly buttonLabel: Signal<string> = computed(() => (this.appliedCount() ? `Filters, ${this.appliedCount()} applied` : ''));
   protected readonly foundationOptions: Signal<FilterOption<string>[]> = this.initFoundationOptions();
-  protected readonly showFoundation: Signal<boolean> = computed(() => this.personaService.hasBoardRole() && this.foundationOptions().length > 0);
+  protected readonly showFoundation: Signal<boolean> = computed(
+    () => !this.projectScope && this.personaService.hasBoardRole() && this.foundationOptions().length > 0
+  );
   protected readonly projectOptions: Signal<FilterOption<string>[]> = this.initProjectOptions();
-  protected readonly showProject: Signal<boolean> = computed(() => this.personaService.hasProjectRole() && this.projectOptions().length > 0);
+  protected readonly showProject: Signal<boolean> = computed(
+    () => !this.projectScope && this.personaService.hasProjectRole() && this.projectOptions().length > 0
+  );
   protected readonly projectMatches: Signal<FilterOption<string>[]> = this.initProjectMatches();
   protected readonly changed: Signal<boolean> = computed(() => !this.sameFilters(this.draft(), this.filters()));
   protected readonly showReset: Signal<boolean> = computed(() => this.appliedCount() > 0 || countAppliedMeetingFilters(this.draft()) > 0);

@@ -16,8 +16,8 @@ import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-rese
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { LensService } from '@services/lens.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { PlausibleService } from '@services/plausible.service';
 import { SegmentService } from '@services/segment.service';
 import { UserService } from '@services/user.service';
@@ -172,6 +172,7 @@ describe('MeetingsRedesignComponent', () => {
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded, hasBoardRole: signal(false), hasProjectRole: signal(true) } },
         { provide: LensService, useValue: { activeLens: signal('me') } },
+        { provide: ProjectContextService, useValue: { activeContext: signal(null), activeContextUid: signal(''), canWriteMeetings: signal(true) } },
         { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
         { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
@@ -956,6 +957,67 @@ describe('MeetingsRedesignComponent', () => {
       query(fixture, 'ui-tab-upcoming')?.click();
       await fixture.whenStable();
       expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { time: null } }));
+    });
+  });
+
+  describe('project lens', () => {
+    let projectUpcoming$: Subject<Meeting[]>;
+    let canWriteMeetings: ReturnType<typeof signal<boolean>>;
+
+    beforeEach(() => {
+      projectUpcoming$ = new Subject<Meeting[]>();
+      canWriteMeetings = signal(true);
+      TestBed.overrideProvider(LensService, { useValue: { activeLens: signal('project') } });
+      TestBed.overrideProvider(ProjectContextService, {
+        useValue: {
+          activeContext: signal({ uid: 'project-1', name: 'Synthetic Foundation', slug: 'synthetic' }),
+          activeContextUid: signal('project-1'),
+          isFoundationContext: signal(false),
+          canWriteMeetings,
+        },
+      });
+      TestBed.overrideProvider(MeetingService, {
+        useValue: {
+          removedRegistrationMeetingIds: signal(new Set<string>()),
+          getPastMeetingSummary: () => of(null),
+          getPastMeetingRecording: () => of(null),
+          getProjectMeetingsForHome: () => projectUpcoming$,
+          getProjectPastMeetingsForHome: () => of({ meetings: [] }),
+        },
+      });
+    });
+
+    it('describes the project and leaves out the Next and Last meeting cards', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-description')?.textContent?.trim()).toBe(
+        'Coordinate decisions, align stakeholders, and maintain transparent governance in Synthetic Foundation.'
+      );
+      expect(query(fixture, 'meetings-redesign-right-column')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-folded-rail')).toBeNull();
+    });
+
+    it('opens the composer for the project without the picker, for those who can write its meetings', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      const open = vi.spyOn(TestBed.inject(MeetingComposerService), 'open').mockImplementation(() => undefined);
+
+      query(fixture, 'meetings-home-create')?.querySelector('button')?.click();
+
+      expect(open).toHaveBeenCalledWith({ mode: 'create', projectUid: 'project-1' });
+      expect(openCreateDialog).not.toHaveBeenCalled();
+      canWriteMeetings.set(false);
+      fixture.detectChanges();
+      expect(query(fixture, 'meetings-home-create')).toBeNull();
+    });
+
+    it('uses the project copy for an empty Upcoming tab', async () => {
+      const fixture = render();
+      projectUpcoming$.next([]);
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('No meetings yet');
     });
   });
 
