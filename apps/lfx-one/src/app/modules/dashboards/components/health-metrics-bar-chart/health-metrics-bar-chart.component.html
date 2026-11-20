@@ -24,7 +24,6 @@
               class="relative flex h-full min-w-0 flex-1 justify-center rounded-[6px] outline-none transition-colors duration-ui-fast hover:bg-[var(--ui-neutral-alpha-50)] focus-visible:ring-2 focus-visible:ring-blue-500"
               role="listitem"
               tabindex="0"
-              [class.z-20]="tip.activeIndex() === index"
               [attr.aria-label]="bar.ariaLabel"
               [attr.data-testid]="testId() + '-bar-' + bar.key"
               (mouseenter)="tip.enter(index, $event)"
@@ -62,7 +61,9 @@
           }
         </div>
         @if (chart().line; as line) {
-          <!-- The line stretches with the plot; the stroke and its 4 3 dash stay in screen pixels. -->
+          <!-- The line stretches with the plot; the stroke and its 4 3 dash stay in screen pixels. With no z-index, -->
+          <!-- the line and dots paint over every bar fill, and only the popup's z-10 rises above them. -->
+
           <svg
             class="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
             viewBox="0 0 100 100"

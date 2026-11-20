@@ -96,6 +96,8 @@ describe('HealthMetricsBarChartComponent', () => {
     item.dispatchEvent(new Event('mouseenter'));
     fixture.detectChanges();
     expect(query('chart-tip')?.textContent).toContain('Logo churn');
+    // The open bar stays under the line, so its fill never hides the logo point the popup describes.
+    expect(item.className).not.toContain('z-');
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     fixture.detectChanges();
