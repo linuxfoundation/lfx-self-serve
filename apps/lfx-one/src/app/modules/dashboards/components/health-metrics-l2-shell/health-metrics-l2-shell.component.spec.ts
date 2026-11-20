@@ -491,6 +491,35 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(rebuilt.disconnected).toBe(false);
   });
 
+  it('keeps a jump waiting through an offset change that is not the header compacting', async () => {
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
+    fixture.detectChanges();
+
+    chrome.headerHeightPx.set(chrome.headerHeightPx() + 10);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 50);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets the reader take over a deep link jump after the link is released', async () => {
+    fragment.next('gamma');
+    allSettle();
+    await flush();
+    const jumps = scrollIntoView().mock.calls.length;
+
+    window.dispatchEvent(new WheelEvent('wheel'));
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 40);
+    fixture.detectChanges();
+    await offsetSettled();
+
+    expect(scrollIntoView()).toHaveBeenCalledTimes(jumps);
+  });
+
   it('drops a jump the reader takes over before the header settles', async () => {
     fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
     fixture.detectChanges();
@@ -883,13 +912,15 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   // The handlers sit on three of the browser's hottest event streams, so a settled read has to
   // give them back rather than leave them running for the rest of the page's life.
-  it('unregisters the reader-intent listeners once every section has settled', async () => {
+  // The release scrolls to the section, and that jump keeps them until its re-aim window closes.
+  it('unregisters the reader-intent listeners once every section has settled and the jump has landed', async () => {
     const removeEventListener = vi.spyOn(window, 'removeEventListener');
     fragment.next('gamma');
     fixture.detectChanges();
 
     allSettle();
     await flush();
+    await new Promise((resolve) => setTimeout(resolve, HEALTH_METRICS_L2_JUMP_REAIM_MS + 50));
 
     for (const type of ['wheel', 'touchmove', 'keydown']) expect(removeEventListener).toHaveBeenCalledWith(type, expect.any(Function));
   });

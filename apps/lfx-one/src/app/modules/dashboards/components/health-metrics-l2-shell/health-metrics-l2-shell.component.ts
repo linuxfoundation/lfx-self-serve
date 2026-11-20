@@ -175,6 +175,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private spyOffsetPx?: number;
   /** The last section jump, when it started and the offset it aimed at, so a header that compacts mid-jump can re-aim it. */
   private jumpInFlight: { key: string; startedAt: number; offsetPx: number } | null = null;
+  private jumpTimer?: ReturnType<typeof setTimeout>;
   /** Navigation id → where the page stood when a query-only navigation began, put back after the router's scroll. */
   private readonly heldScrolls = new Map<number, [number, number]>();
   /** A section jumped to while a router scroll was still due, replayed after it since that scroll cuts it short. */
@@ -184,6 +185,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.destroyRef.onDestroy(() => {
       this.teardownScrollSpy();
       clearTimeout(this.pendingSectionTimer);
+      clearTimeout(this.jumpTimer);
       // The destroy hook lives here, not in `observeReaderIntent`: the listeners register per arm,
       // and one hook per arm would pile up over the page's life.
       this.removeIntentListeners?.();
@@ -331,15 +333,27 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     this.jumpInFlight = { key, startedAt: performance.now(), offsetPx: this.chrome.stickyTopPx() };
     this.observeReaderIntent();
+    // A header that never compacts leaves nothing to re-aim, so the jump ends with its window.
+    clearTimeout(this.jumpTimer);
+    this.jumpTimer = setTimeout(() => this.endJump(), HEALTH_METRICS_L2_JUMP_REAIM_MS);
   }
 
   /** A jump from the top compacts the header on its way and lands short of it; aiming again lands it under the new height. */
   private reaimJump(offsetPx: number): void {
     const jump = this.jumpInFlight;
+    if (!jump) return;
+    const expired = performance.now() - jump.startedAt > HEALTH_METRICS_L2_JUMP_REAIM_MS;
+    // Until the header has compacted, the jump keeps waiting for it.
+    if (!expired && offsetPx >= jump.offsetPx) return;
+    this.endJump();
+    if (!expired) this.sectionElement(jump.key)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /** Forgets the jump, and the reader-intent listeners with it unless a deep link still needs them. */
+  private endJump(): void {
     this.jumpInFlight = null;
+    clearTimeout(this.jumpTimer);
     if (!this.pendingSection()) this.removeIntentListeners?.();
-    if (!jump || offsetPx >= jump.offsetPx || performance.now() - jump.startedAt > HEALTH_METRICS_L2_JUMP_REAIM_MS) return;
-    this.sectionElement(jump.key)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   private initQueryScrollKeeping(): void {
@@ -436,6 +450,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       if (event.defaultPrevented) return;
       if (event.type === 'keydown' && !this.isScrollIntent(event as KeyboardEvent)) return;
       this.jumpInFlight = null;
+      clearTimeout(this.jumpTimer);
       this.clearPendingSection();
     };
     // Bound to the window, where page scrolling is dispatched. A scrollbar drag fires none of these,
@@ -477,7 +492,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private clearPendingSection(): void {
     this.pendingSection.set(null);
     clearTimeout(this.pendingSectionTimer);
-    this.removeIntentListeners?.();
+    // A jump still waiting to be re-aimed keeps them, so the reader can still take it over.
+    if (!this.jumpInFlight) this.removeIntentListeners?.();
   }
 
   /**
