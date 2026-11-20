@@ -106,10 +106,9 @@ export class MeetingsCalendarDialogComponent {
       .subscribe((from) => this.data.showPastFrom(from));
   }
 
-  /** Asking again for the shown period's past meetings retries the page that failed. */
   protected retryPast(): void {
     const from = this.pastShownFrom();
-    if (from) this.data.showPastFrom(from);
+    if (from) this.data.retryPast(from);
   }
 
   protected close(): void {

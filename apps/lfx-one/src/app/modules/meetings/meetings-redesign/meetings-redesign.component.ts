@@ -264,6 +264,7 @@ export class MeetingsRedesignComponent {
       openMeeting: (row) => this.details.open(row, 'calendar'),
       showPastFrom: (day) => this.store.showPastFrom(day),
       pastFailed: this.store.calendarPastFailed,
+      retryPast: (day) => this.store.retryCalendarPast(day),
       month,
     };
     // Below an impersonation banner, as the drawers sit, so Stop impersonating stays reachable.
