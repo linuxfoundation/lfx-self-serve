@@ -165,16 +165,19 @@
       tabindex="0"
       aria-label="Meetings calendar"
       data-testid="meetings-redesign-project-column">
-      <!-- shortcut: past dots come from the loaded past rows, which a paged feed searches on the server. revisit: when the calendar gets its own unsearched past feed. -->
-      <lfx-meetings-mini-calendar
-        [upcomingRows]="store.upcomingRows()"
-        [pastRows]="store.pastRows()"
-        [now]="store.now()"
-        [scope]="feedKey()"
-        [loading]="store.upcomingLoading() || store.pastLoading()"
-        (daySelected)="showDay($event)"
-        (olderMonthShown)="store.showPastFrom($event)"
-        data-testid="meetings-redesign-mini-calendar" />
+      <!-- Only while the column shows, so a hidden calendar does not load past pages. -->
+      @if (columnHeight() !== null) {
+        <!-- shortcut: past dots come from the loaded past rows, which a paged feed searches on the server. revisit: when the calendar gets its own unsearched past feed. -->
+        <lfx-meetings-mini-calendar
+          [upcomingRows]="store.upcomingRows()"
+          [pastRows]="store.pastRows()"
+          [now]="store.now()"
+          [scope]="feedKey()"
+          [loading]="store.upcomingLoading() || store.pastLoading()"
+          (daySelected)="showDay($event)"
+          (olderMonthShown)="store.showPastFrom($event)"
+          data-testid="meetings-redesign-mini-calendar" />
+      }
     </aside>
   }
 </div>

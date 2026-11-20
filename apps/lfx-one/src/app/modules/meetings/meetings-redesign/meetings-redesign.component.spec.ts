@@ -1046,6 +1046,18 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-redesign-project-column')?.className).toContain('min-[1025px]:flex');
     });
 
+    it('does not create the calendar, or load past pages for it, while its column is hidden', async () => {
+      desktop = false;
+      const fixture = render();
+      await fixture.whenStable();
+      const showPastFrom = vi.spyOn(fixture.componentInstance['store'], 'showPastFrom');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-mini-calendar')).toBeNull();
+      expect(showPastFrom).not.toHaveBeenCalled();
+    });
+
     it('lists a past day picked on the calendar on the Past tab, scrolled below the tabs and flashed', async () => {
       // Mid-month, so the day three days back is on the calendar's month whatever the real date.
       vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
