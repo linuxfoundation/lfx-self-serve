@@ -6,7 +6,7 @@ import { Component, output, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, NavigationEnd, NavigationSkipped, provideRouter, Router, Scroll } from '@angular/router';
-import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_L2_OFFSET_SETTLE_MS, HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, filter, firstValueFrom, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -212,6 +212,12 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   function scrollIntoView(): ReturnType<typeof vi.fn> {
     return Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+  }
+
+  /** Waits out the debounce the shell puts on a new sticky offset. */
+  async function offsetSettled(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, HEALTH_METRICS_L2_OFFSET_SETTLE_MS + 50));
+    fixture.detectChanges();
   }
 
   async function flush(): Promise<void> {
@@ -463,14 +469,44 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(spyObserver().rootMargin).toBe(`-${offset}px 0px -${Math.round((400 - offset) * 0.7)}px 0px`);
   });
 
-  it('rebuilds the observer when the gate re-measures the sticky header', () => {
+  it('rebuilds the observer once the re-measured sticky header settles, not on every frame of its animation', async () => {
     const before = spyObserver();
 
+    chrome.headerHeightPx.set(128);
+    fixture.detectChanges();
     chrome.headerHeightPx.set(120);
     fixture.detectChanges();
+    expect(before.disconnected).toBe(false);
+
+    await offsetSettled();
 
     expect(before.disconnected).toBe(true);
-    expect(spyObserver().rootMargin).toBe(`-136px 0px -${bandBottomPx(136)}px 0px`);
+    const rebuilt = spyObserver();
+    expect(rebuilt.rootMargin).toBe(`-136px 0px -${bandBottomPx(136)}px 0px`);
+
+    // The same height again leaves the rebuilt observer alone.
+    chrome.headerHeightPx.set(120);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(rebuilt.disconnected).toBe(false);
+  });
+
+  it('re-aims a section jump when the header compacts on its way, but not when it grows back', async () => {
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
+    fixture.detectChanges();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 40);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(2);
+
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-beta"]').click();
+    fixture.detectChanges();
+    chrome.headerHeightPx.set(chrome.headerHeightPx() + 40);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(3);
   });
 
   it('lights exactly one item, the topmost intersecting heading', () => {

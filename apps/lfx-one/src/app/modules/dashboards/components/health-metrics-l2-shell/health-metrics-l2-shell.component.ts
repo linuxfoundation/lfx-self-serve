@@ -35,7 +35,13 @@ import {
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
-import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS, HEALTH_METRICS_L2_SCROLL_KEYS, HEALTH_METRICS_PROVISIONAL_BADGE } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_L2_JUMP_REAIM_MS,
+  HEALTH_METRICS_L2_OFFSET_SETTLE_MS,
+  HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS,
+  HEALTH_METRICS_L2_SCROLL_KEYS,
+  HEALTH_METRICS_PROVISIONAL_BADGE,
+} from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsL2BlankView,
   buildHealthMetricsL2EmptyCopy,
@@ -166,6 +172,9 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   // offset is a third, rebuilt from its own subscription rather than compared here.
   private spyEndBelowFold?: boolean;
   private spyViewportHeight?: number;
+  private spyOffsetPx?: number;
+  /** The last section jump, when it started and the offset it aimed at, so a header that compacts mid-jump can re-aim it. */
+  private jumpInFlight: { key: string; startedAt: number; offsetPx: number } | null = null;
   /** Navigation id → where the page stood when a query-only navigation began, put back after the router's scroll. */
   private readonly heldScrolls = new Map<number, [number, number]>();
   /** A section jumped to while a router scroll was still due, replayed after it since that scroll cuts it short. */
@@ -190,12 +199,13 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       // With nothing left to settle there is no later reflow, so this replay is the only one needed.
       if (this.unsettledSections.size === 0) this.clearPendingSection();
     });
-    // The activation band hangs off the sticky header, which the gate measures after first paint —
-    // rebuild the observer whenever that height settles rather than hard-coding a pixel offset.
+    // The activation band hangs off the sticky header, measured after first paint and animated as it compacts on
+    // scroll, so the observer is rebuilt once that height settles rather than on every frame.
     toObservable(this.chrome.stickyTopPx)
-      .pipe(takeUntilDestroyed())
+      .pipe(debounceTime(HEALTH_METRICS_L2_OFFSET_SETTLE_MS), takeUntilDestroyed())
       .subscribe((offset) => {
-        if (!this.scrollSpyObserver) return;
+        this.reaimJump(offset);
+        if (!this.scrollSpyObserver || offset === this.spyOffsetPx) return;
         this.setupScrollSpy(offset);
       });
 
@@ -319,6 +329,15 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     if (this.heldScrolls.size > 0) this.jumpAfterRouterScroll = key;
     // The section's `scroll-margin-top` keeps it clear of the sticky page header.
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    this.jumpInFlight = { key, startedAt: performance.now(), offsetPx: this.chrome.stickyTopPx() };
+  }
+
+  /** A jump from the top compacts the header on its way and lands short of it; aiming again lands it under the new height. */
+  private reaimJump(offsetPx: number): void {
+    const jump = this.jumpInFlight;
+    this.jumpInFlight = null;
+    if (!jump || offsetPx >= jump.offsetPx || performance.now() - jump.startedAt > HEALTH_METRICS_L2_JUMP_REAIM_MS) return;
+    this.sectionElement(jump.key)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   private initQueryScrollKeeping(): void {
@@ -497,6 +516,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     if (!isPlatformBrowser(this.platformId) || typeof IntersectionObserver === 'undefined') return;
 
     this.teardownScrollSpy();
+    this.spyOffsetPx = offsetPx;
 
     const views = this.sectionViews();
     const keys = views.map((section) => section.key);

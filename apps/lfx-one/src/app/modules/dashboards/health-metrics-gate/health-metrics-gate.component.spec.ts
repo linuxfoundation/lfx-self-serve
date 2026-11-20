@@ -159,7 +159,8 @@ describe('HealthMetricsGateComponent', () => {
     await render(signal(true));
 
     expect(query('health-metrics-page')?.classList).toContain('max-w-[1384px]');
-    for (const cls of ['font-display', 'font-light', 'text-[24px]', 'text-gray-900']) expect(query('health-metrics-title')?.classList).toContain(cls);
+    // The 24px size lives in the stylesheet, since the scrolled header animates it down.
+    for (const cls of ['hm-head-title', 'font-display', 'font-light', 'text-gray-900']) expect(query('health-metrics-title')?.classList).toContain(cls);
     for (const cls of ['text-[12px]', 'text-gray-500']) expect(query('health-metrics-subtitle')?.classList).toContain(cls);
     expect(query('health-metrics-subtitle')?.textContent?.trim()).toBe('Operational health across your foundation. Data updated every 24-48 hours.');
   });
@@ -309,6 +310,66 @@ describe('HealthMetricsGateComponent', () => {
       await settle();
       expect(chrome.selectedRange()).toBe(chrome.periods[1].range);
       expect(select('health-metrics-period-select').value()).toBe(chrome.periods[1].range);
+    });
+  });
+
+  describe('scrolled header', () => {
+    const scrollYDescriptor = Object.getOwnPropertyDescriptor(window, 'scrollY');
+    const innerHeightDescriptor = Object.getOwnPropertyDescriptor(window, 'innerHeight');
+
+    afterEach(() => {
+      if (scrollYDescriptor) Object.defineProperty(window, 'scrollY', scrollYDescriptor);
+      if (innerHeightDescriptor) Object.defineProperty(window, 'innerHeight', innerHeightDescriptor);
+      delete (document.documentElement as { scrollHeight?: number }).scrollHeight;
+    });
+
+    function scrollTo(top: number, pageHeight = 2000): void {
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: top });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+      Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: pageHeight });
+      window.dispatchEvent(new Event('scroll'));
+      fixture.detectChanges();
+    }
+
+    function compact(): boolean {
+      return !!query('health-metrics-sticky-header')?.classList.contains('hm-head-compact');
+    }
+
+    it('compacts once the page scrolls, with its divider, and goes back to default at the top', async () => {
+      await render(signal(true), '/foundation/health-metrics');
+      expect(compact()).toBe(false);
+      expect(query('health-metrics-header-divider')?.classList).toContain('-z-10');
+
+      scrollTo(10);
+      expect(compact()).toBe(true);
+
+      // Near the top it holds, so a small scroll back cannot make it bounce.
+      scrollTo(2);
+      expect(compact()).toBe(true);
+
+      scrollTo(0);
+      expect(compact()).toBe(false);
+    });
+
+    it('stays default on a page too short to stay scrolled once the header shrinks', async () => {
+      await render(signal(true), '/foundation/health-metrics');
+
+      scrollTo(10, 850);
+
+      expect(compact()).toBe(false);
+    });
+
+    it('goes back to default on a new tab, but not on a query change within the tab', async () => {
+      await render(signal(true), '/foundation/health-metrics');
+      scrollTo(10);
+
+      await TestBed.inject(Router).navigateByUrl('/foundation/health-metrics?nonPage=2');
+      await settle();
+      expect(compact()).toBe(true);
+
+      await TestBed.inject(Router).navigateByUrl('/foundation/health-metrics/members');
+      await settle();
+      expect(compact()).toBe(false);
     });
   });
 

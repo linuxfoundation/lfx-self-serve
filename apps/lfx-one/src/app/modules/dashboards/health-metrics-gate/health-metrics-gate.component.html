@@ -12,11 +12,13 @@
     <!-- The design's `.hm-head`, pinned above the scrolling content at every width. -mt-6 cancels main-layout's `py-6`
          so it has no distance to travel before it locks, and its own top padding restores the design's 28px. Page-coloured
          and opaque so content scrolls under it, and bled to the page edges so a card's edge never shows past it. It pins
-         below the impersonation banner and the mobile top bar; the section nav's offset is measured from its height. -->
+         below the impersonation banner and the mobile top bar; the section nav's offset is measured from its height.
+         It compacts once the page scrolls (see the stylesheet). -->
     <div
       #pageHeader
       data-testid="health-metrics-sticky-header"
-      class="@container/hmhead sticky z-10 -mx-[40px] -mt-6 mb-[32px] flex flex-col gap-[14px] bg-gray-50 px-[40px] pt-[28px] max-[640px]:-mx-[20px] max-[640px]:px-[20px]"
+      class="hm-head @container/hmhead sticky z-10 -mx-[40px] -mt-6 mb-[32px] flex flex-col bg-gray-50 px-[40px] max-[640px]:-mx-[20px] max-[640px]:px-[20px]"
+      [class.hm-head-compact]="compact()"
       [style.top.px]="chrome.headerTopPx()">
       <!-- The fade content scrolls into under the pinned header; the header has no rule of its own. Painted behind the
            header's content, so a control's outline at the header's bottom edge, such as the view select's ring, stays whole. -->
@@ -24,14 +26,25 @@
         class="pointer-events-none absolute inset-x-0 top-full -z-10 h-[32px] bg-gradient-to-b from-gray-50 via-gray-50/85 via-35% to-gray-50/0"
         aria-hidden="true"
         data-testid="health-metrics-header-fade"></span>
+      <!-- The scrolled header's divider, edge to edge along its bottom. Behind the content like the fade, so the tab
+           bar's own rule and the active tab's underline draw over it. -->
+      <span
+        class="hm-head-divider pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-px bg-gray-200"
+        aria-hidden="true"
+        data-testid="health-metrics-header-divider"></span>
 
       <!-- The design's own title type replaces the shared page header's: Roboto Slab light at 24px. -->
       <div class="flex items-start justify-between gap-[16px]">
-        <div class="flex min-w-0 flex-col gap-[6px]">
-          <h1 class="m-0 font-display text-[24px] font-light leading-[1.2] text-gray-900" data-testid="health-metrics-title">Health Metrics</h1>
-          <p class="m-0 text-[12px] font-normal leading-normal text-gray-500" data-testid="health-metrics-subtitle">
-            Operational health across your foundation. Data updated every 24-48 hours.
-          </p>
+        <div class="flex min-w-0 flex-col">
+          <h1 class="hm-head-title m-0 font-display font-light leading-[1.2] text-gray-900" data-testid="health-metrics-title">Health Metrics</h1>
+          <!-- The 6px above the description sits inside the collapsing row, so it goes with it. -->
+          <div class="hm-head-desc">
+            <div class="min-h-0 overflow-hidden">
+              <p class="m-0 pt-[6px] text-[12px] font-normal leading-normal text-gray-500" data-testid="health-metrics-subtitle">
+                Operational health across your foundation. Data updated every 24-48 hours.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div class="flex shrink-0 items-center gap-[10px]">
