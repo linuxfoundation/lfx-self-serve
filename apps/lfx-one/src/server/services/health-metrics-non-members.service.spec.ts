@@ -73,7 +73,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     execute.mockResolvedValue({ rows: [orgRow()] });
   });
 
-  it('reads the period columns for the range and binds only the foundation, twice, when unfiltered', async () => {
+  it('reads the period columns for the range and binds only the foundation when unfiltered', async () => {
     for (const [range, suffix] of [
       ['YTD', 'ytd'],
       ['COMPLETED_YEAR', 'last_completed_year'],
@@ -84,7 +84,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       await new HealthMetricsNonMembersService().getOrgs(req, { ...query, range });
 
       const [sql, binds] = orgsRead();
-      expect(binds).toEqual(['acme', 'acme']);
+      expect(binds).toEqual(['acme']);
       expect(sql.match(/\?/g)).toHaveLength(binds.length);
       expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_COMPANY_PARTICIPATION p');
       expect(sql).not.toContain('NON_MEMBER_FIT_SCORE');
@@ -112,7 +112,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     await new HealthMetricsNonMembersService().getOrgs(req, { ...query, filter: 'meetings', search: '50%_off!' });
 
     const [sql, binds] = orgsRead();
-    expect(binds).toEqual(['acme', 'acme', '%50!%!_off!!%']);
+    expect(binds).toEqual(['acme', '%50!%!_off!!%']);
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
     expect(sql).toContain("WHERE meetings_attended_count > 0 AND account_name ILIKE ? ESCAPE '!'");
   });
@@ -150,11 +150,24 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
   });
 
-  it("summarises each company's memberships in other foundations for the sort, leaving the viewed foundation out", async () => {
-    await new HealthMetricsNonMembersService().getOrgs(req, query);
+  it('reads no membership directory for any order but Other memberships, so the table never depends on it', async () => {
+    for (const sort of [null, { key: 'company', direction: 'asc' }, { key: 'fit', direction: 'desc' }] as const) {
+      execute.mockClear();
+      await new HealthMetricsNonMembersService().getOrgs(req, { ...query, sort });
 
-    const [sql] = orgsRead();
-    const other = sql.slice(sql.indexOf('WITH other AS'), sql.indexOf('scoped AS'));
+      const [sql] = orgsRead();
+      expect(sql).not.toContain('MEMBERSHIP_DIRECTORY');
+      expect(sql).toContain('CAST(NULL AS NUMBER) AS other_top_tier_rank');
+    }
+  });
+
+  it("summarises each company's memberships in other foundations for the Other memberships sort, leaving the viewed foundation out", async () => {
+    await new HealthMetricsNonMembersService().getOrgs(req, { ...query, search: 'acme', sort: { key: 'memberships', direction: 'desc' } });
+
+    const [sql, binds] = orgsRead();
+    expect(binds).toEqual(['acme', 'acme', '%acme%']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    const other = sql.slice(sql.indexOf('other AS ('), sql.indexOf('scoped AS'));
     expect(other).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY');
     expect(other).toContain("WHERE foundation_slug <> ?\n          AND foundation_slug <> ''");
     expect(other).toContain('COUNT(DISTINCT foundation_slug) AS other_membership_count');

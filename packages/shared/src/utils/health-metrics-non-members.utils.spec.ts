@@ -107,7 +107,7 @@ describe('buildHealthMetricsNonMembersOrgRows', () => {
 describe('buildHealthMetricsNonMembersOtherMemberships', () => {
   const membership = (foundationSlug: string, foundationName: string, tier: string | null) => ({ foundationSlug, foundationName, tier });
 
-  it('keeps one badge per foundation at its highest tier, highest tier first, then A–Z', () => {
+  it('keeps one badge per foundation at its highest tier, Diamond to Silver first, then A–Z', () => {
     const views = buildHealthMetricsNonMembersOtherMemberships([
       membership('zeta-foundation', 'Zeta Foundation', 'Silver Membership'),
       membership('cncf', 'Cloud Native Computing Foundation', 'Silver Membership'),
@@ -124,14 +124,26 @@ describe('buildHealthMetricsNonMembersOtherMemberships', () => {
     ]);
   });
 
-  it('says "Membership" with no tier, ranks it last, and falls back to the slug with no name', () => {
+  it('runs every tier past Silver, and no tier, A–Z together', () => {
+    const views = buildHealthMetricsNonMembersOtherMemberships([
+      membership('zeta-foundation', 'Zeta Foundation', 'Associate'),
+      membership('beta-foundation', 'Beta Foundation', null),
+      membership('alpha-foundation', 'Alpha Foundation', 'Bronze'),
+      membership('gamma-foundation', 'Gamma Foundation', 'End User Supporter'),
+    ]);
+
+    expect(views.map((view) => view.label)).toEqual(['Alpha Foundation', 'Beta Foundation', 'Gamma Foundation', 'Zeta Foundation']);
+  });
+
+  it('keeps a foundation\'s highest tier by the full ranking, says "Membership" with no tier, and falls back to the slug with no name', () => {
     const views = buildHealthMetricsNonMembersOtherMemberships([
       membership('constructor', '', null),
+      membership('beta-foundation', 'Beta Foundation', 'Associate'),
       membership('beta-foundation', 'Beta Foundation', 'End User Supporter'),
     ]);
 
     expect(views).toEqual([
-      { key: 'beta-foundation', label: 'Beta Foundation', tierLabel: 'End User Supporter membership' },
+      { key: 'beta-foundation', label: 'Beta Foundation', tierLabel: 'Associate membership' },
       { key: 'constructor', label: 'constructor', tierLabel: 'Membership' },
     ]);
   });

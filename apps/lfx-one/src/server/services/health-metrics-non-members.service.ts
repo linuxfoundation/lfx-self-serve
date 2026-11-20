@@ -121,8 +121,9 @@ export class HealthMetricsNonMembersService {
   public async getOrgs(req: Request, query: HealthMetricsNonMembersOrgsQuery): Promise<HealthMetricsNonMembersOrgs> {
     // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
-    // The foundation twice: `other` leaves its memberships out, then `scoped` picks its companies.
-    const binds: string[] = [query.foundationSlug, query.foundationSlug];
+    // Only the Other memberships sort reads the directory, so no other read depends on it. Its CTE binds the foundation first.
+    const sortsByMemberships = query.sort?.key === 'memberships';
+    const binds: string[] = sortsByMemberships ? [query.foundationSlug, query.foundationSlug] : [query.foundationSlug];
 
     const predicates: string[] = [];
     if (query.filter === 'meetings') predicates.push('meetings_attended_count > 0');
@@ -139,8 +140,8 @@ export class HealthMetricsNonMembersService {
     // A column the reader picked, over every page; with none, the view's rank. Only these expressions reach the SQL.
     const orderBy = buildHealthMetricsSortOrderBy(query.sort, orgSortColumns(), 'sort_rank ASC NULLS LAST, account_id ASC');
 
-    const sql = `
-      WITH other AS (
+    const otherCte = `
+      other AS (
         -- Each company's current memberships in other foundations: its highest tier and how many, for the sort.
         SELECT
           account_id,
@@ -153,7 +154,13 @@ export class HealthMetricsNonMembersService {
           AND account_id IS NOT NULL
           AND account_id <> ''
         GROUP BY account_id
-      ),
+      ),`;
+    const otherColumns = sortsByMemberships
+      ? 'o.other_top_tier_rank,\n          o.other_membership_count'
+      : 'CAST(NULL AS NUMBER) AS other_top_tier_rank,\n          CAST(NULL AS NUMBER) AS other_membership_count';
+
+    const sql = `
+      WITH ${sortsByMemberships ? otherCte : ''}
       scoped AS (
         SELECT
           p.account_id,
@@ -166,10 +173,9 @@ export class HealthMetricsNonMembersService {
           p.fit_band,
           -- High band among active rows: the set high_fit_org_count counts.
           COALESCE(p.fit_band = 'High', FALSE) AS is_high_fit,
-          o.other_top_tier_rank,
-          o.other_membership_count
+          ${otherColumns}
         FROM ${NON_MEMBER_COMPANY_PARTICIPATION_VIEW} p
-        LEFT JOIN other o ON o.account_id = p.account_id
+        ${sortsByMemberships ? 'LEFT JOIN other o ON o.account_id = p.account_id' : ''}
         WHERE p.foundation_slug = ?
           -- Rows the mapper cannot show must not count, or the totals and the page window drift apart.
           AND p.account_id IS NOT NULL

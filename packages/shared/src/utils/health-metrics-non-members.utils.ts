@@ -54,7 +54,7 @@ export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMember
 
 /**
  * The Other memberships badges: one per foundation, named by its short name (else its full name), with its highest tier
- * in the tooltip. Highest tier first, then name A–Z; a membership with no tier ranks below every named one.
+ * in the tooltip. Diamond, Platinum, Gold and Silver first, in that order, then every other tier together; name A–Z within each.
  */
 export function buildHealthMetricsNonMembersOtherMemberships(
   memberships: HealthMetricsNonMembersOtherMembership[]
@@ -67,8 +67,8 @@ export function buildHealthMetricsNonMembersOtherMemberships(
   }
 
   return [...best.values()]
-    .map(({ membership, rank }) => ({
-      rank,
+    .map(({ membership }) => ({
+      rank: badgeOrderRank(membership.tier),
       view: {
         key: membership.foundationSlug,
         label: foundationShortName(membership),
@@ -121,6 +121,11 @@ export function buildHealthMetricsNonMembersConversionView(conversion: HealthMet
     ],
     warmest: buildWarmestRows(conversion.warmest),
   };
+}
+
+// The four reserved tiers keep their rank; every other tier, or none, shares the lowest, so those badges run A–Z.
+function badgeOrderRank(tier: string | null): number {
+  return tier?.trim() && resolveHealthMetricsMembersTier(tier).reserved ? (healthMetricsTierSortRank(tier) ?? 0) : 0;
 }
 
 // Own keys only, so a slug such as `constructor` falls back to its name rather than to Object's prototype.
