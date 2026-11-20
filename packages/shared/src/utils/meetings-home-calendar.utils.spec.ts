@@ -193,6 +193,26 @@ describe('meetings home calendar utils', () => {
       expect(formatMeetingCalendarWeekRange(new Date(2026, 11, 27))).toBe('Dec 27, 2026 – Jan 2, 2027');
     });
 
+    it('ends a meeting across a clock change at its real end time', () => {
+      const zone = process.env['TZ'];
+      process.env['TZ'] = 'America/New_York';
+      try {
+        // 2026-03-08 springs forward at 2:00 AM: an hour from 1:30 AM ends at 3:30 AM on the clock.
+        const [event] = layoutMeetingCalendarWeekDay([{ row: typed('dst', new Date(2026, 2, 8, 1, 30), 'Board', 60), past: false }]);
+        expect([event.top, event.height]).toEqual([72, 94]);
+      } finally {
+        process.env['TZ'] = zone;
+      }
+    });
+
+    it('does not carry a short meeting that ends by midnight into the next day', () => {
+      const days = groupMeetingCalendarEntries([typed('short', new Date(2026, 9, 3, 23, 45), 'Board', 15)], []);
+
+      const [, sunday] = buildMeetingCalendarDialogDays([new Date(2026, 9, 3), new Date(2026, 9, 4)], days, new Date(2026, 9, 1), null, 0);
+
+      expect(sunday.events).toEqual([]);
+    });
+
     it('shows a meeting that crosses midnight on both days of the week, clipped to each', () => {
       const days = groupMeetingCalendarEntries([typed('late', new Date(2026, 9, 3, 23, 30), 'Board', 60)], []);
       const dates = [new Date(2026, 9, 3), new Date(2026, 9, 4)];

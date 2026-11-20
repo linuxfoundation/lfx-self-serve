@@ -3,7 +3,8 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, ElementRef, inject, Signal, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, Signal, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
   MEETINGS_HOME_CALENDAR_HOUR_PX,
   MEETINGS_HOME_CALENDAR_MONTH_CHIPS,
@@ -32,6 +33,7 @@ import {
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
+import { distinctUntilChanged, filter } from 'rxjs';
 
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
@@ -85,15 +87,26 @@ export class MeetingsCalendarDialogComponent {
     const first = getLocalDayKey(this.view() === 'month' ? getMeetingCalendarMonthDates(this.focus())[0] : this.weekStart());
     return first <= getLocalDayKey(this.data.now()) ? first : null;
   });
+  /** Older past meetings for the shown period failed to load, so its earlier days may be missing some. */
+  protected readonly pastFailed: Signal<boolean> = computed(() => this.pastShownFrom() !== null && this.data.pastFailed());
 
   private scrollTimer: ReturnType<typeof setTimeout> | undefined;
 
   public constructor() {
     this.destroyRef.onDestroy(() => clearTimeout(this.scrollTimer));
-    effect(() => {
-      const from = this.pastShownFrom();
-      if (from) untracked(() => this.data.showPastFrom(from));
-    });
+    toObservable(this.pastShownFrom)
+      .pipe(
+        distinctUntilChanged(),
+        filter((from): from is string => from !== null),
+        takeUntilDestroyed()
+      )
+      .subscribe((from) => this.data.showPastFrom(from));
+  }
+
+  /** Asking again for the shown period's past meetings retries the page that failed. */
+  protected retryPast(): void {
+    const from = this.pastShownFrom();
+    if (from) this.data.showPastFrom(from);
   }
 
   protected close(): void {

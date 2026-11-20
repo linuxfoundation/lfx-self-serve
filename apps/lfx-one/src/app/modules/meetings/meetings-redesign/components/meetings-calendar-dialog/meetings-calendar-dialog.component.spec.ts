@@ -28,6 +28,7 @@ describe('MeetingsCalendarDialogComponent', () => {
   let past: ReturnType<typeof signal<MeetingHomeRow[]>>;
   let showPastFrom: ReturnType<typeof vi.fn<(day: string) => void>>;
   let month: Date | undefined;
+  let pastFailed: ReturnType<typeof signal<boolean>>;
 
   beforeEach(() => {
     close = vi.fn();
@@ -36,6 +37,7 @@ describe('MeetingsCalendarDialogComponent', () => {
     past = signal<MeetingHomeRow[]>([]);
     showPastFrom = vi.fn<(day: string) => void>();
     month = undefined;
+    pastFailed = signal(false);
   });
 
   const configure = (): void => {
@@ -47,6 +49,7 @@ describe('MeetingsCalendarDialogComponent', () => {
       logoUrl: '',
       openMeeting,
       showPastFrom,
+      pastFailed,
       month,
     };
     TestBed.configureTestingModule({
@@ -258,5 +261,18 @@ describe('MeetingsCalendarDialogComponent', () => {
       'Fri, Oct 9',
       'Sat, Oct 10',
     ]);
+  });
+
+  it('says when older meetings failed to load, and retries them from the first day shown', async () => {
+    const fixture = await render();
+    expect(query(fixture, 'meetings-calendar-dialog-past-failed')).toBeNull();
+
+    pastFailed.set(true);
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-calendar-dialog-past-failed')?.textContent).toContain("Couldn't load older meetings.");
+    showPastFrom.mockClear();
+
+    await click(fixture, 'meetings-calendar-dialog-past-retry');
+    expect(showPastFrom).toHaveBeenCalledWith('2026-09-27');
   });
 });

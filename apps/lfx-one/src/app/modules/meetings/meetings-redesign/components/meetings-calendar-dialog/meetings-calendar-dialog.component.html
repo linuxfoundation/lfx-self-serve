@@ -105,6 +105,12 @@
   class="min-h-0 flex-auto overflow-y-auto px-[24px] pb-[24px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
   (scroll)="onScroll()"
   data-testid="meetings-calendar-dialog-body">
+  @if (pastFailed()) {
+    <div class="mb-[8px] flex items-center gap-[8px] text-[12px] leading-[16px] text-gray-600" role="status" data-testid="meetings-calendar-dialog-past-failed">
+      <span>Couldn't load older meetings.</span>
+      <lfx-ui-button variant="tertiary" size="tiny" label="Retry" (click)="retryPast()" data-testid="meetings-calendar-dialog-past-retry" />
+    </div>
+  }
   @if (view() === 'month') {
     <div class="overflow-hidden rounded-b-ui-md bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.200)]" data-testid="meetings-calendar-dialog-month">
       @for (week of monthWeeks(); track week[0].key) {
