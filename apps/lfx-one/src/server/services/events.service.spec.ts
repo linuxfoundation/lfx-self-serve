@@ -518,6 +518,7 @@ describe('EventsService filter options use the same past-event predicate', () =>
 
     expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
     expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
+    expect(lastSql()).toContain("AND NULLIF(TRIM(EVENT_COUNTRY), '') IS NOT NULL");
   });
 
   it('lists travel fund countries from the same events and rule as the picker', async () => {
@@ -526,7 +527,7 @@ describe('EventsService filter options use the same past-event predicate', () =>
     expect(lastSql()).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.EVENTS');
     expect(lastSql()).not.toContain('EVENT_REGISTRATIONS');
     expect(lastSql()).toContain("EVENT_STATUS IN ('Active', 'Pending')");
-    expect(lastSql()).toContain('AND EVENT_COUNTRY IS NOT NULL');
+    expect(lastSql()).toContain("AND NULLIF(TRIM(EVENT_COUNTRY), '') IS NOT NULL");
   });
 });
 

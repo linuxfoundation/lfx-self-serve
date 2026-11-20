@@ -635,7 +635,7 @@ export class EventsService {
     const sql = `
       SELECT DISTINCT EVENT_COUNTRY
       FROM ${source}
-        AND EVENT_COUNTRY IS NOT NULL
+        AND NULLIF(TRIM(EVENT_COUNTRY), '') IS NOT NULL
       ORDER BY EVENT_COUNTRY
     `;
 
