@@ -29,6 +29,7 @@ describe('MeetingsCalendarDialogComponent', () => {
   let showPastFrom: ReturnType<typeof vi.fn<(day: string) => void>>;
   let month: Date | undefined;
   let pastFailed: ReturnType<typeof signal<boolean>>;
+  let retryPast: ReturnType<typeof vi.fn<(day: string) => void>>;
 
   beforeEach(() => {
     close = vi.fn();
@@ -38,6 +39,7 @@ describe('MeetingsCalendarDialogComponent', () => {
     showPastFrom = vi.fn<(day: string) => void>();
     month = undefined;
     pastFailed = signal(false);
+    retryPast = vi.fn<(day: string) => void>();
   });
 
   const configure = (): void => {
@@ -50,6 +52,7 @@ describe('MeetingsCalendarDialogComponent', () => {
       openMeeting,
       showPastFrom,
       pastFailed,
+      retryPast,
       month,
     };
     TestBed.configureTestingModule({
@@ -270,10 +273,12 @@ describe('MeetingsCalendarDialogComponent', () => {
 
     pastFailed.set(true);
     await fixture.whenStable();
-    expect(query(fixture, 'meetings-calendar-dialog-past-failed')?.textContent).toContain("Couldn't load older meetings.");
-    showPastFrom.mockClear();
+    const notice = query(fixture, 'meetings-calendar-dialog-past-failed');
+    expect(notice?.textContent).toContain("Couldn't load older meetings.");
+    // Outside the scrolling body, so the week view's 8 AM scroll cannot hide it.
+    expect(query(fixture, 'meetings-calendar-dialog-body')?.contains(notice as Node)).toBe(false);
 
     await click(fixture, 'meetings-calendar-dialog-past-retry');
-    expect(showPastFrom).toHaveBeenCalledWith('2026-09-27');
+    expect(retryPast).toHaveBeenCalledWith('2026-09-27');
   });
 });

@@ -281,8 +281,8 @@ export class MeetingsHomeStore {
     const from = this.pastCalendarFromState();
     return !!from && this.pastPageToken() !== undefined && this.oldestPastDayAtOrAfter(from);
   });
-  /** A past page the calendar asked for failed; {@link showPastFrom} retries it. */
-  public readonly calendarPastFailed: Signal<boolean> = computed(() => this.pastPageFailedState() && this.calendarNeedsOlderPast());
+  /** The first past page, or a later one the calendar asked for, failed; {@link retryCalendarPast} retries it. */
+  public readonly calendarPastFailed: Signal<boolean> = computed(() => this.pastFailedState() || (this.pastPageFailedState() && this.calendarNeedsOlderPast()));
   /** The picked day once every one of its rows is loaded and shown; the page then scrolls to it and calls {@link completeReveal}. */
   public readonly revealedDay: Signal<string | null> = computed(() => {
     const day = this.revealDayState();
@@ -368,6 +368,12 @@ export class MeetingsHomeStore {
     this.pastCalendarFromState.update((current) => (current && current <= day ? current : day));
     // Going back another month is the calendar's way to retry a page that failed.
     this.retryPastPage();
+  }
+
+  /** Retries the calendar's failed past meetings: the first page through {@link retry}, a later one by asking again for `day`. */
+  public retryCalendarPast(day: string): void {
+    if (this.pastFailedState()) this.retry();
+    else this.showPastFrom(day);
   }
 
   /** Keeps the rows a picked day brought in and ends the reveal. */
