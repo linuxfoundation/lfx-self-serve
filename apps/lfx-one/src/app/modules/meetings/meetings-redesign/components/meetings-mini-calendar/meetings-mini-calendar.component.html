@@ -58,11 +58,13 @@
                 class="group flex h-[44px] cursor-pointer flex-col items-center justify-start gap-[3px] border-0 bg-transparent pt-[2px] focus-visible:outline-none"
                 [attr.aria-label]="day.label + ': ' + day.entries.length + (day.entries.length === 1 ? ' meeting' : ' meetings')"
                 [attr.aria-current]="day.today ? 'date' : null"
+                [attr.aria-describedby]="tooltip()?.day === day.key ? tooltipId : null"
                 (click)="select(day)"
                 (mouseenter)="showTooltip(day, $event.currentTarget)"
-                (mouseleave)="tooltip.set(null)"
+                (mouseleave)="scheduleHideTooltip()"
                 (focus)="showTooltip(day, $event.currentTarget)"
-                (blur)="tooltip.set(null)"
+                (blur)="hideTooltip()"
+                (keydown.escape)="hideTooltip()"
                 [attr.data-day]="day.key"
                 data-testid="meetings-mini-calendar-day">
                 <span
@@ -108,9 +110,13 @@
 @if (tooltip(); as tip) {
   <div
     role="tooltip"
-    class="pointer-events-none fixed z-[2147483200] flex w-max max-w-[280px] -translate-x-1/2 -translate-y-full flex-col gap-[4px] rounded-ui-sm bg-gray-900 px-[10px] py-[8px] text-[12px] leading-[16px] text-white shadow-medium"
+    [id]="tooltipId"
+    class="fixed z-[2147483200] flex w-max max-w-[280px] -translate-x-1/2 flex-col gap-[4px] rounded-ui-sm bg-gray-900 px-[10px] py-[8px] text-[12px] leading-[16px] text-white shadow-medium"
     [style.left.px]="tip.left"
     [style.top.px]="tip.top"
+    [class.-translate-y-full]="tip.above"
+    (mouseenter)="keepTooltip()"
+    (mouseleave)="hideTooltip()"
     data-testid="meetings-mini-calendar-tooltip">
     <span class="font-medium">{{ tip.head }}</span>
     @for (item of tip.items; track item.key) {

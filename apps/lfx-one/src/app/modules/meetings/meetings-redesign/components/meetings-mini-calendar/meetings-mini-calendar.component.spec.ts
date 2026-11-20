@@ -3,7 +3,8 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Meeting, MeetingHomeRow, MeetingMiniCalendarDay } from '@lfx-one/shared/interfaces';
-import { describe, expect, it } from 'vitest';
+import { MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS } from '@lfx-one/shared/constants';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsMiniCalendarComponent } from './meetings-mini-calendar.component';
 
@@ -20,6 +21,10 @@ const row = (key: string, start: Date, title = key): MeetingHomeRow => ({
 });
 
 describe('MeetingsMiniCalendarComponent', () => {
+  const hideDelay = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS + 20));
+
+  afterEach(() => vi.restoreAllMocks());
+
   const render = async (upcoming: MeetingHomeRow[] = [], past: MeetingHomeRow[] = []): Promise<ComponentFixture<MeetingsMiniCalendarComponent>> => {
     const fixture = TestBed.createComponent(MeetingsMiniCalendarComponent);
     fixture.componentRef.setInput('upcomingRows', upcoming);
@@ -77,10 +82,16 @@ describe('MeetingsMiniCalendarComponent', () => {
     expect(query(fixture, 'meetings-mini-calendar-title')?.textContent?.trim()).toBe('October 2026');
   });
 
-  it('pages between months, asking for past meetings back to the start of an older month', async () => {
-    const fixture = await render([row('november', new Date(2026, 10, 3, 9))]);
+  it('pages between months, asking for past meetings back to the start of the current or an older month', async () => {
+    const fixture = TestBed.createComponent(MeetingsMiniCalendarComponent);
     const older: string[] = [];
     fixture.componentInstance.olderMonthShown.subscribe((value) => older.push(value));
+    fixture.componentRef.setInput('upcomingRows', [row('november', new Date(2026, 10, 3, 9))]);
+    fixture.componentRef.setInput('pastRows', []);
+    fixture.componentRef.setInput('now', NOW);
+    await fixture.whenStable();
+    // The current month's earlier days hold past meetings too.
+    expect(older).toEqual(['2026-10-01']);
 
     query(fixture, 'meetings-mini-calendar-next')?.querySelector('button')?.click();
     await fixture.whenStable();
@@ -91,7 +102,23 @@ describe('MeetingsMiniCalendarComponent', () => {
     query(fixture, 'meetings-mini-calendar-previous')?.querySelector('button')?.click();
     await fixture.whenStable();
     expect(query(fixture, 'meetings-mini-calendar-title')?.textContent?.trim()).toBe('September 2026');
-    expect(older).toEqual(['2026-09-01']);
+    expect(older).toEqual(['2026-10-01', '2026-09-01']);
+  });
+
+  it('goes back to the current month, and asks for it again, when the scope changes', async () => {
+    const fixture = await render();
+    fixture.componentRef.setInput('scope', 'project-a');
+    await fixture.whenStable();
+    const older: string[] = [];
+    fixture.componentInstance.olderMonthShown.subscribe((value) => older.push(value));
+    query(fixture, 'meetings-mini-calendar-previous')?.querySelector('button')?.click();
+    await fixture.whenStable();
+
+    fixture.componentRef.setInput('scope', 'project-b');
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-mini-calendar-title')?.textContent?.trim()).toBe('October 2026');
+    expect(older).toEqual(['2026-09-01', '2026-10-01']);
   });
 
   it('lists a day’s meetings on hover in time order, six at most', async () => {
@@ -120,8 +147,59 @@ describe('MeetingsMiniCalendarComponent', () => {
     expect(query(fixture, 'meetings-mini-calendar-tooltip-item')?.lastElementChild?.className).not.toContain('truncate');
 
     day(fixture, '2026-10-20')?.dispatchEvent(new MouseEvent('mouseleave'));
+    await hideDelay();
     await fixture.whenStable();
     expect(query(fixture, 'meetings-mini-calendar-tooltip')).toBeNull();
+  });
+
+  it('stays open while the pointer moves from the day onto the tooltip, and closes when it leaves', async () => {
+    const fixture = await render([row('a', new Date(2026, 9, 20, 9))]);
+    day(fixture, '2026-10-20')?.dispatchEvent(new MouseEvent('mouseenter'));
+    await fixture.whenStable();
+
+    day(fixture, '2026-10-20')?.dispatchEvent(new MouseEvent('mouseleave'));
+    query(fixture, 'meetings-mini-calendar-tooltip')?.dispatchEvent(new MouseEvent('mouseenter'));
+    await hideDelay();
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-mini-calendar-tooltip')).toBeTruthy();
+
+    query(fixture, 'meetings-mini-calendar-tooltip')?.dispatchEvent(new MouseEvent('mouseleave'));
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-mini-calendar-tooltip')).toBeNull();
+  });
+
+  it('describes the focused day with its tooltip, which Escape closes', async () => {
+    const fixture = await render([row('a', new Date(2026, 9, 20, 9))]);
+    const button = day(fixture, '2026-10-20') as HTMLButtonElement;
+
+    button.dispatchEvent(new FocusEvent('focus'));
+    await fixture.whenStable();
+    const tooltip = query(fixture, 'meetings-mini-calendar-tooltip');
+    expect(tooltip?.id).toBeTruthy();
+    expect(button.getAttribute('aria-describedby')).toBe(tooltip?.id);
+
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-mini-calendar-tooltip')).toBeNull();
+    expect(button.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('opens the tooltip above a day with room above it, and below a day near the top of the window', async () => {
+    const fixture = await render([row('a', new Date(2026, 9, 20, 9))]);
+    const button = day(fixture, '2026-10-20') as HTMLElement;
+    const rect = (top: number): DOMRect => ({ top, bottom: top + 44, left: 100, right: 140, width: 40, height: 44, x: 100, y: top }) as DOMRect;
+
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(rect(400));
+    button.dispatchEvent(new MouseEvent('mouseenter'));
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-mini-calendar-tooltip')?.className).toContain('-translate-y-full');
+    expect(query(fixture, 'meetings-mini-calendar-tooltip')?.style.top).toBe('394px');
+
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(rect(40));
+    button.dispatchEvent(new MouseEvent('mouseenter'));
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-mini-calendar-tooltip')?.className).not.toContain('-translate-y-full');
+    expect(query(fixture, 'meetings-mini-calendar-tooltip')?.style.top).toBe('90px');
   });
 
   it('emits the clicked day with the tab that lists it', async () => {
