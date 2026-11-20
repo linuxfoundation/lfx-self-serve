@@ -4,9 +4,18 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_NO_PAST_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingRsvp, MeetingsHomePastPage, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingRollupGroupOption,
+  MeetingRsvp,
+  MeetingsHomePastFilters,
+  MeetingsHomePastPage,
+  PastMeeting,
+  PastMeetingRecording,
+  PastMeetingSummary,
+} from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
@@ -51,9 +60,9 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
   };
 }
 
-function buildPastMeeting(id: string, start: Date): PastMeeting {
+function buildPastMeeting(id: string, start: Date, overrides: Partial<Meeting> = {}): PastMeeting {
   return {
-    ...buildMeeting({ id, title: `Past ${id}`, start_time: start.toISOString() }),
+    ...buildMeeting({ id, title: `Past ${id}`, start_time: start.toISOString(), ...overrides }),
     scheduled_start_time: start.toISOString(),
     scheduled_end_time: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
     meeting_id: 'm-past',
@@ -825,11 +834,13 @@ describe('MeetingsHomeStore', () => {
 
   describe('paged past feed', () => {
     let pastPages: Subject<MeetingsHomePastPage>[];
-    let past: ReturnType<typeof vi.fn<(search: string, pageToken?: string) => Subject<MeetingsHomePastPage>>>;
+    let past: ReturnType<typeof vi.fn<(search: string, filters: MeetingsHomePastFilters, pageToken?: string) => Subject<MeetingsHomePastPage>>>;
+    let groups$: Subject<MeetingRollupGroupOption[]>;
 
     const createPaged = (): MeetingsHomeStore => {
       pastPages = [];
-      past = vi.fn<(search: string, pageToken?: string) => Subject<MeetingsHomePastPage>>(() => {
+      groups$ = new Subject();
+      past = vi.fn<(search: string, filters: MeetingsHomePastFilters, pageToken?: string) => Subject<MeetingsHomePastPage>>(() => {
         const page$ = new Subject<MeetingsHomePastPage>();
         pastPages.push(page$);
         return page$;
@@ -843,6 +854,7 @@ describe('MeetingsHomeStore', () => {
         upcoming: () => upcoming$,
         past,
         latestPast: () => latestPast$,
+        groups: () => groups$,
       };
       TestBed.configureTestingModule({
         providers: [
@@ -872,7 +884,7 @@ describe('MeetingsHomeStore', () => {
       expect(store.hasMore()).toBe(true);
       store.loadMore();
       TestBed.tick();
-      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+      expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
 
       pastPages[1].next(pastPage('b', 5));
       TestBed.tick();
@@ -894,7 +906,7 @@ describe('MeetingsHomeStore', () => {
         store.setSearch(' weekly ');
         TestBed.tick();
         await vi.advanceTimersByTimeAsync(300);
-        expect(past).toHaveBeenLastCalledWith('weekly');
+        expect(past).toHaveBeenLastCalledWith('weekly', MEETINGS_HOME_NO_PAST_FILTERS);
 
         pastPages[1].next(pastPage('stale', 3));
         pastPages[2].next(pastPage('w', 2));
@@ -924,13 +936,130 @@ describe('MeetingsHomeStore', () => {
       expect(store.hasMore()).toBe(false);
     });
 
+    describe('project filters', () => {
+      const tsc = { uid: 'c-1', name: 'TSC' };
+      const wg = { uid: 'c-2', name: 'Docs WG' };
+      const loadPast = (store: MeetingsHomeStore): void => {
+        store.setTab('past');
+        pastPages[0].next({
+          meetings: [
+            buildPastMeeting('a', inDays(-1), { committees: [tsc] }),
+            buildPastMeeting('b', inDays(-2), { committees: [wg], project_uid: 'p-2', project_name: 'Project Two', meeting_type: 'Board' }),
+          ],
+        });
+        TestBed.tick();
+      };
+
+      it('reloads the past list from its first page with the filters the server can apply, and continues cursors with them', () => {
+        const store = createPaged();
+        groups$.next([{ uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'p-1' }]);
+        loadPast(store);
+
+        store.setFilters({
+          ...MEETINGS_HOME_DEFAULT_FILTERS,
+          project: 'p-1',
+          group: 'c-1',
+          groupType: 'Technical Steering Committee',
+          meetingType: 'Technical',
+        });
+        TestBed.tick();
+
+        const applied = { projectUid: 'p-1', committeeUid: 'c-1', groupType: 'Technical Steering Committee', meetingType: 'Technical' };
+        expect(past).toHaveBeenLastCalledWith('', applied);
+        pastPages[1].next({ meetings: [buildPastMeeting('c', inDays(-3), { committees: [tsc] })], pageToken: 'cursor-2' });
+        TestBed.tick();
+        expect(store.pastRows().map((row) => row.meeting.id)).toEqual(['c']);
+        // Fewer rows than a list page, so the next server page loads on its own.
+        expect(past).toHaveBeenLastCalledWith('', applied, 'cursor-2');
+      });
+
+      it('does not page the previous filters after a filtered reload fails', () => {
+        const store = createPaged();
+        store.setTab('past');
+        pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+        TestBed.tick();
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, group: 'c-1' });
+        TestBed.tick();
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        pastPages[1].error(new Error('boom'));
+        TestBed.tick();
+
+        // The cursor belongs to the unfiltered query, so it is not paged under the new filters.
+        expect(past).toHaveBeenCalledTimes(2);
+        expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+      });
+
+      it('filters a group type read from group names on the loaded rows only', () => {
+        const store = createPaged();
+        groups$.next([]);
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Working Group' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['b']);
+      });
+
+      it('matches group types by category from the groups in scope', () => {
+        const store = createPaged();
+        groups$.next([{ uid: 'c-2', name: 'Docs WG', category: 'Special Interest Group', project_uid: 'p-1' }]);
+        loadPast(store);
+
+        expect(store.groupCategories()).toEqual(new Map([['c-2', 'Special Interest Group']]));
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Special Interest Group' });
+        TestBed.tick();
+        pastPages[1].next({ meetings: [buildPastMeeting('b', inDays(-2), { committees: [wg] })] });
+        TestBed.tick();
+
+        expect(past).toHaveBeenLastCalledWith('', { ...MEETINGS_HOME_NO_PAST_FILTERS, groupType: 'Special Interest Group' });
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['b']);
+      });
+
+      it('keeps the filter options and chip names of the last unfiltered past load while filters narrow it', () => {
+        const store = createPaged();
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-2', group: 'c-2' });
+        TestBed.tick();
+        pastPages[1].next({ meetings: [] });
+        TestBed.tick();
+
+        expect(store.filterOptionRows().map((row) => row.meeting.id)).toEqual(['a', 'b']);
+        expect(store.filterChips()).toEqual([
+          { key: 'project', prefix: 'Project:', label: 'Project Two' },
+          { key: 'group', prefix: 'Group:', label: 'Docs WG' },
+        ]);
+
+        store.clearFilter('project');
+        store.clearFilter('group');
+        TestBed.tick();
+        pastPages[2].next({ meetings: [buildPastMeeting('d', inDays(-4))] });
+        TestBed.tick();
+        expect(store.filterOptionRows().map((row) => row.meeting.id)).toEqual(['d']);
+      });
+
+      it('applies filters on the Upcoming tab without reloading the past list', () => {
+        const store = createPaged();
+        upcoming$.next([buildMeeting({ id: 'u1', committees: [tsc] }), buildMeeting({ id: 'u2', committees: [wg] })]);
+        TestBed.tick();
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, group: 'c-2' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['u2']);
+      });
+    });
+
     it('keeps loading server pages while none of the loaded rows can be shown', () => {
       const store = createPaged();
       store.setTab('past');
       pastPages[0].next(pastPage('a', 0, 'cursor-1'));
       TestBed.tick();
 
-      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+      expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
       expect(store.loading()).toBe(true);
       pastPages[1].next(pastPage('b', 3));
       TestBed.tick();
@@ -984,7 +1113,7 @@ describe('MeetingsHomeStore', () => {
       pastPages[pastPages.length - 1].error(new Error('first page failed'));
       TestBed.tick();
 
-      expect(past).not.toHaveBeenCalledWith('', 'cursor-a');
+      expect(past).not.toHaveBeenCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-a');
       expect(store.hasMore()).toBe(false);
     });
 
@@ -1031,7 +1160,7 @@ describe('MeetingsHomeStore', () => {
       store.retryPastPage();
       TestBed.tick();
       expect(store.pastPageFailed()).toBe(false);
-      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+      expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
     });
 
     it('keeps showing more upcoming rows while a past page is loading', () => {

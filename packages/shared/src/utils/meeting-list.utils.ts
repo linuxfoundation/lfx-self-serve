@@ -3,6 +3,8 @@
 
 import {
   DEFAULT_MEETING_TYPE_CONFIG,
+  MEETING_GROUP_TYPE_OTHER,
+  MEETING_GROUP_TYPE_PATTERNS,
   MEETING_TYPE_CONFIGS,
   MEETING_VISIBILITY_INFO,
   MEETINGS_HOME_FILTER_CHIP_LABELS,
@@ -199,7 +201,8 @@ export function groupMeetingsByDayBucket(
 
 /**
  * Applies search and filters to a tab's rows (AND).
- * @description Search is a case-insensitive substring over the title and committee names. Hide declined
+ * @description Search is a case-insensitive substring over the title and committee names. Group type reads each group's
+ * category from `groupCategories` (committee UID to category), else from its name. Hide declined
  * drops a series when every one of its rows in `rows` is declined, so pass the tab's unfiltered rows. It never hides a
  * meeting the viewer organizes ({@link isMeetingHomeOrganizer}) and is ignored while the RSVP filter is "Not going".
  */
@@ -207,7 +210,8 @@ export function filterMeetingsHome(
   rows: readonly MeetingHomeRow[],
   filters: MeetingsHomeFilters,
   search: string,
-  viewerUsername: string | null
+  viewerUsername: string | null,
+  groupCategories: ReadonlyMap<string, string> = new Map()
 ): MeetingHomeRow[] {
   const query = search.trim().toLowerCase();
   const declinedSeries = filters.hideDeclined && filters.rsvp !== 'declined' ? findDeclinedSeries(rows) : null;
@@ -216,6 +220,8 @@ export function filterMeetingsHome(
     const meeting = row.meeting;
     if (query && !matchesMeetingSearch(row, query)) return false;
     if (!matchesEntityFilters(meeting, filters)) return false;
+    if (filters.group && !(meeting.committees ?? []).some((committee) => committee.uid === filters.group)) return false;
+    if (filters.groupType && !getMeetingGroupTypes(meeting, groupCategories).includes(filters.groupType)) return false;
     if (filters.meetingType && meeting.meeting_type?.trim().toLowerCase() !== filters.meetingType.toLowerCase()) return false;
     if (!matchesRsvpFilter(row, filters.rsvp)) return false;
     if (filters.organizedByMe && !isMeetingHomeOrganizer(meeting, viewerUsername)) return false;
@@ -235,24 +241,44 @@ export function isMeetingHomeOrganizer(meeting: Meeting, viewerUsername: string 
 
 /** Number of applied filters, for the Filters button badge. Search does not count. */
 export function countAppliedMeetingFilters(filters: MeetingsHomeFilters): number {
-  return [filters.foundation, filters.project, filters.meetingType, filters.rsvp !== 'all', filters.organizedByMe, filters.hideDeclined].filter(Boolean).length;
+  return [
+    filters.foundation,
+    filters.project,
+    filters.group,
+    filters.groupType,
+    filters.meetingType,
+    filters.rsvp !== 'all',
+    filters.organizedByMe,
+    filters.hideDeclined,
+  ].filter(Boolean).length;
 }
 
 /**
- * One chip per applied filter, in popover order, keyed like "Project:"; foundation and project chips take the name from `rows`, else the UID.
- * The Foundation/Project chip reads "Foundation:" when its pick is a foundation.
+ * One chip per applied filter, in popover order, keyed like "Project:"; foundation, project and group chips take the name from `rows`, else the UID.
+ * The Foundation/Project chip reads "Foundation:" when its pick is a foundation, except in a project or foundation lens (`projectScope`).
  */
-export function buildMeetingFilterChips(filters: MeetingsHomeFilters, rows: readonly MeetingHomeRow[]): MeetingFilterChip[] {
+export function buildMeetingFilterChips(filters: MeetingsHomeFilters, rows: readonly MeetingHomeRow[], projectScope = false): MeetingFilterChip[] {
   const chips: MeetingFilterChip[] = [];
   const meetingOf = (uid: string) => rows.find((row) => row.meeting.project_uid === uid)?.meeting;
   const nameOf = (uid: string): string => meetingOf(uid)?.project_name || uid;
+  const groupNameOf = (uid: string): string =>
+    rows
+      .flatMap((row) => row.meeting.committees ?? [])
+      .find((committee) => committee.uid === uid && committee.name?.trim())
+      ?.name?.trim() || uid;
 
   if (filters.foundation) {
     chips.push({ key: 'foundation', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.foundation}:`, label: nameOf(filters.foundation) });
   }
   if (filters.project) {
-    const kind = meetingOf(filters.project)?.is_foundation ? 'foundation' : 'project';
+    const kind = !projectScope && meetingOf(filters.project)?.is_foundation ? 'foundation' : 'project';
     chips.push({ key: 'project', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS[kind]}:`, label: nameOf(filters.project) });
+  }
+  if (filters.group) {
+    chips.push({ key: 'group', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.group}:`, label: groupNameOf(filters.group) });
+  }
+  if (filters.groupType) {
+    chips.push({ key: 'groupType', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.groupType}:`, label: filters.groupType });
   }
   if (filters.meetingType) {
     chips.push({ key: 'meetingType', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.meetingType}:`, label: filters.meetingType });
@@ -434,6 +460,19 @@ export function getMeetingHomeRowType(meeting: Pick<Meeting, 'meeting_type'>): M
 export function getMeetingGroupNames(meeting: Pick<Meeting, 'committees'>): string[] {
   const names = (meeting.committees ?? []).map((committee) => committee.name?.trim() ?? '').filter(Boolean);
   return [...new Set(names)];
+}
+
+/** A group's type: its category when it has one, else read from its name by {@link MEETING_GROUP_TYPE_PATTERNS}. */
+export function getMeetingGroupType(name: string, category?: string | null): string {
+  const set = category?.trim();
+  if (set) return set;
+  return MEETING_GROUP_TYPE_PATTERNS.find(({ pattern }) => pattern.test(name))?.type ?? MEETING_GROUP_TYPE_OTHER;
+}
+
+/** Types of the groups a meeting belongs to, without repeats; categories come from `groupCategories` by committee UID. */
+export function getMeetingGroupTypes(meeting: Pick<Meeting, 'committees'>, groupCategories: ReadonlyMap<string, string>): string[] {
+  const types = (meeting.committees ?? []).map((committee) => getMeetingGroupType(committee.name ?? '', groupCategories.get(committee.uid)));
+  return [...new Set(types)];
 }
 
 /** "Organized by" avatars: owner or creator first ("You" for the viewer), then the other `organizers` by username. */

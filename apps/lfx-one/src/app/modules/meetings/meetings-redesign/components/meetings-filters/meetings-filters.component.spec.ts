@@ -7,12 +7,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingsHomeFilters } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
-import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
+import { ProjectContextService } from '@services/project-context.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
 import { MeetingsFiltersComponent } from './meetings-filters.component';
 
 const row = (id: string, meeting: Partial<Meeting>): MeetingHomeRow =>
@@ -48,6 +49,7 @@ describe('MeetingsFiltersComponent', () => {
   let emitted: MeetingsHomeFilters[];
   let outside: HTMLButtonElement;
   const persona = { hasBoardRole: signal(true), hasProjectRole: signal(true) };
+  const foundationContext = signal(false);
   let phone: boolean;
 
   const byTestId = (testId: string): HTMLElement | null => document.querySelector(`[data-testid="${testId}"]`);
@@ -61,11 +63,13 @@ describe('MeetingsFiltersComponent', () => {
   const render = async (
     filters: MeetingsHomeFilters = MEETINGS_HOME_DEFAULT_FILTERS,
     tab: MeetingDashboardView = 'upcoming',
-    rows: MeetingHomeRow[] = ROWS
+    rows: MeetingHomeRow[] = ROWS,
+    groupCategories: ReadonlyMap<string, string> = new Map()
   ): Promise<void> => {
     fixture = TestBed.createComponent(MeetingsFiltersComponent);
     fixture.componentRef.setInput('tab', tab);
     fixture.componentRef.setInput('rows', rows);
+    fixture.componentRef.setInput('groupCategories', groupCategories);
     fixture.componentRef.setInput('filters', filters);
     emitted = [];
     fixture.componentInstance.filters.subscribe((value) => emitted.push(value));
@@ -101,10 +105,12 @@ describe('MeetingsFiltersComponent', () => {
   beforeEach(() => {
     persona.hasBoardRole.set(true);
     persona.hasProjectRole.set(true);
+    foundationContext.set(false);
     phone = false;
     TestBed.configureTestingModule({
       providers: [
         { provide: PersonaService, useValue: persona },
+        { provide: ProjectContextService, useValue: { isFoundationContext: foundationContext } },
         { provide: MeetingsHomeFeed, useValue: feedScope },
         { provide: BreakpointObserver, useValue: { observe: () => of({ matches: phone, breakpoints: {} }) } },
       ],
@@ -163,7 +169,7 @@ describe('MeetingsFiltersComponent', () => {
     expect(byTestId('meetings-home-filters-hide-declined')?.textContent).toContain('Hide declined meeting series');
   });
 
-  it('offers only Meeting type on a project or foundation list', async () => {
+  it('leaves out the Me lens filters on a project or foundation list', async () => {
     feedScope.scope = 'project';
     await render();
     feedScope.scope = 'me';
@@ -189,6 +195,102 @@ describe('MeetingsFiltersComponent', () => {
     expect(byTestId('meetings-home-filters-rsvp')).toBeNull();
     expect(byTestId('meetings-home-filters-organized')).toBeNull();
     expect(byTestId('meetings-home-filters-hide-declined')).toBeNull();
+  });
+
+  describe('project lens', () => {
+    const PROJECT_ROWS = [
+      row('tsc', { project_uid: 'p-1', project_name: 'Kubernetes', meeting_type: 'Technical', committees: [{ uid: 'c-1', name: 'TOC' }] }),
+      row('wg', {
+        project_uid: 'p-2',
+        project_name: 'Envoy',
+        meeting_type: ' technical ',
+        committees: [
+          { uid: 'c-2', name: 'Docs WG' },
+          { uid: 'c-1', name: 'TOC' },
+        ],
+      }),
+      row('board', {
+        project_uid: 'f-1',
+        project_name: 'CNCF',
+        is_foundation: true,
+        meeting_type: 'Board',
+        committees: [{ uid: 'c-3', name: 'Governing Board' }],
+      }),
+      row('open', { project_uid: 'p-1', project_name: 'Kubernetes', meeting_type: 'None', committees: [] }),
+    ];
+    const sections = (): string[] =>
+      Array.from(panel()?.querySelectorAll('[data-testid^="meetings-home-filters-"]') ?? [])
+        .map((element) => element.getAttribute('data-testid') ?? '')
+        .filter((testId) =>
+          ['project', 'group', 'group-type', 'type', 'rsvp', 'organized', 'hide-declined'].some((name) => testId === `meetings-home-filters-${name}`)
+        );
+
+    beforeEach(() => {
+      feedScope.scope = 'project';
+    });
+
+    afterEach(() => {
+      feedScope.scope = 'me';
+    });
+
+    it.each<[MeetingDashboardView]>([['upcoming'], ['past']])('offers Group, Group type and Meeting type for a project on %s', async (tab) => {
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, tab, PROJECT_ROWS);
+      await open();
+
+      expect(sections()).toEqual(['meetings-home-filters-group', 'meetings-home-filters-group-type', 'meetings-home-filters-type']);
+      expect(await optionLabels('meetings-home-filters-group')).toEqual(['All groups', 'Docs WG', 'Governing Board', 'TOC']);
+      expect(await optionLabels('meetings-home-filters-group-type')).toEqual(['All group types', 'Board', 'Technical Advisory Committee', 'Working Group']);
+      expect(await optionLabels('meetings-home-filters-type')).toEqual(['All types', 'Board', 'Technical']);
+    });
+
+    it('adds Project first for a foundation, listing the projects with meetings', async () => {
+      foundationContext.set(true);
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', PROJECT_ROWS);
+      await open();
+
+      expect(sections()).toEqual([
+        'meetings-home-filters-project',
+        'meetings-home-filters-group',
+        'meetings-home-filters-group-type',
+        'meetings-home-filters-type',
+      ]);
+      expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'CNCF', 'Envoy', 'Kubernetes']);
+    });
+
+    it('names group types by category when the group has one', async () => {
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', PROJECT_ROWS, new Map([['c-1', 'Technical Oversight Committee']]));
+      await open();
+
+      expect(await optionLabels('meetings-home-filters-group-type')).toEqual(['All group types', 'Board', 'Technical Oversight Committee', 'Working Group']);
+    });
+
+    it('applies the picked project, group, group type and meeting type', async () => {
+      foundationContext.set(true);
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'past', PROJECT_ROWS);
+      await open();
+      await pick('meetings-home-filters-project', 'Envoy');
+      await pick('meetings-home-filters-group', 'Docs WG');
+      await pick('meetings-home-filters-group-type', 'Working Group');
+      await pick('meetings-home-filters-type', 'Technical');
+
+      button('meetings-home-filters-apply').click();
+      await settle();
+
+      expect(emitted).toEqual([{ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-2', group: 'c-2', groupType: 'Working Group', meetingType: 'Technical' }]);
+    });
+
+    it('counts the group filters on the button and maps "All" back to no filter', async () => {
+      await render({ ...MEETINGS_HOME_DEFAULT_FILTERS, group: 'c-1', groupType: 'Board' }, 'upcoming', PROJECT_ROWS);
+      expect(byTestId('meetings-home-filters-count')?.textContent?.trim()).toBe('2');
+
+      await open();
+      await pick('meetings-home-filters-group', 'All groups');
+      await pick('meetings-home-filters-group-type', 'All group types');
+      button('meetings-home-filters-apply').click();
+      await settle();
+
+      expect(emitted).toEqual([MEETINGS_HOME_DEFAULT_FILTERS]);
+    });
   });
 
   describe('foundation', () => {

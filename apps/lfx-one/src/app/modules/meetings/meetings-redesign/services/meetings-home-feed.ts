@@ -3,7 +3,14 @@
 
 import { computed, inject, Injectable, Provider, Signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { Meeting, MeetingProjectQueryOptions, MeetingsHomePastPage, PastMeeting } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingProjectQueryOptions,
+  MeetingRollupGroupOption,
+  MeetingsHomePastFilters,
+  MeetingsHomePastPage,
+  PastMeeting,
+} from '@lfx-one/shared/interfaces';
 import { parseToInt } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -25,10 +32,12 @@ export abstract class MeetingsHomeFeed {
   public abstract readonly upcomingRefresh$: Observable<void>;
   public abstract readonly pastRefresh$: Observable<void>;
   public abstract upcoming(): Observable<Meeting[]>;
-  /** Past meetings, most recent first; `search` and `pageToken` apply only when {@link pagedPast} is true. */
-  public abstract past(search: string, pageToken?: string): Observable<MeetingsHomePastPage>;
+  /** Past meetings, most recent first; `search`, `filters` and `pageToken` apply only when {@link pagedPast} is true. */
+  public abstract past(search: string, filters: MeetingsHomePastFilters, pageToken?: string): Observable<MeetingsHomePastPage>;
   /** The few most recent past meetings, for the Last meeting card. */
   public abstract latestPast(): Observable<PastMeeting[]>;
+  /** The groups in scope with their categories, for the Group type filter; none in the Me lens. */
+  public abstract groups(): Observable<MeetingRollupGroupOption[]>;
 }
 
 /** The viewer's meetings across every project, loaded whole. */
@@ -52,6 +61,10 @@ export class UserMeetingsHomeFeed extends MeetingsHomeFeed {
 
   public latestPast(): Observable<PastMeeting[]> {
     return this.userService.getUserLatestPastMeetings();
+  }
+
+  public groups(): Observable<MeetingRollupGroupOption[]> {
+    return of([]);
   }
 }
 
@@ -77,11 +90,12 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
     return this.followRefresh(this.upcomingRefresh$, (projectUid, options) => this.meetingService.getProjectMeetingsForHome(projectUid, options), []);
   }
 
-  public past(search: string, pageToken?: string): Observable<MeetingsHomePastPage> {
+  public past(search: string, filters: MeetingsHomePastFilters, pageToken?: string): Observable<MeetingsHomePastPage> {
     const projectUid = this.projectContext.activeContextUid();
     if (!projectUid) return of({ meetings: [] });
+    const clauses = filters.meetingType ? [`meeting_type:${filters.meetingType}`] : [];
     return this.meetingService
-      .getProjectPastMeetingsForHome(projectUid, search, pageToken, undefined, this.scopeOptions())
+      .getProjectPastMeetingsForHome(projectUid, search, pageToken, undefined, this.pastScopeOptions(filters), clauses)
       .pipe(map((page) => ({ ...page, meetings: this.ended(page.meetings) })));
   }
 
@@ -90,9 +104,23 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
     return of([]);
   }
 
+  /** Errors yield no groups (the service logs them), so group types are then read from the group names. */
+  public groups(): Observable<MeetingRollupGroupOption[]> {
+    const projectUid = this.projectContext.activeContextUid();
+    return projectUid ? this.meetingService.getRollupFilterOptions(projectUid).pipe(map((options) => options.groups)) : of([]);
+  }
+
   /** A foundation lists its sub-projects' meetings too; a project only its own. */
   private scopeOptions(): MeetingProjectQueryOptions {
     return { includeSubProjects: this.projectContext.isFoundationContext() };
+  }
+
+  /** Group filters take the roll-up query, which a project's own list then limits to the project itself. */
+  private pastScopeOptions({ projectUid, committeeUid, groupType }: MeetingsHomePastFilters): MeetingProjectQueryOptions {
+    if (this.projectContext.isFoundationContext()) {
+      return { includeSubProjects: true, ...(projectUid && { projectUids: [projectUid] }), committeeUid, groupType };
+    }
+    return committeeUid || groupType ? { includeSubProjects: true, rootOnly: true, committeeUid, groupType } : this.scopeOptions();
   }
 
   /** Loads now and again on every refresh, as the user feed's shared streams do. */
