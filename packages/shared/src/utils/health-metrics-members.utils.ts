@@ -15,6 +15,8 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR,
   HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
+  HEALTH_METRICS_MEMBERS_CHURN_TREND_CHART,
+  HEALTH_METRICS_MEMBERS_CHURN_TREND_COLORS,
   HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS,
@@ -31,6 +33,8 @@ import {
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
+import { buildHealthMetricsBarChart } from './health-metrics-bar-chart.utils';
+import { healthMetricsColumnChartCeiling } from './health-metrics-column-chart.utils';
 import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
 import {
   formatHealthMetricsPercent,
@@ -41,6 +45,7 @@ import {
 } from './health-metrics-table.utils';
 import { formatCurrency } from './number.utils';
 
+import type { HealthMetricsBarChartView } from '../interfaces/health-metrics-bar-chart.interface';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type { HealthMetricsChartTipRowView, HealthMetricsL2Section, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
 import type {
@@ -581,6 +586,7 @@ export function buildHealthMetricsMembersChurnView(churn: HealthMetricsMembersCh
   const prior = churn.years.find((row) => row.year === year - 1) ?? null;
   const revenue = revenueChurnRate(current);
   const change = churnDifference(revenue, revenueChurnRate(prior));
+  const trend = buildChurnTrend(churn.years, year, revenueChurnRate);
 
   return {
     measured: churn.years.length > 0,
@@ -590,9 +596,8 @@ export function buildHealthMetricsMembersChurnView(churn: HealthMetricsMembersCh
     metrics: buildChurnMetrics(current, revenue, year, change),
     // A year that lost no membership has no loss to split, so By tier reads as empty rather than rows of zeroes.
     tiers: Math.round(current?.lostCount ?? 0) > 0 ? buildChurnTierRows(churn.tiers.filter((row) => row.year === year)) : [],
-    trend: buildChurnTrend(churn.years, year, revenueChurnRate),
-    // Follows the metric's change, so the bar and the metric never disagree on direction.
-    trendRose: change !== null && Math.round(change * 10) > 0,
+    trend,
+    trendChart: buildChurnTrendChart(trend),
   };
 }
 
@@ -621,7 +626,8 @@ export function buildHealthMetricsMembersChurnDepartureRows(rows: HealthMetricsM
 function revenueChurnRate(row: HealthMetricsMembersChurnYear | null): number | null {
   if (!row) return null;
   if (row.revenueNotRenewedRate !== null) return row.revenueNotRenewedRate;
-  return row.lostCount === 0 && (row.duesLostUsd ?? 0) === 0 ? 0 : null;
+  // Both must be recorded zeros; unmeasured dues keep the rate unmeasured.
+  return row.lostCount === 0 && row.duesLostUsd === 0 ? 0 : null;
 }
 
 function churnDifference(current: number | null, previous: number | null): number | null {
@@ -710,9 +716,51 @@ function buildChurnTrend(
         label: String(row.year),
         value,
         valueLabel: value === null ? '—' : formatHealthMetricsPercent(value),
+        logoValue: row.logoChurnRate,
+        logoValueLabel: row.logoChurnRate === null ? '—' : formatHealthMetricsPercent(row.logoChurnRate),
         isSelected: row.year === year,
       };
     });
+}
+
+/**
+ * The design's trend: revenue churn bars, the selected year solid and the years before it pale, with logo churn as a
+ * dashed line on the same axis, which runs from 0% to the higher of the two rounded up to whole quarters.
+ */
+function buildChurnTrendChart(points: HealthMetricsMembersChurnTrendPointView[]): HealthMetricsBarChartView {
+  const peak = Math.max(0, ...points.flatMap((point) => [point.value ?? 0, point.logoValue ?? 0]));
+  const top = healthMetricsColumnChartCeiling(peak);
+  const colors = HEALTH_METRICS_MEMBERS_CHURN_TREND_COLORS;
+
+  return buildHealthMetricsBarChart({
+    heightPx: HEALTH_METRICS_MEMBERS_CHURN_TREND_CHART.heightPx,
+    barWidthPx: HEALTH_METRICS_MEMBERS_CHURN_TREND_CHART.barWidthPx,
+    max: top,
+    ticks: [1, 0.75, 0.5, 0.25, 0].map((share) => `${top * share}%`),
+    bars: points.map((point) => ({
+      key: String(point.year),
+      label: point.label,
+      value: point.value,
+      valueLabel: point.valueLabel,
+      labelTone: point.isSelected ? 'strong' : 'muted',
+      color: colors.revenue,
+      opacity: point.isSelected ? 1 : HEALTH_METRICS_MEMBERS_CHURN_TREND_CHART.earlierOpacity,
+      lineValue: point.logoValue,
+      tip: {
+        title: point.label,
+        rows: [
+          { label: 'Revenue churn', value: point.valueLabel, color: colors.revenue, separated: false },
+          { label: 'Logo churn', value: point.logoValueLabel, color: colors.logo, separated: false },
+        ],
+      },
+    })),
+    line: { color: colors.logo, max: top, ticks: [] },
+    legend: [
+      { key: 'revenue', label: 'Revenue churn', color: colors.revenue, kind: 'bar' },
+      { key: 'logo', label: 'Logo churn', color: colors.logo, kind: 'line' },
+    ],
+    ariaLabel: `Revenue and logo churn over ${points.length} years, oldest first`,
+  });
 }
 
 /** A percentage to one decimal, dropping a trailing `.0`; under 1% never reads "0%" above zero. */

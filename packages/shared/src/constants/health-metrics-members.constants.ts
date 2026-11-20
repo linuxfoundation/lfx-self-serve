@@ -534,6 +534,12 @@ export const HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP = 1000;
 /** Years the trend plots, ending at the selected one. */
 export const HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS = 4;
 
+/** The churn trend's chart: 180px tall, 40px bars, earlier years at 30% behind the selected one. */
+export const HEALTH_METRICS_MEMBERS_CHURN_TREND_CHART = { heightPx: 180, barWidthPx: 40, earlierOpacity: 0.3 } as const;
+
+/** Revenue churn's bars and logo churn's dashed line. */
+export const HEALTH_METRICS_MEMBERS_CHURN_TREND_COLORS = { revenue: lfxColors.red[500], logo: lfxColors.blue[500] } as const;
+
 /** A tier churn rate (percent) at or above this reads as a danger badge. */
 export const HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT = 25;
 

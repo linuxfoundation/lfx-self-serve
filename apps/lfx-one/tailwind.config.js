@@ -25,6 +25,7 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_BAR_CHART_LABEL_CLASSES,
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS,
   HEALTH_METRICS_EVENTS_FORECAST_PACES,
@@ -240,6 +241,8 @@ export default {
     ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES).flatMap((c) => c.split(' ')),
     // Members at-risk age and risk dots (HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES),
+    // Bar chart value label tones (HEALTH_METRICS_BAR_CHART_LABEL_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_BAR_CHART_LABEL_CLASSES),
     // Members NPS distribution segments (HEALTH_METRICS_MEMBERS_NPS_SEGMENTS in @lfx-one/shared) — applied via [class].
     ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
     // Non-Members fit band dots (HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS in @lfx-one/shared) — applied via [class].

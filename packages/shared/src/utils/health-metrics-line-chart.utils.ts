@@ -92,7 +92,7 @@ export function buildHealthMetricsLineChart(input: HealthMetricsLineChartInput):
         widthPct: columnWidth,
         pointOffsetPct: ((centre - left) / columnWidth) * 100,
         tip,
-        ariaLabel: lineChartTipLabel(tip),
+        ariaLabel: healthMetricsChartTipLabel(tip),
       };
     }),
     ticks,
@@ -153,8 +153,8 @@ function lineChartTickAlign(index: number, count: number): HealthMetricsLineChar
   return index === count - 1 ? 'end' : 'center';
 }
 
-/** "Title, Label value, Label value": the popup as one line, for the column's accessible name. */
-function lineChartTipLabel(tip: HealthMetricsChartTipView): string {
+/** "Title, Label value, Label value": the popup as one line, for a chart point's accessible name. */
+export function healthMetricsChartTipLabel(tip: HealthMetricsChartTipView): string {
   return [tip.title, ...tip.rows.map((row) => `${row.label} ${row.value}`)].join(', ');
 }
 

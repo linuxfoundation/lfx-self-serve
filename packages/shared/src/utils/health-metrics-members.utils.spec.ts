@@ -1165,16 +1165,47 @@ describe('members churn', () => {
     ]);
   });
 
-  it('plots the revenue churn trend ending at the selected year and warns when churn rose', () => {
+  it('plots revenue churn bars and a logo churn line ending at the selected year, the selected bar solid', () => {
     const view = buildHealthMetricsMembersChurnView(CHURN, 'YTD');
 
-    expect(view.trend.map((point) => [point.label, point.valueLabel, point.isSelected])).toEqual([
-      ['2023', '6%', false],
-      ['2024', '8%', false],
-      ['2025', '11%', false],
-      ['2026', '16%', true],
+    expect(view.trend.map((point) => [point.label, point.valueLabel, point.logoValueLabel, point.isSelected])).toEqual([
+      ['2023', '6%', '10%', false],
+      ['2024', '8%', '10%', false],
+      ['2025', '11%', '13%', false],
+      ['2026', '16%', '10%', true],
     ]);
-    expect(view.trendRose).toBe(true);
+    const chart = view.trendChart;
+    expect(chart.yTicks).toEqual(['16%', '12%', '8%', '4%', '0%']);
+    expect(chart.bars.map((bar) => [bar.heightPct, bar.opacity, bar.color, bar.valueLabelClass])).toEqual([
+      [37.5, 0.3, lfxColors.red[500], 'text-gray-500'],
+      [50, 0.3, lfxColors.red[500], 'text-gray-500'],
+      [71.25, 0.3, lfxColors.red[500], 'text-gray-500'],
+      [100, 1, lfxColors.red[500], 'text-gray-900'],
+    ]);
+    expect(chart.line).toMatchObject({ color: lfxColors.blue[500], path: 'M12.5 37.5 L37.5 37.5 L62.5 21.88 L87.5 37.5' });
+    expect(chart.bars[3].tip).toEqual({
+      title: '2026',
+      rows: [
+        { label: 'Revenue churn', value: '16%', color: lfxColors.red[500], separated: false },
+        { label: 'Logo churn', value: '10%', color: lfxColors.blue[500], separated: false },
+      ],
+    });
+    expect(chart.legend.map((item) => [item.label, item.kind])).toEqual([
+      ['Revenue churn', 'bar'],
+      ['Logo churn', 'line'],
+    ]);
+  });
+
+  it('keeps a small churn trend on a readable 0–4% axis', () => {
+    const quiet: HealthMetricsMembersChurn = {
+      years: [churnYear(2025, { revenueNotRenewedRate: 0.4, logoChurnRate: 1 }), churnYear(2026, { revenueNotRenewedRate: 0.8, logoChurnRate: null })],
+      tiers: [],
+    };
+    const chart = buildHealthMetricsMembersChurnView(quiet, 'YTD').trendChart;
+
+    expect(chart.yTicks).toEqual(['4%', '3%', '2%', '1%', '0%']);
+    expect(chart.bars.map((bar) => bar.valueLabel)).toEqual(['0.4%', '0.8%']);
+    expect(chart.line?.dots.map((dot) => dot.key)).toEqual(['2025']);
   });
 
   it('reads 0% for a year that lost nothing, and an unread year as unmeasured', () => {
@@ -1193,6 +1224,8 @@ describe('members churn', () => {
     expect(buildHealthMetricsMembersChurnView(noOpening, 'YTD').metrics[0].value).toBe('0%');
     const missing: HealthMetricsMembersChurn = { years: [churnYear(2026, { revenueNotRenewedRate: null })], tiers: [] };
     expect(buildHealthMetricsMembersChurnView(missing, 'YTD').metrics[0].value).toBe('—');
+    const unmeasuredDues: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: 0, duesLostUsd: null, revenueNotRenewedRate: null })], tiers: [] };
+    expect(buildHealthMetricsMembersChurnView(unmeasuredDues, 'YTD').metrics[0].value).toBe('—');
 
     const unmeasured: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: null })], tiers: [] };
     expect(buildHealthMetricsMembersChurnView(unmeasured, 'YTD').yearMeasured).toBe(false);
