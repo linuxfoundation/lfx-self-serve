@@ -168,8 +168,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private scrollSpyObserver?: IntersectionObserver;
   private scrollEndObserver?: IntersectionObserver;
   private scrollStartObserver?: IntersectionObserver;
-  // Two of the observers' inputs, so a content change that leaves both alone costs nothing. The sticky
-  // offset is a third, rebuilt from its own subscription rather than compared here.
+  // The observers' inputs. A resize compares the first two, and the debounced offset subscription the third,
+  // so a change that leaves them alone costs nothing.
   private spyEndBelowFold?: boolean;
   private spyViewportHeight?: number;
   private spyOffsetPx?: number;

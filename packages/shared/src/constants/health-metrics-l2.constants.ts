@@ -13,8 +13,9 @@ export const HEALTH_METRICS_PROJECT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[
  */
 export const HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS = 30_000;
 
-/** Scroll distance in px past which the sticky page header compacts. It expands again only back at the top. */
-export const HEALTH_METRICS_HEADER_COMPACT_AFTER_PX = 4;
+/** Scroll distance in px past which the header compacts; it expands only back at the top. Past its ~40px shrink, so
+ *  the browser's scroll anchoring, which pulls the page back by that shrink, leaves it scrolled and still compact. */
+export const HEALTH_METRICS_HEADER_COMPACT_AFTER_PX = 64;
 
 /** More than the height in px the header gives up as it compacts (about 40px): a page with less scroll room stays expanded, so it can't flicker. */
 export const HEALTH_METRICS_HEADER_COMPACT_SHRINK_PX = 56;

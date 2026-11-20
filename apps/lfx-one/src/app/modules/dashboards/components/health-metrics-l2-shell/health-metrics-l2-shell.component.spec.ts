@@ -6,7 +6,7 @@ import { Component, output, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, NavigationEnd, NavigationSkipped, provideRouter, Router, Scroll } from '@angular/router';
-import { HEALTH_METRICS_L2_OFFSET_SETTLE_MS, HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_L2_JUMP_REAIM_MS, HEALTH_METRICS_L2_OFFSET_SETTLE_MS, HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, filter, firstValueFrom, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -489,6 +489,20 @@ describe('HealthMetricsL2ShellComponent', () => {
     fixture.detectChanges();
     await offsetSettled();
     expect(rebuilt.disconnected).toBe(false);
+  });
+
+  it('leaves a jump that has already landed alone when the header compacts later', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
+    fixture.detectChanges();
+
+    now.mockReturnValue(1_000 + HEALTH_METRICS_L2_JUMP_REAIM_MS + 1);
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 40);
+    fixture.detectChanges();
+    await offsetSettled();
+
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+    now.mockRestore();
   });
 
   it('re-aims a section jump when the header compacts on its way, but not when it grows back', async () => {

@@ -340,11 +340,15 @@ describe('HealthMetricsGateComponent', () => {
       expect(compact()).toBe(false);
       expect(query('health-metrics-header-divider')?.classList).toContain('-z-10');
 
+      // Under the threshold it holds, so a small scroll stays default.
       scrollTo(10);
+      expect(compact()).toBe(false);
+
+      scrollTo(80);
       expect(compact()).toBe(true);
 
-      // Near the top it holds, so a small scroll back cannot make it bounce.
-      scrollTo(2);
+      // Near the top it holds, as scroll anchoring pulls the page back by the height the header gave up.
+      scrollTo(20);
       expect(compact()).toBe(true);
 
       scrollTo(0);
@@ -354,14 +358,14 @@ describe('HealthMetricsGateComponent', () => {
     it('stays default on a page too short to stay scrolled once the header shrinks', async () => {
       await render(signal(true), '/foundation/health-metrics');
 
-      scrollTo(10, 850);
+      scrollTo(80, 900);
 
       expect(compact()).toBe(false);
     });
 
     it('goes back to default on a new tab, but not on a query change within the tab', async () => {
       await render(signal(true), '/foundation/health-metrics');
-      scrollTo(10);
+      scrollTo(80);
 
       await TestBed.inject(Router).navigateByUrl('/foundation/health-metrics?nonPage=2');
       await settle();
