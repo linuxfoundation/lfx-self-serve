@@ -1421,6 +1421,28 @@ describe('MeetingsHomeStore', () => {
       expect(store.failed()).toBe(false);
     });
 
+    it('shows no kept-list toast when a changed search fails after the field moved on', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 2));
+        TestBed.tick();
+
+        store.setSearch('board');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        store.setSearch('boards');
+        TestBed.tick();
+        pastPages[1].error(new Error('search failed'));
+        TestBed.tick();
+
+        expect(toast.show).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('treats the past count as unknown on Upcoming when the first page for a changed search fails', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       vi.useFakeTimers();
