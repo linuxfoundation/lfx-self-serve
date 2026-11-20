@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-19
+last_updated: 2026-11-20
 intercom_collection: Committees
 ---
 
@@ -92,8 +92,8 @@ Status filters stay available while the import runs and in the results. If the s
 You don't have to wait in the dialog. While rows are being added, select **Continue in background** (or press Escape) to close it. The import keeps running while you use other pages in LFX, as long as the browser tab stays open. Refreshing or closing the tab, or restarting the browser, interrupts the import and discards its report, although batches already sent may still be added. Your browser may ask you to confirm before you leave the tab while an import is running.
 
 - **Members tab:** a message above the member list shows the import's progress with confirmed counts, for example **Importing members from CSV: 25 of 30 processed**, or that it is paused or stopping. Select **View progress** to reopen the dialog where it is; reopening never sends rows again or restarts the import. **Add Member**, filters and the rest of the page stay available.
-- **Groups list:** in the list view, under the group's member count, **Importing _X_/_Y_**, **Import paused**, **Stopping import** or **View import report** appears. Select it to open the progress or report without opening the group. The **Card view** of your groups does not show it; use the group's **Members** tab instead. The member count itself only changes once LFX confirms the new members.
-- **When it finishes:** a notification names the group and says whether the import completed, partly completed, finished without adding members, failed with no members added, stopped, or has outcomes that are unknown. The member list and the Groups list refresh on their own; new members may take a moment to appear.
+- **Groups list:** in the list view, under the group's member count, **Importing _X_/_Y_**, **Import paused**, **Stopping import** or **View import report** appears. Select it to open the progress or report without opening the group. If your Groups page has the redesigned layout, select **List view** to find the same entry in its **Members** column. The **Card view** of your groups does not show it; use the group's **Members** tab instead. The member count itself only changes once LFX confirms the new members.
+- **When it finishes:** a notification names the group and says whether the import completed, partly completed, finished without adding members, failed with no members added, stopped, or has outcomes that are unknown. The member list and the Groups list refresh on their own, including when you return after the import finishes. The Groups list keeps its rows visible during these refreshes. Confirmed new members may take a moment to appear; a report with no confirmed additions does not promise new members.
 - **Reports stay until you dismiss them:** the Members tab message then shows the outcome with **View report** and **Dismiss report**, and **View import report** stays in the Groups list view. Closing the report only hides it. **Dismiss report** clears it so you can start a new import into that group; if some rows could still be retried or have an unknown outcome, you are asked to confirm first. Dismissing never removes members who were already added.
 
 One import can run per group at a time; imports into different groups run independently. Import progress and reports are visible only to you, in the tab where you started them, and only while you can still manage the group. If you sign out, switch accounts, or lose permission to manage the group, the import stops sending new rows and its report is removed. Imports while creating or editing a group are not affected: they still wait for **Done** or **Update Group**.

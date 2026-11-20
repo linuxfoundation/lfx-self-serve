@@ -38,7 +38,9 @@
         <p class="text-sm text-gray-700" role="status" aria-live="polite" data-testid="committee-members-import-banner-message">
           {{ importBannerMessage() }}
           @if (importRun.phase === 'settled') {
-            <span class="text-gray-500">New members may take a moment to appear.</span>
+            @if (importRun.added > 0) {
+              <span class="text-gray-500">New members may take a moment to appear.</span>
+            }
           } @else {
             <span class="text-gray-500">You can keep working; keep this tab open until it finishes.</span>
           }

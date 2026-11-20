@@ -187,12 +187,12 @@ export class CommitteeMemberImportService {
   public revoke(committeeUid: string): void {
     const run = this.getRun(committeeUid);
     if (!run) return;
-    this.retireRun(run.runId);
     this.runs.update((runs) => {
       const next = new Map(runs);
       next.delete(committeeUid);
       return next;
     });
+    this.retireRun(run.runId);
   }
 
   private initSummaries(): Signal<ReadonlyMap<string, MemberImportRunSummary>> {

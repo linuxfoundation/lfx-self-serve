@@ -69,13 +69,16 @@ describe('CommitteeMembersComponent add-people actions', () => {
   let summaries: ReturnType<typeof signal<ReadonlyMap<string, MemberImportRunSummary>>>;
   let settlements: Subject<MemberImportSettlement>;
   let importService: {
+    viewerSubject: ReturnType<typeof signal<string | null>>;
     getSummary: (uid: string) => MemberImportRunSummary | undefined;
     settlements$: Subject<MemberImportSettlement>;
     dismiss: ReturnType<typeof vi.fn>;
   };
 
   function settle(summary: MemberImportRunSummary): void {
-    settlements.next({ key: `${summary.runId}:${summary.attempt}`, summary: { ...summary, phase: 'settled' } });
+    const report = { ...summary, phase: 'settled' as const };
+    summaries.update((runs) => new Map(runs).set(report.committeeUid, report));
+    settlements.next({ key: `${summary.runId}:${summary.attempt}`, summary: report });
   }
 
   async function setRetained(summary: MemberImportRunSummary | null): Promise<void> {
@@ -89,7 +92,12 @@ describe('CommitteeMembersComponent add-people actions', () => {
     importDialog = { openNew: vi.fn(), openRun: vi.fn() };
     summaries = signal<ReadonlyMap<string, MemberImportRunSummary>>(new Map());
     settlements = new Subject<MemberImportSettlement>();
-    importService = { getSummary: (uid) => summaries().get(uid), settlements$: settlements, dismiss: vi.fn() };
+    importService = {
+      viewerSubject: signal<string | null>('synthetic-manager'),
+      getSummary: (uid) => summaries().get(uid),
+      settlements$: settlements,
+      dismiss: vi.fn(),
+    };
     committeeService = {
       getCommitteeMembers: vi.fn().mockReturnValue(of(MEMBERS)),
       getCommitteeInvites: vi.fn().mockReturnValue(of(INVITES)),
@@ -283,6 +291,12 @@ describe('CommitteeMembersComponent add-people actions', () => {
         expect(query('import-members-csv-btn')?.textContent).toContain('Import Members');
       });
 
+      it.each([{ failed: 2 }, { manualStopRequested: true }, { failed: 0 }])('does not promise new members for a zero-addition report (%j)', async (patch) => {
+        await setRetained(importSummary({ ...patch, phase: 'settled', added: 0, reconciliationTarget: 1 }));
+        expect(query('committee-members-import-banner-message')?.textContent).not.toContain('New members may take a moment to appear.');
+        expect(query('committee-members-import-banner-message')?.textContent).not.toContain('keep this tab open');
+      });
+
       it('dismisses a clean report directly', async () => {
         await setRetained(importSummary({ phase: 'settled' }));
         query('committee-members-import-banner-dismiss')?.querySelector('button')?.click();
@@ -313,7 +327,7 @@ describe('CommitteeMembersComponent add-people actions', () => {
     });
 
     describe('settlement refresh', () => {
-      beforeEach(() => vi.useFakeTimers());
+      beforeEach(() => vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] }));
 
       it('refreshes and polls until the roster reaches the retained target, without a toast of its own', () => {
         const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
@@ -327,6 +341,41 @@ describe('CommitteeMembersComponent add-people actions', () => {
         vi.advanceTimersByTime(3000);
         expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
         expect(toast).not.toHaveBeenCalled();
+      });
+
+      it('reconciles a retained report after remounting and waits for the roster to be ready', async () => {
+        fixture.destroy();
+        settle(importSummary({ added: 2, reconciliationTarget: 3 }));
+        fixture = TestBed.createComponent(CommitteeMembersComponent);
+        component = fixture.componentInstance;
+        fixture.componentRef.setInput('committee', WRITER_GROUP);
+        fixture.componentRef.setInput('members', MEMBERS);
+        fixture.componentRef.setInput('membersLoading', true);
+        component.refresh.subscribe(() => refreshes++);
+        await fixture.whenStable();
+        expect(refreshes).toBe(0);
+        fixture.componentRef.setInput('membersLoading', false);
+        fixture.componentRef.setInput('membersReady', true);
+        await fixture.whenStable();
+        expect(refreshes).toBe(1);
+        vi.advanceTimersByTime(10_000);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(6);
+        expect(refreshes).toBe(2);
+        fixture.componentRef.setInput('members', [...MEMBERS]);
+        await fixture.whenStable();
+        vi.advanceTimersByTime(10_000);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(6);
+      });
+
+      it('cancels retained-report polling when navigating to another group', async () => {
+        settle(importSummary({ added: 2, reconciliationTarget: 3 }));
+        vi.advanceTimersByTime(400);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+        fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2' });
+        await fixture.whenStable();
+        vi.advanceTimersByTime(10_000);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+        expect(refreshes).toBe(1);
       });
 
       it('refreshes once without polling when the roster already reaches the target after a remount or retry', async () => {

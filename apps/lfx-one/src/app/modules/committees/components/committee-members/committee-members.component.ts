@@ -23,6 +23,8 @@ import {
   COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS,
   COMMITTEE_INVITE_EXPIRY_TICK_MS,
   COMMITTEE_LABEL,
+  MEMBER_IMPORT_RECONCILE_INTERVAL_MS,
+  MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS,
   NO_VOTING_STATUS_LABEL,
 } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
@@ -77,14 +79,19 @@ import {
   exhaustMap,
   filter,
   finalize,
+  first,
   forkJoin,
   map,
+  merge,
+  EMPTY,
   Observable,
   of,
   startWith,
+  switchMap,
   take,
   takeUntil,
   takeWhile,
+  tap,
   timer,
 } from 'rxjs';
 import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
@@ -832,23 +839,46 @@ export class CommitteeMembersComponent implements OnInit {
     this.refresh.emit();
   }
 
-  /**
-   * Each settled attempt for the shown group refreshes the roster once, even when its dialog was hidden or
-   * this view mounted after the import began. Indexing lag is absorbed against the run's retained target
-   * (the pre-import roster plus every confirmed addition), never the current count plus additions.
-   */
+  /** Live or retained settlements reconcile once per run/attempt after this scope's roster is ready. */
   private initImportSettlementRefresh(): void {
-    this.importService.settlements$
+    const scope = computed(() => JSON.stringify([this.importService.viewerSubject(), this.committee()?.uid, this.canManageMembers()]));
+    const retained = computed(() => (this.membersReady() && !this.membersLoading() && !this.membersError() ? this.importSummary() : undefined));
+    const retained$ = toObservable(retained);
+    toObservable(scope)
       .pipe(
-        filter(({ summary }) => summary.committeeUid === this.committee()?.uid),
+        switchMap((scopeKey) => {
+          const seen = new Set<string>();
+          return merge(this.importService.settlements$.pipe(map(({ summary }) => summary)), retained$).pipe(
+            filter(
+              (summary): summary is MemberImportRunSummary =>
+                !!summary &&
+                summary.phase === 'settled' &&
+                scope() === scopeKey &&
+                this.canManageMembers() &&
+                this.membersReady() &&
+                !this.membersLoading() &&
+                !this.membersError() &&
+                summary.committeeUid === this.committee()?.uid &&
+                !seen.has(`${summary.runId}:${summary.attempt}`)
+            ),
+            tap((summary) => {
+              seen.add(`${summary.runId}:${summary.attempt}`);
+              this.refreshMembers();
+            }),
+            switchMap((summary) => {
+              if (summary.added === 0 || this.members().length >= summary.reconciliationTarget) return EMPTY;
+              return timer(MEMBER_IMPORT_RECONCILE_INTERVAL_MS, MEMBER_IMPORT_RECONCILE_INTERVAL_MS).pipe(
+                exhaustMap(() => this.committeeService.getCommitteeMembers(summary.committeeUid).pipe(catchError(() => of(null)))),
+                take(MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS),
+                first((members) => members !== null && members.length >= summary.reconciliationTarget, null),
+                tap(() => this.refreshMembers())
+              );
+            })
+          );
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ summary }) => {
-        this.refreshMembers();
-        if (summary.added > 0 && this.members().length < summary.reconciliationTarget) {
-          this.pollUntilMemberAdded(summary.reconciliationTarget, 0);
-        }
-      });
+      .subscribe();
   }
 
   /**

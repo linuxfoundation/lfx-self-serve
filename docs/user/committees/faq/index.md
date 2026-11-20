@@ -4,7 +4,7 @@ description: Frequently asked questions about groups (committees) in LFX Self Se
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, faq, governance, join, leave]
-last_updated: 2026-11-19
+last_updated: 2026-11-20
 intercom_collection: Committees
 ---
 
@@ -62,7 +62,7 @@ Yes. If you can manage the group's members, use **Import Members** on the group'
 
 ## Can I keep using LFX while a CSV import runs?
 
-Yes, for imports started from a group's **Members** tab. Select **Continue in background** and keep working anywhere in LFX in the same browser tab. Progress and the finished report stay available from the group's **Members** tab and under its member count in the Groups list view (not the **Card view**) until you select **Dismiss report**, and a notification tells you when the import finishes. Keep the tab open: refreshing or closing it interrupts the import and discards the report, although batches already sent may still be added. Imports while creating or editing a group are different: those members are only staged and are saved when you select **Done** or **Update Group**. See [Keep working while an import runs](../manage-committees/#keep-working-while-an-import-runs).
+Yes, for imports started from a group's **Members** tab. Select **Continue in background** and keep working anywhere in LFX in the same browser tab. Progress and the finished report stay available from the group's **Members** tab and under its member count in the Groups list view (not the **Card view**) until you select **Dismiss report**, and a notification tells you when the import finishes. On a redesigned Groups page, select **List view** and look in the **Members** column. Returning after the import finishes still refreshes indexed member counts without restarting the import. Keep the tab open: refreshing or closing it interrupts the import and discards the report, although batches already sent may still be added. Imports while creating or editing a group are different: those members are only staged and are saved when you select **Done** or **Update Group**. See [Keep working while an import runs](../manage-committees/#keep-working-while-an-import-runs).
 
 ## Can I have the same person in multiple groups?
 

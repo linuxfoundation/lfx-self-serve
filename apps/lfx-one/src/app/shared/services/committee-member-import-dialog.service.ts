@@ -10,7 +10,7 @@ import { MemberImportAccessCheck, MemberImportAccessState, MemberImportDialogDat
 import { canManageCommitteeMembers } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, EMPTY, filter, finalize, ignoreElements, map, merge, Observable, of, share, Subscription, take, tap } from 'rxjs';
+import { catchError, defer, EMPTY, filter, finalize, ignoreElements, map, merge, Observable, of, share, Subscription, take, tap } from 'rxjs';
 
 import { CommitteeMemberImportService } from './committee-member-import.service';
 import { CommitteeService } from './committee.service';
@@ -41,7 +41,7 @@ export class CommitteeMemberImportDialogService {
   private readonly pendingOpens = new Map<string, Subscription>();
   /** In-flight access probes, shared by reopening and Groups-table rows showing the group. */
   private readonly probes = new Map<string, Observable<MemberImportAccessCheck>>();
-  private readonly access = signal(new Map<string, { owner: string; state: MemberImportAccessState }>());
+  private readonly access = signal(new Map<string, { owner: string; runId: string; state: MemberImportAccessState }>());
 
   /** The latest access result per group for the observed subject; a group without one shows no details. */
   public readonly accessByUid: Signal<ReadonlyMap<string, MemberImportAccessState>> = this.initAccessByUid();
@@ -79,7 +79,7 @@ export class CommitteeMemberImportDialogService {
     const pending = new Subscription();
     this.pendingOpens.set(committeeUid, pending);
     pending.add(
-      this.checkAccess(committeeUid, owner, run.runId)
+      this.probe(committeeUid, owner, run.runId)
         .pipe(
           finalize(() => {
             if (this.pendingOpens.get(committeeUid) === pending) this.pendingOpens.delete(committeeUid);
@@ -127,42 +127,47 @@ export class CommitteeMemberImportDialogService {
       const owner = this.importService.viewerSubject();
       const states = new Map<string, MemberImportAccessState>();
       for (const [committeeUid, entry] of this.access()) {
-        if (entry.owner === owner) states.set(committeeUid, entry.state);
+        if (entry.owner === owner && this.importService.getRun(committeeUid)?.runId === entry.runId) states.set(committeeUid, entry.state);
       }
       return states;
     });
   }
 
   private probe(committeeUid: string, owner: string, runId: string): Observable<MemberImportAccessCheck> {
-    const inFlight = this.probes.get(committeeUid);
+    const key = JSON.stringify([committeeUid, owner, runId]);
+    const inFlight = this.probes.get(key);
     if (inFlight) return inFlight;
     const probe$: Observable<MemberImportAccessCheck> = this.checkAccess(committeeUid, owner, runId).pipe(
       finalize(() => {
-        if (this.probes.get(committeeUid) === probe$) this.probes.delete(committeeUid);
+        if (this.probes.get(key) === probe$) this.probes.delete(key);
       }),
       share()
     );
-    this.probes.set(committeeUid, probe$);
+    this.probes.set(key, probe$);
     return probe$;
   }
 
   /** Records the result only while the same subject still retains the same run. */
   private checkAccess(committeeUid: string, owner: string, runId: string): Observable<MemberImportAccessCheck> {
-    return this.committeeService.getCommitteeDetail(committeeUid, { strictWriter: true }).pipe(
-      take(1),
-      map((committee): MemberImportAccessCheck => (canManageCommitteeMembers(committee) ? { state: 'authorized', committee } : { state: 'denied' })),
-      catchError((error: unknown) => {
-        const status = error instanceof HttpErrorResponse ? error.status : 0;
-        console.error('CSV member import access check failed', { status });
-        return of<MemberImportAccessCheck>({ state: status === 403 || status === 404 ? 'denied' : 'error' });
-      }),
-      tap((check) => this.applyAccess(committeeUid, owner, runId, check.state))
-    );
+    return defer(() => {
+      if (!this.isCurrent(committeeUid, owner, runId)) return EMPTY;
+      this.applyAccess(committeeUid, owner, runId, 'pending');
+      return this.committeeService.getCommitteeDetail(committeeUid, { strictWriter: true }).pipe(
+        take(1),
+        map((committee): MemberImportAccessCheck => (canManageCommitteeMembers(committee) ? { state: 'authorized', committee } : { state: 'denied' })),
+        catchError((error: unknown) => {
+          const status = error instanceof HttpErrorResponse ? error.status : 0;
+          console.error('CSV member import access check failed', { status });
+          return of<MemberImportAccessCheck>({ state: status === 403 || status === 404 ? 'denied' : 'error' });
+        }),
+        tap((check) => this.applyAccess(committeeUid, owner, runId, check.state))
+      );
+    });
   }
 
   private applyAccess(committeeUid: string, owner: string, runId: string, state: MemberImportAccessState): void {
     if (!this.isCurrent(committeeUid, owner, runId)) return;
-    this.access.update((access) => new Map(access).set(committeeUid, { owner, state }));
+    this.access.update((access) => new Map(access).set(committeeUid, { owner, runId, state }));
     if (state === 'denied') {
       this.dialogs.get(committeeUid)?.close();
       this.importService.revoke(committeeUid);

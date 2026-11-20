@@ -26,6 +26,7 @@ import {
   GroupsEngagementStats,
   GroupsViewMode,
   JoinMode,
+  MemberImportRunSummary,
   MyCommittee,
   MyGroupsActiveFilter,
   MyGroupsFilterKey,
@@ -54,9 +55,11 @@ import {
   finalize,
   first,
   map,
+  merge,
   Observable,
   of,
   startWith,
+  Subject,
   switchMap,
   take,
   tap,
@@ -187,6 +190,10 @@ export class CommitteeDashboardComponent {
   // Decorated source signals — depend only on the raw committees lists, so decoration runs once per source change rather than on every filter change.
   private decoratedCommittees: Signal<Committee[]>;
   private decoratedMyCommittees: Signal<MyCommittee[]>;
+
+  /** Import refreshes keep the shown rows mounted; normal refreshes retain their loading state. */
+  private readonly importRefresh = new Subject<void>();
+  private readonly loadedListScope = signal('');
 
   public constructor() {
     // Initialize project context
@@ -445,24 +452,40 @@ export class CommitteeDashboardComponent {
     this.searchForm?.get('joinModeFilter')?.setValue(null);
   }
 
-  /**
-   * A settled CSV import (#5731) refreshes the shown list once, then refetches until indexed member totals
-   * reach each run's retained target (its pre-import roster plus confirmed additions) or the attempts run
-   * out, then refreshes again. One loop serves every grouped table; a newer settlement restarts it with all
-   * pending targets. A subject, lens or project change, or leaving the page, cancels it. API totals are never
-   * raised optimistically, and a target that other membership changes make unreachable just ends at the bound.
-   */
+  /** Reconciles live and retained settlements once per run/attempt in the loaded scope, without replaying notices. */
   private initImportReconciliation(): void {
-    const scope = computed(() => `${this.importService.viewerSubject() ?? ''}|${this.lensService.activeLens()}|${this.project()?.uid ?? ''}`);
-    const targets = new Map<string, number>();
+    const scope = computed(() => this.importScopeKey());
+    const retained = computed(() => {
+      if (this.loadedListScope() !== scope()) return [];
+      return this.shownCommittees().flatMap((committee) => {
+        const summary = this.importService.getSummary(committee.uid);
+        return summary?.phase === 'settled' ? [summary] : [];
+      });
+    });
+    const retained$ = toObservable(retained);
     toObservable(scope)
       .pipe(
-        switchMap(() => {
-          targets.clear();
-          return this.importService.settlements$.pipe(
-            filter(({ summary }) => summary.added > 0 || summary.unknown > 0),
-            filter(({ summary }) => this.shownCommittees().some((committee) => committee.uid === summary.committeeUid)),
-            tap(({ summary }) => targets.set(summary.committeeUid, summary.reconciliationTarget)),
+        switchMap((scopeKey) => {
+          const targets = new Map<string, number>();
+          const seen = new Set<string>();
+          return merge(this.importService.settlements$.pipe(map(({ summary }) => [summary])), retained$).pipe(
+            map((summaries: MemberImportRunSummary[]) =>
+              summaries.filter(
+                (summary) =>
+                  this.importScopeKey() === scopeKey &&
+                  this.loadedListScope() === scopeKey &&
+                  (summary.added > 0 || summary.unknown > 0) &&
+                  this.shownCommittees().some((committee) => committee.uid === summary.committeeUid) &&
+                  !seen.has(`${summary.runId}:${summary.attempt}`)
+              )
+            ),
+            filter((summaries) => summaries.length > 0),
+            tap((summaries) => {
+              for (const summary of summaries) {
+                seen.add(`${summary.runId}:${summary.attempt}`);
+                targets.set(summary.committeeUid, summary.reconciliationTarget);
+              }
+            }),
             switchMap(() => this.reconcileImportedTotals(targets))
           );
         }),
@@ -481,7 +504,6 @@ export class CommitteeDashboardComponent {
       return EMPTY;
     }
     return timer(MEMBER_IMPORT_RECONCILE_INTERVAL_MS, MEMBER_IMPORT_RECONCILE_INTERVAL_MS).pipe(
-      take(MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS),
       exhaustMap(() =>
         this.fetchShownCommittees().pipe(
           catchError((error: unknown) => {
@@ -490,6 +512,7 @@ export class CommitteeDashboardComponent {
           })
         )
       ),
+      take(MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS),
       first((committees) => committees !== null && reached(committees), null),
       map(() => {
         targets.clear();
@@ -511,16 +534,16 @@ export class CommitteeDashboardComponent {
   }
 
   private refreshShownCommittees(): void {
-    if (this.isMeLens()) {
-      this.reloadMyCommittees();
-    } else {
-      this.refreshCommittees();
-    }
+    this.importRefresh.next();
+  }
+
+  private importScopeKey(): string {
+    return JSON.stringify([this.importService.viewerSubject(), this.lensService.activeLens(), this.project()?.uid]);
   }
 
   private initializeMyCommittees(): Signal<MyCommittee[]> {
     const project$ = toObservable(this.project);
-    const refresh$ = toObservable(this.refresh);
+    const refresh$ = merge(toObservable(this.refresh).pipe(map(() => false)), this.importRefresh.pipe(map(() => true)));
     const isFoundationContext$ = toObservable(this.isFoundationContext);
     const isMeLens$ = toObservable(this.isMeLens);
 
@@ -543,15 +566,19 @@ export class CommitteeDashboardComponent {
 
     return toSignal(
       combineLatest([scope$, refresh$]).pipe(
-        switchMap(([scope]) => {
+        switchMap(([scope, silent]) => {
           if (scope.mode !== 'all') {
             // Non-me lens: full enrichment is not needed here; UIDs are fetched via getMyCommitteeUids.
             this.myCommitteesLoading.set(false);
             return of([] as MyCommittee[]);
           }
 
-          this.myCommitteesLoading.set(true);
-          return this.committeeService.getMyCommittees().pipe(finalize(() => this.myCommitteesLoading.set(false)));
+          const scopeKey = this.importScopeKey();
+          if (!silent || this.loadedListScope() !== scopeKey) this.myCommitteesLoading.set(true);
+          return this.committeeService.getMyCommittees().pipe(
+            tap(() => this.loadedListScope.set(scopeKey)),
+            finalize(() => this.myCommitteesLoading.set(false))
+          );
         })
       ),
       { initialValue: [] }
@@ -663,19 +690,21 @@ export class CommitteeDashboardComponent {
 
   private initializeCommittees(): Signal<Committee[]> {
     const project$ = toObservable(this.project);
-    const refresh$ = toObservable(this.refresh);
+    const refresh$ = merge(toObservable(this.refresh).pipe(map(() => false)), this.importRefresh.pipe(map(() => true)));
     const lens$ = toObservable(this.lensService.activeLens);
 
     return toSignal(
       combineLatest([project$, refresh$, lens$]).pipe(
-        switchMap(([project, , lens]) => {
+        switchMap(([project, silent, lens]) => {
           if (lens === 'me' || !project?.uid) {
             this.committeesLoading.set(false);
             return of([]);
           }
 
-          this.committeesLoading.set(true);
+          const scopeKey = this.importScopeKey();
+          if (!silent || this.loadedListScope() !== scopeKey) this.committeesLoading.set(true);
           return this.committeeService.getCommitteesByProject(project.uid).pipe(
+            tap(() => this.loadedListScope.set(scopeKey)),
             catchError((error) => {
               console.error('Failed to load committees:', error);
               return of([]);

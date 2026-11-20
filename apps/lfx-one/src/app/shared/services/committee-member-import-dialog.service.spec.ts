@@ -182,7 +182,7 @@ describe('CommitteeMemberImportDialogService', () => {
 
       expect(dialogService.open).not.toHaveBeenCalled();
       expect(importService.revoke).toHaveBeenCalledExactlyOnceWith(GROUP.uid);
-      expect(service.accessByUid().get(GROUP.uid)).toBe('denied');
+      expect(service.accessByUid().has(GROUP.uid)).toBe(false);
       expect(toast).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ severity: 'error', summary: 'Import Unavailable' }));
     });
 
@@ -246,11 +246,55 @@ describe('CommitteeMemberImportDialogService', () => {
       const second = service.probeAccess([GROUP.uid]).subscribe();
 
       expect(committeeService.getCommitteeDetail).toHaveBeenCalledExactlyOnceWith(GROUP.uid, { strictWriter: true });
-      expect(service.accessByUid().has(GROUP.uid)).toBe(false);
+      expect(service.accessByUid().get(GROUP.uid)).toBe('pending');
       answer(0);
       expect(service.accessByUid().get(GROUP.uid)).toBe('authorized');
       first.unsubscribe();
       second.unsubscribe();
+    });
+
+    it('hides previously authorized status as soon as a fresh probe or reopen is subscribed', () => {
+      retain();
+      service.probeAccess([GROUP.uid]).subscribe();
+      answer(0);
+      expect(service.accessByUid().get(GROUP.uid)).toBe('authorized');
+
+      const probe = service.probeAccess([GROUP.uid]);
+      expect(service.accessByUid().get(GROUP.uid)).toBe('authorized');
+      probe.subscribe();
+      expect(service.accessByUid().get(GROUP.uid)).toBe('pending');
+      answer(1);
+      service.openRun(GROUP.uid);
+      expect(service.accessByUid().get(GROUP.uid)).toBe('pending');
+      answer(2);
+      expect(service.accessByUid().get(GROUP.uid)).toBe('authorized');
+      expect(dialogs).toHaveLength(1);
+    });
+
+    it('shares a current probe with reopening without resetting its in-flight result', () => {
+      retain();
+      service.probeAccess([GROUP.uid]).subscribe();
+      service.openRun(GROUP.uid);
+      expect(details).toHaveLength(1);
+      answer(0);
+      expect(dialogs).toHaveLength(1);
+    });
+
+    it('does not reuse authorization or an in-flight probe for a replacement run', () => {
+      retain();
+      service.probeAccess([GROUP.uid]).subscribe();
+      answer(0);
+      service.probeAccess([GROUP.uid]).subscribe();
+      retain(GROUP.uid, 'member-import-2');
+      expect(service.accessByUid().has(GROUP.uid)).toBe(false);
+      service.probeAccess([GROUP.uid]).subscribe();
+      expect(details).toHaveLength(3);
+      expect(service.accessByUid().get(GROUP.uid)).toBe('pending');
+      answer(1, { writer: false });
+      expect(importService.revoke).not.toHaveBeenCalled();
+      expect(service.accessByUid().get(GROUP.uid)).toBe('pending');
+      answer(2);
+      expect(service.accessByUid().get(GROUP.uid)).toBe('authorized');
     });
 
     it('cancels a probe once every surface stops observing it, then probes afresh', () => {

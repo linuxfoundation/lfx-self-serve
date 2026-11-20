@@ -53,10 +53,14 @@ const groups: MyCommittee[] = [
 ];
 const allIds = groups.map((item) => item.uid);
 
-/** Status surfaces in the rendered tables only read these; reconciliation is driven by `settlements$`. */
-function importProviders(settlements = new Subject<MemberImportSettlement>(), owner = signal<string | null>('synthetic-manager')) {
+/** Both live events and retained summaries drive reconciliation; status surfaces read counts only. */
+function importProviders(
+  settlements = new Subject<MemberImportSettlement>(),
+  owner = signal<string | null>('synthetic-manager'),
+  summaries = signal<ReadonlyMap<string, MemberImportRunSummary>>(new Map())
+) {
   return [
-    { provide: CommitteeMemberImportService, useValue: { viewerSubject: owner, getSummary: () => undefined, settlements$: settlements } },
+    { provide: CommitteeMemberImportService, useValue: { viewerSubject: owner, getSummary: (uid: string) => summaries().get(uid), settlements$: settlements } },
     { provide: CommitteeMemberImportDialogService, useValue: { accessByUid: signal(new Map()), probeAccess: () => EMPTY, openRun: vi.fn() } },
   ];
 }
@@ -254,6 +258,7 @@ describe('CSV import count reconciliation (#5731)', () => {
   let fixture: ComponentFixture<CommitteeDashboardComponent>;
   let settlements: Subject<MemberImportSettlement>;
   let owner: ReturnType<typeof signal<string | null>>;
+  let summaries: ReturnType<typeof signal<ReadonlyMap<string, MemberImportRunSummary>>>;
   let lens: ReturnType<typeof signal<string>>;
   /** Indexed totals for the group in the order the list endpoint returns them; the last value repeats. */
   let totals: number[];
@@ -289,6 +294,7 @@ describe('CSV import count reconciliation (#5731)', () => {
       reconciliationTarget: 5,
       ...patch,
     };
+    summaries.update((runs) => new Map(runs).set(summary.committeeUid, summary));
     settlements.next({ key: `${summary.runId}:${summary.attempt}`, summary });
   }
 
@@ -306,6 +312,7 @@ describe('CSV import count reconciliation (#5731)', () => {
     totals = initialTotals;
     settlements = new Subject<MemberImportSettlement>();
     owner = signal<string | null>('synthetic-manager');
+    summaries = signal<ReadonlyMap<string, MemberImportRunSummary>>(new Map());
     lens = signal<string>(activeLens);
     committeeService = {
       getMyCommittees: vi.fn(list),
@@ -335,7 +342,7 @@ describe('CSV import count reconciliation (#5731)', () => {
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: InvitationService, useValue: { loadPendingInvitations: () => of([]) } },
         { provide: CommitteeService, useValue: committeeService },
-        ...importProviders(settlements, owner),
+        ...importProviders(settlements, owner, summaries),
       ],
     })
       .overrideComponent(CommitteeDashboardComponent, {
@@ -386,6 +393,63 @@ describe('CSV import count reconciliation (#5731)', () => {
 
     await step(10_000);
     expect(fetches()).toBe(4);
+  });
+
+  it('reconciles a retained settlement after mounting into an initially loading list, only once per attempt', async () => {
+    await setup('me', [3]);
+    fixture.destroy();
+    settle(); // No mounted subscriber observes this event.
+    const initial = new Subject<MyCommittee[]>();
+    committeeService.getMyCommittees.mockReturnValueOnce(initial);
+    fixture = TestBed.createComponent(CommitteeDashboardComponent);
+    await step();
+    expect(fixture.componentInstance.myCommitteesLoading()).toBe(true);
+    initial.next([group('a-enabled', { total_members: 3 })]);
+    initial.complete();
+    await step();
+    expect(fixture.componentInstance.myCommitteesLoading()).toBe(false);
+    await step(10_000);
+    const afterReconciliation = fetches();
+    fixture.componentInstance.reloadMyCommittees();
+    await step();
+    await step(10_000);
+    expect(fetches()).toBe(afterReconciliation + 1);
+    expect(shownTotal()).toBe(3);
+  });
+
+  it.each(['me', 'project'] as const)('keeps the %s list visible while an import refresh is pending', async (activeLens) => {
+    await setup(activeLens, [3]);
+    const response = new Subject<MyCommittee[]>();
+    const method = activeLens === 'me' ? 'getMyCommittees' : 'getCommitteesByProject';
+    committeeService[method].mockReturnValueOnce(response);
+    settle();
+    await step();
+    expect(fixture.componentInstance.myCommitteesLoading()).toBe(false);
+    expect(fixture.componentInstance.committeesLoading()).toBe(false);
+    expect(shownTotal()).toBe(3);
+    response.next([group('a-enabled', { total_members: 3 })]);
+    response.complete();
+    await step();
+  });
+
+  it('counts six completed refetches even when each request outlasts several timer ticks', async () => {
+    await setup('me', [3]);
+    settle();
+    await step();
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const response = new Subject<MyCommittee[]>();
+      committeeService.getMyCommittees.mockReturnValueOnce(response);
+      await step(400);
+      const inFlightCount = fetches();
+      await step(2_000);
+      expect(fetches()).toBe(inFlightCount);
+      response.next([group('a-enabled', { total_members: 3 })]);
+      response.complete();
+      await step();
+    }
+    expect(fetches()).toBe(1 + 6 + 1);
+    await step(10_000);
+    expect(fetches()).toBe(8);
   });
 
   it('refreshes once without polling when the shown total already reaches the target', async () => {

@@ -407,6 +407,20 @@ describe('CommitteeMemberImportService', () => {
       expect(toast).not.toHaveBeenCalled();
     });
 
+    it.each([1, 30])('revokes a paused %s-row run without another POST or a settlement', (count) => {
+      vi.useFakeTimers();
+      service.start(input('group-a', readyRows(count)));
+      pending[0].response.error(new HttpErrorResponse({ status: 429, headers: new HttpHeaders({ 'Retry-After': '5' }) }));
+      expect(service.getSummary('group-a')?.phase).toBe('paused');
+
+      service.revoke('group-a');
+      vi.advanceTimersByTime(60_000);
+      expect(service.getRun('group-a')).toBeUndefined();
+      expect(pending).toHaveLength(1);
+      expect(settled).toHaveLength(0);
+      expect(toast).not.toHaveBeenCalled();
+    });
+
     it("never exposes or announces another subject's run", () => {
       service.start(input('group-a', readyRows(1)));
       user.set({ sub: 'synthetic-replacement' });
