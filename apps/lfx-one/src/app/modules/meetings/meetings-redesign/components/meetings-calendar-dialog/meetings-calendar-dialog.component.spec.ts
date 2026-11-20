@@ -5,6 +5,7 @@ import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Meeting, MeetingCalendarDialogData, MeetingHomeRow } from '@lfx-one/shared/interfaces';
+import { MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsCalendarDialogComponent } from './meetings-calendar-dialog.component';
@@ -30,6 +31,8 @@ describe('MeetingsCalendarDialogComponent', () => {
   let month: Date | undefined;
   let pastFailed: ReturnType<typeof signal<boolean>>;
   let retryPast: ReturnType<typeof vi.fn<(day: string) => void>>;
+  let upcomingFailed: ReturnType<typeof signal<boolean>>;
+  let retryUpcoming: ReturnType<typeof vi.fn<() => void>>;
 
   beforeEach(() => {
     close = vi.fn();
@@ -40,6 +43,8 @@ describe('MeetingsCalendarDialogComponent', () => {
     month = undefined;
     pastFailed = signal(false);
     retryPast = vi.fn<(day: string) => void>();
+    upcomingFailed = signal(false);
+    retryUpcoming = vi.fn<() => void>();
   });
 
   const configure = (): void => {
@@ -53,6 +58,8 @@ describe('MeetingsCalendarDialogComponent', () => {
       showPastFrom,
       pastFailed,
       retryPast,
+      upcomingFailed,
+      retryUpcoming,
       month,
     };
     TestBed.configureTestingModule({
@@ -315,5 +322,36 @@ describe('MeetingsCalendarDialogComponent', () => {
     await fixture.whenStable();
     tooltip = query(fixture, 'meetings-calendar-dialog-tooltip');
     expect([tooltip?.style.top, tooltip?.className.includes('-translate-y-full')]).toEqual(['206px', false]);
+  });
+
+  it('keeps a chip tooltip open while the pointer moves onto it, and closes it when the pointer leaves', async () => {
+    past.set([row('a', new Date(2026, 9, 4, 10))]);
+    const fixture = await render();
+    const chip = query(fixture, 'meetings-calendar-dialog-chip') as HTMLElement;
+    chip.dispatchEvent(new MouseEvent('mouseenter'));
+    await fixture.whenStable();
+
+    chip.dispatchEvent(new MouseEvent('mouseleave'));
+    query(fixture, 'meetings-calendar-dialog-tooltip')?.dispatchEvent(new MouseEvent('mouseenter'));
+    await new Promise((resolve) => setTimeout(resolve, MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS + 20));
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-calendar-dialog-tooltip')).toBeTruthy();
+
+    query(fixture, 'meetings-calendar-dialog-tooltip')?.dispatchEvent(new MouseEvent('mouseleave'));
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-calendar-dialog-tooltip')).toBeNull();
+  });
+
+  it('says when upcoming meetings failed to load while the period reaches today, and retries them', async () => {
+    upcomingFailed.set(true);
+    const fixture = await render();
+    expect(query(fixture, 'meetings-calendar-dialog-upcoming-failed')?.textContent).toContain("Couldn't load upcoming meetings.");
+
+    await click(fixture, 'meetings-calendar-dialog-upcoming-retry');
+    expect(retryUpcoming).toHaveBeenCalled();
+
+    // A month that ends before today holds no upcoming meetings to miss.
+    await click(fixture, 'meetings-calendar-dialog-previous');
+    expect(query(fixture, 'meetings-calendar-dialog-upcoming-failed')).toBeNull();
   });
 });

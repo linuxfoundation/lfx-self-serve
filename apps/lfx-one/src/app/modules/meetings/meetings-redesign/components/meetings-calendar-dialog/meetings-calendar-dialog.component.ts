@@ -13,6 +13,7 @@ import {
   MEETINGS_HOME_CALENDAR_TYPE_COLORS,
   MEETINGS_HOME_CALENDAR_WEEKDAY_NAMES,
   MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX,
+  MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS,
 } from '@lfx-one/shared/constants';
 import {
   MeetingCalendarChip,
@@ -94,10 +95,22 @@ export class MeetingsCalendarDialogComponent {
   /** Older past meetings for the shown period failed to load, so its earlier days may be missing some. */
   protected readonly pastFailed: Signal<boolean> = computed(() => this.pastShownFrom() !== null && this.data.pastFailed());
 
+  /** Upcoming meetings failed to load while the shown period reaches today or later. */
+  protected readonly upcomingFailed: Signal<boolean> = computed(() => {
+    const start = this.weekStart();
+    const last =
+      this.view() === 'month' ? getMeetingCalendarMonthDates(this.focus()).at(-1) : new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    return this.data.upcomingFailed() && !!last && getLocalDayKey(last) >= getLocalDayKey(this.data.now());
+  });
+
   private scrollTimer: ReturnType<typeof setTimeout> | undefined;
+  private hideTimer: ReturnType<typeof setTimeout> | undefined;
 
   public constructor() {
-    this.destroyRef.onDestroy(() => clearTimeout(this.scrollTimer));
+    this.destroyRef.onDestroy(() => {
+      clearTimeout(this.scrollTimer);
+      clearTimeout(this.hideTimer);
+    });
     toObservable(this.pastShownFrom)
       .pipe(
         distinctUntilChanged(),
@@ -105,6 +118,21 @@ export class MeetingsCalendarDialogComponent {
         takeUntilDestroyed()
       )
       .subscribe((from) => this.data.showPastFrom(from));
+  }
+
+  protected hideTooltip(): void {
+    clearTimeout(this.hideTimer);
+    this.tooltip.set(null);
+  }
+
+  /** Leaving a chip waits a moment, so the pointer can move onto the tooltip to read it. */
+  protected scheduleHideTooltip(): void {
+    clearTimeout(this.hideTimer);
+    this.hideTimer = setTimeout(() => this.tooltip.set(null), MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS);
+  }
+
+  protected keepTooltip(): void {
+    clearTimeout(this.hideTimer);
   }
 
   protected retryPast(): void {
@@ -120,7 +148,7 @@ export class MeetingsCalendarDialogComponent {
     const view: MeetingCalendarView = value === 'week' ? 'week' : 'month';
     if (view === this.view()) return;
     this.view.set(view);
-    this.tooltip.set(null);
+    this.hideTooltip();
     if (view === 'week') {
       this.scrollToStartHour();
       return;
@@ -138,29 +166,30 @@ export class MeetingsCalendarDialogComponent {
         ? new Date(focus.getFullYear(), focus.getMonth() + direction, 1)
         : new Date(focus.getFullYear(), focus.getMonth(), focus.getDate() + direction * 7)
     );
-    this.tooltip.set(null);
+    this.hideTooltip();
   }
 
   protected goToToday(): void {
     this.focus.set(this.data.now());
-    this.tooltip.set(null);
+    this.hideTooltip();
   }
 
   /** "+N more": that day's week, at 8 AM. */
   protected showWeek(day: MeetingCalendarDialogDay): void {
     this.focus.set(day.date);
     this.view.set('week');
-    this.tooltip.set(null);
+    this.hideTooltip();
     this.scrollToStartHour();
   }
 
   protected open(chip: MeetingCalendarChip): void {
-    this.tooltip.set(null);
+    this.hideTooltip();
     this.data.openMeeting(chip.entry.row);
   }
 
   protected showTooltip(chip: MeetingCalendarChip, target: EventTarget | null): void {
     if (!(target instanceof HTMLElement)) return;
+    clearTimeout(this.hideTimer);
     const rect = target.getBoundingClientRect();
     const edge = MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX;
     const left = Math.max(edge, Math.min(window.innerWidth - edge, rect.left + rect.width / 2));
@@ -174,7 +203,7 @@ export class MeetingsCalendarDialogComponent {
 
   protected onScroll(): void {
     this.scrolled.set(this.body().nativeElement.scrollTop > 2);
-    this.tooltip.set(null);
+    this.hideTooltip();
   }
 
   /** The month it was opened on; today when that month holds it, so Week opens on today's week. */
