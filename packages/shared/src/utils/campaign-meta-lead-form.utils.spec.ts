@@ -11,6 +11,7 @@ import {
   metaLeadFormForObjective,
   metaLeadFormId,
   metaLeadFormRefusal,
+  metaObjectiveAfterFoundationSwitch,
   metaObjectiveChoices,
 } from './campaign-meta-lead-form.utils';
 
@@ -131,5 +132,12 @@ describe('metaLeadFormDraftRefusal', () => {
     ['a call to action a form cannot carry', { ...draft, callToAction: 'BUY_TICKETS' }, 'metaConfig.callToAction'],
   ])('refuses %s', (_label, value, field) => {
     expect(metaLeadFormDraftRefusal(value)?.field).toBe(field);
+  });
+});
+
+describe('metaObjectiveAfterFoundationSwitch', () => {
+  it('drops leads to the default and keeps every other objective', () => {
+    expect(metaObjectiveAfterFoundationSwitch('leads')).toBe('traffic');
+    expect(metaObjectiveAfterFoundationSwitch('conversions')).toBe('conversions');
   });
 });

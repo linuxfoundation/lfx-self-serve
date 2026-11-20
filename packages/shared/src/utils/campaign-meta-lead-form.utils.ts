@@ -91,6 +91,14 @@ export function metaLeadFormForObjective(objective: MetaObjective, leadFormId: s
   return objective === 'leads' ? leadFormId : '';
 }
 
+/**
+ * The objective to keep after a foundation switch: `leads` falls back to the default, because whether this caller
+ * may send a lead form is re-read for the new foundation, and `leads` without a form would go out as traffic.
+ */
+export function metaObjectiveAfterFoundationSwitch(objective: MetaObjective): MetaObjective {
+  return objective === 'leads' ? DEFAULT_META_OBJECTIVE : objective;
+}
+
 /** Whether a call to action may be offered with a lead form; without one every call to action may be. */
 export function metaCallToActionAllowedWithLeadForm(callToAction: string, withLeadForm: boolean): boolean {
   return !withLeadForm || (META_LEAD_FORM_CALL_TO_ACTIONS as readonly string[]).includes(callToAction.trim().toUpperCase());

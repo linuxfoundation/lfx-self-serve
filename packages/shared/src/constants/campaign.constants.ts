@@ -816,8 +816,11 @@ export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjective
   //
   // OUTCOME_TRAFFIC + LINK_CLICKS with no promoted object is the pairing that always succeeds
   // end-to-end. OUTCOME_LEADS + LINK_CLICKS is deliberately NOT used: Meta requires a pixel and
-  // `custom_event_type` for it, which this flow does not supply. Full instant-form parity is
-  // tracked as LFXV2-2665.
+  // `custom_event_type` for it, which this flow does not supply.
+  //
+  // This mapping is for `leads` WITHOUT a form only (a brief or draft saved before lead forms). With
+  // `metaConfig.leadFormId` (#5940) campaign-service builds the real lead ad itself: OUTCOME_LEADS,
+  // LEAD_GENERATION and the form on the ad's call to action.
   leads: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
   conversions: { campaignObjective: 'OUTCOME_SALES', optimizationGoal: 'OFFSITE_CONVERSIONS', promotedObjectType: 'pixel_id' },
 } as const;
@@ -883,17 +886,15 @@ export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
 } as const;
 
 /**
- * The objectives a user may actually choose, in the order the objective selector renders them.
+ * The objectives every user may choose, in the order the objective selector renders them.
  *
- * `leads` is DELIBERATELY ABSENT. It dispatches as a website-traffic campaign — see the long
- * comment on `META_OBJECTIVE_PARAMS.leads` for why that mapping is the safe one and must not
- * change — so offering it would label a traffic campaign "Leads" and let a user act on a wrong
- * assumption. Hiding it makes that a question someone asks rather than a mistake they ship.
- * LFXV2-2665 builds instant-form support and restores the option.
+ * `leads` is absent here. Without a lead form it dispatches as a website-traffic campaign — see
+ * the comment on `META_OBJECTIVE_PARAMS.leads` — so offering it to everyone would label a traffic
+ * campaign "Leads". `metaObjectiveChoices` adds it back only for a caller who may send a lead form
+ * (`CampaignListResult.metaLeadFormsEnabled`, #5940), and the Implement tab then requires one.
  *
- * This is the selector's ONLY source. `leads` stays in `MetaObjective`, in
- * `META_OBJECTIVE_PARAMS` and in `META_OBJECTIVE_LABELS`, so a persisted `leads` brief still
- * dispatches — as traffic — and still renders a name.
+ * `leads` stays in `MetaObjective`, in `META_OBJECTIVE_PARAMS` and in `META_OBJECTIVE_LABELS`, so a
+ * persisted `leads` brief without a form still dispatches — as traffic — and still renders a name.
  */
 export const META_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'engagement', 'conversions'] as const satisfies readonly SelectableMetaObjective[];
 

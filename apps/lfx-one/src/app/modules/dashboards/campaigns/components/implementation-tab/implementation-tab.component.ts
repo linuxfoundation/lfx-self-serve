@@ -482,6 +482,7 @@ import {
   metaCallToActionAllowedWithLeadForm,
   metaLeadFormDraftRefusal,
   metaLeadFormForObjective,
+  metaObjectiveAfterFoundationSwitch,
   metaObjectiveChoices,
 } from '@lfx-one/shared/utils';
 
@@ -4973,8 +4974,10 @@ export class ImplementationTabComponent implements OnInit {
         this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
         // The Meta ad choices (#5934) are reset too: their capabilities are re-read for this foundation.
         this.metaAdOptions.set({});
-        // So is the lead form (#5940): it belongs to the previous foundation's Page.
+        // So is the lead form (#5940): it belongs to the previous foundation's Page. A `leads` objective falls back
+        // too, since lead forms are re-read for this foundation and `leads` without a form would go out as traffic.
         this.metaLeadFormId.set('');
+        this.metaObjective.set(metaObjectiveAfterFoundationSwitch(this.metaObjective()));
         this.emitDraft();
       });
   }

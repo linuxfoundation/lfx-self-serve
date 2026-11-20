@@ -2326,11 +2326,10 @@ export interface MetaBriefCopy {
 export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
 
 /**
- * Objectives deliberately withheld from the campaign objective selector.
+ * Objectives withheld from the objective selector unless a condition holds.
  *
- * `leads` dispatches as a website-traffic campaign (see `META_OBJECTIVE_PARAMS`), so offering it
- * would label a traffic campaign "Leads". LFXV2-2665 builds instant-form support and removes it
- * from this union.
+ * `leads` dispatches as a website-traffic campaign without a lead form (see `META_OBJECTIVE_PARAMS`),
+ * so it is offered only to a caller who may send one (`metaObjectiveChoices`, #5940).
  *
  * Declared as a type so `SelectableMetaObjective` can be DERIVED rather than restated: a new member
  * of `MetaObjective` is then a compile error in `META_SELECTABLE_OBJECTIVES` unless it is named
