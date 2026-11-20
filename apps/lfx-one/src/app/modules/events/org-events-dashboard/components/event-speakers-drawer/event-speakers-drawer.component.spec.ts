@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EventSpeakersDrawerComponent } from './event-speakers-drawer.component';
 
-async function open(failing = false, { rollUp = false, company = '', companyLabel = '' }: { rollUp?: boolean; company?: string; companyLabel?: string } = {}) {
+async function open(failing = false, { company = '', companyLabel = '' }: { company?: string; companyLabel?: string } = {}) {
   const getEventSpeakers = vi.fn(() =>
     failing
       ? throwError(() => new Error('boom'))
@@ -26,14 +26,12 @@ async function open(failing = false, { rollUp = false, company = '', companyLabe
               name: 'Jane Doe',
               jobTitle: null,
               status: 'ACCEPTED' as const,
-              ...(rollUp ? { organizations: [{ accountId: 'acc-a', name: 'Acme Motors, Inc.' }] } : {}),
             },
             {
               contactId: '1',
               name: 'Sam Lee',
               jobTitle: null,
               status: 'SUBMITTED' as const,
-              ...(rollUp ? { organizations: [{ accountId: 'acc-b', name: 'Acme Robotics' }] } : {}),
             },
           ],
         })
@@ -82,7 +80,7 @@ describe('EventSpeakersDrawerComponent', () => {
   });
 
   it("titles the drawer with the row's company in a roll-up, and lists no per-person company line", async () => {
-    await open(false, { rollUp: true, company: 'acc-b', companyLabel: 'Acme Robotics' });
+    await open(false, { company: 'acc-b', companyLabel: 'Acme Robotics' });
 
     expect(document.body.querySelector('[data-testid="event-speakers-drawer-title"]')?.textContent?.trim()).toBe('Acme Robotics Speakers');
     expect(document.body.querySelector('[data-testid^="event-speaker-companies-"]')).toBeNull();
@@ -95,7 +93,7 @@ describe('EventSpeakersDrawerComponent', () => {
   });
 
   it("asks for the row's company only", async () => {
-    const { getEventSpeakers } = await open(false, { rollUp: true, company: 'acc-b' });
+    const { getEventSpeakers } = await open(false, { company: 'acc-b' });
 
     expect(getEventSpeakers).toHaveBeenCalledWith('acc-1', 'event-1', { company: 'acc-b' });
   });

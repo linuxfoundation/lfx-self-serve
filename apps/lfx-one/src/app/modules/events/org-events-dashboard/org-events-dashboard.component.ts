@@ -8,7 +8,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -229,7 +229,11 @@ export class OrgEventsDashboardComponent {
       this.participation() !== DEFAULT_ORG_EVENTS_PARTICIPATION ||
       this.effectiveScope() !== DEFAULT_ORG_EVENTS_SCOPE
   );
-  public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
+  private readonly servedSummary: Signal<{ company: string; summary: OrgEventsSummary } | null> = this.initEventsSummary();
+  public readonly eventsSummary = computed<OrgEventsSummary | null>(() => {
+    const served = this.servedSummary();
+    return served && !this.companyUnresolved() && served.company === this.effectiveCompany() ? served.summary : null;
+  });
   public readonly rollUpNotices = computed<string[]>(() => {
     const coverage = this.isRollUp() ? this.eventsSummary()?.rollUp : undefined;
     if (!coverage) return [];
@@ -417,7 +421,7 @@ export class OrgEventsDashboardComponent {
     });
   }
 
-  private initEventsSummary(): Signal<OrgEventsSummary | null> {
+  private initEventsSummary(): Signal<{ company: string; summary: OrgEventsSummary } | null> {
     const query$ = toObservable(
       computed(() => {
         const accountId = this.contentVisible() ? this.accountContext.selectedAccount().accountId : null;
@@ -434,6 +438,7 @@ export class OrgEventsDashboardComponent {
             tap((summary) => {
               if (summary.organizations) this.servedOrganizations.set({ accountId, organizations: summary.organizations });
             }),
+            map((summary) => ({ company: params.company, summary })),
             catchError((error: unknown) => {
               console.error('Failed to load the events summary', error);
               this.summaryLoadFailed.set(true);
@@ -489,11 +494,11 @@ export class OrgEventsDashboardComponent {
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId || !this.contentVisible()) return null;
           this.retryCount();
-          const unresolvedCompany = this.companyUnresolved();
-          if (unresolvedCompany && !this.summaryLoadFailed()) return null;
+          let companyCheck: 'pending' | 'failed' | null = null;
+          if (this.companyUnresolved()) companyCheck = this.summaryLoadFailed() ? 'failed' : 'pending';
           return {
             accountId,
-            unresolvedCompany,
+            companyCheck,
             ...page(),
             eventScope: this.effectiveScope(),
             foundation: this.foundation(),
@@ -510,12 +515,13 @@ export class OrgEventsDashboardComponent {
       ).pipe(
         debounceTime(0),
         filter((params): params is NonNullable<typeof params> => params !== null),
-        tap(() => {
+        tap(() => loadFailed.set(false)),
+        switchMap(({ accountId, companyCheck, ...params }) => {
           loading.set(true);
-          loadFailed.set(false);
-        }),
-        switchMap(({ accountId, unresolvedCompany, ...params }) => {
-          if (unresolvedCompany) {
+          if (companyCheck === 'pending') {
+            return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize: params.pageSize, offset: params.offset });
+          }
+          if (companyCheck === 'failed') {
             loadFailed.set(true);
             loading.set(false);
             return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize: params.pageSize, offset: params.offset });

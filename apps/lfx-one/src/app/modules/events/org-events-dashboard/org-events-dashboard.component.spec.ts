@@ -12,14 +12,14 @@ import {
   ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE,
   ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE,
 } from '@lfx-one/shared/constants';
-import type { Account, OrgEvent, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
+import type { Account, OrgEvent, OrgEventsResponse, OrgEventsSummary, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
 import { IntercomService } from '@services/intercom.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { MessageService } from 'primeng/api';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EventAttendeesDrawerComponent } from './components/event-attendees-drawer/event-attendees-drawer.component';
@@ -64,7 +64,8 @@ async function render(
     settled = true,
     query = {} as Record<string, string>,
     summaryFails = false,
-    listMode = 'ok' as 'ok' | 'pending' | 'error',
+    listMode = 'ok' as 'ok' | 'pending' | 'error' | 'manual',
+    summaries = [] as Observable<OrgEventsSummary>[],
     foundations = [{ id: 'foundation-a', name: 'Foundation A' }],
     foundationsFail = false,
     rollUp = false,
@@ -77,12 +78,18 @@ async function render(
       ? { accountId: ROLL_UP_KEY, accountName: 'Acme Group', membershipTier: '', uid: ROLL_UP_KEY, slug: ROLL_UP_KEY }
       : { accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' }
   );
-  const summary = rollUp
+  const summary: OrgEventsSummary = rollUp
     ? { totalEvents: 0, upcomingEvents: 0, pastEvents: 0, organizations: ROLL_UP_ORGANIZATIONS, rollUp: coverage }
     : { totalEvents: 0, upcomingEvents: 0, pastEvents: 0 };
+  const lists: Subject<OrgEventsResponse>[] = [];
   const eventsService = {
-    getOrgEventsSummary: vi.fn(() => (summaryFails ? throwError(() => new Error('summary down')) : of(summary))),
-    getOrgEvents: vi.fn(() => {
+    getOrgEventsSummary: vi.fn(() => summaries.shift() ?? (summaryFails ? throwError(() => new Error('summary down')) : of(summary))),
+    getOrgEvents: vi.fn((): Observable<OrgEventsResponse> => {
+      if (listMode === 'manual') {
+        const list = new Subject<OrgEventsResponse>();
+        lists.push(list);
+        return list;
+      }
       if (listMode === 'pending') return NEVER;
       if (listMode === 'error') return throwError(() => new Error('list down'));
       return of(EMPTY_ORG_EVENTS_RESPONSE);
@@ -123,7 +130,7 @@ async function render(
   // The events pipeline starts one macrotask later (debounceTime(0) batches the filter signals into a single read).
   await new Promise((resolve) => setTimeout(resolve));
   fixture.detectChanges();
-  return { el: fixture.nativeElement as HTMLElement, eventsService, component: fixture.componentInstance, fixture };
+  return { el: fixture.nativeElement as HTMLElement, eventsService, component: fixture.componentInstance, fixture, summary, lists };
 }
 
 describe('OrgEventsDashboardComponent', () => {
@@ -353,6 +360,54 @@ describe('OrgEventsDashboardComponent', () => {
 
       expect(eventsService.getOrgEvents).not.toHaveBeenCalled();
       expect(el.querySelector('[data-testid="org-events-load-error"]')).not.toBeNull();
+    });
+
+    it('cancels a whole-family read and shows no rows while a newly picked Company is checked, then reads that Company', async () => {
+      const pendingSummary = new Subject<OrgEventsSummary>();
+      const { component, eventsService, fixture, summary, lists } = await render(null, { rollUp: true, listMode: 'manual', summaries: [pendingSummary] });
+      const rows = () => (component.isPastTab() ? component.pastEvents() : component.upcomingEvents()).data;
+      const loading = () => (component.isPastTab() ? component.pastEventsLoading() : component.upcomingEventsLoading());
+      expect(companiesSent(eventsService.getOrgEvents)).toEqual(['']);
+
+      component.filterForm.controls.company.setValue('acc-b');
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve));
+      lists[0].next({ ...EMPTY_ORG_EVENTS_RESPONSE, data: [ROW], total: 1 });
+
+      expect(lists[0].observed).toBe(false);
+      expect(eventsService.getOrgEvents).toHaveBeenCalledTimes(1);
+      expect(rows()).toEqual([]);
+      expect(loading()).toBe(true);
+
+      pendingSummary.next(summary);
+      pendingSummary.complete();
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve));
+      lists.at(-1)?.next({ ...EMPTY_ORG_EVENTS_RESPONSE, data: [ROW], total: 1 });
+      lists.at(-1)?.complete();
+
+      expect(companiesSent(eventsService.getOrgEvents)).toEqual(['', 'acc-b']);
+      expect(rows()).toEqual([ROW]);
+      expect(loading()).toBe(false);
+    });
+
+    it('shows no card figures for the whole family while a Company from the URL is checked', async () => {
+      const familySummary = new Subject<OrgEventsSummary>();
+      const companySummary = new Subject<OrgEventsSummary>();
+      const { component, fixture, summary } = await render(null, { rollUp: true, query: { company: 'acc-b' }, summaries: [familySummary, companySummary] });
+
+      familySummary.next({ ...summary, upcomingEvents: 5 });
+      familySummary.complete();
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve));
+
+      expect(component.eventsSummary()).toBeNull();
+      expect(component.tabPillOptions().map((tab) => tab.label)).not.toContain('Upcoming (5)');
+
+      companySummary.next({ ...summary, upcomingEvents: 2 });
+      companySummary.complete();
+
+      expect(component.eventsSummary()?.upcomingEvents).toBe(2);
     });
 
     it("opens a row's drawers for that row's company", async () => {

@@ -13,16 +13,8 @@ import { describe, expect, it, type Mock, vi } from 'vitest';
 import { EventAttendeesDrawerComponent } from './event-attendees-drawer.component';
 
 const FAMILY_ATTENDEES = [
-  { contactId: '0', name: 'Jane Doe', jobTitle: null, organizations: [{ accountId: 'acc-a', name: 'Acme Motors, Inc.' }] },
-  {
-    contactId: '1',
-    name: 'Roster Employee',
-    jobTitle: 'Analyst',
-    organizations: [
-      { accountId: 'acc-a', name: 'Acme Motors, Inc.' },
-      { accountId: 'acc-b', name: 'Acme Robotics' },
-    ],
-  },
+  { contactId: '0', name: 'Jane Doe', jobTitle: null },
+  { contactId: '1', name: 'Roster Employee', jobTitle: 'Analyst' },
 ];
 
 async function open(
