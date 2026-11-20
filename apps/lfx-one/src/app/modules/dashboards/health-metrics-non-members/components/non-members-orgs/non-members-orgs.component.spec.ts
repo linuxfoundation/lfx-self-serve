@@ -14,7 +14,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { NonMembersOrgsComponent } from './non-members-orgs.component';
 
-import type { HealthMetricsNonMembersOrg, HealthMetricsNonMembersOrgs } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsNonMembersOrg, HealthMetricsNonMembersOrgs, HealthMetricsNonMembersOrgsFilter } from '@lfx-one/shared/interfaces';
 
 const ACCOUNT_ID = '0014100000AcmeAAAA';
 
@@ -48,7 +48,8 @@ describe('NonMembersOrgsComponent', () => {
   async function render(
     payload: HealthMetricsNonMembersOrgs = response(),
     queryParams: Record<string, string> = {},
-    followUpPayload?: HealthMetricsNonMembersOrgs
+    followUpPayload?: HealthMetricsNonMembersOrgs,
+    initialFilter?: HealthMetricsNonMembersOrgsFilter
   ): Promise<void> {
     getNonMembersOrgs = vi
       .fn()
@@ -69,6 +70,8 @@ describe('NonMembersOrgsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(NonMembersOrgsComponent);
+    // The page binds the cut it read from the URL before the section's first read.
+    if (initialFilter) fixture.componentRef.setInput('filter', initialFilter);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -251,10 +254,11 @@ describe('NonMembersOrgsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonFit: null, nonSearch: null, nonPage: 3 } }));
   });
 
-  it('starts on the search and page the URL carries', async () => {
-    await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonSearch: 'acme', nonPage: '2' });
+  it('starts on the cut the page binds and the search and page the URL carries, in one read', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }), { nonFit: 'meetings', nonSearch: 'acme', nonPage: '2' }, undefined, 'meetings');
 
-    expect(getNonMembersOrgs).toHaveBeenCalledWith(expect.objectContaining({ search: 'acme', offset: 10 }));
+    expect(getNonMembersOrgs).toHaveBeenCalledTimes(1);
+    expect(getNonMembersOrgs).toHaveBeenCalledWith(expect.objectContaining({ filter: 'meetings', search: 'acme', offset: 10 }));
   });
 
   it('falls back to the first page for a URL page it cannot honour', async () => {

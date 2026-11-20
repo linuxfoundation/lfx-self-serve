@@ -17,7 +17,7 @@ export interface HealthMetricsNonMembersSubNavItem extends HealthMetricsL2SubNav
   key: HealthMetricsNonMembersSectionKey;
 }
 
-/** Company participation's filter pill; `all` matches every organization active in the period. */
+/** Company participation's header-switch cut; `all` matches every company active in the period. */
 export type HealthMetricsNonMembersOrgsFilter = (typeof HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS)[number];
 
 /** One choice on Company participation's header switch. */
