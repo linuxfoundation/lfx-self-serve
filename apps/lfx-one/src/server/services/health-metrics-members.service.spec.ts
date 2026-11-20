@@ -1033,7 +1033,9 @@ describe('HealthMetricsMembersService.getNps', () => {
       expect(sql).toContain(`nps_score_change_pp_${suffix} AS nps_score_change_pp`);
       expect(sql).toContain(`AND recipients_count_${suffix} > 0`);
       expect(sql).toContain("AND NULLIF(TRIM(audience_type), '') IS NOT NULL");
-      expect(sql).toContain("ORDER BY CASE TRIM(audience_type) WHEN 'Board' THEN 0 WHEN 'Maintainers' THEN 1 ELSE 2 END, TRIM(audience_type) ASC");
+      expect(sql).toContain(
+        "ORDER BY CASE TRIM(audience_type) WHEN 'All' THEN 0 WHEN 'Board' THEN 1 WHEN 'Maintainers' THEN 2 ELSE 3 END, TRIM(audience_type) ASC"
+      );
     }
   });
 
@@ -1044,7 +1046,7 @@ describe('HealthMetricsMembersService.getNps', () => {
     expect(binds).toEqual(['acme', 'Committers', 'acme']);
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
     expect(sql).toContain('AND recipients_count_last_completed_year > 0');
-    expect(sql).toContain("ORDER BY IFF(TRIM(audience_type) = ?, 0, 1), CASE TRIM(audience_type) WHEN 'Board'");
+    expect(sql).toContain("ORDER BY IFF(TRIM(audience_type) = ?, 0, 1), CASE TRIM(audience_type) WHEN 'All'");
     expect(sql).toContain('JOIN chosen ON chosen.audience_type = TRIM(trend.audience_type)');
     expect(sql).toContain('AND trend.recipients_count > 0');
     expect(sql).toContain("AND trend.quarter_start_date < DATE_TRUNC('YEAR', CURRENT_DATE())");

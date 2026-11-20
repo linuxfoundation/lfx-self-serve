@@ -63,8 +63,26 @@
       (reading)="shell.sectionReading('board')"
       (settled)="shell.sectionSettled('board', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="nps">
+    @if (npsSwitch().options.length > 0) {
+      <lfx-ui-switch
+        size="small"
+        ariaLabel="Audience"
+        [value]="npsSwitch().selected"
+        (valueChange)="onNpsAudienceChange($event)"
+        data-testid="members-nps-audience">
+        @for (option of npsSwitch().options; track option.id) {
+          <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'members-nps-audience-' + option.id" />
+        }
+      </lfx-ui-switch>
+    }
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="nps">
-    <lfx-members-nps (reading)="shell.sectionReading('nps')" (settled)="shell.sectionSettled('nps', $event)" />
+    <lfx-members-nps
+      [(audience)]="npsAudience"
+      (audienceSwitch)="npsSwitch.set($event)"
+      (reading)="shell.sectionReading('nps')"
+      (settled)="shell.sectionSettled('nps', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="churn">
     <lfx-members-churn (reading)="shell.sectionReading('churn')" (settled)="shell.sectionSettled('churn', $event)" />

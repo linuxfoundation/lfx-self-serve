@@ -526,36 +526,15 @@ export interface HealthMetricsMembersNps {
   trend: HealthMetricsMembersNpsQuarter[];
 }
 
-/** The audience toggle over the hero; the id is the view's audience name. */
+/** The card header's audience switch; the id is the view's audience name. */
 export interface HealthMetricsMembersNpsAudienceOption extends FilterPillOption {
   id: string;
 }
 
-/** The note under the response distribution; `lead` is the bolded opening, when there is one. */
-export interface HealthMetricsMembersNpsFooterView {
-  isBelowFloor: boolean;
-  lead: string | null;
-  text: string;
-}
-
-/** The NPS hero as the section renders it; a missing score renders the dash and the not-enough caption. */
-export interface HealthMetricsMembersNpsSummaryView {
-  isUnscored: boolean;
-  /** A score on a flagged sample or a below-floor rate, rendered in amber. */
-  isLowConfidence: boolean;
-  scoreLabel: string;
-  /** `null` renders no change. */
-  changeLabel: string | null;
-  changeDirection: 'up' | 'down' | 'neutral';
-  caption: string;
-  respondedLabel: string;
-  rateLabel: string;
-  isRateBelowFloor: boolean;
-  /** The low-confidence banner, when the view flags the sample too small. */
-  lowSampleNote: string | null;
-  lastUpdatedLabel: string;
-  surveyedLabel: string;
-  footer: HealthMetricsMembersNpsFooterView;
+/** What the section hands the page for its header switch: the audiences in order and the one the figures belong to. */
+export interface HealthMetricsMembersNpsAudienceSwitch {
+  options: HealthMetricsMembersNpsAudienceOption[];
+  selected: string | null;
 }
 
 /** One segment of the response distribution; `widthPct` is its share of everyone surveyed. */
@@ -565,29 +544,6 @@ export interface HealthMetricsMembersNpsSegmentView {
   countLabel: string;
   widthPct: number;
   colorClass: string;
-}
-
-/** One wave of the trend chart; `ratePct` is the shown percent (one decimal under 1%), `null` when unmeasured. */
-export interface HealthMetricsMembersNpsTrendPointView {
-  quarterStartDate: string;
-  label: string;
-  score: number | null;
-  scoreLabel: string;
-  /** The score as the tooltip and screen-reader table read it, noting a low-response wave. */
-  scoreDescription: string;
-  ratePct: number | null;
-  rateLabel: string;
-  isRateBelowFloor: boolean;
-  /** A score on a flagged sample or a below-floor rate, drawn as an amber bar. */
-  isLowConfidence: boolean;
-}
-
-/** The sentence under the trend: a score rising on a falling rate, a rate below the floor, or a rate holding. */
-export interface HealthMetricsMembersNpsTrendNote {
-  kind: 'diverging' | 'below-floor' | 'holding';
-  scoreChangeLabel: string;
-  fromRateLabel: string;
-  toRateLabel: string;
 }
 
 /** `GET /api/analytics/members-churn` — every year's churn; the section re-projects it per period client-side. */

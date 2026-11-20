@@ -21,7 +21,12 @@ import { MembersNpsComponent } from './components/members-nps/members-nps.compon
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
 
-import type { HealthMetricsMembersAtRiskFilter, HealthMetricsMembersBoardCohort, HealthMetricsMembersRenewalsWindow } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsMembersAtRiskFilter,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersNpsAudienceSwitch,
+  HealthMetricsMembersRenewalsWindow,
+} from '@lfx-one/shared/interfaces';
 
 /** Stands in for Member growth by year, whose read its own spec covers; the test drives its settle. */
 @Component({ selector: 'lfx-members-growth', template: '<div data-testid="members-growth-stub"></div>' })
@@ -56,6 +61,8 @@ class AtRiskStubComponent {
 /** Stands in for the member satisfaction section; the test drives its settle. */
 @Component({ selector: 'lfx-members-nps', template: '<div data-testid="members-nps-stub"></div>' })
 class NpsStubComponent {
+  public readonly audience = model<string | null>(null);
+  public readonly audienceSwitch = output<HealthMetricsMembersNpsAudienceSwitch>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -324,6 +331,33 @@ describe('HealthMetricsMembersComponent', () => {
     (section.querySelector('[data-testid="members-board-cohort-board"] input') as HTMLInputElement).click();
     await flush();
     expect(stub(BoardStubComponent).cohort()).toBe('board');
+  });
+
+  it("puts the NPS audience switch in that card's header once the section reports its audiences, handing a pick back", async () => {
+    await setup(null, { npsAudience: ' Board ' });
+    const section = fixture.nativeElement.querySelector('#sec-mem-nps') as HTMLElement;
+
+    expect(stub(NpsStubComponent).audience()).toBe('Board');
+    expect(section.querySelector('[data-testid="members-nps-audience"]')).toBeNull();
+
+    stub(NpsStubComponent).audienceSwitch.emit({
+      options: [
+        { id: 'All', label: 'All' },
+        { id: 'Board', label: 'Board' },
+      ],
+      selected: 'Board',
+    });
+    await flush();
+    const labels = [...section.querySelectorAll('[data-testid="members-nps-audience"] [data-testid="ui-switch-option-text"]')].map((label) =>
+      label.textContent?.trim()
+    );
+    expect(labels).toEqual(['All', 'Board']);
+
+    (section.querySelector('[data-testid="members-nps-audience-All"] input') as HTMLInputElement).click();
+    await flush();
+    expect(stub(NpsStubComponent).audience()).toBe('All');
+    // The switch shows the pick at once rather than snapping back to the last read's audience.
+    expect((section.querySelector('[data-testid="members-nps-audience-All"] input') as HTMLInputElement).checked).toBe(true);
   });
 
   it('falls back to the default bucket, window and cohort for URL values it does not know', async () => {

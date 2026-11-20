@@ -96,8 +96,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-clipboard-list', source: HEALTH_METRICS_L2_EMPTY_SOURCES.survey },
     label: 'Satisfaction (NPS)',
     heading: 'Satisfaction (NPS)',
-    description:
-      'Deliberately low in this section — NPS moves once a quarter at most, so it is context rather than a signal to act on. Non-responses are shown at full weight.',
+    description: 'How likely members are to recommend the foundation.',
   },
   {
     key: 'churn',
@@ -501,8 +500,8 @@ export const HEALTH_METRICS_MEMBERS_NPS_UNMEASURED: HealthMetricsMembersNps = {
   trend: [],
 };
 
-/** Audiences the toggle leads with, in order; the rest follow alphabetically. */
-export const HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES = ['Board', 'Maintainers'] as const;
+/** Audiences the switch leads with, in order, the first selected by default; the rest follow alphabetically. */
+export const HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES = ['All', 'Board', 'Maintainers'] as const;
 
 /** Longest audience name a caller may pass; the view's names are far shorter. */
 export const HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH = 100;
@@ -510,16 +509,23 @@ export const HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH = 100;
 /** Below this whole-percent response rate the sample is too small to trust the score (NPS-04). */
 export const HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT = 35;
 
-/** A response-rate fall of at least this many points makes a rising score unproven; a smaller one is noise. */
-export const HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP = 5;
-
 /** The response distribution's segments, left to right, with non-responses last at full weight. */
 export const HEALTH_METRICS_MEMBERS_NPS_SEGMENTS = [
-  { key: 'promoters', label: 'Promoters', colorClass: 'bg-emerald-600' },
-  { key: 'passives', label: 'Passives', colorClass: 'bg-amber-600' },
-  { key: 'detractors', label: 'Detractors', colorClass: 'bg-red-600' },
+  { key: 'promoters', label: 'Promoters', colorClass: 'bg-emerald-500' },
+  { key: 'passives', label: 'Passives', colorClass: 'bg-amber-500' },
+  { key: 'detractors', label: 'Detractors', colorClass: 'bg-red-500' },
   { key: 'noResponse', label: 'No response', colorClass: 'bg-gray-200' },
 ] as const;
+
+/** A trend bar's colour by score: +30 and up is good, 0 to +29 fair, below 0 poor. */
+export const HEALTH_METRICS_MEMBERS_NPS_SCORE_GOOD = 30;
+export const HEALTH_METRICS_MEMBERS_NPS_SCORE_COLORS = { good: lfxColors.emerald[500], fair: lfxColors.amber[500], poor: lfxColors.red[500] } as const;
+
+/** The response rate's dashed line and its popup dot. */
+export const HEALTH_METRICS_MEMBERS_NPS_RATE_COLOR = lfxColors.blue[500];
+
+/** The design's trend: 180px tall, 40px bars, earlier quarters at 30% behind the latest. */
+export const HEALTH_METRICS_MEMBERS_NPS_CHART = { heightPx: 180, barWidthPx: 40, earlierOpacity: 0.3 } as const;
 
 /** Read-failed / no-foundation value: no churn rows, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED: HealthMetricsMembersChurn = { years: [], tiers: [] };
