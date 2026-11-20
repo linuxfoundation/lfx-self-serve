@@ -108,6 +108,7 @@
                   (cleared)="closeSearch(true)"
                   (focusout)="onSearchFocusOut($event)"
                   (keydown.escape)="onSearchEscape()"
+                  (compositionstart)="cancelSearchClose()"
                   data-testid="meetings-redesign-search" />
               } @else {
                 <lfx-ui-button

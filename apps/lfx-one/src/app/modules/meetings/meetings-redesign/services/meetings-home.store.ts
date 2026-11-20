@@ -316,6 +316,8 @@ export class MeetingsHomeStore {
   public readonly lastMeetingRecordingUrl: Signal<string | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingRecording(id).pipe(map((recording) => getLargestSessionShareUrl(recording)))
   );
+  /** A paged past search changed and its first page has not loaded yet, so the rows shown are the old query's. */
+  public readonly pastQueryPending: Signal<boolean> = computed(() => this.pagedPast && this.search().trim() !== this.pastQuery());
   public readonly hasActiveQuery: Signal<boolean> = computed(() => this.search().trim() !== '' || countAppliedMeetingFilters(this.filters()) > 0);
   /** One chip per applied filter. */
   public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() =>

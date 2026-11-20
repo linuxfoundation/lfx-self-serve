@@ -102,6 +102,9 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     class: 'block -mx-5 -my-6 md:-mx-8',
     '(window:resize)': 'measure()',
     '(window:scroll)': 'updateScroll()',
+    '(document:pointerdown)': 'pointerHeld = true',
+    '(document:pointerup)': 'releasePointer()',
+    '(document:pointercancel)': 'releasePointer()',
   },
 })
 export class MeetingsRedesignComponent {
@@ -192,10 +195,16 @@ export class MeetingsRedesignComponent {
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(
     // A paged past feed searches on the server, so its empty rows under a query are no results, not an empty tab.
-    () => !this.store.loading() && this.store.tabRows().length === 0 && !(this.store.pagedPast && this.store.tab() === 'past' && this.store.hasActiveQuery())
+    () =>
+      !this.store.loading() &&
+      this.store.tabRows().length === 0 &&
+      !(this.store.pagedPast && this.store.tab() === 'past' && (this.store.hasActiveQuery() || this.store.pastQueryPending()))
   );
   /** The active tab has meetings, but none match the search and filters. */
-  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
+  protected readonly noResults: Signal<boolean> = computed(
+    // Until a changed past search loads, its empty rows are not yet an answer.
+    () => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0 && !(this.store.tab() === 'past' && this.store.pastQueryPending())
+  );
   /** No-results copy: search only, filters only, or both. */
   protected readonly noResultsDescription: Signal<string> = computed(() => {
     if (countAppliedMeetingFilters(this.store.filters()) === 0) return 'No meetings match your search';
@@ -203,6 +212,9 @@ export class MeetingsRedesignComponent {
   });
 
   private searchCloseTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A pointer is down; a focus-out it causes closes the search on release, so the control under it keeps its place. */
+  protected pointerHeld = false;
+  private closeOnRelease = false;
 
   public constructor() {
     this.destroyRef.onDestroy(this.appService.claimFooter());
@@ -270,7 +282,24 @@ export class MeetingsRedesignComponent {
   /** Leaving an empty field closes it; focus moving to or from its clear button stays inside. */
   protected onSearchFocusOut(event: FocusEvent): void {
     if ((event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) return;
-    if (!this.store.search().trim()) this.closeSearch(false);
+    if (this.store.search().trim()) return;
+    if (this.pointerHeld) this.closeOnRelease = true;
+    else this.closeSearch(false);
+  }
+
+  protected releasePointer(): void {
+    this.pointerHeld = false;
+    if (!this.closeOnRelease) return;
+    this.closeOnRelease = false;
+    if (!this.store.search().trim() && !this.searchFieldHost()?.nativeElement.contains(document.activeElement)) this.closeSearch(false);
+  }
+
+  /** Composing text with an input method keeps a closing field open; its text reaches the store only when composed. */
+  protected cancelSearchClose(): void {
+    if (!this.searchClosing()) return;
+    clearTimeout(this.searchCloseTimer);
+    this.searchClosing.set(false);
+    this.searchOpen.set(true);
   }
 
   /** The field clears its text on the first Esc; one with no text closes it. */
