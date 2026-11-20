@@ -930,6 +930,31 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-redesign-search')?.classList).toContain('is-closing');
     });
 
+    it('keeps an empty field left open beside Filters while the viewer presses inside the Filters panel', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      const filters = query(fixture, 'meetings-redesign-search')?.nextElementSibling as HTMLElement;
+      filters.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      searchInput(fixture)?.blur();
+      document.dispatchEvent(new PointerEvent('pointerup'));
+      const overlay = document.createElement('div');
+      overlay.className = 'cdk-overlay-container';
+      const panel = overlay.appendChild(document.createElement('div'));
+      document.body.appendChild(overlay);
+
+      try {
+        panel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        document.dispatchEvent(new PointerEvent('pointerup'));
+        await closeDelay();
+        await fixture.whenStable();
+
+        expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+        expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
+      } finally {
+        overlay.remove();
+      }
+    });
+
     it('waits for a pressed pointer to be released before closing, so the control under it is not moved', async () => {
       const fixture = await attached();
       await openSearch(fixture);
