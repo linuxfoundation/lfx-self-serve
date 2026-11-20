@@ -28,6 +28,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from './health-metrics-non-members.service';
+import { logger } from './logger.service';
 
 import type { Request } from 'express';
 
@@ -155,7 +156,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     const [sql] = orgsRead();
     const other = sql.slice(sql.indexOf('WITH other AS'), sql.indexOf('scoped AS'));
     expect(other).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY');
-    expect(other).toContain('WHERE foundation_slug <> ?');
+    expect(other).toContain("WHERE foundation_slug <> ?\n          AND foundation_slug <> ''");
     expect(other).toContain('COUNT(DISTINCT foundation_slug) AS other_membership_count');
     expect(other).toMatch(/COALESCE\(MAX\(CASE WHEN .* END\), 0\) AS other_top_tier_rank/);
     expect(other).toContain('GROUP BY account_id');
@@ -184,6 +185,21 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       { foundationSlug: 'openssf', foundationName: 'openssf', tier: null },
     ]);
     expect(response.rows[1].otherMemberships).toEqual([]);
+  });
+
+  it('shows no badges, keeping the page, when the memberships read fails', async () => {
+    execute.mockResolvedValueOnce({ rows: [orgRow()] }).mockRejectedValueOnce(new Error('warehouse down'));
+
+    const response = await new HealthMetricsNonMembersService().getOrgs(req, query);
+
+    expect(response.rows).toHaveLength(1);
+    expect(response.rows[0].otherMemberships).toEqual([]);
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'get_non_members_other_memberships',
+      'Other memberships unavailable, showing none',
+      expect.objectContaining({ account_count: 1 })
+    );
   });
 
   it('skips the memberships read for an empty page', async () => {

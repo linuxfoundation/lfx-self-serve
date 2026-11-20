@@ -170,7 +170,9 @@ describe('NonMembersOrgsComponent', () => {
     const badges = [...(cell('memberships')?.querySelectorAll('lfx-ui-badge') ?? [])] as HTMLElement[];
     expect(badges.map((badge) => badge.textContent?.trim())).toEqual(['CNCF', 'Zeta Foundation']);
     expect(badges[0].getAttribute('tabindex')).toBe('0');
-    expect(badges[0].className).toContain('edge');
+    expect(badges[0].getAttribute('role')).toBe('img');
+    expect(badges[0].getAttribute('aria-label')).toBe('CNCF');
+    expect(badges[0].className).toContain('max-w-[170px]');
     expect(fixture.componentInstance['rowViews']()[0].otherMemberships[0]).toEqual({ key: 'cncf', label: 'CNCF', tierLabel: 'Gold membership' });
   });
 

@@ -19,6 +19,7 @@ import { healthMetricsAccountLogoJoinSql, healthMetricsAccountLogoSql } from '..
 import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
+import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
 import type {
@@ -57,6 +58,9 @@ interface OrgRow {
   SORT_RANK: number | null;
   FIT_BAND: string | null;
   IS_HIGH_FIT: boolean | null;
+  /** Sort-only: the highest tier rank and count of the company's memberships in other foundations. */
+  OTHER_TOP_TIER_RANK: number | null;
+  OTHER_MEMBERSHIP_COUNT: number | null;
   /** The row's place in the picked order, which the outer select keeps after the logo join. */
   PAGE_POSITION: number | null;
   LOGO_URL: string | null;
@@ -143,7 +147,9 @@ export class HealthMetricsNonMembersService {
           COALESCE(MAX(${healthMetricsTierRankSql('membership_tier')}), 0) AS other_top_tier_rank,
           COUNT(DISTINCT foundation_slug) AS other_membership_count
         FROM ${MEMBERSHIP_DIRECTORY_VIEW}
+        -- The badges read skips a blank foundation too, so a company sorted as holding one never shows "—".
         WHERE foundation_slug <> ?
+          AND foundation_slug <> ''
           AND account_id IS NOT NULL
           AND account_id <> ''
         GROUP BY account_id
@@ -211,40 +217,6 @@ export class HealthMetricsNonMembersService {
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
     };
-  }
-
-  /** The page's companies' current memberships in other foundations, keyed by account; read for those companies only. */
-  private async getOtherMemberships(
-    req: Request,
-    foundationSlug: string,
-    accountIds: string[]
-  ): Promise<Map<string, HealthMetricsNonMembersOtherMembership[]>> {
-    const memberships = new Map<string, HealthMetricsNonMembersOtherMembership[]>();
-    if (accountIds.length === 0) return memberships;
-
-    // One bound placeholder per account; the list is the page, so it is never longer than the page size cap.
-    const sql = `
-      SELECT account_id, foundation_slug, foundation_name, membership_tier
-      FROM ${MEMBERSHIP_DIRECTORY_VIEW}
-      WHERE foundation_slug <> ?
-        AND foundation_slug IS NOT NULL
-        AND foundation_slug <> ''
-        AND account_id IN (${accountIds.map(() => '?').join(', ')})
-    `;
-
-    const result = await executeSnowflakeViewRead<OtherMembershipRow>(this.snowflakeService, req, sql, [foundationSlug, ...accountIds], {
-      view: MEMBERSHIP_DIRECTORY_VIEW,
-      operation: 'get_non_members_other_memberships',
-      clientMessage: 'Company participation is unavailable right now.',
-    });
-
-    for (const row of result.rows) {
-      if (!row.ACCOUNT_ID || !row.FOUNDATION_SLUG) continue;
-      const list = memberships.get(row.ACCOUNT_ID) ?? [];
-      list.push({ foundationSlug: row.FOUNDATION_SLUG, foundationName: row.FOUNDATION_NAME || row.FOUNDATION_SLUG, tier: row.MEMBERSHIP_TIER || null });
-      memberships.set(row.ACCOUNT_ID, list);
-    }
-    return memberships;
   }
 
   /** One page of the period's engaged non-member individuals, in the view's rank. Never selects an email address. */
@@ -379,6 +351,54 @@ export class HealthMetricsNonMembersService {
       estimatedPipelineUsd: toNullableNumber(row.ESTIMATED_PIPELINE_USD),
       warmest: warmest.rows.flatMap(mapWarmOrg),
     };
+  }
+
+  /**
+   * The page's companies' current memberships in other foundations, keyed by account; read for those companies only, after
+   * the page, which supplies them. A failed read shows no badges rather than taking the table down with it.
+   */
+  private async getOtherMemberships(
+    req: Request,
+    foundationSlug: string,
+    accountIds: string[]
+  ): Promise<Map<string, HealthMetricsNonMembersOtherMembership[]>> {
+    const memberships = new Map<string, HealthMetricsNonMembersOtherMembership[]>();
+    if (accountIds.length === 0) return memberships;
+
+    // One bound placeholder per account; the list is the page, so it is never longer than the page size cap.
+    const sql = `
+      SELECT account_id, foundation_slug, foundation_name, membership_tier
+      FROM ${MEMBERSHIP_DIRECTORY_VIEW}
+      WHERE foundation_slug <> ?
+        AND foundation_slug IS NOT NULL
+        AND foundation_slug <> ''
+        AND account_id IN (${accountIds.map(() => '?').join(', ')})
+    `;
+
+    let rows: OtherMembershipRow[];
+    try {
+      const result = await executeSnowflakeViewRead<OtherMembershipRow>(this.snowflakeService, req, sql, [foundationSlug, ...accountIds], {
+        view: MEMBERSHIP_DIRECTORY_VIEW,
+        operation: 'get_non_members_other_memberships',
+        clientMessage: 'Other memberships are unavailable right now.',
+      });
+      rows = result.rows;
+    } catch (error) {
+      logger.warning(req, 'get_non_members_other_memberships', 'Other memberships unavailable, showing none', {
+        foundation_slug: foundationSlug,
+        account_count: accountIds.length,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return memberships;
+    }
+
+    for (const row of rows) {
+      if (!row.ACCOUNT_ID || !row.FOUNDATION_SLUG) continue;
+      const list = memberships.get(row.ACCOUNT_ID) ?? [];
+      list.push({ foundationSlug: row.FOUNDATION_SLUG, foundationName: row.FOUNDATION_NAME || row.FOUNDATION_SLUG, tier: row.MEMBERSHIP_TIER || null });
+      memberships.set(row.ACCOUNT_ID, list);
+    }
+    return memberships;
   }
 }
 

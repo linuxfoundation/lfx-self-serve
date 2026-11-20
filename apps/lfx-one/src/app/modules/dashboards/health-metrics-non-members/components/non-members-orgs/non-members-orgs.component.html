@@ -51,7 +51,8 @@
                 data-testid="non-members-orgs-sort-company" />
             </th>
             <!-- Exact %: the design's 1 / 0.8 / 0.6 / 0.5 shares of its 4.7fr row, Company taking the rest. -->
-            <th scope="col" class="w-[21%]" [attr.aria-sort]="sorting.headers().memberships.ariaSort">
+            <!-- Exact px: the design's 170px column minimum. -->
+            <th scope="col" class="w-[21%] min-w-[170px]" [attr.aria-sort]="sorting.headers().memberships.ariaSort">
               <lfx-health-metrics-th
                 label="Other memberships"
                 [sort]="sorting.headers().memberships.state"
@@ -94,13 +95,17 @@
             </td>
             <td [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-memberships'">
               @if (view.otherMemberships.length) {
-                <!-- Every badge shows, wrapping inside the column with the design's 6px gap; a long name truncates. -->
+                <!-- Every badge shows, wrapping with the design's 6px gap. A long name truncates at the 170px column minimum, a fixed cap
+                     the auto-sized table cannot widen. Focusable for its tooltip, so it carries a role; its name is the label, the tooltip
+                     describes it. -->
                 <span class="flex min-w-0 flex-wrap gap-[6px]">
                   @for (membership of view.otherMemberships; track membership.key) {
                     <lfx-ui-badge
                       variant="outline"
+                      role="img"
                       tabindex="0"
-                      class="max-w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                      class="max-w-[170px] cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                      [attr.aria-label]="membership.label"
                       [lfxUiTooltip]="membership.tierLabel"
                       [lfxUiTooltipTitle]="membership.label"
                       [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-membership-' + membership.key"
