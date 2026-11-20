@@ -94,12 +94,12 @@
           data-testid="meetings-redesign-tabs">
           @if (!tabEmpty()) {
             <!-- Above 1024px, in a centre of 440px or more, the bar stays on one line and an open search narrows from 280px. -->
-            <div class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
+            <div #searchTools class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
               @if (searchExpanded()) {
                 <!-- A full-row basis at 640px and below, so only the opacity animates there; above it min-w-0 drops the library's min(300px, 100%). -->
                 <lfx-ui-search-input
                   class="meetings-search max-w-full basis-full min-[641px]:w-[280px] min-[641px]:min-w-0 min-[641px]:basis-auto"
-                  [class.is-opening]="!searchClosing()"
+                  [class.is-opening]="!searchClosing() && !searchKept()"
                   [class.is-closing]="searchClosing()"
                   placeholder="Search meetings"
                   ariaLabel="Search meetings"

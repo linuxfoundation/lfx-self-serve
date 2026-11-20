@@ -138,6 +138,8 @@ export class MeetingsHomeStore {
   // Search and filters the first past page was loaded with; its cursor only continues that query.
   private readonly pastQuery: WritableSignal<string> = signal('');
   private readonly pastFilters: WritableSignal<MeetingsHomePastFilters> = signal(MEETINGS_HOME_NO_PAST_FILTERS);
+  // Search whose first past page failed after an earlier one loaded; its list is then the error state, not still pending.
+  private readonly pastFailedQuery: WritableSignal<string | null> = linkedSignal({ source: this.feed.key, computation: (): string | null => null });
   private readonly pastPageFailedState: WritableSignal<boolean> = signal(false);
   // Past meetings of the last load without server filters; server-filtered rows only hold the picked values. A new scope drops them.
   private readonly pastOptionMeetings: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.feed.key, computation: (): PastMeeting[] => [] });
@@ -203,7 +205,8 @@ export class MeetingsHomeStore {
   public readonly pastShowsError: Signal<boolean> = computed(
     () =>
       this.pastFailed() ||
-      (this.tab() === 'past' && this.pastPageFailedState() && this.search().trim() === this.pastQuery() && this.filteredRows().length === 0)
+      (this.tab() === 'past' && this.pastPageFailedState() && this.search().trim() === this.pastQuery() && this.filteredRows().length === 0) ||
+      (this.tab() === 'past' && this.pastQuery() !== this.search().trim() && this.pastFailedQuery() === this.search().trim())
   );
   /** The active tab's rows before search and filters. */
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
@@ -289,7 +292,9 @@ export class MeetingsHomeStore {
     this.meetingService.getPastMeetingRecording(id).pipe(map((recording) => getLargestSessionShareUrl(recording)))
   );
   /** A paged past search changed and its first page has not loaded yet, so the rows shown are the old query's. */
-  public readonly pastQueryPending: Signal<boolean> = computed(() => this.pagedPast && this.search().trim() !== this.pastQuery());
+  public readonly pastQueryPending: Signal<boolean> = computed(
+    () => this.pagedPast && this.search().trim() !== this.pastQuery() && this.search().trim() !== this.pastFailedQuery()
+  );
   public readonly hasActiveQuery: Signal<boolean> = computed(() => this.search().trim() !== '' || countAppliedMeetingFilters(this.filters()) > 0);
   /** One chip per applied filter. */
   public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() =>
@@ -531,6 +536,7 @@ export class MeetingsHomeStore {
         if (version !== this.pastQueryVersion) return;
         this.pastQuery.set(query);
         this.pastFilters.set(filters);
+        this.pastFailedQuery.set(null);
         this.pastPageFailedState.set(false);
         this.pastPageToken.set(page.pageToken);
         if (!this.isNarrowed(filters)) this.pastOptionMeetings.set(page.meetings);
@@ -542,6 +548,7 @@ export class MeetingsHomeStore {
           if (version === this.pastQueryVersion && this.tab() === 'past' && current) this.revealDayState.set(null);
         },
       }),
+      tap({ error: () => version === this.pastQueryVersion && this.pastFailedQuery.set(query) }),
       map((page) => page.meetings)
     );
   }
