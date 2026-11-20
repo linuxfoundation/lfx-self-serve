@@ -121,15 +121,16 @@ export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembe
   const revenue = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.revenueUsd)));
 
   const ranked = collectBreakdownTiers(rows);
+  const lowestRank = Math.max(...ranked.map((tier) => tier.rank));
   const tierRows = ranked.map(
-    (tier, index): HealthMetricsMembersBreakdownRowView => ({
+    (tier): HealthMetricsMembersBreakdownRowView => ({
       key: `tier-${tier.label}`,
       label: tier.label,
       kind: 'tier',
       icon: tier.reserved,
       cells: years.map((year) => formatCount(tier.members.get(year) ?? null)),
-      // The view's rank as a score, so Tier ↓ is its own order even for tiers the app does not know.
-      sortValues: Object.fromEntries([['tier', ranked.length - index], ...years.map((year) => [breakdownSortKey(year), tier.members.get(year) ?? null])]),
+      // The view's rank as a score, so Tier ↓ is its own order even for tiers the app does not know; equal ranks tie.
+      sortValues: Object.fromEntries([['tier', lowestRank - tier.rank], ...years.map((year) => [breakdownSortKey(year), tier.members.get(year) ?? null])]),
     })
   );
 

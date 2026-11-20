@@ -13,9 +13,9 @@
   } @else if (loading()) {
     <p-skeleton height="26rem" borderRadius="0.5rem" data-testid="members-breakdown-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    <!-- Only the table scrolls sideways below 560px. -->
+    <!-- Only the table scrolls sideways, below its columns' least width. -->
     <div class="min-w-0 overflow-x-auto" data-testid="members-breakdown-table">
-      <div class="flex min-w-[560px] flex-col" role="table" aria-label="Members per tier by year">
+      <div class="flex flex-col" role="table" aria-label="Members per tier by year" [style.min-width.px]="tableMinWidthPx()">
         <!-- The design's 32px header row. -->
         <div class="grid min-h-[32px] bg-gray-50 shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-200)]" [style.grid-template-columns]="gridColumns()" role="row">
           <span
@@ -29,7 +29,7 @@
               data-testid="members-breakdown-sort-tier" />
           </span>
           @for (column of yearHeaders(); track column.year) {
-            <!-- Clipped like the cells below, so a label too wide for a narrow column never spills into the next. -->
+            <!-- Each year column is wide enough for its label and arrow; the clip only guards a label longer than the design's. -->
             <span
               class="flex min-w-0 items-center justify-end overflow-hidden whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
               role="columnheader"

@@ -9,7 +9,9 @@ import {
   getYearForRange,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_DEFAULT_SORT,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_YEAR_MIN_PX,
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
+  HEALTH_METRICS_SORT_HEADER_UNSORTED,
 } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsMembersBreakdownSortColumns,
@@ -33,7 +35,6 @@ import type {
   HealthMetricsMembersBreakdownView,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
-  HealthMetricsSortHeaderView,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -73,13 +74,17 @@ export class MembersBreakdownComponent {
   /** Each year column with its sort state; a column the sort does not know reads unsorted rather than failing to render. */
   protected readonly yearHeaders: Signal<HealthMetricsMembersBreakdownHeaderView[]> = computed(() => {
     const headers = this.sorting.headers();
-    return this.view().columns.map((column) => ({ ...column, header: headers[column.sortKey] ?? UNSORTED_HEADER }));
+    return this.view().columns.map((column) => ({ ...column, header: headers[column.sortKey] ?? HEALTH_METRICS_SORT_HEADER_UNSORTED }));
   });
   /** The tiers in the reader's order; Total members and Total revenue stay at the bottom whatever the sort. */
   private readonly sortedRows: Signal<HealthMetricsMembersBreakdownRowView[]> = computed(() =>
     sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue, (row) => row.kind === 'total')
   );
-  protected readonly gridColumns = computed(() => `minmax(170px, 1.8fr) repeat(${this.view().columns.length}, minmax(0, 1fr))`);
+  /** The design's 560px floor, widened to fit every year column so the header fill and rules span the whole scroll. */
+  protected readonly tableMinWidthPx = computed(() => Math.max(560, 170 + this.view().columns.length * HEALTH_METRICS_MEMBERS_BREAKDOWN_YEAR_MIN_PX));
+  protected readonly gridColumns = computed(
+    () => `minmax(170px, 1.8fr) repeat(${this.view().columns.length}, minmax(${HEALTH_METRICS_MEMBERS_BREAKDOWN_YEAR_MIN_PX}px, 1fr))`
+  );
   protected readonly tableRows: Signal<HealthMetricsMembersBreakdownTableRow[]> = this.initTableRows();
 
   /**
@@ -143,8 +148,6 @@ export class MembersBreakdownComponent {
     );
   }
 }
-
-const UNSORTED_HEADER: HealthMetricsSortHeaderView = { state: 'none', ariaSort: 'none' };
 
 function rowStripe(striped: boolean): string {
   return striped ? HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES.stripe : '';

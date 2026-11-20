@@ -229,6 +229,9 @@ export const HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES: HealthMetricsMember
   totalRule: 'border-t border-gray-900',
 };
 
+/** A year column's least width: "2026 YTD" at 12px, its 10px sort arrow and 10px padding each side; narrower tables scroll. */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_YEAR_MIN_PX = 92;
+
 /** The breakdown opens on the view's tier rank, highest-paying first; it is not paged, so it sorts in the browser. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_DEFAULT_SORT: HealthMetricsTableSort = { key: 'tier', direction: 'desc' };
 

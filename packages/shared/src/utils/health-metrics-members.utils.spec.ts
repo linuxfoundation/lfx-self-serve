@@ -227,10 +227,24 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     expect(view.rows[1].cells).toEqual(['110', '118', '124', '131', '138', '142', '150', '158']);
     // Tier sorts on the view's rank, highest-paying highest; each year on its members. Totals carry no sort value.
     expect(view.columns[7].sortKey).toBe('y2026');
-    expect(view.rows.map((row) => row.sortValues['tier'] ?? null)).toEqual([5, 4, 3, 2, 1, null, null]);
+    expect(view.rows.map((row) => row.sortValues['tier'] ?? null)).toEqual([4, 3, 2, 1, 0, null, null]);
     expect(view.rows[1].sortValues['y2026']).toBe(158);
     expect(view.rows[5].cells[7]).toBe('2,352');
     expect(view.rows[6].cells[7]).toBe('$2.4M');
+  });
+
+  it('scores tiers of equal rank alike, so a sort keeps their own order in both directions', () => {
+    const view = build([
+      ...tier('Premier', 1, [1, 1, 1, 1, 1, 1, 1, 1]),
+      ...tier('General', 1, [2, 2, 2, 2, 2, 2, 2, 2]),
+      ...tier('Associate', 2, [3, 3, 3, 3, 3, 3, 3, 3]),
+    ]);
+
+    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => [row.label, row.sortValues['tier']])).toEqual([
+      ['General', 1],
+      ['Premier', 1],
+      ['Associate', 0],
+    ]);
   });
 
   it('lists the tier and every year it can show as sortable columns', () => {
