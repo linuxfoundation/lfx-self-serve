@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEETINGS_HOME_CALENDAR_HOUR_PX, MEETINGS_HOME_CALENDAR_TYPE_COLORS, MEETINGS_HOME_MINI_CALENDAR_MAX_DOTS } from '../constants/meeting-list.constants';
+import {
+  MEETINGS_HOME_CALENDAR_EVENT_MIN_HEIGHT_PX,
+  MEETINGS_HOME_CALENDAR_HOUR_PX,
+  MEETINGS_HOME_CALENDAR_TYPE_COLORS,
+  MEETINGS_HOME_MINI_CALENDAR_MAX_DOTS,
+} from '../constants/meeting-list.constants';
 import type {
   MeetingCalendarChip,
   MeetingCalendarDialogDay,
@@ -140,12 +145,15 @@ export function layoutMeetingCalendarWeekDay(entries: readonly MeetingCalendarEn
     .map((entry) => {
       const minutes = getMeetingCalendarDayMinutes(entry, day ?? new Date(entry.row.startTime), 0);
       const start = Math.max(0, minutes.start);
-      // The 30-minute floor is for meetings that start this day; a carry-over keeps its real end, so it takes no extra lanes.
+      // The 30-minute floor is for meetings that start this day; a carry-over keeps its real end.
       const end = minutes.start < 0 ? minutes.end : Math.max(minutes.end, start + 30);
       return { entry, start, duration: Math.min(1440, end) - start, lane: 0, lanes: 1 };
     })
     .sort((a, b) => a.start - b.start);
 
+  // Lanes follow the drawn boxes: a short event is drawn taller than it lasts, and must not sit under the next one in its lane.
+  const drawnMinutes = ((MEETINGS_HOME_CALENDAR_EVENT_MIN_HEIGHT_PX + 2) / MEETINGS_HOME_CALENDAR_HOUR_PX) * 60;
+  const drawnEnd = (item: (typeof placed)[number]): number => item.start + Math.max(item.duration, drawnMinutes);
   let cluster: typeof placed = [];
   let clusterEnd = -1;
   let laneEnds: number[] = [];
@@ -160,17 +168,17 @@ export function layoutMeetingCalendarWeekDay(entries: readonly MeetingCalendarEn
     }
     let lane = laneEnds.findIndex((end) => end <= item.start);
     if (lane < 0) lane = laneEnds.push(0) - 1;
-    laneEnds[lane] = item.start + item.duration;
+    laneEnds[lane] = drawnEnd(item);
     item.lane = lane;
     cluster.push(item);
-    clusterEnd = Math.max(clusterEnd, item.start + item.duration);
+    clusterEnd = Math.max(clusterEnd, drawnEnd(item));
   }
   closeCluster();
 
   return placed.map((item) => ({
     ...toMeetingCalendarChip(item.entry),
     top: (item.start / 60) * MEETINGS_HOME_CALENDAR_HOUR_PX,
-    height: Math.max(22, (item.duration / 60) * MEETINGS_HOME_CALENDAR_HOUR_PX - 2),
+    height: Math.max(MEETINGS_HOME_CALENDAR_EVENT_MIN_HEIGHT_PX, (item.duration / 60) * MEETINGS_HOME_CALENDAR_HOUR_PX - 2),
     lane: item.lane,
     lanes: item.lanes,
   }));
