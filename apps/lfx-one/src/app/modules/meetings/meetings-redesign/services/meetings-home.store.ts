@@ -124,7 +124,8 @@ export class MeetingsHomeStore {
   // Bumped whenever the first past page is requested, so a next page for an older query is dropped.
   private pastQueryVersion = 0;
   // Search the first past page was loaded with; its cursor only continues that query.
-  private pastQuery = '';
+  private readonly pastQuery: WritableSignal<string> = signal('');
+  private readonly pastPageFailedState: WritableSignal<boolean> = signal(false);
   // Carries `recording_share_url` / `has_ai_summary` for the Recording and AI Summary buttons, and organizer attendance.
   private readonly pastFirstPage: Signal<PastMeeting[]> = this.initFeed(
     () => this.loadFirstPastPage(),
@@ -199,6 +200,8 @@ export class MeetingsHomeStore {
   public readonly groups: Signal<MeetingDayGroup[]> = computed(() =>
     groupMeetingsByDayBucket(this.filteredRows(), this.tab(), this.now(), this.visibleCount())
   );
+  /** A next past page failed on the past tab; the list offers to load more instead of retrying on its own. */
+  public readonly pastPageFailed: Signal<boolean> = computed(() => this.tab() === 'past' && this.pastPageFailedState() && this.filteredRows().length > 0);
   /** More rows to show, loaded or still on the server for a paged past feed. */
   public readonly hasMore: Signal<boolean> = computed(
     () => this.visibleCount() < this.filteredRows().length || (this.tab() === 'past' && this.pastPageToken() !== undefined)
@@ -234,11 +237,11 @@ export class MeetingsHomeStore {
   /** One chip per applied filter. */
   public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() => buildMeetingFilterChips(this.filters(), this.tabRows()));
 
-  /** Switches tab and clears the filters; search is kept. */
   public constructor() {
     this.initPastAutoLoad();
   }
 
+  /** Switches tab and clears the filters; search is kept. */
   public setTab(tab: MeetingDashboardView): void {
     if (tab === this.tab()) return;
     this.tabState.set(tab);
@@ -258,9 +261,11 @@ export class MeetingsHomeStore {
     this.filtersState.update((filters) => ({ ...filters, [key]: MEETINGS_HOME_DEFAULT_FILTERS[key] }));
   }
 
-  /** Shows another page of rows; on a paged past feed the store loads server pages until they fill it. */
+  /** Shows another page of rows; on a paged past feed the store loads server pages until they fill it, retrying a failed one. */
   public loadMore(): void {
-    if (!this.hasMore() || this.pastLoadingMore()) return;
+    const past = this.tab() === 'past';
+    if (!this.hasMore() || (past && this.pastLoadingMore())) return;
+    if (past) this.pastPageFailedState.set(false);
     this.visibleCountState.update((count) => count + MEETINGS_HOME_PAGE_SIZE);
   }
 
@@ -387,7 +392,8 @@ export class MeetingsHomeStore {
     return this.feed.past(query).pipe(
       tap((page) => {
         if (version !== this.pastQueryVersion) return;
-        this.pastQuery = query;
+        this.pastQuery.set(query);
+        this.pastPageFailedState.set(false);
         this.pastPageToken.set(page.pageToken);
       }),
       map((page) => page.meetings)
@@ -403,7 +409,10 @@ export class MeetingsHomeStore {
           this.tab() === 'past' &&
           !this.pastLoading() &&
           !this.pastLoadingMore() &&
+          !this.pastPageFailedState() &&
           this.pastPageToken() !== undefined &&
+          // The cursor continues the last loaded search; a newer one waits for its own first page.
+          this.search().trim() === this.pastQuery() &&
           this.filteredRows().length < this.visibleCount()
       )
     )
@@ -417,7 +426,7 @@ export class MeetingsHomeStore {
     const version = this.pastQueryVersion;
     this.pastLoadingMore.set(true);
     this.pastNextPage = this.feed
-      .past(this.pastQuery, pageToken)
+      .past(this.pastQuery(), pageToken)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (page) => {
@@ -430,9 +439,8 @@ export class MeetingsHomeStore {
           if (version !== this.pastQueryVersion) return;
           console.error('Failed to load more past meetings for the meetings home page:', error);
           this.pastLoadingMore.set(false);
-          // Stops loading this query, so a broken page is not requested again; a reload starts over.
-          this.pastPageToken.set(undefined);
-          // With nothing to show, the list's error state offers Retry, which reloads the query.
+          // The cursor stays, so Load more (or Retry, with nothing to show) can ask for the page again.
+          this.pastPageFailedState.set(true);
           if (this.pastMeetings().length === 0) this.pastFailedState.set(true);
           else this.showRefreshFailedToast();
         },

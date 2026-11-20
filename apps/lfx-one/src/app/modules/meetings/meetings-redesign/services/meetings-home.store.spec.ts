@@ -923,19 +923,6 @@ describe('MeetingsHomeStore', () => {
       expect(store.hasMore()).toBe(false);
     });
 
-    it('continues a cursor with the search it was loaded with, even mid-debounce', () => {
-      const store = createPaged();
-      store.setTab('past');
-      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
-      TestBed.tick();
-
-      store.setSearch('typed');
-      store.loadMore();
-      TestBed.tick();
-
-      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
-    });
-
     it('keeps loading server pages while none of the loaded rows can be shown', () => {
       const store = createPaged();
       store.setTab('past');
@@ -1012,6 +999,55 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.failed()).toBe(true);
       expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    it('does not page the previous search while a new one is debouncing', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      store.setSearch('nothing loaded matches this');
+      TestBed.tick();
+
+      expect(past).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers to load more after a next page fails with rows shown, and retries the same cursor', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      expect(store.pastPageFailed()).toBe(true);
+      expect(past).toHaveBeenCalledTimes(2);
+      store.loadMore();
+      TestBed.tick();
+      expect(store.pastPageFailed()).toBe(false);
+      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+    });
+
+    it('keeps showing more upcoming rows while a past page is loading', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      store.setTab('upcoming');
+      upcoming$.next(
+        Array.from({ length: MEETINGS_HOME_PAGE_SIZE + 5 }, (_, index) => buildMeeting({ id: `u-${index}`, start_time: inDays(index + 1).toISOString() }))
+      );
+      TestBed.tick();
+
+      store.loadMore();
+
+      expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE * 2);
     });
 
     it('does not request a next page on the upcoming tab', () => {
