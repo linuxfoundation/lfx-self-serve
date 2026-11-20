@@ -105,3 +105,27 @@ export interface CalendarEvent extends EventInput {
     [key: string]: any;
   };
 }
+
+/** Calendar app a feed can be added to from a subscribe dialog. */
+export type CalendarSubscribeAppKey = 'google' | 'outlookLive' | 'outlook365' | 'apple';
+
+/** Links that add a calendar feed to each app, plus the feed's `webcal://` form. */
+export type CalendarSubscribeUrls = Record<CalendarSubscribeAppKey, string>;
+
+/** A calendar app tile of a subscribe dialog. */
+export interface CalendarSubscribeApp {
+  key: CalendarSubscribeAppKey;
+  label: string;
+  /** Font Awesome brand icon. */
+  icon: string;
+  /** The vendor's brand colour. */
+  color: string;
+}
+
+/** A calendar app tile with the link that adds a feed to it. */
+export interface CalendarSubscribeAppLink {
+  app: CalendarSubscribeApp;
+  href: string;
+  /** Web calendars open in a new tab; a `webcal://` link goes to the OS calendar app in place. */
+  newTab: boolean;
+}
