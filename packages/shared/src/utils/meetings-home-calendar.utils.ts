@@ -96,7 +96,7 @@ export function toMeetingCalendarChip(entry: MeetingCalendarEntry): MeetingCalen
     time,
     title: entry.row.title,
     background: entry.past ? mix(7, 'var(--ui-white)') : mix(16, 'var(--ui-white)'),
-    ink: entry.past ? mix(50, 'var(--ui-white)') : mix(75, 'var(--ui-black)'),
+    ink: entry.past ? mix(75, 'var(--ui-white)') : mix(75, 'var(--ui-black)'),
     bar: entry.past ? mix(35, 'var(--ui-white)') : color,
     detail: `${formatMeetingCalendarDay(entry.row.startTime)} · ${time} · ${type}${entry.past ? ' · Past' : ''}`,
   };
