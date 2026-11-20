@@ -6,6 +6,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
+  MEETINGS_HOME_CALENDAR_CHIP_TOOLTIP_HEIGHT_PX,
   MEETINGS_HOME_CALENDAR_HOUR_PX,
   MEETINGS_HOME_CALENDAR_MONTH_CHIPS,
   MEETINGS_HOME_CALENDAR_START_HOUR,
@@ -67,7 +68,7 @@ export class MeetingsCalendarDialogComponent {
 
   protected readonly view = signal<MeetingCalendarView>('month');
   /** A date in the shown month or week. */
-  protected readonly focus = signal<Date>(this.data.month ?? this.data.now());
+  protected readonly focus = signal<Date>(this.initFocus());
   protected readonly scrolled = signal(false);
   protected readonly tooltip = signal<MeetingCalendarChipTooltip | null>(null);
 
@@ -163,12 +164,24 @@ export class MeetingsCalendarDialogComponent {
     const rect = target.getBoundingClientRect();
     const edge = MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX;
     const left = Math.max(edge, Math.min(window.innerWidth - edge, rect.left + rect.width / 2));
-    this.tooltip.set({ left: Math.round(left), top: Math.round(rect.top - 6), title: chip.title, detail: chip.detail });
+    // Anchors to the part of the chip the body shows, so a long week event scrolled half out keeps its tooltip on screen.
+    const body = this.body().nativeElement.getBoundingClientRect();
+    const top = Math.max(rect.top, body.top);
+    const above = top >= MEETINGS_HOME_CALENDAR_CHIP_TOOLTIP_HEIGHT_PX;
+    const anchor = above ? top - 6 : Math.min(rect.bottom, body.bottom) + 6;
+    this.tooltip.set({ left: Math.round(left), top: Math.round(anchor), above, title: chip.title, detail: chip.detail });
   }
 
   protected onScroll(): void {
     this.scrolled.set(this.body().nativeElement.scrollTop > 2);
     this.tooltip.set(null);
+  }
+
+  /** The month it was opened on; today when that month holds it, so Week opens on today's week. */
+  private initFocus(): Date {
+    const now = this.data.now();
+    const month = this.data.month;
+    return month && (month.getFullYear() !== now.getFullYear() || month.getMonth() !== now.getMonth()) ? month : now;
   }
 
   private initTodayInView(): Signal<boolean> {

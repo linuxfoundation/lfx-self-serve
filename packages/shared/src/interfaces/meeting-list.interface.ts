@@ -619,6 +619,8 @@ export interface MeetingCalendarWeekEvent extends MeetingCalendarChip {
 
 /** Hover card over one meeting of the calendar dialog. */
 export interface MeetingCalendarChipTooltip extends MeetingCalendarTooltipAnchor {
+  /** Opens above the chip; false when there is no room above its visible part, so it opens below. */
+  above: boolean;
   title: string;
   /** "Thu, Oct 1 · 10:00 AM · Board", as on the chip. */
   detail: string;
