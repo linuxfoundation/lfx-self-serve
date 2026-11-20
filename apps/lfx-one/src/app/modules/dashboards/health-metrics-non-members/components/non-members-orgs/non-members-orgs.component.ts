@@ -22,7 +22,9 @@ import { buildHealthMetricsNonMembersOrgRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
+import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { catchError, debounce, distinctUntilChanged, map, of, skip, switchMap, tap, timer } from 'rxjs';
 
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
@@ -44,7 +46,16 @@ import type {
  */
 @Component({
   selector: 'lfx-non-members-orgs',
-  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsThComponent, TableComponent, UiPaginationComponent, UiSearchInputComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsThComponent,
+    TableComponent,
+    UiBadgeComponent,
+    UiPaginationComponent,
+    UiSearchInputComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './non-members-orgs.component.html',
 })
 export class NonMembersOrgsComponent {
