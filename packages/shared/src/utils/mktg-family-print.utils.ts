@@ -11,7 +11,9 @@ import {
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
+  MKTG_FAMILY_PRINT_COVER_TEXT,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
+  MKTG_FAMILY_PRINT_FAQ_CHIP,
   MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
   MKTG_FAMILY_PRINT_HEAD_CAPS,
   MKTG_FAMILY_PRINT_HEAD_MEASURE,
@@ -29,12 +31,14 @@ import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
 import {
   MKTG_PORTRAIT_CAPS_TRACKING_EM,
   MKTG_PORTRAIT_COVER_STRIP,
+  MKTG_PORTRAIT_FAMILY_WIDTH,
   MKTG_PORTRAIT_FIT,
   MKTG_PORTRAIT_GLYPH_WIDTHS,
   MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
   MKTG_PORTRAIT_PAGE,
 } from '../constants/mktg-portrait-print.constants';
-import type { BrandKitBookView, BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
+import { BRAND_KIT_REPORT_ASSET_LABELS } from '../constants/brand-kit.constants';
+import type { BrandKitBookView, BrandKitReport, BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
 import type { FaqGroupView } from '../interfaces/faq.interface';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
@@ -50,6 +54,7 @@ import type {
   MktgFamilyPrintFaqItem,
   MktgFamilyPrintFaqPage,
   MktgFamilyPrintFaqPlanGroup,
+  MktgFamilyPrintFigure,
   MktgFamilyPrintFitRows,
   MktgFamilyPrintTextSource,
   MktgFamilyPrintOpenItem,
@@ -368,7 +373,11 @@ export function mktgFamilyPrintMeasuredLines(text: string, width: number, size: 
  * minimum, the lines measured in the book's face (`family`, the look's font
  * stack); while the cards and their gaps outgrow the room, the tallest
  * text loses its last sentence and keeps one line for the cut note, so the
- * page prints every card and says how many words did not fit. The room
+ * page prints every card and says how many words did not fit. The loop is
+ * bounded by the room, not by a count: it cuts until the measured heights
+ * fit, a text with nothing left to cut standing empty with every word
+ * counted, and stops only when no card has a word left (then the minimum
+ * heights alone are the overrun). The room
  * keeps one line of the largest text free, so a line the engine wraps
  * otherwise than the measure never reaches the Built from block. A text that
  * fits prints whole. Nothing is rephrased and nothing is cut in silence. Pure.
@@ -376,7 +385,7 @@ export function mktgFamilyPrintMeasuredLines(text: string, width: number, size: 
 export function mktgFamilyPrintFitBoilerplateCards(
   cards: readonly { text: string; fontSize: number; minHeight: number }[],
   width: number,
-  layout: typeof MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
+  layout: Readonly<Record<keyof typeof MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT, number>> = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
   family = ''
 ): MktgFamilyPrintFittedText[] {
   const guard = Math.max(0, ...cards.map((card) => card.fontSize * layout.line));
@@ -391,13 +400,46 @@ export function mktgFamilyPrintFitBoilerplateCards(
   };
   const total = (): number => fitted.reduce((sum, _, index) => sum + height(index), 0);
   const words = cards.map((card) => mktgFamilyPrintWordCount(card.text));
-  for (let guard = 0; guard < MKTG_PORTRAIT_FIT.maxCuts && total() > room; guard++) {
-    const tallest = fitted.map((_, index) => index).reduce((best, index) => (height(index) > height(best) ? index : best), 0);
+  // Each turn takes at least one word off the tallest text that still has one, so the loop ends within the texts' word
+  // count: the room bounds it, not a fixed number of cuts (a card of 200 repeated sentences kept 80 under a cap of 120).
+  while (total() > room) {
+    const candidates = fitted.map((_, index) => index).filter((index) => fitted[index].text.length > 0);
+    if (candidates.length === 0) break;
+    const tallest = candidates.reduce((best, index) => (height(index) > height(best) ? index : best));
     const shorter = mktgFamilyPrintCutFromEnd(fitted[tallest].text);
-    if (!shorter) break;
     fitted[tallest] = { text: shorter, cutWords: words[tallest] - mktgFamilyPrintWordCount(shorter) };
   }
   return fitted;
+}
+
+/**
+ * The cover's tagline as it fits over the title and the purpose: the three
+ * measured in the book's face (`family`, the look's font stack) at the cover's
+ * type (MKTG_FAMILY_PRINT_COVER_TEXT) in the inset column `width` wide, the
+ * purpose at its own measure; while the stack would reach the document tiles,
+ * the tagline loses its last word and ends in an ellipsis, so the title and
+ * the purpose, which are never cut, keep their room. A tagline that fits
+ * prints whole; one word with the ellipsis is the least that prints, so a
+ * reader sees it was shortened. Pure.
+ */
+export function mktgFamilyPrintCoverTagline(tagline: string, title: string, purpose: string, width: number, family = ''): string {
+  const cover = MKTG_FAMILY_PRINT_COVER_TEXT;
+  const room = cover.bottom - cover.top;
+  const fixed =
+    mktgPortraitParaHeight({ text: title, ...cover.title, family }, width) +
+    mktgPortraitParaHeight(
+      { text: purpose, size: cover.purpose.size, line: cover.purpose.line, above: cover.purpose.above, family },
+      Math.min(width, cover.purpose.maxWidth)
+    );
+  const fits = (text: string): boolean => fixed + mktgPortraitParaHeight({ text, ...cover.tagline, family }, width) <= room + 0.01;
+  const trimmed = tagline.trim();
+  if (!trimmed || fits(trimmed)) return trimmed;
+  const words = trimmed.split(/\s+/);
+  for (let keep = words.length - 1; keep >= 1; keep--) {
+    const cut = `${words.slice(0, keep).join(' ')}…`;
+    if (fits(cut)) return cut;
+  }
+  return `${words[0]}…`;
 }
 
 /** The cut note under a fitted block: `+3 more in LFX One`; '' when nothing was cut. */
@@ -749,6 +791,39 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[]): MktgF
   return { pages, chapters, faqPages, sourcesPage, total: n };
 }
 
+/** A text's content words for a restatement test: lowercase, letters only, four letters or more, `colour` and `color` one word. */
+function mktgFamilyPrintContentWords(text: string): Set<string> {
+  return new Set(
+    text
+      .toLocaleLowerCase()
+      .split(/[^a-z]+/)
+      .filter((word) => word.length >= 4)
+      .map((word) => word.replace(/our$/, 'or'))
+  );
+}
+
+/**
+ * The kit's open items for the family's Still open list: its missing-asset
+ * reasons, then every report gap that no missing asset already states. On the
+ * real records the gaps restate the missing-asset reasons in other words
+ * (`No stacked logo was provided.` for the stacked logo's `Not in the record`),
+ * so a gap that shares a content word with a missing asset's label or reason
+ * is that asset's restatement and prints once, in the reason's words; a gap
+ * about something else (a kit with gaps but no missing asset, or a gap on the
+ * palette when only a logo is missing) is an open item of its own, so the page
+ * never says nothing is left open while the kit's chapter lists a gap. A v1
+ * report has no findings: its gaps are the items. Pure.
+ */
+export function mktgFamilyPrintKitOpenItems(report: BrandKitReport | null | undefined): string[] {
+  if (!report) return [];
+  const missing = report.findings?.missing_assets ?? [];
+  const stated = missing.map((entry) => mktgFamilyPrintContentWords(`${BRAND_KIT_REPORT_ASSET_LABELS[entry.asset]} ${entry.reason}`));
+  const gaps = report.gaps
+    .map((gap) => gap.trim())
+    .filter((gap) => gap !== '' && !stated.some((words) => [...mktgFamilyPrintContentWords(gap)].some((word) => words.has(word))));
+  return [...missing.map((entry) => entry.reason), ...gaps];
+}
+
 /** The Sources page's Still open list: each chapter's open items, in chapter order, with the document's title; an item a record states twice prints once. */
 export function mktgFamilyPrintOpenItems(chapters: MktgFamilyPrintChapter[]): MktgFamilyPrintOpenItem[] {
   const seen = new Set<string>();
@@ -767,9 +842,12 @@ export function mktgFamilyPrintOpenItems(chapters: MktgFamilyPrintChapter[]): Mk
  * from y 410 to the Still open block, the open items from there to the
  * page's bottom (from y 410 when there are no conflicts); whole rows only,
  * nothing added, the rows past a block counted for its cut note. The Still
- * open block follows the conflicts printed, a block gap under them, never
- * lower than the board's y for it, so the page keeps no dead space between
- * the two; its budget runs from there. The open rows' text column starts
+ * open block follows the conflicts printed, a block gap under them, so the
+ * page keeps no dead space between the two; its budget runs from where it
+ * stands, above the board's y for it when the conflicts are short and below
+ * it when they fill their block to the line (the gap then carries the block
+ * past it), so no open row is kept that the frame has no room for. The open
+ * rows' text column starts
  * after the widest document chip, so the chips align whatever the longest
  * document name.
  */
@@ -796,7 +874,9 @@ export function mktgFamilyPrintSourcesLayout(conflicts: MktgFamilyPrintConflict[
       mktgPortraitParaHeight({ text: conflictText(row), size: layout.conflict.size, line: layout.conflict.line }, conflictWidth),
     noteLine
   );
-  const openTop = conflicts.length ? Math.min(layout.openTop, layout.conflictsTop + layout.heading + conflictsHeight + layout.blockGap) : layout.conflictsTop;
+  // Where the Still open block stands in the page's flow: under the conflicts and the block gap, wherever that falls against
+  // the board's y (a budget started at the board's y under a full conflicts block kept one row more than the frame holds).
+  const openTop = conflicts.length ? layout.conflictsTop + layout.heading + conflictsHeight + layout.blockGap : layout.conflictsTop;
   const chipWidth = Math.max(0, ...openItems.map((item) => item.document.length)) * layout.chip.size * MKTG_PORTRAIT_FIT.charEmCaps + layout.chip.padding;
   const keptOpen = mktgFamilyPrintFitRows(
     openItems,
@@ -826,6 +906,26 @@ function mktgFamilyPrintMeasurePhrase(label: string): string {
     .join(' ');
 }
 
+/**
+ * The measure phrase as a pattern that meets its count noun in the singular and the plural: the last word's stem with
+ * its endings (`organizations` and `organization` → `organizations?`; `company` → `compan(?:y|ies)`; `branch` →
+ * `branch(?:es)?`; a bare final `s` is read as a plural),
+ * the words before it as written, each gap any whitespace. The lfx-one review's case: `1 member organization` is a
+ * count of `member organizations`.
+ */
+function mktgFamilyPrintMeasurePattern(phrase: string): string {
+  const words = phrase.split(' ');
+  const last = words[words.length - 1];
+  let forms: string;
+  if (/[^aeiou]ies$/.test(last)) forms = `${last.slice(0, -3)}(?:y|ies)`;
+  else if (/[^aeiou]y$/.test(last)) forms = `${last.slice(0, -1)}(?:y|ies)`;
+  else if (/(?:s|x|z|ch|sh)es$/.test(last)) forms = `${last.slice(0, -2)}(?:es)?`;
+  else if (/(?:ss|x|z|ch|sh)$/.test(last)) forms = `${last}(?:es)?`;
+  else if (/s$/.test(last)) forms = `${last}?`;
+  else forms = `${last}s?`;
+  return [...words.slice(0, -1), forms].join('\\s+');
+}
+
 /** `Member organizations` read on from a figure or mid-sentence: `member organizations`; an acronym (`FAQ`, `MCP servers`) keeps its case. */
 export function mktgFamilyPrintInSentence(name: string): string {
   const trimmed = name.trim();
@@ -852,31 +952,34 @@ function mktgFamilyPrintFigureValue(digits: string, magnitude: string | undefine
 
 /**
  * A key number's figure as a value: the whole number read as `[qualifier] <figure>[ magnitude][+]`, so `1.2M` is
- * 1200000 and `7,000+` is 7000; null when the number holds no figure, holds a currency or a percentage, or carries
- * words the reader cannot interpret whole (`1.2M a day`): then nothing is compared and no re-run is asked for.
+ * 1200000 and `7,000+` is 7000 with `lowerBound` set (the `+` makes the figure a floor, not a count); null when the
+ * number holds no figure, holds a currency or a percentage, or carries words the reader cannot interpret whole
+ * (`1.2M a day`): then nothing is compared and no re-run is asked for.
  */
-export function mktgFamilyPrintFigure(text: string): number | null {
+export function mktgFamilyPrintFigure(text: string): MktgFamilyPrintFigure | null {
   if (/[$€£%]/.test(text)) return null;
   const match = new RegExp(
-    `^\\s*(?:(?:${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}\\+?\\s*$`,
+    `^\\s*(?:(?:${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}(\\+?)\\s*$`,
     'i'
   ).exec(text);
   if (!match) return null;
   const value = mktgFamilyPrintFigureValue(match[1], match[2] ?? match[3]);
-  return Number.isFinite(value) ? value : null;
+  return Number.isFinite(value) ? { value, lowerBound: match[4] === '+' } : null;
 }
 
 /**
  * The framework's key numbers read against the other documents' own text: a
  * sentence that gives the same measure (the label's whole phrase, a word
- * boundary on each side, plural or singular) a different count, the figure
+ * boundary on each side, its count noun in the singular or the plural) a different count, the figure
  * standing right before the phrase (`308 member organizations`), is a row
  * quoting both. A figure of another kind (a price, a percentage, a year), a
  * rounded one (`over 300`, `7,000+`), a figure with words between it and the
  * measure (`18 new member organizations`: a part, not the count) or a
  * sentence that also states the framework's own figure (`299 …, up from 150
  * member organizations`) is no other count of it; a word that only starts
- * with the phrase (`membership`) is not the measure. One row per key number
+ * with the phrase (`membership`) is not the measure. A framework figure
+ * written with a `+` (`10,000+`) is a lower bound: a count at or above it
+ * agrees, only a smaller one is another count. One row per key number
  * and document. The document to re-run is the other one: the framework is
  * the source.
  */
@@ -886,12 +989,14 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
     const figure = mktgFamilyPrintFigure(row.number);
     const phrase = mktgFamilyPrintMeasurePhrase(row.label);
     if (figure === null || !phrase) continue;
+    const agrees = (count: number): boolean => (figure.lowerBound ? count >= figure.value : count === figure.value);
     // `[qualifier] <figure>[ magnitude][+] <phrase>[s]`: the figure right before the measure counts it, its magnitude
     // read (`1.2M downloads` is 1,200,000 downloads); one under a qualifier or with a trailing `+` is rounded, and a
-    // year is a date. Nothing else between the figure and the phrase: `18 new member organizations` counts a part of
-    // the measure, not the measure.
+    // year is a date: four bare digits as written (`2024 member organizations`), not a count that happens to fall in
+    // the years (`2,000 code contributors`, `2 thousand`). Nothing else between the figure and the phrase: `18 new
+    // member organizations` counts a part of the measure, not the measure.
     const pattern = new RegExp(
-      `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}(\\+?)\\s+${phrase.replace(/ /g, '\\s+')}s?\\b`,
+      `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}(\\+?)\\s+${mktgFamilyPrintMeasurePattern(phrase)}\\b`,
       'gi'
     );
     for (const source of sources) {
@@ -900,10 +1005,11 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
         .map((part) => part.trim())
         .find((part) => {
           const counts = Array.from(part.matchAll(pattern))
-            .filter((match) => !match[1] && !match[5] && !/^(?:19|20)\d\d$/.test(match[2].replace(/,/g, '')))
+            .filter((match) => !match[1] && !match[5] && !(/^(?:19|20)\d\d$/.test(match[2]) && !(match[3] ?? match[4])))
             .map((match) => mktgFamilyPrintFigureValue(match[2], match[3] ?? match[4]));
-          // A sentence that states the framework's own figure agrees with it, whatever else it counts.
-          return counts.length > 0 && !counts.includes(figure);
+          // A sentence that states the framework's own figure, or a count at or above a lower bound, agrees with it,
+          // whatever else it counts.
+          return counts.length > 0 && !counts.some(agrees);
         });
       if (!sentence) continue;
       const label = row.label.trim();
@@ -1127,4 +1233,39 @@ export function mktgFamilyPrintFaqBalancedPages(groups: MktgFamilyPrintFaqPlanGr
 export function mktgFamilyPrintFaqSourceLabel(source: string): string {
   const trimmed = source.trim();
   return MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS[trimmed.toLocaleLowerCase()] ?? trimmed;
+}
+
+/** The widest face the width table knows, so a bound measured in it holds in every book's face. */
+const WIDEST_FAMILY = Object.entries(MKTG_PORTRAIT_FAMILY_WIDTH).reduce((widest, [family, width]) => (width > widest[1] ? [family, width] : widest))[0];
+
+/**
+ * A FAQ source chip's text, bounded to its column: the label's word
+ * (mktgFamilyPrintFaqSourceLabel; '' prints no chip), a URL read as its host
+ * (`one.example.org`), and a label wider than the column at the chip's type
+ * (MKTG_FAMILY_PRINT_FAQ_CHIP, the grammar's `.pp-chip`, measured in the
+ * widest face the table knows) cut at a word, then at a character, with an
+ * ellipsis, so the chip keeps the one line the entry's height counts
+ * (mktgFamilyPrintFaqEntryHeight) and never runs into the other column. The
+ * FAQ agent writes short labels on every record read; this bounds what it
+ * could write. A non-empty label is never cut to nothing. Pure.
+ */
+export function mktgFamilyPrintFaqSourceChip(source: string, width: number): string {
+  const label = mktgFamilyPrintFaqSourceLabel(source);
+  if (!label) return '';
+  const chip = MKTG_FAMILY_PRINT_FAQ_CHIP;
+  const text = SOURCE_HOST_REGEX.test(label) ? (SOURCE_HOST_REGEX.exec(label)?.[1] ?? label).replace(/^www\./, '') : label;
+  const fits = (candidate: string): boolean =>
+    mktgPortraitTextWidth(candidate, chip.size, { weight: chip.weight, caps: true, tracking: chip.tracking, family: WIDEST_FAMILY }) + chip.inset <= width;
+  if (fits(text)) return text;
+  const words = text.split(/\s+/);
+  for (let keep = words.length - 1; keep >= 1; keep--) {
+    const cut = `${words.slice(0, keep).join(' ')}…`;
+    if (fits(cut)) return cut;
+  }
+  const chars = Array.from(words[0]);
+  for (let keep = chars.length - 1; keep >= 1; keep--) {
+    const cut = `${chars.slice(0, keep).join('')}…`;
+    if (fits(cut)) return cut;
+  }
+  return `${chars[0] ?? ''}…`;
 }

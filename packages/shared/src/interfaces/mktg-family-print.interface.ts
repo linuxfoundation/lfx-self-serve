@@ -160,6 +160,16 @@ export interface MktgFamilyPrintPlanMember {
 }
 
 /**
+ * A framework key number read as a figure (mktgFamilyPrintFigure): its value
+ * with the magnitude applied, and whether the number wrote it with a trailing
+ * `+` (`10,000+`), a lower bound: a count at or above it agrees with it.
+ */
+export interface MktgFamilyPrintFigure {
+  value: number;
+  lowerBound: boolean;
+}
+
+/**
  * One row of the Sources page's "Where the documents disagree": a real
  * conflict, with the document to re-run. Two producers: the store's own
  * (the kit's line against the framework's tagline, the kit report's colour

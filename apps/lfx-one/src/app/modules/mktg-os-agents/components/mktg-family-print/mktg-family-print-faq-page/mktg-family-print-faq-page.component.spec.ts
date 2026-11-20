@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_FAMILY_PRINT_LABELS, MKTG_FAMILY_PRINT_SEP } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_FAMILY_PRINT_LABELS, MKTG_FAMILY_PRINT_SEP, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { FaqGroupView } from '@lfx-one/shared/interfaces';
-import { mktgFamilyPrintFaqGroups } from '@lfx-one/shared/utils';
+import { mktgFamilyPrintFaqGroups, mktgFamilyPrintFaqSourceChip } from '@lfx-one/shared/utils';
 import { describe, expect, it } from 'vitest';
 import { MktgFamilyPrintFaqPageComponent } from './mktg-family-print-faq-page.component';
 
@@ -94,6 +94,38 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
     ).toEqual(['About', `About ${MKTG_FAMILY_PRINT_LABELS.faqContinued}`]);
     expect(root.querySelectorAll('[data-testid="family-print-faq-continued"]')).toHaveLength(1);
     expect(root.textContent).not.toContain('Who runs it?');
+  });
+
+  it('bounds a source chip to its column: a URL as its host, a long label cut with an ellipsis, on the one line the plan counted', async () => {
+    const long = Array.from({ length: 12 }, () => 'synthetic brand guidelines').join(' ');
+    const fixture = TestBed.createComponent(MktgFamilyPrintFaqPageComponent);
+    fixture.componentRef.setInput(
+      'groups',
+      mktgFamilyPrintFaqGroups([
+        {
+          ...stored[0],
+          questions: [
+            { ...stored[0].questions[1], source: 'https://www.one.example.org/about/' },
+            { ...stored[0].questions[2], source: long },
+          ],
+        },
+      ])
+    );
+    fixture.componentRef.setInput('columns', [
+      [
+        { group: 0, question: 0, heading: true },
+        { group: 0, question: 1, heading: false },
+      ],
+      [],
+    ]);
+    await fixture.whenStable();
+    const chips = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('.pp-chip')).map((chip) => chip.textContent);
+    expect(chips[0]).toBe('one.example.org');
+    expect(chips[1]?.endsWith('…')).toBe(true);
+    expect(chips[1]?.length).toBeLessThan(long.length);
+    expect(long.startsWith(chips[1]?.slice(0, -1).trim() ?? long)).toBe(true);
+    // The bound is the plan's column (mktgFamilyPrintFaqSourceChip at the column's width), so the chip reads the same as the plan measured it.
+    expect(chips[1]).toBe(mktgFamilyPrintFaqSourceChip(long, (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_FAQ_LAYOUT.columnGap) / 2));
   });
 
   it('repeats a heading only where the plan opens the group, and names its groups on a later page', async () => {
