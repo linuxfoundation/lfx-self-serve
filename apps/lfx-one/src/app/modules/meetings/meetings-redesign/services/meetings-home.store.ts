@@ -27,6 +27,7 @@ import {
   expandMeetingOccurrences,
   filterMeetingsHome,
   getLargestSessionShareUrl,
+  getLocalDayKey,
   getMeetingGroupCategories,
   getMeetingGroupType,
   getMeetingSeriesUid,
@@ -171,6 +172,13 @@ export class MeetingsHomeStore {
     source: () => ({ tab: this.tab(), search: this.search(), filters: this.filters(), identity: this.feed.key() }),
     computation: () => MEETINGS_HOME_PAGE_SIZE,
   });
+  /** Local day (`YYYY-MM-DD`) picked on the calendar whose rows the list is still bringing in; a new tab, search or filters drop it. */
+  private readonly revealDayState: WritableSignal<string | null> = linkedSignal({
+    source: () => ({ tab: this.tab(), search: this.search(), filters: this.filters(), identity: this.feed.key() }),
+    computation: () => null,
+  });
+  /** Local day (`YYYY-MM-DD`) the calendar shows back to; a paged past feed loads pages until its rows reach it. */
+  private readonly pastCalendarFromState: WritableSignal<string | null> = linkedSignal({ source: this.feed.key, computation: () => null });
 
   /** One row per active upcoming date, soonest first. */
   public readonly upcomingRows: Signal<MeetingHomeRow[]> = this.initUpcomingRows();
@@ -222,8 +230,25 @@ export class MeetingsHomeStore {
   public readonly filteredRows: Signal<MeetingHomeRow[]> = computed(() =>
     filterMeetingsHome(this.tabRows(), this.filters(), this.search(), this.userService.viewerUsername(), this.groupCategories())
   );
-  /** Rows shown so far; back to one page whenever the tab, search or filters change. */
-  public readonly visibleCount: Signal<number> = this.visibleCountState.asReadonly();
+  /** Rows of the list up to and including the last row of the day picked on the calendar; 0 without one. */
+  private readonly revealCount: Signal<number> = this.initRevealCount();
+  /** Rows shown so far; back to one page whenever the tab, search or filters change, and at least through a picked day. */
+  public readonly visibleCount: Signal<number> = computed(() => Math.max(this.visibleCountState(), this.revealCount()));
+  /** A paged past list, loaded for the current search, has not yet loaded past the picked day and has a cursor to continue. */
+  private readonly revealNeedsOlderPast: Signal<boolean> = this.initRevealNeedsOlderPast();
+  /** The calendar shows a month older than the paged past rows loaded so far, and the feed has more. */
+  private readonly calendarNeedsOlderPast: Signal<boolean> = computed(() => {
+    const from = this.pastCalendarFromState();
+    return !!from && this.pastPageToken() !== undefined && this.oldestPastDayAtOrAfter(from);
+  });
+  /** The picked day once every one of its rows is loaded and shown; the page then scrolls to it and calls {@link completeReveal}. */
+  public readonly revealedDay: Signal<string | null> = computed(() => {
+    const day = this.revealDayState();
+    if (!day || this.loading()) return null;
+    // Only a paged feed reloads on a new search; a page loading past an already covered day does not hold the day back.
+    const pastPending = (this.feed.pagedPast && this.pastQuery() !== this.search().trim()) || this.revealNeedsOlderPast();
+    return this.tab() === 'past' && pastPending ? null : day;
+  });
   public readonly groups: Signal<MeetingDayGroup[]> = computed(() =>
     groupMeetingsByDayBucket(this.filteredRows(), this.tab(), this.now(), this.visibleCount())
   );
@@ -278,6 +303,30 @@ export class MeetingsHomeStore {
     if (tab === this.tab()) return;
     this.tabState.set(tab);
     this.filtersState.set(MEETINGS_HOME_DEFAULT_FILTERS);
+  }
+
+  /**
+   * Shows every meeting of a local day (`YYYY-MM-DD`) on `tab`: clears search and filters, then shows rows through that day;
+   * a paged past feed keeps loading pages until it is covered. {@link revealedDay} reports the day once it is.
+   */
+  public showDay(day: string, tab: MeetingDashboardView): void {
+    this.tabState.set(tab);
+    this.filtersState.set(MEETINGS_HOME_DEFAULT_FILTERS);
+    this.searchState.set('');
+    this.revealDayState.set(day);
+  }
+
+  /** Loads past pages until they reach a local day (`YYYY-MM-DD`), so the calendar can show that month's past meetings. */
+  public showPastFrom(day: string): void {
+    this.pastCalendarFromState.update((current) => (current && current <= day ? current : day));
+    // Going back another month is the calendar's way to retry a page that failed.
+    this.retryPastPage();
+  }
+
+  /** Keeps the rows a picked day brought in and ends the reveal. */
+  public completeReveal(): void {
+    this.visibleCountState.set(this.visibleCount());
+    this.revealDayState.set(null);
   }
 
   public setSearch(search: string): void {
@@ -484,17 +533,23 @@ export class MeetingsHomeStore {
         this.pastPageToken.set(page.pageToken);
         if (!this.isNarrowed(filters)) this.pastOptionMeetings.set(page.meetings);
       }),
+      tap({
+        // A failed reload of the past list the day waits on leaves it unreachable, so the list stops waiting for it.
+        error: () => {
+          const current = query === this.search().trim() && this.samePastFilters(filters, this.pastServerFilters());
+          if (version === this.pastQueryVersion && this.tab() === 'past' && current) this.revealDayState.set(null);
+        },
+      }),
       map((page) => page.meetings)
     );
   }
 
-  /** Loads server pages while the list shows fewer matching past rows than it asks for and the feed has more. */
+  /** Loads server pages while the list, a picked day or the calendar's month needs more past rows and the feed has more. */
   private initPastAutoLoad(): void {
     if (!this.feed.pagedPast || !isPlatformBrowser(this.platformId)) return;
     toObservable(
       computed(
         () =>
-          this.tab() === 'past' &&
           !this.pastLoading() &&
           !this.pastLoadingMore() &&
           !this.pastPageFailedState() &&
@@ -502,7 +557,7 @@ export class MeetingsHomeStore {
           // The cursor continues the last loaded search and filters; newer ones wait for their own first page.
           this.search().trim() === this.pastQuery() &&
           this.samePastFilters(this.pastServerFilters(), this.pastFilters()) &&
-          this.filteredRows().length < this.visibleCount()
+          ((this.tab() === 'past' && (this.filteredRows().length < this.visibleCount() || this.revealNeedsOlderPast())) || this.calendarNeedsOlderPast())
       )
     )
       .pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef))
@@ -533,6 +588,36 @@ export class MeetingsHomeStore {
           this.pastPageFailedState.set(true);
         },
       });
+  }
+
+  /** Rows through the picked day in list order, so a day without meetings still opens the list to its date. */
+  private initRevealCount(): Signal<number> {
+    return computed(() => {
+      const day = this.revealDayState();
+      if (!day) return 0;
+      const past = this.tab() === 'past';
+      return this.filteredRows().filter((row) => {
+        const key = getLocalDayKey(row.startTime);
+        return past ? key >= day : key <= day;
+      }).length;
+    });
+  }
+
+  /** Past rows run newest first, so the day is covered once the oldest loaded row is from an earlier day. */
+  private initRevealNeedsOlderPast(): Signal<boolean> {
+    return computed(() => {
+      const day = this.revealDayState();
+      // A failed page keeps its cursor for Load more; the day settles on the rows loaded so far.
+      if (!day || this.tab() !== 'past' || this.pastPageToken() === undefined || this.pastPageFailedState()) return false;
+      if (this.pastQuery() !== this.search().trim()) return false;
+      return this.oldestPastDayAtOrAfter(day);
+    });
+  }
+
+  /** Past rows run newest first: true while none is loaded or the oldest loaded one is on or after `day`. */
+  private oldestPastDayAtOrAfter(day: string): boolean {
+    const oldest = this.pastRows().at(-1);
+    return !oldest || getLocalDayKey(oldest.startTime) >= day;
   }
 
   private initNextRow(): Signal<MeetingHomeRow | null> {
