@@ -882,6 +882,33 @@ describe('MeetingsRedesignComponent', () => {
       expect(searchButton(fixture)).toBeTruthy();
     });
 
+    it('stays open when an input method starts composing while it is closing', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      await escape(fixture);
+
+      searchInput(fixture)?.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      await closeDelay();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+    });
+
+    it('waits for a pressed pointer to be released before closing, so the control under it is not moved', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+
+      document.dispatchEvent(new Event('pointerdown'));
+      searchInput(fixture)?.blur();
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+
+      document.dispatchEvent(new Event('pointerup'));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).toContain('is-closing');
+    });
+
     it('starts as a tertiary Search button with a magnifier, before Filters', async () => {
       const fixture = render();
       await loadFeeds(fixture, [buildMeeting(0)]);
@@ -1219,6 +1246,7 @@ describe('MeetingsRedesignComponent', () => {
 
   describe('paged past feed', () => {
     let pastPage$: Subject<{ data: PastMeeting[]; page_token?: string }>;
+    const searchDebounce = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 320));
 
     beforeEach(() => {
       pastPage$ = new Subject();
@@ -1238,11 +1266,31 @@ describe('MeetingsRedesignComponent', () => {
       });
     });
 
+    it('keeps the toolbar, without a no results message, while a cleared search reloads', async () => {
+      queryParamMap$.next(convertToParamMap({ time: 'past' }));
+      const fixture = render();
+      await fixture.whenStable();
+      pastPage$.next({ data: [{ ...buildMeeting(0, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting] });
+      fixture.componentInstance['store'].setSearch('nothing matches');
+      await searchDebounce();
+      pastPage$.next({ data: [] });
+      await fixture.whenStable();
+
+      fixture.componentInstance['store'].setSearch('');
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search-button')).toBeTruthy();
+      expect(query(fixture, 'meetings-home-no-results')).toBeNull();
+      expect(query(fixture, 'meetings-home-empty-past')).toBeNull();
+    });
+
     it('shows no results with a reset, not an empty tab, when a server search matches nothing', async () => {
       queryParamMap$.next(convertToParamMap({ time: 'past' }));
       const fixture = render();
       await fixture.whenStable();
+      pastPage$.next({ data: [{ ...buildMeeting(0, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting] });
       fixture.componentInstance['store'].setSearch('nothing matches');
+      await searchDebounce();
       pastPage$.next({ data: [] });
       await fixture.whenStable();
 
