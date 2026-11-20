@@ -4,7 +4,6 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { lfxColors } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { isObservable, Observable, of, Subject, throwError } from 'rxjs';
@@ -13,7 +12,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { MembersBoardAttendanceComponent } from './members-board-attendance.component';
 
-import type { HealthMetricsMembersBoardAttendance, HealthMetricsMembersBoardCohortSummary, HealthMetricsMembersBoardMeeting } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsMembersBoardAttendance,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardCohortSummary,
+  HealthMetricsMembersBoardMeeting,
+} from '@lfx-one/shared/interfaces';
 
 function cohort(overrides: Partial<HealthMetricsMembersBoardCohortSummary> = {}): HealthMetricsMembersBoardCohortSummary {
   return {
@@ -22,7 +26,6 @@ function cohort(overrides: Partial<HealthMetricsMembersBoardCohortSummary> = {})
     latestInvitedCount: 11,
     meetingsInRangeCount: 12,
     neverAttendedCount: 0,
-    isBelowExpectedLevel: true,
     ...overrides,
   };
 }
@@ -42,7 +45,7 @@ function meeting(overrides: Partial<HealthMetricsMembersBoardMeeting> = {}): Hea
 
 function response(overrides: Partial<HealthMetricsMembersBoardAttendance> = {}): HealthMetricsMembersBoardAttendance {
   return {
-    cohorts: { board: cohort(), voting_members: cohort({ latestAttendancePct: 0.646, isBelowExpectedLevel: false }) },
+    cohorts: { board: cohort(), voting_members: cohort({ latestAttendancePct: 0.646 }) },
     trend: [meeting({ meetingId: 'm-0', meetingDate: '2026-07-31', attendancePct: 0.9 }), meeting({ isLatestMeeting: true })],
     rows: [meeting()],
     totalRecords: 12,
@@ -66,7 +69,8 @@ describe('MembersBoardAttendanceComponent', () => {
   async function render(
     payload: HealthMetricsMembersBoardAttendance = response(),
     queryParams: Record<string, string> = {},
-    followUpPayload?: HealthMetricsMembersBoardAttendance | Observable<HealthMetricsMembersBoardAttendance>
+    followUpPayload?: HealthMetricsMembersBoardAttendance | Observable<HealthMetricsMembersBoardAttendance>,
+    cohortValue: HealthMetricsMembersBoardCohort = 'board'
   ): Promise<void> {
     const followUp = followUpPayload ?? payload;
     getMembersBoardAttendance = vi
@@ -87,6 +91,8 @@ describe('MembersBoardAttendanceComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(MembersBoardAttendanceComponent);
+    // The page owns the cohort switch and passes it in.
+    fixture.componentRef.setInput('cohort', cohortValue);
     fixture.componentInstance.noteChange.subscribe((note) => notes.push(note));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
@@ -119,98 +125,75 @@ describe('MembersBoardAttendanceComponent', () => {
     verdicts = [];
   });
 
-  it('reads the board cohort for the period, renders the hero, and settles with the board note', async () => {
+  function sortBy(column: string): void {
+    (query(`members-board-sort-${column}`)?.querySelector('button') as HTMLButtonElement).click();
+  }
+
+  it('reads the board cohort for the period, renders the metrics, and settles with the board note', async () => {
     await render();
 
-    expect(getMembersBoardAttendance).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10 });
-    expect(text('members-board-meetings')).toBe('12 meetings in range');
-    expect(text('members-board-latest')).toBe('82%');
-    // The hero sits flush in the section, as the design draws it, not inside a card.
-    expect(query('members-board-hero')?.classList).not.toContain('border');
-    expect(query('members-board-latest')?.classList).toContain('text-red-600');
-    expect(text('members-board-caption')).toBe('Last board meeting · below the ~100% this should be');
-    expect(text('members-board-other')).toBe('65%');
-    expect(text('members-board-attended')).toBe('9 / 11');
-    expect(text('members-board-never')).toBe('0');
-    // The meetings-in-range line above the hero is the only count; none repeats over the table.
-    expect(query('members-board-count')).toBeNull();
+    expect(getMembersBoardAttendance).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10, sort: null });
+    expect(text('members-board-metrics-latest-value')).toBe('82%');
+    expect(text('members-board-metrics-latest-description')).toBe('9 of 11 board members attended');
+    expect(text('members-board-metrics-other-label')).toBe('Voting-member attendance');
+    expect(text('members-board-metrics-other-value')).toBe('65%');
+    expect(text('members-board-metrics-never-value')).toBe('0');
+    expect(text('members-board-metrics-never-description')).toBe('Board members with no meeting this year');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
     expect(notes).toEqual(['', '82% attended']);
   });
 
-  it('renders a meeting row with its attended counts and rate bar', async () => {
+  it('renders a meeting row with its name, date and attendance over a bar red below the level', async () => {
     await render();
 
     expect(text('members-board-row-m-1-name')).toBe('Acme Board');
     expect(text('members-board-row-m-1-date')).toBe('Aug 31, 2026');
-    expect(text('members-board-row-m-1-attended')).toBe('9 / 11');
-    expect(text('members-board-row-m-1-rate')).toBe('82%');
-    expect(fixture.nativeElement.querySelectorAll('[data-testid="members-board-table"] th')).toHaveLength(4);
+    expect(text('members-board-row-m-1-attendance')).toBe('9/11・82%');
+    expect(query('members-board-row-m-1-attendance')?.querySelector('[data-testid="health-metrics-progress-fill"]')?.className).toContain('bg-red-500');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="members-board-table"] th')).toHaveLength(3);
   });
 
-  it('draws the latest meetings as a chart with a screen-reader table of the same values', async () => {
+  it('charts the latest meetings oldest first under its sub-heading, the latest bar solid', async () => {
     await render();
 
-    expect(query('members-board-chart')?.getAttribute('aria-label')).toContain('latest 2 board meetings');
-    const rows = [...(query('members-board-chart-table')?.querySelectorAll('tbody tr') ?? [])].map((row) =>
-      [...row.querySelectorAll('th, td')].map((cell) => cell.textContent?.trim())
-    );
-    expect(rows).toEqual([
-      ['Jul 31, 2026', 'Acme Board', '90%'],
-      ['Aug 31, 2026', 'Acme Board', '82%'],
-    ]);
+    expect(text('members-board-trend')).toContain('Attendance by meeting');
+    expect(query('members-board-chart-bars')?.getAttribute('aria-label')).toBe('Attendance at the latest 2 board meetings, oldest first');
+    expect(
+      [...fixture.nativeElement.querySelectorAll('[data-testid^="members-board-chart-value-"]')].map((label: Element) => label.textContent?.trim())
+    ).toEqual(['90%', '82%']);
+    expect(query('members-board-chart-fill-m-0')?.style.opacity).toBe('0.2');
+    expect(query('members-board-chart-fill-m-1')?.style.opacity).toBe('1');
+    expect(query('members-board-chart-bar-m-1')?.getAttribute('aria-label')).toBe('Acme Board, Date Aug 31, 2026, Attendance 82% · 9 / 11');
   });
 
-  it('labels the tooltip with the same rate as the table, to one decimal under 1%', async () => {
-    await render(response({ trend: [meeting({ meetingId: 'm-0', attendancePct: 0.004 }), meeting({ isLatestMeeting: true })] }));
-
-    const label = fixture.componentInstance['chartOptions'].plugins?.tooltip?.callbacks?.label as (item: { dataIndex: number }) => string;
-    expect([label({ dataIndex: 0 }), label({ dataIndex: 1 }), label({ dataIndex: 5 })]).toEqual(['0.4%', '82%', '']);
-  });
-
-  it("highlights the view's latest meeting, not the last bar, when meetings share a date", async () => {
-    const sameDay = [meeting({ meetingId: 'm-a', isLatestMeeting: true }), meeting({ meetingId: 'm-b' })];
-    await render(response({ trend: sameDay, cohorts: { board: cohort({ latestAttendancePct: 0.95, isBelowExpectedLevel: false }), voting_members: null } }));
-
-    expect(fixture.componentInstance['chartData']().datasets[0].backgroundColor).toEqual([lfxColors.blue[500], lfxColors.blue[200]]);
-  });
-
-  it('flags never-attended seats and links to the representatives who never attended', async () => {
-    await render(response({ cohorts: { board: cohort({ neverAttendedCount: 3 }), voting_members: null } }));
-
-    expect(query('members-board-never')?.classList).toContain('text-red-600');
-    expect(text('members-board-never-note')).toContain('3 representatives have never attended');
-    const link = query('members-board-never-link') as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement?repFilter=never#reps');
-    expect(notes.at(-1)).toBe('3 seats unused');
-  });
-
-  it('keeps the board-only never-attended note off the voting members cohort', async () => {
-    const board = cohort({ neverAttendedCount: 3 });
-    await render(response({ cohorts: { board, voting_members: board } }), { boardCohort: 'voting_members' });
-
-    expect(text('members-board-never')).toBe('3');
-    expect(query('members-board-never-note')).toBeNull();
-  });
-
-  it('leaves out the never-attended note when every seat has been used', async () => {
-    await render();
-
-    expect(query('members-board-never-note')).toBeNull();
-  });
-
-  it('switches to voting members, re-reading from page 1 and writing the cohort to the URL, while the note stays on the board', async () => {
+  it('sorts the meetings on the server, returning to the first page and keeping the chart oldest first', async () => {
     await render(response({ totalRecords: 30 }), { boardPage: '2' });
+    getMembersBoardAttendance.mockClear();
+
+    sortBy('attendance');
+    await settle();
+
+    expect(getMembersBoardAttendance).toHaveBeenCalledWith(expect.objectContaining({ offset: 0, sort: { key: 'attendance', direction: 'desc' } }));
+    expect(query('members-board-sort-attendance')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+    expect(query('members-board-chart-bar-m-0')).not.toBeNull();
+  });
+
+  it('switches to voting members from the first page, keeping the sort, while the note stays on the board', async () => {
+    await render(response({ totalRecords: 30 }), { boardPage: '2' });
+    sortBy('meeting');
+    await settle();
     getMembersBoardAttendance.mockClear();
     notes.length = 0;
 
-    fixture.componentInstance['onCohortChange']('voting_members');
+    fixture.componentRef.setInput('cohort', 'voting_members');
     await settle();
 
-    expect(getMembersBoardAttendance).toHaveBeenCalledWith(expect.objectContaining({ cohort: 'voting_members', offset: 0 }));
-    expect(text('members-board-caption')).toBe('Last voting meeting');
-    expect(text('members-board-other')).toBe('82%');
+    expect(getMembersBoardAttendance).toHaveBeenCalledWith(
+      expect.objectContaining({ cohort: 'voting_members', offset: 0, sort: { key: 'meeting', direction: 'asc' } })
+    );
+    expect(text('members-board-metrics-latest-description')).toBe('9 of 11 voting members attended');
+    expect(text('members-board-metrics-other-label')).toBe('Board attendance');
     expect(notes).toEqual(['82% attended']);
     expect(navigate).toHaveBeenLastCalledWith(
       [],
@@ -218,33 +201,23 @@ describe('MembersBoardAttendanceComponent', () => {
     );
   });
 
-  it('ignores a cohort it does not know', async () => {
-    await render();
-    getMembersBoardAttendance.mockClear();
-
-    fixture.componentInstance['onCohortChange']('committee');
-    await settle();
-
-    expect(getMembersBoardAttendance).not.toHaveBeenCalled();
-  });
-
   it('pages through the table and writes the page to the URL', async () => {
     await render(response({ totalRecords: 30 }));
     getMembersBoardAttendance.mockClear();
 
-    fixture.componentInstance['onTablePage']({ first: 20, rows: 10 });
+    fixture.componentInstance['page'].set(2);
     await settle();
 
     expect(getMembersBoardAttendance).toHaveBeenCalledWith(expect.objectContaining({ offset: 20 }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { boardCohort: null, boardPage: 3 } }));
   });
 
-  it('starts on the cohort and page the URL carries, and falls back for values it cannot honour', async () => {
-    await render(response({ totalRecords: 30 }), { boardCohort: 'voting_members', boardPage: '2' });
+  it('starts on the page the URL carries, and falls back for a page it cannot honour', async () => {
+    await render(response({ totalRecords: 30 }), { boardPage: '2' }, undefined, 'voting_members');
     expect(getMembersBoardAttendance).toHaveBeenCalledWith(expect.objectContaining({ cohort: 'voting_members', offset: 10 }));
 
     TestBed.resetTestingModule();
-    await render(response(), { boardCohort: 'toString', boardPage: 'x' });
+    await render(response(), { boardPage: 'x' });
     expect(getMembersBoardAttendance).toHaveBeenCalledWith(expect.objectContaining({ cohort: 'board', offset: 0 }));
   });
 
@@ -258,7 +231,7 @@ describe('MembersBoardAttendanceComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { boardCohort: null, boardPage: 2 } }));
   });
 
-  it('re-reads from page 1 for a new period, blanking the note until it lands', async () => {
+  it('re-reads from the first page for a new period, blanking the note until it lands', async () => {
     await render(response({ totalRecords: 30 }), { boardPage: '3' });
     getMembersBoardAttendance.mockClear();
     notes.length = 0;
@@ -285,34 +258,32 @@ describe('MembersBoardAttendanceComponent', () => {
     await settle();
 
     expect(query('members-board-loading')).not.toBeNull();
-    expect(query('members-board-latest')).toBeNull();
-    expect(text('members-board-meetings')).toBe('—');
+    expect(query('members-board-metrics')).toBeNull();
   });
 
   it('settles empty, with no body, when the period holds no meeting', async () => {
     await render(NO_MEETINGS);
 
     expect(verdicts).toEqual([true]);
-    expect(query('members-board-hero')).toBeNull();
+    expect(query('members-board-metrics')).toBeNull();
     expect(query('members-board-table')).toBeNull();
     expect(notes.at(-1)).toBe('');
   });
 
-  it('does not settle empty for a cohort with no meeting while the other cohort met, keeping the pills to switch back', async () => {
+  it('does not settle empty for a cohort with no meeting while the other cohort met, so the switch can go back', async () => {
     const votingOnly = { board: cohort({ meetingsInRangeCount: 0 }), voting_members: cohort({ meetingsInRangeCount: 4 }) };
     await render(response({ cohorts: votingOnly, trend: [], rows: [], totalRecords: 0 }));
 
     expect(verdicts).toEqual([false]);
-    expect(query('members-board-cohort-pills')).not.toBeNull();
     expect(text('members-board-empty')).toContain('No board meetings in this period');
-    expect(query('members-board-hero')).toBeNull();
+    expect(query('members-board-metrics')).toBeNull();
   });
 
   it('keeps the body for rows and a trend the cohort summaries leave unmeasured', async () => {
     await render(response({ cohorts: { board: null, voting_members: null } }));
 
     expect(verdicts).toEqual([false]);
-    expect(query('members-board-hero')).not.toBeNull();
+    expect(text('members-board-metrics-latest-value')).toBe('—');
     expect(query('members-board-empty')).toBeNull();
   });
 
@@ -322,7 +293,7 @@ describe('MembersBoardAttendanceComponent', () => {
     lifecycle.length = 0;
     getMembersBoardAttendance.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
-    fixture.componentInstance['onTablePage']({ first: 10, rows: 10 });
+    fixture.componentInstance['page'].set(1);
     await settle();
 
     expect(query('members-board-error')).not.toBeNull();

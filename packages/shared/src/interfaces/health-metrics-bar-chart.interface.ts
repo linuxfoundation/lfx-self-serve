@@ -4,7 +4,7 @@
 import type { HEALTH_METRICS_BAR_CHART_LABEL_CLASSES } from '../constants/health-metrics-bar-chart.constants';
 import type { HealthMetricsChartTipView } from './health-metrics-l2.interface';
 
-/** How a bar's value label reads: the latest bar's ink or an earlier bar's muted ink. */
+/** How a bar's value label reads: the latest bar's ink, an earlier bar's muted ink, or a warning. */
 export type HealthMetricsBarChartLabelTone = keyof typeof HEALTH_METRICS_BAR_CHART_LABEL_CLASSES;
 
 /** One bar before layout. */

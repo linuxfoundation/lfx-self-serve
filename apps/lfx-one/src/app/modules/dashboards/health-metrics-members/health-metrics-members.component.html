@@ -49,8 +49,16 @@
   <ng-template lfxHealthMetricsL2Section="renewals">
     <lfx-members-renewals [(window)]="renewalsWindow" (reading)="shell.sectionReading('renewals')" (settled)="shell.sectionSettled('renewals', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="board">
+    <lfx-ui-switch size="small" ariaLabel="Cohort" [value]="boardCohort()" (valueChange)="onBoardCohortChange($event)" data-testid="members-board-cohort">
+      @for (option of boardCohorts; track option.id) {
+        <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'members-board-cohort-' + option.id" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="board">
     <lfx-members-board-attendance
+      [(cohort)]="boardCohort"
       (noteChange)="boardNote.set($event)"
       (reading)="shell.sectionReading('board')"
       (settled)="shell.sectionSettled('board', $event)" />

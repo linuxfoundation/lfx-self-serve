@@ -781,7 +781,7 @@ describe('HealthMetricsMembersService.getRenewals', () => {
 });
 
 describe('HealthMetricsMembersService.getBoardAttendance', () => {
-  const query = { foundationSlug: 'acme', range: 'YTD' as const, cohort: 'board' as const, offset: 0, pageSize: 10 };
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, cohort: 'board' as const, offset: 0, pageSize: 10, sort: null };
 
   function cohortRow(cohort: string, overrides: Record<string, unknown> = {}) {
     return {
@@ -791,7 +791,6 @@ describe('HealthMetricsMembersService.getBoardAttendance', () => {
       LATEST_INVITED_COUNT: 11,
       MEETINGS_IN_RANGE_COUNT: 7,
       NEVER_ATTENDED_COUNT: 2,
-      IS_BELOW_EXPECTED_LEVEL: true,
       ...overrides,
     };
   }
@@ -830,7 +829,7 @@ describe('HealthMetricsMembersService.getBoardAttendance', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     respond({
-      cohorts: [cohortRow('board'), cohortRow('voting_members', { LATEST_ATTENDANCE_PCT: 0.646, IS_BELOW_EXPECTED_LEVEL: false })],
+      cohorts: [cohortRow('board'), cohortRow('voting_members', { LATEST_ATTENDANCE_PCT: 0.646 })],
       page: [{ TOTAL_RECORDS: 7, IS_PAGE_ROW: true, ...meetingRow('m-2', 18, { IS_LATEST_MEETING: true }) }],
       trend: [meetingRow('m-2', 18, { IS_LATEST_MEETING: true }), meetingRow('m-1', 4)],
     });
@@ -852,7 +851,8 @@ describe('HealthMetricsMembersService.getBoardAttendance', () => {
       expect(sql.match(/\?/g)).toHaveLength(binds.length);
       expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE\n');
       expect(sql).toContain(`latest_meeting_attendance_pct_${suffix} AS latest_attendance_pct`);
-      expect(sql).toContain(`is_below_expected_level_${suffix} AS is_below_expected_level`);
+      expect(sql).toContain(`never_attended_count_${suffix} AS never_attended_count\n`);
+      expect(sql).not.toContain('is_below_expected_level');
     }
   });
 
@@ -879,6 +879,23 @@ describe('HealthMetricsMembersService.getBoardAttendance', () => {
       `ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC\n        LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`
     );
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+    expect(sql).toContain('ROW_NUMBER() OVER (ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC) AS page_position');
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+  });
+
+  it.each([
+    ['board', 'meeting', 'asc', 'COLLATE(NULLIF(NULLIF(TRIM(committee_name'],
+    ['voting_members', 'meeting', 'desc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(committee_name, 'Voting members')"],
+    ['board', 'date', 'asc', 'meeting_date ASC NULLS LAST, meeting_date DESC NULLS LAST'],
+    ['board', 'attendance', 'desc', 'ROUND(LEAST(GREATEST(attendance_pct * 100, 0), 100))) DESC NULLS LAST, meeting_date DESC'],
+  ] as const)('sorts the %s meetings by %s %s across every page, then newest first', async (cohort, key, direction, expected) => {
+    await new HealthMetricsMembersService().getBoardAttendance(req, { ...query, cohort, sort: { key, direction } });
+
+    const [sql, binds] = boardRead('page');
+    expect(sql).toContain(expected);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    // The chart keeps its own order whatever the table's sort.
+    expect(boardRead('trend')[0]).toContain('ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC\n      LIMIT 12');
   });
 
   it('caps the trend at the latest twelve meetings and plots them oldest first', async () => {
@@ -897,9 +914,8 @@ describe('HealthMetricsMembersService.getBoardAttendance', () => {
       latestInvitedCount: 11,
       meetingsInRangeCount: 7,
       neverAttendedCount: 2,
-      isBelowExpectedLevel: true,
     });
-    expect(result.cohorts.voting_members).toMatchObject({ latestAttendancePct: 0.646, isBelowExpectedLevel: false });
+    expect(result.cohorts.voting_members).toMatchObject({ latestAttendancePct: 0.646 });
     expect(result.totalRecords).toBe(7);
     expect(result.rows).toEqual([
       {
@@ -916,7 +932,7 @@ describe('HealthMetricsMembersService.getBoardAttendance', () => {
 
   it('reads a missing cohort as null, keeps the total past the end, and maps missing fields to null', async () => {
     respond({
-      cohorts: [cohortRow('board', { LATEST_ATTENDANCE_PCT: null, IS_BELOW_EXPECTED_LEVEL: null })],
+      cohorts: [cohortRow('board', { LATEST_ATTENDANCE_PCT: null })],
       page: [{ TOTAL_RECORDS: 7, IS_PAGE_ROW: null, MEETING_AND_OCCURRENCE_ID: null }],
       trend: [
         meetingRow('m-3', 2, { COMMITTEE_NAME: '', MEETING_DATE: null, ATTENDED_COUNT: null, ATTENDANCE_PCT: null, IS_LATEST_MEETING: null }),
@@ -926,7 +942,7 @@ describe('HealthMetricsMembersService.getBoardAttendance', () => {
 
     const result = await new HealthMetricsMembersService().getBoardAttendance(req, query);
 
-    expect(result.cohorts).toMatchObject({ board: { latestAttendancePct: null, isBelowExpectedLevel: null }, voting_members: null });
+    expect(result.cohorts).toMatchObject({ board: { latestAttendancePct: null }, voting_members: null });
     expect(result).toMatchObject({ rows: [], totalRecords: 7 });
     expect(result.trend).toHaveLength(1);
     expect(result.trend[0]).toMatchObject({ committeeName: null, meetingDate: null, attendedCount: null, attendancePct: null, isLatestMeeting: false });

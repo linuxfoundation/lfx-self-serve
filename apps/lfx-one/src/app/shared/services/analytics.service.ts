@@ -1442,12 +1442,13 @@ export class AnalyticsService {
   }
 
   public getMembersBoardAttendance(query: HealthMetricsMembersBoardAttendanceQuery): Observable<HealthMetricsMembersBoardAttendance> {
-    const params = strictHttpParams()
+    let params = strictHttpParams()
       .set('foundationSlug', query.foundationSlug)
       .set('range', query.range)
       .set('cohort', query.cohort)
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state rather than an empty one.
     return this.http.get<HealthMetricsMembersBoardAttendance>('/api/analytics/members-board-attendance', { params }).pipe(

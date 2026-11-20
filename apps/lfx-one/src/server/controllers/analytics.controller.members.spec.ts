@@ -454,6 +454,7 @@ describe('AnalyticsController.getMembersBoardAttendance', () => {
       cohort: 'board',
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED);
   });
@@ -467,7 +468,16 @@ describe('AnalyticsController.getMembersBoardAttendance', () => {
       cohort: 'voting_members',
       offset: 10,
       pageSize: 10,
+      sort: null,
     });
+  });
+
+  it('passes an allowed sort and drops one it does not know', async () => {
+    await call({ ...valid, sortKey: 'attendance', sortDir: 'asc' }, 'getMembersBoardAttendance').promise;
+    expect(getBoardAttendance).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'attendance', direction: 'asc' } }));
+
+    await call({ ...valid, sortKey: 'committee_name', sortDir: 'asc' }, 'getMembersBoardAttendance').promise;
+    expect(getBoardAttendance).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it('falls back to the default page size past the cap', async () => {

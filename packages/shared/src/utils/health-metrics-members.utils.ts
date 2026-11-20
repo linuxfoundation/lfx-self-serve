@@ -3,16 +3,19 @@
 
 import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
-import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_TIPS,
   HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
-  HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS,
-  HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_BOARD_BAR_COLORS,
+  HEALTH_METRICS_MEMBERS_BOARD_CHART,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORT_PEOPLE,
   HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES,
-  HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
+  HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES,
+  HEALTH_METRICS_MEMBERS_BOARD_MEETING_FALLBACKS,
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
+  HEALTH_METRICS_MEMBERS_BOARD_OTHER_COHORT_LABELS,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR,
   HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
   HEALTH_METRICS_MEMBERS_CHURN_TREND_CHART,
@@ -35,7 +38,6 @@ import {
 import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
 import { buildHealthMetricsBarChart } from './health-metrics-bar-chart.utils';
 import { healthMetricsColumnChartCeiling } from './health-metrics-column-chart.utils';
-import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
 import {
   formatHealthMetricsPercent,
   formatHealthMetricsSmallPercent,
@@ -45,7 +47,7 @@ import {
 } from './health-metrics-table.utils';
 import { formatCurrency } from './number.utils';
 
-import type { HealthMetricsBarChartView } from '../interfaces/health-metrics-bar-chart.interface';
+import type { HealthMetricsBarChartLabelTone, HealthMetricsBarChartView } from '../interfaces/health-metrics-bar-chart.interface';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type { HealthMetricsChartTipRowView, HealthMetricsL2Section, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
 import type {
@@ -60,8 +62,6 @@ import type {
   HealthMetricsMembersBoardCohortSummary,
   HealthMetricsMembersBoardMeeting,
   HealthMetricsMembersBoardMeetingRowView,
-  HealthMetricsMembersBoardSummaryView,
-  HealthMetricsMembersBoardTrendBarView,
   HealthMetricsMembersBreakdownColumnView,
   HealthMetricsMembersBreakdownRowView,
   HealthMetricsMembersBreakdownView,
@@ -376,90 +376,130 @@ export function parseHealthMetricsMembersRenewalsWindow(value: string | null): H
   return HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS.find((window) => window === value) ?? HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS[0];
 }
 
-/** The board hero for the selected cohort, with the other cohort's latest share beside it. */
-export function buildHealthMetricsMembersBoardSummary(
-  cohort: HealthMetricsMembersBoardCohort,
-  selected: HealthMetricsMembersBoardCohortSummary | null,
-  other: HealthMetricsMembersBoardCohortSummary | null
-): HealthMetricsMembersBoardSummaryView {
-  const isBelowExpectedLevel = isHealthMetricsMembersBoardBelowLevel(cohort, selected);
-  const latestTone = isBelowExpectedLevel ? HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].tone : 'ok';
-  const neverAttendedCount = Math.max(0, selected?.neverAttendedCount ?? 0);
-  const noun = HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS[cohort];
-  const attended = selected?.latestAttendedCount ?? null;
-  const invited = selected?.latestInvitedCount ?? null;
-  const meetings = selected?.meetingsInRangeCount ?? null;
-  return {
-    meetingsLabel: meetings === null ? '—' : `${pluralize(meetings, 'meeting')} in range`,
-    latestPctLabel: formatPct(selected?.latestAttendancePct ?? null),
-    latestCaption: `Last ${noun}${isBelowExpectedLevel ? ` · ${HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS[cohort]}` : ''}`,
-    isBelowExpectedLevel,
-    latestTone,
-    latestTextClass: HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS[latestTone],
-    otherCohortLabel: HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS.find((option) => option.id !== cohort)?.label ?? '',
-    otherCohortPctLabel: formatPct(other?.latestAttendancePct ?? null),
-    attendedInvitedLabel: attended === null || invited === null ? '—' : `${formatCount(attended)} / ${formatCount(invited)}`,
-    neverAttendedLabel: formatCount(selected?.neverAttendedCount ?? null),
-    neverAttendedCount,
-  };
+/** The cohort switch's value from the URL or the switch; anything else is the board. */
+export function parseHealthMetricsMembersBoardCohort(value: string | null): HealthMetricsMembersBoardCohort {
+  return HEALTH_METRICS_MEMBERS_BOARD_COHORTS.find((cohort) => cohort === value) ?? HEALTH_METRICS_MEMBERS_BOARD_COHORTS[0];
 }
 
 /**
- * Whether the latest meeting is below the cohort's rule, on the whole percent shown. The view's flag
- * draws the board's 90% line for both cohorts, so it stands in only for a board share that is missing.
+ * The selected cohort's last meeting, the other cohort's beside it, and who never attended in the period's year. Values
+ * stay ink; only the chart and table mark a meeting below its level.
  */
-export function isHealthMetricsMembersBoardBelowLevel(
+export function buildHealthMetricsMembersBoardMetrics(
   cohort: HealthMetricsMembersBoardCohort,
-  summary: HealthMetricsMembersBoardCohortSummary | null
-): boolean {
-  const pct = toWholePct(summary?.latestAttendancePct ?? null);
-  if (pct === null) return cohort === 'board' && summary?.isBelowExpectedLevel === true;
-  return pct < Math.round(HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].threshold * 100);
+  cohorts: Record<HealthMetricsMembersBoardCohort, HealthMetricsMembersBoardCohortSummary | null>,
+  range: HealthMetricsRange
+): HealthMetricsMetricItem[] {
+  const other = HEALTH_METRICS_MEMBERS_BOARD_COHORTS.find((candidate) => candidate !== cohort) ?? cohort;
+  const selected = cohorts[cohort];
+  const people = HEALTH_METRICS_MEMBERS_BOARD_COHORT_PEOPLE[cohort];
+  const peopleLabel = people.charAt(0).toUpperCase() + people.slice(1);
+  const year = getYearForRange(range);
+  // The count follows the period, so "this year" names the running year only, as the churn metrics do.
+  const yearPhrase = year === getYearForRange('YTD') ? 'this year' : `in ${year}`;
+  const ofCount = (summary: HealthMetricsMembersBoardCohortSummary | null, suffix: string): string => {
+    const attended = summary?.latestAttendedCount ?? null;
+    const invited = summary?.latestInvitedCount ?? null;
+    return attended === null || invited === null ? '' : `${formatCount(attended)} of ${formatCount(invited)} ${suffix}`;
+  };
+
+  return [
+    {
+      key: 'latest',
+      label: 'Last meeting attendance',
+      value: formatPct(selected?.latestAttendancePct ?? null),
+      description: ofCount(selected, `${people} attended`),
+    },
+    {
+      key: 'other',
+      label: HEALTH_METRICS_MEMBERS_BOARD_OTHER_COHORT_LABELS[other],
+      value: formatPct(cohorts[other]?.latestAttendancePct ?? null),
+      description: ofCount(cohorts[other], 'at last meeting'),
+    },
+    {
+      key: 'never',
+      label: 'Never attended',
+      value: formatCount(selected?.neverAttendedCount ?? null),
+      description: `${peopleLabel} with no meeting ${yearPhrase}`,
+    },
+  ];
 }
 
-/** Meeting rows; the rate bar takes the Engagement attendance tones under the cohort's rule. */
+/** Meeting rows: the name, the date, and "5/7・71%" over a bar that turns red below the cohort's level. */
 export function buildHealthMetricsMembersBoardMeetingRows(
   rows: HealthMetricsMembersBoardMeeting[],
   cohort: HealthMetricsMembersBoardCohort
 ): HealthMetricsMembersBoardMeetingRowView[] {
-  const rule = HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort];
   return rows.map((row) => {
-    const ratePct = toWholePct(row.attendancePct);
+    const pct = toShownPct(row.attendancePct);
+    const counts = row.attendedCount === null || row.invitedCount === null ? null : `${formatCount(row.attendedCount)}/${formatCount(row.invitedCount)}`;
+    const shown = formatPct(row.attendancePct);
     return {
       meetingId: row.meetingId,
-      committeeName: row.committeeName ?? '—',
+      meetingName: boardMeetingName(row, cohort),
       dateLabel: formatIsoDate(row.meetingDate),
-      attendedLabel: row.attendedCount === null || row.invitedCount === null ? '—' : `${formatCount(row.attendedCount)} / ${formatCount(row.invitedCount)}`,
-      ratePct,
-      rateLabel: formatPct(row.attendancePct),
-      rateFillClass: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[resolveHealthMetricsEngagementAttendanceTone(row.attendancePct, rule)],
+      attendanceLabel: counts === null ? shown : `${counts}・${shown}`,
+      attendancePct: pct,
+      fillClass: HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES[isBoardBelowLevel(cohort, pct) ? 'low' : 'ok'],
     };
   });
 }
 
-/** Trend bars, labelled by short date; the rate is clamped like the table's. */
-export function buildHealthMetricsMembersBoardTrend(trend: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardTrendBarView[] {
-  return trend.map((meeting) => {
-    const pct = toShownPct(meeting.attendancePct);
-    return {
-      meetingId: meeting.meetingId,
-      label: formatIsoDateShortLabel(meeting.meetingDate) ?? '—',
-      dateLabel: formatIsoDate(meeting.meetingDate),
-      committeeName: meeting.committeeName ?? '—',
-      pct,
-      pctLabel: formatPct(meeting.attendancePct),
-      isLatest: meeting.isLatestMeeting,
-    };
+/**
+ * The design's chart: one bar per meeting, oldest first, red below the cohort's level and blue otherwise, the latest
+ * solid and the rest at 20%. Its popup names the meeting, then its date and attendance.
+ */
+export function buildHealthMetricsMembersBoardChart(
+  trend: HealthMetricsMembersBoardMeeting[],
+  cohort: HealthMetricsMembersBoardCohort
+): HealthMetricsBarChartView {
+  // The view's latest meeting, not the last bar, so meetings sharing a date mark the one the metrics report.
+  const flagged = trend.findIndex((meeting) => meeting.isLatestMeeting);
+  const latestIndex = flagged === -1 ? trend.length - 1 : flagged;
+
+  return buildHealthMetricsBarChart({
+    heightPx: HEALTH_METRICS_MEMBERS_BOARD_CHART.heightPx,
+    barWidthPx: HEALTH_METRICS_MEMBERS_BOARD_CHART.barWidthPx,
+    max: 100,
+    ticks: ['100%', '75%', '50%', '25%', '0%'],
+    bars: trend.map((meeting, index) => {
+      const pct = toShownPct(meeting.attendancePct);
+      const low = isBoardBelowLevel(cohort, pct);
+      const latest = index === latestIndex;
+      const color = HEALTH_METRICS_MEMBERS_BOARD_BAR_COLORS[low ? 'low' : 'ok'];
+      const valueLabel = formatPct(meeting.attendancePct);
+      const counts =
+        meeting.attendedCount === null || meeting.invitedCount === null
+          ? ''
+          : ` · ${formatCount(meeting.attendedCount)} / ${formatCount(meeting.invitedCount)}`;
+      return {
+        key: meeting.meetingId,
+        label: formatIsoDateShortLabel(meeting.meetingDate) ?? '—',
+        value: pct,
+        valueLabel,
+        labelTone: boardLabelTone(latest, low),
+        color,
+        opacity: latest ? 1 : HEALTH_METRICS_MEMBERS_BOARD_CHART.earlierOpacity,
+        lineValue: null,
+        tip: {
+          title: boardMeetingName(meeting, cohort),
+          rows: [
+            { label: 'Date', value: formatIsoDate(meeting.meetingDate), color: null, separated: false },
+            { label: 'Attendance', value: `${valueLabel}${counts}`, color, separated: false },
+          ],
+        },
+      };
+    }),
+    line: null,
+    legend: [],
+    ariaLabel: `Attendance at the latest ${pluralize(trend.length, HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS[cohort])}, oldest first`,
   });
 }
 
-/** The sub-nav note, from the board cohort: unused seats first, else the latest share when below its level. */
+/** The sub-nav note: the board's latest meeting, "{pct}% attended"; empty when it has none. */
 export function buildHealthMetricsMembersBoardNote(board: HealthMetricsMembersBoardCohortSummary | null): string {
-  if (!board) return '';
-  const never = board.neverAttendedCount ?? 0;
-  if (never > 0) return `${pluralize(never, 'seat')} unused`;
-  if (isHealthMetricsMembersBoardBelowLevel('board', board) && board.latestAttendancePct !== null) return `${formatPct(board.latestAttendancePct)} attended`;
-  return '';
+  const pct = board?.latestAttendancePct ?? null;
+  return pct === null ? '' : `${formatPct(pct)} attended`;
 }
 
 /** The audience toggle, in the read's order. */
@@ -798,6 +838,22 @@ function formatRevenueChurn(pct: number | null): string {
   if (pct === null) return '—';
   if (pct === 0) return '0%';
   return formatHealthMetricsSmallPercent(pct) ?? `${pct.toFixed(1)}%`;
+}
+
+/** Below the cohort's level on the percent the cell shows, so a bar reading "90%" is never red under the board's 90%. */
+function isBoardBelowLevel(cohort: HealthMetricsMembersBoardCohort, shownPct: number | null): boolean {
+  return shownPct !== null && shownPct < Math.round(HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].threshold * 100);
+}
+
+/** The latest bar's label is ink, or red below the level; earlier bars are muted. */
+function boardLabelTone(latest: boolean, low: boolean): HealthMetricsBarChartLabelTone {
+  if (!latest) return 'muted';
+  return low ? 'alert' : 'strong';
+}
+
+/** The meeting name the view carries today: its committee, then the cohort's own fallback, then "—". */
+function boardMeetingName(meeting: HealthMetricsMembersBoardMeeting, cohort: HealthMetricsMembersBoardCohort): string {
+  return meeting.committeeName ?? HEALTH_METRICS_MEMBERS_BOARD_MEETING_FALLBACKS[cohort] ?? '—';
 }
 
 function toWholePct(share: number | null): number | null {

@@ -210,7 +210,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getMembersBoardAttendance',
       url: '/api/analytics/members-board-attendance',
       // A swallowed failure would read as a board that met with no one attending.
-      call: () => service.getMembersBoardAttendance({ foundationSlug: 'aaif', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10 }),
+      call: () => service.getMembersBoardAttendance({ foundationSlug: 'aaif', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10, sort: null }),
     },
     {
       name: 'getMembersNps',

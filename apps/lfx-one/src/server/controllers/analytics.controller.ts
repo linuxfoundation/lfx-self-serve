@@ -21,6 +21,7 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_SORT_COLUMNS,
@@ -4016,6 +4017,12 @@ export class AnalyticsController {
         cohort: cohort as HealthMetricsMembersBoardCohort,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the newest meeting first.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_BOARD_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       logger.success(req, 'get_members_board_attendance', startTime, {
