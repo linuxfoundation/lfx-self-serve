@@ -227,19 +227,22 @@ describe('HealthMetricsOverviewService.getChurn', () => {
 });
 
 describe('HealthMetricsOverviewService.getOutstandingBalance', () => {
-  it('maps the one row, and reports an unmeasured foundation without one', async () => {
+  it('reads every period from the one row, and reports an unmeasured foundation without one', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        {
-          OUTSTANDING_BALANCE_USD: '1105250.00',
-          OVERDUE_MEMBERS_COUNT: 20,
-          HIGH_RISK_BALANCE_USD: '1083250.00',
-          HIGH_RISK_MEMBERS_COUNT: 18,
-          HIGH_RISK_BALANCE_SHARE_PCT: '0.98',
-          MEDIUM_RISK_BALANCE_USD: '22000.00',
-          MEDIUM_RISK_MEMBERS_COUNT: 2,
-          MEDIUM_RISK_BALANCE_SHARE_PCT: '0.02',
-        },
+        wide(
+          {
+            OUTSTANDING_BALANCE_USD: '1105250.00',
+            OVERDUE_MEMBERS_COUNT: 20,
+            HIGH_RISK_BALANCE_USD: '1083250.00',
+            HIGH_RISK_MEMBERS_COUNT: 18,
+            HIGH_RISK_BALANCE_SHARE_PCT: '0.98',
+            MEDIUM_RISK_BALANCE_USD: '22000.00',
+            MEDIUM_RISK_MEMBERS_COUNT: 2,
+            MEDIUM_RISK_BALANCE_SHARE_PCT: '0.02',
+          },
+          { OUTSTANDING_BALANCE_USD_COMPLETED_YEAR_2: 0, HIGH_RISK_MEMBERS_COUNT_COMPLETED_YEAR_2: 0 }
+        ),
       ],
     });
     execute.mockResolvedValueOnce({ rows: [] });
@@ -249,8 +252,10 @@ describe('HealthMetricsOverviewService.getOutstandingBalance', () => {
     const missing = await service.getOutstandingBalance(req, query);
 
     expectBinds(0, ['acme']);
-    expect(balance).toEqual({
-      measured: true,
+    expect(sql()).toContain('outstanding_balance_usd_ytd AS outstanding_balance_usd_YTD');
+    expect(sql()).toContain('medium_risk_balance_share_pct_3rd_last_completed_year AS medium_risk_balance_share_pct_COMPLETED_YEAR_3');
+    expect(balance.measured).toBe(true);
+    expect(balance.periods.YTD).toEqual({
       outstandingUsd: 1105250,
       overdueMembers: 20,
       highRiskUsd: 1083250,
@@ -260,8 +265,9 @@ describe('HealthMetricsOverviewService.getOutstandingBalance', () => {
       mediumRiskMembers: 2,
       mediumRiskSharePct: 0.02,
     });
+    expect(balance.periods.COMPLETED_YEAR_2).toMatchObject({ outstandingUsd: 0, highRiskMembers: 0 });
     expect(missing.measured).toBe(false);
-    expect(missing.outstandingUsd).toBeNull();
+    expect(missing.periods.YTD.outstandingUsd).toBeNull();
   });
 });
 

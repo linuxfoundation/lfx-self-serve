@@ -54,6 +54,7 @@ import type {
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsOverviewBalancePeriod,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewChurn,
   HealthMetricsOverviewChurnTotals,
@@ -64,6 +65,7 @@ import type {
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewNpsPeriod,
+  HealthMetricsOverviewOutstandingBalance,
   HealthMetricsOverviewParticipatingOrgs,
   HealthMetricsOverviewParticipatingOrgsPeriod,
 } from '../interfaces/health-metrics-overview.interface';
@@ -107,15 +109,14 @@ describe('buildHealthMetricsOverviewEmptyCopy', () => {
     });
   });
 
-  it('names the year in every past-year title, while the balance, a snapshot of today, keeps its present-tense words', () => {
-    const { balance, ...periodCards } = HEALTH_METRICS_OVERVIEW_EMPTY_COPY;
-    for (const copy of Object.values(periodCards)) {
+  it('names the year in every past-year title', () => {
+    for (const copy of Object.values(HEALTH_METRICS_OVERVIEW_EMPTY_COPY)) {
       expect(copy.ytd.title).not.toContain('{Y}');
       expect(buildHealthMetricsOverviewEmptyCopy(copy, 2023).title).toMatch(/ in 2023$/);
       expect(Boolean(copy.ytd.text) !== copy.ytd.reasons.length > 0).toBe(true);
       expect(Boolean(copy.past.text) !== copy.past.reasons.length > 0).toBe(true);
     }
-    expect(buildHealthMetricsOverviewEmptyCopy(balance, 2023).title).toBe('All invoices paid');
+    expect(buildHealthMetricsOverviewEmptyCopy(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.balance, 2023).title).toBe('Nothing overdue in 2023');
   });
 });
 
@@ -378,8 +379,7 @@ describe('buildHealthMetricsOverviewChurnView', () => {
 });
 
 describe('buildHealthMetricsOverviewBalanceView', () => {
-  const balance = {
-    measured: true,
+  const figures: HealthMetricsOverviewBalancePeriod = {
     outstandingUsd: 1105250,
     overdueMembers: 20,
     highRiskUsd: 1083250,
@@ -390,37 +390,52 @@ describe('buildHealthMetricsOverviewBalanceView', () => {
     mediumRiskSharePct: 0.02,
   };
 
-  it('reads the total, the members at risk and each band', () => {
-    const view = buildHealthMetricsOverviewBalanceView(balance);
+  /** `ytd` in the year to date; every past year holds `past`. */
+  function balance(ytd: Partial<HealthMetricsOverviewBalancePeriod> = {}, past: Partial<HealthMetricsOverviewBalancePeriod> = {}): HealthMetricsOverviewOutstandingBalance {
+    const year = { ...figures, ...past };
+    return { measured: true, periods: { YTD: { ...figures, ...ytd }, COMPLETED_YEAR: year, COMPLETED_YEAR_2: year, COMPLETED_YEAR_3: year } };
+  }
 
-    expect([view.totalLabel, view.overdueMembersLabel, view.atRiskLabel]).toEqual(['$1,105,250', '20', '18 members']);
+  it('reads the total, the members at risk and each band', () => {
+    const view = buildHealthMetricsOverviewBalanceView(balance(), 'YTD');
+
+    expect([view.totalLabel, view.overdueMembersLabel, view.atRiskLabel, view.showAtRisk]).toEqual(['$1,105,250', '20', '18 members', true]);
     expect(view.rows.map((row) => [row.label, row.daysLabel, row.widthPct, row.membersLabel, row.amountLabel])).toEqual([
       ['High risk', '90+ days', 98, '18', '$1,083,250'],
       ['Medium risk', '60–89 days', 2, '2', '$22,000'],
     ]);
   });
 
+  it('follows the selected period', () => {
+    const view = buildHealthMetricsOverviewBalanceView(balance({}, { outstandingUsd: 4000, overdueMembers: 2 }), 'COMPLETED_YEAR_2');
+
+    expect([view.totalLabel, view.overdueMembersLabel]).toEqual(['$4,000', '2']);
+  });
+
   it('splits the bar by amount when the view has no shares', () => {
-    const view = buildHealthMetricsOverviewBalanceView({
-      ...balance,
-      highRiskUsd: 300,
-      mediumRiskUsd: 100,
-      highRiskSharePct: null,
-      mediumRiskSharePct: null,
-      highRiskMembers: 1,
-    });
+    const view = buildHealthMetricsOverviewBalanceView(
+      balance({ highRiskUsd: 300, mediumRiskUsd: 100, highRiskSharePct: null, mediumRiskSharePct: null, highRiskMembers: 1 }),
+      'YTD'
+    );
 
     expect(view.rows.map((row) => row.widthPct)).toEqual([75, 25]);
     expect(view.atRiskLabel).toBe('1 member');
   });
 
+  it('hides the at-risk tag when the period has no high-risk members, measured or not', () => {
+    expect(buildHealthMetricsOverviewBalanceView(balance({ highRiskMembers: 0 }), 'YTD').showAtRisk).toBe(false);
+    expect(buildHealthMetricsOverviewBalanceView(balance({ highRiskMembers: null }), 'YTD').showAtRisk).toBe(false);
+  });
+
   it('is empty when nothing is overdue, and paid in full only for a measured zero', () => {
-    const paid = buildHealthMetricsOverviewBalanceView({ ...balance, outstandingUsd: 0 });
-    const unmeasured = buildHealthMetricsOverviewBalanceView({ ...balance, measured: false, outstandingUsd: null });
+    const paid = buildHealthMetricsOverviewBalanceView(balance({}, { outstandingUsd: 0 }), 'COMPLETED_YEAR');
+    const unmeasured = buildHealthMetricsOverviewBalanceView({ ...balance(), measured: false }, 'YTD');
+    const blank = buildHealthMetricsOverviewBalanceView(balance({ outstandingUsd: null }), 'YTD');
 
     expect([paid.isEmpty, paid.isPaidInFull]).toEqual([true, true]);
     expect([unmeasured.isEmpty, unmeasured.isPaidInFull]).toEqual([true, false]);
-    expect(buildHealthMetricsOverviewBalanceView(balance).isPaidInFull).toBe(false);
+    expect([blank.isEmpty, blank.isPaidInFull]).toEqual([true, false]);
+    expect(buildHealthMetricsOverviewBalanceView(balance(), 'YTD').isPaidInFull).toBe(false);
   });
 });
 
@@ -1508,8 +1523,7 @@ describe('Overview churn and balance sort values', () => {
     expect(churn.tiers.map((tier) => healthMetricsOverviewChurnSortValue(tier, 'tier'))).toEqual([2, 1]);
     expect(churn.tiers.map((tier) => healthMetricsOverviewChurnSortValue(tier, 'value'))).toEqual([480000, null]);
 
-    const balance = buildHealthMetricsOverviewBalanceView({
-      measured: true,
+    const period: HealthMetricsOverviewBalancePeriod = {
       outstandingUsd: 32000,
       overdueMembers: 3,
       highRiskUsd: 10000,
@@ -1518,7 +1532,11 @@ describe('Overview churn and balance sort values', () => {
       mediumRiskUsd: 22000,
       mediumRiskMembers: 2,
       mediumRiskSharePct: null,
-    });
+    };
+    const balance = buildHealthMetricsOverviewBalanceView(
+      { measured: true, periods: { YTD: period, COMPLETED_YEAR: period, COMPLETED_YEAR_2: period, COMPLETED_YEAR_3: period } },
+      'YTD'
+    );
     expect(balance.rows.map((row) => [healthMetricsOverviewBalanceSortValue(row, 'risk'), healthMetricsOverviewBalanceSortValue(row, 'amount')])).toEqual([
       ['High risk', 10000],
       ['Medium risk', 22000],

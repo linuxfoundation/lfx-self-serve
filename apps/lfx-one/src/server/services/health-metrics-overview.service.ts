@@ -20,6 +20,7 @@ import { SnowflakeService } from './snowflake.service';
 
 import type {
   HealthMetricsL2Range,
+  HealthMetricsOverviewBalancePeriod,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardAttendance,
   HealthMetricsOverviewBoardMember,
@@ -217,18 +218,22 @@ export class HealthMetricsOverviewService {
     };
   }
 
-  /** Overdue membership invoices today, split by risk; the view has no period columns. */
+  /** Overdue membership invoices in every period, split by risk; one row per foundation carries every period. */
   public async getOutstandingBalance(req: Request, query: HealthMetricsOverviewQuery): Promise<HealthMetricsOverviewOutstandingBalance> {
+    const columns = HEALTH_METRICS_L2_RANGES.flatMap((range) =>
+      [
+        'outstanding_balance_usd',
+        'overdue_members_count',
+        'high_risk_balance_usd',
+        'high_risk_members_count',
+        'high_risk_balance_share_pct',
+        'medium_risk_balance_usd',
+        'medium_risk_members_count',
+        'medium_risk_balance_share_pct',
+      ].map((column) => periodSelect(column, range))
+    );
     const sql = `
-      SELECT
-        outstanding_balance_usd,
-        overdue_members_count,
-        high_risk_balance_usd,
-        high_risk_members_count,
-        high_risk_balance_share_pct,
-        medium_risk_balance_usd,
-        medium_risk_members_count,
-        medium_risk_balance_share_pct
+      SELECT ${columns.join(',\n        ')}
       FROM ${OUTSTANDING_BALANCE_VIEW}
       WHERE foundation_slug = ?
       -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
@@ -242,17 +247,7 @@ export class HealthMetricsOverviewService {
     });
 
     const row = result.rows[0];
-    return {
-      measured: !!row,
-      outstandingUsd: toNullableNumber(row?.['OUTSTANDING_BALANCE_USD']),
-      overdueMembers: toNullableNumber(row?.['OVERDUE_MEMBERS_COUNT']),
-      highRiskUsd: toNullableNumber(row?.['HIGH_RISK_BALANCE_USD']),
-      highRiskMembers: toNullableNumber(row?.['HIGH_RISK_MEMBERS_COUNT']),
-      highRiskSharePct: toNullableNumber(row?.['HIGH_RISK_BALANCE_SHARE_PCT']),
-      mediumRiskUsd: toNullableNumber(row?.['MEDIUM_RISK_BALANCE_USD']),
-      mediumRiskMembers: toNullableNumber(row?.['MEDIUM_RISK_MEMBERS_COUNT']),
-      mediumRiskSharePct: toNullableNumber(row?.['MEDIUM_RISK_BALANCE_SHARE_PCT']),
-    };
+    return { measured: !!row, periods: byRange((range) => mapBalancePeriod(row, range)) };
   }
 
   /**
@@ -633,6 +628,19 @@ function mapPastEvent(row: PastEventRow): HealthMetricsOverviewEvent {
     registrationsGoal: row.HAS_GOAL === true ? toNullableNumber(row.REGISTRATIONS_GOAL) : null,
     compScore: null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[`IS_IN_PERIOD_${range}`] === true),
+  };
+}
+
+function mapBalancePeriod(row: WideRow | undefined, range: HealthMetricsL2Range): HealthMetricsOverviewBalancePeriod {
+  return {
+    outstandingUsd: periodNumber(row, 'OUTSTANDING_BALANCE_USD', range),
+    overdueMembers: periodNumber(row, 'OVERDUE_MEMBERS_COUNT', range),
+    highRiskUsd: periodNumber(row, 'HIGH_RISK_BALANCE_USD', range),
+    highRiskMembers: periodNumber(row, 'HIGH_RISK_MEMBERS_COUNT', range),
+    highRiskSharePct: periodNumber(row, 'HIGH_RISK_BALANCE_SHARE_PCT', range),
+    mediumRiskUsd: periodNumber(row, 'MEDIUM_RISK_BALANCE_USD', range),
+    mediumRiskMembers: periodNumber(row, 'MEDIUM_RISK_MEMBERS_COUNT', range),
+    mediumRiskSharePct: periodNumber(row, 'MEDIUM_RISK_BALANCE_SHARE_PCT', range),
   };
 }
 

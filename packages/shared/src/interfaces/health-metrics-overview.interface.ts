@@ -95,9 +95,11 @@ export interface HealthMetricsOverviewChurn {
   periods: Record<HealthMetricsL2Range, HealthMetricsOverviewChurnPeriod>;
 }
 
-/** `GET /api/analytics/overview-outstanding-balance` — overdue invoices today; the view has no periods. Shares are 0–1. */
-export interface HealthMetricsOverviewOutstandingBalance {
-  measured: boolean;
+/**
+ * One period's overdue membership invoices: those due in the period that are still unpaid and 60 or more days
+ * overdue today, not the balance at the period's end. Shares are 0–1.
+ */
+export interface HealthMetricsOverviewBalancePeriod {
   outstandingUsd: number | null;
   overdueMembers: number | null;
   highRiskUsd: number | null;
@@ -106,6 +108,12 @@ export interface HealthMetricsOverviewOutstandingBalance {
   mediumRiskUsd: number | null;
   mediumRiskMembers: number | null;
   mediumRiskSharePct: number | null;
+}
+
+/** `GET /api/analytics/overview-outstanding-balance` — every period, from the foundation's one row. */
+export interface HealthMetricsOverviewOutstandingBalance {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewBalancePeriod>;
 }
 
 /** One event on the Overview list. Every `null` is unmeasured, never zero. */
@@ -411,6 +419,8 @@ export interface HealthMetricsOverviewBalanceView {
   totalLabel: string;
   overdueMembersLabel: string;
   atRiskLabel: string;
+  /** The "{N} at risk of churn" tag shows only when the period has high-risk members. */
+  showAtRisk: boolean;
   rows: HealthMetricsOverviewBalanceRowView[];
 }
 

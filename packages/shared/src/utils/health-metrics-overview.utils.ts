@@ -273,45 +273,48 @@ export function buildHealthMetricsOverviewChurnView(churn: HealthMetricsOverview
   };
 }
 
-/** Overdue invoices today, split into the high and medium risk bands. */
-export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOverviewOutstandingBalance): HealthMetricsOverviewBalanceView {
-  const high = balance.highRiskUsd ?? 0;
-  const medium = balance.mediumRiskUsd ?? 0;
+/** The period's overdue invoices, split into the high and medium risk bands. */
+export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOverviewOutstandingBalance, range: HealthMetricsRange): HealthMetricsOverviewBalanceView {
+  const l2 = toHealthMetricsOverviewRange(range);
+  const period = balance.measured && l2 ? balance.periods[l2] : null;
+  const high = period?.highRiskUsd ?? 0;
+  const medium = period?.mediumRiskUsd ?? 0;
   // The view's share when it has one, otherwise the band's part of the two amounts.
   const share = (pct: number | null, amount: number): number => {
     if (pct !== null) return clampPct(pct * 100);
     return high + medium > 0 ? clampPct((amount / (high + medium)) * 100) : 0;
   };
-  const highMembers = balance.highRiskMembers;
+  const highMembers = period?.highRiskMembers ?? null;
 
   return {
-    isEmpty: !balance.measured || !balance.outstandingUsd,
-    isPaidInFull: balance.measured && balance.outstandingUsd === 0,
-    totalLabel: formatMoney(balance.outstandingUsd),
-    overdueMembersLabel: formatCount(balance.overdueMembers),
+    isEmpty: !period?.outstandingUsd,
+    isPaidInFull: period?.outstandingUsd === 0,
+    totalLabel: formatMoney(period?.outstandingUsd ?? null),
+    overdueMembersLabel: formatCount(period?.overdueMembers ?? null),
     atRiskLabel: formatMembers(highMembers),
+    showAtRisk: (highMembers ?? 0) > 0,
     rows: [
       {
         key: 'high',
         label: 'High risk',
         daysLabel: '90+ days',
         dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low,
-        widthPct: share(balance.highRiskSharePct, high),
-        membersLabel: formatCount(balance.highRiskMembers),
-        amountLabel: formatMoney(balance.highRiskUsd),
-        members: balance.highRiskMembers,
-        amountUsd: balance.highRiskUsd,
+        widthPct: share(period?.highRiskSharePct ?? null, high),
+        membersLabel: formatCount(period?.highRiskMembers ?? null),
+        amountLabel: formatMoney(period?.highRiskUsd ?? null),
+        members: period?.highRiskMembers ?? null,
+        amountUsd: period?.highRiskUsd ?? null,
       },
       {
         key: 'medium',
         label: 'Medium risk',
         daysLabel: '60–89 days',
         dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium,
-        widthPct: share(balance.mediumRiskSharePct, medium),
-        membersLabel: formatCount(balance.mediumRiskMembers),
-        amountLabel: formatMoney(balance.mediumRiskUsd),
-        members: balance.mediumRiskMembers,
-        amountUsd: balance.mediumRiskUsd,
+        widthPct: share(period?.mediumRiskSharePct ?? null, medium),
+        membersLabel: formatCount(period?.mediumRiskMembers ?? null),
+        amountLabel: formatMoney(period?.mediumRiskUsd ?? null),
+        members: period?.mediumRiskMembers ?? null,
+        amountUsd: period?.mediumRiskUsd ?? null,
       },
     ],
   };
