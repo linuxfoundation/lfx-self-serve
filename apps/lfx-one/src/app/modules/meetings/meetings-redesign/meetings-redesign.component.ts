@@ -131,6 +131,7 @@ export class MeetingsRedesignComponent {
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
   private readonly chips = viewChild(UiChipGroupComponent, { read: ElementRef });
   private readonly searchField = viewChild(UiSearchInputComponent);
+  private readonly searchFieldHost = viewChild(UiSearchInputComponent, { read: ElementRef });
   private readonly searchButton = viewChild<UiButtonComponent>('searchButton');
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
@@ -284,7 +285,16 @@ export class MeetingsRedesignComponent {
     this.searchOpen.set(false);
     const done = (): void => {
       this.searchClosing.set(false);
-      if (restoreFocus) afterNextRender(() => this.searchButton()?.focus(), { injector: this.injector });
+      // Text typed while it was closing keeps the field open.
+      if (this.store.search().trim()) {
+        this.searchOpen.set(true);
+        return;
+      }
+      // Only take focus back from the closing field, not from wherever the user moved on to.
+      const active = document.activeElement;
+      const field: HTMLElement | undefined = this.searchFieldHost()?.nativeElement;
+      const fromField = !active || active === document.body || !!field?.contains(active);
+      if (restoreFocus && fromField) afterNextRender(() => this.searchButton()?.focus(), { injector: this.injector });
     };
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       done();
