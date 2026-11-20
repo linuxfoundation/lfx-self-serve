@@ -3,7 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, InputSignal, output, signal, Signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingAttendeePreviewComponent } from '@app/modules/meetings/components/meeting-attendee-preview/meeting-attendee-preview.component';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -22,6 +22,8 @@ import {
 import {
   buildAttendeePreviewFromRegistrants,
   buildAttendeePreviewFromRsvps,
+  filterUnindexedMeetingRegistrants,
+  resolveMeetingBaseCount,
   getCurrentOrNextOccurrence,
   isMeetingInviteResponsesEnabled,
   resolveRsvpOccurrenceId,
@@ -56,6 +58,10 @@ export class MeetingRsvpDetailsComponent {
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
   /** Successful local writes, retained while the roster's query index catches up. */
   public readonly confirmedRsvps = input<MeetingRsvp[]>([]);
+  /** Confirmed registrations are reconciled separately from numeric backend-count adjustments. */
+  public readonly confirmedRegistrants = input<MeetingRegistrant[]>([]);
+  public readonly confirmedRemovedRegistrantIds = input<string[]>([]);
+  public readonly confirmedCountAdjustment = input(0);
   public readonly addClicked = output<void>();
   public readonly viewAllClicked = output<void>();
   public readonly disabled: InputSignal<boolean> = input<boolean>(false);
@@ -63,6 +69,7 @@ export class MeetingRsvpDetailsComponent {
 
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalLoading: WritableSignal<boolean> = signal(true);
+  private readonly acknowledgedConfirmedRegistrants = signal<MeetingRegistrant[]>([]);
   public readonly loading: Signal<boolean> = computed(() =>
     this.externallyManaged() && !this.pastMeeting() ? this.initialRegistrantsLoading() : this.internalLoading()
   );
@@ -83,17 +90,21 @@ export class MeetingRsvpDetailsComponent {
         .map((r) => r.rsvp)
         .filter((r): r is MeetingRsvp => r != null);
     }
-    return [...this.applicableConfirmedRsvps(), ...this.upcomingData().rsvps.filter((rsvp) => this.isApplicableRsvp(rsvp))];
+    const removed = new Set(this.confirmedRemovedRegistrantIds());
+    return [...this.applicableConfirmedRsvps(), ...this.upcomingData().rsvps.filter((rsvp) => this.isApplicableRsvp(rsvp))].filter(
+      (rsvp) => !removed.has(rsvp.registrant_id)
+    );
   });
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   // Registrants when the roster was fetched (Me lens); otherwise the RSVP rows the project and
   // foundation lens cards load, which still name the people who responded.
   public readonly previewPeople: Signal<MeetingAttendeePreviewPerson[]> = computed(() => {
     const registrants = this.registrants();
-    if (registrants.length > 0) {
-      return buildAttendeePreviewFromRegistrants(registrants, { inviteResponsesEnabled: this.inviteResponsesEnabled() });
-    }
-    return buildAttendeePreviewFromRsvps(this.rsvps(), this.resolvedOccurrenceId());
+    const rosterPreview = buildAttendeePreviewFromRegistrants(registrants, { inviteResponsesEnabled: this.inviteResponsesEnabled() });
+    if ((this.externallyManaged() || !this.hasBackendRegistrantCounts(this.meeting())) && registrants.length > 0) return rosterPreview;
+    // Backend-count cards may have only RSVP history: pending additions must not hide those other people.
+    const responsePreview = buildAttendeePreviewFromRsvps(this.rsvps(), this.resolvedOccurrenceId());
+    return [...new Map([...rosterPreview, ...responsePreview].map((person) => [person.key, person])).values()];
   });
   public readonly rsvpCounts: Signal<RsvpCounts> = this.initializeRsvpCounts();
   public readonly acceptedCount: Signal<number> = computed(() => this.rsvpCounts().accepted);
@@ -108,10 +119,35 @@ export class MeetingRsvpDetailsComponent {
   public readonly headerTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-600' : 'text-gray-600'));
   public readonly summaryTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-900' : 'text-gray-900'));
 
+  public constructor() {
+    toObservable(
+      computed(() => {
+        const removed = new Set(this.confirmedRemovedRegistrantIds());
+        const roster = this.externallyManaged() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
+        return { roster: roster.filter((row) => !removed.has(row.uid)), confirmed: this.confirmedRegistrants() };
+      })
+    )
+      .pipe(takeUntilDestroyed())
+      .subscribe(({ roster, confirmed }) => {
+        const known = this.acknowledgedConfirmedRegistrants();
+        const candidates = this.unacknowledgedConfirmedRegistrants(confirmed);
+        const pending = filterUnindexedMeetingRegistrants(candidates, roster);
+        const acknowledged = candidates.filter((row) => !pending.includes(row));
+        if (acknowledged.length) this.acknowledgedConfirmedRegistrants.set([...known, ...acknowledged]);
+      });
+  }
+
   private initializeRegistrants(): Signal<MeetingRegistrant[]> {
     return computed(() => {
       const parentRoster = this.externallyManaged() && !this.pastMeeting();
-      const registrants = parentRoster ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
+      const source = parentRoster ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
+      const removed = new Set(this.confirmedRemovedRegistrantIds());
+      const indexed = source.filter((row) => !removed.has(row.uid));
+      const pending = filterUnindexedMeetingRegistrants(
+        this.unacknowledgedConfirmedRegistrants().filter((row) => !removed.has(row.uid)),
+        indexed
+      );
+      const registrants = [...pending, ...indexed];
       const confirmed = this.applicableConfirmedRsvps();
       if (confirmed.length === 0 && !this.meeting().recurrence) return registrants;
       const occurrenceId = this.resolvedOccurrenceId();
@@ -165,7 +201,8 @@ export class MeetingRsvpDetailsComponent {
   private applicableConfirmedRsvps(): MeetingRsvp[] {
     if (this.pastMeeting()) return [];
     const meeting = this.meeting();
-    return this.confirmedRsvps().filter((rsvp) => rsvp.meeting_id === meeting.id && this.isApplicableRsvp(rsvp));
+    const removed = new Set(this.confirmedRemovedRegistrantIds());
+    return this.confirmedRsvps().filter((rsvp) => rsvp.meeting_id === meeting.id && !removed.has(rsvp.registrant_id) && this.isApplicableRsvp(rsvp));
   }
 
   private isApplicableRsvp(rsvp: MeetingRsvp): boolean {
@@ -266,7 +303,7 @@ export class MeetingRsvpDetailsComponent {
       // in the same cases the guest chip does — keeps "N of M attending" in sync
       // with the drawer's per-registrant chips (LFXV2-2864).
       const registrants = this.registrants();
-      if (registrants.length > 0) {
+      if ((this.externallyManaged() || !this.hasBackendRegistrantCounts(this.meeting())) && registrants.length > 0) {
         return countRegistrantAttendance(registrants, { inviteResponsesEnabled: this.inviteResponsesEnabled() });
       }
       // Non-Me lens: no registrant array available (detail page — counts come off
@@ -294,11 +331,10 @@ export class MeetingRsvpDetailsComponent {
         return this.registrants().length + additionalCount;
       }
 
-      const splitCount = (meeting.individual_registrants_count || 0) + (meeting.committee_members_count || 0);
-      // Me lens: splitCount is 0 (backend doesn't populate), fall back to the lazy-fetched registrants.
-      // Non-Me lens: registrant_count may be populated by legacy paths that don't split; respect it.
-      const baseCount = splitCount > 0 ? splitCount : (meeting.registrant_count ?? this.registrants().length);
-      return baseCount + additionalCount;
+      const baseCount = resolveMeetingBaseCount(meeting);
+      if (baseCount !== undefined) return Math.max(0, baseCount + additionalCount + this.confirmedCountAdjustment());
+      // With no backend aggregate, the merged roster already includes acknowledged card writes.
+      return Math.max(0, this.registrants().length + additionalCount);
     });
   }
 
@@ -343,5 +379,11 @@ export class MeetingRsvpDetailsComponent {
       }
       return '';
     });
+  }
+
+  /** Real UIDs persist across row copies; a UID-less acknowledgement belongs only to that saved write. */
+  private unacknowledgedConfirmedRegistrants(rows = this.confirmedRegistrants()): MeetingRegistrant[] {
+    const known = this.acknowledgedConfirmedRegistrants();
+    return rows.filter((row) => !known.includes(row) && (!row.uid || row.uid.startsWith('optimistic-') || !known.some((saved) => saved.uid === row.uid)));
   }
 }

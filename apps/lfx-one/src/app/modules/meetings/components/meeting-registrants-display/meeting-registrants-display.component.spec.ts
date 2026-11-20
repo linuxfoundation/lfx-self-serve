@@ -16,9 +16,10 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, Subject, take, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingRegistrantsDisplayComponent } from './meeting-registrants-display.component';
@@ -51,7 +52,7 @@ describe('MeetingRegistrantsDisplayComponent — past-participant total', () => 
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -107,7 +108,7 @@ describe('MeetingRegistrantsDisplayComponent — open add form on show', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -172,7 +173,7 @@ describe('MeetingRegistrantsDisplayComponent — guest invite scope', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -247,7 +248,7 @@ describe('MeetingRegistrantsDisplayComponent — organizer filter and collapsibl
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -399,7 +400,7 @@ describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -541,7 +542,7 @@ describe('MeetingRegistrantsDisplayComponent — guest rows on mobile (#4864)', 
       providers: [
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null), user: signal(null), viewerUsername: signal(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -646,7 +647,10 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
       providers: [
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: UserService, useValue: { getMeetingSelfGuest } },
+        {
+          provide: UserService,
+          useValue: { getMeetingSelfGuest, user: signal({ sub: 'synthetic-subject', email: SELF_GUEST.email }), viewerUsername: signal(SELF_GUEST.username) },
+        },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -749,6 +753,380 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     const { button } = await mount();
 
     expect(button()).toBeNull();
+  });
+
+  it('is hidden while the host shows the user as a guest, even before the roster lists them', async () => {
+    const { fixture, button } = await mount({ registrants: [listed('someone@acme-motors.example')] });
+    expect(button()).not.toBeNull();
+
+    fixture.componentRef.setInput('selfInvited', true);
+    fixture.detectChanges();
+    expect(button()).toBeNull();
+
+    fixture.componentInstance.onAddSelf();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+
+    fixture.componentRef.setInput('selfInvited', false);
+    fixture.detectChanges();
+    expect(button()).not.toBeNull();
+  });
+
+  it('blocks self-add while the card invite is pending and restores it after failure', async () => {
+    const { fixture, button } = await mount();
+    fixture.componentRef.setInput('selfInvitePending', true);
+    fixture.detectChanges();
+    expect(button()).toBeNull();
+    fixture.componentInstance.onAddSelf();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    fixture.componentRef.setInput('selfInvitePending', false);
+    fixture.detectChanges();
+    expect(button()).not.toBeNull();
+  });
+
+  it('blocks a manual session-email self-invite while a card attempt is pending after lookup failure', async () => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    const { fixture, button } = await mount();
+    expect(button()).toBeNull();
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(` ${SELF_GUEST.email.toUpperCase()} `));
+    form.addControl('first_name', new FormControl('Synthetic'));
+    form.addControl('last_name', new FormControl('Viewer'));
+    const pending = TestBed.inject(MeetingSelfInviteService)
+      .withPendingInvite$('meeting-1', () => new Subject<unknown>())
+      .subscribe();
+    fixture.componentInstance.onAddRegistrant();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    pending.unsubscribe();
+    fixture.componentInstance.onAddRegistrant();
+    expect(addMeetingRegistrants).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('recognizes a manually saved self after lookup failure by LFID rather than email: %s', async (byUsername) => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    removedMeetingIds.set(new Set(['meeting-1']));
+    const { fixture, button } = await mount();
+    const selfAdded = vi.fn();
+    fixture.componentInstance.selfAdded.subscribe(selfAdded);
+    const email = byUsername ? 'alternate@vendor-corp.example' : SELF_GUEST.email;
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(email));
+    form.addControl('first_name', new FormControl('Synthetic'));
+    form.addControl('last_name', new FormControl('Viewer'));
+    if (byUsername) form.addControl('username', new FormControl(SELF_GUEST.username?.toUpperCase()));
+    const saved = { ...listed(email), uid: 'synthetic-manual-self', username: byUsername ? SELF_GUEST.username : null };
+    addMeetingRegistrants.mockReturnValueOnce(of({ ...SUCCESS, successes: [saved] }));
+    fixture.componentInstance.onAddRegistrant();
+    expect(selfAdded).toHaveBeenCalledWith(expect.objectContaining({ uid: saved.uid, email }));
+    expect(removedMeetingIds().has('meeting-1')).toBe(false);
+    expect(button()).toBeNull();
+    expect(addMeetingRegistrants.mock.calls[0][1][0].email).toBe(email);
+  });
+
+  it.each([
+    { byUsername: false, survives: false },
+    { byUsername: false, survives: true },
+    { byUsername: true, survives: false },
+    { byUsername: true, survives: true },
+  ])('acknowledges a manual fallback add/delete round trip with %j', async ({ byUsername, survives }) => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    const other = listed('other-guest@vendor-corp.example');
+    const survivor = { ...listed('surviving-alias@vendor-corp.example'), uid: 'synthetic-surviving-self', username: SELF_GUEST.username };
+    const { fixture } = await mount({ registrants: survives ? [other, survivor] : [other] });
+    const email = byUsername ? 'alternate@vendor-corp.example' : SELF_GUEST.email;
+    const saved = { ...listed(email), uid: 'saved-self', username: byUsername ? SELF_GUEST.username : null };
+    addMeetingRegistrants.mockReturnValueOnce(of({ ...SUCCESS, successes: [saved] }));
+    let invited = false;
+    fixture.componentInstance.selfAdded.subscribe(() => {
+      invited = true;
+    });
+    const selfRemoved = vi.fn();
+    fixture.componentInstance.selfRemoved.subscribe((result) => {
+      selfRemoved(result);
+      invited = result.remaining_registrant_ids.length > 0;
+    });
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(email));
+    form.addControl('first_name', new FormControl('Synthetic'));
+    form.addControl('last_name', new FormControl('Viewer'));
+    if (byUsername) form.addControl('username', new FormControl(SELF_GUEST.username));
+    fixture.componentInstance.onAddRegistrant();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(invited).toBe(true);
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    fixture.componentInstance.onRequestRemoveGuest(saved);
+    confirm.mock.calls[0][0].accept?.();
+    expect(selfRemoved).toHaveBeenCalledWith({
+      meeting_id: 'meeting-1',
+      removed_registrant_ids: [saved.uid],
+      remaining_registrant_ids: survives ? [survivor.uid] : [],
+    });
+    expect(invited).toBe(survives);
+    expect(fixture.componentInstance.registrants().map((row) => row.uid)).not.toContain(saved.uid);
+  });
+
+  it('holds the shared guard during a manual fallback self-invite without changing the chosen address', async () => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    const { fixture } = await mount();
+    const pending$ = new Subject<typeof SUCCESS>();
+    addMeetingRegistrants.mockReturnValueOnce(pending$);
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(SELF_GUEST.email));
+    form.addControl('first_name', new FormControl('Synthetic'));
+    form.addControl('last_name', new FormControl('Viewer'));
+    fixture.componentInstance.onAddRegistrant();
+    const invites = TestBed.inject(MeetingSelfInviteService);
+    expect(invites.isPending('meeting-1')).toBe(true);
+    const profileCalls = getMeetingSelfGuest.mock.calls.length;
+    invites.add$('meeting-1').subscribe();
+    expect(getMeetingSelfGuest).toHaveBeenCalledTimes(profileCalls);
+    expect(addMeetingRegistrants).toHaveBeenCalledTimes(1);
+    expect(addMeetingRegistrants.mock.calls[0][1][0].email).toBe(SELF_GUEST.email);
+    pending$.error(new Error('Synthetic manual invitation rejected'));
+    expect(invites.isPending('meeting-1')).toBe(false);
+  });
+
+  it('does not claim an unrelated manual guest or block them behind a pending self-invite when lookup failed', async () => {
+    getMeetingSelfGuest.mockReturnValue(of(null));
+    removedMeetingIds.set(new Set(['meeting-1']));
+    const { fixture } = await mount();
+    const selfAdded = vi.fn();
+    fixture.componentInstance.selfAdded.subscribe(selfAdded);
+    const pending = TestBed.inject(MeetingSelfInviteService)
+      .withPendingInvite$('meeting-1', () => new Subject<unknown>())
+      .subscribe();
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl('other-guest@vendor-corp.example'));
+    form.addControl('first_name', new FormControl('Another'));
+    form.addControl('last_name', new FormControl('Guest'));
+    fixture.componentInstance.onAddRegistrant();
+    expect(addMeetingRegistrants).toHaveBeenCalledOnce();
+    expect(selfAdded).not.toHaveBeenCalled();
+    expect(removedMeetingIds().has('meeting-1')).toBe(true);
+    pending.unsubscribe();
+  });
+
+  it('keeps a closed drawer self-invite exclusive against the card and permits retry after failure', async () => {
+    const pending$ = new Subject<typeof SUCCESS>();
+    addMeetingRegistrants.mockReturnValueOnce(pending$);
+    const { fixture, button } = await mount();
+    const invites = TestBed.inject(MeetingSelfInviteService);
+    fixture.componentInstance.onAddSelf();
+    expect(invites.isPending('meeting-1')).toBe(true);
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    const cardResult: unknown[] = [];
+    invites.add$('meeting-1').subscribe((result) => cardResult.push(result));
+    expect(cardResult).toEqual([]);
+    expect(addMeetingRegistrants).toHaveBeenCalledTimes(1);
+    pending$.error(new Error('Synthetic invitation failed'));
+    expect(invites.isPending('meeting-1')).toBe(false);
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(button()).not.toBeNull();
+    fixture.componentInstance.onAddSelf();
+    expect(addMeetingRegistrants).toHaveBeenCalledTimes(2);
+  });
+
+  it('merges a card-saved row, preserves its count through stale loads, and deduplicates indexed UIDs', async () => {
+    const roster$ = new BehaviorSubject<MeetingRegistrant[]>([listed('one@example.com'), listed('two@example.com'), listed('three@example.com')]);
+    const { fixture } = await mount({ fetched: roster$.pipe(take(1)), meeting: { id: 'meeting-1', timezone: 'UTC', registrant_count: 3 } as Meeting });
+    const saved = { ...listed(SELF_GUEST.email), uid: 'saved-self', meeting_id: 'meeting-1' };
+    const total = vi.fn();
+    const delta = vi.fn();
+    fixture.componentInstance.totalCountChange.subscribe(total);
+    fixture.componentInstance.registrantsCountChange.subscribe(delta);
+    const rowsChanged = vi.fn();
+    fixture.componentInstance.registrantsChange.subscribe(rowsChanged);
+    fixture.componentRef.setInput('confirmedRegistrants', [saved]);
+    fixture.componentRef.setInput('confirmedCountAdjustment', 1);
+    fixture.componentRef.setInput('selfInvited', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(4);
+    expect(total).toHaveBeenLastCalledWith(4);
+    expect(delta).toHaveBeenLastCalledWith(0);
+    expect(rowsChanged).toHaveBeenLastCalledWith(expect.arrayContaining([saved]));
+
+    roster$.next([...roster$.value, saved]);
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants().filter((row) => row.uid === saved.uid)).toHaveLength(1);
+    expect(total).toHaveBeenLastCalledWith(4);
+
+    const extra = { ...listed('extra@example.com'), uid: 'saved-extra', meeting_id: 'meeting-1' };
+    addMeetingRegistrants.mockReturnValueOnce(of({ ...SUCCESS, successes: [extra] }));
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(extra.email));
+    form.addControl('first_name', new FormControl('Extra'));
+    form.addControl('last_name', new FormControl('Guest'));
+    fixture.componentInstance.onAddRegistrant();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(total).toHaveBeenLastCalledWith(5);
+    expect(delta).toHaveBeenLastCalledWith(1);
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    fixture.componentInstance.onRequestRemoveGuest(extra);
+    confirm.mock.calls[0][0].accept?.();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(total).toHaveBeenLastCalledWith(4);
+    expect(delta).toHaveBeenLastCalledWith(0);
+
+    fixture.componentRef.setInput('confirmedRegistrants', []);
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['saved-self']);
+    fixture.componentRef.setInput('confirmedCountAdjustment', 0);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(3);
+    expect(total).toHaveBeenLastCalledWith(3);
+    expect(delta).toHaveBeenLastCalledWith(0);
+    expect(rowsChanged.mock.lastCall?.[0]).toHaveLength(3);
+    expect(rowsChanged.mock.lastCall?.[0].map((row: MeetingRegistrant) => row.uid)).not.toContain('saved-self');
+  });
+
+  it.each([false, true])('uses the refreshed roster as the baseline without count fields, with a card-saved guest: %s', async (cardSaved) => {
+    const original = [listed('one@example.com'), listed('two@example.com'), listed('three@example.com')];
+    const saved = { ...listed(SELF_GUEST.email), uid: 'saved-self', meeting_id: 'meeting-1' };
+    const extra = { ...listed('extra@example.com'), uid: 'saved-extra', meeting_id: 'meeting-1' };
+    const { fixture } = await mount({ fetched: of(original) });
+    const total = vi.fn();
+    const delta = vi.fn();
+    fixture.componentInstance.totalCountChange.subscribe(total);
+    fixture.componentInstance.registrantsCountChange.subscribe(delta);
+    if (cardSaved) {
+      fixture.componentRef.setInput('confirmedRegistrants', [saved]);
+      fixture.componentRef.setInput('confirmedCountAdjustment', 1);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(total).toHaveBeenLastCalledWith(4);
+    }
+
+    const indexed = cardSaved ? [...original, saved] : original;
+    const getRoster = vi.mocked(TestBed.inject(MeetingService).getMeetingRegistrants);
+    getRoster.mockReturnValueOnce(of([...indexed, extra]));
+    addMeetingRegistrants.mockReturnValueOnce(of({ ...SUCCESS, successes: [extra] }));
+    const form = fixture.componentInstance.addRegistrantForm;
+    form.addControl('email', new FormControl(extra.email));
+    form.addControl('first_name', new FormControl('Extra'));
+    form.addControl('last_name', new FormControl('Guest'));
+    fixture.componentInstance.onAddRegistrant();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(indexed.length + 1);
+    expect(total).toHaveBeenLastCalledWith(indexed.length + 1);
+    expect(delta).toHaveBeenLastCalledWith(cardSaved ? -1 : 0);
+
+    getRoster.mockReturnValueOnce(of(indexed));
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    fixture.componentInstance.onRequestRemoveGuest(extra);
+    confirm.mock.calls[0][0].accept?.();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(indexed.length);
+    expect(total).toHaveBeenLastCalledWith(indexed.length);
+    expect(delta).toHaveBeenLastCalledWith(cardSaved ? -1 : 0);
+  });
+
+  it.each([false, true])('preserves a card-confirmed deletion with a stale roster: %s', async (stale) => {
+    const removed = listed('removed@example.com');
+    const remaining = [listed('one@example.com'), listed('two@example.com')];
+    const { fixture } = await mount({
+      fetched: of(stale ? [...remaining, removed] : remaining),
+      meeting: { id: 'meeting-1', timezone: 'UTC', registrant_count: 3 } as Meeting,
+    });
+    const total = vi.fn();
+    const delta = vi.fn();
+    fixture.componentInstance.totalCountChange.subscribe(total);
+    fixture.componentInstance.registrantsCountChange.subscribe(delta);
+    fixture.componentRef.setInput('confirmedCountAdjustment', -1);
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', [removed.uid]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual(expect.arrayContaining(remaining));
+    expect(fixture.componentInstance.registrants()).toHaveLength(2);
+    expect(total).toHaveBeenLastCalledWith(2);
+    expect(delta).toHaveBeenLastCalledWith(0);
+  });
+
+  it.each([
+    { uid: '', fetched: false },
+    { uid: '', fetched: true },
+    { uid: 'optimistic-rejoin', fetched: false },
+    { uid: 'optimistic-rejoin', fetched: true },
+  ])('keeps a re-invitation while a known deleted row remains indexed: %j', async ({ uid, fetched }) => {
+    const old = { ...listed(SELF_GUEST.email), uid: 'deleted-self' };
+    const rejoined = { ...old, uid };
+    const indexed = { ...old, uid: 'new-self' };
+    const options = fetched ? { fetched: of([old]) } : { registrants: [old] };
+    const { fixture } = await mount(options);
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['deleted-self']);
+    fixture.componentRef.setInput('confirmedRegistrants', [rejoined]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([rejoined]);
+
+    const refresh = async (rows: MeetingRegistrant[]): Promise<void> => {
+      if (fetched) {
+        vi.mocked(TestBed.inject(MeetingService).getMeetingRegistrants).mockReturnValueOnce(of(rows));
+        fixture.componentRef.setInput('visible', false);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.componentRef.setInput('visible', true);
+      } else fixture.componentRef.setInput('initialRegistrants', rows);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+    await refresh([old, indexed]);
+    expect(fixture.componentInstance.registrants()).toEqual([indexed]);
+    await refresh([old]);
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+  });
+
+  it.each(['saved-self', '', 'optimistic-self'])('does not resurrect a parent-saved row after indexing acknowledges it then drops it: %j', async (uid) => {
+    const saved = { ...listed(SELF_GUEST.email), uid };
+    const { fixture } = await mount();
+    fixture.componentRef.setInput('confirmedRegistrants', [saved]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([saved]);
+    fixture.componentRef.setInput('initialRegistrants', [{ ...saved, uid: 'saved-self', email: saved.email.toUpperCase() }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants().map((row) => row.uid)).toEqual(['saved-self']);
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+    const nextWrite = { ...saved };
+    fixture.componentRef.setInput('confirmedRegistrants', [nextWrite]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual(uid && !uid.startsWith('optimistic-') ? [] : [nextWrite]);
+  });
+
+  it('retires only the acknowledged invitation scope when fallback UIDs are empty', async () => {
+    const allDates = { ...listed(SELF_GUEST.email), uid: '', occurrence_id: null };
+    const singleDate = { ...allDates, occurrence_id: '4071031200' };
+    const indexed = { ...allDates, uid: 'indexed-self' };
+    const { fixture } = await mount();
+    fixture.componentRef.setInput('confirmedRegistrants', [allDates, singleDate]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toHaveLength(2);
+    fixture.componentRef.setInput('initialRegistrants', [indexed]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual(expect.arrayContaining([indexed, singleDate]));
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([singleDate]);
   });
 
   it('is hidden when the drawer cannot add guests', async () => {
