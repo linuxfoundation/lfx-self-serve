@@ -14,6 +14,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { BrandKitRevision, FoundationMessageContent, FoundationMessagePrintView, FoundationMessageReport } from '@lfx-one/shared/interfaces';
 import { buildFoundationMessagePrintView, frameworkPortraitMatrix, frameworkPortraitPlan, mktgPortraitLook } from '@lfx-one/shared/utils';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MktgFrameworkPrintComponent } from './mktg-framework-print.component';
 
@@ -435,14 +436,12 @@ describe('MktgFrameworkPrintComponent, the pages', () => {
     expect(heads.map((head) => head.textContent?.trim())).toEqual(titles);
     expect(new Set(heads.map((head) => head.style.fontSize)).size).toBe(1);
     expect(parseFloat(heads[0].style.fontSize)).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
-    // A band prints the key message and the proofs for its four goals, never the value or sound-bite row, whatever the texts (editor W1b),
-    // and says so once under the bands; every proof cell keeps a row (F3 in the bands too).
-    expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-vp"]').length)).toEqual([0, 0]);
-    expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-bite"]').length)).toEqual([0, 0]);
+    // The bands drop rows only by the room (the editor's ladder): these short texts fit whole, so each band prints every row for its
+    // four goals, the value and sound-bite rows included, with no note under the bands; every proof cell keeps a row (F3 in the bands too).
+    expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-vp"]').length)).toEqual([4, 4]);
+    expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-bite"]').length)).toEqual([4, 4]);
     expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof"]').length).toBeGreaterThanOrEqual(8);
-    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
-      FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages,
-    ]);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).toHaveLength(0);
     // One size across each band's proof row (editor W4): every cell tightened together, every row at the one size the layout set.
     for (const band of [query('mktg-framework-print-goals-band-0'), query('mktg-framework-print-goals-band-1')]) {
       const cells = Array.from(band?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-proof-cell"]') ?? []);
@@ -474,20 +473,20 @@ describe('MktgFrameworkPrintComponent, the pages', () => {
     expect(laid.bands).toHaveLength(2);
     const labels = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-goals-label"]')).map((label) => label.textContent?.trim());
     expect(labels.filter((label) => label === 'Key message')).toHaveLength(2);
-    // Measured on the glyph table in the LF look's face, this shape's bands hold the proof row at the ladder's first step: every
-    // cell's one whole first proof with its own "+3 more" line, the plain caption under the bands, the buffer above the footer kept.
-    expect(labels.filter((label) => label === 'Proof')).toHaveLength(2);
+    // Measured on the glyph table in the LF look's face as the served print set it (the matrix's own Inter factor, the source tag on
+    // its own line when the fact's last line cannot hold it): this shape's seven-line key messages and six-line first proofs leave the
+    // proof row no room even folded (the folded bands end 11 px under the buffer), so the ladder's last step takes it: no proof row,
+    // every cell empty, the caption naming all three rows; the key messages print whole at their type.
+    expect(labels.filter((label) => label === 'Proof')).toHaveLength(0);
     expect(labels.filter((label) => label === 'Value proposition')).toHaveLength(0);
     expect(labels.filter((label) => label === 'Sound bite')).toHaveLength(0);
-    expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
-    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(laid.rows).toEqual({ value: false, bite: false, proof: false });
+    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll]);
     expect(FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix - laid.height).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
-    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof-cell"]')).toHaveLength(8);
-    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proofs-cut"]')).map((note) => note.textContent?.trim())).toEqual(
-      Array.from({ length: 8 }, () => '+3 more in LFX One')
-    );
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof-cell"]')).toHaveLength(0);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proofs-cut"]')).toHaveLength(0);
     expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
-      'Value propositions and sound bites are on each goal page.',
+      'Value propositions, sound bites and proofs are on each goal page.',
     ]);
     const keys = Array.from(host().querySelectorAll<HTMLElement>('.fwp-matrix-key'));
     expect(keys.map((key) => key.style.fontSize)).toEqual(Array.from({ length: 8 }, () => `${FRAMEWORK_PORTRAIT_TYPE.matrixKey.size}px`));
@@ -508,9 +507,11 @@ describe('MktgFrameworkPrintComponent, the pages', () => {
   });
 
   it('folds the proof cells’ "+N more" lines into the one caption when that is what keeps a whole first proof a goal (the maintainer’s fold step)', async () => {
-    // The family seeds' shape: long goal names on the overfull record's key messages and proofs. The head row grows for the names, and
-    // with each cell's own "+3 more" line the first proofs would fall below the tight floor: the lines fold into the caption, every
-    // goal keeps one whole first proof at 10.5 px, and no cell prints a line of its own.
+    // The family seeds' shape: long goal names on the overfull record's key messages and proofs, in the seeds' own brand face
+    // (Instrument Sans). The head row grows for the names, and with each cell's own "+3 more" line the first proofs would fall below
+    // the tight floor: the lines fold into the caption, every goal keeps one whole first proof at 10.5 px, and no cell prints a line
+    // of its own. In the LF look the same shape drops the proof row instead (Inter measured as the served print sets it, the matrix's
+    // calibrated factor), as the eight-goal test above reads it; the shared layout spec pins both faces.
     const longTitles = [
       'Adoption across every cloud and vendor',
       'Contributors and maintainers of the projects',
@@ -549,9 +550,16 @@ describe('MktgFrameworkPrintComponent, the pages', () => {
       key: keys[index],
       proof: Array.from({ length: 4 }, (_, at) => pair(facts[(index + at) % facts.length], at % 2 ? 'LFX field' : 'Website')),
     }));
-    const view = buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals } }, 'TestOrbit', 2, null);
+    const seeds = brandKitTestRevision();
+    const kit: BrandKitRevision = {
+      ...seeds,
+      kit: { ...seeds.kit, font: 'Instrument Sans' },
+      chapters: { ...seeds.chapters, type: { ...seeds.chapters.type, family: 'Instrument Sans' } },
+    };
+    const view = buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals } }, 'TestOrbit', 2, kit);
     await configure('browser', view);
     const room = FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix;
+    expect(mktgPortraitLook(view.brand).fontStack).toContain('Instrument Sans');
     const laid = frameworkPortraitMatrix(view.goals, view.mf.crosscut, room, mktgPortraitLook(view.brand).fontStack);
     expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
     expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
