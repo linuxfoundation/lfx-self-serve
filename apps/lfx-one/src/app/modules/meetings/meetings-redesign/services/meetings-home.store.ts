@@ -337,6 +337,8 @@ export class MeetingsHomeStore {
           const identityChanged = previousIdentity !== null && identity !== previousIdentity;
           previousIdentity = identity;
           if (identityChanged) loaded = false;
+          // A reload from the error state (Retry) returns to it on failure, rather than a toast over an empty list.
+          const fromError = failed();
           loading.set(true);
           failed.set(false);
           const request$ = defer(load).pipe(
@@ -349,7 +351,7 @@ export class MeetingsHomeStore {
               error: (error: unknown) => {
                 console.error('Failed to load meetings for the meetings home page:', error);
                 loading.set(false);
-                if (loaded) this.showRefreshFailedToast();
+                if (loaded && !fromError) this.showRefreshFailedToast();
                 else failed.set(true);
               },
             }),

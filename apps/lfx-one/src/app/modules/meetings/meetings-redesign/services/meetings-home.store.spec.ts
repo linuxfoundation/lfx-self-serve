@@ -1050,6 +1050,25 @@ describe('MeetingsHomeStore', () => {
       expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE * 2);
     });
 
+    it('stays on the error state when Retry after a failed empty past list fails again', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+      expect(store.failed()).toBe(true);
+
+      store.retry();
+      TestBed.tick();
+      pastPages[pastPages.length - 1].error(new Error('reload failed'));
+      TestBed.tick();
+
+      expect(store.failed()).toBe(true);
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
     it('does not request a next page on the upcoming tab', () => {
       const store = createPaged();
       pastPages[0].next(pastPage('a', 1, 'cursor-1'));
