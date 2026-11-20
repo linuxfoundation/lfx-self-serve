@@ -72,7 +72,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     execute.mockResolvedValue({ rows: [orgRow()] });
   });
 
-  it('reads the period columns for the range and binds only the foundation when unfiltered', async () => {
+  it('reads the period columns for the range and binds only the foundation, twice, when unfiltered', async () => {
     for (const [range, suffix] of [
       ['YTD', 'ytd'],
       ['COMPLETED_YEAR', 'last_completed_year'],
@@ -83,7 +83,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       await new HealthMetricsNonMembersService().getOrgs(req, { ...query, range });
 
       const [sql, binds] = orgsRead();
-      expect(binds).toEqual(['acme']);
+      expect(binds).toEqual(['acme', 'acme']);
       expect(sql.match(/\?/g)).toHaveLength(binds.length);
       expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_COMPANY_PARTICIPATION p');
       expect(sql).not.toContain('NON_MEMBER_FIT_SCORE');
@@ -111,7 +111,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     await new HealthMetricsNonMembersService().getOrgs(req, { ...query, filter: 'meetings', search: '50%_off!' });
 
     const [sql, binds] = orgsRead();
-    expect(binds).toEqual(['acme', '%50!%!_off!!%']);
+    expect(binds).toEqual(['acme', 'acme', '%50!%!_off!!%']);
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
     expect(sql).toContain("WHERE meetings_attended_count > 0 AND account_name ILIKE ? ESCAPE '!'");
   });
@@ -120,7 +120,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     await new HealthMetricsNonMembersService().getOrgs(req, query);
 
     const [sql] = orgsRead();
-    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
+    const scoped = sql.slice(sql.indexOf('scoped AS'), sql.indexOf('matched AS'));
     expect(scoped).toContain('AND p.account_id IS NOT NULL');
     expect(scoped).toContain("AND p.account_id <> ''");
     expect(scoped).toContain('AND (COALESCE(p.meetings_attended_count_ytd, 0) > 0 OR COALESCE(p.contributions_count_ytd, 0) > 0)');
@@ -136,6 +136,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
 
   it.each([
     ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(account_name, ''), account_id)"],
+    ['memberships', 'desc', 'IFF(other_membership_count > 0, other_top_tier_rank * 1000 + other_membership_count, NULL) DESC NULLS LAST'],
     ['meetings', 'asc', 'NULLIF(meetings_attended_count, 0) ASC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC'],
     ['contributions', 'desc', 'NULLIF(contributions_count, 0) DESC NULLS LAST, sort_rank ASC NULLS LAST'],
     ['fit', 'desc', "CASE TRIM(fit_band) WHEN 'High' THEN 3 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 1 END DESC NULLS LAST"],
@@ -146,6 +147,51 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     expect(sql).toContain(expected);
     expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY ${expected.split(' ASC')[0].split(' DESC')[0]}`);
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
+  });
+
+  it("summarises each company's memberships in other foundations for the sort, leaving the viewed foundation out", async () => {
+    await new HealthMetricsNonMembersService().getOrgs(req, query);
+
+    const [sql] = orgsRead();
+    const other = sql.slice(sql.indexOf('WITH other AS'), sql.indexOf('scoped AS'));
+    expect(other).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY');
+    expect(other).toContain('WHERE foundation_slug <> ?');
+    expect(other).toContain('COUNT(DISTINCT foundation_slug) AS other_membership_count');
+    expect(other).toMatch(/COALESCE\(MAX\(CASE WHEN .* END\), 0\) AS other_top_tier_rank/);
+    expect(other).toContain('GROUP BY account_id');
+    expect(sql).toContain('LEFT JOIN other o ON o.account_id = p.account_id');
+  });
+
+  it("reads the page's other memberships for its companies only, after the page, and merges them on", async () => {
+    execute.mockResolvedValueOnce({ rows: [orgRow(), orgRow({ ACCOUNT_ID: '0014100000VendAAAA', PAGE_POSITION: 2 })] }).mockResolvedValueOnce({
+      rows: [
+        { ACCOUNT_ID: '0014100000AcmeAAAA', FOUNDATION_SLUG: 'cncf', FOUNDATION_NAME: 'Cloud Native Computing Foundation', MEMBERSHIP_TIER: 'Gold Membership' },
+        { ACCOUNT_ID: '0014100000AcmeAAAA', FOUNDATION_SLUG: 'openssf', FOUNDATION_NAME: '', MEMBERSHIP_TIER: '' },
+        { ACCOUNT_ID: null, FOUNDATION_SLUG: 'cncf', FOUNDATION_NAME: 'x', MEMBERSHIP_TIER: null },
+      ],
+    });
+
+    const response = await new HealthMetricsNonMembersService().getOrgs(req, query);
+
+    const [sql, binds] = execute.mock.calls[1] as [string, unknown[]];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY');
+    expect(sql).toContain('WHERE foundation_slug <> ?');
+    expect(sql).toContain('AND account_id IN (?, ?)');
+    expect(binds).toEqual(['acme', '0014100000AcmeAAAA', '0014100000VendAAAA']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(response.rows[0].otherMemberships).toEqual([
+      { foundationSlug: 'cncf', foundationName: 'Cloud Native Computing Foundation', tier: 'Gold Membership' },
+      { foundationSlug: 'openssf', foundationName: 'openssf', tier: null },
+    ]);
+    expect(response.rows[1].otherMemberships).toEqual([]);
+  });
+
+  it('skips the memberships read for an empty page', async () => {
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 4, TOTAL_RECORDS: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
+
+    await new HealthMetricsNonMembersService().getOrgs(req, query);
+
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it('clamps an oversized page and offset before interpolating them', async () => {
@@ -185,6 +231,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
           distinctPeople: 9,
           contributions: 1840,
           fitBand: 'High',
+          otherMemberships: [],
         },
         {
           accountId: '0014100000AcmeAAAA',
@@ -195,6 +242,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
           distinctPeople: null,
           contributions: 1840,
           fitBand: null,
+          otherMemberships: [],
         },
       ],
     });

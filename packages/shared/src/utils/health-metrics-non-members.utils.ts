@@ -3,12 +3,14 @@
 
 import {
   HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES,
+  HEALTH_METRICS_NON_MEMBERS_FOUNDATION_SHORT_NAMES,
   HEALTH_METRICS_NON_MEMBERS_FIT_BANDS,
   HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
   HEALTH_METRICS_NON_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-non-members.constants';
 import { formatIsoDateLabel } from './date-time.utils';
+import { healthMetricsTierSortRank, resolveHealthMetricsMembersTier } from './health-metrics-table.utils';
 import { formatCurrency } from './number.utils';
 
 import type {
@@ -17,6 +19,8 @@ import type {
   HealthMetricsNonMembersOrg,
   HealthMetricsNonMembersOrgRowView,
   HealthMetricsNonMembersOrgsFilter,
+  HealthMetricsNonMembersOtherMembership,
+  HealthMetricsNonMembersOtherMembershipView,
   HealthMetricsNonMembersPerson,
   HealthMetricsNonMembersPersonRowView,
   HealthMetricsNonMembersSubNavItem,
@@ -39,12 +43,40 @@ export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMember
       accountName: row.accountName,
       logoUrl: row.logoUrl,
       lastEngagedLabel: row.lastEngagedDate ? `Last engaged ${formatIsoDateLabel(row.lastEngagedDate)}` : '',
+      otherMemberships: buildHealthMetricsNonMembersOtherMemberships(row.otherMemberships),
       meetingsLabel,
       peopleLabel: meetingsLabel === '—' || people <= 0 ? '' : pluralize(people, 'person', 'people'),
       contributionsLabel: formatCount(row.contributions),
       ...buildFit(row.fitBand),
     };
   });
+}
+
+/**
+ * The Other memberships badges: one per foundation, named by its short name (else its full name), with its highest tier
+ * in the tooltip. Highest tier first, then name A–Z; a membership with no tier ranks below every named one.
+ */
+export function buildHealthMetricsNonMembersOtherMemberships(
+  memberships: HealthMetricsNonMembersOtherMembership[]
+): HealthMetricsNonMembersOtherMembershipView[] {
+  const best = new Map<string, { membership: HealthMetricsNonMembersOtherMembership; rank: number }>();
+  for (const membership of memberships) {
+    const rank = healthMetricsTierSortRank(membership.tier) ?? -1;
+    const held = best.get(membership.foundationSlug);
+    if (!held || rank > held.rank) best.set(membership.foundationSlug, { membership, rank });
+  }
+
+  return [...best.values()]
+    .map(({ membership, rank }) => ({
+      rank,
+      view: {
+        key: membership.foundationSlug,
+        label: foundationShortName(membership),
+        tierLabel: membership.tier?.trim() ? `${resolveHealthMetricsMembersTier(membership.tier).label} membership` : 'Membership',
+      },
+    }))
+    .sort((a, b) => b.rank - a.rank || a.view.label.localeCompare(b.view.label, 'en', { sensitivity: 'base' }))
+    .map(({ view }) => view);
 }
 
 /** The header switch's value from the URL or the switch; anything else is All. */
@@ -89,6 +121,13 @@ export function buildHealthMetricsNonMembersConversionView(conversion: HealthMet
     ],
     warmest: buildWarmestRows(conversion.warmest),
   };
+}
+
+// Own keys only, so a slug such as `constructor` falls back to its name rather than to Object's prototype.
+function foundationShortName(membership: HealthMetricsNonMembersOtherMembership): string {
+  const names = HEALTH_METRICS_NON_MEMBERS_FOUNDATION_SHORT_NAMES;
+  if (Object.hasOwn(names, membership.foundationSlug)) return names[membership.foundationSlug];
+  return membership.foundationName.trim() || membership.foundationSlug;
 }
 
 function formatCount(value: number | null): string {

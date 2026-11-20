@@ -28,6 +28,10 @@ function org(overrides: Partial<HealthMetricsNonMembersOrg> = {}): HealthMetrics
     distinctPeople: 9,
     contributions: 1840,
     fitBand: 'High',
+    otherMemberships: [
+      { foundationSlug: 'zeta-foundation', foundationName: 'Zeta Foundation', tier: 'Silver Membership' },
+      { foundationSlug: 'cncf', foundationName: 'Cloud Native Computing Foundation', tier: 'Gold Membership' },
+    ],
     ...overrides,
   };
 }
@@ -134,11 +138,11 @@ describe('NonMembersOrgsComponent', () => {
     expect(verdicts).toEqual([false]);
   });
 
-  it('draws the four columns, Meetings attended marked as the default order and Contributions with its tip', async () => {
+  it('draws the five columns, Meetings attended marked as the default order and Contributions with its tip', async () => {
     await render();
 
     const headers = [...(query('non-members-orgs-table')?.querySelectorAll('th') ?? [])].map((th) => th.textContent?.replace(/\s+/g, ' ').trim());
-    expect(headers).toEqual(['Company', 'Meetings attended', 'Contributions', 'Fit']);
+    expect(headers).toEqual(['Company', 'Other memberships', 'Meetings attended', 'Contributions', 'Fit']);
     expect(query('non-members-orgs-sort-meetings')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
     expect(fixture.componentInstance['contributionsTip']).toBe(
       "Code contributions (commits and pull requests) this company made to the foundation's projects in the selected period."
@@ -160,13 +164,34 @@ describe('NonMembersOrgsComponent', () => {
     expect(badge?.className).toContain('h-[24px]');
   });
 
+  it('badges each other foundation, highest tier first, with the tier in its tooltip', async () => {
+    await render();
+
+    const badges = [...(cell('memberships')?.querySelectorAll('lfx-ui-badge') ?? [])] as HTMLElement[];
+    expect(badges.map((badge) => badge.textContent?.trim())).toEqual(['CNCF', 'Zeta Foundation']);
+    expect(badges[0].getAttribute('tabindex')).toBe('0');
+    expect(badges[0].className).toContain('edge');
+    expect(fixture.componentInstance['rowViews']()[0].otherMemberships[0]).toEqual({ key: 'cncf', label: 'CNCF', tierLabel: 'Gold membership' });
+  });
+
+  it('sorts Other memberships highest tier first on the first click', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+
+    sortBy('memberships');
+    await settle();
+
+    expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, sort: { key: 'memberships', direction: 'desc' } }));
+  });
+
   it('dashes a company with no meetings, contributions or score, with no people or date line', async () => {
-    await render(response({ rows: [org({ meetingsAttended: 0, contributions: null, fitBand: null, lastEngagedDate: null })] }));
+    await render(response({ rows: [org({ meetingsAttended: 0, contributions: null, fitBand: null, lastEngagedDate: null, otherMemberships: [] })] }));
 
     expect(cellText('meetings')).toBe('—');
     expect(cellDescription('meetings')).toBeUndefined();
     expect(cellText('contributions')).toBe('—');
     expect(cellDescription('name')).toBeUndefined();
+    expect(text(`non-members-orgs-row-${ACCOUNT_ID}-memberships`)).toBe('—');
+    expect(cell('memberships')?.querySelector('lfx-ui-badge')).toBeNull();
     expect(text(`non-members-orgs-row-${ACCOUNT_ID}-fit`)).toBe('—');
     expect(cell('fit')?.querySelector('[data-testid="health-metrics-cell-text"]')?.classList).toContain('text-gray-400');
   });

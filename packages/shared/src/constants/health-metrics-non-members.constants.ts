@@ -103,6 +103,17 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 export const HEALTH_METRICS_NON_MEMBERS_CONTRIBUTIONS_TIP =
   "Code contributions (commits and pull requests) this company made to the foundation's projects in the selected period.";
 
+/**
+ * Short foundation names for the Other memberships badges, keyed by `foundation_slug`; a foundation missing here shows its
+ * full name. Replaced by a `foundation_short_name` column once the directory carries one.
+ */
+export const HEALTH_METRICS_NON_MEMBERS_FOUNDATION_SHORT_NAMES: Readonly<Record<string, string>> = {
+  aaif: 'AAIF',
+  cncf: 'CNCF',
+  openssf: 'OpenSSF',
+  pytorch: 'PyTorch',
+};
+
 /** The fit bands, highest first; the Fit column ranks them in this order. */
 export const HEALTH_METRICS_NON_MEMBERS_FIT_BANDS = ['High', 'Medium', 'Low'] as const;
 
@@ -116,6 +127,8 @@ export const HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES: Readonly<Record<Healt
 /** Company participation's sortable columns. Fit ranks its bands, so it sorts as a number, High first. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsNonMembersOrgsSortKey>[] = [
   { key: 'company', kind: 'text' },
+  // The highest tier held, then how many; the first click puts the highest tier first.
+  { key: 'memberships', kind: 'number' },
   { key: 'meetings', kind: 'number' },
   { key: 'contributions', kind: 'number' },
   { key: 'fit', kind: 'number' },

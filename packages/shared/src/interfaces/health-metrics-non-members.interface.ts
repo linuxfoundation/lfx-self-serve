@@ -30,7 +30,23 @@ export interface HealthMetricsNonMembersOrgsFilterOption {
 export type HealthMetricsNonMembersFitBand = (typeof HEALTH_METRICS_NON_MEMBERS_FIT_BANDS)[number];
 
 /** Company participation's sortable columns. */
-export type HealthMetricsNonMembersOrgsSortKey = 'company' | 'meetings' | 'contributions' | 'fit';
+export type HealthMetricsNonMembersOrgsSortKey = 'company' | 'memberships' | 'meetings' | 'contributions' | 'fit';
+
+/** One current membership a non-member company holds in another LF foundation, from `MEMBERSHIP_DIRECTORY`. */
+export interface HealthMetricsNonMembersOtherMembership {
+  foundationSlug: string;
+  foundationName: string;
+  /** The warehouse's tier name, such as `Gold Membership`; `null` when unset. */
+  tier: string | null;
+}
+
+/** One Other memberships badge: a foundation's short name, with its highest tier in the tooltip. */
+export interface HealthMetricsNonMembersOtherMembershipView {
+  key: string;
+  label: string;
+  /** "{Tier} membership", or "Membership" with no tier. */
+  tierLabel: string;
+}
 
 /** `GET /api/analytics/non-members-orgs` — one page of the period's active non-member organizations. */
 export interface HealthMetricsNonMembersOrgsQuery {
@@ -57,6 +73,8 @@ export interface HealthMetricsNonMembersOrg {
   contributions: number | null;
   /** The model's fit band (`High`, `Medium` or `Low`); `null` when unscored. */
   fitBand: string | null;
+  /** Current memberships in other foundations; empty when it holds none. */
+  otherMemberships: HealthMetricsNonMembersOtherMembership[];
 }
 
 export interface HealthMetricsNonMembersOrgs {
@@ -74,6 +92,8 @@ export interface HealthMetricsNonMembersOrgRowView {
   logoUrl: string | null;
   /** "Last engaged {Mon D, YYYY}" under the name; empty with no date. */
   lastEngagedLabel: string;
+  /** One badge per other foundation, highest tier first, then A–Z; empty reads "—". */
+  otherMemberships: HealthMetricsNonMembersOtherMembershipView[];
   meetingsLabel: string;
   /** "{n} person" or "{n} people" under the count; empty when nobody attended. */
   peopleLabel: string;

@@ -16,7 +16,7 @@ import {
 import { toIsoDate } from '../helpers/date-format.helper';
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
 import { healthMetricsAccountLogoJoinSql, healthMetricsAccountLogoSql } from '../helpers/health-metrics-logo.helper';
-import { buildHealthMetricsSortOrderBy } from '../helpers/health-metrics-sort.helper';
+import { buildHealthMetricsSortOrderBy, healthMetricsTierRankSql } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -29,6 +29,7 @@ import type {
   HealthMetricsNonMembersOrgs,
   HealthMetricsNonMembersOrgsQuery,
   HealthMetricsNonMembersOrgsSortKey,
+  HealthMetricsNonMembersOtherMembership,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersPeopleQuery,
   HealthMetricsNonMembersPerson,
@@ -41,6 +42,7 @@ const NON_MEMBER_CONVERSION_OPPORTUNITY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_M
 const NON_MEMBER_COMPANY_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_COMPANY_PARTICIPATION';
 const NON_MEMBER_FIT_SCORE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_FIT_SCORE';
 const NON_MEMBER_PEOPLE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_PEOPLE';
+const MEMBERSHIP_DIRECTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY';
 
 interface OrgRow {
   SCOPE_TOTAL: number | null;
@@ -58,6 +60,13 @@ interface OrgRow {
   /** The row's place in the picked order, which the outer select keeps after the logo join. */
   PAGE_POSITION: number | null;
   LOGO_URL: string | null;
+}
+
+interface OtherMembershipRow {
+  ACCOUNT_ID: string | null;
+  FOUNDATION_SLUG: string | null;
+  FOUNDATION_NAME: string | null;
+  MEMBERSHIP_TIER: string | null;
 }
 
 interface PersonRow {
@@ -108,7 +117,8 @@ export class HealthMetricsNonMembersService {
   public async getOrgs(req: Request, query: HealthMetricsNonMembersOrgsQuery): Promise<HealthMetricsNonMembersOrgs> {
     // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
-    const binds: string[] = [query.foundationSlug];
+    // The foundation twice: `other` leaves its memberships out, then `scoped` picks its companies.
+    const binds: string[] = [query.foundationSlug, query.foundationSlug];
 
     const predicates: string[] = [];
     if (query.filter === 'meetings') predicates.push('meetings_attended_count > 0');
@@ -126,7 +136,19 @@ export class HealthMetricsNonMembersService {
     const orderBy = buildHealthMetricsSortOrderBy(query.sort, orgSortColumns(), 'sort_rank ASC NULLS LAST, account_id ASC');
 
     const sql = `
-      WITH scoped AS (
+      WITH other AS (
+        -- Each company's current memberships in other foundations: its highest tier and how many, for the sort.
+        SELECT
+          account_id,
+          COALESCE(MAX(${healthMetricsTierRankSql('membership_tier')}), 0) AS other_top_tier_rank,
+          COUNT(DISTINCT foundation_slug) AS other_membership_count
+        FROM ${MEMBERSHIP_DIRECTORY_VIEW}
+        WHERE foundation_slug <> ?
+          AND account_id IS NOT NULL
+          AND account_id <> ''
+        GROUP BY account_id
+      ),
+      scoped AS (
         SELECT
           p.account_id,
           p.account_name,
@@ -137,8 +159,11 @@ export class HealthMetricsNonMembersService {
           p.sort_rank_${suffix} AS sort_rank,
           p.fit_band,
           -- High band among active rows: the set high_fit_org_count counts.
-          COALESCE(p.fit_band = 'High', FALSE) AS is_high_fit
+          COALESCE(p.fit_band = 'High', FALSE) AS is_high_fit,
+          o.other_top_tier_rank,
+          o.other_membership_count
         FROM ${NON_MEMBER_COMPANY_PARTICIPATION_VIEW} p
+        LEFT JOIN other o ON o.account_id = p.account_id
         WHERE p.foundation_slug = ?
           -- Rows the mapper cannot show must not count, or the totals and the page window drift apart.
           AND p.account_id IS NOT NULL
@@ -175,11 +200,51 @@ export class HealthMetricsNonMembersService {
     });
 
     const first = result.rows[0];
+    const rows = result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapOrg);
+    const memberships = await this.getOtherMemberships(
+      req,
+      query.foundationSlug,
+      rows.map((row) => row.accountId)
+    );
     return {
-      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapOrg),
+      rows: rows.map((row) => ({ ...row, otherMemberships: memberships.get(row.accountId) ?? [] })),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
     };
+  }
+
+  /** The page's companies' current memberships in other foundations, keyed by account; read for those companies only. */
+  private async getOtherMemberships(
+    req: Request,
+    foundationSlug: string,
+    accountIds: string[]
+  ): Promise<Map<string, HealthMetricsNonMembersOtherMembership[]>> {
+    const memberships = new Map<string, HealthMetricsNonMembersOtherMembership[]>();
+    if (accountIds.length === 0) return memberships;
+
+    // One bound placeholder per account; the list is the page, so it is never longer than the page size cap.
+    const sql = `
+      SELECT account_id, foundation_slug, foundation_name, membership_tier
+      FROM ${MEMBERSHIP_DIRECTORY_VIEW}
+      WHERE foundation_slug <> ?
+        AND foundation_slug IS NOT NULL
+        AND foundation_slug <> ''
+        AND account_id IN (${accountIds.map(() => '?').join(', ')})
+    `;
+
+    const result = await executeSnowflakeViewRead<OtherMembershipRow>(this.snowflakeService, req, sql, [foundationSlug, ...accountIds], {
+      view: MEMBERSHIP_DIRECTORY_VIEW,
+      operation: 'get_non_members_other_memberships',
+      clientMessage: 'Company participation is unavailable right now.',
+    });
+
+    for (const row of result.rows) {
+      if (!row.ACCOUNT_ID || !row.FOUNDATION_SLUG) continue;
+      const list = memberships.get(row.ACCOUNT_ID) ?? [];
+      list.push({ foundationSlug: row.FOUNDATION_SLUG, foundationName: row.FOUNDATION_NAME || row.FOUNDATION_SLUG, tier: row.MEMBERSHIP_TIER || null });
+      memberships.set(row.ACCOUNT_ID, list);
+    }
+    return memberships;
   }
 
   /** One page of the period's engaged non-member individuals, in the view's rank. Never selects an email address. */
@@ -356,6 +421,7 @@ function mapOrg(row: OrgRow): HealthMetricsNonMembersOrg[] {
       distinctPeople: toNullableNumber(row.DISTINCT_PEOPLE_COUNT),
       contributions: toNullableNumber(row.CONTRIBUTIONS_COUNT),
       fitBand: row.FIT_BAND || null,
+      otherMemberships: [],
     },
   ];
 }
@@ -366,6 +432,8 @@ function orgSortColumns(): Record<HealthMetricsNonMembersOrgsSortKey, HealthMetr
   return {
     // A company with no name shows its account id, so it sorts by that.
     company: { expression: "COALESCE(NULLIF(account_name, ''), account_id)", kind: 'text' },
+    // The highest tier held, then how many (the rank leads by a factor no count reaches); none reads "—", so it is empty.
+    memberships: { expression: 'IFF(other_membership_count > 0, other_top_tier_rank * 1000 + other_membership_count, NULL)', kind: 'number' },
     meetings: { expression: 'NULLIF(meetings_attended_count, 0)', kind: 'number' },
     contributions: { expression: 'NULLIF(contributions_count, 0)', kind: 'number' },
     // The bands are constants, never request input.

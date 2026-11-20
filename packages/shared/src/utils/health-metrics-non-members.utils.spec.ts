@@ -8,6 +8,7 @@ import { HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED } from '../constants/h
 import {
   buildHealthMetricsNonMembersConversionView,
   buildHealthMetricsNonMembersOrgRows,
+  buildHealthMetricsNonMembersOtherMemberships,
   buildHealthMetricsNonMembersPeopleCountLabel,
   buildHealthMetricsNonMembersPersonRows,
   buildHealthMetricsNonMembersSubNavItems,
@@ -29,6 +30,7 @@ const ORG: HealthMetricsNonMembersOrg = {
   distinctPeople: 3,
   contributions: 1840,
   fitBand: 'High',
+  otherMemberships: [{ foundationSlug: 'cncf', foundationName: 'Cloud Native Computing Foundation', tier: 'Gold Membership' }],
 };
 
 const CONVERSION: HealthMetricsNonMembersConversion = {
@@ -74,6 +76,7 @@ describe('buildHealthMetricsNonMembersOrgRows', () => {
       accountName: 'Acme Motors',
       logoUrl: 'https://logos.example/acme.png',
       lastEngagedLabel: 'Last engaged Mar 14, 2026',
+      otherMemberships: [{ key: 'cncf', label: 'CNCF', tierLabel: 'Gold membership' }],
       meetingsLabel: '12',
       peopleLabel: '3 people',
       contributionsLabel: '1,840',
@@ -98,6 +101,43 @@ describe('buildHealthMetricsNonMembersOrgRows', () => {
     expect(view('Medium')).toMatchObject({ fitLabel: 'Medium', fitBadgeClass: 'bg-amber-50 text-amber-800' });
     expect(view(' Low ')).toMatchObject({ fitLabel: 'Low', fitBadgeClass: 'bg-red-50 text-red-700' });
     for (const band of [null, '  ', 'Unrated', 'constructor']) expect(view(band)).toMatchObject({ fitLabel: '—', fitBadgeClass: null });
+  });
+});
+
+describe('buildHealthMetricsNonMembersOtherMemberships', () => {
+  const membership = (foundationSlug: string, foundationName: string, tier: string | null) => ({ foundationSlug, foundationName, tier });
+
+  it('keeps one badge per foundation at its highest tier, highest tier first, then A–Z', () => {
+    const views = buildHealthMetricsNonMembersOtherMemberships([
+      membership('zeta-foundation', 'Zeta Foundation', 'Silver Membership'),
+      membership('cncf', 'Cloud Native Computing Foundation', 'Silver Membership'),
+      membership('cncf', 'Cloud Native Computing Foundation', 'Platinum Membership'),
+      membership('alpha-foundation', 'Alpha Foundation', 'Silver'),
+      membership('openssf', 'Open Source Security Foundation', 'Associate'),
+    ]);
+
+    expect(views).toEqual([
+      { key: 'cncf', label: 'CNCF', tierLabel: 'Platinum membership' },
+      { key: 'alpha-foundation', label: 'Alpha Foundation', tierLabel: 'Silver membership' },
+      { key: 'zeta-foundation', label: 'Zeta Foundation', tierLabel: 'Silver membership' },
+      { key: 'openssf', label: 'OpenSSF', tierLabel: 'Associate membership' },
+    ]);
+  });
+
+  it('says "Membership" with no tier, ranks it last, and falls back to the slug with no name', () => {
+    const views = buildHealthMetricsNonMembersOtherMemberships([
+      membership('constructor', '', null),
+      membership('beta-foundation', 'Beta Foundation', 'End User Supporter'),
+    ]);
+
+    expect(views).toEqual([
+      { key: 'beta-foundation', label: 'Beta Foundation', tierLabel: 'End User Supporter membership' },
+      { key: 'constructor', label: 'constructor', tierLabel: 'Membership' },
+    ]);
+  });
+
+  it('is empty for a company with no other membership', () => {
+    expect(buildHealthMetricsNonMembersOtherMemberships([])).toEqual([]);
   });
 });
 
