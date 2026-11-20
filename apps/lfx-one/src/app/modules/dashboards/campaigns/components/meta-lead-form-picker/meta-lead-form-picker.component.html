@@ -1,0 +1,42 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2" data-testid="meta-lead-form-picker">
+  @switch (picker().status) {
+    @case ('loading') {
+      <p class="text-xs text-gray-500" data-testid="meta-lead-form-picker-loading">{{ loadingText }}</p>
+    }
+    @case ('loaded') {
+      @if (picker().choices.length === 0) {
+        <p class="text-xs text-gray-500" data-testid="meta-lead-form-picker-empty">{{ emptyText }}</p>
+      } @else {
+        <lfx-ui-select
+          label="Lead form"
+          size="small"
+          [value]="leadFormId()"
+          (valueChange)="onPick($event)"
+          hint="Forms are made in Meta Ads Manager on the project's Facebook Page. Only active forms can be used."
+          data-testid="meta-lead-form-picker-select">
+          <lfx-ui-option value="" label="Choose a lead form" />
+          @if (heldIdUnlisted()) {
+            <lfx-ui-option [value]="leadFormId()" [label]="'Form ' + leadFormId() + ' (not listed)'" />
+          }
+          @for (choice of picker().choices; track choice.value) {
+            <lfx-ui-option [value]="choice.value" [label]="choice.label" [disabled]="choice.disabled" />
+          }
+        </lfx-ui-select>
+      }
+    }
+    @case ('unavailable') {
+      <lfx-ui-input
+        label="Lead form id"
+        size="small"
+        inputmode="numeric"
+        placeholder="e.g. 1234567890123456"
+        [hint]="picker().reason ?? ''"
+        [value]="leadFormId()"
+        (valueChange)="onType($event)"
+        data-testid="meta-lead-form-picker-id" />
+    }
+  }
+</div>

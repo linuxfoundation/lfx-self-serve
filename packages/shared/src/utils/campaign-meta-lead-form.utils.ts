@@ -1,8 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_META_OBJECTIVE, META_LEAD_FORM_CALL_TO_ACTIONS, META_LEAD_FORM_ID_PATTERN } from '../constants/campaign.constants';
-import type { MetaConfigRefusal } from '../interfaces/campaign.interface';
+import {
+  DEFAULT_META_OBJECTIVE,
+  META_LEAD_FORM_CALL_TO_ACTIONS,
+  META_LEAD_FORM_ID_PATTERN,
+  META_OBJECTIVE_LABELS,
+  META_SELECTABLE_OBJECTIVES,
+} from '../constants/campaign.constants';
+import type { MetaConfigRefusal, MetaLeadFormChoice, MetaLeadFormDraft, MetaLeadFormOption, MetaObjective } from '../interfaces/campaign.interface';
 import { metaAdOptionLabel, metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
@@ -57,4 +63,48 @@ export function metaLeadFormRefusal(raw: unknown, manualBidding: boolean): MetaC
     }
   }
   return null;
+}
+
+/**
+ * The objectives the Implement tab offers, in `META_OBJECTIVE_LABELS` order: the always-selectable ones, plus
+ * `leads` only when this caller may send a lead form. Without a form `leads` would run as a traffic campaign,
+ * which is why it stays hidden otherwise.
+ */
+export function metaObjectiveChoices(leadFormsEnabled: boolean): MetaObjective[] {
+  const selectable = META_SELECTABLE_OBJECTIVES as readonly MetaObjective[];
+  return (Object.keys(META_OBJECTIVE_LABELS) as MetaObjective[]).filter(
+    (objective) => selectable.includes(objective) || (leadFormsEnabled && objective === 'leads')
+  );
+}
+
+/** The picker rows for the Page's forms, in the read's (name) order: a form that is not ACTIVE, or whose id campaign-service would refuse, shows its status and cannot be picked. */
+export function metaLeadFormChoices(forms: readonly MetaLeadFormOption[]): MetaLeadFormChoice[] {
+  return forms.map((form) => {
+    const active = form.status.trim().toUpperCase() === 'ACTIVE' && META_LEAD_FORM_ID_PATTERN.test(form.id);
+    const status = form.status.trim() === '' ? 'unknown' : form.status.trim().toLowerCase();
+    return { value: form.id, label: active ? form.name : `${form.name} (${status})`, disabled: !active };
+  });
+}
+
+/** The form id to keep after the objective changes: only `leads` carries one, so any other objective clears it. */
+export function metaLeadFormForObjective(objective: MetaObjective, leadFormId: string): string {
+  return objective === 'leads' ? leadFormId : '';
+}
+
+/** Whether a call to action may be offered with a lead form; without one every call to action may be. */
+export function metaCallToActionAllowedWithLeadForm(callToAction: string, withLeadForm: boolean): boolean {
+  return !withLeadForm || (META_LEAD_FORM_CALL_TO_ACTIONS as readonly string[]).includes(callToAction.trim().toUpperCase());
+}
+
+/**
+ * Why the Implement tab's Meta draft cannot be created with its lead form, or `null`. Only while lead forms are
+ * enabled for this caller: `leads` then needs a form, so self-serve never sends the traffic-mapped `leads`, and the
+ * form must pass the create route's own rules ({@link metaLeadFormRefusal}). While they are off nothing is checked
+ * here and no form is sent.
+ */
+export function metaLeadFormDraftRefusal(draft: MetaLeadFormDraft): MetaConfigRefusal | null {
+  if (!draft.leadFormsEnabled || draft.objective !== 'leads') return null;
+  const leadFormId = draft.leadFormId.trim();
+  if (leadFormId === '') return { field: 'metaConfig.leadFormId', message: 'Choose a lead form for the Leads objective.' };
+  return metaLeadFormRefusal({ leadFormId, objective: draft.objective, callToAction: draft.callToAction }, draft.manualBidding);
 }

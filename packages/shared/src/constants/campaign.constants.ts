@@ -1009,6 +1009,13 @@ export const META_AD_OPTION_FIELDS: readonly MetaAdOptionField[] = [
 export const META_LEAD_FORM_ID_PATTERN = /^[0-9]{1,20}$/;
 /** The only buttons campaign-service accepts on a lead form create, a subset of `META_CALL_TO_ACTIONS`. */
 export const META_LEAD_FORM_CALL_TO_ACTIONS = ['LEARN_MORE', 'SIGN_UP', 'APPLY_NOW', 'SUBSCRIBE', 'DOWNLOAD'] as const;
+/** What the Implement tab's lead form picker says while it has no list, one sentence each; the typed box still takes a form id. */
+export const META_LEAD_FORM_PICKER_REASONS = {
+  unavailable: "The lead form picker isn't available here. Enter the form id from Meta Ads Manager instead.",
+  failed: "The lead forms couldn't be read from this project's Facebook Page. Enter the form id from Meta Ads Manager instead.",
+} as const;
+export const META_LEAD_FORM_PICKER_LOADING = "Loading the Page's lead forms…";
+export const META_LEAD_FORM_PICKER_EMPTY = 'This Facebook Page has no lead forms. Create one in Meta Ads Manager, then reload.';
 
 /**
  * The countries for which Meta requires the EU Digital Services Act disclosures

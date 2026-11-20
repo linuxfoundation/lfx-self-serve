@@ -1265,6 +1265,10 @@ export interface CampaignImplementationDraft {
   metaAdOptions?: MetaAdOptions;
   /** The foundation slug {@link metaAdOptions} was chosen under: restored only under the same one, like the targeting. */
   metaAdOptionsProject?: string;
+  /** The Meta lead form id as picked or typed (#5940); absent means the draft predates it. */
+  metaLeadFormId?: string;
+  /** The foundation slug {@link metaLeadFormId} was picked under: a form belongs to that foundation's Page, so restored only under the same one. */
+  metaLeadFormProject?: string;
   /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
@@ -2522,6 +2526,32 @@ export interface MetaLeadFormOption {
 export interface MetaLeadFormsResult {
   pageId: string;
   forms: MetaLeadFormOption[];
+}
+
+/** One row of the Implement tab's lead form picker (#5940): only an ACTIVE form with a valid id can be picked. */
+export interface MetaLeadFormChoice {
+  value: string;
+  label: string;
+  disabled: boolean;
+}
+
+/** Where the lead form picker stands; `unavailable` carries the sentence the typed form id box is offered with. */
+export interface MetaLeadFormPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  choices: MetaLeadFormChoice[];
+  reason: string | null;
+}
+
+/** What the Implement tab's lead form check reads: the Meta draft as the screen holds it (#5940). */
+export interface MetaLeadFormDraft {
+  /** Whether this caller may send a lead form: `CampaignListResult.metaLeadFormsEnabled` is an explicit yes. */
+  leadFormsEnabled: boolean;
+  objective: MetaObjective;
+  /** The picked or typed form id; blank is none. */
+  leadFormId: string;
+  manualBidding: boolean;
+  /** The chosen call to action; absent or blank is "Not set". */
+  callToAction?: string;
 }
 
 /** Where the Meta custom-audience picker stands; `unavailable` carries the sentence the typed boxes are offered with. */

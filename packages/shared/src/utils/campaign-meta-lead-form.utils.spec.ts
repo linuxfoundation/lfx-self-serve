@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from './campaign-meta-lead-form.utils';
+import {
+  hasMetaLeadFormKeyVariant,
+  metaCallToActionAllowedWithLeadForm,
+  metaLeadFormChoices,
+  metaLeadFormDraftRefusal,
+  metaLeadFormForObjective,
+  metaLeadFormId,
+  metaLeadFormRefusal,
+  metaObjectiveChoices,
+} from './campaign-meta-lead-form.utils';
 
 describe('metaLeadFormRefusal', () => {
   it.each([
@@ -57,5 +66,70 @@ describe('hasMetaLeadFormKeyVariant', () => {
     expect(hasMetaLeadFormKeyVariant({ leadFormId: '1' })).toBe(false);
     expect(hasMetaLeadFormKeyVariant({ objective: 'leads' })).toBe(false);
     expect(hasMetaLeadFormKeyVariant(undefined)).toBe(false);
+  });
+});
+
+describe('metaObjectiveChoices', () => {
+  it('hides leads unless lead forms are enabled', () => {
+    expect(metaObjectiveChoices(false)).toEqual(['awareness', 'traffic', 'engagement', 'conversions']);
+    expect(metaObjectiveChoices(true)).toEqual(['awareness', 'traffic', 'engagement', 'leads', 'conversions']);
+  });
+});
+
+describe('metaLeadFormChoices', () => {
+  it('lets only an ACTIVE form with a valid id be picked, and shows the others with their status', () => {
+    expect(
+      metaLeadFormChoices([
+        { id: '111', name: 'Registrations', status: 'ACTIVE' },
+        { id: '222', name: 'Old form', status: 'ARCHIVED' },
+        { id: 'not-digits', name: 'Odd id', status: 'active' },
+        { id: '333', name: 'No status', status: ' ' },
+      ])
+    ).toEqual([
+      { value: '111', label: 'Registrations', disabled: false },
+      { value: '222', label: 'Old form (archived)', disabled: true },
+      { value: 'not-digits', label: 'Odd id (active)', disabled: true },
+      { value: '333', label: 'No status (unknown)', disabled: true },
+    ]);
+  });
+});
+
+describe('metaLeadFormForObjective', () => {
+  it('keeps the form only on leads', () => {
+    expect(metaLeadFormForObjective('leads', '111')).toBe('111');
+    expect(metaLeadFormForObjective('traffic', '111')).toBe('');
+  });
+});
+
+describe('metaCallToActionAllowedWithLeadForm', () => {
+  it.each([
+    ['SIGN_UP', true, true],
+    [' learn_more ', true, true],
+    ['BUY_TICKETS', true, false],
+    ['BUY_TICKETS', false, true],
+  ])('%s with a lead form %s -> %s', (cta, withForm, allowed) => {
+    expect(metaCallToActionAllowedWithLeadForm(cta, withForm)).toBe(allowed);
+  });
+});
+
+describe('metaLeadFormDraftRefusal', () => {
+  const draft = { leadFormsEnabled: true, objective: 'leads' as const, leadFormId: '111', manualBidding: false };
+
+  it.each([
+    ['lead forms off', { ...draft, leadFormsEnabled: false, leadFormId: '' }],
+    ['another objective', { ...draft, objective: 'traffic' as const, leadFormId: '' }],
+    ['a form on leads', draft],
+    ['a form with a call to action it can carry', { ...draft, callToAction: 'SIGN_UP' }],
+  ])('accepts %s', (_label, value) => {
+    expect(metaLeadFormDraftRefusal(value)).toBeNull();
+  });
+
+  it.each([
+    ['leads with no form', { ...draft, leadFormId: '  ' }, 'metaConfig.leadFormId'],
+    ['a typed id that is not digits', { ...draft, leadFormId: 'abc' }, 'metaConfig.leadFormId'],
+    ['manual bidding', { ...draft, manualBidding: true }, 'metaConfig.leadFormId'],
+    ['a call to action a form cannot carry', { ...draft, callToAction: 'BUY_TICKETS' }, 'metaConfig.callToAction'],
+  ])('refuses %s', (_label, value, field) => {
+    expect(metaLeadFormDraftRefusal(value)?.field).toBe(field);
   });
 });
