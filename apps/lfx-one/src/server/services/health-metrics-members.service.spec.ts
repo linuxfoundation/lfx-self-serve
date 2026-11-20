@@ -781,7 +781,7 @@ describe('HealthMetricsMembersService.getRenewals', () => {
 });
 
 describe('HealthMetricsMembersService.getBoardAttendance', () => {
-  const query = { foundationSlug: 'acme', range: 'YTD' as const, cohort: 'board' as const, offset: 0, pageSize: 10 };
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, cohort: 'board' as const, offset: 0, pageSize: 10, sort: null };
 
   function cohortRow(cohort: string, overrides: Record<string, unknown> = {}) {
     return {
@@ -879,6 +879,23 @@ describe('HealthMetricsMembersService.getBoardAttendance', () => {
       `ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC\n        LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`
     );
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+    expect(sql).toContain('ROW_NUMBER() OVER (ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC) AS page_position');
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+  });
+
+  it.each([
+    ['board', 'meeting', 'asc', 'COLLATE(NULLIF(NULLIF(TRIM(committee_name'],
+    ['voting_members', 'meeting', 'desc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(committee_name, 'Voting members')"],
+    ['board', 'date', 'asc', 'meeting_date ASC NULLS LAST, meeting_date DESC NULLS LAST'],
+    ['board', 'attendance', 'desc', 'ROUND(LEAST(GREATEST(attendance_pct * 100, 0), 100))) DESC NULLS LAST, meeting_date DESC'],
+  ] as const)('sorts the %s meetings by %s %s across every page, then newest first', async (cohort, key, direction, expected) => {
+    await new HealthMetricsMembersService().getBoardAttendance(req, { ...query, cohort, sort: { key, direction } });
+
+    const [sql, binds] = boardRead('page');
+    expect(sql).toContain(expected);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    // The chart keeps its own order whatever the table's sort.
+    expect(boardRead('trend')[0]).toContain('ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC\n      LIMIT 12');
   });
 
   it('caps the trend at the latest twelve meetings and plots them oldest first', async () => {

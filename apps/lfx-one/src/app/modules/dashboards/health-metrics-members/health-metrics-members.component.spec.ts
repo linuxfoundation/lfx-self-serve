@@ -21,7 +21,7 @@ import { MembersNpsComponent } from './components/members-nps/members-nps.compon
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
 
-import type { HealthMetricsMembersAtRiskFilter, HealthMetricsMembersRenewalsWindow } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsMembersAtRiskFilter, HealthMetricsMembersBoardCohort, HealthMetricsMembersRenewalsWindow } from '@lfx-one/shared/interfaces';
 
 /** Stands in for Member growth by year, whose read its own spec covers; the test drives its settle. */
 @Component({ selector: 'lfx-members-growth', template: '<div data-testid="members-growth-stub"></div>' })
@@ -78,6 +78,7 @@ class RenewalsStubComponent {
 /** Stands in for the board attendance section; the test drives its note and settle. */
 @Component({ selector: 'lfx-members-board-attendance', template: '<div data-testid="members-board-stub"></div>' })
 class BoardStubComponent {
+  public readonly cohort = model<HealthMetricsMembersBoardCohort>('board');
   public readonly noteChange = output<string>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
@@ -310,11 +311,27 @@ describe('HealthMetricsMembersComponent', () => {
     expect(stub(RenewalsStubComponent).window()).toBe('180_days');
   });
 
-  it('falls back to the default bucket and window for URL values it does not know', async () => {
-    await setup(null, { riskBucket: 'under_60_days', renewalsWindow: '30_days' });
+  it("puts the board cohort switch in that card's header, seeded from the URL and handed to the section", async () => {
+    await setup(null, { boardCohort: 'voting_members' });
+    const section = fixture.nativeElement.querySelector('#sec-mem-board') as HTMLElement;
+
+    const labels = [...section.querySelectorAll('[data-testid="members-board-cohort"] [data-testid="ui-switch-option-text"]')].map((label) =>
+      label.textContent?.trim()
+    );
+    expect(labels).toEqual(['Board', 'Voting members']);
+    expect(stub(BoardStubComponent).cohort()).toBe('voting_members');
+
+    (section.querySelector('[data-testid="members-board-cohort-board"] input') as HTMLInputElement).click();
+    await flush();
+    expect(stub(BoardStubComponent).cohort()).toBe('board');
+  });
+
+  it('falls back to the default bucket, window and cohort for URL values it does not know', async () => {
+    await setup(null, { riskBucket: 'under_60_days', renewalsWindow: '30_days', boardCohort: 'committee' });
 
     expect(stub(AtRiskStubComponent).bucket()).toBe('all');
     expect(stub(RenewalsStubComponent).window()).toBe('90_days');
+    expect(stub(BoardStubComponent).cohort()).toBe('board');
   });
 
   it('notes Board & voting attendance with the board note once it reports one', async () => {

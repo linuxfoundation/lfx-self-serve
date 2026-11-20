@@ -7,6 +7,7 @@ import {
   getYearForRange,
   HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
   HEALTH_METRICS_MEMBERS_BLANK,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
   HEALTH_METRICS_MEMBERS_DATA_SECTIONS,
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
   HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_OPTIONS,
@@ -16,6 +17,7 @@ import {
   buildHealthMetricsMembersSections,
   buildHealthMetricsMembersSubNavItems,
   parseHealthMetricsMembersAtRiskFilter,
+  parseHealthMetricsMembersBoardCohort,
   parseHealthMetricsMembersRenewalsWindow,
 } from '@lfx-one/shared/utils';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
@@ -33,7 +35,12 @@ import { MembersGrowthComponent } from './components/members-growth/members-grow
 import { MembersNpsComponent } from './components/members-nps/members-nps.component';
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 
-import type { HealthMetricsMembersAtRiskFilter, HealthMetricsMembersRenewalsWindow, HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsMembersAtRiskFilter,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersRenewalsWindow,
+  HealthMetricsMembersSubNavItem,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * Members (Level 2) — eight anchored sections in the shared Level 2 shell; a section without a body
@@ -67,12 +74,16 @@ export class HealthMetricsMembersComponent {
   protected readonly blank = HEALTH_METRICS_MEMBERS_BLANK;
   protected readonly riskFilters = HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS;
   protected readonly renewalsWindows = HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_OPTIONS;
+  protected readonly boardCohorts = HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS;
   // The header switches live in the sections' controls, so the page owns each cut; the section keeps it in the URL.
   protected readonly riskBucket = signal<HealthMetricsMembersAtRiskFilter>(
     parseHealthMetricsMembersAtRiskFilter(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.atRiskBucket))
   );
   protected readonly renewalsWindow = signal<HealthMetricsMembersRenewalsWindow>(
     parseHealthMetricsMembersRenewalsWindow(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.renewalsWindow))
+  );
+  protected readonly boardCohort = signal<HealthMetricsMembersBoardCohort>(
+    parseHealthMetricsMembersBoardCohort(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.boardCohort))
   );
   protected readonly riskNote = signal<string>('');
   protected readonly boardNote = signal<string>('');
@@ -86,5 +97,9 @@ export class HealthMetricsMembersComponent {
 
   protected onRenewalsWindowChange(value: string | null): void {
     this.renewalsWindow.set(parseHealthMetricsMembersRenewalsWindow(value));
+  }
+
+  protected onBoardCohortChange(value: string | null): void {
+    this.boardCohort.set(parseHealthMetricsMembersBoardCohort(value));
   }
 }

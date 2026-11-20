@@ -3,11 +3,7 @@
 
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import { lfxColors } from './colors.constants';
-import {
-  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
-  HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
-  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
-} from './health-metrics-engagement.constants';
+import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE } from './health-metrics-engagement.constants';
 
 import type { FilterOption } from '../interfaces/filter.interface';
 import type { HealthMetricsEngagementAttendanceRule } from '../interfaces/health-metrics-engagement.interface';
@@ -20,7 +16,7 @@ import type {
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardCohort,
   HealthMetricsMembersBoardCohortOption,
-  HealthMetricsMembersBoardLatestTone,
+  HealthMetricsMembersBoardSortKey,
   HealthMetricsMembersBreakdownTableClasses,
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDepartures,
@@ -93,8 +89,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board },
     label: 'Board & voting attendance',
     heading: 'Board & voting-member attendance',
-    description:
-      'Governance participation. This lives in Members rather than Engagement because it sits next to dues and renewals — an unused board seat is a paid benefit going to waste.',
+    description: 'Whether board and voting members show up to meetings.',
   },
   {
     key: 'nps',
@@ -429,43 +424,58 @@ export const HEALTH_METRICS_MEMBERS_RENEWALS_DEFAULT_SORT: HealthMetricsTableSor
 /** `MEMBERSHIP_BOARD_ATTENDANCE`'s cohorts; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_BOARD_COHORTS = ['board', 'voting_members'] as const;
 
-/** The cohort toggle over the hero. */
+/** The card header's Board / Voting members switch. */
 export const HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS: readonly HealthMetricsMembersBoardCohortOption[] = [
   { id: 'board', label: 'Board' },
   { id: 'voting_members', label: 'Voting members' },
 ];
 
-/** The meeting noun in each cohort's hero caption. */
+/** The meeting noun in each cohort's empty note. */
 export const HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS: Record<HealthMetricsMembersBoardCohort, string> = {
   board: 'board meeting',
   voting_members: 'voting meeting',
 };
 
-/** Each cohort's attendance rule: the board's (ENG-01), and voting members as another voting group (ENG-03). */
+/** Each cohort's level: the board's 90% (ENG-01), and voting members' 50% as another voting group (ENG-03); below it reads red. */
 export const HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES: Record<HealthMetricsMembersBoardCohort, HealthMetricsEngagementAttendanceRule> = {
   board: HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
   voting_members: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
 };
 
-/** The hero caption's suffix when the latest meeting is below its cohort's rule; the board's is the design's. */
-export const HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS: Record<HealthMetricsMembersBoardCohort, string> = {
-  board: 'below the ~100% this should be',
-  voting_members: `below the ${Math.round(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE.threshold * 100)}% a voting group needs`,
+/** Each cohort's people, as its metrics name them. */
+export const HEALTH_METRICS_MEMBERS_BOARD_COHORT_PEOPLE: Record<HealthMetricsMembersBoardCohort, string> = {
+  board: 'board members',
+  voting_members: 'voting members',
 };
 
-/** The trend's latest bar: red or amber below the cohort's rule, the accent otherwise. */
-export const HEALTH_METRICS_MEMBERS_BOARD_LATEST_BAR_COLORS: Record<HealthMetricsMembersBoardLatestTone, string> = {
-  critical: lfxColors.red[600],
-  low: lfxColors.amber[500],
-  ok: lfxColors.blue[500],
+/** The other cohort's metric, beside the selected one's latest meeting. */
+export const HEALTH_METRICS_MEMBERS_BOARD_OTHER_COHORT_LABELS: Record<HealthMetricsMembersBoardCohort, string> = {
+  board: 'Board attendance',
+  voting_members: 'Voting-member attendance',
 };
 
-/** The hero value's colour: red or amber below the cohort's rule, ink otherwise. */
-export const HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS: Record<HealthMetricsMembersBoardLatestTone, string> = {
-  critical: 'text-red-600',
-  low: 'text-amber-600',
-  ok: 'text-gray-900',
+/** A voting meeting with no committee reads as the cohort; a board meeting without one reads "—". */
+export const HEALTH_METRICS_MEMBERS_BOARD_MEETING_FALLBACKS: Record<HealthMetricsMembersBoardCohort, string | null> = {
+  board: null,
+  voting_members: 'Voting members',
 };
+
+/** The chart's bars and the table's fills: red below the cohort's level, the accent otherwise. */
+export const HEALTH_METRICS_MEMBERS_BOARD_BAR_COLORS = { low: lfxColors.red[600], ok: lfxColors.blue[500] } as const;
+export const HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES = { low: 'bg-red-500', ok: 'bg-blue-500' } as const;
+
+/** The design's chart: 200px tall, 28px bars, earlier meetings at 20% behind the latest. */
+export const HEALTH_METRICS_MEMBERS_BOARD_CHART = { heightPx: 200, barWidthPx: 28, earlierOpacity: 0.2 } as const;
+
+/** The meetings table's sortable columns; it pages on the server, so the read sorts. */
+export const HEALTH_METRICS_MEMBERS_BOARD_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersBoardSortKey>[] = [
+  { key: 'meeting', kind: 'text' },
+  { key: 'date', kind: 'date' },
+  { key: 'attendance', kind: 'number' },
+];
+
+/** The newest meeting first, as the view orders them. */
+export const HEALTH_METRICS_MEMBERS_BOARD_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersBoardSortKey> = { key: 'date', direction: 'desc' };
 
 /** Read-failed / no-foundation value: no cohorts measured, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED: HealthMetricsMembersBoardAttendance = {
@@ -483,13 +493,6 @@ export const HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE = 100;
 
 /** Meetings the attendance chart plots: the latest twelve in the period, oldest first. */
 export const HEALTH_METRICS_MEMBERS_BOARD_TREND_MEETINGS = 12;
-
-/** Where "see who" lands: Engagement's representatives, cut to those who never attended. */
-export const HEALTH_METRICS_MEMBERS_BOARD_NEVER_ATTENDED_LINK = {
-  route: 'engagement',
-  fragment: 'reps',
-  queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter]: 'never' },
-} as const;
 
 /** Read-failed / no-foundation value: no audience surveyed, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_NPS_UNMEASURED: HealthMetricsMembersNps = {

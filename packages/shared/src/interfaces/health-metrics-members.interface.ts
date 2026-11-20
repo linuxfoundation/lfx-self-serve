@@ -433,7 +433,12 @@ export interface HealthMetricsMembersBoardAttendanceQuery {
   cohort: HealthMetricsMembersBoardCohort;
   offset: number;
   pageSize: number;
+  /** `null` keeps the newest meeting first. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersBoardSortKey> | null;
 }
+
+/** The meetings table's sortable columns. */
+export type HealthMetricsMembersBoardSortKey = 'meeting' | 'date' | 'attendance';
 
 /** One cohort's period figures as the view carries them; every field is `null` when the period held no meeting. */
 export interface HealthMetricsMembersBoardCohortSummary {
@@ -469,44 +474,16 @@ export interface HealthMetricsMembersBoardAttendance {
   totalRecords: number;
 }
 
-/** The latest meeting against its cohort's rule: below it (red or amber), or not. */
-export type HealthMetricsMembersBoardLatestTone = Extract<HealthMetricsEngagementAttendanceTone, 'low' | 'critical' | 'ok'>;
-
-/** The board hero as the section renders it. */
-export interface HealthMetricsMembersBoardSummaryView {
-  meetingsLabel: string;
-  latestPctLabel: string;
-  latestCaption: string;
-  isBelowExpectedLevel: boolean;
-  latestTone: HealthMetricsMembersBoardLatestTone;
-  latestTextClass: string;
-  otherCohortLabel: string;
-  otherCohortPctLabel: string;
-  attendedInvitedLabel: string;
-  neverAttendedLabel: string;
-  neverAttendedCount: number;
-}
-
-/** One meeting row as the table renders it; `ratePct` is a whole percent, `null` when unmeasured. */
+/** One meeting row as the table renders it; `attendancePct` is the shown percent, `null` when unmeasured. */
 export interface HealthMetricsMembersBoardMeetingRowView {
   meetingId: string;
-  committeeName: string;
+  /** The meeting name, falling back to the committee and, for a voting meeting without one, "Voting members". */
+  meetingName: string;
   dateLabel: string;
-  attendedLabel: string;
-  ratePct: number | null;
-  rateLabel: string;
-  rateFillClass: string;
-}
-
-/** One bar of the trend chart, oldest first; `pct` is the shown percent (one decimal under 1%), `null` when unmeasured. */
-export interface HealthMetricsMembersBoardTrendBarView {
-  meetingId: string;
-  label: string;
-  dateLabel: string;
-  committeeName: string;
-  pct: number | null;
-  pctLabel: string;
-  isLatest: boolean;
+  /** "{attended}/{invited}・{pct}%". */
+  attendanceLabel: string;
+  attendancePct: number | null;
+  fillClass: string;
 }
 
 /** `GET /api/analytics/members-nps` — one audience's survey figures for a period; `null` picks the first audience. */

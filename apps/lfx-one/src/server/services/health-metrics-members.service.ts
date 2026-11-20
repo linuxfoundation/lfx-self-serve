@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_MEETING_FALLBACKS,
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_TREND_MEETINGS,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
@@ -49,6 +50,7 @@ import type {
   HealthMetricsMembersBoardCohort,
   HealthMetricsMembersBoardCohortSummary,
   HealthMetricsMembersBoardMeeting,
+  HealthMetricsMembersBoardSortKey,
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDeparture,
   HealthMetricsMembersChurnDepartures,
@@ -859,6 +861,8 @@ export class HealthMetricsMembersService {
   ): Promise<Pick<HealthMetricsMembersBoardAttendance, 'rows' | 'totalRecords'>> {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+    // A column the reader picked, over every page; with none, the newest meeting first. Only these expressions reach the SQL.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, boardSortColumns(query.cohort), 'meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC');
 
     const sql = `
       WITH scoped AS (${boardMeetingsSql(query.range)}),
@@ -866,16 +870,20 @@ export class HealthMetricsMembersService {
         SELECT COUNT(*) AS total_records FROM scoped
       ),
       page AS (
-        SELECT scoped.*, TRUE AS is_page_row
+        SELECT
+          scoped.*,
+          TRUE AS is_page_row,
+          -- The row's place in the page's order, which the outer select keeps.
+          ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM scoped
-        ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC
+        ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
       SELECT totals.*, page.*
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.meeting_date DESC NULLS LAST, page.meeting_and_occurrence_id ASC
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<BoardMeetingPageRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.cohort], {
@@ -1077,6 +1085,20 @@ function renewalsSortColumns(): Record<HealthMetricsMembersRenewalsSortKey, Heal
     membership: { expression: 'membership_tier', kind: 'tier' },
     date: { expression: 'renewal_date', kind: 'date' },
     dues: { expression: 'dues_usd', kind: 'number' },
+  };
+}
+
+/**
+ * Each meetings column as its cell shows it: the name with the cohort's fallback, the date, and attendance as the shown
+ * percent (whole from 1%, one decimal under it). The fallback is a constant, never request input.
+ */
+function boardSortColumns(cohort: HealthMetricsMembersBoardCohort): Record<HealthMetricsMembersBoardSortKey, HealthMetricsSqlSortColumn> {
+  const fallback = HEALTH_METRICS_MEMBERS_BOARD_MEETING_FALLBACKS[cohort];
+  const shown = 'LEAST(GREATEST(attendance_pct * 100, 0), 100)';
+  return {
+    meeting: { expression: fallback === null ? 'committee_name' : `COALESCE(committee_name, '${fallback}')`, kind: 'text' },
+    date: { expression: 'meeting_date', kind: 'date' },
+    attendance: { expression: `IFF(${shown} > 0 AND ${shown} < 1, LEAST(1, GREATEST(0.1, ROUND(${shown}, 1))), ROUND(${shown}))`, kind: 'number' },
   };
 }
 

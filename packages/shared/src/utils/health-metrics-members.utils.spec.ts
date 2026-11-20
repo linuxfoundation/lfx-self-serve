@@ -9,10 +9,10 @@ import {
   buildHealthMetricsMembersAtRiskMetrics,
   buildHealthMetricsMembersAtRiskNote,
   buildHealthMetricsMembersAtRiskRows,
+  buildHealthMetricsMembersBoardChart,
   buildHealthMetricsMembersBoardMeetingRows,
+  buildHealthMetricsMembersBoardMetrics,
   buildHealthMetricsMembersBoardNote,
-  buildHealthMetricsMembersBoardSummary,
-  buildHealthMetricsMembersBoardTrend,
   buildHealthMetricsMembersBreakdownView,
   buildHealthMetricsMembersChurnDepartureRows,
   buildHealthMetricsMembersChurnView,
@@ -28,6 +28,7 @@ import {
   buildHealthMetricsMembersSections,
   buildHealthMetricsMembersSubNavItems,
   parseHealthMetricsMembersAtRiskFilter,
+  parseHealthMetricsMembersBoardCohort,
   parseHealthMetricsMembersRenewalsWindow,
 } from './health-metrics-members.utils';
 import { healthMetricsRowSortValue, resolveHealthMetricsMembersTier, sortHealthMetricsRows } from './health-metrics-table.utils';
@@ -570,204 +571,131 @@ function boardCohort(overrides: Partial<HealthMetricsMembersBoardCohortSummary> 
   };
 }
 
-describe('buildHealthMetricsMembersBoardSummary', () => {
-  it('renders the selected cohort with the other cohort beside it, flagging a level below expected', () => {
-    expect(buildHealthMetricsMembersBoardSummary('board', boardCohort(), boardCohort({ latestAttendancePct: 0.646 }))).toEqual({
-      meetingsLabel: '7 meetings in range',
-      latestPctLabel: '82%',
-      latestCaption: 'Last board meeting · below the ~100% this should be',
-      isBelowExpectedLevel: true,
-      latestTone: 'critical',
-      latestTextClass: 'text-red-600',
-      otherCohortLabel: 'Voting members',
-      otherCohortPctLabel: '65%',
-      attendedInvitedLabel: '9 / 11',
-      neverAttendedLabel: '2',
-      neverAttendedCount: 2,
+function boardMeeting(
+  meetingId: string,
+  attendancePct: number | null,
+  overrides: Partial<HealthMetricsMembersBoardMeeting> = {}
+): HealthMetricsMembersBoardMeeting {
+  return {
+    meetingId,
+    committeeName: 'Acme Board',
+    meetingDate: '2026-09-18',
+    attendedCount: 9,
+    invitedCount: 11,
+    attendancePct,
+    isLatestMeeting: false,
+    ...overrides,
+  };
+}
+
+describe('members board attendance', () => {
+  it("reports the selected cohort's last meeting, the other cohort's beside it, and who never attended", () => {
+    const metrics = buildHealthMetricsMembersBoardMetrics('board', {
+      board: boardCohort(),
+      voting_members: boardCohort({ latestAttendancePct: 0.646, latestAttendedCount: 31, latestInvitedCount: 48 }),
     });
+
+    expect(metrics.map((item) => [item.label, item.value, item.description])).toEqual([
+      ['Last meeting attendance', '82%', '9 of 11 board members attended'],
+      ['Voting-member attendance', '65%', '31 of 48 at last meeting'],
+      ['Never attended', '2', 'Board members with no meeting this year'],
+    ]);
+    // Values stay ink: no item carries a tone.
+    expect(metrics.some((item) => item.dotClass || item.trendTone || item.descriptionLeadTone)).toBe(false);
   });
 
-  it('drops the caution at the expected level and names the board as the other cohort', () => {
-    const view = buildHealthMetricsMembersBoardSummary('voting_members', boardCohort({ isBelowExpectedLevel: false, neverAttendedCount: 0 }), null);
-    expect(view).toMatchObject({
-      latestCaption: 'Last voting meeting',
-      isBelowExpectedLevel: false,
-      otherCohortLabel: 'Board',
-      otherCohortPctLabel: '—',
-      neverAttendedCount: 0,
+  it('turns the metrics round for voting members, reads "0" when nobody is missing and dashes what is unmeasured', () => {
+    const metrics = buildHealthMetricsMembersBoardMetrics('voting_members', {
+      board: null,
+      voting_members: boardCohort({ neverAttendedCount: 0, latestAttendedCount: null }),
     });
-  });
 
-  // The view flags both cohorts at 90%; the rules hold voting members to the 50% a voting group needs.
-  it('judges each cohort against its own rule rather than the view flag', () => {
-    expect(buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: 0.95 }), null)).toMatchObject({
-      isBelowExpectedLevel: false,
-      latestTone: 'ok',
-      latestTextClass: 'text-gray-900',
-    });
-    expect(buildHealthMetricsMembersBoardSummary('voting_members', boardCohort({ latestAttendancePct: 0.42 }), null)).toMatchObject({
-      latestCaption: 'Last voting meeting · below the 50% a voting group needs',
-      isBelowExpectedLevel: true,
-      latestTone: 'low',
-      latestTextClass: 'text-amber-600',
-    });
-  });
-
-  it('falls back to the view flag only when the latest share is missing', () => {
-    const flagged = buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: null }), null);
-    expect(flagged).toMatchObject({ isBelowExpectedLevel: true, latestTone: 'critical' });
-    // The flag is the board's 90% line, so it says nothing about a voting group's 50% one.
-    const voting = buildHealthMetricsMembersBoardSummary('voting_members', boardCohort({ latestAttendancePct: null }), null);
-    expect(voting).toMatchObject({ isBelowExpectedLevel: false, latestTone: 'ok', latestCaption: 'Last voting meeting' });
-  });
-
-  it('judges the whole percent the hero shows, so a share reading 90% is not below the board rule', () => {
-    expect(buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: 26 / 29 }), null)).toMatchObject({
-      latestPctLabel: '90%',
-      isBelowExpectedLevel: false,
-      latestTone: 'ok',
-    });
-  });
-
-  it('clamps a share recorded above the invited count to 100%, as the table and chart do', () => {
-    const view = buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: 1.09 }), boardCohort({ latestAttendancePct: 1.2 }));
-    expect(view).toMatchObject({ latestPctLabel: '100%', otherCohortPctLabel: '100%' });
-  });
-
-  it('dashes every figure for a cohort with no meeting in the period', () => {
-    const empty = boardCohort({
-      latestAttendancePct: null,
-      latestAttendedCount: null,
-      latestInvitedCount: null,
-      meetingsInRangeCount: null,
-      neverAttendedCount: null,
-      isBelowExpectedLevel: null,
-    });
-    expect(buildHealthMetricsMembersBoardSummary('board', empty, null)).toMatchObject({
-      meetingsLabel: '—',
-      latestPctLabel: '—',
-      latestCaption: 'Last board meeting',
-      isBelowExpectedLevel: false,
-      attendedInvitedLabel: '—',
-      neverAttendedLabel: '—',
-      neverAttendedCount: 0,
-    });
-  });
-});
-
-describe('buildHealthMetricsMembersBoardMeetingRows', () => {
-  it('renders a meeting with its rate bar tone', () => {
-    expect(
-      buildHealthMetricsMembersBoardMeetingRows(
-        [
-          {
-            meetingId: 'm-1',
-            committeeName: 'Acme Board',
-            meetingDate: '2026-09-18',
-            attendedCount: 4,
-            invitedCount: 11,
-            attendancePct: 0.3636,
-            isLatestMeeting: false,
-          },
-        ],
-        'voting_members'
-      )
-    ).toEqual([
-      {
-        meetingId: 'm-1',
-        committeeName: 'Acme Board',
-        dateLabel: 'Sep 18, 2026',
-        attendedLabel: '4 / 11',
-        ratePct: 36,
-        rateLabel: '36%',
-        rateFillClass: 'bg-amber-500',
-      },
+    expect(metrics.map((item) => [item.label, item.value, item.description])).toEqual([
+      ['Last meeting attendance', '82%', ''],
+      ['Board attendance', '—', ''],
+      ['Never attended', '0', 'Voting members with no meeting this year'],
     ]);
   });
 
-  it('holds board meetings to the board rule: red below 90%, blue at or above it', () => {
-    const meeting = (meetingId: string, attendancePct: number): HealthMetricsMembersBoardMeeting => ({
-      meetingId,
-      committeeName: 'Acme Board',
-      meetingDate: '2026-09-18',
-      attendedCount: null,
-      invitedCount: null,
-      attendancePct,
-      isLatestMeeting: false,
-    });
-    const rows = buildHealthMetricsMembersBoardMeetingRows([meeting('m-1', 0.85), meeting('m-2', 0.9)], 'board');
-    expect(rows.map((row) => row.rateFillClass)).toEqual(['bg-red-500', 'bg-blue-500']);
-    expect(buildHealthMetricsMembersBoardMeetingRows([meeting('m-3', 0.85)], 'voting_members')[0].rateFillClass).toBe('bg-blue-500');
+  it("builds meeting rows with the cohort's fallback name and a red bar below its level", () => {
+    const rows = buildHealthMetricsMembersBoardMeetingRows(
+      [boardMeeting('m-1', 0.4545, { committeeName: null, attendedCount: 5, invitedCount: 11 }), boardMeeting('m-2', 0.5)],
+      'voting_members'
+    );
+
+    expect(rows).toEqual([
+      { meetingId: 'm-1', meetingName: 'Voting members', dateLabel: 'Sep 18, 2026', attendanceLabel: '5/11・45%', attendancePct: 45, fillClass: 'bg-red-500' },
+      { meetingId: 'm-2', meetingName: 'Acme Board', dateLabel: 'Sep 18, 2026', attendanceLabel: '9/11・50%', attendancePct: 50, fillClass: 'bg-blue-500' },
+    ]);
   });
 
-  it('dashes missing figures and greys an unmeasured rate', () => {
-    const [row] = buildHealthMetricsMembersBoardMeetingRows(
-      [{ meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: 5, attendancePct: null, isLatestMeeting: false }],
+  it('holds board meetings to 90% on the percent shown, and dashes a board meeting with no committee', () => {
+    const rows = buildHealthMetricsMembersBoardMeetingRows(
+      [boardMeeting('m-1', 0.85), boardMeeting('m-2', 26 / 29), boardMeeting('m-3', null, { committeeName: null, meetingDate: null, attendedCount: null })],
       'board'
     );
-    expect(row).toMatchObject({ committeeName: '—', dateLabel: '—', attendedLabel: '—', ratePct: null, rateLabel: '—', rateFillClass: 'bg-gray-300' });
-  });
-});
 
-describe('buildHealthMetricsMembersBoardTrend', () => {
-  it('labels each bar by its short date and whole percent', () => {
-    expect(
-      buildHealthMetricsMembersBoardTrend([
-        {
-          meetingId: 'm-1',
-          committeeName: 'Acme Board',
-          meetingDate: '2026-08-31',
-          attendedCount: 9,
-          invitedCount: 11,
-          attendancePct: 0.818,
-          isLatestMeeting: true,
-        },
-      ])
-    ).toEqual([{ meetingId: 'm-1', label: 'Aug 31', dateLabel: 'Aug 31, 2026', committeeName: 'Acme Board', pct: 82, pctLabel: '82%', isLatest: true }]);
-  });
-
-  it('keeps an unmeasured bar null and clamps an out-of-range share', () => {
-    const [unmeasured, over] = buildHealthMetricsMembersBoardTrend([
-      { meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: null, attendancePct: null, isLatestMeeting: false },
-      {
-        meetingId: 'm-3',
-        committeeName: 'Acme Board',
-        meetingDate: '2026-09-18',
-        attendedCount: 12,
-        invitedCount: 11,
-        attendancePct: 1.09,
-        isLatestMeeting: false,
-      },
+    expect(rows.map((row) => [row.meetingName, row.attendanceLabel, row.fillClass])).toEqual([
+      ['Acme Board', '9/11・85%', 'bg-red-500'],
+      // 89.7% reads "90%", so it is not below the board's 90%.
+      ['Acme Board', '9/11・90%', 'bg-blue-500'],
+      ['—', '—', 'bg-blue-500'],
     ]);
-    expect(unmeasured).toMatchObject({ label: '—', dateLabel: '—', committeeName: '—', pct: null, pctLabel: '—' });
-    expect(over).toMatchObject({ pct: 100, pctLabel: '100%' });
+    expect(rows[2]).toMatchObject({ dateLabel: '—', attendancePct: null });
+  });
 
-    // A share under 1% reads to one decimal, and the bar is drawn to the same value.
-    const [faint] = buildHealthMetricsMembersBoardTrend([
-      {
-        meetingId: 'm-4',
-        committeeName: 'Acme Board',
-        meetingDate: '2026-10-01',
-        attendedCount: 1,
-        invitedCount: 250,
-        attendancePct: 0.004,
-        isLatestMeeting: false,
-      },
+  it("charts meetings oldest first, coloured by the cohort's level, the latest solid with a red label when low", () => {
+    const chart = buildHealthMetricsMembersBoardChart(
+      [
+        boardMeeting('m-1', 0.95, { meetingDate: '2026-07-01' }),
+        boardMeeting('m-2', 0.004, { meetingDate: '2026-08-01' }),
+        boardMeeting('m-3', 0.82, { meetingDate: '2026-08-31' }),
+      ],
+      'board'
+    );
+
+    expect(chart.yTicks).toEqual(['100%', '75%', '50%', '25%', '0%']);
+    expect(chart.bars.map((bar) => [bar.label, bar.heightPct, bar.valueLabel, bar.color, bar.opacity, bar.valueLabelClass])).toEqual([
+      ['Jul 1', 95, '95%', lfxColors.blue[500], 0.2, 'text-gray-500'],
+      // Under 1% reads to one decimal, and the bar is drawn to the same value.
+      ['Aug 1', 0.4, '0.4%', lfxColors.red[600], 0.2, 'text-gray-500'],
+      ['Aug 31', 82, '82%', lfxColors.red[600], 1, 'text-red-600'],
     ]);
-    expect(faint).toMatchObject({ pct: 0.4, pctLabel: '0.4%' });
+    expect(chart.bars[2].tip).toEqual({
+      title: 'Acme Board',
+      rows: [
+        { label: 'Date', value: 'Aug 31, 2026', color: null, separated: false },
+        { label: 'Attendance', value: '82% · 9 / 11', color: lfxColors.red[600], separated: false },
+      ],
+    });
+    expect(chart.line).toBeNull();
+    expect(chart.legend).toEqual([]);
   });
-});
 
-describe('buildHealthMetricsMembersBoardNote', () => {
-  it('counts unused seats first', () => {
-    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 1 }))).toBe('1 seat unused');
-    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 3 }))).toBe('3 seats unused');
+  it('inks the latest bar at its level and leaves an unmeasured meeting without a bar', () => {
+    const chart = buildHealthMetricsMembersBoardChart([boardMeeting('m-1', null, { meetingDate: null }), boardMeeting('m-2', 0.5)], 'voting_members');
+
+    expect(chart.bars.map((bar) => [bar.label, bar.heightPct, bar.valueLabel, bar.valueLabelClass])).toEqual([
+      ['—', 0, '', 'text-gray-500'],
+      ['Sep 18', 50, '50%', 'text-gray-900'],
+    ]);
+    expect(chart.bars[0].tip.title).toBe('Acme Board');
   });
 
-  it('falls back to the latest share only when below the expected level', () => {
-    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0 }))).toBe('82% attended');
-    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0, latestAttendancePct: 0.95 }))).toBe('');
+  it("notes the board's latest meeting attendance, whatever its level", () => {
+    expect(buildHealthMetricsMembersBoardNote(boardCohort())).toBe('82% attended');
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ latestAttendancePct: 0.95 }))).toBe('95% attended');
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ latestAttendancePct: null }))).toBe('');
     expect(buildHealthMetricsMembersBoardNote(null)).toBe('');
+  });
+
+  it.each([
+    ['voting_members', 'voting_members'],
+    ['board', 'board'],
+    ['committee', 'board'],
+    [null, 'board'],
+  ] as const)('reads the cohort %s from the URL as %s', (value, expected) => {
+    expect(parseHealthMetricsMembersBoardCohort(value)).toBe(expected);
   });
 });
 
