@@ -87,6 +87,10 @@ export class PastMeetingController {
       if (includeViewerAttendance === 'true') {
         await this.userService.enrichPastMeetingsWithUserAttendance(req, getEffectiveEmail(req) ?? '', enriched);
       }
+      // The home fields gate on `organizer`, which access checks grant on the occurrence key, not the row's uid.
+      if (include.includes(USER_PAST_MEETINGS_INCLUDE_ARTIFACTS) || include.includes(USER_MEETINGS_INCLUDE_ATTENDANCE)) {
+        enriched = await this.withOccurrenceOrganizer(req, enriched);
+      }
       if (include.includes(USER_PAST_MEETINGS_INCLUDE_ARTIFACTS)) await this.userService.attachPastMeetingArtifacts(req, enriched, 'get_past_meetings');
       if (include.includes(USER_MEETINGS_INCLUDE_ATTENDANCE)) enriched = await attachPastMeetingAttendanceSummaries(req, enriched);
 
@@ -1080,6 +1084,17 @@ export class PastMeetingController {
    * Resolves whether the requesting user is the organizer of a past meeting. Unauthenticated
    * requests and access-check failures both default to false (fail closed).
    */
+  /** Sets `organizer` from the occurrence key each row's access grants use, keeping the row's own `id`. */
+  private async withOccurrenceOrganizer(req: Request, meetings: PastMeeting[]): Promise<PastMeeting[]> {
+    const checked = await this.accessCheckService.addAccessToResources(
+      req,
+      meetings.map((meeting) => ({ ...meeting, id: meeting.meeting_and_occurrence_id ?? meeting.id })),
+      'v1_past_meeting',
+      'organizer'
+    );
+    return meetings.map((meeting, index) => ({ ...meeting, organizer: checked[index].organizer ?? false }));
+  }
+
   private async isPastMeetingOrganizer(req: Request, pastMeeting: PastMeeting, uid: string): Promise<boolean> {
     if (!req.oidc?.isAuthenticated()) {
       return false;

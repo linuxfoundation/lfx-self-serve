@@ -10,6 +10,7 @@ const {
   meetingSvc,
   reconciliationSvc,
   addAccessToResourceMock,
+  addAccessToResourcesMock,
   validateUidParameterMock,
   enrichAttendanceMock,
   getEffectiveEmailMock,
@@ -30,6 +31,7 @@ const {
     reconcilePastMeetingParticipants: vi.fn(),
   },
   addAccessToResourceMock: vi.fn(),
+  addAccessToResourcesMock: vi.fn(),
   validateUidParameterMock: vi.fn(() => true),
 }));
 
@@ -65,7 +67,7 @@ vi.mock('../services/attendance-reconciliation.service', () => ({
 }));
 vi.mock('../services/access-check.service', () => ({
   AccessCheckService: vi.fn(function () {
-    return { addAccessToResource: addAccessToResourceMock };
+    return { addAccessToResource: addAccessToResourceMock, addAccessToResources: addAccessToResourcesMock };
   }),
 }));
 vi.mock('../services/user.service', () => ({
@@ -233,6 +235,24 @@ describe('PastMeetingController.getPastMeetings — meetings home include', () =
     meetingSvc.getMeetings.mockResolvedValue({ data: meetings, page_token: 'next' });
     attachArtifactsMock.mockResolvedValue(undefined);
     attachAttendanceSummariesMock.mockResolvedValue(withSummary);
+    addAccessToResourcesMock.mockImplementation(async (_req: unknown, rows: { id: string }[]) => rows.map((row) => ({ ...row, organizer: true })));
+  });
+
+  it('checks organizer access on the occurrence key and keeps the row id', async () => {
+    meetingSvc.getMeetings.mockResolvedValue({
+      data: [{ ...meetings[0], id: 'past-uid-1', meeting_and_occurrence_id: 'm-1:1', organizer: false }],
+      page_token: undefined,
+    });
+    addAccessToResourcesMock.mockImplementation(async (_req: unknown, rows: { id: string }[]) =>
+      rows.map((row) => ({ ...row, organizer: row.id === 'm-1:1' }))
+    );
+
+    await controller.getPastMeetings(listReq({ include: 'attendance' }), buildRes(), vi.fn());
+
+    expect(addAccessToResourcesMock).toHaveBeenCalledWith(expect.anything(), [expect.objectContaining({ id: 'm-1:1' })], 'v1_past_meeting', 'organizer');
+    expect(attachAttendanceSummariesMock).toHaveBeenCalledWith(expect.anything(), [
+      expect.objectContaining({ id: 'past-uid-1', meeting_and_occurrence_id: 'm-1:1', organizer: true }),
+    ]);
   });
 
   it('adds artifacts and organizer attendance when both are included, without forwarding include upstream', async () => {
@@ -241,8 +261,9 @@ describe('PastMeetingController.getPastMeetings — meetings home include', () =
     await controller.getPastMeetings(listReq({ include: 'artifacts, attendance', name: 'weekly' }), res, vi.fn());
 
     expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { name: 'weekly' }, 'v1_past_meeting');
-    expect(attachArtifactsMock).toHaveBeenCalledWith(expect.anything(), meetings, 'get_past_meetings');
-    expect(attachAttendanceSummariesMock).toHaveBeenCalledWith(expect.anything(), meetings);
+    const organized = [{ ...meetings[0], organizer: true }];
+    expect(attachArtifactsMock).toHaveBeenCalledWith(expect.anything(), organized, 'get_past_meetings');
+    expect(attachAttendanceSummariesMock).toHaveBeenCalledWith(expect.anything(), organized);
     expect(res.json).toHaveBeenCalledWith({ data: withSummary, page_token: 'next' });
   });
 
@@ -253,6 +274,7 @@ describe('PastMeetingController.getPastMeetings — meetings home include', () =
 
     expect(attachArtifactsMock).not.toHaveBeenCalled();
     expect(attachAttendanceSummariesMock).not.toHaveBeenCalled();
+    expect(addAccessToResourcesMock).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ data: meetings, page_token: 'next' });
   });
 
