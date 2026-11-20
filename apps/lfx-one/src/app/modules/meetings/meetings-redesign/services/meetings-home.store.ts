@@ -204,7 +204,10 @@ export class MeetingsHomeStore {
   public readonly pastPageFailed: Signal<boolean> = computed(() => this.tab() === 'past' && this.pastPageFailedState() && this.filteredRows().length > 0);
   /** More rows to show, loaded or still on the server for a paged past feed. */
   public readonly hasMore: Signal<boolean> = computed(
-    () => this.visibleCount() < this.filteredRows().length || (this.tab() === 'past' && this.pastPageToken() !== undefined)
+    () =>
+      this.visibleCount() < this.filteredRows().length ||
+      // Server pages only count while the cursor's search is the current one and its last page did not fail.
+      (this.tab() === 'past' && this.pastPageToken() !== undefined && !this.pastPageFailedState() && this.search().trim() === this.pastQuery())
   );
   /** Most recent ended meeting of the feed: one the viewer has a direct grant on in the Me lens, the scope's in a project lens. */
   public readonly lastMeeting: Signal<MeetingHomeRow | null> = computed(
@@ -261,12 +264,15 @@ export class MeetingsHomeStore {
     this.filtersState.update((filters) => ({ ...filters, [key]: MEETINGS_HOME_DEFAULT_FILTERS[key] }));
   }
 
-  /** Shows another page of rows; on a paged past feed the store loads server pages until they fill it, retrying a failed one. */
+  /** Shows another page of rows; on a paged past feed the store loads server pages until they fill it. */
   public loadMore(): void {
-    const past = this.tab() === 'past';
-    if (!this.hasMore() || (past && this.pastLoadingMore())) return;
-    if (past) this.pastPageFailedState.set(false);
+    if (!this.hasMore() || (this.tab() === 'past' && this.pastLoadingMore())) return;
     this.visibleCountState.update((count) => count + MEETINGS_HOME_PAGE_SIZE);
+  }
+
+  /** Asks again for the past page that failed, with its cursor and query. */
+  public retryPastPage(): void {
+    this.pastPageFailedState.set(false);
   }
 
   /** Clears both filters and search. */
@@ -338,13 +344,14 @@ export class MeetingsHomeStore {
           previousIdentity = identity;
           if (identityChanged) loaded = false;
           // A reload from the error state (Retry) returns to it on failure, rather than a toast over an empty list.
-          const fromError = failed();
+          let fromError = failed();
           loading.set(true);
           failed.set(false);
           const request$ = defer(load).pipe(
             tap({
               next: () => {
                 loaded = true;
+                fromError = false;
                 loading.set(false);
                 failed.set(false);
               },
@@ -443,7 +450,7 @@ export class MeetingsHomeStore {
           this.pastLoadingMore.set(false);
           // The cursor stays, so Load more (or Retry, with nothing to show) can ask for the page again.
           this.pastPageFailedState.set(true);
-          if (this.pastMeetings().length === 0) this.pastFailedState.set(true);
+          if (this.filteredRows().length === 0) this.pastFailedState.set(true);
           else this.showRefreshFailedToast();
         },
       });

@@ -315,7 +315,7 @@
       }
       @if (store.pastPageFailed()) {
         <div class="flex justify-center py-[16px]">
-          <lfx-ui-button variant="secondary" icon="fa-light fa-arrow-rotate-right" (click)="store.loadMore()" data-testid="meetings-home-load-more-retry">
+          <lfx-ui-button variant="secondary" icon="fa-light fa-arrow-rotate-right" (click)="store.retryPastPage()" data-testid="meetings-home-load-more-retry">
             Load more meetings
           </lfx-ui-button>
         </div>

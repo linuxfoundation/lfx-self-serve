@@ -1025,8 +1025,9 @@ describe('MeetingsHomeStore', () => {
       TestBed.tick();
 
       expect(store.pastPageFailed()).toBe(true);
+      expect(store.hasMore()).toBe(false);
       expect(past).toHaveBeenCalledTimes(2);
-      store.loadMore();
+      store.retryPastPage();
       TestBed.tick();
       expect(store.pastPageFailed()).toBe(false);
       expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
@@ -1067,6 +1068,33 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.failed()).toBe(true);
       expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    it('shows the error state when a next page fails and the filters hide every loaded row', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, meetingType: 'Board' });
+      TestBed.tick();
+
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      expect(store.failed()).toBe(true);
+    });
+
+    it('offers no more rows while the cursor belongs to a search still debouncing', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      store.setSearch('Past a1');
+      TestBed.tick();
+
+      expect(store.hasMore()).toBe(false);
     });
 
     it('does not request a next page on the upcoming tab', () => {
