@@ -4438,7 +4438,7 @@ export class AnalyticsController {
     );
   }
 
-  /** `GET /api/analytics/overview-outstanding-balance` — overdue membership invoices today. */
+  /** `GET /api/analytics/overview-outstanding-balance` — every period's overdue membership invoices, split by risk. */
   public async getOverviewOutstandingBalance(req: Request, res: Response, next: NextFunction): Promise<void> {
     await this.readOverviewCard(
       req,
