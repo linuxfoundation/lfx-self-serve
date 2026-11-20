@@ -491,6 +491,18 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(rebuilt.disconnected).toBe(false);
   });
 
+  it('drops a jump the reader takes over before the header settles', async () => {
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
+    fixture.detectChanges();
+
+    window.dispatchEvent(new WheelEvent('wheel'));
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 40);
+    fixture.detectChanges();
+    await offsetSettled();
+
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves a jump that has already landed alone when the header compacts later', async () => {
     const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
     fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();

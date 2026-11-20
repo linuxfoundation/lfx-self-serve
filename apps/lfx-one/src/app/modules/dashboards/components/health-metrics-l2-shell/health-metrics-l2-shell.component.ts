@@ -330,12 +330,14 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     // The section's `scroll-margin-top` keeps it clear of the sticky page header.
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     this.jumpInFlight = { key, startedAt: performance.now(), offsetPx: this.chrome.stickyTopPx() };
+    this.observeReaderIntent();
   }
 
   /** A jump from the top compacts the header on its way and lands short of it; aiming again lands it under the new height. */
   private reaimJump(offsetPx: number): void {
     const jump = this.jumpInFlight;
     this.jumpInFlight = null;
+    if (!this.pendingSection()) this.removeIntentListeners?.();
     if (!jump || offsetPx >= jump.offsetPx || performance.now() - jump.startedAt > HEALTH_METRICS_L2_JUMP_REAIM_MS) return;
     this.sectionElement(jump.key)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -419,9 +421,9 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   }
 
   /**
-   * A deep link waiting on data would scroll back over wherever the reader has moved to, and a failed
-   * read leaves it waiting indefinitely — so their own first scroll or keypress supersedes it.
-   * Idempotent: every arm calls this, and only the first one that finds no listeners registers them.
+   * A deep link waiting on data, or a jump waiting to be re-aimed, would scroll back over wherever the reader has
+   * moved to — so their own first scroll or keypress supersedes both. A failed read leaves a deep link waiting
+   * indefinitely. Idempotent: every arm and jump calls this, and only the first that finds no listeners registers them.
    */
   private observeReaderIntent(): void {
     if (!isPlatformBrowser(this.platformId) || this.removeIntentListeners) return;
@@ -433,14 +435,15 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       // runs — that key opened a drawer, it did not move the page.
       if (event.defaultPrevented) return;
       if (event.type === 'keydown' && !this.isScrollIntent(event as KeyboardEvent)) return;
+      this.jumpInFlight = null;
       this.clearPendingSection();
     };
     // Bound to the window, where page scrolling is dispatched. A scrollbar drag fires none of these,
     // which is what the TTL is for.
     const events = ['wheel', 'touchmove', 'keydown'];
     for (const event of events) window.addEventListener(event, onIntent, { passive: true });
-    // Dead weight on the browser's hottest event streams once no key is armed; the next arm
-    // registers them again.
+    // Dead weight on the browser's hottest event streams once no key is armed and no jump is in flight;
+    // the next arm or jump registers them again.
     this.removeIntentListeners = () => {
       for (const event of events) window.removeEventListener(event, onIntent);
       this.removeIntentListeners = null;
