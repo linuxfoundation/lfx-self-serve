@@ -100,7 +100,7 @@ describe('HealthMetricsBarChartComponent', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     fixture.detectChanges();
     expect(query('chart-tip')).toBeNull();
-    expect(fixture.componentInstance['activeBar']).toBeNull();
+    expect(fixture.componentInstance['tip']['anchor']).toBeNull();
 
     item.dispatchEvent(new Event('focus'));
     fixture.detectChanges();

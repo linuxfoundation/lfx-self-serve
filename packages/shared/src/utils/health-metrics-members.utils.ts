@@ -3,7 +3,6 @@
 
 import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
-import { HEALTH_METRICS_COLUMN_CHART_QUARTER_STEPS } from '../constants/health-metrics-column-chart.constants';
 import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES,
@@ -35,6 +34,7 @@ import {
 } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
 import { buildHealthMetricsBarChart } from './health-metrics-bar-chart.utils';
+import { healthMetricsColumnChartCeiling } from './health-metrics-column-chart.utils';
 import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
 import {
   formatHealthMetricsPercent,
@@ -43,7 +43,6 @@ import {
   healthMetricsTierSortRank,
   resolveHealthMetricsMembersTier,
 } from './health-metrics-table.utils';
-import { healthMetricsQuarterCeiling } from './health-metrics-line-chart.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsBarChartView } from '../interfaces/health-metrics-bar-chart.interface';
@@ -730,7 +729,7 @@ function buildChurnTrend(
  */
 function buildChurnTrendChart(points: HealthMetricsMembersChurnTrendPointView[]): HealthMetricsBarChartView {
   const peak = Math.max(0, ...points.flatMap((point) => [point.value ?? 0, point.logoValue ?? 0]));
-  const top = healthMetricsQuarterCeiling(peak, HEALTH_METRICS_COLUMN_CHART_QUARTER_STEPS, true);
+  const top = healthMetricsColumnChartCeiling(peak);
   const colors = HEALTH_METRICS_MEMBERS_CHURN_TREND_COLORS;
 
   return buildHealthMetricsBarChart({
