@@ -985,6 +985,7 @@ describe('MeetingsRedesignComponent', () => {
           getPastMeetingRecording: () => of(null),
           getProjectMeetingsForHome: () => projectUpcoming$,
           getProjectPastMeetingsForHome: () => of({ meetings: [] }),
+          getRollupFilterOptions: () => of({ projects: [], groups: [], complete: true }),
         },
       });
     });
@@ -1039,6 +1040,7 @@ describe('MeetingsRedesignComponent', () => {
           getPastMeetingRecording: () => of(null),
           getProjectMeetingsForHome: () => of([]),
           getProjectPastMeetingsForHome: () => pastPage$.pipe(map((page) => ({ meetings: page.data, pageToken: page.page_token }))),
+          getRollupFilterOptions: () => of({ projects: [], groups: [], complete: true }),
         },
       });
     });

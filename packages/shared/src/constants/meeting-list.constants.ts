@@ -4,12 +4,14 @@
 import { MeetingVisibilityKind } from '../enums';
 import type {
   MeetingDetailsFeature,
+  MeetingGroupTypePattern,
   MeetingHomeArtifact,
   MeetingHomeAttendanceKind,
   MeetingJoinLink,
   MeetingResponseFilterOption,
   MeetingRsvpChoice,
   MeetingsHomeFilters,
+  MeetingsHomePastFilters,
   MeetingVisibilityInfo,
   UiBadgeTone,
 } from '../interfaces';
@@ -30,11 +32,16 @@ export const MEETINGS_HOME_DAY_HEADING_GAP_PX = 20;
 export const MEETINGS_HOME_DEFAULT_FILTERS: MeetingsHomeFilters = {
   foundation: null,
   project: null,
+  group: null,
+  groupType: null,
   meetingType: null,
   rsvp: 'all',
   organizedByMe: false,
   hideDeclined: false,
 };
+
+/** A paged past feed with no filters applied on the server. */
+export const MEETINGS_HOME_NO_PAST_FILTERS: MeetingsHomePastFilters = { projectUid: null, committeeUid: null, groupType: null, meetingType: null };
 
 /** RSVP filter choices, in menu order. */
 export const MEETINGS_HOME_RSVP_FILTER_OPTIONS: readonly MeetingResponseFilterOption[] = [
@@ -56,11 +63,26 @@ export const MEETINGS_HOME_RSVP_CHOICES: readonly MeetingRsvpChoice[] = [
 export const MEETINGS_HOME_FILTER_CHIP_LABELS = {
   foundation: 'Foundation',
   project: 'Project',
+  group: 'Group',
+  groupType: 'Group type',
   meetingType: 'Meeting type',
   rsvp: 'RSVP',
   organizedByMe: 'Organized by me',
   hideDeclined: 'Hiding declined series',
 } as const;
+
+/** Group types read from a group's name when it has no category, first match wins. */
+export const MEETING_GROUP_TYPE_PATTERNS: readonly MeetingGroupTypePattern[] = [
+  { pattern: /\bBoard\b/i, type: 'Board' },
+  { pattern: /\bWG\b|\bWorking Group\b|\bWorkstreams?\b/i, type: 'Working Group' },
+  { pattern: /\bSIG\b|\bSpecial Interest\b/i, type: 'Special Interest Group' },
+  { pattern: /\b(?:TAC|TOC)\b|\bTechnical\b|\bSteering\b/i, type: 'Technical Advisory Committee' },
+  { pattern: /\bCommittee\b|\bCouncil\b/i, type: 'Committee' },
+  { pattern: /\bAmbassadors?\b/i, type: 'Ambassador' },
+];
+
+/** Type of a group without a category whose name matches no {@link MEETING_GROUP_TYPE_PATTERNS}. */
+export const MEETING_GROUP_TYPE_OTHER = 'Other';
 
 /** Tailwind fill of a visibility badge per kind. */
 export const MEETING_VISIBILITY_BG_CLASSES: Record<MeetingVisibilityKind, string> = {

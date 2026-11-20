@@ -55,6 +55,10 @@ export interface MeetingsHomeFilters {
   foundation: string | null;
   /** Project UID; null means all projects. Takes precedence over `foundation`. */
   project: string | null;
+  /** Committee UID; null means all groups. Set only in a project or foundation lens. */
+  group: string | null;
+  /** Group type, as {@link getMeetingGroupType} names it; null means all types. Set only in a project or foundation lens. */
+  groupType: string | null;
   /** Exact `meeting_type`; null means all types. */
   meetingType: string | null;
   /** The viewer's RSVP for the row's date. */
@@ -63,6 +67,21 @@ export interface MeetingsHomeFilters {
   organizedByMe: boolean;
   /** Hide a series when the viewer declined every upcoming date of it; never hides meetings the viewer organizes. */
   hideDeclined: boolean;
+}
+
+/** The filters a paged past feed applies on the server; null means not filtered. */
+export interface MeetingsHomePastFilters {
+  projectUid: string | null;
+  committeeUid: string | null;
+  /** A group category the server can match; types read from group names are filtered on the loaded rows only. */
+  groupType: string | null;
+  meetingType: string | null;
+}
+
+/** Regex a group name is matched against when the group has no category, and the type it then reads as. */
+export interface MeetingGroupTypePattern {
+  pattern: RegExp;
+  type: string;
 }
 
 export interface MeetingResponseFilterOption {

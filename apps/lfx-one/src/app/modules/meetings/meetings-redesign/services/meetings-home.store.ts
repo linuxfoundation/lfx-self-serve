@@ -5,15 +5,17 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_NO_PAST_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   Meeting,
   MeetingDashboardView,
   MeetingDayGroup,
   MeetingFilterChip,
   MeetingHomeRow,
+  MeetingRollupFilterOptions,
   MeetingRsvp,
   MeetingsHomeFilters,
+  MeetingsHomePastFilters,
   PastMeeting,
   PastMeetingAttendanceSummary,
   PastMeetingSummary,
@@ -25,6 +27,8 @@ import {
   expandMeetingOccurrences,
   filterMeetingsHome,
   getLargestSessionShareUrl,
+  getMeetingGroupCategories,
+  getMeetingGroupType,
   getMeetingSeriesUid,
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
@@ -65,7 +69,8 @@ import { MeetingsHomeJoinService } from './meetings-home-join.service';
  * State of the meetings home list, provided by the page component over a {@link MeetingsHomeFeed}.
  * @description Loads the upcoming and past feeds up front so both tab counts show, expands upcoming meetings into one
  * row per date, then applies search and filters, groups by day and pages {@link MEETINGS_HOME_PAGE_SIZE} rows at a time.
- * A paged past feed loads its next server page when the list runs out, and reloads from the first page on search.
+ * A paged past feed loads its next server page when the list runs out, and reloads from the first page on search and on
+ * the filters the server can apply.
  */
 @Injectable()
 export class MeetingsHomeStore {
@@ -109,6 +114,12 @@ export class MeetingsHomeStore {
   public readonly pastFailed: Signal<boolean> = this.pastFailedState.asReadonly();
   public readonly lastMeetingLoading: Signal<boolean> = this.lastMeetingLoadingState.asReadonly();
   public readonly lastMeetingFailed: Signal<boolean> = this.lastMeetingFailedState.asReadonly();
+  /** Projects and groups in scope, for the project filters' options; empty in the Me lens or when they fail to load. */
+  public readonly scopeOptions: Signal<MeetingRollupFilterOptions> = this.initScopeOptions();
+  /** Category of each group in scope by committee UID, for the Group type filter. */
+  public readonly groupCategories: Signal<ReadonlyMap<string, string>> = computed(() => getMeetingGroupCategories(this.scopeOptions().groups));
+  /** Filters a paged past feed applies on the server while the Past tab is open; none for a whole feed. */
+  private readonly pastServerFilters: Signal<MeetingsHomePastFilters> = this.initPastServerFilters();
 
   private readonly upcomingMeetings: Signal<Meeting[]> = this.initFeed(
     () => this.feed.upcoming(),
@@ -123,9 +134,12 @@ export class MeetingsHomeStore {
   private pastNextPage: Subscription | null = null;
   // Bumped whenever the first past page is requested, so a next page for an older query is dropped.
   private pastQueryVersion = 0;
-  // Search the first past page was loaded with; its cursor only continues that query.
+  // Search and filters the first past page was loaded with; its cursor only continues that query.
   private readonly pastQuery: WritableSignal<string> = signal('');
+  private readonly pastFilters: WritableSignal<MeetingsHomePastFilters> = signal(MEETINGS_HOME_NO_PAST_FILTERS);
   private readonly pastPageFailedState: WritableSignal<boolean> = signal(false);
+  // Past meetings of the last load without server filters; server-filtered rows only hold the picked values. A new scope drops them.
+  private readonly pastOptionMeetings: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.feed.key, computation: (): PastMeeting[] => [] });
   // Carries `recording_share_url` / `has_ai_summary` for the Recording and AI Summary buttons, and organizer attendance.
   private readonly pastFirstPage: Signal<PastMeeting[]> = this.initFeed(
     () => this.loadFirstPastPage(),
@@ -185,6 +199,8 @@ export class MeetingsHomeStore {
   );
   /** The active tab's rows before search and filters. */
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
+  /** Rows the Filters popover takes its options from: the tab's rows, or the last past rows loaded without server filters. */
+  public readonly filterOptionRows: Signal<MeetingHomeRow[]> = this.initFilterOptionRows();
   /** The soonest date not yet over, else the soonest one, whatever the search and filters; it anchors the Next meeting card. */
   public readonly nextRow: Signal<MeetingHomeRow | null> = this.initNextRow();
   /** The next date and the dates not yet over that overlap it, soonest first; the Next meeting card pages through them. */
@@ -204,7 +220,7 @@ export class MeetingsHomeStore {
   public readonly nextRowJoinUrl: Signal<string | null> = this.joinService.joinUrl(this.nextCardRow, this.nextRowJoinable);
   /** The list's rows: the active tab's rows that match the search and filters, the Next meeting card's date included. */
   public readonly filteredRows: Signal<MeetingHomeRow[]> = computed(() =>
-    filterMeetingsHome(this.tabRows(), this.filters(), this.search(), this.userService.viewerUsername())
+    filterMeetingsHome(this.tabRows(), this.filters(), this.search(), this.userService.viewerUsername(), this.groupCategories())
   );
   /** Rows shown so far; back to one page whenever the tab, search or filters change. */
   public readonly visibleCount: Signal<number> = this.visibleCountState.asReadonly();
@@ -249,7 +265,9 @@ export class MeetingsHomeStore {
   );
   public readonly hasActiveQuery: Signal<boolean> = computed(() => this.search().trim() !== '' || countAppliedMeetingFilters(this.filters()) > 0);
   /** One chip per applied filter. */
-  public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() => buildMeetingFilterChips(this.filters(), this.tabRows()));
+  public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() =>
+    buildMeetingFilterChips(this.filters(), this.filterOptionRows(), this.feed.scope === 'project', this.scopeOptions())
+  );
 
   public constructor() {
     this.initPastAutoLoad();
@@ -399,25 +417,72 @@ export class MeetingsHomeStore {
     });
   }
 
-  /** Emits when a paged past feed's search settles on a new value or the feed is refreshed; never for a whole feed. */
+  /** Emits when a paged past feed's search settles, its server filters change or it is refreshed; never for a whole feed. */
   private initPastReloads(): Observable<unknown> {
     if (!this.feed.pagedPast) return of(undefined);
     const search$ = toObservable(computed(() => this.search().trim())).pipe(debounceTime(300), startWith(''), distinctUntilChanged());
-    return merge(search$, this.feed.pastRefresh$);
+    const filters$ = toObservable(this.pastServerFilters).pipe(distinctUntilChanged((a, b) => this.samePastFilters(a, b)));
+    return merge(combineLatest([search$, filters$]), this.feed.pastRefresh$);
+  }
+
+  private initScopeOptions(): Signal<MeetingRollupFilterOptions> {
+    const empty: MeetingRollupFilterOptions = { projects: [], groups: [], complete: false };
+    if (!isPlatformBrowser(this.platformId)) return signal(empty);
+    return toSignal(toObservable(this.feed.key).pipe(switchMap(() => this.feed.filterOptions().pipe(startWith(empty)))), { initialValue: empty });
+  }
+
+  /**
+   * The server matches a group type on the selected group's own category, so it gets one only with no group picked, a complete scope,
+   * and no uncategorised group in scope or on loaded rows reading as that type; otherwise the loaded rows are filtered.
+   */
+  private initPastServerFilters(): Signal<MeetingsHomePastFilters> {
+    return computed(() => {
+      if (!this.feed.pagedPast || this.tab() !== 'past') return MEETINGS_HOME_NO_PAST_FILTERS;
+      const { project, group, groupType, meetingType } = this.filters();
+      const { groups, complete } = this.scopeOptions();
+      const categories = this.groupCategories();
+      const rowGroups = this.pastOptionMeetings().flatMap((meeting) => (meeting.committees ?? []).map(({ uid, name }) => ({ uid, name: name ?? '' })));
+      const serverType =
+        !!groupType &&
+        !group &&
+        complete &&
+        [...categories.values()].includes(groupType) &&
+        ![...groups, ...rowGroups].some((scoped) => !categories.has(scoped.uid) && getMeetingGroupType(scoped.name) === groupType);
+      return { projectUid: project, committeeUid: group, groupType: serverType ? groupType : null, meetingType };
+    });
+  }
+
+  private initFilterOptionRows(): Signal<MeetingHomeRow[]> {
+    return computed(() => {
+      if (this.tab() !== 'past') return this.upcomingRows();
+      // Narrowed rows add values the unfiltered snapshot may lack, for when roll-up options fail.
+      return this.isNarrowed(this.pastServerFilters()) ? [...this.toPastRows(this.pastOptionMeetings()), ...this.pastRows()] : this.pastRows();
+    });
+  }
+
+  private isNarrowed(filters: MeetingsHomePastFilters): boolean {
+    return Object.values(filters).some(Boolean);
+  }
+
+  private samePastFilters(a: MeetingsHomePastFilters, b: MeetingsHomePastFilters): boolean {
+    return (Object.keys(a) as (keyof MeetingsHomePastFilters)[]).every((key) => a[key] === b[key]);
   }
 
   /** The cursor and its query change only when a first page succeeds, so a failed reload keeps the rows and cursor it had. */
   private loadFirstPastPage(): Observable<PastMeeting[]> {
     const version = ++this.pastQueryVersion;
     const query = this.search().trim();
+    const filters = this.pastServerFilters();
     this.pastNextPage?.unsubscribe();
     this.pastLoadingMore.set(false);
-    return this.feed.past(query).pipe(
+    return this.feed.past(query, filters).pipe(
       tap((page) => {
         if (version !== this.pastQueryVersion) return;
         this.pastQuery.set(query);
+        this.pastFilters.set(filters);
         this.pastPageFailedState.set(false);
         this.pastPageToken.set(page.pageToken);
+        if (!this.isNarrowed(filters)) this.pastOptionMeetings.set(page.meetings);
       }),
       map((page) => page.meetings)
     );
@@ -434,8 +499,9 @@ export class MeetingsHomeStore {
           !this.pastLoadingMore() &&
           !this.pastPageFailedState() &&
           this.pastPageToken() !== undefined &&
-          // The cursor continues the last loaded search; a newer one waits for its own first page.
+          // The cursor continues the last loaded search and filters; newer ones wait for their own first page.
           this.search().trim() === this.pastQuery() &&
+          this.samePastFilters(this.pastServerFilters(), this.pastFilters()) &&
           this.filteredRows().length < this.visibleCount()
       )
     )
@@ -449,7 +515,7 @@ export class MeetingsHomeStore {
     const version = this.pastQueryVersion;
     this.pastLoadingMore.set(true);
     this.pastNextPage = this.feed
-      .past(this.pastQuery(), pageToken)
+      .past(this.pastQuery(), this.pastFilters(), pageToken)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (page) => {
@@ -457,6 +523,7 @@ export class MeetingsHomeStore {
           this.pastLoadingMore.set(false);
           this.pastNextPages.update((meetings) => [...meetings, ...page.meetings]);
           this.pastPageToken.set(page.pageToken);
+          if (!this.isNarrowed(this.pastFilters())) this.pastOptionMeetings.update((meetings) => [...meetings, ...page.meetings]);
         },
         error: (error: unknown) => {
           if (version !== this.pastQueryVersion) return;
@@ -518,11 +585,11 @@ export class MeetingsHomeStore {
   }
 
   private initPastRows(): Signal<MeetingHomeRow[]> {
-    return computed(() =>
-      sortPastMeetingsDescending(this.pastMeetings())
-        .flatMap((meeting) => toPastMeetingHomeRow(meeting) ?? [])
-        .filter((row) => !this.deletedPastIds().has(getMeetingSeriesUid(row.meeting)))
-    );
+    return computed(() => this.toPastRows(this.pastMeetings()).filter((row) => !this.deletedPastIds().has(getMeetingSeriesUid(row.meeting))));
+  }
+
+  private toPastRows(meetings: PastMeeting[]): MeetingHomeRow[] {
+    return sortPastMeetingsDescending(meetings).flatMap((meeting) => toPastMeetingHomeRow(meeting) ?? []);
   }
 
   /** Marks dates cancelled here as cancelled on the meeting, so its rows and the occurrence pickers leave them out. */
