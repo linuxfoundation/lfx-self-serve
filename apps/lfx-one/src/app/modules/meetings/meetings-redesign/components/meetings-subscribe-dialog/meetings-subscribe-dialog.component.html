@@ -12,9 +12,9 @@
     <div class="flex flex-col gap-[6px]">
       <span class="text-[13px] font-medium leading-[18px] text-gray-900" aria-hidden="true">Calendar feed URL</span>
       <div class="flex items-center gap-[8px]">
-        <!-- Read-only so the URL can be focused and selected; it keeps a resting look with no hover or focus ring. -->
+        <!-- Read-only so the URL can be focused and selected; it keeps a resting look on hover, and the focus ring when focused. -->
         <lfx-ui-input
-          class="min-w-0 flex-auto [&_[data-testid=ui-input-wrapper]]:!bg-gray-50 [&_[data-testid=ui-input-wrapper]]:!shadow-[inset_0_0_0_1px_theme(colors.gray.300)] [&_input]:!text-gray-600"
+          class="min-w-0 flex-auto [&_[data-testid=ui-input-wrapper]:not(:focus-within)]:!shadow-[inset_0_0_0_1px_theme(colors.gray.300)] [&_[data-testid=ui-input-wrapper]]:!bg-gray-50 [&_input]:!text-gray-600"
           size="medium"
           ariaLabel="Calendar feed URL"
           prefixIcon="fa-light fa-link"
