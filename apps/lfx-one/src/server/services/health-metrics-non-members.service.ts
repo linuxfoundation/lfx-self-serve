@@ -33,6 +33,7 @@ import type {
   HealthMetricsNonMembersOtherMembership,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersPeopleQuery,
+  HealthMetricsNonMembersPeopleSortKey,
   HealthMetricsNonMembersPerson,
   HealthMetricsNonMembersWarmOrg,
   HealthMetricsSqlSortColumn,
@@ -86,6 +87,9 @@ interface PersonRow {
   MEETINGS_ATTENDED_COUNT: number | null;
   SORT_RANK: number | null;
   SCOPE_INDIVIDUALS_COUNT: number | null;
+  /** The row's place in the picked order, which the outer select keeps after the logo join. */
+  PAGE_POSITION: number | null;
+  LOGO_URL: string | null;
 }
 
 interface ConversionRow {
@@ -225,7 +229,7 @@ export class HealthMetricsNonMembersService {
     };
   }
 
-  /** One page of the period's engaged non-member individuals, in the view's rank. Never selects an email address. */
+  /** One page of the period's engaged non-member individuals, in the view's rank or a column the reader picked. Never selects an email address. */
   public async getPeople(req: Request, query: HealthMetricsNonMembersPeopleQuery): Promise<HealthMetricsNonMembersPeople> {
     // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
@@ -240,6 +244,9 @@ export class HealthMetricsNonMembersService {
 
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE, HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+    // A column the reader picked, over every page; with none, the view's rank. Only these expressions reach the SQL.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, personSortColumns(), 'sort_rank ASC NULLS LAST, person_key ASC');
 
     const sql = `
       WITH scoped AS (
@@ -271,17 +278,19 @@ export class HealthMetricsNonMembersService {
           (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
-        SELECT *, TRUE AS is_page_row
+        -- The row's place in the page's order, which the outer select keeps after the logo join.
+        SELECT *, TRUE AS is_page_row, ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM matched
         -- person_key breaks any tie, and NULLS LAST pins placement against the session's null ordering.
-        ORDER BY sort_rank ASC NULLS LAST, person_key ASC
+        ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
-      SELECT totals.*, page.*
+      SELECT totals.*, page.*, ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.person_key ASC
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<PersonRow>(this.snowflakeService, req, sql, binds, {
@@ -429,6 +438,7 @@ function mapPerson(row: PersonRow, position: number): HealthMetricsNonMembersPer
     jobTitle: row.PERSON_JOB_TITLE || null,
     accountId: row.ACCOUNT_ID || null,
     accountName: row.ACCOUNT_NAME || null,
+    logoUrl: row.LOGO_URL || null,
     lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
     meetingsAttended: toNullableNumber(row.MEETINGS_ATTENDED_COUNT),
   };
@@ -464,6 +474,16 @@ function orgSortColumns(): Record<HealthMetricsNonMembersOrgsSortKey, HealthMetr
     contributions: { expression: 'NULLIF(contributions_count, 0)', kind: 'number' },
     // The bands are constants, never request input.
     fit: { expression: `CASE TRIM(fit_band) ${bands.map((band, index) => `WHEN '${band}' THEN ${bands.length - index}`).join(' ')} END`, kind: 'number' },
+  };
+}
+
+/** Each column as its cell shows it: no name reads "Unnamed individual", and a person with no company reads "—". */
+function personSortColumns(): Record<HealthMetricsNonMembersPeopleSortKey, HealthMetricsSqlSortColumn> {
+  return {
+    person: { expression: "COALESCE(NULLIF(person_display_name, ''), 'Unnamed individual')", kind: 'text' },
+    company: { expression: "COALESCE(NULLIF(account_name, ''), account_id)", kind: 'text' },
+    meetings: { expression: 'NULLIF(meetings_attended_count, 0)', kind: 'number' },
+    lastAttended: { expression: 'last_attended_date', kind: 'date' },
   };
 }
 

@@ -44,6 +44,7 @@ import {
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS,
   HEALTH_METRICS_PROJECT_SLUG_PATTERN,
   HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
@@ -4323,7 +4324,18 @@ export class AnalyticsController {
         maxPageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
       });
 
-      const response = await this.healthMetricsNonMembersService.getPeople(req, { foundationSlug, range, search, offset, pageSize });
+      const response = await this.healthMetricsNonMembersService.getPeople(req, {
+        foundationSlug,
+        range,
+        search,
+        offset,
+        pageSize,
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS.map((column) => column.key)
+        ),
+      });
 
       // Counts only: the search text can name a person, so it stays out of this metadata.
       logger.success(req, 'get_non_members_people', startTime, {

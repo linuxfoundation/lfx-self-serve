@@ -287,7 +287,7 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
 });
 
 describe('HealthMetricsNonMembersService.getPeople', () => {
-  const query = { foundationSlug: 'acme', range: 'YTD' as const, search: '', offset: 0, pageSize: 10 };
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, search: '', offset: 0, pageSize: 10, sort: null };
 
   function personRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -302,6 +302,8 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
       LAST_ATTENDED_DATE: new Date(Date.UTC(2026, 2, 14)),
       MEETINGS_ATTENDED_COUNT: 42,
       SORT_RANK: 1,
+      PAGE_POSITION: 1,
+      LOGO_URL: 'https://logos.example/acme.png',
       ...overrides,
     };
   }
@@ -361,8 +363,25 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
     expect(scoped).toContain("AND p.person_key <> ''");
     expect(sql).toContain('(SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ANY_VALUE(scope_individuals_count) END FROM scoped) AS scope_total');
     expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
+    expect(sql).toContain('ROW_NUMBER() OVER (ORDER BY sort_rank ASC NULLS LAST, person_key ASC) AS page_position');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, person_key ASC\n        LIMIT 10 OFFSET 0');
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).toContain("NULLIF(TRIM(logos.logo_url), '') AS logo_url");
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+  });
+
+  it.each([
+    ['person', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(person_display_name, ''), 'Unnamed individual')"],
+    ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(account_name, ''), account_id)"],
+    ['meetings', 'asc', 'NULLIF(meetings_attended_count, 0) ASC NULLS LAST, sort_rank ASC NULLS LAST, person_key ASC'],
+    ['lastAttended', 'desc', 'last_attended_date DESC NULLS LAST, sort_rank ASC NULLS LAST'],
+  ] as const)("sorts %s %s across every page, then the view's rank", async (key, direction, expected) => {
+    await new HealthMetricsNonMembersService().getPeople(req, { ...query, sort: { key, direction } });
+
+    const [sql, binds] = peopleRead();
+    expect(sql).toContain(expected);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
   });
 
   it('clamps an oversized page and offset before interpolating them', async () => {
@@ -383,6 +402,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
           ACCOUNT_NAME: '',
           LAST_ATTENDED_DATE: null,
           MEETINGS_ATTENDED_COUNT: null,
+          LOGO_URL: null,
         }),
       ],
     });
@@ -399,6 +419,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
           jobTitle: 'Staff Engineer',
           accountId: '0014100000AcmeAAAA',
           accountName: 'Acme Motors',
+          logoUrl: 'https://logos.example/acme.png',
           lastAttendedDate: '2026-03-14',
           meetingsAttended: 42,
         },
@@ -408,6 +429,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
           jobTitle: null,
           accountId: null,
           accountName: null,
+          logoUrl: null,
           lastAttendedDate: null,
           meetingsAttended: null,
         },

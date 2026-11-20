@@ -9,7 +9,6 @@ import {
   buildHealthMetricsNonMembersConversionView,
   buildHealthMetricsNonMembersOrgRows,
   buildHealthMetricsNonMembersOtherMemberships,
-  buildHealthMetricsNonMembersPeopleCountLabel,
   buildHealthMetricsNonMembersPersonRows,
   buildHealthMetricsNonMembersSubNavItems,
   parseHealthMetricsNonMembersOrgsFilter,
@@ -53,6 +52,7 @@ const PERSON: HealthMetricsNonMembersPerson = {
   jobTitle: 'Staff Engineer',
   accountId: '0014100000AcmeAAAA',
   accountName: 'Acme Motors',
+  logoUrl: 'https://logos.example/acme.png',
   lastAttendedDate: '2026-03-14',
   meetingsAttended: 1240,
 };
@@ -164,40 +164,34 @@ describe('parseHealthMetricsNonMembersOrgsFilter', () => {
 });
 
 describe('buildHealthMetricsNonMembersPersonRows', () => {
-  it('formats the meeting count and the last attended date, keeping the title', () => {
+  it('formats the meeting count and the last attended date, with the title under the name and the company logo', () => {
     expect(buildHealthMetricsNonMembersPersonRows([PERSON])).toEqual([
       {
         rowKey: '1',
         displayName: 'Jane Doe',
         jobTitle: 'Staff Engineer',
-        organizationLabel: 'Acme Motors',
+        companyLabel: 'Acme Motors',
+        hasCompany: true,
+        logoUrl: 'https://logos.example/acme.png',
         meetingsLabel: '1,240',
         lastAttendedLabel: 'Mar 14, 2026',
       },
     ]);
   });
 
-  it('drops a blank title and dashes a missing organization, count or date', () => {
+  it('drops a blank title and dashes a missing company, count or date', () => {
     const [row] = buildHealthMetricsNonMembersPersonRows([
       { ...PERSON, jobTitle: '  ', accountId: null, accountName: null, meetingsAttended: null, lastAttendedDate: null },
     ]);
 
-    expect(row.jobTitle).toBeNull();
-    expect(row.organizationLabel).toBe('—');
-    expect(row.meetingsLabel).toBe('—');
-    expect(row.lastAttendedLabel).toBe('—');
+    expect(row).toMatchObject({ jobTitle: '', companyLabel: '—', hasCompany: false, meetingsLabel: '—', lastAttendedLabel: '—' });
   });
 
-  it('falls back to the account id when the organization has no name', () => {
-    expect(buildHealthMetricsNonMembersPersonRows([{ ...PERSON, accountName: '' }])[0].organizationLabel).toBe('0014100000AcmeAAAA');
-  });
-});
-
-describe('buildHealthMetricsNonMembersPeopleCountLabel', () => {
-  it('counts the engaged individuals', () => {
-    expect(buildHealthMetricsNonMembersPeopleCountLabel(1412)).toBe('1,412 engaged individuals');
-    expect(buildHealthMetricsNonMembersPeopleCountLabel(1)).toBe('1 engaged individual');
-    expect(buildHealthMetricsNonMembersPeopleCountLabel(null)).toBe('Engaged individuals not available');
+  it('falls back to the account id when the company has no name', () => {
+    expect(buildHealthMetricsNonMembersPersonRows([{ ...PERSON, accountName: ' ' }])[0]).toMatchObject({
+      companyLabel: '0014100000AcmeAAAA',
+      hasCompany: true,
+    });
   });
 });
 

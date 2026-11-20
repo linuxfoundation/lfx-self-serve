@@ -12,6 +12,7 @@ import type {
   HealthMetricsNonMembersOrgsFilterOption,
   HealthMetricsNonMembersOrgsSortKey,
   HealthMetricsNonMembersPeople,
+  HealthMetricsNonMembersPeopleSortKey,
   HealthMetricsNonMembersQueryParams,
   HealthMetricsNonMembersSectionKey,
 } from '../interfaces/health-metrics-non-members.interface';
@@ -33,7 +34,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'People',
     heading: 'People',
-    description: 'The individuals behind those companies — the actual contact to reach out to. A company is a lead; a person is a conversation.',
+    description: 'Contacts at those companies you can reach out to.',
   },
   {
     key: 'conversion',
@@ -147,10 +148,22 @@ export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_UNMEASURED: HealthMetricsNonMembe
   scopeTotal: 0,
 };
 
-/** People rows per page, and the rows-per-page choices; the largest foundation has a few hundred engaged individuals. */
+/** People rows per page, with the numbered pager; the largest foundation has a few hundred engaged individuals. */
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE = 10;
 
-export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
+/** People's sortable columns. */
+export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsNonMembersPeopleSortKey>[] = [
+  { key: 'person', kind: 'text' },
+  { key: 'company', kind: 'text' },
+  { key: 'meetings', kind: 'number' },
+  { key: 'lastAttended', kind: 'date' },
+];
+
+/** People opens on the view's rank: meetings attended, highest first. */
+export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsNonMembersPeopleSortKey> = {
+  key: 'meetings',
+  direction: 'desc',
+};
 
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE = 100;
 

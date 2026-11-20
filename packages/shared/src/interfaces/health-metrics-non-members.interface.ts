@@ -108,11 +108,16 @@ export interface HealthMetricsNonMembersPeopleQuery {
   foundationSlug: string;
   /** Picks the period columns for the meeting count and rank. */
   range: HealthMetricsL2Range;
-  /** Matches the person's name or their organization's. */
+  /** Matches the person's name or their company's. */
   search: string;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, over every page; `null` keeps the view's rank. */
+  sort: HealthMetricsTableSort<HealthMetricsNonMembersPeopleSortKey> | null;
 }
+
+/** People's sortable columns. */
+export type HealthMetricsNonMembersPeopleSortKey = 'person' | 'company' | 'meetings' | 'lastAttended';
 
 /** One `NON_MEMBER_PEOPLE` row for the period; never carries an email address. The date is ISO `YYYY-MM-DD`. */
 export interface HealthMetricsNonMembersPerson {
@@ -122,6 +127,8 @@ export interface HealthMetricsNonMembersPerson {
   jobTitle: string | null;
   accountId: string | null;
   accountName: string | null;
+  /** The person's company's mapped logo; `null` shows its first letter. */
+  logoUrl: string | null;
   lastAttendedDate: string | null;
   meetingsAttended: number | null;
 }
@@ -138,8 +145,13 @@ export interface HealthMetricsNonMembersPeople {
 export interface HealthMetricsNonMembersPersonRowView {
   rowKey: string;
   displayName: string;
-  jobTitle: string | null;
-  organizationLabel: string;
+  /** The description under the name; empty with no job title. */
+  jobTitle: string;
+  /** The company's name; "—" when the person has no matched company. */
+  companyLabel: string;
+  /** Whether the Company cell leads with a logo, which a person with no matched company does not. */
+  hasCompany: boolean;
+  logoUrl: string | null;
   meetingsLabel: string;
   lastAttendedLabel: string;
 }
