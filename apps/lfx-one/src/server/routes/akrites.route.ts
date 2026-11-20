@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { AkritesController } from '../controllers/akrites.controller';
+import { requireExecutiveDirector } from '../middleware/require-executive-director.middleware';
 
 const router = Router();
 const akritesController = new AkritesController();
@@ -15,10 +16,10 @@ router.get('/packages', akritesController.getPackages.bind(akritesController));
 router.get('/packages/:purl', akritesController.getPackage.bind(akritesController));
 router.get('/activity', akritesController.getActivityFeed.bind(akritesController));
 
-// Steward admin actions (writes). Authorization gate to be added (see CM-1245 plan, Gap #4).
-router.post('/stewardships', akritesController.openStewardship.bind(akritesController));
-router.put('/stewardships/:id/steward', akritesController.assignSteward.bind(akritesController));
-router.put('/stewardships/:id/escalate', akritesController.escalateStewardship.bind(akritesController));
-router.put('/stewardships/:id/status', akritesController.updateStewardshipStatus.bind(akritesController));
+// Steward admin actions (writes) require server-verified Executive Director access.
+router.post('/stewardships', requireExecutiveDirector, akritesController.openStewardship.bind(akritesController));
+router.put('/stewardships/:id/steward', requireExecutiveDirector, akritesController.assignSteward.bind(akritesController));
+router.put('/stewardships/:id/escalate', requireExecutiveDirector, akritesController.escalateStewardship.bind(akritesController));
+router.put('/stewardships/:id/status', requireExecutiveDirector, akritesController.updateStewardshipStatus.bind(akritesController));
 
 export default router;
