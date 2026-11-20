@@ -85,6 +85,10 @@ describe('buildHealthMetricsNonMembersOrgRows', () => {
     });
   });
 
+  it('shows the account id for a company whose name is blank once trimmed', () => {
+    expect(buildHealthMetricsNonMembersOrgRows([{ ...ORG, accountName: '   ' }])[0].accountName).toBe(ORG.accountId);
+  });
+
   it('says one person in the singular', () => {
     expect(buildHealthMetricsNonMembersOrgRows([{ ...ORG, distinctPeople: 1 }])[0].peopleLabel).toBe('1 person');
   });
@@ -169,6 +173,7 @@ describe('buildHealthMetricsNonMembersPersonRows', () => {
       {
         rowKey: '1',
         displayName: 'Jane Doe',
+        initials: '',
         jobTitle: 'Staff Engineer',
         companyLabel: 'Acme Motors',
         hasCompany: true,
@@ -185,6 +190,11 @@ describe('buildHealthMetricsNonMembersPersonRows', () => {
     ]);
 
     expect(row).toMatchObject({ jobTitle: '', companyLabel: '—', hasCompany: false, meetingsLabel: '—', lastAttendedLabel: '—' });
+  });
+
+  it('gives a one-word name one initial, and leaves longer names to the avatar', () => {
+    expect(buildHealthMetricsNonMembersPersonRows([{ ...PERSON, displayName: ' jane ' }])[0].initials).toBe('J');
+    expect(buildHealthMetricsNonMembersPersonRows([{ ...PERSON, displayName: 'Jane Q Doe' }])[0].initials).toBe('');
   });
 
   it('falls back to the account id when the company has no name', () => {

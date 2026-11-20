@@ -450,7 +450,8 @@ function mapOrg(row: OrgRow): HealthMetricsNonMembersOrg[] {
   return [
     {
       accountId: row.ACCOUNT_ID,
-      accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      // Trimmed as the Company sort trims it, so a blank name shows the account id it sorts by.
+      accountName: row.ACCOUNT_NAME?.trim() || row.ACCOUNT_ID,
       logoUrl: row.LOGO_URL || null,
       lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
       meetingsAttended: toNullableNumber(row.MEETINGS_ATTENDED_COUNT),

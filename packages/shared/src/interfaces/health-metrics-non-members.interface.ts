@@ -145,6 +145,8 @@ export interface HealthMetricsNonMembersPeople {
 export interface HealthMetricsNonMembersPersonRowView {
   rowKey: string;
   displayName: string;
+  /** The avatar's initials: one letter for a one-word name, else empty for the avatar's own two. */
+  initials: string;
   /** The description under the name; empty with no job title. */
   jobTitle: string;
   /** The company's name; "—" when the person has no matched company. */

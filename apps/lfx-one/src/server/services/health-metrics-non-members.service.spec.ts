@@ -277,6 +277,14 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     });
   });
 
+  it('shows the account id for a company whose name is only spaces, as the Company sort orders it', async () => {
+    execute.mockResolvedValueOnce({ rows: [orgRow({ ACCOUNT_NAME: '   ' })] }).mockResolvedValueOnce({ rows: [] });
+
+    const response = await new HealthMetricsNonMembersService().getOrgs(req, query);
+
+    expect(response.rows[0].accountName).toBe('0014100000AcmeAAAA');
+  });
+
   it('keeps the totals when the page is past the end', async () => {
     execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 1412, TOTAL_RECORDS: 30, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
 

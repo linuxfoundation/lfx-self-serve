@@ -80,7 +80,7 @@
             <td>
               <lfx-health-metrics-cell
                 [text]="view.displayName"
-                [lead]="{ kind: 'person', name: view.displayName, photoUrl: '' }"
+                [lead]="{ kind: 'person', name: view.displayName, photoUrl: '', initials: view.initials }"
                 [description]="view.jobTitle"
                 [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-name'" />
             </td>
@@ -98,10 +98,8 @@
               <lfx-health-metrics-cell [text]="view.meetingsLabel" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-meetings'" />
             </td>
             <td>
-              <lfx-health-metrics-cell
-                textClass="text-gray-900"
-                [text]="view.lastAttendedLabel"
-                [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-last-attended'" />
+              <!-- Ink from the table's cell style, so the shared cell can still mute a "—". -->
+              <lfx-health-metrics-cell [text]="view.lastAttendedLabel" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-last-attended'" />
             </td>
           </tr>
         </ng-template>

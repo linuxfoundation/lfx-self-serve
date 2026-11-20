@@ -40,7 +40,8 @@ export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMember
     const people = row.distinctPeople === null ? 0 : Math.round(row.distinctPeople);
     return {
       accountId: row.accountId,
-      accountName: row.accountName,
+      // Trimmed as the Company sort trims it, so a blank name shows the account id it sorts by.
+      accountName: row.accountName.trim() || row.accountId,
       logoUrl: row.logoUrl,
       lastEngagedLabel: row.lastEngagedDate ? `Last engaged ${formatIsoDateLabel(row.lastEngagedDate)}` : '',
       otherMemberships: buildHealthMetricsNonMembersOtherMemberships(row.otherMemberships),
@@ -88,9 +89,11 @@ export function parseHealthMetricsNonMembersOrgsFilter(value: string | null | un
 export function buildHealthMetricsNonMembersPersonRows(rows: HealthMetricsNonMembersPerson[]): HealthMetricsNonMembersPersonRowView[] {
   return rows.map((row) => {
     const company = row.accountName?.trim() || row.accountId || '';
+    const words = row.displayName.trim().split(/\s+/).filter(Boolean);
     return {
       rowKey: row.rowKey,
       displayName: row.displayName,
+      initials: words.length === 1 ? Array.from(words[0])[0].toUpperCase() : '',
       jobTitle: row.jobTitle?.trim() || '',
       companyLabel: company || '—',
       hasCompany: !!company,

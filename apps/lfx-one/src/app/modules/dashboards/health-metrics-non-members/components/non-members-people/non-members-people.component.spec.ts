@@ -140,7 +140,13 @@ describe('NonMembersPeopleComponent', () => {
     expect(cellText('company')).toBe('Acme Motors');
     expect(cellText('meetings')).toBe('42');
     expect(cellText('last-attended')).toBe('Mar 14, 2026');
-    expect(cell('last-attended')?.querySelector('[data-testid="health-metrics-cell-text"]')?.className).toContain('text-gray-900');
+    expect(cell('last-attended')?.querySelector('[data-testid="health-metrics-cell-text"]')?.className).not.toContain('text-gray-400');
+  });
+
+  it('gives a one-word name a single initial', async () => {
+    await render(response({ rows: [person({ displayName: 'Jane' })] }));
+
+    expect(cell('name')?.querySelector('[data-testid="health-metrics-cell-person"]')?.textContent?.trim()).toBe('J');
   });
 
   it('drops the description with no job title, and dashes a person with no company or date, with no logo', async () => {
@@ -150,6 +156,7 @@ describe('NonMembersPeopleComponent', () => {
     expect(cellText('company')).toBe('—');
     expect(cell('company')?.querySelector('[data-testid="health-metrics-cell-company"]')).toBeNull();
     expect(cellText('last-attended')).toBe('—');
+    expect(cell('last-attended')?.querySelector('[data-testid="health-metrics-cell-text"]')?.className).toContain('text-gray-400');
   });
 
   it('searches people and companies from a box that fills the row, with no count line or rows-per-page choice', async () => {
