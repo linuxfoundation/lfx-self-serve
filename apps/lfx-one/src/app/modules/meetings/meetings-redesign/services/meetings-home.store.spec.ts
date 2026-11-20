@@ -1694,12 +1694,14 @@ describe('MeetingsHomeStore', () => {
         TestBed.tick();
 
         expect(past).toHaveBeenCalledTimes(2);
+        expect(store.calendarPastFailed()).toBe(true);
 
         // Going back another month retries the page from the kept cursor.
         store.showPastFrom(getLocalDayKey(inDays(-90)));
         TestBed.tick();
         expect(past).toHaveBeenCalledTimes(3);
         expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+        expect(store.calendarPastFailed()).toBe(false);
       });
     });
 
