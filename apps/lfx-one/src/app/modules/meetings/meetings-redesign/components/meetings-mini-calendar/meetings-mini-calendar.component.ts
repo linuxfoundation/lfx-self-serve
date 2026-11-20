@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, inject, input, linkedSignal, output, Signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, linkedSignal, output, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
   MEETINGS_HOME_CALENDAR_WEEKDAYS,
   MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX,
@@ -19,6 +20,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
+import { distinctUntilChanged, filter } from 'rxjs';
 
 /**
  * Month calendar at the top of a project's meetings right column: up to three dots per day with meetings, upcoming and past.
@@ -69,11 +71,13 @@ export class MeetingsMiniCalendarComponent {
   public constructor() {
     this.destroyRef.onDestroy(() => clearTimeout(this.hideTimer));
     // Asks again for a new scope, whose past rows start over from their first page.
-    effect(() => {
-      const start = this.pastMonthStart();
-      this.scope();
-      if (start) untracked(() => this.olderMonthShown.emit(start));
-    });
+    toObservable(computed(() => ({ start: this.pastMonthStart(), scope: this.scope() })))
+      .pipe(
+        distinctUntilChanged((a, b) => a.start === b.start && a.scope === b.scope),
+        filter((shown): shown is { start: string; scope: string } => shown.start !== null),
+        takeUntilDestroyed()
+      )
+      .subscribe(({ start }) => this.olderMonthShown.emit(start));
   }
 
   protected step(offset: -1 | 1): void {
