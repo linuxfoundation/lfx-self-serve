@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { signal } from '@angular/core';
+import { PastMeeting } from '@lfx-one/shared/interfaces';
 import { TestBed } from '@angular/core/testing';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -12,9 +13,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeFeed, ProjectMeetingsHomeFeed, provideMeetingsHomeFeed, UserMeetingsHomeFeed } from './meetings-home-feed';
 
+const ended = (id: string): PastMeeting => ({ id, scheduled_start_time: '2026-01-01T10:00:00Z', scheduled_end_time: '2026-01-01T11:00:00Z' }) as PastMeeting;
+const running = (id: string): PastMeeting =>
+  ({
+    id,
+    scheduled_start_time: new Date(Date.now() - 60_000).toISOString(),
+    scheduled_end_time: new Date(Date.now() + 3_600_000).toISOString(),
+  }) as PastMeeting;
+
 describe('MeetingsHomeFeed', () => {
   let lens: ReturnType<typeof signal<string>>;
   let projectUid: ReturnType<typeof signal<string>>;
+  let foundation: ReturnType<typeof signal<boolean>>;
+  let pastRefresh$: Subject<void>;
+  let upcomingRefresh$: Subject<void>;
   let meetingService: { getProjectMeetingsForHome: ReturnType<typeof vi.fn>; getProjectPastMeetingsForHome: ReturnType<typeof vi.fn> };
   let userService: Record<string, unknown>;
 
@@ -23,7 +35,7 @@ describe('MeetingsHomeFeed', () => {
       providers: [
         ...provideMeetingsHomeFeed(),
         { provide: LensService, useValue: { activeLens: lens } },
-        { provide: ProjectContextService, useValue: { activeContextUid: projectUid } },
+        { provide: ProjectContextService, useValue: { activeContextUid: projectUid, isFoundationContext: foundation } },
         { provide: MeetingService, useValue: meetingService },
         { provide: UserService, useValue: userService },
       ],
@@ -35,14 +47,17 @@ describe('MeetingsHomeFeed', () => {
     TestBed.resetTestingModule();
     lens = signal('project');
     projectUid = signal('project-1');
+    foundation = signal(false);
+    pastRefresh$ = new Subject<void>();
+    upcomingRefresh$ = new Subject<void>();
     meetingService = {
       getProjectMeetingsForHome: vi.fn(() => of([{ id: 'm-1' }])),
-      getProjectPastMeetingsForHome: vi.fn(() => of({ meetings: [{ id: 'm-1:1' }], pageToken: 'next' })),
+      getProjectPastMeetingsForHome: vi.fn(() => of({ meetings: [ended('m-1:1'), running('m-2:1')], pageToken: 'next' })),
     };
     userService = {
       meetingFeedIdentity: signal('viewer'),
-      meetingsRefresh$: new Subject<void>(),
-      pastMeetingsRefresh$: new Subject<void>(),
+      meetingsRefresh$: upcomingRefresh$,
+      pastMeetingsRefresh$: pastRefresh$,
       getUserMeetings: vi.fn(() => of([{ id: 'mine' }])),
       getUserPastMeetings: vi.fn(() => of([{ id: 'mine:1' }])),
       getUserLatestPastMeetings: vi.fn(() => of([])),
@@ -59,7 +74,7 @@ describe('MeetingsHomeFeed', () => {
     expect(userService['getUserPastMeetings']).toHaveBeenCalledWith({ includeArtifactsAndAttendance: true });
   });
 
-  it('reads the active project in a project or foundation lens, keyed on viewer and project', async () => {
+  it('reads only the active project in a project lens, keyed on viewer and project', async () => {
     const feed = inject();
 
     expect(feed).toBeInstanceOf(ProjectMeetingsHomeFeed);
@@ -69,16 +84,40 @@ describe('MeetingsHomeFeed', () => {
     expect(feed.key()).not.toBe(key);
 
     await expect(firstValueFrom(feed.upcoming())).resolves.toEqual([{ id: 'm-1' }]);
-    expect(meetingService.getProjectMeetingsForHome).toHaveBeenCalledWith('project-2');
+    expect(meetingService.getProjectMeetingsForHome).toHaveBeenCalledWith('project-2', { includeSubProjects: false });
     await firstValueFrom(feed.past('weekly', 'cursor'));
-    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenCalledWith('project-2', 'weekly', 'cursor');
+    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenCalledWith('project-2', 'weekly', 'cursor', undefined, { includeSubProjects: false });
   });
 
-  it('reads the latest past meetings as a short first page', async () => {
+  it('includes sub-projects for a foundation', async () => {
+    foundation.set(true);
     const feed = inject();
 
-    await expect(firstValueFrom(feed.latestPast())).resolves.toEqual([{ id: 'm-1:1' }]);
-    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenCalledWith('project-1', '', undefined, 5);
+    await firstValueFrom(feed.upcoming());
+
+    expect(meetingService.getProjectMeetingsForHome).toHaveBeenCalledWith('project-1', { includeSubProjects: true });
+  });
+
+  it('leaves meetings still running out of the past feed and the latest past meetings', async () => {
+    const feed = inject();
+
+    await expect(firstValueFrom(feed.past(''))).resolves.toEqual({ meetings: [ended('m-1:1')], pageToken: 'next' });
+    await expect(firstValueFrom(feed.latestPast())).resolves.toEqual([ended('m-1:1')]);
+    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenLastCalledWith('project-1', '', undefined, 10, { includeSubProjects: false });
+  });
+
+  it('reloads the upcoming and latest past meetings on refresh', () => {
+    const feed = inject();
+    const upcoming = vi.fn();
+    const latest = vi.fn();
+    feed.upcoming().subscribe(upcoming);
+    feed.latestPast().subscribe(latest);
+
+    upcomingRefresh$.next();
+    pastRefresh$.next();
+
+    expect(upcoming).toHaveBeenCalledTimes(2);
+    expect(latest).toHaveBeenCalledTimes(2);
   });
 
   it('loads nothing until a project is active', async () => {

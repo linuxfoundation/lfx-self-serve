@@ -45,6 +45,7 @@ import {
   distinctUntilChanged,
   interval,
   map,
+  merge,
   Observable,
   of,
   retry,
@@ -117,13 +118,15 @@ export class MeetingsHomeStore {
   private readonly pastLoadingMore: WritableSignal<boolean> = signal(false);
   // Bumped whenever the first past page is requested, so a next page for an older query is dropped.
   private pastQueryVersion = 0;
+  // Search the first past page was loaded with; its cursor only continues that query.
+  private pastQuery = '';
   // Carries `recording_share_url` / `has_ai_summary` for the Recording and AI Summary buttons, and organizer attendance.
   private readonly pastFirstPage: Signal<PastMeeting[]> = this.initFeed(
     () => this.loadFirstPastPage(),
     this.feed.pastRefresh$,
     this.pastLoadingState,
     this.pastFailedState,
-    this.initServerSearchChanges()
+    this.initPastReloads()
   );
   private readonly pastNextPages: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.pastFirstPage, computation: () => [] as PastMeeting[] });
   private readonly pastMeetings: Signal<PastMeeting[]> = computed(() => [...this.pastFirstPage(), ...this.pastNextPages()]);
@@ -190,7 +193,7 @@ export class MeetingsHomeStore {
   public readonly hasMore: Signal<boolean> = computed(
     () => this.visibleCount() < this.filteredRows().length || (this.tab() === 'past' && this.pastPageToken() !== undefined)
   );
-  /** Most recent ended meeting the viewer has a direct grant on (invited, organizer or participant), as on the legacy dashboard card. */
+  /** Most recent ended meeting of the feed: one the viewer has a direct grant on in the Me lens, the scope's in a project lens. */
   public readonly lastMeeting: Signal<MeetingHomeRow | null> = computed(
     () =>
       this.latestPastMeetings()
@@ -354,16 +357,18 @@ export class MeetingsHomeStore {
     });
   }
 
-  /** Emits when a paged past feed's search settles on a new value; never for a feed searched on the client. */
-  private initServerSearchChanges(): Observable<unknown> {
+  /** Emits when a paged past feed's search settles on a new value or the feed is refreshed; never for a whole feed. */
+  private initPastReloads(): Observable<unknown> {
     if (!this.feed.pagedPast) return of(undefined);
-    return toObservable(computed(() => this.search().trim())).pipe(debounceTime(300), startWith(''), distinctUntilChanged());
+    const search$ = toObservable(computed(() => this.search().trim())).pipe(debounceTime(300), startWith(''), distinctUntilChanged());
+    return merge(search$, this.feed.pastRefresh$);
   }
 
   private loadFirstPastPage(): Observable<PastMeeting[]> {
     const version = ++this.pastQueryVersion;
+    this.pastQuery = this.search().trim();
     this.pastPageToken.set(undefined);
-    return this.feed.past(this.search().trim()).pipe(
+    return this.feed.past(this.pastQuery).pipe(
       tap((page) => {
         if (version === this.pastQueryVersion) this.pastPageToken.set(page.pageToken);
       }),
@@ -377,7 +382,7 @@ export class MeetingsHomeStore {
     const version = this.pastQueryVersion;
     this.pastLoadingMore.set(true);
     this.feed
-      .past(this.search().trim(), pageToken)
+      .past(this.pastQuery, pageToken)
       .pipe(take(1))
       .subscribe({
         next: (page) => {

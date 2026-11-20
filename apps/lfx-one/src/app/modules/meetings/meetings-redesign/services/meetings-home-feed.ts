@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, Provider, Signal } from '@angular/core';
-import { LATEST_PAST_MEETINGS_RETURN_LIMIT } from '@lfx-one/shared/constants';
-import { Meeting, MeetingsHomePastPage, PastMeeting } from '@lfx-one/shared/interfaces';
+import { LATEST_PAST_MEETINGS_FETCH_SIZE, LATEST_PAST_MEETINGS_RETURN_LIMIT } from '@lfx-one/shared/constants';
+import { Meeting, MeetingProjectQueryOptions, MeetingsHomePastPage, PastMeeting } from '@lfx-one/shared/interfaces';
+import { parseToInt } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { map, Observable, of } from 'rxjs';
+import { map, Observable, of, startWith, switchMap } from 'rxjs';
 
 /**
  * Where the meetings home reads its meetings from: the viewer's own meetings (Me lens) or one project's.
- * @description Edits, deletes and RSVPs refresh through {@link UserService}'s refresh streams, which both feeds follow.
+ * @description Edits, deletes and RSVPs refresh through {@link UserService}'s refresh streams: the upcoming and latest past
+ * feeds re-emit on them, and the store reloads a paged past feed from its first page.
  */
 export abstract class MeetingsHomeFeed {
   /** Changes with the viewer or the scope; the store reloads its feeds and resets search and filters when it does. */
@@ -51,32 +53,82 @@ export class UserMeetingsHomeFeed extends MeetingsHomeFeed {
   }
 }
 
-/** Every meeting of the active project or foundation, as the viewer can see them; past meetings are paged. */
+/**
+ * Every meeting of the active project, or of a foundation and its sub-projects, as the viewer can see them.
+ * @description Past meetings are paged; meetings still running are left out of them, as the user feed's server does.
+ */
 @Injectable()
 export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
   private readonly userService = inject(UserService);
   private readonly meetingService = inject(MeetingService);
   private readonly projectContext = inject(ProjectContextService);
 
-  public readonly key: Signal<string> = computed(() => `${this.userService.meetingFeedIdentity()}\0${this.projectContext.activeContextUid()}`);
+  public readonly key: Signal<string> = computed(
+    () => `${this.userService.meetingFeedIdentity()}\0${this.projectContext.activeContextUid()}\0${this.projectContext.isFoundationContext()}`
+  );
   public readonly pagedPast = true;
   public readonly upcomingRefresh$: Observable<void> = this.userService.meetingsRefresh$;
   public readonly pastRefresh$: Observable<void> = this.userService.pastMeetingsRefresh$;
 
   public upcoming(): Observable<Meeting[]> {
-    const projectUid = this.projectContext.activeContextUid();
-    return projectUid ? this.meetingService.getProjectMeetingsForHome(projectUid) : of([]);
+    return this.followRefresh(this.upcomingRefresh$, (projectUid, options) => this.meetingService.getProjectMeetingsForHome(projectUid, options), []);
   }
 
   public past(search: string, pageToken?: string): Observable<MeetingsHomePastPage> {
     const projectUid = this.projectContext.activeContextUid();
-    return projectUid ? this.meetingService.getProjectPastMeetingsForHome(projectUid, search, pageToken) : of({ meetings: [] });
+    if (!projectUid) return of({ meetings: [] });
+    return this.meetingService
+      .getProjectPastMeetingsForHome(projectUid, search, pageToken, undefined, this.scopeOptions())
+      .pipe(map((page) => ({ ...page, meetings: this.ended(page.meetings) })));
   }
 
   public latestPast(): Observable<PastMeeting[]> {
-    const projectUid = this.projectContext.activeContextUid();
-    if (!projectUid) return of([]);
-    return this.meetingService.getProjectPastMeetingsForHome(projectUid, '', undefined, LATEST_PAST_MEETINGS_RETURN_LIMIT).pipe(map((page) => page.meetings));
+    // Over-fetched: the index lists a meeting once it starts, and running ones are dropped.
+    return this.followRefresh(
+      this.pastRefresh$,
+      (projectUid, options) =>
+        this.meetingService
+          .getProjectPastMeetingsForHome(projectUid, '', undefined, LATEST_PAST_MEETINGS_FETCH_SIZE, options)
+          .pipe(map((page) => this.ended(page.meetings).slice(0, LATEST_PAST_MEETINGS_RETURN_LIMIT))),
+      []
+    );
+  }
+
+  /** A foundation lists its sub-projects' meetings too; a project only its own. */
+  private scopeOptions(): MeetingProjectQueryOptions {
+    return { includeSubProjects: this.projectContext.isFoundationContext() };
+  }
+
+  /** Loads now and again on every refresh, as the user feed's shared streams do. */
+  private followRefresh<T>(
+    refresh$: Observable<void>,
+    load: (projectUid: string, options: MeetingProjectQueryOptions) => Observable<T>,
+    empty: T
+  ): Observable<T> {
+    return refresh$.pipe(
+      startWith(undefined),
+      switchMap(() => {
+        const projectUid = this.projectContext.activeContextUid();
+        return projectUid ? load(projectUid, this.scopeOptions()) : of(empty);
+      })
+    );
+  }
+
+  private ended(meetings: PastMeeting[]): PastMeeting[] {
+    const now = Date.now();
+    return meetings.filter((meeting) => {
+      const end = this.effectiveEndMs(meeting);
+      return end !== null && end < now;
+    });
+  }
+
+  /** Scheduled end, else start plus duration; null when neither can be read. */
+  private effectiveEndMs(meeting: PastMeeting): number | null {
+    const scheduledEnd = meeting.scheduled_end_time ? Date.parse(meeting.scheduled_end_time) : NaN;
+    if (!Number.isNaN(scheduledEnd)) return scheduledEnd;
+    const start = Date.parse(meeting.scheduled_start_time || meeting.start_time);
+    const duration = parseToInt(meeting.duration);
+    return Number.isNaN(start) || duration === undefined ? null : start + duration * 60_000;
   }
 }
 

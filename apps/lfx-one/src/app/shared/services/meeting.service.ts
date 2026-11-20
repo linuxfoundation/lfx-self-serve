@@ -283,9 +283,9 @@ export class MeetingService {
    * Every meeting of a project for its meetings home, with the viewer's RSVP and organizer counts. It reads up to
    * {@link MEETINGS_HOME_PROJECT_MAX_UPCOMING_PAGES} max-size pages; errors propagate so the page shows its error state.
    */
-  public getProjectMeetingsForHome(projectUid: string): Observable<Meeting[]> {
+  public getProjectMeetingsForHome(projectUid: string, options: MeetingProjectQueryOptions = {}): Observable<Meeting[]> {
     const fetchPage = (pageToken?: string): Observable<PaginatedResponse<Meeting>> => {
-      let params = this.projectScopeParams(projectUid, { pageSize: QUERY_SERVICE_MAX_PAGE_SIZE }).set(
+      let params = this.projectScopeParams(projectUid, { ...options, pageSize: QUERY_SERVICE_MAX_PAGE_SIZE }).set(
         'include',
         `${MEETINGS_INCLUDE_VIEWER_RSVP},${USER_MEETINGS_INCLUDE_ATTENDANCE}`
       );
@@ -295,7 +295,11 @@ export class MeetingService {
     return fetchPage().pipe(
       expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
       take(MEETINGS_HOME_PROJECT_MAX_UPCOMING_PAGES),
-      reduce((meetings: Meeting[], response) => [...meetings, ...response.data], [])
+      reduce((meetings: Meeting[], response) => [...meetings, ...response.data], []),
+      catchError((error) => {
+        console.error('Failed to load project meetings for the meetings home:', error);
+        return throwError(() => error);
+      })
     );
   }
 
@@ -307,9 +311,10 @@ export class MeetingService {
     projectUid: string,
     search: string,
     pageToken?: string,
-    pageSize: number = MEETINGS_HOME_PROJECT_PAST_PAGE_SIZE
+    pageSize: number = MEETINGS_HOME_PROJECT_PAST_PAGE_SIZE,
+    options: MeetingProjectQueryOptions = {}
   ): Observable<MeetingsHomePastPage> {
-    let params = this.projectScopeParams(projectUid, { pageSize })
+    let params = this.projectScopeParams(projectUid, { ...options, pageSize })
       .set('sort', PAST_MEETING_SORT.NAME_DESC)
       .set('include', `${USER_PAST_MEETINGS_INCLUDE_ARTIFACTS},${USER_MEETINGS_INCLUDE_ATTENDANCE}`)
       .set('include_viewer_attendance', 'true');
@@ -319,7 +324,11 @@ export class MeetingService {
       map((response) => ({
         meetings: response.data.flatMap((meeting) => (meeting.meeting_and_occurrence_id ? [{ ...meeting, id: meeting.meeting_and_occurrence_id }] : [])),
         pageToken: response.page_token,
-      }))
+      })),
+      catchError((error) => {
+        console.error('Failed to load past project meetings for the meetings home:', error);
+        return throwError(() => error);
+      })
     );
   }
 

@@ -901,6 +901,36 @@ describe('MeetingsHomeStore', () => {
       }
     });
 
+    it('reloads a paged past feed from its first page on refresh', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      pastPages[1].next(pastPage('b', 2, 'cursor-2'));
+      TestBed.tick();
+
+      pastMeetingsRefresh$.next();
+      pastPages[2].next(pastPage('c', 1));
+      TestBed.tick();
+
+      expect(past).toHaveBeenCalledTimes(3);
+      expect(store.pastRows().map((row) => row.meeting.id)).toEqual(['c0']);
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('continues a cursor with the search it was loaded with, even mid-debounce', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      store.setSearch('typed');
+      store.loadMore();
+
+      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+    });
+
     it('does not request a next page on the upcoming tab', () => {
       const store = createPaged();
       pastPages[0].next(pastPage('a', 1, 'cursor-1'));
