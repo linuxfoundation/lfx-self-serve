@@ -520,13 +520,15 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   it('scrolls to the section the sub-nav emits', () => {
     const scrollIntoViewSpy = vi.fn();
-    vi.spyOn(document, 'getElementById').mockReturnValue({ scrollIntoView: scrollIntoViewSpy } as unknown as HTMLElement);
+    const focusSpy = vi.fn();
+    vi.spyOn(document, 'getElementById').mockReturnValue({ scrollIntoView: scrollIntoViewSpy, focus: focusSpy } as unknown as HTMLElement);
 
     fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
     fixture.detectChanges();
 
     expect(activeKey()).toBe('gamma');
     expect(scrollIntoViewSpy).toHaveBeenCalledOnce();
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
   });
 
   it('scrolls to a fragment that was already in the URL before the sections existed', async () => {
@@ -773,6 +775,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(activeKey()).toBe('beta');
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
     expect(document.activeElement?.getAttribute('data-testid')).toBe('test-section-beta');
+    expect(document.activeElement?.getAttribute('aria-labelledby')).toBe(document.querySelector('[data-testid="test-section-beta"] h2')?.id);
 
     child('beta').settled.emit(false);
     await flush();
