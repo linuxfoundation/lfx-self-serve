@@ -67,6 +67,14 @@ describe('MeetingsSubscribeDialogComponent', () => {
     expect(show).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
   });
 
+  it('keeps the focus ring on the read-only feed field, overriding only its resting ring', async () => {
+    const fixture = await render();
+
+    const field = query(fixture, 'meetings-subscribe-dialog-feed') as HTMLElement;
+    expect(field.className).toContain('[&_[data-testid=ui-input-wrapper]:not(:focus-within)]:!shadow-');
+    expect(field.className).not.toContain('[&_[data-testid=ui-input-wrapper]]:!shadow-');
+  });
+
   it('links each calendar app to the real feed', async () => {
     const fixture = await render();
     const link = (key: string): HTMLAnchorElement | null => query(fixture, `meetings-subscribe-dialog-app-${key}`) as HTMLAnchorElement | null;
