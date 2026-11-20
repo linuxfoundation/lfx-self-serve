@@ -4,6 +4,7 @@
 import { PollType, VoteVoterStatus } from '../enums/poll.enum';
 import type {
   VoteCommentAnonymityReason,
+  VoteMethodOption,
   VoteDetailTab,
   VoteDetailTabOption,
   VoteParticipationStatusFilter,
@@ -204,6 +205,27 @@ export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.INSTANT_RUNOFF_VOTE]: 'Instant runoff vote',
   [PollType.MEEK_STV]: 'Meek STV',
 };
+
+/** Voting methods offered when creating a vote (#2921) — read by the Create Vote dropdown and the form's Voting Method select. */
+export const VOTE_METHOD_OPTIONS: VoteMethodOption[] = [
+  {
+    label: 'Plurality',
+    value: PollType.GENERIC,
+    icon: 'fa-light fa-check-to-slot',
+    description: 'Voters pick from the options; the option with the most votes wins.',
+  },
+  {
+    label: 'Condorcet IRV',
+    value: PollType.CONDORCET_IRV,
+    icon: 'fa-light fa-list-ol',
+    description: 'Voters rank the options. The winner beats every other option head-to-head; if none does, instant-runoff elimination decides.',
+    // Enable only after #5969 results support is deployed and verified.
+    disabled: true,
+  },
+];
+
+/** Fewest eligible voters a Condorcet IRV vote can be opened with — matches PCC's `minMembersValidator`. */
+export const VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS = 3;
 
 /** Admin Mode ballot policy (#4331): only active impersonation is restricted, never an admin acting as themselves. */
 export const VOTE_IMPERSONATION_READ_ONLY_NOTICE = 'Ballots are read-only while impersonating another user. You cannot cast or change their vote.';

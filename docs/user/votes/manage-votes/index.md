@@ -4,7 +4,7 @@ description: How to find, edit, delete, vote on, and send reminders for votes in
 audience: [all]
 product_area: Votes
 tags: [votes, manage, drafts, cast, results, reminders, mailing-list, copy-link]
-last_updated: 2026-11-17
+last_updated: 2026-11-19
 intercom_collection: Votes
 ---
 
@@ -50,7 +50,7 @@ Active and ended votes also have a **⋮** (**More actions**) menu. Selecting a 
 Only drafts can be edited. An active vote can't be edited, and there is no action to close a vote early. If an active vote has a mistake, [clone it](../present-extend-clone/#clone-a-vote) into a corrected vote.
 
 1. Open the **Draft** tab.
-2. Select **Edit** on the draft. The create form opens with your saved answers, and you can jump between steps freely.
+2. Select **Edit** on the draft. The create form opens with your saved answers, and you can jump between steps freely. The voting method can't be changed.
 3. Change what you need, then select **Save as Draft** to keep it as a draft or **Open Vote** on the last step to open it.
 
 To delete a draft, select **Delete** on its row and confirm. Deleting can't be undone.

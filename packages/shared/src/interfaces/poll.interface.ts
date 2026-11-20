@@ -951,6 +951,8 @@ export interface VoteFormValue {
   committee: CommitteeReference | null;
   /** Eligible participants filter value */
   eligible_participants: string;
+  /** Voting method — chosen on create, locked once the vote exists */
+  poll_type: PollType;
   /** Vote close/end date */
   close_date: Date | null;
   /** Vote close time in 12-hour format (e.g. "11:59 PM") */
@@ -965,6 +967,51 @@ export interface VoteFormValue {
   questions: QuestionFormValue[];
   /** Array of comment-prompt form values (optional, creator authoring only) */
   commentPrompts: CommentPromptFormValue[];
+}
+
+/**
+ * A voting method offered when creating a vote
+ * @description Shared by the Create Vote dropdown and the form's Voting Method select, so adding a
+ * method is one entry in `VOTE_METHOD_OPTIONS`.
+ */
+export interface VoteMethodOption {
+  /** Display label for the method (e.g. "Plurality") */
+  label: string;
+  /** Voting method sent as `poll_type` */
+  value: PollType;
+  /** Supporting copy explaining how the method picks a winner */
+  description: string;
+  /** Font Awesome icon classes for the method */
+  icon: string;
+  /** Unavailable for new votes; does not change existing votes or ballots. */
+  disabled?: boolean;
+}
+
+/**
+ * Extra per-row fields the Create Vote dropdown renders alongside the label and icon a PrimeNG
+ * `MenuItem` already carries.
+ * @description Mirrors `MeetingCreateMenuRow` — free of any PrimeNG import, intersected with
+ * `MenuItem` at the component boundary and read from the menu's `item` template.
+ */
+export interface VoteCreateMenuRow {
+  /** Supporting copy shown under the row's title */
+  description: string;
+  /** Tailwind classes for the row's icon tile — background plus icon colour */
+  tileClass: string;
+  /** `data-testid` for the row, since the template replaces PrimeNG's own item markup */
+  testId: string;
+}
+
+/**
+ * How many group members a Condorcet IRV vote would go to, as the create form knows it
+ * @description `idle` when the count doesn't apply (plurality, or no group chosen yet); `error` when
+ * the group's members couldn't be fetched, which never blocks the form since the backend accepts the vote.
+ */
+export interface VoteEligibleVoterCountState {
+  /** Where the count is in its fetch */
+  status: 'idle' | 'loading' | 'loaded' | 'error';
+  /** Eligible voter count once `loaded`, otherwise null */
+  count: number | null;
 }
 
 /**

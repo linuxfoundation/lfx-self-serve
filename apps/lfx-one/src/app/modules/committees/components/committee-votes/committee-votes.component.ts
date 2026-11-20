@@ -5,8 +5,10 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, si
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { PollType } from '@lfx-one/shared/enums';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
+import { VoteCreateMenuComponent } from '@app/modules/votes/components/vote-create-menu/vote-create-menu.component';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
@@ -15,7 +17,7 @@ import { finalize } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
-  imports: [ButtonComponent, CardComponent, VotesTableComponent],
+  imports: [ButtonComponent, CardComponent, VoteCreateMenuComponent, VotesTableComponent],
   templateUrl: './committee-votes.component.html',
   styleUrl: './committee-votes.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -80,7 +82,8 @@ export class CommitteeVotesComponent {
     this.voteClosed.emit(vote);
   }
 
-  protected onCreateVote(): void {
+  /** The Create Vote dropdown's chosen method — re-checks write access, then opens the create form for this group with that method preselected. */
+  protected onCreateVote(pollType: PollType): void {
     const committee = this.committee();
     const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
     const denyParams: Record<string, string> = { _notice: 'votes' };
@@ -97,7 +100,7 @@ export class CommitteeVotesComponent {
             deny();
             return;
           }
-          void this.router.navigate(['/votes', 'create'], { queryParams: this.createVoteQueryParams() });
+          void this.router.navigate(['/votes', 'create'], { queryParams: { ...this.createVoteQueryParams(), poll_type: pollType } });
         },
         error: () => deny(),
       });

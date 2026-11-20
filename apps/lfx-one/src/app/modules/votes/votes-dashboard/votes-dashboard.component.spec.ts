@@ -5,8 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, input, model, NO_ERRORS_SCHEMA, output, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideRouter, Router } from '@angular/router';
-import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
+import { provideRouter, Router, RouterLink } from '@angular/router';
+import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
 import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
 import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
@@ -22,6 +22,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
+import { VoteCreateMenuComponent } from '../components/vote-create-menu/vote-create-menu.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 import { VotesDashboardComponent } from './votes-dashboard.component';
 
@@ -817,6 +818,42 @@ describe('VotesDashboardComponent personal summary', () => {
       );
       expect(card?.textContent?.includes('Create')).toBe(writer);
       expect(element('votes-create-button') !== null).toBe(writer);
+    });
+
+    it('makes the header Create Vote a menu button and keeps the empty-state link on plurality (#2921)', async () => {
+      canWrite.set(true);
+      vi.mocked(TestBed.inject(VoteService).getVotesByProjectPaginated).mockReturnValue(of({ data: [], total_records: 0 }));
+      await freshDashboard('project');
+      element('filter-pill-all')!.click();
+      await settle();
+
+      const trigger = element('votes-create-button')!.querySelector('button')!;
+      expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      const cta = fixture.debugElement.query(By.css('[data-testid="votes-empty-state-card"] lfx-button')).injector.get(RouterLink);
+      expect(cta.urlTree?.toString()).toBe('/votes/create');
+    });
+
+    it('toggles the Create Vote dropdown from the header trigger (#2921)', async () => {
+      canWrite.set(true);
+      await freshDashboard('project');
+      const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
+      const toggle = vi.spyOn(menu, 'toggle').mockImplementation(() => undefined);
+
+      element('votes-create-button')!.querySelector('button')!.click();
+
+      expect(toggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the create form with the method chosen in the Create Vote dropdown (#2921)', async () => {
+      canWrite.set(true);
+      await freshDashboard('project');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
+
+      menu.methodSelected.emit(PollType.CONDORCET_IRV);
+
+      expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], { queryParams: { poll_type: 'condorcet_irv' } });
     });
   });
 
