@@ -3,8 +3,8 @@ title: Votes FAQ
 description: Frequently asked questions about creating, voting on, and managing votes in LFX Self Serve.
 audience: [all]
 product_area: Votes
-tags: [votes, faq, governance, elections, abstain, results, present, clone]
-last_updated: 2026-11-17
+tags: [votes, faq, governance, elections, abstain, results, present, clone, cancel]
+last_updated: 2026-11-20
 intercom_collection: Votes
 ---
 
@@ -57,7 +57,17 @@ Yes, while it is still active. Select **⋮ → Extend** on the vote's row and c
 
 ## Can I edit or close an active vote?
 
-No. Only drafts can be edited, and there is no action to close a vote early. To fix a mistake, clone the vote and open the corrected copy. Ranked-choice and secret-ballot votes can't be cloned yet.
+You can close it, but not edit it. Only drafts can be edited. To fix a mistake, clone the vote and open the corrected copy. Ranked-choice and secret-ballot votes can't be cloned yet.
+
+People who can manage the vote can end it early with **⋮ → Close vote**. Closing keeps the vote and its results. See [Close the vote early](../present-extend-clone/#close-the-vote-early).
+
+## What's the difference between Delete, Close vote, and Cancel vote?
+
+- **Delete** removes a draft that was never opened.
+- **Close vote** ends an active vote now. The vote and its results are kept.
+- **Cancel vote** permanently deletes an active vote and every response, and emails the invited voters that it was cancelled. It can't be undone, and it isn't available once the vote has ended.
+
+See [Cancel an active vote](../manage-votes/#cancel-an-active-vote).
 
 ## How do I show a vote in a meeting?
 

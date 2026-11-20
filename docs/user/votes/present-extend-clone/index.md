@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-11-03
+last_updated: 2026-11-20
 intercom_collection: Votes
 ---
 
@@ -36,6 +36,8 @@ While the vote is open, **Close vote** at the bottom of the presenter ends it no
 After you confirm, the presenter switches to the final results within a few seconds. The vote keeps its original deadline on record and also shows when it was closed. If the vote can't be closed (for example it hasn't started yet), LFX shows the reason and the vote stays open. You need permission to manage the vote.
 
 You can also close an open vote from the votes list: select **⋮ → Close vote** on its row. It asks the same question. After you confirm, the row shows as ended and a **Vote closed** message appears; if the vote can't be closed, LFX shows the reason and the row stays as it was.
+
+Closing keeps the vote and its results. To delete an open vote and all its responses instead, use [Cancel vote](../manage-votes/#cancel-an-active-vote).
 
 ### Leave the presenter
 
@@ -103,7 +105,7 @@ If you try to send before the vote has closed, LFX says the vote hasn't closed y
 
 ## Delete a draft
 
-Drafts have no **⋮** menu. Select **Delete** on the draft's row and confirm. Deleting can't be undone. See [Manage Votes](../manage-votes/#edit-or-delete-a-draft).
+Drafts have no **⋮** menu. Select **Delete** on the draft's row and confirm. Deleting can't be undone. See [Manage Votes](../manage-votes/#edit-or-delete-a-draft). To delete a vote that is already open, use [Cancel vote](../manage-votes/#cancel-an-active-vote).
 
 ## Related
 
