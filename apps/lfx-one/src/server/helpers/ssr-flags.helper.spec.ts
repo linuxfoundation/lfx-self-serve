@@ -30,7 +30,11 @@ describe('resolveSsrFlags', () => {
     expect(isFlagEnabled).toHaveBeenCalledWith(req, MEETINGS_REDESIGN_FLAG, false, { key: 'pat', name: 'Pat Viewer', email: 'pat@example.org' });
   });
 
-  it.each(['/meetings', '/meetings/create', '/meetings/123/details', '/groups/123'])('skips %s', async (path) => {
+  it.each(['/project/meetings?project=synthetic', '/foundation/meetings'])('evaluates the redesign flag for the lens list %s', async (path) => {
+    expect(await resolveSsrFlags(request(path), user)).toEqual({ meetingsRedesign: true });
+  });
+
+  it.each(['/meetings', '/meetings/create', '/meetings/123/details', '/groups/123', '/project/meetings/create', '/org/meetings'])('skips %s', async (path) => {
     expect(await resolveSsrFlags(request(path), user)).toEqual({});
     expect(isFlagEnabled).not.toHaveBeenCalled();
   });

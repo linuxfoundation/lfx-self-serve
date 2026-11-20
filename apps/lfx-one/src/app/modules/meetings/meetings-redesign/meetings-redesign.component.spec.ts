@@ -78,6 +78,7 @@ describe('MeetingsRedesignComponent', () => {
   let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
   let elementScrollBy: ReturnType<typeof vi.fn<(options?: ScrollToOptions) => void>>;
   let windowScrollBy: ReturnType<typeof vi.spyOn>;
+  let routeData: Record<string, string>;
 
   const render = (): ComponentFixture<MeetingsRedesignComponent> => {
     const fixture = TestBed.createComponent(MeetingsRedesignComponent);
@@ -137,6 +138,7 @@ describe('MeetingsRedesignComponent', () => {
     elementScrollBy = vi.fn<(options?: ScrollToOptions) => void>();
     Object.defineProperty(HTMLElement.prototype, 'scrollBy', { value: elementScrollBy, configurable: true, writable: true });
     windowScrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
+    routeData = {};
     TestBed.configureTestingModule({
       providers: [
         {
@@ -174,7 +176,7 @@ describe('MeetingsRedesignComponent', () => {
         { provide: LensService, useValue: { activeLens: signal('me') } },
         { provide: ProjectContextService, useValue: { activeContext: signal(null), activeContextUid: signal(''), canWriteMeetings: signal(true) } },
         { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
-        { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
+        { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$, snapshot: { pathFromRoot: [{ data: routeData }] } }) },
         { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
         { provide: SegmentService, useValue: { trackEvent: vi.fn() } },
       ],
@@ -967,7 +969,7 @@ describe('MeetingsRedesignComponent', () => {
     beforeEach(() => {
       projectUpcoming$ = new Subject<Meeting[]>();
       canWriteMeetings = signal(true);
-      TestBed.overrideProvider(LensService, { useValue: { activeLens: signal('project') } });
+      routeData = { lens: 'project' };
       TestBed.overrideProvider(ProjectContextService, {
         useValue: {
           activeContext: signal({ uid: 'project-1', name: 'Synthetic Foundation', slug: 'synthetic' }),

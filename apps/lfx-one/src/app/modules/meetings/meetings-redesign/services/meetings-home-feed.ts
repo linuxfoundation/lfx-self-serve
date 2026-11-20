@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, Provider, Signal } from '@angular/core';
-import { LATEST_PAST_MEETINGS_FETCH_SIZE, LATEST_PAST_MEETINGS_RETURN_LIMIT } from '@lfx-one/shared/constants';
+import { ActivatedRoute } from '@angular/router';
 import { Meeting, MeetingProjectQueryOptions, MeetingsHomePastPage, PastMeeting } from '@lfx-one/shared/interfaces';
 import { parseToInt } from '@lfx-one/shared/utils';
-import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -86,16 +85,9 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
       .pipe(map((page) => ({ ...page, meetings: this.ended(page.meetings) })));
   }
 
+  // shortcut: the project lens has no Last meeting card, so nothing loads. revisit: when its right column shows one.
   public latestPast(): Observable<PastMeeting[]> {
-    // Over-fetched: the index lists a meeting once it starts, and running ones are dropped.
-    return this.followRefresh(
-      this.pastRefresh$,
-      (projectUid, options) =>
-        this.meetingService
-          .getProjectPastMeetingsForHome(projectUid, '', undefined, LATEST_PAST_MEETINGS_FETCH_SIZE, options)
-          .pipe(map((page) => this.ended(page.meetings).slice(0, LATEST_PAST_MEETINGS_RETURN_LIMIT))),
-      []
-    );
+    return of([]);
   }
 
   /** A foundation lists its sub-projects' meetings too; a project only its own. */
@@ -136,14 +128,22 @@ export class ProjectMeetingsHomeFeed extends MeetingsHomeFeed {
   }
 }
 
-/** The Me lens reads the viewer's meetings; a project or foundation lens reads that project's. */
+/**
+ * `/project/meetings` and `/foundation/meetings` read that project's meetings; the flat `/meetings` reads the viewer's.
+ * @description Chosen from the route's `lens` data, as the page's gate is, not from the active lens, which can lag a deep link.
+ */
 export function provideMeetingsHomeFeed(): Provider[] {
   return [
     UserMeetingsHomeFeed,
     ProjectMeetingsHomeFeed,
     {
       provide: MeetingsHomeFeed,
-      useFactory: (): MeetingsHomeFeed => (inject(LensService).activeLens() === 'me' ? inject(UserMeetingsHomeFeed) : inject(ProjectMeetingsHomeFeed)),
+      useFactory: (): MeetingsHomeFeed => {
+        const lens = inject(ActivatedRoute)
+          .snapshot.pathFromRoot.map((route) => route.data?.['lens'])
+          .find(Boolean);
+        return lens === 'project' || lens === 'foundation' ? inject(ProjectMeetingsHomeFeed) : inject(UserMeetingsHomeFeed);
+      },
     },
   ];
 }

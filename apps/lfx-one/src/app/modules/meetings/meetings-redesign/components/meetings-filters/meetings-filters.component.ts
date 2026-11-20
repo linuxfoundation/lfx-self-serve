@@ -24,7 +24,8 @@ import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
  * Project, Meeting type, RSVP and two switches; Past has Foundation, Project and Meeting type. Foundation and Project options come from the tab's
  * unfiltered rows; Meeting type lists every selectable type. Project has a search field.
  * Foundation shows for board personas and Project for project personas, each only with an option; a foundation narrows Project to its children.
- * Without the Foundation field, Project lists foundations too.
+ * Without the Foundation field, Project lists foundations too. A project or foundation's list hides Foundation, Project, RSVP and the switches,
+ * leaving Meeting type.
  */
 @Component({
   selector: 'lfx-meetings-filters',
@@ -44,11 +45,11 @@ import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
 })
 export class MeetingsFiltersComponent implements UiFocusable {
   private readonly personaService = inject(PersonaService);
-  // A project or foundation's list has no cross-project or RSVP filters.
-  protected readonly projectScope = inject(MeetingsHomeFeed, { optional: true })?.scope === 'project';
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly button = viewChild(UiButtonComponent);
   private readonly phone = injectIsMobileViewport(PHONE_MEDIA_QUERY);
+  // A project or foundation's list has no cross-project or RSVP filters.
+  protected readonly projectScope = inject(MeetingsHomeFeed, { optional: true })?.scope === 'project';
 
   public readonly tab = input.required<MeetingDashboardView>();
   /** The tab's rows before search and filters. */

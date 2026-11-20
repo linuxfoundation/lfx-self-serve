@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { PastMeeting } from '@lfx-one/shared/interfaces';
 import { TestBed } from '@angular/core/testing';
-import { LensService } from '@services/lens.service';
+import { ActivatedRoute } from '@angular/router';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -34,7 +34,7 @@ describe('MeetingsHomeFeed', () => {
     TestBed.configureTestingModule({
       providers: [
         ...provideMeetingsHomeFeed(),
-        { provide: LensService, useValue: { activeLens: lens } },
+        { provide: ActivatedRoute, useValue: { snapshot: { pathFromRoot: [{ data: {} }, { data: lens() === 'me' ? {} : { lens: lens() } }] } } },
         { provide: ProjectContextService, useValue: { activeContextUid: projectUid, isFoundationContext: foundation } },
         { provide: MeetingService, useValue: meetingService },
         { provide: UserService, useValue: userService },
@@ -98,26 +98,27 @@ describe('MeetingsHomeFeed', () => {
     expect(meetingService.getProjectMeetingsForHome).toHaveBeenCalledWith('project-1', { includeSubProjects: true });
   });
 
-  it('leaves meetings still running out of the past feed and the latest past meetings', async () => {
+  it('leaves meetings still running out of the past feed', async () => {
     const feed = inject();
 
     await expect(firstValueFrom(feed.past(''))).resolves.toEqual({ meetings: [ended('m-1:1')], pageToken: 'next' });
-    await expect(firstValueFrom(feed.latestPast())).resolves.toEqual([ended('m-1:1')]);
-    expect(meetingService.getProjectPastMeetingsForHome).toHaveBeenLastCalledWith('project-1', '', undefined, 10, { includeSubProjects: false });
   });
 
-  it('reloads the upcoming and latest past meetings on refresh', () => {
+  it('reloads the upcoming meetings on refresh', () => {
     const feed = inject();
     const upcoming = vi.fn();
-    const latest = vi.fn();
     feed.upcoming().subscribe(upcoming);
-    feed.latestPast().subscribe(latest);
 
     upcomingRefresh$.next();
-    pastRefresh$.next();
 
     expect(upcoming).toHaveBeenCalledTimes(2);
-    expect(latest).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads no latest past meetings, which the project lens does not show', async () => {
+    const feed = inject();
+
+    await expect(firstValueFrom(feed.latestPast())).resolves.toEqual([]);
+    expect(meetingService.getProjectPastMeetingsForHome).not.toHaveBeenCalled();
   });
 
   it('falls back to start plus duration for the end, and drops rows whose end cannot be read', async () => {
