@@ -112,7 +112,9 @@ export class MembersBoardAttendanceComponent {
   protected readonly query: Signal<HealthMetricsMembersBoardAttendanceQuery> = this.initQuery();
   protected readonly response: Signal<HealthMetricsMembersBoardAttendance> = this.initResponse();
 
-  protected readonly metrics: Signal<HealthMetricsMetricItem[]> = computed(() => buildHealthMetricsMembersBoardMetrics(this.cohort(), this.response().cohorts));
+  protected readonly metrics: Signal<HealthMetricsMetricItem[]> = computed(() =>
+    buildHealthMetricsMembersBoardMetrics(this.cohort(), this.response().cohorts, this.range())
+  );
   /** The chart stays oldest first whatever the table's sort. */
   protected readonly chart: Signal<HealthMetricsBarChartView> = computed(() => buildHealthMetricsMembersBoardChart(this.response().trend, this.cohort()));
   protected readonly rowViews: Signal<HealthMetricsMembersBoardMeetingRowView[]> = computed(() =>

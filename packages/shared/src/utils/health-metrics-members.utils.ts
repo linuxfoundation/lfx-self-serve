@@ -382,17 +382,21 @@ export function parseHealthMetricsMembersBoardCohort(value: string | null): Heal
 }
 
 /**
- * The selected cohort's last meeting, the other cohort's beside it, and who never attended. Values stay ink; only the
- * chart and table mark a meeting below its level.
+ * The selected cohort's last meeting, the other cohort's beside it, and who never attended in the period's year. Values
+ * stay ink; only the chart and table mark a meeting below its level.
  */
 export function buildHealthMetricsMembersBoardMetrics(
   cohort: HealthMetricsMembersBoardCohort,
-  cohorts: Record<HealthMetricsMembersBoardCohort, HealthMetricsMembersBoardCohortSummary | null>
+  cohorts: Record<HealthMetricsMembersBoardCohort, HealthMetricsMembersBoardCohortSummary | null>,
+  range: HealthMetricsRange
 ): HealthMetricsMetricItem[] {
   const other = HEALTH_METRICS_MEMBERS_BOARD_COHORTS.find((candidate) => candidate !== cohort) ?? cohort;
   const selected = cohorts[cohort];
   const people = HEALTH_METRICS_MEMBERS_BOARD_COHORT_PEOPLE[cohort];
   const peopleLabel = people.charAt(0).toUpperCase() + people.slice(1);
+  const year = getYearForRange(range);
+  // The count follows the period, so "this year" names the running year only, as the churn metrics do.
+  const yearPhrase = year === getYearForRange('YTD') ? 'this year' : `in ${year}`;
   const ofCount = (summary: HealthMetricsMembersBoardCohortSummary | null, suffix: string): string => {
     const attended = summary?.latestAttendedCount ?? null;
     const invited = summary?.latestInvitedCount ?? null;
@@ -416,7 +420,7 @@ export function buildHealthMetricsMembersBoardMetrics(
       key: 'never',
       label: 'Never attended',
       value: formatCount(selected?.neverAttendedCount ?? null),
-      description: `${peopleLabel} with no meeting this year`,
+      description: `${peopleLabel} with no meeting ${yearPhrase}`,
     },
   ];
 }
@@ -449,7 +453,9 @@ export function buildHealthMetricsMembersBoardChart(
   trend: HealthMetricsMembersBoardMeeting[],
   cohort: HealthMetricsMembersBoardCohort
 ): HealthMetricsBarChartView {
-  const last = trend.length - 1;
+  // The view's latest meeting, not the last bar, so meetings sharing a date mark the one the metrics report.
+  const flagged = trend.findIndex((meeting) => meeting.isLatestMeeting);
+  const latestIndex = flagged === -1 ? trend.length - 1 : flagged;
 
   return buildHealthMetricsBarChart({
     heightPx: HEALTH_METRICS_MEMBERS_BOARD_CHART.heightPx,
@@ -459,7 +465,7 @@ export function buildHealthMetricsMembersBoardChart(
     bars: trend.map((meeting, index) => {
       const pct = toShownPct(meeting.attendancePct);
       const low = isBoardBelowLevel(cohort, pct);
-      const latest = index === last;
+      const latest = index === latestIndex;
       const color = HEALTH_METRICS_MEMBERS_BOARD_BAR_COLORS[low ? 'low' : 'ok'];
       const valueLabel = formatPct(meeting.attendancePct);
       const counts =

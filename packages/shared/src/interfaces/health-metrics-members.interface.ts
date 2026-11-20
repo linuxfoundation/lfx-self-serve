@@ -448,8 +448,6 @@ export interface HealthMetricsMembersBoardCohortSummary {
   latestInvitedCount: number | null;
   meetingsInRangeCount: number | null;
   neverAttendedCount: number | null;
-  /** The view's level flag (one 90% line for both cohorts); read only when the share is missing. */
-  isBelowExpectedLevel: boolean | null;
 }
 
 /** One meeting occurrence of the cohort. `meetingDate` is ISO `YYYY-MM-DD`; `attendancePct` is 0–1. */
@@ -460,16 +458,16 @@ export interface HealthMetricsMembersBoardMeeting {
   attendedCount: number | null;
   invitedCount: number | null;
   attendancePct: number | null;
-  /** The view's latest meeting in the period — the one the hero reports. */
+  /** The view's latest meeting in the period, which the chart draws solid. */
   isLatestMeeting: boolean;
 }
 
-/** `cohorts` carries both cohorts so the hero can show the other one; `null` when the foundation has no row for it. */
+/** `cohorts` carries both cohorts so the metrics row can show the other one; `null` when the foundation has no row for it. */
 export interface HealthMetricsMembersBoardAttendance {
   cohorts: Record<HealthMetricsMembersBoardCohort, HealthMetricsMembersBoardCohortSummary | null>;
   /** The selected cohort's latest meetings in the period, oldest first, for the chart. */
   trend: HealthMetricsMembersBoardMeeting[];
-  /** One page of the selected cohort's meetings in the period, newest first. */
+  /** One page of the selected cohort's meetings in the period, in the query's sort (newest first by default). */
   rows: HealthMetricsMembersBoardMeeting[];
   totalRecords: number;
 }
@@ -477,7 +475,7 @@ export interface HealthMetricsMembersBoardAttendance {
 /** One meeting row as the table renders it; `attendancePct` is the shown percent, `null` when unmeasured. */
 export interface HealthMetricsMembersBoardMeetingRowView {
   meetingId: string;
-  /** The meeting name, falling back to the committee and, for a voting meeting without one, "Voting members". */
+  /** The committee name, then the cohort's fallback ("Voting members" for a voting meeting), then "—". */
   meetingName: string;
   dateLabel: string;
   /** "{attended}/{invited}・{pct}%". */

@@ -195,7 +195,6 @@ interface BoardCohortRow {
   LATEST_INVITED_COUNT: number | null;
   MEETINGS_IN_RANGE_COUNT: number | null;
   NEVER_ATTENDED_COUNT: number | null;
-  IS_BELOW_EXPECTED_LEVEL: boolean | null;
 }
 
 interface BoardMeetingRow {
@@ -211,6 +210,7 @@ interface BoardMeetingRow {
 interface BoardMeetingPageRow extends BoardMeetingRow {
   TOTAL_RECORDS: number | null;
   IS_PAGE_ROW: boolean | null;
+  PAGE_POSITION: number | null;
 }
 
 interface NpsAudienceRow {
@@ -829,8 +829,7 @@ export class HealthMetricsMembersService {
         latest_meeting_attended_count_${suffix} AS latest_attended_count,
         latest_meeting_invited_count_${suffix} AS latest_invited_count,
         meetings_in_range_count_${suffix} AS meetings_in_range_count,
-        never_attended_count_${suffix} AS never_attended_count,
-        is_below_expected_level_${suffix} AS is_below_expected_level
+        never_attended_count_${suffix} AS never_attended_count
       FROM ${MEMBERSHIP_BOARD_ATTENDANCE_VIEW}
       WHERE foundation_slug = ?
         AND attendance_cohort IN (${HEALTH_METRICS_MEMBERS_BOARD_COHORTS.map(() => '?').join(', ')})
@@ -1182,7 +1181,6 @@ function mapBoardCohort(row: BoardCohortRow | undefined): HealthMetricsMembersBo
     latestInvitedCount: toNullableNumber(row.LATEST_INVITED_COUNT),
     meetingsInRangeCount: toNullableNumber(row.MEETINGS_IN_RANGE_COUNT),
     neverAttendedCount: toNullableNumber(row.NEVER_ATTENDED_COUNT),
-    isBelowExpectedLevel: row.IS_BELOW_EXPECTED_LEVEL ?? null,
   };
 }
 

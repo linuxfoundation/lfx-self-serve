@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { lfxColors } from '../constants/colors.constants';
+import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import {
   buildHealthMetricsMembersAtRiskMetrics,
@@ -566,7 +567,6 @@ function boardCohort(overrides: Partial<HealthMetricsMembersBoardCohortSummary> 
     latestInvitedCount: 11,
     meetingsInRangeCount: 7,
     neverAttendedCount: 2,
-    isBelowExpectedLevel: true,
     ...overrides,
   };
 }
@@ -590,10 +590,14 @@ function boardMeeting(
 
 describe('members board attendance', () => {
   it("reports the selected cohort's last meeting, the other cohort's beside it, and who never attended", () => {
-    const metrics = buildHealthMetricsMembersBoardMetrics('board', {
-      board: boardCohort(),
-      voting_members: boardCohort({ latestAttendancePct: 0.646, latestAttendedCount: 31, latestInvitedCount: 48 }),
-    });
+    const metrics = buildHealthMetricsMembersBoardMetrics(
+      'board',
+      {
+        board: boardCohort(),
+        voting_members: boardCohort({ latestAttendancePct: 0.646, latestAttendedCount: 31, latestInvitedCount: 48 }),
+      },
+      'YTD'
+    );
 
     expect(metrics.map((item) => [item.label, item.value, item.description])).toEqual([
       ['Last meeting attendance', '82%', '9 of 11 board members attended'],
@@ -604,16 +608,18 @@ describe('members board attendance', () => {
     expect(metrics.some((item) => item.dotClass || item.trendTone || item.descriptionLeadTone)).toBe(false);
   });
 
-  it('turns the metrics round for voting members, reads "0" when nobody is missing and dashes what is unmeasured', () => {
-    const metrics = buildHealthMetricsMembersBoardMetrics('voting_members', {
-      board: null,
-      voting_members: boardCohort({ neverAttendedCount: 0, latestAttendedCount: null }),
-    });
+  it('turns the metrics round for voting members, reads "0" when nobody is missing and names a completed year', () => {
+    const metrics = buildHealthMetricsMembersBoardMetrics(
+      'voting_members',
+      { board: null, voting_members: boardCohort({ neverAttendedCount: 0, latestAttendedCount: null }) },
+      'COMPLETED_YEAR'
+    );
 
     expect(metrics.map((item) => [item.label, item.value, item.description])).toEqual([
       ['Last meeting attendance', '82%', ''],
       ['Board attendance', '—', ''],
-      ['Never attended', '0', 'Voting members with no meeting this year'],
+      // The count follows the period, so a completed year is named rather than called "this year".
+      ['Never attended', '0', `Voting members with no meeting in ${getYearForRange('COMPLETED_YEAR')}`],
     ]);
   });
 
@@ -670,6 +676,15 @@ describe('members board attendance', () => {
     });
     expect(chart.line).toBeNull();
     expect(chart.legend).toEqual([]);
+  });
+
+  it("draws the view's latest meeting solid, not the last bar, when meetings share a date", () => {
+    const chart = buildHealthMetricsMembersBoardChart([boardMeeting('m-a', 0.95, { isLatestMeeting: true }), boardMeeting('m-b', 0.95)], 'board');
+
+    expect(chart.bars.map((bar) => [bar.key, bar.opacity, bar.valueLabelClass])).toEqual([
+      ['m-a', 1, 'text-gray-900'],
+      ['m-b', 0.2, 'text-gray-500'],
+    ]);
   });
 
   it('inks the latest bar at its level and leaves an unmeasured meeting without a bar', () => {

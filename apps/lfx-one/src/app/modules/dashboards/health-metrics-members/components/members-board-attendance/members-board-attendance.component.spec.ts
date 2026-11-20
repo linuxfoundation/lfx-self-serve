@@ -26,7 +26,6 @@ function cohort(overrides: Partial<HealthMetricsMembersBoardCohortSummary> = {})
     latestInvitedCount: 11,
     meetingsInRangeCount: 12,
     neverAttendedCount: 0,
-    isBelowExpectedLevel: true,
     ...overrides,
   };
 }
@@ -46,7 +45,7 @@ function meeting(overrides: Partial<HealthMetricsMembersBoardMeeting> = {}): Hea
 
 function response(overrides: Partial<HealthMetricsMembersBoardAttendance> = {}): HealthMetricsMembersBoardAttendance {
   return {
-    cohorts: { board: cohort(), voting_members: cohort({ latestAttendancePct: 0.646, isBelowExpectedLevel: false }) },
+    cohorts: { board: cohort(), voting_members: cohort({ latestAttendancePct: 0.646 }) },
     trend: [meeting({ meetingId: 'm-0', meetingDate: '2026-07-31', attendancePct: 0.9 }), meeting({ isLatestMeeting: true })],
     rows: [meeting()],
     totalRecords: 12,
