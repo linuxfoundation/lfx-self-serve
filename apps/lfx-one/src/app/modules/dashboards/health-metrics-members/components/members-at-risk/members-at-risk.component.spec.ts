@@ -19,6 +19,7 @@ function member(overrides: Partial<HealthMetricsMembersAtRiskMember> = {}): Heal
   return {
     accountId: ACCOUNT_ID,
     accountName: 'Acme Motors',
+    logoUrl: 'https://logos.example/acme.png',
     membershipTier: 'Gold Membership',
     outstandingBalanceUsd: 20000,
     daysOverdue: 71,
@@ -33,7 +34,7 @@ function response(overrides: Partial<HealthMetricsMembersAtRisk> = {}): HealthMe
   return {
     rows: [member()],
     totalRecords: 3,
-    summary: { outstandingBalanceUsd: 120000, highRiskBalanceUsd: 90000, mediumRiskBalanceUsd: 30000, memberCount: 3 },
+    summary: { outstandingBalanceUsd: 120000, memberCount: 3 },
     aging: [
       { bucket: '60_89_days', memberCount: 2, balanceUsd: 30000 },
       { bucket: '90_plus_days', memberCount: 1, balanceUsd: 90000 },
@@ -45,7 +46,7 @@ function response(overrides: Partial<HealthMetricsMembersAtRisk> = {}): HealthMe
 const NONE_AT_RISK = response({
   rows: [],
   totalRecords: 0,
-  summary: { outstandingBalanceUsd: 0, highRiskBalanceUsd: 0, mediumRiskBalanceUsd: 0, memberCount: 0 },
+  summary: { outstandingBalanceUsd: 0, memberCount: 0 },
   aging: [
     { bucket: '60_89_days', memberCount: 0, balanceUsd: 0 },
     { bucket: '90_plus_days', memberCount: 0, balanceUsd: 0 },
@@ -116,54 +117,53 @@ describe('MembersAtRiskComponent', () => {
     verdicts = [];
   });
 
-  it('reads the selected foundation, renders the hero, aging and count, and settles with the note', async () => {
+  it('reads the selected foundation, renders the metrics, and settles with the note', async () => {
     await render();
 
-    expect(getMembersAtRisk).toHaveBeenCalledWith({ foundationSlug: 'acme', bucket: 'all', offset: 0, pageSize: 10 });
-    expect(text('members-at-risk-outstanding')).toBe('$120K');
-    // The hero sits flush in the section, as the design draws it, not inside a card.
-    expect(query('members-at-risk-hero')?.classList).not.toContain('border');
-    expect(text('members-at-risk-high')).toBe('$90K');
-    expect(text('members-at-risk-medium')).toBe('$30K');
-    expect(text('members-at-risk-members')).toBe('3');
-    expect(text('members-at-risk-count')).toBe('3 members');
-    expect(text('members-at-risk-aging-60_89_days')).toContain('60–89 days · 2 members');
-    expect(text('members-at-risk-aging-90_plus_days-value')).toBe('$90K');
+    expect(getMembersAtRisk).toHaveBeenCalledWith({ foundationSlug: 'acme', bucket: 'all', offset: 0, pageSize: 10, sort: null });
+    expect(text('members-at-risk-metrics-outstanding-value')).toBe('$120K');
+    expect(text('members-at-risk-metrics-outstanding-description')).toBe('3 members at risk');
+    expect(text('members-at-risk-metrics-90_plus_days-label')).toContain('High risk');
+    expect(text('members-at-risk-metrics-90_plus_days-value')).toBe('$90K');
+    expect(text('members-at-risk-metrics-60_89_days-description')).toBe('2 members');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
     expect(notes).toEqual(['', '3 overdue · $120K']);
   });
 
+  it("draws the design's columns, the spacer unlabelled, with Overdue marked as the default order", async () => {
+    await render();
+
+    const headers = [...(query('members-at-risk-table')?.querySelectorAll('thead th') ?? [])].map((th) => th.textContent?.trim());
+    expect(headers).toEqual(['Company', 'Membership', 'Overdue', 'Age']);
+    expect(query('members-at-risk-sort-overdue')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+  });
+
   it('renders an at-risk row the way the design draws it', async () => {
     await render();
 
-    expect(text(`members-at-risk-row-${ACCOUNT_ID}-name`)).toBe('Acme Motors');
-    expect(text(`members-at-risk-row-${ACCOUNT_ID}-tier`)).toBe('Gold Membership');
+    const cell = (column: string) => query(`members-at-risk-row-${ACCOUNT_ID}-${column}`);
+    expect(cell('name')?.querySelector('[data-testid="health-metrics-cell-company"]')).not.toBeNull();
+    expect(cell('name')?.querySelector('[data-testid="health-metrics-cell-text"]')?.textContent?.trim()).toBe('Acme Motors');
+    expect(cell('name')?.querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim()).toBe('Last engaged Feb 3, 2026');
+    expect(cell('membership')?.querySelector('[data-testid="health-metrics-cell-tier"]')).not.toBeNull();
+    expect(cell('membership')?.querySelector('[data-testid="health-metrics-cell-text"]')?.textContent?.trim()).toBe('Gold');
     expect(text(`members-at-risk-row-${ACCOUNT_ID}-overdue`)).toBe('$20K');
     expect(text(`members-at-risk-row-${ACCOUNT_ID}-age`)).toBe('71 days');
-    expect(query(`members-at-risk-row-${ACCOUNT_ID}-age`)?.classList).toContain('text-red-600');
-    expect(query(`members-at-risk-row-${ACCOUNT_ID}-last-engaged`)?.classList).toContain('text-amber-700');
+    expect(cell('age')?.querySelector('[data-testid="health-metrics-cell-dot"]')?.className).toContain('bg-amber-400');
   });
 
-  it('draws no churn-risk chip after the name and no aging bucket under the age, as the design does', async () => {
-    await render();
-
-    const row = query(`members-at-risk-row-${ACCOUNT_ID}`);
-    expect(query(`members-at-risk-row-${ACCOUNT_ID}-churn-risk`)).toBeNull();
-    expect(query(`members-at-risk-row-${ACCOUNT_ID}-aging`)).toBeNull();
-    expect(row?.textContent).not.toContain('High risk');
-    expect(row?.querySelectorAll('td')[3]?.textContent?.trim()).toBe('71 days');
-  });
-
-  it('re-reads one bucket from page 1, keeping the note, and writes it to the URL with the fragment kept', async () => {
+  it('shows only the outstanding balance for one bucket, re-reading it from page 1 and keeping the note', async () => {
     await render(response({ totalRecords: 30 }), { riskPage: '2' });
     getMembersAtRisk.mockClear();
     notes.length = 0;
 
-    fixture.componentInstance['onBucketChange']('90_plus_days');
+    fixture.componentInstance.bucket.set('90_plus_days');
     await settle();
 
     expect(getMembersAtRisk).toHaveBeenLastCalledWith(expect.objectContaining({ bucket: '90_plus_days', offset: 0 }));
+    expect(text('members-at-risk-metrics-outstanding-value')).toBe('$90K');
+    expect(query('members-at-risk-metrics-90_plus_days')).toBeNull();
     expect(notes.every((note) => note === '3 overdue · $120K')).toBe(true);
     expect(navigate).toHaveBeenLastCalledWith(
       [],
@@ -171,33 +171,36 @@ describe('MembersAtRiskComponent', () => {
     );
   });
 
-  it('ignores a pill id it does not know', async () => {
-    await render();
+  it('sorts on the server from page 1, and keeps the sort when the bucket changes', async () => {
+    await render(response({ totalRecords: 30 }), { riskPage: '2' });
 
-    fixture.componentInstance['onBucketChange']('under_60_days');
+    (query('members-at-risk-sort-age')?.querySelector('button') as HTMLButtonElement).click();
     await settle();
+    expect(getMembersAtRisk).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, sort: { key: 'age', direction: 'desc' } }));
 
-    expect(getMembersAtRisk).toHaveBeenLastCalledWith(expect.objectContaining({ bucket: 'all' }));
+    fixture.componentInstance.bucket.set('60_89_days');
+    await settle();
+    expect(getMembersAtRisk).toHaveBeenLastCalledWith(expect.objectContaining({ bucket: '60_89_days', sort: { key: 'age', direction: 'desc' } }));
   });
 
   it('pages through the table and writes the page to the URL', async () => {
     await render(response({ totalRecords: 30 }));
     getMembersAtRisk.mockClear();
 
-    fixture.componentInstance['onTablePage']({ first: 20, rows: 10 });
+    fixture.componentInstance['page'].set(2);
     await settle();
 
     expect(getMembersAtRisk).toHaveBeenCalledWith(expect.objectContaining({ offset: 20 }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { riskBucket: null, riskPage: 3 } }));
   });
 
-  it('starts on the bucket and page the URL carries, and falls back for values it cannot honour', async () => {
-    await render(response({ totalRecords: 30 }), { riskBucket: '60_89_days', riskPage: '2' });
-    expect(getMembersAtRisk).toHaveBeenCalledWith(expect.objectContaining({ bucket: '60_89_days', offset: 10 }));
+  it('starts on the page the URL carries, and falls back for one it cannot honour', async () => {
+    await render(response({ totalRecords: 30 }), { riskPage: '2' });
+    expect(getMembersAtRisk).toHaveBeenCalledWith(expect.objectContaining({ offset: 10 }));
 
     TestBed.resetTestingModule();
-    await render(response(), { riskBucket: 'under_60_days', riskPage: '-2' });
-    expect(getMembersAtRisk).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'all', offset: 0 }));
+    await render(response(), { riskPage: '-2' });
+    expect(getMembersAtRisk).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
   });
 
   // The totals join still reports the real count past the end, so the page must move back.
@@ -231,17 +234,17 @@ describe('MembersAtRiskComponent', () => {
     await settle();
 
     expect(query('members-at-risk-loading')).not.toBeNull();
-    expect(query('members-at-risk-outstanding')).toBeNull();
+    expect(query('members-at-risk-metrics')).toBeNull();
   });
 
-  it('moves a URL page back to page 1 when the bucket it names holds no one', async () => {
+  it('moves a URL page back to page 1 when the bucket holds no one', async () => {
     const empty = response({ rows: [], totalRecords: 0 });
-    await render(empty, { riskBucket: '60_89_days', riskPage: '3' }, empty);
+    await render(empty, { riskPage: '3' }, empty);
 
     expect(getMembersAtRisk).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 20 }));
     expect(getMembersAtRisk).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 0 }));
     expect(getMembersAtRisk).toHaveBeenCalledTimes(2);
-    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { riskBucket: '60_89_days', riskPage: null } }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { riskBucket: null, riskPage: null } }));
   });
 
   it('holds the skeleton, not a $0 hero, while a URL page past an empty foundation moves back', async () => {
@@ -249,22 +252,22 @@ describe('MembersAtRiskComponent', () => {
 
     expect(getMembersAtRisk).toHaveBeenCalledTimes(2);
     expect(query('members-at-risk-loading')).not.toBeNull();
-    expect(query('members-at-risk-outstanding')).toBeNull();
+    expect(query('members-at-risk-metrics')).toBeNull();
   });
 
   it('settles empty, with no body and no note, when no member is at risk', async () => {
     await render(NONE_AT_RISK);
 
     expect(verdicts).toEqual([true]);
-    expect(query('members-at-risk-controls')).toBeNull();
+    expect(query('members-at-risk-metrics')).toBeNull();
     expect(query('members-at-risk-table')).toBeNull();
     expect(notes.at(-1)).toBe('');
   });
 
-  it('shows the rows with a dashed hero, not settling empty, when the model leaves the totals unset', async () => {
+  it('shows the rows with dashed metrics, not settling empty, when the model leaves the totals unset', async () => {
     await render(
       response({
-        summary: { outstandingBalanceUsd: null, highRiskBalanceUsd: null, mediumRiskBalanceUsd: null, memberCount: null },
+        summary: { outstandingBalanceUsd: null, memberCount: null },
         aging: [
           { bucket: '60_89_days', memberCount: null, balanceUsd: null },
           { bucket: '90_plus_days', memberCount: null, balanceUsd: null },
@@ -274,19 +277,20 @@ describe('MembersAtRiskComponent', () => {
 
     expect(verdicts).toEqual([false]);
     expect(query(`members-at-risk-row-${ACCOUNT_ID}`)).not.toBeNull();
-    expect(text('members-at-risk-outstanding')).toBe('—');
-    expect(text('members-at-risk-members')).toBe('—');
+    expect(text('members-at-risk-metrics-outstanding-value')).toBe('—');
+    expect(text('members-at-risk-metrics-90_plus_days-description')).toBe('—');
     expect(notes.at(-1)).toBe('');
   });
 
-  it('keeps the hero and says so when the picked bucket holds no one', async () => {
+  it('keeps the metrics and says so when the picked bucket holds no one', async () => {
     await render(response(), {}, response({ rows: [], totalRecords: 0 }));
 
-    fixture.componentInstance['onBucketChange']('60_89_days');
+    fixture.componentInstance.bucket.set('60_89_days');
     await settle();
 
-    expect(text('members-at-risk-outstanding')).toBe('$120K');
-    expect(text('members-at-risk-no-match')).toBe('No member is in this aging bucket.');
+    expect(text('members-at-risk-metrics-outstanding-value')).toBe('$30K');
+    expect(text('members-at-risk-no-match')).toBe('Nothing matches this view.');
+    expect(query('members-at-risk-table')).toBeNull();
   });
 
   // A failed read must not render copy that asserts no member is at risk.
@@ -296,7 +300,7 @@ describe('MembersAtRiskComponent', () => {
     lifecycle.length = 0;
     getMembersAtRisk.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
-    fixture.componentInstance['onBucketChange']('90_plus_days');
+    fixture.componentInstance.bucket.set('90_plus_days');
     await settle();
 
     expect(query('members-at-risk-error')).not.toBeNull();

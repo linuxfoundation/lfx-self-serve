@@ -6,11 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { lfxColors } from '../constants/colors.constants';
 import { HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import {
-  buildHealthMetricsMembersAtRiskAging,
-  buildHealthMetricsMembersAtRiskCountLabel,
+  buildHealthMetricsMembersAtRiskMetrics,
   buildHealthMetricsMembersAtRiskNote,
   buildHealthMetricsMembersAtRiskRows,
-  buildHealthMetricsMembersAtRiskSummary,
   buildHealthMetricsMembersBoardMeetingRows,
   buildHealthMetricsMembersBoardNote,
   buildHealthMetricsMembersBoardSummary,
@@ -28,16 +26,17 @@ import {
   buildHealthMetricsMembersNpsTrend,
   buildHealthMetricsMembersNpsTrendNote,
   buildHealthMetricsMembersRenewalRows,
-  buildHealthMetricsMembersRenewalsCountLabel,
-  buildHealthMetricsMembersRenewalsSummary,
+  buildHealthMetricsMembersRenewalsMetrics,
   buildHealthMetricsMembersSections,
   buildHealthMetricsMembersSubNavItems,
-  resolveHealthMetricsMembersTier,
+  parseHealthMetricsMembersAtRiskFilter,
+  parseHealthMetricsMembersRenewalsWindow,
 } from './health-metrics-members.utils';
+import { resolveHealthMetricsMembersTier } from './health-metrics-table.utils';
 
 import type {
+  HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskMember,
-  HealthMetricsMembersAtRiskSummary,
   HealthMetricsMembersBoardCohortSummary,
   HealthMetricsMembersBoardMeeting,
   HealthMetricsMembersChurn,
@@ -409,17 +408,21 @@ describe('buildHealthMetricsMembersSections', () => {
 });
 
 describe('members at risk', () => {
-  const summary: HealthMetricsMembersAtRiskSummary = {
-    outstandingBalanceUsd: 120_000,
-    highRiskBalanceUsd: 90_000,
-    mediumRiskBalanceUsd: 30_000,
-    memberCount: 3,
+  const response: HealthMetricsMembersAtRisk = {
+    rows: [],
+    totalRecords: 3,
+    summary: { outstandingBalanceUsd: 120_000, memberCount: 3 },
+    aging: [
+      { bucket: '60_89_days', memberCount: 2, balanceUsd: 30_000 },
+      { bucket: '90_plus_days', memberCount: 1, balanceUsd: 90_000 },
+    ],
   };
 
   function atRiskMember(overrides: Partial<HealthMetricsMembersAtRiskMember> = {}): HealthMetricsMembersAtRiskMember {
     return {
       accountId: '0014100000AcmeRsk1',
       accountName: 'Acme Robotics',
+      logoUrl: 'https://logos.example/acme.png',
       membershipTier: 'Gold Membership',
       outstandingBalanceUsd: 20_000,
       daysOverdue: 71,
@@ -430,162 +433,129 @@ describe('members at risk', () => {
     };
   }
 
-  it('labels the hero in compact currency', () => {
-    expect(buildHealthMetricsMembersAtRiskSummary(summary)).toEqual({
-      outstandingLabel: '$120K',
-      highRiskLabel: '$90K',
-      mediumRiskLabel: '$30K',
-      memberCountLabel: '3',
-    });
-    expect(
-      buildHealthMetricsMembersAtRiskSummary({ outstandingBalanceUsd: null, highRiskBalanceUsd: null, mediumRiskBalanceUsd: 0, memberCount: null })
-    ).toEqual({
-      outstandingLabel: '—',
-      highRiskLabel: '—',
-      mediumRiskLabel: '$0',
-      memberCountLabel: '—',
-    });
-  });
-
-  it('sizes the aging bars against the largest bucket and leaves out an empty bucket', () => {
-    const bars = buildHealthMetricsMembersAtRiskAging([
-      { bucket: '60_89_days', memberCount: 2, balanceUsd: 30_000 },
-      { bucket: '90_plus_days', memberCount: 1, balanceUsd: 90_000 },
-    ]);
-
-    expect(bars).toEqual([
-      { bucket: '60_89_days', label: '60–89 days · 2 members', balanceLabel: '$30K', widthPct: (30_000 / 90_000) * 100 },
-      { bucket: '90_plus_days', label: '90+ days · 1 member', balanceLabel: '$90K', widthPct: 100 },
-    ]);
-    expect(buildHealthMetricsMembersAtRiskAging([{ bucket: '60_89_days', memberCount: 0, balanceUsd: 0 }])).toEqual([]);
-  });
-
-  it('keeps an aging bar whose totals are unset, drawn empty with dashes', () => {
-    expect(
-      buildHealthMetricsMembersAtRiskAging([
-        { bucket: '60_89_days', memberCount: null, balanceUsd: null },
-        { bucket: '90_plus_days', memberCount: 1, balanceUsd: 90_000 },
-      ])
-    ).toEqual([
-      { bucket: '60_89_days', label: '60–89 days · —', balanceLabel: '—', widthPct: 0 },
-      { bucket: '90_plus_days', label: '90+ days · 1 member', balanceLabel: '$90K', widthPct: 100 },
+  it('reads the balance with its members, then High risk (90+ days) and Medium risk (60–89), each with its dot and tip', () => {
+    expect(buildHealthMetricsMembersAtRiskMetrics(response, 'all')).toEqual([
+      { key: 'outstanding', label: 'Outstanding balance', value: '$120K', description: '3 members at risk' },
+      {
+        key: '90_plus_days',
+        label: 'High risk',
+        value: '$90K',
+        description: '1 member',
+        dotClass: 'bg-red-400',
+        tip: 'Dues overdue for 90 days or more. These members are the most likely to churn.',
+      },
+      {
+        key: '60_89_days',
+        label: 'Medium risk',
+        value: '$30K',
+        description: '2 members',
+        dotClass: 'bg-amber-400',
+        tip: 'Dues overdue for 60 to 89 days. Still recoverable with a timely follow-up.',
+      },
     ]);
   });
 
-  it('renders a row with its age in days, and dashes for missing values', () => {
-    expect(buildHealthMetricsMembersAtRiskRows([atRiskMember()])[0]).toMatchObject({
+  it('shows only the outstanding balance, for that bucket, with one bucket switched on', () => {
+    expect(buildHealthMetricsMembersAtRiskMetrics(response, '90_plus_days')).toEqual([
+      { key: 'outstanding', label: 'Outstanding balance', value: '$90K', description: '1 member at risk' },
+    ]);
+  });
+
+  it('dashes unset totals rather than showing zeros', () => {
+    const unset: HealthMetricsMembersAtRisk = {
+      ...response,
+      summary: { outstandingBalanceUsd: null, memberCount: null },
+      aging: [{ bucket: '60_89_days', memberCount: null, balanceUsd: null }],
+    };
+    expect(buildHealthMetricsMembersAtRiskMetrics(unset, 'all').map((item) => [item.value, item.description])).toEqual([
+      ['—', '— at risk'],
+      ['—', '—'],
+      ['—', '—'],
+    ]);
+  });
+
+  it('renders a row with its logo, last engaged date, tier icon and a dotted age, and dashes for missing values', () => {
+    expect(buildHealthMetricsMembersAtRiskRows([atRiskMember()])[0]).toEqual({
       accountId: '0014100000AcmeRsk1',
-      tierLabel: 'Gold Membership',
+      name: 'Acme Robotics',
+      logoUrl: 'https://logos.example/acme.png',
+      lastEngagedLabel: 'Last engaged Mar 4, 2026',
+      membershipLabel: 'Gold',
+      tier: 'gold',
       overdueLabel: '$20K',
       ageLabel: '71 days',
+      ageDotClass: 'bg-amber-400',
+    });
+    expect(buildHealthMetricsMembersAtRiskRows([atRiskMember({ agingBucket: '90_plus_days', daysOverdue: 120 })])[0]).toMatchObject({
+      ageLabel: '120 days',
+      ageDotClass: 'bg-red-400',
     });
     expect(
       buildHealthMetricsMembersAtRiskRows([
         atRiskMember({ membershipTier: null, outstandingBalanceUsd: null, daysOverdue: null, lastEngagedDate: null, churnRisk: null, agingBucket: null }),
       ])[0]
-    ).toMatchObject({ tierLabel: '—', overdueLabel: '—', ageLabel: '—', lastEngagedLabel: '—' });
-    // The design draws no risk chip or aging bucket on a row, so the view carries neither.
-    expect(Object.keys(buildHealthMetricsMembersAtRiskRows([atRiskMember()])[0])).toEqual([
-      'accountId',
-      'accountName',
-      'tierLabel',
-      'overdueLabel',
-      'ageLabel',
-      'lastEngagedLabel',
-    ]);
+    ).toMatchObject({ membershipLabel: '—', tier: null, overdueLabel: '—', ageLabel: '—', ageDotClass: '', lastEngagedLabel: '' });
   });
 
   it('notes the overdue count and balance, and nothing while no member is at risk', () => {
+    const summary = response.summary;
     expect(buildHealthMetricsMembersAtRiskNote(summary)).toBe('3 overdue · $120K');
     expect(buildHealthMetricsMembersAtRiskNote({ ...summary, memberCount: 0 })).toBe('');
     expect(buildHealthMetricsMembersAtRiskNote({ ...summary, memberCount: null })).toBe('');
     expect(buildHealthMetricsMembersAtRiskNote({ ...summary, outstandingBalanceUsd: null })).toBe('');
   });
 
-  it('pluralizes the member count', () => {
-    expect(buildHealthMetricsMembersAtRiskCountLabel(1)).toBe('1 member');
-    expect(buildHealthMetricsMembersAtRiskCountLabel(12)).toBe('12 members');
+  it.each([
+    ['60_89_days', '60_89_days'],
+    ['90_plus_days', '90_plus_days'],
+    ['all', 'all'],
+    ['30_days', 'all'],
+    [null, 'all'],
+  ] as const)('reads the bucket %s from the URL as %s', (value, expected) => {
+    expect(parseHealthMetricsMembersAtRiskFilter(value)).toBe(expected);
   });
 });
 
-describe('buildHealthMetricsMembersRenewalsSummary', () => {
-  it('labels the value and count, with no note when every renewal has dues', () => {
-    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: 3, valueUsd: 185_000, withoutDuesCount: 0 })).toEqual({
-      valueLabel: '$185K',
-      renewalCountLabel: '3',
-      coverageNote: '',
-    });
+describe('members renewals', () => {
+  it('reads the known dues up for renewal and how many renew', () => {
+    expect(buildHealthMetricsMembersRenewalsMetrics({ renewalCount: 3, valueUsd: 185_000 })).toEqual([
+      { key: 'value', label: 'Value up for renewal', value: '$185K' },
+      { key: 'due', label: 'Renewals due', value: '3' },
+    ]);
+    expect(buildHealthMetricsMembersRenewalsMetrics({ renewalCount: null, valueUsd: null }).map((item) => item.value)).toEqual(['—', '—']);
   });
 
-  it('notes the renewals without dues, since the value counts only the known dues', () => {
-    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: 4, valueUsd: 95_000, withoutDuesCount: 1 }).coverageNote).toBe(
-      '1 renewal without dues on record, so the value counts only the known dues.'
-    );
-    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: 4, valueUsd: null, withoutDuesCount: 4 })).toEqual({
-      valueLabel: '—',
-      renewalCountLabel: '4',
-      coverageNote: '4 renewals without dues on record, so the value counts only the known dues.',
-    });
-  });
-
-  it('dashes unset totals rather than showing zeros', () => {
-    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: null, valueUsd: null, withoutDuesCount: null })).toEqual({
-      valueLabel: '—',
-      renewalCountLabel: '—',
-      coverageNote: '',
-    });
-  });
-});
-
-describe('buildHealthMetricsMembersRenewalRows', () => {
-  it('formats the date and dues and keeps the balance marker', () => {
-    expect(
-      buildHealthMetricsMembersRenewalRows([
-        {
-          accountId: 'acct-1',
-          accountName: 'Acme Studios',
-          membershipTier: 'General',
-          renewalDate: '2026-11-18',
-          duesUsd: 20_000,
-          hasOutstandingBalance: true,
-          daysUntilRenewal: 40,
-          hasRenewed: false,
-        },
-      ])
-    ).toEqual([
+  it('formats a renewal with its logo and tier icon, and dashes a missing tier, date or dues instead of $0', () => {
+    const [row, empty] = buildHealthMetricsMembersRenewalRows([
       {
         accountId: 'acct-1',
         accountName: 'Acme Studios',
-        tierLabel: 'General',
-        renewalDateLabel: 'Nov 18, 2026',
-        duesLabel: '$20K',
-        hasOutstandingBalance: true,
-        hasRenewed: false,
+        logoUrl: '',
+        membershipTier: 'Platinum Membership',
+        renewalDate: '2026-11-18',
+        duesUsd: 20_000,
       },
+      { accountId: 'acct-2', accountName: 'Acme Labs', logoUrl: '', membershipTier: null, renewalDate: null, duesUsd: null },
     ]);
+    expect(row).toEqual({
+      accountId: 'acct-1',
+      name: 'Acme Studios',
+      logoUrl: '',
+      membershipLabel: 'Platinum',
+      tier: 'platinum',
+      renewalDateLabel: 'Nov 18, 2026',
+      duesLabel: '$20K',
+    });
+    expect(empty).toMatchObject({ membershipLabel: '—', tier: null, renewalDateLabel: '—', duesLabel: '—' });
   });
 
-  it('dashes a missing tier, date or dues instead of $0', () => {
-    const [row] = buildHealthMetricsMembersRenewalRows([
-      {
-        accountId: 'acct-2',
-        accountName: 'Acme Labs',
-        membershipTier: null,
-        renewalDate: null,
-        duesUsd: null,
-        hasOutstandingBalance: false,
-        daysUntilRenewal: null,
-        hasRenewed: true,
-      },
-    ]);
-    expect(row).toMatchObject({ tierLabel: '—', renewalDateLabel: '—', duesLabel: '—', hasOutstandingBalance: false, hasRenewed: true });
-  });
-});
-
-describe('buildHealthMetricsMembersRenewalsCountLabel', () => {
-  it('pluralizes the renewal count', () => {
-    expect(buildHealthMetricsMembersRenewalsCountLabel(1)).toBe('1 renewal');
-    expect(buildHealthMetricsMembersRenewalsCountLabel(61)).toBe('61 renewals');
+  it.each([
+    ['180_days', '180_days'],
+    ['this_year', 'this_year'],
+    ['next_week', '90_days'],
+    [null, '90_days'],
+  ] as const)('reads the window %s from the URL as %s', (value, expected) => {
+    expect(parseHealthMetricsMembersRenewalsWindow(value)).toBe(expected);
   });
 });
 

@@ -296,12 +296,19 @@ export interface HealthMetricsMembersAtRiskQuery {
   bucket: HealthMetricsMembersAtRiskFilter;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, sorted on the server across every page; `null` keeps the view's rank. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersAtRiskSortKey> | null;
 }
+
+/** The at-risk table's sortable columns; the spacer has no header and does not sort. */
+export type HealthMetricsMembersAtRiskSortKey = 'company' | 'membership' | 'overdue' | 'age';
 
 /** One at-risk member, in the view's own `sort_rank` order. Dates are ISO `YYYY-MM-DD`. */
 export interface HealthMetricsMembersAtRiskMember {
   accountId: string;
   accountName: string;
+  /** The mapped company logo; empty falls back to the first letter. */
+  logoUrl: string;
   membershipTier: string | null;
   outstandingBalanceUsd: number | null;
   daysOverdue: number | null;
@@ -312,17 +319,15 @@ export interface HealthMetricsMembersAtRiskMember {
 }
 
 /**
- * The hero, summed over every member 60+ days overdue whatever the bucket pill; with a bucket picked it exceeds the
- * table's total. `null` is a total the model left unset for a foundation with members at risk, never a zero.
+ * The outstanding balance, summed over every member 60+ days overdue whatever the bucket switch. `null` is a total the
+ * model left unset for a foundation with members at risk, never a zero.
  */
 export interface HealthMetricsMembersAtRiskSummary {
   outstandingBalanceUsd: number | null;
-  highRiskBalanceUsd: number | null;
-  mediumRiskBalanceUsd: number | null;
   memberCount: number | null;
 }
 
-/** One aging bar; always both buckets, whatever the selected pill. `null` is an unset model total, as in the summary. */
+/** One bucket's totals: 90+ days is High risk, 60–89 Medium. Always both, whatever the switch; `null` is an unset model total. */
 export interface HealthMetricsMembersAtRiskAging {
   bucket: HealthMetricsMembersAtRiskBucket;
   memberCount: number | null;
@@ -337,35 +342,24 @@ export interface HealthMetricsMembersAtRisk {
   aging: HealthMetricsMembersAtRiskAging[];
 }
 
-/** A bucket pill; `all` is "All at risk". */
+/** A bucket switch option; `all` is "All at risk". */
 export interface HealthMetricsMembersAtRiskFilterOption extends FilterPillOption {
   id: HealthMetricsMembersAtRiskFilter;
-}
-
-/** The hero as the section renders it. */
-export interface HealthMetricsMembersAtRiskSummaryView {
-  outstandingLabel: string;
-  highRiskLabel: string;
-  mediumRiskLabel: string;
-  memberCountLabel: string;
-}
-
-/** One aging bar as the section renders it; `widthPct` is against the larger bucket's balance. */
-export interface HealthMetricsMembersAtRiskAgingView {
-  bucket: HealthMetricsMembersAtRiskBucket;
-  label: string;
-  balanceLabel: string;
-  widthPct: number;
 }
 
 /** One at-risk row as the table renders it. */
 export interface HealthMetricsMembersAtRiskRowView {
   accountId: string;
-  accountName: string;
-  tierLabel: string;
+  name: string;
+  logoUrl: string;
+  /** "Last engaged {date}"; empty when there is none. */
+  lastEngagedLabel: string;
+  membershipLabel: string;
+  tier: HealthMetricsMembersReservedTier | null;
   overdueLabel: string;
   ageLabel: string;
-  lastEngagedLabel: string;
+  /** The age's dot: red at 90+ days, amber at 60–89; empty with no bucket. */
+  ageDotClass: string;
 }
 
 /** A `MEMBERSHIP_RENEWALS` window, each backed by the model's own `is_renewing_*` flag and foundation totals. */
@@ -382,27 +376,28 @@ export interface HealthMetricsMembersRenewalsQuery {
   window: HealthMetricsMembersRenewalsWindow;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, sorted on the server across every page; `null` keeps the default, highest dues first. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersRenewalsSortKey> | null;
 }
 
-/** One renewal inside the window, soonest first. Dates are ISO `YYYY-MM-DD`; `null` dues is not recorded, never $0. */
+/** The renewals table's sortable columns. */
+export type HealthMetricsMembersRenewalsSortKey = 'company' | 'membership' | 'date' | 'dues';
+
+/** One renewal inside the window, highest dues first. Dates are ISO `YYYY-MM-DD`; `null` dues is not recorded, never $0. */
 export interface HealthMetricsMembersRenewal {
   accountId: string;
   accountName: string;
+  /** The mapped company logo; empty falls back to the first letter. */
+  logoUrl: string;
   membershipTier: string | null;
   renewalDate: string | null;
-  daysUntilRenewal: number | null;
-  /** Already renewed; the model's window totals still count it. */
-  hasRenewed: boolean;
   duesUsd: number | null;
-  /** The renewal plus a concurrent risk signal (MEM-02); every other row carries no status. */
-  hasOutstandingBalance: boolean;
 }
 
-/** The hero over every renewal in the window. `valueUsd` sums the known dues; `withoutDuesCount` renewals have none on record. */
+/** The metrics over every renewal in the window; `valueUsd` sums the known dues only. */
 export interface HealthMetricsMembersRenewalsSummary {
   renewalCount: number | null;
   valueUsd: number | null;
-  withoutDuesCount: number | null;
 }
 
 export interface HealthMetricsMembersRenewals {
@@ -411,22 +406,15 @@ export interface HealthMetricsMembersRenewals {
   summary: HealthMetricsMembersRenewalsSummary;
 }
 
-/** The renewals hero as the section renders it; `coverageNote` is empty when every renewal has dues. */
-export interface HealthMetricsMembersRenewalsSummaryView {
-  valueLabel: string;
-  renewalCountLabel: string;
-  coverageNote: string;
-}
-
 /** One renewal row as the table renders it. */
 export interface HealthMetricsMembersRenewalRowView {
   accountId: string;
-  accountName: string;
-  tierLabel: string;
+  name: string;
+  logoUrl: string;
+  membershipLabel: string;
+  tier: HealthMetricsMembersReservedTier | null;
   renewalDateLabel: string;
   duesLabel: string;
-  hasOutstandingBalance: boolean;
-  hasRenewed: boolean;
 }
 
 /** `MEMBERSHIP_BOARD_ATTENDANCE`'s `attendance_cohort` values. */

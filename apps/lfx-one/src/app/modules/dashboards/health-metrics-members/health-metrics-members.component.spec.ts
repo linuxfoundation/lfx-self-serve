@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, signal } from '@angular/core';
+import { Component, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_MEMBERS_SECTIONS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject } from 'rxjs';
@@ -20,6 +20,8 @@ import { MembersGrowthComponent } from './components/members-growth/members-grow
 import { MembersNpsComponent } from './components/members-nps/members-nps.component';
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
+
+import type { HealthMetricsMembersAtRiskFilter, HealthMetricsMembersRenewalsWindow } from '@lfx-one/shared/interfaces';
 
 /** Stands in for Member growth by year, whose read its own spec covers; the test drives its settle. */
 @Component({ selector: 'lfx-members-growth', template: '<div data-testid="members-growth-stub"></div>' })
@@ -45,6 +47,7 @@ class DirectoryStubComponent {
 /** Stands in for the at-risk section; the test drives its note and settle. */
 @Component({ selector: 'lfx-members-at-risk', template: '<div data-testid="members-at-risk-stub"></div>' })
 class AtRiskStubComponent {
+  public readonly bucket = model<HealthMetricsMembersAtRiskFilter>('all');
   public readonly noteChange = output<string>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
@@ -67,6 +70,7 @@ class ChurnStubComponent {
 /** Stands in for the renewals section; the test drives its settle. */
 @Component({ selector: 'lfx-members-renewals', template: '<div data-testid="members-renewals-stub"></div>' })
 class RenewalsStubComponent {
+  public readonly window = model<HealthMetricsMembersRenewalsWindow>('90_days');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -85,13 +89,19 @@ describe('HealthMetricsMembersComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   let fixture: ComponentFixture<HealthMetricsMembersComponent>;
 
-  async function setup(initialFragment: string | null = null): Promise<void> {
+  async function setup(initialFragment: string | null = null, queryParams: Record<string, string> = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsMembersComponent],
       providers: [
         HealthMetricsChromeService,
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            fragment: new BehaviorSubject<string | null>(initialFragment).asObservable(),
+            snapshot: { queryParamMap: convertToParamMap(queryParams) },
+          },
+        },
       ],
     })
       .overrideComponent(HealthMetricsMembersComponent, {
@@ -268,6 +278,43 @@ describe('HealthMetricsMembersComponent', () => {
     stub(AtRiskStubComponent).noteChange.emit('');
     await flush();
     expect(item()).not.toContain('overdue');
+  });
+
+  it("puts the at-risk bucket switch in that card's header, seeded from the URL and handed to the section", async () => {
+    await setup(null, { riskBucket: '90_plus_days' });
+    const section = fixture.nativeElement.querySelector('#sec-mem-risk') as HTMLElement;
+
+    const labels = [...section.querySelectorAll('[data-testid="members-at-risk-bucket"] [data-testid="ui-switch-option-text"]')].map((label) =>
+      label.textContent?.trim()
+    );
+    expect(labels).toEqual(['All at risk', '60–89 days', '90+ days']);
+    expect(stub(AtRiskStubComponent).bucket()).toBe('90_plus_days');
+
+    (section.querySelector('[data-testid="members-at-risk-bucket-60_89_days"] input') as HTMLInputElement).click();
+    await flush();
+    expect(stub(AtRiskStubComponent).bucket()).toBe('60_89_days');
+  });
+
+  it("puts the renewals window switch in that card's header, seeded from the URL and handed to the section", async () => {
+    await setup(null, { renewalsWindow: 'this_year' });
+    const section = fixture.nativeElement.querySelector('#sec-mem-renewals') as HTMLElement;
+
+    const labels = [...section.querySelectorAll('[data-testid="members-renewals-window"] [data-testid="ui-switch-option-text"]')].map((label) =>
+      label.textContent?.trim()
+    );
+    expect(labels).toEqual(['Next 90 days', 'Next 180 days', 'This year']);
+    expect(stub(RenewalsStubComponent).window()).toBe('this_year');
+
+    (section.querySelector('[data-testid="members-renewals-window-180_days"] input') as HTMLInputElement).click();
+    await flush();
+    expect(stub(RenewalsStubComponent).window()).toBe('180_days');
+  });
+
+  it('falls back to the default bucket and window for URL values it does not know', async () => {
+    await setup(null, { riskBucket: 'under_60_days', renewalsWindow: '30_days' });
+
+    expect(stub(AtRiskStubComponent).bucket()).toBe('all');
+    expect(stub(RenewalsStubComponent).window()).toBe('90_days');
   });
 
   it('notes Board & voting attendance with the board note once it reports one', async () => {

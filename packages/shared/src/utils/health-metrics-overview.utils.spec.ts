@@ -363,6 +363,28 @@ describe('buildHealthMetricsOverviewChurnView', () => {
     ]);
   });
 
+  it("leads with Diamond, Platinum, Gold and Silver, each with its icon, then the rest in the view's order", () => {
+    const mixed: HealthMetricsOverviewChurn = {
+      periods: everyPeriod({
+        totals,
+        tiers: [
+          { tier: 'Associate', label: 'Associate', churnRatePct: 5, membershipsLost: 2, valueLostUsd: 0 },
+          { tier: 'Gold Membership', label: 'Gold Membership', churnRatePct: 3, membershipsLost: 1, valueLostUsd: 100 },
+          { tier: 'End User', label: 'End User Supporter', churnRatePct: 2, membershipsLost: 1, valueLostUsd: 0 },
+          { tier: 'Diamond', label: 'Diamond', churnRatePct: 1, membershipsLost: 1, valueLostUsd: 900 },
+        ],
+      }),
+    };
+    const { tiers } = buildHealthMetricsOverviewChurnView(mixed, 'YTD');
+
+    expect(tiers.map((tier) => [tier.label, tier.tier, tier.tierRank])).toEqual([
+      ['Diamond', 'diamond', 4],
+      ['Gold', 'gold', 3],
+      ['Associate', null, 2],
+      ['End User Supporter', null, 1],
+    ]);
+  });
+
   it('lists every tier, zero churn included, against the overall rate', () => {
     const view = buildHealthMetricsOverviewChurnView(churn, 'YTD');
 

@@ -28,8 +28,9 @@ import {
 } from '../constants/health-metrics-overview.constants';
 import { HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_MEMBERS_RESERVED_TIERS } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, parseIsoDateAsUtcMidnight } from './date-time.utils';
-import { formatHealthMetricsPercent } from './health-metrics-table.utils';
+import { formatHealthMetricsPercent, resolveHealthMetricsMembersTier } from './health-metrics-table.utils';
 import { getHealthMetricsTrainingDeliveryTypeLabel } from './health-metrics-training.utils';
 import { formatCurrency, formatNumber } from './number.utils';
 
@@ -46,6 +47,7 @@ import type {
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsBlankCopy, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsMembersReservedTier } from '../interfaces/health-metrics-members.interface';
 import type {
   HealthMetricsEventTrendEvent,
   HealthMetricsOverviewBalanceRowView,
@@ -56,6 +58,7 @@ import type {
   HealthMetricsOverviewBoardSortKey,
   HealthMetricsOverviewBoardView,
   HealthMetricsOverviewChurn,
+  HealthMetricsOverviewChurnTier,
   HealthMetricsOverviewChurnSortKey,
   HealthMetricsOverviewChurnTierView,
   HealthMetricsOverviewChurnView,
@@ -255,14 +258,15 @@ export function buildHealthMetricsOverviewChurnView(churn: HealthMetricsOverview
             : `${formatCount(totals.membershipsLostPriorYear)} last year`,
       },
     ],
-    tiers: (period?.tiers ?? []).map((tier, index, tiers) => ({
+    tiers: leadWithReservedTiers(period?.tiers ?? []).map(({ tier, label, reserved }, index, tiers) => ({
       key: tier.tier,
-      label: tier.label,
+      label,
+      tier: reserved,
       rateLabel: formatRatePct(tier.churnRatePct),
       rateWidthPct: clampPct(tier.churnRatePct ?? 0),
       lostLabel: formatCount(tier.membershipsLost),
       valueLabel: formatMoneyCompact(tier.valueLostUsd),
-      // The view lists tiers highest rank first.
+      // Diamond, Platinum, Gold and Silver lead, then the rest in the view's rank; a Tier sort follows this order.
       tierRank: tiers.length - index,
       churnRatePct: tier.churnRatePct,
       membershipsLost: tier.membershipsLost,
@@ -1371,6 +1375,17 @@ function goalShareStatus(share: number): HealthMetricsOverviewEventStatus {
   if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.onTrack) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack;
   if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.atRisk) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.atRisk;
   return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.action;
+}
+
+/** Diamond, Platinum, Gold and Silver first, in that order, as the membership breakdown leads; the rest keep the view's rank. */
+function leadWithReservedTiers(
+  tiers: readonly HealthMetricsOverviewChurnTier[]
+): { tier: HealthMetricsOverviewChurnTier; label: string; reserved: HealthMetricsMembersReservedTier | null }[] {
+  const resolved = tiers.map((tier) => ({ tier, ...resolveHealthMetricsMembersTier(tier.label) }));
+  const reservedOrder = (entry: (typeof resolved)[number]): number =>
+    entry.reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIERS.indexOf(entry.reserved) : HEALTH_METRICS_MEMBERS_RESERVED_TIERS.length;
+  // A stable sort keeps the view's order among the unreserved tiers.
+  return [...resolved].sort((a, b) => reservedOrder(a) - reservedOrder(b));
 }
 
 /** "Dec 15, 2026", "Dec 8–10, 2026", "Nov 30 – Dec 2, 2026" or "Dec 30, 2026 – Jan 2, 2027". */

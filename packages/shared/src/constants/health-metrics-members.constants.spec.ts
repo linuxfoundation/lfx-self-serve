@@ -15,12 +15,16 @@ describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
     expect(HEALTH_METRICS_MEMBERS_DATA_SECTIONS).toEqual(['growth', 'breakdown', 'list', 'risk', 'renewals', 'board', 'nps', 'churn']);
   });
 
-  // Plain footnotes are gone; the renewals caution stays as a warning note, keeping its bold lead.
-  it('keeps a caution note on renewals only', () => {
-    const noted = HEALTH_METRICS_MEMBERS_SECTIONS.filter((section) => 'note' in section);
+  // The design draws no caution or footnote under any Members section.
+  it('carries no section note', () => {
+    expect(HEALTH_METRICS_MEMBERS_SECTIONS.filter((section) => 'note' in section)).toEqual([]);
+  });
 
-    expect(noted.map((section) => [section.key, section.note.tone])).toEqual([['renewals', 'caution']]);
-    expect(noted[0].note.parts[0]).toEqual({ text: 'Company, tier, dues and renewal date', bold: true });
+  it('describes at-risk and renewals in the design\'s words', () => {
+    const description = (key: string) => HEALTH_METRICS_MEMBERS_SECTIONS.find((section) => section.key === key)?.description;
+
+    expect(description('risk')).toBe('Members with unpaid invoices who may not renew.');
+    expect(description('renewals')).toBe('Memberships coming up for renewal, and their value.');
   });
 });
 

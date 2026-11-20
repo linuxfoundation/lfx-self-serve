@@ -10,13 +10,14 @@ import {
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SORT_COLUMNS,
-  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
-  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_AT_RISK_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
@@ -31,6 +32,7 @@ import {
   HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
@@ -3918,6 +3920,12 @@ export class AnalyticsController {
         bucket: bucket as HealthMetricsMembersAtRiskFilter,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_AT_RISK_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       logger.success(req, 'get_members_at_risk', startTime, {
@@ -3957,13 +3965,18 @@ export class AnalyticsController {
         window: window as HealthMetricsMembersRenewalsWindow,
         offset,
         pageSize,
+        // Only an allowed column and a known direction pass; anything else is the highest dues first.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_RENEWALS_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       logger.success(req, 'get_members_renewals', startTime, {
         foundation_slug: foundationSlug,
         window,
         total_records: response.totalRecords,
-        without_dues_count: response.summary.withoutDuesCount,
       });
 
       res.json(response);

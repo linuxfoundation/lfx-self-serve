@@ -14,6 +14,7 @@ import { AnalyticsService } from '@services/analytics.service';
 
 import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
 import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
+import { HealthMetricsTierIconComponent } from '../../../components/health-metrics-tier-icon/health-metrics-tier-icon.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectOverviewCardRead } from '../../overview-card-read';
 import { OverviewCardComponent } from '../overview-card/overview-card.component';
@@ -25,7 +26,7 @@ import type { HealthMetricsOverviewChurnTierView, HealthMetricsOverviewChurnView
 /** The foundation's churn against last year, then every tier against the overall rate. */
 @Component({
   selector: 'lfx-overview-churn-card',
-  imports: [HealthMetricsThComponent, OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent],
+  imports: [HealthMetricsThComponent, HealthMetricsTierIconComponent, OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent],
   templateUrl: './overview-churn-card.component.html',
   host: { class: 'flex min-w-0 flex-col' },
 })
