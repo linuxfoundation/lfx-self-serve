@@ -188,7 +188,9 @@ describe('MeetingsHomeStore', () => {
       upcoming$.next([stale]);
       TestBed.tick();
       const refresh = userService['refreshUserMeetings'] as ReturnType<typeof vi.fn>;
-      refresh.mockImplementation(() => upcoming$.next([{ ...stale, invited: true, my_registrant_ids: refresh.mock.calls.length === 1 ? [] : ['reg-new'] }]));
+      refresh.mockImplementation(() =>
+        upcoming$.next([{ ...stale, invited: true, my_registrant_ids: refresh.mock.calls.length === 1 ? undefined : ['reg-new'] }])
+      );
 
       vi.advanceTimersByTime(1000);
       TestBed.tick();
@@ -233,15 +235,17 @@ describe('MeetingsHomeStore', () => {
       expect(refresh).toHaveBeenCalledTimes(7);
     });
 
-    it.each(['removal', 'viewer', 'destruction'])('stops delayed work after %s', (change) => {
+    it.each(['removal', 'deletion', 'viewer', 'destruction'])('stops delayed work after %s', (change) => {
       const store = create();
       upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
       store.markSelfInvited('organized', ['reg-new']);
       TestBed.tick();
       if (change === 'removal') removed.set(new Set(['organized']));
+      if (change === 'deletion') store.removeMeeting('organized');
       if (change === 'viewer') identity.set('viewer-b');
       if (change === 'destruction') TestBed.resetTestingModule();
       else TestBed.tick();
+      if (change !== 'destruction') expect(store.selfInviteOf('organized')).toBeUndefined();
       vi.advanceTimersByTime(60000);
       expect(userService['refreshUserMeetings']).not.toHaveBeenCalled();
       expect(toast.show).not.toHaveBeenCalled();
@@ -410,6 +414,11 @@ describe('MeetingsHomeStore', () => {
       removed.set(new Set(['organized']));
 
       expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      removed.set(new Set());
+      store.markSelfInvited('organized', ['reg-readded']);
+      expect(store.selfInviteOf('organized')).toEqual(['reg-readded']);
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: true, my_registrant_ids: ['reg-readded'] });
     });
 
     it('retires a self-invite once the feed lists it, so a later feed decides again', () => {
@@ -435,6 +444,17 @@ describe('MeetingsHomeStore', () => {
       expect(store.selfInviteOf('organized')).toEqual([]);
       upcoming$.next([{ ...organized, my_registrant_ids: ['reg-self'] }]);
 
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+    });
+
+    it('does not confirm a no-UID invitation from unknown registration enrichment', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+      store.markSelfInvited('organized', []);
+      upcoming$.next([{ ...organized, invited: true, my_registrant_ids: undefined }]);
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      upcoming$.next([{ ...organized, invited: true, my_registrant_ids: ['reg-confirmed'] }]);
       expect(store.selfInviteOf('organized')).toBeUndefined();
     });
 

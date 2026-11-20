@@ -119,7 +119,13 @@ export class MeetingsHomeStore {
   });
   /** Registrant uids of the meetings the viewer added themselves to here, until the feed's index lists them or the viewer removes them; a new viewer starts empty. */
   private readonly selfInvitedIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = linkedSignal({
-    source: () => ({ key: this.feed.key(), meetings: this.upcomingMeetings(), removed: this.removedSelfRegistrantIds() }),
+    source: () => ({
+      key: this.feed.key(),
+      meetings: this.upcomingMeetings(),
+      removed: this.removedSelfRegistrantIds(),
+      removedMeetings: this.meetingService.removedRegistrationMeetingIds(),
+      deletedMeetings: this.deletedMeetingIds(),
+    }),
     computation: (source, previous): ReadonlyMap<string, readonly string[]> =>
       previous?.source.key === source.key ? this.withoutListedSelfInvites(previous.value, source.meetings) : new Map(),
   });
@@ -807,11 +813,12 @@ export class MeetingsHomeStore {
   private withoutListedSelfInvites(ids: ReadonlyMap<string, readonly string[]>, meetings: Meeting[]): ReadonlyMap<string, readonly string[]> {
     const listed = new Map(meetings.map((meeting) => [meeting.id, meeting]));
     const kept = [...ids].filter(([meetingId, uids]) => {
+      if (this.meetingService.removedRegistrationMeetingIds().has(meetingId) || this.deletedMeetingIds().has(meetingId)) return false;
       const meeting = listed.get(meetingId);
       if (!meeting?.invited) return true;
       const removed = this.removedSelfRegistrantIds().get(meetingId);
       const registrantIds = meeting.my_registrant_ids?.filter((uid) => !removed?.has(uid));
-      if (!uids.length) return registrantIds ? !registrantIds.length : !!removed?.size;
+      if (!uids.length) return !registrantIds?.length;
       return !uids.every((uid) => registrantIds?.includes(uid));
     });
     return kept.length === ids.size ? ids : new Map(kept);
