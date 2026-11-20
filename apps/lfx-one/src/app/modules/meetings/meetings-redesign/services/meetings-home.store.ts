@@ -245,7 +245,8 @@ export class MeetingsHomeStore {
   public readonly revealedDay: Signal<string | null> = computed(() => {
     const day = this.revealDayState();
     if (!day || this.loading()) return null;
-    const pastPending = this.pastQuery() !== this.search().trim() || this.pastLoadingMore() || this.revealNeedsOlderPast();
+    // Only a paged feed reloads on a new search; a page loading past an already covered day does not hold the day back.
+    const pastPending = (this.feed.pagedPast && this.pastQuery() !== this.search().trim()) || this.revealNeedsOlderPast();
     return this.tab() === 'past' && pastPending ? null : day;
   });
   public readonly groups: Signal<MeetingDayGroup[]> = computed(() =>
@@ -533,9 +534,9 @@ export class MeetingsHomeStore {
         if (!this.isNarrowed(filters)) this.pastOptionMeetings.set(page.meetings);
       }),
       tap({
-        // A failed reload leaves the day unreachable, so the list stops waiting for it.
+        // A failed reload of the past list the day waits on leaves it unreachable, so the list stops waiting for it.
         error: () => {
-          if (version === this.pastQueryVersion) this.revealDayState.set(null);
+          if (version === this.pastQueryVersion && this.tab() === 'past' && query === this.search().trim()) this.revealDayState.set(null);
         },
       }),
       map((page) => page.meetings)
@@ -588,15 +589,16 @@ export class MeetingsHomeStore {
       });
   }
 
+  /** Rows through the picked day in list order, so a day without meetings still opens the list to its date. */
   private initRevealCount(): Signal<number> {
     return computed(() => {
       const day = this.revealDayState();
       if (!day) return 0;
-      const rows = this.filteredRows();
-      for (let index = rows.length - 1; index >= 0; index--) {
-        if (getLocalDayKey(rows[index].startTime) === day) return index + 1;
-      }
-      return 0;
+      const past = this.tab() === 'past';
+      return this.filteredRows().filter((row) => {
+        const key = getLocalDayKey(row.startTime);
+        return past ? key >= day : key <= day;
+      }).length;
     });
   }
 

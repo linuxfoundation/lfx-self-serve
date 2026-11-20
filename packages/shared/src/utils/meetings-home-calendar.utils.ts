@@ -76,7 +76,7 @@ export function buildMeetingMiniCalendarWeeks(month: Date, days: ReadonlyMap<str
       entries,
       dots: entries.slice(0, MEETINGS_HOME_MINI_CALENDAR_MAX_DOTS).map((entry) => entry.row.key),
       label: formatMeetingCalendarDay(date),
-      tab: beforeToday || (key === todayKey && !hasUpcoming) ? 'past' : 'upcoming',
+      tab: !hasUpcoming && (beforeToday || key === todayKey) ? 'past' : 'upcoming',
     });
   }
   return weeks;

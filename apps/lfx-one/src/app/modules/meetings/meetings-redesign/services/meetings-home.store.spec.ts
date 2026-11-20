@@ -213,6 +213,26 @@ describe('MeetingsHomeStore', () => {
       expect(store.upcomingRows()).toHaveLength(1);
     });
 
+    it('reports a past day on the whole feed after a retry made with a search', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = create();
+      upcoming$.next([]);
+      store.setTab('past');
+      past$.error(new Error('down'));
+      const retried$ = new Subject<PastMeeting[]>();
+      (userService['getUserPastMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(retried$);
+      store.setSearch('board');
+      store.retry();
+      retried$.next([buildPastMeeting('a', inDays(-1))]);
+      TestBed.tick();
+      const day = getLocalDayKey(inDays(-1));
+
+      store.showDay(day, 'past');
+      TestBed.tick();
+
+      expect(store.revealedDay()).toBe(day);
+    });
+
     it('keeps the loaded rows on a failed refresh, shows one toast and takes the next refresh', () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const store = create();
@@ -871,6 +891,10 @@ describe('MeetingsHomeStore', () => {
       TestBed.tick();
       return store;
     };
+    const olderPage = (prefix: string, fromDay: number, count: number, pageToken?: string): MeetingsHomePastPage => ({
+      meetings: Array.from({ length: count }, (_, index) => buildPastMeeting(`${prefix}${index}`, inDays(-fromDay - index))),
+      pageToken,
+    });
     const pastPage = (prefix: string, count: number, pageToken?: string): MeetingsHomePastPage => ({
       meetings: Array.from({ length: count }, (_, index) => buildPastMeeting(`${prefix}${index}`, inDays(-1 - index))),
       pageToken,
@@ -1406,11 +1430,6 @@ describe('MeetingsHomeStore', () => {
     });
 
     describe('showing a calendar day', () => {
-      const olderPage = (prefix: string, fromDay: number, count: number, pageToken?: string): MeetingsHomePastPage => ({
-        meetings: Array.from({ length: count }, (_, index) => buildPastMeeting(`${prefix}${index}`, inDays(-fromDay - index))),
-        pageToken,
-      });
-
       it('switches tab, clears search and filters, and loads older pages until the day is covered', () => {
         const store = createPaged();
         pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
@@ -1425,12 +1444,12 @@ describe('MeetingsHomeStore', () => {
         expect(store.tab()).toBe('past');
         expect(store.search()).toBe('');
         expect(store.filters()).toEqual(MEETINGS_HOME_DEFAULT_FILTERS);
-        expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
         expect(store.revealedDay()).toBeNull();
 
         pastPages[1].next(olderPage('b', 21, 3, 'cursor-2'));
         TestBed.tick();
-        expect(past).toHaveBeenLastCalledWith('', 'cursor-2');
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-2');
 
         pastPages[2].next(olderPage('c', 24, 5, 'cursor-3'));
         TestBed.tick();
@@ -1461,7 +1480,7 @@ describe('MeetingsHomeStore', () => {
           expect(store.revealedDay()).toBeNull();
 
           await vi.advanceTimersByTimeAsync(300);
-          expect(past).toHaveBeenLastCalledWith('');
+          expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS);
           pastPages[2].next(pastPage('a', 2));
           TestBed.tick();
           expect(store.revealedDay()).toBe(day);
@@ -1484,6 +1503,73 @@ describe('MeetingsHomeStore', () => {
         expect(store.revealedDay()).toBe(day);
         expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE + 3);
         expect(past).toHaveBeenCalledTimes(1);
+      });
+
+      it('opens the list through a day with no meetings, up to its date', () => {
+        const store = createPaged();
+        const meetings = Array.from({ length: MEETINGS_HOME_PAGE_SIZE + 5 }, (_, index) =>
+          buildMeeting({ id: `u-${index}`, start_time: inDays(40 + index * 2).toISOString() })
+        );
+        upcoming$.next(meetings);
+        const day = getLocalDayKey(inDays(40 + MEETINGS_HOME_PAGE_SIZE * 2 + 1));
+
+        store.showDay(day, 'upcoming');
+        TestBed.tick();
+
+        expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE + 1);
+      });
+
+      it('keeps an Upcoming day when a past load fails', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const store = createPaged();
+        upcoming$.next([buildMeeting({ id: 'u-1', start_time: inDays(3).toISOString() })]);
+        const day = getLocalDayKey(inDays(3));
+
+        store.showDay(day, 'upcoming');
+        pastPages[0].error(new Error('past down'));
+        TestBed.tick();
+
+        expect(store.revealedDay()).toBe(day);
+      });
+
+      it('keeps a day picked while a searched past load is in flight when that load fails', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.useFakeTimers();
+        try {
+          const store = createPaged();
+          store.setTab('past');
+          pastPages[0].next(pastPage('a', 1));
+          store.setSearch('board');
+          TestBed.tick();
+          await vi.advanceTimersByTimeAsync(300);
+          const day = getLocalDayKey(inDays(-1));
+
+          store.showDay(day, 'past');
+          TestBed.tick();
+          pastPages[1].error(new Error('searched load failed'));
+          TestBed.tick();
+          await vi.advanceTimersByTimeAsync(300);
+          pastPages[pastPages.length - 1].next(pastPage('a', 2));
+          TestBed.tick();
+
+          expect(store.revealedDay()).toBe(day);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('does not hold a covered day back while a next page loads', () => {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 3, 'cursor-1'));
+        TestBed.tick();
+        const day = getLocalDayKey(inDays(-1));
+
+        store.showDay(day, 'past');
+        TestBed.tick();
+
+        // Three rows are under a page, so the next page is loading.
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+        expect(store.revealedDay()).toBe(day);
       });
 
       it('settles on the rows it has, without retrying, when an older page fails', () => {
@@ -1555,11 +1641,6 @@ describe('MeetingsHomeStore', () => {
     });
 
     describe('calendar months', () => {
-      const olderPage = (prefix: string, fromDay: number, count: number, pageToken?: string): MeetingsHomePastPage => ({
-        meetings: Array.from({ length: count }, (_, index) => buildPastMeeting(`${prefix}${index}`, inDays(-fromDay - index))),
-        pageToken,
-      });
-
       it('loads past pages back to an older month the calendar shows, on any tab', () => {
         const store = createPaged();
         pastPages[0].next(pastPage('a', 5, 'cursor-1'));
@@ -1568,11 +1649,11 @@ describe('MeetingsHomeStore', () => {
 
         store.showPastFrom(getLocalDayKey(inDays(-12)));
         TestBed.tick();
-        expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
 
         pastPages[1].next(olderPage('b', 6, 5, 'cursor-2'));
         TestBed.tick();
-        expect(past).toHaveBeenLastCalledWith('', 'cursor-2');
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-2');
         pastPages[2].next(olderPage('c', 11, 5, 'cursor-3'));
         TestBed.tick();
 
@@ -1598,7 +1679,7 @@ describe('MeetingsHomeStore', () => {
         store.showPastFrom(getLocalDayKey(inDays(-90)));
         TestBed.tick();
         expect(past).toHaveBeenCalledTimes(3);
-        expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
       });
     });
 

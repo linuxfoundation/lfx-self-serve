@@ -555,7 +555,7 @@ export interface MeetingMiniCalendarDay {
   dots: string[];
   /** "Thu, Oct 1". */
   label: string;
-  /** Tab that lists the day's meetings: past before today, and today when none of them is upcoming. */
+  /** Tab that lists the day's meetings: Upcoming while one of them is, else Past for today and earlier days. */
   tab: MeetingDashboardView;
 }
 

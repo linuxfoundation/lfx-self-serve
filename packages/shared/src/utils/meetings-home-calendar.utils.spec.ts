@@ -116,6 +116,30 @@ describe('meetings home calendar utils', () => {
     ).toBe('past');
   });
 
+  it('lists a day before today on Upcoming while one of its meetings, running past midnight, has not ended', () => {
+    const now = new Date(2026, 9, 10, 0, 15);
+    const days = groupMeetingCalendarEntries([row('overnight', new Date(2026, 9, 9, 23, 30))], []);
+    const day = buildMeetingMiniCalendarWeeks(now, days, now)
+      .flatMap((week) => week.days)
+      .find((cell) => cell.key === '2026-10-09');
+
+    expect(day?.tab).toBe('upcoming');
+  });
+
+  it.each([
+    ['spring forward', new Date(2026, 2, 1)],
+    ['fall back', new Date(2026, 10, 1)],
+  ])('keys every day of a month with a clock change (%s) once, in order', (_, month) => {
+    const keys = buildMeetingMiniCalendarWeeks(month, new Map(), month)
+      .flatMap((week) => week.days)
+      .filter((day) => day.inMonth)
+      .map((day) => day.key);
+
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toEqual([...keys].sort());
+    expect(keys).toHaveLength(new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate());
+  });
+
   it('keeps a date that is in both lists once, as past', () => {
     const start = new Date(2026, 9, 1, 9);
     const upcoming = row('series-1-occ', start, buildMeeting({ id: 'series-1' }));
