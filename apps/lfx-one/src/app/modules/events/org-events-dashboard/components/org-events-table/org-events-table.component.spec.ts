@@ -25,11 +25,6 @@ const EVENT: OrgEvent = {
   orgSpeakerAcceptedCount: 0,
   orgSpeakerSubmittedCount: 0,
   isOrgSponsor: true,
-  organizations: [
-    { accountId: 'acc-a', name: 'Acme Motors, Inc.' },
-    { accountId: 'acc-b', name: 'Acme Robotics' },
-  ],
-  sponsors: [{ accountId: 'acc-b', name: 'Acme Robotics' }],
 };
 
 async function render({ rollUp = false, loadFailed = false, events = [EVENT] }: { rollUp?: boolean; loadFailed?: boolean; events?: OrgEvent[] } = {}) {
@@ -56,37 +51,42 @@ describe('OrgEventsTableComponent', () => {
     expect(el.querySelector('[data-testid="org-event-company-event-one"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-events-attendees-owner"]')?.textContent?.trim()).toBe('My Company');
     expect(el.querySelector('[data-testid="org-event-sponsor-event-one"]')?.textContent?.trim()).toBe('Yes');
-    expect(el.querySelector('[data-testid="org-event-sponsor-event-one"] [aria-label]')).toBeNull();
   });
 
-  it('follows Event Name with a Company column naming every organization on the row', async () => {
-    const el = await render({ rollUp: true });
+  it("follows Event Name with a Company column, one row per company, repeating the event's details", async () => {
+    const el = await render({
+      rollUp: true,
+      events: [
+        { ...EVENT, organization: { accountId: 'acc-a', name: 'Acme Motors, Inc.' }, isOrgSponsor: false },
+        { ...EVENT, organization: { accountId: 'acc-b', name: 'Acme Robotics' } },
+      ],
+    });
 
     const headers = Array.from(el.querySelectorAll('thead th')).map((th) => th.textContent?.trim() ?? '');
     expect(headers.indexOf('Company')).toBe(headers.findIndex((text) => text.startsWith('Event Name')) + 1);
     expect(el.querySelector('[data-testid="org-events-company-header"] button')).toBeNull();
-    const companies = Array.from(el.querySelectorAll('[data-testid="org-event-company-event-one"] span')).map((span) => span.textContent?.trim());
-    expect(companies).toEqual(['Acme Motors, Inc.', 'Acme Robotics']);
+    expect(el.querySelector('[data-testid="org-event-company-event-one-acc-a"]')?.textContent?.trim()).toBe('Acme Motors, Inc.');
+    expect(el.querySelector('[data-testid="org-event-company-event-one-acc-b"]')?.textContent?.trim()).toBe('Acme Robotics');
+    expect(el.querySelector('[data-testid="org-event-name-event-one-acc-b"]')?.textContent?.trim()).toBe('Open Source Summit');
   });
 
-  it('credits attendees to My Orgs in a roll-up', async () => {
-    const el = await render({ rollUp: true });
+  it("reads each company's own Event Sponsor flag", async () => {
+    const el = await render({
+      rollUp: true,
+      events: [
+        { ...EVENT, organization: { accountId: 'acc-a', name: 'Acme Motors, Inc.' }, isOrgSponsor: false },
+        { ...EVENT, organization: { accountId: 'acc-b', name: 'Acme Robotics' } },
+      ],
+    });
+
+    expect(el.querySelector('[data-testid="org-event-sponsor-event-one-acc-a"]')?.textContent?.trim()).toBe('No');
+    expect(el.querySelector('[data-testid="org-event-sponsor-event-one-acc-b"]')?.textContent?.trim()).toBe('Yes');
+  });
+
+  it("credits each row's attendees to that company in a roll-up", async () => {
+    const el = await render({ rollUp: true, events: [{ ...EVENT, organization: { accountId: 'acc-a', name: 'Acme Motors, Inc.' } }] });
 
     expect(el.querySelector('[data-testid="org-events-attendees-owner"]')?.textContent?.trim()).toBe(ORG_EVENTS_ROLL_UP_PAGE_COPY.attendeesOwner);
-  });
-
-  it('reads Yes for a sponsored event and names the sponsoring organizations', async () => {
-    const el = await render({ rollUp: true });
-
-    const sponsor = el.querySelector('[data-testid="org-event-sponsor-event-one"] [aria-label]');
-    expect(sponsor?.textContent?.trim()).toBe('Yes');
-    expect(sponsor?.getAttribute('aria-label')).toBe('Yes, sponsored by Acme Robotics');
-  });
-
-  it('reads No when no organization in the roll-up sponsors', async () => {
-    const el = await render({ rollUp: true, events: [{ ...EVENT, isOrgSponsor: false, sponsors: [] }] });
-
-    expect(el.querySelector('[data-testid="org-event-sponsor-event-one"]')?.textContent?.trim()).toBe('No');
   });
 
   it("says it could not read the organizations' events in a roll-up, and the company's otherwise", async () => {

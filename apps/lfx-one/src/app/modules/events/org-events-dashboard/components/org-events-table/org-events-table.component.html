@@ -64,7 +64,7 @@
   </ng-template>
 
   <ng-template #body let-event let-rowIndex="rowIndex">
-    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-event-row-' + event.eventId">
+    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-event-row-' + event.rowKey">
       <!-- Event Name -->
       <td>
         @if (event.eventUrl) {
@@ -73,30 +73,26 @@
             target="_blank"
             rel="noopener noreferrer"
             class="lfx-table-name-link text-sm"
-            [attr.data-testid]="'org-event-name-' + event.eventId">
+            [attr.data-testid]="'org-event-name-' + event.rowKey">
             {{ event.eventName }}
           </a>
         } @else {
-          <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-event-name-' + event.eventId">
+          <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-event-name-' + event.rowKey">
             {{ event.eventName }}
           </span>
         }
       </td>
 
       @if (rollUp()) {
-        <td [attr.data-testid]="'org-event-company-' + event.eventId">
-          @for (organization of event.organizations ?? []; track organization.accountId) {
-            <span class="block text-sm text-gray-700">{{ organization.name }}</span>
-          } @empty {
-            <span class="text-xs text-gray-400">&mdash;</span>
-          }
+        <td [attr.data-testid]="'org-event-company-' + event.rowKey">
+          <span class="text-sm text-gray-700">{{ event.organization?.name }}</span>
         </td>
       }
 
       <!-- Foundation -->
       <td>
         @if (event.foundation) {
-          <lfx-tag [value]="event.foundation" styleClass="tag-neutral" [attr.data-testid]="'org-event-foundation-' + event.eventId" />
+          <lfx-tag [value]="event.foundation" styleClass="tag-neutral" [attr.data-testid]="'org-event-foundation-' + event.rowKey" />
         } @else {
           <span class="text-xs text-gray-400">&mdash;</span>
         }
@@ -124,7 +120,7 @@
 
       <!-- Event Attendees: this org's registrants. The event-wide goal rides alongside only for LF
            staff — for an external admin the field is absent from the payload entirely (#4432). -->
-      <td [attr.data-testid]="'org-event-attendees-' + event.eventId" [attr.title]="attendeesCaption()">
+      <td [attr.data-testid]="'org-event-attendees-' + event.rowKey" [attr.title]="attendeesCaption()">
         @if (event.orgAttendeeCount > 0) {
           <button
             type="button"
@@ -146,7 +142,7 @@
       </td>
 
       <!-- Event Speakers: Accepted / Submitted -->
-      <td [attr.data-testid]="'org-event-speakers-' + event.eventId">
+      <td [attr.data-testid]="'org-event-speakers-' + event.rowKey">
         @if (event.orgSpeakerAcceptedCount > 0 || event.orgSpeakerSubmittedCount > 0) {
           <button
             type="button"
@@ -160,24 +156,13 @@
       </td>
 
       <!-- Event Sponsor -->
-      <td [attr.data-testid]="'org-event-sponsor-' + event.eventId">
-        @if (event.sponsorNames) {
-          <span
-            class="text-sm text-gray-700 underline decoration-dotted underline-offset-2"
-            tabindex="0"
-            [pTooltip]="event.sponsorNames"
-            tooltipPosition="top"
-            [attr.aria-label]="'Yes, sponsored by ' + event.sponsorNames"
-            >Yes</span
-          >
-        } @else {
-          <span class="text-sm text-gray-700">{{ event.isOrgSponsor ? 'Yes' : 'No' }}</span>
-        }
+      <td [attr.data-testid]="'org-event-sponsor-' + event.rowKey">
+        <span class="text-sm text-gray-700">{{ event.isOrgSponsor ? 'Yes' : 'No' }}</span>
       </td>
 
       <!-- Action -->
       @if (showAction()) {
-        <td [attr.data-testid]="'org-event-action-' + event.eventId">
+        <td [attr.data-testid]="'org-event-action-' + event.rowKey">
           @if (event.eventRegistrationUrl) {
             <a
               [href]="event.eventRegistrationUrl"

@@ -74,11 +74,6 @@
               @if (speaker.jobTitle) {
                 <span class="text-xs text-gray-500 truncate">{{ speaker.jobTitle }}</span>
               }
-              @if (speaker.organizationNames) {
-                <span class="text-xs text-gray-500 truncate" [attr.data-testid]="'event-speaker-companies-' + index">
-                  <i class="fa-light fa-building mr-1" aria-hidden="true"></i>{{ speaker.organizationNames }}
-                </span>
-              }
             </div>
             <!-- Status badge -->
             @if (speaker.status === 'ACCEPTED') {

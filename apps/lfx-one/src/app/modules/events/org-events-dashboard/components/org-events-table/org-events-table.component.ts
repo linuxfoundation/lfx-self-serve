@@ -9,13 +9,10 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { ORG_EVENTS_PAGE_COPY, ORG_EVENTS_ROLL_UP_PAGE_COPY } from '@lfx-one/shared/constants';
 import type { OrgEvent, OrgEventRowVm, OrgEventsResponse, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
-import { TooltipModule } from 'primeng/tooltip';
-
-import { organizationNames } from '@shared/utils/org-lens-row-organizations.util';
 
 @Component({
   selector: 'lfx-org-events-table',
-  imports: [TableComponent, TagComponent, DecimalPipe, TooltipModule],
+  imports: [TableComponent, TagComponent, DecimalPipe],
   templateUrl: './org-events-table.component.html',
 })
 export class OrgEventsTableComponent {
@@ -60,7 +57,7 @@ export class OrgEventsTableComponent {
     this.eventsResponse().data.map((event) => ({
       ...event,
       dateRange: this.formatDateRange(event.eventStartDate, event.eventEndDate),
-      sponsorNames: this.rollUp() ? organizationNames(event.sponsors) : null,
+      rowKey: event.organization ? `${event.eventId}-${event.organization.accountId}` : event.eventId,
     }))
   );
 

@@ -15,7 +15,6 @@ import type { OrgEventAttendeeVm, OrgEventsParticipation } from '@lfx-one/shared
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
-import { organizationNames } from '@shared/utils/org-lens-row-organizations.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 @Component({
@@ -33,12 +32,13 @@ export class EventAttendeesDrawerComponent {
   public readonly attendeeCount = input<number>(0);
   public readonly participation = input<OrgEventsParticipation>(DEFAULT_ORG_EVENTS_PARTICIPATION);
   public readonly company = input<string>('');
+  public readonly companyLabel = input<string>('');
 
   protected readonly searchTerm = signal('');
   protected readonly loading = signal(false);
   // A failed read is not a count of zero: the opener's count stays and the list says it could not load.
   protected readonly loadFailed = signal(false);
-  protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
+  protected readonly companyName = computed(() => this.companyLabel() || (this.accountContext.selectedAccount().accountName ?? ''));
 
   // The status badge on every row says what the drawer counts: Registered, Attended, or Registered or attended.
   protected readonly participationLabel = computed(() => ORG_EVENTS_PARTICIPATION_BADGE_LABEL[this.participation()]);
@@ -51,13 +51,8 @@ export class EventAttendeesDrawerComponent {
   protected readonly filteredAttendees = computed<OrgEventAttendeeVm[]>(() => {
     const term = this.searchTerm().toLowerCase().trim();
     const data = this.attendeesData()?.data ?? [];
-    const rows = data.map((a) => ({
-      ...a,
-      initials: computePersonInitials(a.name),
-      avatarColorClass: avatarColorClass(a.contactId),
-      organizationNames: organizationNames(a.organizations),
-    }));
-    return !term ? rows : rows.filter((a) => [a.name, a.jobTitle, a.organizationNames].some((field) => (field ?? '').toLowerCase().includes(term)));
+    const matched = !term ? data : data.filter((a) => a.name.toLowerCase().includes(term) || (a.jobTitle ?? '').toLowerCase().includes(term));
+    return matched.map((a) => ({ ...a, initials: computePersonInitials(a.name), avatarColorClass: avatarColorClass(a.contactId) }));
   });
 
   private initAttendeesData() {

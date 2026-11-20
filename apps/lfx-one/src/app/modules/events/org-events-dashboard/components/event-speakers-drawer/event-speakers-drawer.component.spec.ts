@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EventSpeakersDrawerComponent } from './event-speakers-drawer.component';
 
-async function open(failing = false, { rollUp = false, company = '' }: { rollUp?: boolean; company?: string } = {}) {
+async function open(failing = false, { rollUp = false, company = '', companyLabel = '' }: { rollUp?: boolean; company?: string; companyLabel?: string } = {}) {
   const getEventSpeakers = vi.fn(() =>
     failing
       ? throwError(() => new Error('boom'))
@@ -53,6 +53,7 @@ async function open(failing = false, { rollUp = false, company = '' }: { rollUp?
   fixture.componentRef.setInput('acceptedCount', 3);
   fixture.componentRef.setInput('submittedCount', 5);
   fixture.componentRef.setInput('company', company);
+  fixture.componentRef.setInput('companyLabel', companyLabel);
   fixture.detectChanges();
   fixture.componentRef.setInput('visible', true);
   fixture.detectChanges();
@@ -80,26 +81,20 @@ describe('EventSpeakersDrawerComponent', () => {
     expect(document.body.querySelector('[data-testid="event-speakers-drawer-subtitle"]')?.textContent).toContain('3 accepted of 5 submitted');
   });
 
-  it('shows no company line on a single organization', async () => {
-    await open();
+  it("titles the drawer with the row's company in a roll-up, and lists no per-person company line", async () => {
+    await open(false, { rollUp: true, company: 'acc-b', companyLabel: 'Acme Robotics' });
 
+    expect(document.body.querySelector('[data-testid="event-speakers-drawer-title"]')?.textContent?.trim()).toBe('Acme Robotics Speakers');
     expect(document.body.querySelector('[data-testid^="event-speaker-companies-"]')).toBeNull();
   });
 
-  it("shows each speaker's company in a roll-up, and the drawer search matches it", async () => {
-    const { fixture } = await open(false, { rollUp: true });
+  it('titles the drawer with the selected organization on a single organization', async () => {
+    await open();
 
-    expect(document.body.querySelector('[data-testid="event-speaker-companies-1"]')?.textContent?.trim()).toBe('Acme Robotics');
-    const search = document.body.querySelector('[data-testid="event-speakers-search"]') as HTMLInputElement;
-    search.value = 'robotics';
-    search.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
-
-    const rows = Array.from(document.body.querySelectorAll('[data-testid="event-speakers-list"] > li'));
-    expect(rows.map((row) => row.textContent ?? '')).toEqual([expect.stringContaining('Sam Lee')]);
+    expect(document.body.querySelector('[data-testid="event-speakers-drawer-title"]')?.textContent?.trim()).toBe('Acme Motors Speakers');
   });
 
-  it('asks for the picked Company only', async () => {
+  it("asks for the row's company only", async () => {
     const { getEventSpeakers } = await open(false, { rollUp: true, company: 'acc-b' });
 
     expect(getEventSpeakers).toHaveBeenCalledWith('acc-1', 'event-1', { company: 'acc-b' });

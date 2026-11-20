@@ -182,6 +182,7 @@ export class OrgEventsDashboardComponent {
   private readonly scope: Signal<OrgEventsScope> = toSignal(this.filterForm.controls.scope.valueChanges, {
     initialValue: this.filterForm.controls.scope.value,
   });
+  private readonly effectiveScope = computed<OrgEventsScope>(() => (this.isRollUp() ? DEFAULT_ORG_EVENTS_SCOPE : this.scope()));
   private readonly company: Signal<string> = toSignal(this.filterForm.controls.company.valueChanges, {
     initialValue: this.filterForm.controls.company.value,
   });
@@ -194,6 +195,7 @@ export class OrgEventsDashboardComponent {
     const served = this.currentServedOrganizations();
     return company && served?.some((organization) => organization.accountId === company) ? company : '';
   });
+  private readonly companyUnresolved = computed(() => this.isRollUp() && this.company() !== '' && this.currentServedOrganizations() === null);
   public readonly companyOptions: Signal<OrgDropdownOption[]> = computed(() => [
     { label: ORG_EVENTS_ALL_COMPANIES_LABEL, value: '' },
     ...(this.currentServedOrganizations() ?? []).map((organization) => ({ label: organization.name, value: organization.accountId })),
@@ -202,7 +204,7 @@ export class OrgEventsDashboardComponent {
   private readonly effectiveParticipation = computed(() => effectiveOrgEventsParticipation(this.participation(), this.activeTab() === 'past'));
   // What the tiles and the foundation options read: not the tab, search or status.
   private readonly tileFilters = computed(() => ({
-    eventScope: this.scope(),
+    eventScope: this.effectiveScope(),
     foundation: this.foundation(),
     range: this.timeRange(),
     company: this.effectiveCompany(),
@@ -225,7 +227,7 @@ export class OrgEventsDashboardComponent {
       this.foundation() !== '' ||
       this.company() !== '' ||
       this.participation() !== DEFAULT_ORG_EVENTS_PARTICIPATION ||
-      this.scope() !== DEFAULT_ORG_EVENTS_SCOPE
+      this.effectiveScope() !== DEFAULT_ORG_EVENTS_SCOPE
   );
   public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
   public readonly rollUpNotices = computed<string[]>(() => {
@@ -450,7 +452,7 @@ export class OrgEventsDashboardComponent {
       computed(() => {
         const accountId = this.contentVisible() ? this.accountContext.selectedAccount().accountId : null;
         const retry = this.retryCount();
-        return accountId ? { accountId, eventScope: this.scope(), retry } : null;
+        return accountId ? { accountId, eventScope: this.effectiveScope(), retry } : null;
       })
     ).pipe(distinctUntilChanged((a, b) => a?.accountId === b?.accountId && a?.eventScope === b?.eventScope && a?.retry === b?.retry));
     return toSignal(
@@ -487,10 +489,13 @@ export class OrgEventsDashboardComponent {
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId || !this.contentVisible()) return null;
           this.retryCount();
+          const unresolvedCompany = this.companyUnresolved();
+          if (unresolvedCompany && !this.summaryLoadFailed()) return null;
           return {
             accountId,
+            unresolvedCompany,
             ...page(),
-            eventScope: this.scope(),
+            eventScope: this.effectiveScope(),
             foundation: this.foundation(),
             company: this.effectiveCompany(),
             participation: this.effectiveParticipation(),
@@ -509,8 +514,13 @@ export class OrgEventsDashboardComponent {
           loading.set(true);
           loadFailed.set(false);
         }),
-        switchMap(({ accountId, ...params }) =>
-          this.eventsService.getOrgEvents(accountId, { ...params, isPast }).pipe(
+        switchMap(({ accountId, unresolvedCompany, ...params }) => {
+          if (unresolvedCompany) {
+            loadFailed.set(true);
+            loading.set(false);
+            return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize: params.pageSize, offset: params.offset });
+          }
+          return this.eventsService.getOrgEvents(accountId, { ...params, isPast }).pipe(
             catchError((error: unknown) => {
               console.error(`Failed to load ${tab} events`, error);
               loadFailed.set(true);
@@ -518,8 +528,8 @@ export class OrgEventsDashboardComponent {
               return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize, offset });
             }),
             finalize(() => loading.set(false))
-          )
-        )
+          );
+        })
       ),
       { initialValue: EMPTY_ORG_EVENTS_RESPONSE }
     );

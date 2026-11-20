@@ -49,7 +49,7 @@ export const ORG_EVENTS_ROLL_UP_PAGE_COPY: OrgEventsPageCopy = {
   description: "Your organizations' event footprint across LF events.",
   upcomingEmpty: 'No upcoming events were found for your organizations.',
   pastEmpty: 'No past events were found for your organizations.',
-  attendeesOwner: 'My Orgs',
+  attendeesOwner: 'My Company',
   loadError: "Something went wrong reading your organizations' events.",
 };
 

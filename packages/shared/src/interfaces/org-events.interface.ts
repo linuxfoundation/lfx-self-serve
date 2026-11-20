@@ -56,7 +56,7 @@ export type OrgEventsResponse = OffsetPaginatedResponse<OrgEvent>;
 /** Org event row with presentation fields pre-baked for template rendering (avoids method calls in template). */
 export interface OrgEventRowVm extends OrgEvent {
   readonly dateRange: string;
-  readonly sponsorNames: string | null;
+  readonly rowKey: string;
 }
 
 /** Frontend query params for GET /api/orgs/:accountId/lens/events. */
@@ -129,7 +129,6 @@ export interface OrgEventAttendee {
 export interface OrgEventAttendeeVm extends OrgEventAttendee {
   readonly initials: string;
   readonly avatarColorClass: string;
-  readonly organizationNames: string | null;
 }
 
 /** Response for GET /api/orgs/:accountId/lens/events/:eventId/attendees */
@@ -164,7 +163,6 @@ export interface OrgEventSpeaker {
 export interface OrgEventSpeakerVm extends OrgEventSpeaker {
   readonly initials: string;
   readonly avatarColorClass: string;
-  readonly organizationNames: string | null;
 }
 
 /** Response for GET /api/orgs/:accountId/lens/events/:eventId/speakers */

@@ -202,16 +202,18 @@
               tooltipPosition="top"
               dataTest="org-events-participation-select" />
           </div>
-          <div class="w-full sm:w-52">
-            <lfx-select
-              [form]="filterForm"
-              control="scope"
-              size="small"
-              [options]="scopeOptions"
-              styleClass="w-full"
-              [ariaLabel]="scopeLabel"
-              dataTest="org-events-scope-filter" />
-          </div>
+          @if (!isRollUp()) {
+            <div class="w-full sm:w-52">
+              <lfx-select
+                [form]="filterForm"
+                control="scope"
+                size="small"
+                [options]="scopeOptions"
+                styleClass="w-full"
+                [ariaLabel]="scopeLabel"
+                dataTest="org-events-scope-filter" />
+            </div>
+          }
           @if (canClearFilters()) {
             <button
               type="button"
@@ -279,7 +281,8 @@
       [eventName]="activeDrawerEvent()?.eventName ?? ''"
       [attendeeCount]="activeDrawerEvent()?.orgAttendeeCount ?? 0"
       [participation]="drawerParticipation()"
-      [company]="effectiveCompany()"
+      [company]="activeDrawerEvent()?.organization?.accountId ?? ''"
+      [companyLabel]="activeDrawerEvent()?.organization?.name ?? ''"
       data-testid="org-events-attendees-drawer" />
     <lfx-event-speakers-drawer
       [visible]="speakersDrawerVisible()"
@@ -288,7 +291,8 @@
       [eventName]="activeDrawerEvent()?.eventName ?? ''"
       [acceptedCount]="activeDrawerEvent()?.orgSpeakerAcceptedCount ?? 0"
       [submittedCount]="activeDrawerEvent()?.orgSpeakerSubmittedCount ?? 0"
-      [company]="effectiveCompany()"
+      [company]="activeDrawerEvent()?.organization?.accountId ?? ''"
+      [companyLabel]="activeDrawerEvent()?.organization?.name ?? ''"
       data-testid="org-events-speakers-drawer" />
   }
 </div>

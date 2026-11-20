@@ -3,6 +3,7 @@
 
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import {
@@ -11,7 +12,7 @@ import {
   ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE,
   ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE,
 } from '@lfx-one/shared/constants';
-import type { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
+import type { Account, OrgEvent, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
 import { IntercomService } from '@services/intercom.service';
@@ -21,6 +22,8 @@ import { MessageService } from 'primeng/api';
 import { NEVER, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
+import { EventAttendeesDrawerComponent } from './components/event-attendees-drawer/event-attendees-drawer.component';
+import { EventSpeakersDrawerComponent } from './components/event-speakers-drawer/event-speakers-drawer.component';
 import { OrgEventsDashboardComponent } from './org-events-dashboard.component';
 
 const ROLL_UP_KEY = 'family-0010000000ROOTAAA';
@@ -30,8 +33,30 @@ const ROLL_UP_ORGANIZATIONS = [
 ];
 
 function companiesSent(mock: { mock: { calls: unknown[][] } }): unknown[] {
-  return mock.mock.calls.map((call) => (call[1] as Record<string, unknown>)['company']);
+  return paramSent(mock, 'company');
 }
+
+function paramSent(mock: { mock: { calls: unknown[][] } }, key: string): unknown[] {
+  return mock.mock.calls.map((call) => (call[1] as Record<string, unknown>)[key]);
+}
+
+const ROW: OrgEvent = {
+  eventId: 'event-one',
+  eventName: 'Open Source Summit',
+  foundation: null,
+  eventStartDate: '2027-03-01',
+  eventEndDate: null,
+  eventLocation: null,
+  eventCity: null,
+  eventCountry: null,
+  eventUrl: null,
+  eventRegistrationUrl: null,
+  orgAttendeeCount: 2,
+  orgSpeakerAcceptedCount: 1,
+  orgSpeakerSubmittedCount: 1,
+  isOrgSponsor: false,
+  organization: { accountId: 'acc-b', name: 'Acme Robotics' },
+};
 
 async function render(
   state: OrgLensEmptyStateName | null,
@@ -63,6 +88,8 @@ async function render(
       return of(EMPTY_ORG_EVENTS_RESPONSE);
     }),
     getOrgEventFoundations: vi.fn(() => (foundationsFail ? throwError(() => new Error('foundations down')) : of({ data: foundations }))),
+    getEventAttendees: vi.fn(() => of({ eventId: 'event-one', eventName: 'Open Source Summit', total: 0, data: [] })),
+    getEventSpeakers: vi.fn(() => of({ eventId: 'event-one', eventName: 'Open Source Summit', acceptedCount: 0, submittedCount: 0, data: [] })),
   };
 
   await TestBed.configureTestingModule({
@@ -303,6 +330,43 @@ describe('OrgEventsDashboardComponent', () => {
 
       expect(companiesSent(eventsService.getOrgEventsSummary).at(-1)).toBe('');
       expect(companiesSent(eventsService.getOrgEvents).at(-1)).toBe('');
+    });
+
+    it("hides Show in a roll-up and reads only each company's own activity, whatever the URL says", async () => {
+      const { el, eventsService } = await render(null, { rollUp: true, query: { eventScope: 'all' } });
+
+      expect(el.querySelector('[data-test="org-events-scope-filter"]')).toBeNull();
+      expect(paramSent(eventsService.getOrgEvents, 'eventScope').every((scope) => scope === 'activity')).toBe(true);
+      expect(paramSent(eventsService.getOrgEventsSummary, 'eventScope').every((scope) => scope === 'activity')).toBe(true);
+      expect(paramSent(eventsService.getOrgEventFoundations, 'eventScope').every((scope) => scope === 'activity')).toBe(true);
+    });
+
+    it('keeps Show on a single organization', async () => {
+      const { el, eventsService } = await render(null, { query: { eventScope: 'all' } });
+
+      expect(el.querySelector('[data-test="org-events-scope-filter"]')).not.toBeNull();
+      expect(paramSent(eventsService.getOrgEvents, 'eventScope').at(-1)).toBe('all');
+    });
+
+    it('never widens the list to the whole family while a picked Company cannot be checked', async () => {
+      const { el, eventsService } = await render(null, { rollUp: true, summaryFails: true, query: { company: 'acc-b' } });
+
+      expect(eventsService.getOrgEvents).not.toHaveBeenCalled();
+      expect(el.querySelector('[data-testid="org-events-load-error"]')).not.toBeNull();
+    });
+
+    it("opens a row's drawers for that row's company", async () => {
+      const { component, fixture } = await render(null, { rollUp: true });
+
+      component.onAttendeesClick(ROW);
+      fixture.detectChanges();
+      const attendees = fixture.debugElement.query(By.directive(EventAttendeesDrawerComponent)).componentInstance as EventAttendeesDrawerComponent;
+      expect([attendees.company(), attendees.companyLabel()]).toEqual(['acc-b', 'Acme Robotics']);
+
+      component.onSpeakersClick(ROW);
+      fixture.detectChanges();
+      const speakers = fixture.debugElement.query(By.directive(EventSpeakersDrawerComponent)).componentInstance as EventSpeakersDrawerComponent;
+      expect([speakers.company(), speakers.companyLabel()]).toEqual(['acc-b', 'Acme Robotics']);
     });
 
     it('says when organizations are left out, without saying how many', async () => {
