@@ -853,11 +853,23 @@ function npsScoreColor(score: number | null): string {
   return Math.round(score) >= 0 ? colors.fair : colors.poor;
 }
 
-/** The quarter before the audience's latest wave in the trend; the last but one when the wave is not named. */
+/**
+ * The quarter before the audience's latest wave in the trend; the last but one when the wave is not found. The two
+ * labels differ in form ("Q2 2026" against "Q2 26"), so they are compared as quarter and year.
+ */
 function npsPreviousQuarterLabel(trend: HealthMetricsMembersNpsQuarter[], latestLabel: string | null): string | null {
-  const named = latestLabel === null ? -1 : trend.findIndex((quarter) => quarter.quarterLabel === latestLabel);
+  const latestKey = npsQuarterKey(latestLabel);
+  const named = latestKey === null ? -1 : trend.findIndex((quarter) => npsQuarterKey(quarter.quarterLabel) === latestKey);
   const latest = named === -1 ? trend.length - 1 : named;
   return latest > 0 ? (trend[latest - 1].quarterLabel ?? null) : null;
+}
+
+/** "Q2 2026" or "Q2 26" as "2026-Q2"; `null` for a label in neither form. */
+function npsQuarterKey(label: string | null): string | null {
+  const match = label?.trim().match(/^Q([1-4])\s+(\d{2}|\d{4})$/i);
+  if (!match) return null;
+  const year = match[2].length === 2 ? 2000 + Number(match[2]) : Number(match[2]);
+  return `${year}-Q${match[1]}`;
 }
 
 /** Below the cohort's level on the percent the cell shows, so a bar reading "90%" is never red under the board's 90%. */

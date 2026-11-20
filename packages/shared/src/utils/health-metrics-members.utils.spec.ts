@@ -762,13 +762,20 @@ describe('members nps', () => {
   });
 
   it('reports the score with its change on the previous quarter, and who responded', () => {
-    const trend = [quarter('2026-01-01', 58, 0.7), quarter('2026-04-01', 62, 0.69)];
-    const metrics = buildHealthMetricsMembersNpsMetrics(audience({ audience: 'All', lastUpdatedQuarter: trend[1].quarterLabel }), trend);
+    const trend = [
+      { ...quarter('2025-10-01', 50, 0.7), quarterLabel: 'Q4 25' },
+      { ...quarter('2026-01-01', 58, 0.7), quarterLabel: 'Q1 26' },
+      { ...quarter('2026-04-01', 62, 0.69), quarterLabel: 'Q2 26' },
+    ];
+    // The view names the latest wave "Q1 2026" while the trend says "Q1 26"; a later wave follows it in the trend.
+    const metrics = buildHealthMetricsMembersNpsMetrics(audience({ audience: 'All', lastUpdatedQuarter: 'Q1 2026' }), trend);
 
     expect(metrics).toEqual([
-      { key: 'score', label: 'NPS・All', value: '+62', descriptionLead: '+4', descriptionLeadTone: 'up', description: ` vs ${trend[0].quarterLabel}` },
+      { key: 'score', label: 'NPS・All', value: '+62', descriptionLead: '+4', descriptionLeadTone: 'up', description: ' vs Q4 25' },
       { key: 'rate', label: 'Response rate', value: '69%', description: '18 of 26 responded' },
     ]);
+    // A wave the trend does not carry falls back to the quarter before the last.
+    expect(buildHealthMetricsMembersNpsMetrics(audience({ lastUpdatedQuarter: 'Q3 2027' }), trend)[0].description).toBe(' vs Q1 26');
   });
 
   it('greens a score that held, reds one that fell, and signs negatives with zero unsigned', () => {
