@@ -95,9 +95,11 @@ export interface HealthMetricsOverviewChurn {
   periods: Record<HealthMetricsL2Range, HealthMetricsOverviewChurnPeriod>;
 }
 
-/** `GET /api/analytics/overview-outstanding-balance` — overdue invoices today; the view has no periods. Shares are 0–1. */
-export interface HealthMetricsOverviewOutstandingBalance {
-  measured: boolean;
+/**
+ * One period's overdue membership invoices: those due in the period that are still unpaid and 60 or more days
+ * overdue today, not the balance at the period's end. Shares are 0–1.
+ */
+export interface HealthMetricsOverviewBalancePeriod {
   outstandingUsd: number | null;
   overdueMembers: number | null;
   highRiskUsd: number | null;
@@ -106,6 +108,12 @@ export interface HealthMetricsOverviewOutstandingBalance {
   mediumRiskUsd: number | null;
   mediumRiskMembers: number | null;
   mediumRiskSharePct: number | null;
+}
+
+/** `GET /api/analytics/overview-outstanding-balance` — every period, from the foundation's one row. */
+export interface HealthMetricsOverviewOutstandingBalance {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewBalancePeriod>;
 }
 
 /** One event on the Overview list. Every `null` is unmeasured, never zero. */
@@ -121,6 +129,11 @@ export interface HealthMetricsOverviewEvent {
   registrationsGoal: number | null;
   /** Upcoming only: the view's pace against last year (`high`, `medium` or `low`). */
   compScore: string | null;
+  /**
+   * Upcoming only: the proposals' pace against last year's edition, on the same scale. `null` with no previous
+   * edition, no proposals yet, or once the event has started.
+   */
+  proposalsCompScore: string | null;
   acceptedTalks: number | null;
   totalProposals: number | null;
   /** The call for proposals' stage, e.g. `In Review`. */
@@ -159,6 +172,8 @@ export interface HealthMetricsOverviewBoardMember {
   jobTitle: string | null;
   organization: string | null;
   logoUrl: string | null;
+  /** `null` keeps the initials avatar. */
+  photoUrl: string | null;
   /** `YYYY-MM-DD`. */
   lastAttendedDate: string | null;
   attendance: Partial<Record<HealthMetricsL2Range, HealthMetricsOverviewBoardAttendance>>;
@@ -411,6 +426,8 @@ export interface HealthMetricsOverviewBalanceView {
   totalLabel: string;
   overdueMembersLabel: string;
   atRiskLabel: string;
+  /** The "{N} at risk of churn" tag shows only when the period has high-risk members. */
+  showAtRisk: boolean;
   rows: HealthMetricsOverviewBalanceRowView[];
 }
 
@@ -459,6 +476,8 @@ export interface HealthMetricsOverviewEventRegistrationsView extends HealthMetri
 export interface HealthMetricsOverviewEventTalksView extends HealthMetricsOverviewEventBarView {
   hasProposals: boolean;
   note: string;
+  /** An upcoming event's proposals pace, named for screen readers; `null` without one. */
+  statusLabel: string | null;
 }
 
 export interface HealthMetricsOverviewEventRowView {
@@ -623,6 +642,8 @@ export interface HealthMetricsOverviewBoardRowView {
   key: string;
   name: string;
   initials: string;
+  /** Empty keeps the initials. */
+  photoUrl: string;
   title: string;
   organization: string;
   organizationInitial: string;

@@ -53,7 +53,7 @@ function withPeriod(overrides: Partial<HealthMetricsTrainingEnrollmentPeriod> = 
       { year: 2026, enrollments: 3850 },
       { year: 2025, enrollments: 3400 },
     ],
-    goals: { enrollments: null, revenueUsd: null, enrollmentsProgressYtd: null, revenueProgressYtd: null },
+    goals: HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED.goals,
   };
 }
 

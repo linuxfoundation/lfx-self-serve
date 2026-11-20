@@ -52,7 +52,7 @@ function enrollment(
       { year: currentYear, enrollments: 4000 },
       { year: currentYear - 1, enrollments: 8000 },
     ],
-    goals: { enrollments: null, revenueUsd: null, enrollmentsProgressYtd: null, revenueProgressYtd: null },
+    goals: HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED.goals,
     ...overrides,
   };
 }

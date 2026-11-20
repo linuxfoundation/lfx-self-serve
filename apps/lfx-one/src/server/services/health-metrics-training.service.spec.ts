@@ -52,10 +52,14 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
         ENROLLMENT_COUNT_CHANGE_PCT: 0.1,
         CERTIFICATIONS_CHANGE_PCT: null,
         REVENUE_CHANGE_PCT: -0.25,
-        ENROLLMENT_GOAL: 4000,
+        ENROLLMENT_GOAL_YTD: 4000,
         ENROLLMENT_GOAL_PROGRESS_YTD: '0.9625',
-        REVENUE_GOAL_USD: 0,
+        REVENUE_GOAL_USD_YTD: 0,
         REVENUE_GOAL_PROGRESS_YTD: null,
+        ENROLLMENT_GOAL_COMPLETED_YEAR: 3500,
+        ENROLLMENT_GOAL_PROGRESS_COMPLETED_YEAR: '1.0',
+        REVENUE_GOAL_USD_COMPLETED_YEAR: '250000',
+        REVENUE_GOAL_PROGRESS_COMPLETED_YEAR: '0.42',
       }
     ),
     row(
@@ -191,12 +195,16 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
     ]);
   });
 
-  it('reads the goals off the All row, treating a zero goal as none', async () => {
+  it("reads each period's goals off the All row, treating a zero or missing goal as none", async () => {
     mockReads(summaryRows, []);
 
     const { goals } = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
 
-    expect(goals).toEqual({ enrollments: 4000, revenueUsd: null, enrollmentsProgressYtd: 0.9625, revenueProgressYtd: null });
+    expect(summarySql()).toContain('enrollment_goal_last_completed_year AS enrollment_goal_COMPLETED_YEAR');
+    expect(summarySql()).toContain('revenue_goal_progress_3rd_last_completed_year AS revenue_goal_progress_COMPLETED_YEAR_3');
+    expect(goals.YTD).toEqual({ enrollments: 4000, revenueUsd: null, enrollmentsProgress: 0.9625, revenueProgress: null });
+    expect(goals.COMPLETED_YEAR).toEqual({ enrollments: 3500, revenueUsd: 250000, enrollmentsProgress: 1, revenueProgress: 0.42 });
+    expect(goals.COMPLETED_YEAR_2).toEqual({ enrollments: null, revenueUsd: null, enrollmentsProgress: null, revenueProgress: null });
   });
 
   it('ranks a type without a rank last, by name', async () => {
@@ -214,7 +222,7 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
 
     expect(enrollment.measured).toBe(false);
     expect(enrollment.trend).toEqual([]);
-    expect(enrollment.goals.enrollments).toBeNull();
+    expect(enrollment.goals.YTD.enrollments).toBeNull();
   });
 
   it('rejects when either read fails', async () => {

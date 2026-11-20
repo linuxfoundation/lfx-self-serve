@@ -63,6 +63,7 @@ function event(eventId: string, overrides: Partial<HealthMetricsOverviewEvent> =
     registrations: 328,
     registrationsGoal: 1000,
     compScore: 'medium',
+    proposalsCompScore: null,
     acceptedTalks: 0,
     totalProposals: 185,
     cfpStatus: 'Review Complete',
@@ -84,7 +85,7 @@ describe('OverviewEventsCardComponent', () => {
   let fixture: ComponentFixture<OverviewEventsCardComponent>;
   let open: ReturnType<typeof vi.fn>;
 
-  async function render(failSponsorship = false): Promise<void> {
+  async function render(failSponsorship = false, events: HealthMetricsOverviewEvents = EVENTS): Promise<void> {
     open = vi.fn().mockReturnValue({});
     await TestBed.configureTestingModule({
       imports: [OverviewEventsCardComponent],
@@ -96,7 +97,7 @@ describe('OverviewEventsCardComponent', () => {
           useValue: {
             getEventsAtAGlance: vi.fn().mockReturnValue(of(GLANCE)),
             getEventsSponsorship: vi.fn().mockReturnValue(failSponsorship ? throwError(() => new Error('down')) : of(SPONSORSHIP)),
-            getOverviewEvents: vi.fn().mockReturnValue(of(EVENTS)),
+            getOverviewEvents: vi.fn().mockReturnValue(of(events)),
           },
         },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
@@ -222,6 +223,17 @@ describe('OverviewEventsCardComponent', () => {
     expect(query('overview-events-footer')?.contains(query('overview-events-legend'))).toBe(true);
     expect(text('overview-events-legend')).toBe('On trackAt riskAction required');
     expect(text('overview-events-list-title')).toBe('Upcoming events');
+  });
+
+  it("colours an upcoming event's proposals by their rating and names it for screen readers", async () => {
+    await render(false, { ...EVENTS, upcoming: [event('u0', { proposalsCompScore: 'low', acceptedTalks: 40 }), event('u1')] });
+
+    expect(query('overview-events-row-u0-talks-bar')?.className).toContain('bg-red-400');
+    expect(query('overview-events-row-u0-talks')?.className).toContain('border-l-red-400');
+    expect(squashed('overview-events-row-u0-talks')).toContain('Status:Actionrequired');
+    // No rating keeps the neutral bar, with no status to name.
+    expect(query('overview-events-row-u1-talks-bar')?.className).toContain('bg-blue-500');
+    expect(squashed('overview-events-row-u1-talks')).not.toContain('Status:');
   });
 
   it('stacks each row by default, with a status line, a label and a dark value per cell, and the table from 561px', async () => {

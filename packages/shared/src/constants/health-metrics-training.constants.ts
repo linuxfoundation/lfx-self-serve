@@ -7,6 +7,7 @@ import type {
   HealthMetricsTrainingCourses,
   HealthMetricsTrainingCoursesTypeOption,
   HealthMetricsTrainingEnrollment,
+  HealthMetricsTrainingEnrollmentGoals,
   HealthMetricsTrainingEnrollmentMetric,
   HealthMetricsTrainingEnrollmentMetricOption,
   HealthMetricsTrainingEnrollmentPeriod,
@@ -65,6 +66,14 @@ export const HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED: HealthMetrics
   byType: [],
 };
 
+/** A year with no goal set for either measure. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET: HealthMetricsTrainingEnrollmentGoals = {
+  enrollments: null,
+  revenueUsd: null,
+  enrollmentsProgress: null,
+  revenueProgress: null,
+};
+
 /** The empty read: shown while loading, after a failure, and for a foundation without an `All` row. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainingEnrollment = {
   measured: false,
@@ -75,7 +84,12 @@ export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainin
     COMPLETED_YEAR_3: HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED,
   },
   trend: [],
-  goals: { enrollments: null, revenueUsd: null, enrollmentsProgressYtd: null, revenueProgressYtd: null },
+  goals: {
+    YTD: HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET,
+    COMPLETED_YEAR: HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET,
+    COMPLETED_YEAR_2: HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET,
+    COMPLETED_YEAR_3: HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET,
+  },
 };
 
 /** The toggle above the by-type list. */

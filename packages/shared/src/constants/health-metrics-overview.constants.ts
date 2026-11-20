@@ -188,12 +188,16 @@ export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
       ],
     },
   },
-  // The balance is today's whatever the period, so the card keeps the present-tense words for every year.
   balance: {
     icon: 'fa-light fa-file-invoice-dollar',
     ytd: {
       title: 'All invoices paid',
       text: 'No invoice is 60 or more days overdue and no member has said they won’t renew. Late invoices show here as soon as they come up.',
+      reasons: [],
+    },
+    past: {
+      title: 'Nothing overdue in {Y}',
+      text: 'Every member invoice was paid within 60 days, and no member said they wouldn’t renew.',
       reasons: [],
     },
   },

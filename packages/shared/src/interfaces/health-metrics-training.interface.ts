@@ -59,12 +59,12 @@ export interface HealthMetricsTrainingEnrollmentPeriod {
   byType: HealthMetricsTrainingEnrollmentType[];
 }
 
-/** The foundation's yearly goals; progress (0–1) is modelled for YTD only. `null` is no goal set. */
+/** One year's goals and the view's progress against them (0–1, capped at 1). `null` is no goal set. */
 export interface HealthMetricsTrainingEnrollmentGoals {
   enrollments: number | null;
   revenueUsd: number | null;
-  enrollmentsProgressYtd: number | null;
-  revenueProgressYtd: number | null;
+  enrollmentsProgress: number | null;
+  revenueProgress: number | null;
 }
 
 /** The Enrollment & revenue section: every L2 period, plus the period-independent yearly trend. */
@@ -72,7 +72,8 @@ export interface HealthMetricsTrainingEnrollment {
   measured: boolean;
   periods: Record<HealthMetricsL2Range, HealthMetricsTrainingEnrollmentPeriod>;
   trend: HealthMetricsTrainingEnrollmentYear[];
-  goals: HealthMetricsTrainingEnrollmentGoals;
+  /** Each period's goals; a past year is no goal set until the goals sheet carries that year. */
+  goals: Record<HealthMetricsL2Range, HealthMetricsTrainingEnrollmentGoals>;
 }
 
 /** What the by-type list ranks by; the trend always shows enrollments. */

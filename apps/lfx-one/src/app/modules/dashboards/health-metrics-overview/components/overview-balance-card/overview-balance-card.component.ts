@@ -13,6 +13,7 @@ import {
 import { buildHealthMetricsOverviewBalanceView, healthMetricsOverviewBalanceSortValue, sortHealthMetricsRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 
+import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
 import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { injectOverviewCardRead } from '../../overview-card-read';
@@ -21,7 +22,7 @@ import { OverviewExploreLinkComponent } from '../overview-explore-link/overview-
 
 import type { HealthMetricsOverviewBalanceRowView, HealthMetricsOverviewBalanceView } from '@lfx-one/shared/interfaces';
 
-/** Overdue membership invoices today, split into the high and medium risk bands; the same in every period. */
+/** The period's overdue membership invoices, split into the high and medium risk bands. */
 @Component({
   selector: 'lfx-overview-balance-card',
   imports: [HealthMetricsThComponent, OverviewCardComponent, OverviewExploreLinkComponent],
@@ -30,6 +31,7 @@ import type { HealthMetricsOverviewBalanceRowView, HealthMetricsOverviewBalanceV
 })
 export class OverviewBalanceCardComponent {
   private readonly analyticsService = inject(AnalyticsService);
+  private readonly chrome = inject(HealthMetricsChromeService);
 
   protected readonly card = HEALTH_METRICS_OVERVIEW_CARDS.balance;
   protected readonly link = HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.balance;
@@ -37,7 +39,7 @@ export class OverviewBalanceCardComponent {
   protected readonly read = injectOverviewCardRead((foundationSlug) => this.analyticsService.getOverviewOutstandingBalance({ foundationSlug }));
   protected readonly view = computed<HealthMetricsOverviewBalanceView | null>(() => {
     const data = this.read.data();
-    return data ? buildHealthMetricsOverviewBalanceView(data) : null;
+    return data ? buildHealthMetricsOverviewBalanceView(data, this.chrome.selectedRange()) : null;
   });
   /** The table follows the sort; the bar above keeps the bands in risk order. */
   protected readonly rows = computed<HealthMetricsOverviewBalanceRowView[]>(() =>

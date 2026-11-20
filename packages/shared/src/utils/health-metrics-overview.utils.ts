@@ -273,45 +273,51 @@ export function buildHealthMetricsOverviewChurnView(churn: HealthMetricsOverview
   };
 }
 
-/** Overdue invoices today, split into the high and medium risk bands. */
-export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOverviewOutstandingBalance): HealthMetricsOverviewBalanceView {
-  const high = balance.highRiskUsd ?? 0;
-  const medium = balance.mediumRiskUsd ?? 0;
+/** The period's overdue invoices, split into the high and medium risk bands. */
+export function buildHealthMetricsOverviewBalanceView(
+  balance: HealthMetricsOverviewOutstandingBalance,
+  range: HealthMetricsRange
+): HealthMetricsOverviewBalanceView {
+  const l2 = toHealthMetricsOverviewRange(range);
+  const period = balance.measured && l2 ? balance.periods[l2] : null;
+  const high = period?.highRiskUsd ?? 0;
+  const medium = period?.mediumRiskUsd ?? 0;
   // The view's share when it has one, otherwise the band's part of the two amounts.
   const share = (pct: number | null, amount: number): number => {
     if (pct !== null) return clampPct(pct * 100);
     return high + medium > 0 ? clampPct((amount / (high + medium)) * 100) : 0;
   };
-  const highMembers = balance.highRiskMembers;
+  const highMembers = period?.highRiskMembers ?? null;
 
   return {
-    isEmpty: !balance.measured || !balance.outstandingUsd,
-    isPaidInFull: balance.measured && balance.outstandingUsd === 0,
-    totalLabel: formatMoney(balance.outstandingUsd),
-    overdueMembersLabel: formatCount(balance.overdueMembers),
+    isEmpty: !period?.outstandingUsd,
+    isPaidInFull: period?.outstandingUsd === 0,
+    totalLabel: formatMoney(period?.outstandingUsd ?? null),
+    overdueMembersLabel: formatCount(period?.overdueMembers ?? null),
     atRiskLabel: formatMembers(highMembers),
+    showAtRisk: (highMembers ?? 0) > 0,
     rows: [
       {
         key: 'high',
         label: 'High risk',
         daysLabel: '90+ days',
         dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low,
-        widthPct: share(balance.highRiskSharePct, high),
-        membersLabel: formatCount(balance.highRiskMembers),
-        amountLabel: formatMoney(balance.highRiskUsd),
-        members: balance.highRiskMembers,
-        amountUsd: balance.highRiskUsd,
+        widthPct: share(period?.highRiskSharePct ?? null, high),
+        membersLabel: formatCount(period?.highRiskMembers ?? null),
+        amountLabel: formatMoney(period?.highRiskUsd ?? null),
+        members: period?.highRiskMembers ?? null,
+        amountUsd: period?.highRiskUsd ?? null,
       },
       {
         key: 'medium',
         label: 'Medium risk',
         daysLabel: '60–89 days',
         dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium,
-        widthPct: share(balance.mediumRiskSharePct, medium),
-        membersLabel: formatCount(balance.mediumRiskMembers),
-        amountLabel: formatMoney(balance.mediumRiskUsd),
-        members: balance.mediumRiskMembers,
-        amountUsd: balance.mediumRiskUsd,
+        widthPct: share(period?.mediumRiskSharePct ?? null, medium),
+        membersLabel: formatCount(period?.mediumRiskMembers ?? null),
+        amountLabel: formatMoney(period?.mediumRiskUsd ?? null),
+        members: period?.mediumRiskMembers ?? null,
+        amountUsd: period?.mediumRiskUsd ?? null,
       },
     ],
   };
@@ -355,7 +361,7 @@ export function buildHealthMetricsOverviewEventsView(
   };
 }
 
-/** The training total against its goal, and each program's share; the goal is modelled for YTD only. */
+/** The training total against the period's goal, and each program's share. */
 export function buildHealthMetricsOverviewTrainingView(
   enrollment: HealthMetricsTrainingEnrollment,
   range: HealthMetricsRange,
@@ -365,10 +371,9 @@ export function buildHealthMetricsOverviewTrainingView(
   const period = l2 ? enrollment.periods[l2] : null;
   const isRevenue = metric === 'revenue';
   const total = (isRevenue ? period?.totals.revenueUsd : period?.totals.enrollments) ?? null;
-  const goals = trainingGoal(enrollment, range, isRevenue);
+  const goals = trainingGoal(enrollment, l2, isRevenue);
   const goal = goals.goal;
-  // Goals are read for YTD only, so a past year has no goal to show rather than none set.
-  const noGoal = range === 'YTD' && !goal;
+  const noGoal = l2 !== null && !goal;
   const format = (value: number | null): string => formatTrainingValue(value, isRevenue);
   const fraction = goals.progress ?? (goal && total !== null ? total / goal : 0);
   const metricLabel = isRevenue ? 'Revenue' : 'Enrollments';
@@ -476,6 +481,7 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
       key: member.key,
       name: member.name,
       initials: buildInitials(member.name),
+      photoUrl: member.photoUrl ?? '',
       title: member.jobTitle ?? '',
       organization: member.organization ?? NOT_AVAILABLE,
       organizationInitial: member.organization?.charAt(0).toUpperCase() ?? '',
@@ -1271,7 +1277,11 @@ function buildTalksBar(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
   const proposals = event.totalProposals ?? 0;
   const hasProposals = proposals > 0;
   const note = event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A';
-  const gauge: HealthMetricsOverviewEventGaugeView = isPast ? { ...ACCENT_GAUGE, tone: 'level', level: 'high' } : ACCENT_GAUGE;
+  // Past proposals are green, as the design draws them; upcoming ones take their pace, as registrations do.
+  const status = isPast
+    ? { barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high, statusLabel: null, gauge: { ...ACCENT_GAUGE, tone: 'level' as const, level: 'high' as const } }
+    : statusFields(paceStatus(event.proposalsCompScore));
+  const gauge = status.gauge;
 
   return {
     hasProposals,
@@ -1279,8 +1289,8 @@ function buildTalksBar(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
     sideLabel: 'Received:',
     sideValue: formatCount(proposals),
     widthPct: hasProposals ? clampPct((accepted / proposals) * 100) : 0,
-    // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
-    barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
+    barClass: status.barClass,
+    statusLabel: hasProposals ? status.statusLabel : null,
     neutral: false,
     gauge,
     note,
@@ -1376,15 +1386,16 @@ function formatEventDates(start: string | null, end: string | null): string {
   return `${monthDay(start)}–${Number(end.slice(8, 10))}, ${endYear}`;
 }
 
-/** The year's goal and its modelled progress, which the view carries for YTD only. */
+/** The period's goal and the view's progress against it; a past year with no goal reads as none set. */
 function trainingGoal(
   enrollment: HealthMetricsTrainingEnrollment,
-  range: HealthMetricsRange,
+  range: HealthMetricsL2Range | null,
   isRevenue: boolean
 ): { goal: number | null; progress: number | null } {
-  if (range !== 'YTD') return { goal: null, progress: null };
-  if (isRevenue) return { goal: enrollment.goals.revenueUsd, progress: enrollment.goals.revenueUsd ? enrollment.goals.revenueProgressYtd : null };
-  return { goal: enrollment.goals.enrollments, progress: enrollment.goals.enrollments ? enrollment.goals.enrollmentsProgressYtd : null };
+  const goals = range ? enrollment.goals[range] : null;
+  if (!goals) return { goal: null, progress: null };
+  if (isRevenue) return { goal: goals.revenueUsd, progress: goals.revenueUsd ? goals.revenueProgress : null };
+  return { goal: goals.enrollments, progress: goals.enrollments ? goals.enrollmentsProgress : null };
 }
 
 function trainingGoalLabel(goal: number | null, noGoal: boolean, fraction: number, format: (value: number | null) => string): string | null {
