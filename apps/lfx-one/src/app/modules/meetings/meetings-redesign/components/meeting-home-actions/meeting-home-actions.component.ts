@@ -191,6 +191,13 @@ export class MeetingHomeActionsComponent {
     // A self-invite made here may not be indexed yet, so its saved uid goes along, as the legacy card's does.
     const selfInvite = this.store?.selfInviteOf(meetingId);
     const savedUid = selfInvite?.at(-1);
+    // A no-UID re-add must not delete only an older registration still present in the server's index.
+    if (selfInvite?.length === 0 && !this.row().meeting.my_registrant_ids?.length) {
+      this.showInvitationSyncing();
+      this.userService.refreshUserMeetings();
+      ref?.close();
+      return;
+    }
     this.removing.set(true);
     (savedUid ? this.selfRemoval.remove$(meetingId, 'meetings-home', savedUid) : this.selfRemoval.remove$(meetingId, 'meetings-home'))
       .pipe(
@@ -214,11 +221,7 @@ export class MeetingHomeActionsComponent {
         error: (error: unknown) => {
           // An add that returned no uid can only be removed once it is indexed (legacy card's "Invitation syncing").
           if (selfInvite?.length === 0 && error instanceof HttpErrorResponse && error.status === 404) {
-            this.toast.show({
-              position: 'bottom-center',
-              message: 'Invitation syncing',
-              description: 'Your invitation is saved but is still syncing. Try Remove Myself again shortly.',
-            });
+            this.showInvitationSyncing();
             return;
           }
           this.showError('Error', this.selfRemoval.describeFailure(error));
@@ -236,6 +239,14 @@ export class MeetingHomeActionsComponent {
     return computed(
       () => this.view() === 'upcoming' && this.userService.authenticated() && this.row().meeting.organizer === true && !this.canRemove() && !this.removing()
     );
+  }
+
+  private showInvitationSyncing(): void {
+    this.toast.show({
+      position: 'bottom-center',
+      message: 'Invitation syncing',
+      description: 'Your invitation is saved but is still syncing. Try Remove Myself again shortly.',
+    });
   }
 
   private showError(message: string, description: string): void {

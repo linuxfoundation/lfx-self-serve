@@ -458,10 +458,30 @@ describe('MeetingHomeActionsComponent', () => {
       expect(toastShow).toHaveBeenLastCalledWith({ variant: 'dark', message: 'Removed from meeting' });
     });
 
-    it('says the invitation is still syncing when an add that returned no uid is not indexed yet', async () => {
+    it('does not delete while a no-UID self-invite is syncing, then allows retry after indexing', async () => {
+      selfInvites.set(INVITEE.id, []);
+      await render(row({ ...INVITEE, organizer: true, my_registrant_ids: undefined }));
+      await confirmRemoval();
+
+      expect(remove$).not.toHaveBeenCalled();
+      expect(forgetSelfInvite).not.toHaveBeenCalled();
+      expect(refreshUserMeetings).toHaveBeenCalledTimes(1);
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ message: 'Invitation syncing' }));
+      expect(toastShow).not.toHaveBeenCalledWith(expect.objectContaining({ message: 'Removed from meeting' }));
+
+      selfInvites.delete(INVITEE.id);
+      fixture.componentRef.setInput('row', row({ ...INVITEE, organizer: true, my_registrant_ids: ['synthetic-new-reg'] }));
+      await settle();
+      await confirmRemoval();
+      expect(remove$).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home');
+      expect(toastShow).toHaveBeenLastCalledWith({ variant: 'dark', message: 'Removed from meeting' });
+    });
+
+    it('still reports syncing if the indexed registration disappears before a no-UID removal', async () => {
       selfInvites.set(INVITEE.id, []);
       remove$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
-      await render(row({ ...INVITEE, organizer: true, my_registrant_ids: undefined }));
+      await render(row({ ...INVITEE, organizer: true, my_registrant_ids: ['synthetic-new-reg'] }));
       await confirmRemoval();
 
       expect(remove$).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home');

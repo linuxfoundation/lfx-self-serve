@@ -101,9 +101,14 @@ export class MeetingsHomeStore {
   // Kept for the page's lifetime, so a refetch that still lists a deleted meeting or cancelled date does not bring it back.
   private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
   private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
+  /** Removed UIDs stay suppressed after a re-add clears the meeting-level marker; a different viewer starts empty. */
+  private readonly removedSelfRegistrantIds: WritableSignal<ReadonlyMap<string, ReadonlySet<string>>> = linkedSignal({
+    source: this.feed.key,
+    computation: () => new Map(),
+  });
   /** Registrant uids of the meetings the viewer added themselves to here, until the feed's index lists them or the viewer removes them; a new viewer starts empty. */
   private readonly selfInvitedIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = linkedSignal({
-    source: () => ({ key: this.feed.key(), meetings: this.upcomingMeetings() }),
+    source: () => ({ key: this.feed.key(), meetings: this.upcomingMeetings(), removed: this.removedSelfRegistrantIds() }),
     computation: (source, previous): ReadonlyMap<string, readonly string[]> =>
       previous?.source.key === source.key ? this.withoutListedSelfInvites(previous.value, source.meetings) : new Map(),
   });
@@ -388,7 +393,9 @@ export class MeetingsHomeStore {
 
   /** Marks the viewer invited to a meeting they just added themselves to, with the registrations the add confirmed. */
   public markSelfInvited(meetingId: string, registrantUids: readonly string[]): void {
-    this.selfInvitedIds.update((ids) => new Map(ids).set(meetingId, registrantUids));
+    const removed = this.removedSelfRegistrantIds().get(meetingId);
+    const active = registrantUids.filter((uid) => !removed?.has(uid));
+    this.selfInvitedIds.update((ids) => new Map(ids).set(meetingId, active));
   }
 
   /** Registrant uids of a self-invite made here that the feed does not list yet; empty when the add returned none, undefined without one. */
@@ -398,6 +405,7 @@ export class MeetingsHomeStore {
 
   /** Drops the registrations the viewer just removed from a self-invite made here, so a later removal never sends them again. */
   public forgetSelfInvite(meetingId: string, removedRegistrantUids: readonly string[]): void {
+    this.removedSelfRegistrantIds.update((ids) => new Map(ids).set(meetingId, new Set([...(ids.get(meetingId) ?? []), ...removedRegistrantUids])));
     this.selfInvitedIds.update((ids) => {
       const kept = ids.get(meetingId)?.filter((uid) => !removedRegistrantUids.includes(uid));
       if (!kept) return ids;
@@ -714,11 +722,13 @@ export class MeetingsHomeStore {
 
   /** Applies a self-invite made this session, which the feed can still miss while it indexes. */
   private withSelfInvite(meeting: Meeting): Meeting {
+    const removed = this.removedSelfRegistrantIds().get(meeting.id);
+    const registrantIds = meeting.my_registrant_ids?.filter((uid) => !removed?.has(uid));
     const added = this.selfInvitedIds().get(meeting.id);
-    if (!added) return meeting;
-    // Without a returned uid the registration is still confirmed, so no list stands in for it and `invited` decides.
-    if (!added.length) return { ...meeting, invited: true, my_registrant_ids: meeting.my_registrant_ids?.length ? meeting.my_registrant_ids : undefined };
-    return { ...meeting, invited: true, my_registrant_ids: [...new Set([...(meeting.my_registrant_ids ?? []), ...added])] };
+    if (!added) return removed?.size ? { ...meeting, my_registrant_ids: registrantIds } : meeting;
+    // Without a returned UID, only a non-removed indexed registration can stand in for the new invitation.
+    if (!added.length) return { ...meeting, invited: true, my_registrant_ids: registrantIds?.length ? registrantIds : undefined };
+    return { ...meeting, invited: true, my_registrant_ids: [...new Set([...(registrantIds ?? []), ...added])] };
   }
 
   /** Keeps only the self-invites the feed does not list yet: invited, with every saved uid, or with a registration of its own when none was saved. */
@@ -727,8 +737,9 @@ export class MeetingsHomeStore {
     const kept = [...ids].filter(([meetingId, uids]) => {
       const meeting = listed.get(meetingId);
       if (!meeting?.invited) return true;
-      const registrantIds = meeting.my_registrant_ids;
-      if (!uids.length) return !!registrantIds && !registrantIds.length;
+      const removed = this.removedSelfRegistrantIds().get(meetingId);
+      const registrantIds = meeting.my_registrant_ids?.filter((uid) => !removed?.has(uid));
+      if (!uids.length) return registrantIds ? !registrantIds.length : !!removed?.size;
       return !uids.every((uid) => registrantIds?.includes(uid));
     });
     return kept.length === ids.size ? ids : new Map(kept);

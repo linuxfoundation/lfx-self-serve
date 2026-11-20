@@ -59,6 +59,7 @@ import {
   selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
@@ -120,6 +121,7 @@ import { MeetingDetailsSource } from '../meeting-details.source';
 export class MeetingDetailsGuestsComponent {
   protected readonly context = inject(MeetingDetailsContext);
   private readonly meetingService = inject(MeetingService);
+  private readonly selfInvite = inject(MeetingSelfInviteService);
   private readonly committeeService = inject(CommitteeService);
   private readonly userService = inject(UserService);
   private readonly editService = inject(MeetingsHomeEditService);
@@ -322,6 +324,8 @@ export class MeetingDetailsGuestsComponent {
     return computed(() => {
       const self = this.selfGuest();
       if (!this.canAddGuests() || !this.context.canViewGuests() || this.load().status !== 'ready' || !self?.first_name || !self.last_name) return false;
+      // Keep our own loading button visible, but block another entry point's pending self-invite.
+      if (!this.selfSubmitting() && this.selfInvite.isPending(this.context.meeting().id)) return false;
       // A row already marked as the viewer ("You") is the user too, whatever address it lists.
       const rows = this.rows();
       return (
@@ -564,8 +568,8 @@ export class MeetingDetailsGuestsComponent {
       ...(registrant.occurrence_id ? { occurrence_id: registrant.occurrence_id } : {}),
     };
     this.selfSubmitting.set(true);
-    this.meetingService
-      .addMeetingRegistrants(meetingId, [payload])
+    this.selfInvite
+      .withPendingInvite$(meetingId, () => this.meetingService.addMeetingRegistrants(meetingId, [payload]))
       .pipe(
         take(1),
         finalize(() => this.selfSubmitting.set(false))

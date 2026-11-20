@@ -367,6 +367,61 @@ describe('MeetingsHomeStore', () => {
       expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
     });
 
+    it.each([
+      ['reg-old', 'reg-new'],
+      ['reg-new', 'reg-old'],
+    ])('saves only active UIDs from a mixed re-invite roster: %j', (...uids) => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: true, my_registrant_ids: ['reg-old'] });
+      upcoming$.next([organized]);
+      // The removed registration can already have retired its self-invite override.
+      store.forgetSelfInvite('organized', ['reg-old']);
+      store.markSelfInvited('organized', uids);
+
+      expect(store.selfInviteOf('organized')).toEqual(['reg-new']);
+      expect(store.selfInviteOf('organized')?.at(-1)).toBe('reg-new');
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-new']);
+
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-new'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-old', 'reg-new'] }]);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-new']);
+    });
+
+    it.each([{ ids: ['reg-old'] }, { ids: [] }, { ids: undefined }])('keeps a no-UID re-add pending without an active indexed UID: $ids', ({ ids }) => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: true, my_registrant_ids: ['reg-old'] });
+      upcoming$.next([organized]);
+      store.forgetSelfInvite('organized', ['reg-old']);
+      removed.set(new Set(['organized']));
+      expect(store.upcomingRows()[0].meeting.invited).toBe(false);
+
+      removed.set(new Set());
+      store.markSelfInvited('organized', []);
+      upcoming$.next([{ ...organized, my_registrant_ids: ids }]);
+
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      expect(store.upcomingRows()[0].meeting.invited).toBe(true);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toBeUndefined();
+
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-old', 'reg-new'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-new']);
+    });
+
+    it("resets removed UIDs with the viewer instead of suppressing the next viewer's registration", () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, my_registrant_ids: ['reg-old'] })]);
+      store.forgetSelfInvite('organized', ['reg-old']);
+      identity.set('viewer-b');
+      TestBed.tick();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-old']);
+
+      expect(store.selfInviteOf('organized')).toEqual(['reg-old']);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-old']);
+    });
+
     it('forgets a self-invite on a viewer change', () => {
       const store = create();
       upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
