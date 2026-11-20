@@ -44,6 +44,7 @@ function departure(overrides: Partial<HealthMetricsMembersChurnDeparture> = {}):
     key: 'term-1',
     accountId: 'acct-1',
     accountName: 'Acme Motors',
+    logoUrl: 'https://logos.example/acme.png',
     membershipTier: 'Gold',
     duesLostUsd: 250_000,
     lapsedDate: '2026-03-31',
@@ -140,116 +141,102 @@ describe('MembersChurnComponent', () => {
     vi.useRealTimers();
   });
 
-  it("reads the foundation's churn and the year's departures, renders the hero, and settles once both land", async () => {
+  function section(id: string): void {
+    (query(`members-churn-section-${id}`)?.querySelector('input') as HTMLInputElement).click();
+  }
+
+  it("reads the foundation's churn and the year's members lost, renders the metrics, and settles once both land", async () => {
     await render();
 
     expect(getMembersChurn).toHaveBeenCalledWith('acme');
-    expect(getMembersChurnDepartures).toHaveBeenCalledWith({ foundationSlug: 'acme', year: 2026, offset: 0, pageSize: 25 });
-    expect(text('members-churn-meta')).toBe('12 of 120 memberships lost');
-    expect(text('members-churn-rate')).toBe('16%');
-    expect(text('members-churn-change')).toBe('+4.6pp vs 2025');
-    expect(query('members-churn-change')?.classList).toContain('text-red-600');
-    expect(text('members-churn-caption')).toBe("of last year's dues did not renew");
-    expect(text('members-churn-side-dues-lost')).toBe('$1.5M');
-    // The hero sits flush in the section, as the design draws it, not inside a card.
-    expect(query('members-churn-hero')?.classList).not.toContain('border');
-    expect(query('members-churn-side-dues-lost')?.classList).toContain('text-red-600');
-    expect(text('members-churn-side-logo')).toBe('10% (12 of 120)');
-    expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
+    expect(getMembersChurnDepartures).toHaveBeenCalledWith({ foundationSlug: 'acme', year: 2026, offset: 0, pageSize: 10, sort: null });
+    expect(text('members-churn-metrics-revenue-value')).toBe('16.0%');
+    expect(text('members-churn-metrics-revenue-description')).toBe('+4.6pp vs 2025');
+    expect(query('members-churn-metrics-revenue-description')?.querySelector('.text-red-600')?.textContent).toBe('+4.6pp');
+    expect(text('members-churn-metrics-logo-description')).toBe('12 of 120 memberships');
+    expect(text('members-churn-metrics-dues-label')).toContain('Dues lost this year');
+    expect(lifecycle.filter((event) => event === 'settled')).toHaveLength(1);
     expect(verdicts).toEqual([false]);
   });
 
-  it('switches to logo churn without a re-read and writes the mode to the URL', async () => {
+  it("opens on Members lost, the design's columns with Dues lost marked as the default order", async () => {
     await render();
-    getMembersChurn.mockClear();
-    getMembersChurnDepartures.mockClear();
 
-    fixture.componentInstance['onModeChange']('logo');
+    const headers = [...(query('members-churn-departures-table')?.querySelectorAll('th') ?? [])].map((th) => th.textContent?.trim());
+    expect(headers).toEqual(['Company', 'Membership', 'Dues lost', 'Lapsed', 'Last engaged']);
+    expect(query('members-churn-departures-sort-dues')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+    const name = query('members-churn-departure-term-1-name');
+    expect(name?.querySelector('[data-testid="health-metrics-cell-company"]')).not.toBeNull();
+    expect(query('members-churn-departure-term-1-membership')?.querySelector('[data-testid="health-metrics-cell-tier"]')).not.toBeNull();
+    expect(text('members-churn-departure-term-1-dues')).toBe('$250K');
+    expect(text('members-churn-departure-term-1-lapsed')).toBe('Mar 31, 2026');
+    expect(text('members-churn-departure-term-1-engaged')).toBe('—');
+  });
+
+  it('sorts Members lost on the server from page 1, keeping the churn read', async () => {
+    await render(CHURN, { ...DEPARTURES, totalRecords: 60 }, { churnPage: '3' });
+    getMembersChurn.mockClear();
+
+    (query('members-churn-departures-sort-lapsed')?.querySelector('button') as HTMLButtonElement).click();
     await settle();
 
     expect(getMembersChurn).not.toHaveBeenCalled();
-    expect(getMembersChurnDepartures).not.toHaveBeenCalled();
-    expect(text('members-churn-rate')).toBe('10%');
-    expect(text('members-churn-change')).toBe('−2.5pp vs 2025');
-    expect(query('members-churn-change')?.classList).toContain('text-emerald-600');
-    expect(text('members-churn-side-revenue')).toBe('16%');
-    expect(navigate).toHaveBeenLastCalledWith(
-      [],
-      expect.objectContaining({ queryParams: { churnMode: 'logo', churnPage: null }, preserveFragment: true, replaceUrl: true })
-    );
+    expect(getMembersChurnDepartures).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, sort: { key: 'lapsed', direction: 'desc' } }));
   });
 
-  it('ignores a mode it does not know', async () => {
-    await render();
-    navigate.mockClear();
-
-    fixture.componentInstance['onModeChange']('seats');
-    await settle();
-
-    expect(text('members-churn-rate')).toBe('16%');
-    expect(navigate).not.toHaveBeenCalled();
-  });
-
-  it('lists who left, claiming the churn count only when the list matches it', async () => {
-    await render();
-
-    expect(text('members-churn-departure-term-1')).toContain('Acme Motors');
-    expect(text('members-churn-departure-term-1-dues')).toBe('$250K');
-    expect(text('members-churn-departure-term-2-dues')).toBe('$50K');
-    expect(text('members-churn-departures-subtitle')).toBe('largest dues lost first · the same 12 as lost above');
-    expect(query('members-churn-count-note')).toBeNull();
-  });
-
-  // A downgrade and a non-renewal in one year are two lost memberships, so the organization lists twice.
-  it('lists each lost membership, so an organization that lost two shows on two rows', async () => {
-    await render(CHURN, { rows: [departure(), departure({ key: 'term-3', duesLostUsd: 20_000 })], totalRecords: 12 });
-
-    expect(text('members-churn-departure-term-1-dues')).toBe('$250K');
-    expect(text('members-churn-departure-term-3-dues')).toBe('$20K');
-  });
-
-  it('notes the difference when the list and the churn count disagree', async () => {
-    await render(CHURN, { ...DEPARTURES, totalRecords: 11 });
-
-    expect(text('members-churn-departures-subtitle')).toBe('largest dues lost first');
-    expect(text('members-churn-count-note')).toContain('11 memberships listed, while churn counts 12 lost');
-  });
-
-  it('pages through who left and writes the page to the URL, keeping the churn read', async () => {
+  it('pages through Members lost and writes the page to the URL, keeping the churn read', async () => {
     await render(CHURN, { ...DEPARTURES, totalRecords: 60 });
     getMembersChurn.mockClear();
     getMembersChurnDepartures.mockClear();
 
-    fixture.componentInstance['onTablePage']({ first: 50, rows: 25 });
+    fixture.componentInstance['page'].set(2);
     await settle();
 
     expect(getMembersChurn).not.toHaveBeenCalled();
-    expect(getMembersChurnDepartures).toHaveBeenCalledWith(expect.objectContaining({ offset: 50 }));
-    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { churnMode: null, churnPage: 3 }, preserveFragment: true }));
+    expect(getMembersChurnDepartures).toHaveBeenCalledWith(expect.objectContaining({ offset: 20 }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { churnView: null, churnPage: 3 }, preserveFragment: true }));
   });
 
-  it('starts on the mode and page the URL carries, and falls back for values it cannot honour', async () => {
-    await render(CHURN, { ...DEPARTURES, totalRecords: 60 }, { churnMode: 'logo', churnPage: '2' });
-    expect(getMembersChurnDepartures).toHaveBeenCalledWith(expect.objectContaining({ offset: 25 }));
-    expect(text('members-churn-rate')).toBe('10%');
+  it('switches to By tier and to the trend without a re-read, writing the view to the URL', async () => {
+    await render();
+    getMembersChurn.mockClear();
+    getMembersChurnDepartures.mockClear();
+
+    section('tiers');
+    await settle();
+    expect(query('members-churn-tiers-table')).not.toBeNull();
+    expect(query('members-churn-departures')).toBeNull();
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { churnView: 'tiers', churnPage: null } }));
+
+    section('trend');
+    await settle();
+    expect(query('members-churn-trend')).not.toBeNull();
+    expect(getMembersChurn).not.toHaveBeenCalled();
+    expect(getMembersChurnDepartures).not.toHaveBeenCalled();
+  });
+
+  it('starts on the view and page the URL carries, and falls back for values it cannot honour', async () => {
+    await render(CHURN, { ...DEPARTURES, totalRecords: 60 }, { churnView: 'tiers', churnPage: '2' });
+    expect(getMembersChurnDepartures).toHaveBeenCalledWith(expect.objectContaining({ offset: 10 }));
+    expect(query('members-churn-tiers-table')).not.toBeNull();
 
     TestBed.resetTestingModule();
-    await render(CHURN, DEPARTURES, { churnMode: 'toString', churnPage: 'x' });
+    await render(CHURN, DEPARTURES, { churnView: 'toString', churnPage: 'x' });
     expect(getMembersChurnDepartures).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
-    expect(text('members-churn-rate')).toBe('16%');
+    expect(query('members-churn-departures-table')).not.toBeNull();
   });
 
   it('lands on the last page holding departures, settling once and rewriting the URL', async () => {
     await render(CHURN, { rows: [], totalRecords: 30 }, { churnPage: '9' }, { ...DEPARTURES, totalRecords: 30 });
 
-    expect(getMembersChurnDepartures).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 200 }));
-    expect(getMembersChurnDepartures).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 25 }));
+    expect(getMembersChurnDepartures).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 80 }));
+    expect(getMembersChurnDepartures).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 20 }));
     expect(getMembersChurnDepartures).toHaveBeenCalledTimes(2);
     expect(lifecycle.filter((event) => event === 'settled')).toHaveLength(1);
-    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { churnMode: null, churnPage: 2 } }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { churnView: null, churnPage: 3 } }));
   });
 
-  it('re-projects a new period from the same read and re-reads only its departures, from page 1', async () => {
+  it('re-projects a new period from the same read and re-reads only its members lost, from page 1', async () => {
     await render(CHURN, { ...DEPARTURES, totalRecords: 60 }, { churnPage: '2' });
     getMembersChurn.mockClear();
     getMembersChurnDepartures.mockClear();
@@ -258,21 +245,27 @@ describe('MembersChurnComponent', () => {
     await settle();
 
     expect(getMembersChurn).not.toHaveBeenCalled();
-    expect(getMembersChurnDepartures).toHaveBeenCalledWith({ foundationSlug: 'acme', year: 2025, offset: 0, pageSize: 25 });
-    expect(text('members-churn-caption')).toBe("of 2024's dues did not renew");
+    expect(getMembersChurnDepartures).toHaveBeenCalledWith({ foundationSlug: 'acme', year: 2025, offset: 0, pageSize: 10, sort: null });
+    expect(text('members-churn-metrics-dues-label')).toContain('Dues lost in 2025');
   });
 
-  it('shows where the loss sits by tier, flagging high rates and the count-versus-dues inversion', async () => {
-    await render();
+  it("shows the loss by tier with each tier's icon, a high rate as a danger badge, and sorts in the browser", async () => {
+    await render(CHURN, DEPARTURES, { churnView: 'tiers' });
 
-    expect(text('members-churn-tier-Gold-rate')).toBe('40%');
-    expect(query('members-churn-tier-Gold-rate')?.classList).toContain('text-red-600');
-    expect(query('members-churn-tier-Silver-rate')?.classList).not.toContain('text-red-600');
-    expect(text('members-churn-inversion')).toContain('Silver lost 10 memberships, but Gold lost the money');
+    expect(query('members-churn-tier-Gold-rate')?.querySelector('lfx-ui-badge')?.textContent?.trim()).toBe('40%');
+    expect(query('members-churn-tier-Silver-rate')?.querySelector('lfx-ui-badge')).toBeNull();
+    expect(text('members-churn-tier-Silver-share')).toBe('33%');
+    const rows = () => [...fixture.nativeElement.querySelectorAll('[data-testid^="members-churn-tier-"][data-testid$="-rate"]')].length;
+    expect(rows()).toBe(2);
+
+    (query('members-churn-tiers-sort-lost')?.querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    const order = [...fixture.nativeElement.querySelectorAll('tr[data-testid^="members-churn-tier-"]')].map((row: Element) => row.getAttribute('data-testid'));
+    expect(order).toEqual(['members-churn-tier-Silver', 'members-churn-tier-Gold']);
   });
 
   it('draws the trend ending at the selected year, red when churn rose, with a screen-reader table', async () => {
-    await render();
+    await render(CHURN, DEPARTURES, { churnView: 'trend' });
 
     const rows = [...(query('members-churn-chart-table')?.querySelectorAll('tbody tr') ?? [])].map((row) =>
       [...row.querySelectorAll('th, td')].map((cell) => cell.textContent?.trim())
@@ -295,50 +288,61 @@ describe('MembersChurnComponent', () => {
     await render(throwError(() => new Error('gateway timeout')));
 
     expect(query('members-churn-error')).not.toBeNull();
-    expect(text('members-churn-meta')).toBe('—');
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
     expect(verdicts).toEqual([false]);
   });
 
-  it('shows the departures error in place of the table, without a count note', async () => {
+  it('shows the Members lost error in place of the table, keeping the metrics', async () => {
     await render(
       CHURN,
       DEPARTURES,
       {},
       throwError(() => new Error('gateway timeout'))
     );
-    fixture.componentInstance['onTablePage']({ first: 25, rows: 25 });
+    fixture.componentInstance['page'].set(1);
     await settle();
 
     expect(query('members-churn-departures-error')).not.toBeNull();
     expect(query('members-churn-departures-table')).toBeNull();
-    expect(query('members-churn-count-note')).toBeNull();
-    expect(query('members-churn-hero')).not.toBeNull();
+    expect(query('members-churn-metrics')).not.toBeNull();
   });
 
-  // Both settle empty for the shell, but only the measured year earns a figure in the meta line.
-  it('settles empty, with no body, for a year never measured or one that lost nothing', async () => {
+  it('settles empty for a year never measured, and shows a year that lost nothing at 0% with nothing to list', async () => {
     await render({ years: [churnYear(2025)], tiers: [] });
     expect(verdicts).toEqual([true]);
-    expect(query('members-churn-hero')).toBeNull();
-    expect(text('members-churn-meta')).toBe('—');
+    expect(query('members-churn-metrics')).toBeNull();
 
     TestBed.resetTestingModule();
-    await render({ years: [churnYear(2026, { lostCount: 0 })], tiers: [] }, { rows: [], totalRecords: 0 });
-    expect(verdicts).toEqual([true, true]);
-    expect(query('members-churn-hero')).toBeNull();
-    expect(text('members-churn-meta')).not.toBe('—');
+    await render(
+      {
+        years: [churnYear(2026, { lostCount: 0, revenueNotRenewedRate: 0, logoChurnRate: 0, duesLostUsd: 0 })],
+        tiers: [tier(2026, 'Gold', 1, 0, 0, 0, 0)],
+      },
+      { rows: [], totalRecords: 0 }
+    );
+    expect(verdicts).toEqual([true, false]);
+    expect(text('members-churn-metrics-revenue-value')).toBe('0%');
+    expect(text('members-churn-departures-empty')).toBe('Nothing matches this view.');
+
+    section('tiers');
+    await settle();
+    expect(text('members-churn-tiers-empty')).toBe('Nothing matches this view.');
+
+    // One measured year leaves nothing to trend.
+    section('trend');
+    await settle();
+    expect(text('members-churn-trend-empty')).toBe('Nothing matches this view.');
   });
 
-  it('does not settle empty for a year without churn whose departures read failed, keeping that error on screen', async () => {
+  it('settles an unmeasured year empty even when its Members lost read fails, since that list has nothing to show', async () => {
     await render(
-      { years: [churnYear(2026, { lostCount: 0 })], tiers: [] },
+      { years: [churnYear(2025)], tiers: [] },
       throwError(() => new Error('gateway timeout'))
     );
 
-    expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(verdicts).toEqual([false]);
-    expect(query('members-churn-departures-error')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('members-churn-metrics')).toBeNull();
+    expect(query('members-churn-departures-error')).toBeNull();
   });
 
   it('holds the skeleton, not the old figures, while a newly selected foundation reads', async () => {
@@ -349,8 +353,7 @@ describe('MembersChurnComponent', () => {
     await settle();
 
     expect(query('members-churn-loading')).not.toBeNull();
-    expect(query('members-churn-rate')).toBeNull();
-    expect(text('members-churn-meta')).toBe('—');
+    expect(query('members-churn-metrics')).toBeNull();
   });
 
   it('holds the loading state and reads nothing while no foundation is selected', async () => {

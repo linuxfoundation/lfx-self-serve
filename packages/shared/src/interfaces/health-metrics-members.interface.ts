@@ -14,8 +14,8 @@ import type {
 import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
-import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
-import type { HealthMetricsTableSort } from './health-metrics-table.interface';
+import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
+import type { HealthMetricsSortValue, HealthMetricsTableSort } from './health-metrics-table.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECTIONS)[number]['key'];
@@ -277,7 +277,7 @@ export interface HealthMetricsMembersQueryParams {
   boardCohort?: HealthMetricsMembersBoardCohort | null;
   boardPage?: number | null;
   npsAudience?: string | null;
-  churnMode?: HealthMetricsMembersChurnMode | null;
+  churnView?: HealthMetricsMembersChurnSection | null;
   churnPage?: number | null;
 }
 
@@ -656,7 +656,12 @@ export interface HealthMetricsMembersChurnDeparturesQuery {
   year: number;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, sorted on the server across every page; `null` keeps the most dues lost first. */
+  sort: HealthMetricsTableSort<HealthMetricsMembersChurnDeparturesSortKey> | null;
 }
+
+/** The Members lost table's sortable columns. */
+export type HealthMetricsMembersChurnDeparturesSortKey = 'company' | 'membership' | 'dues' | 'lapsed' | 'engaged';
 
 /** One lost membership from `MEMBERSHIP_CHURNED_MEMBERS`, keyed by its term; dates are ISO `YYYY-MM-DD`. */
 export interface HealthMetricsMembersChurnDeparture {
@@ -664,6 +669,8 @@ export interface HealthMetricsMembersChurnDeparture {
   key: string;
   accountId: string;
   accountName: string;
+  /** The mapped company logo; empty falls back to the first letter. */
+  logoUrl: string;
   membershipTier: string | null;
   duesLostUsd: number | null;
   lapsedDate: string | null;
@@ -676,43 +683,31 @@ export interface HealthMetricsMembersChurnDepartures {
   totalRecords: number;
 }
 
-/** The toggle over the hero: revenue churn leads, logo churn counts each loss once. */
-export type HealthMetricsMembersChurnMode = 'revenue' | 'logo';
+/** The view switch under the metrics: the members lost, the loss by tier, or the trend. */
+export type HealthMetricsMembersChurnSection = 'members' | 'tiers' | 'trend';
 
-export interface HealthMetricsMembersChurnModeOption extends FilterPillOption {
-  id: HealthMetricsMembersChurnMode;
-}
-
-/** One figure beside the hero; `note` is the muted aside after the value. */
-export interface HealthMetricsMembersChurnSideView {
-  key: string;
+export interface HealthMetricsMembersChurnSectionOption {
+  id: HealthMetricsMembersChurnSection;
   label: string;
-  value: string;
-  note: string | null;
-  isLoss: boolean;
 }
 
-/** One tier of "Where the loss sits"; `shareWidthPct` keeps a visible stub for a tiny share. */
+/** The By tier table's sortable columns. */
+export type HealthMetricsMembersChurnTierSortKey = 'membership' | 'lost' | 'rate' | 'dues' | 'share';
+
+/** One tier of By tier; a rate at or over the high-rate line reads as a danger badge. */
 export interface HealthMetricsMembersChurnTierRowView {
-  tier: string;
+  key: string;
+  membershipLabel: string;
+  tier: HealthMetricsMembersReservedTier | null;
   lostLabel: string;
   rateLabel: string;
   isHighRate: boolean;
   duesLabel: string;
   shareLabel: string;
-  shareWidthPct: number;
+  sortValues: Record<HealthMetricsMembersChurnTierSortKey, HealthMetricsSortValue>;
 }
 
-/** The note under the tier table, set only when the tier that lost most members is not the one that lost most dues. */
-export interface HealthMetricsMembersChurnInversionView {
-  /** Bolded, e.g. "Silver lost 83 memberships". */
-  countLead: string;
-  /** Bolded, e.g. "Gold lost the money". */
-  duesLead: string;
-  text: string;
-}
-
-/** One year of the churn trend, oldest first; `value` is the mode's rate, `null` when unmeasured. */
+/** One year of the churn trend, oldest first; `value` is the year's revenue churn, `null` when unmeasured. */
 export interface HealthMetricsMembersChurnTrendPointView {
   year: number;
   label: string;
@@ -721,39 +716,30 @@ export interface HealthMetricsMembersChurnTrendPointView {
   isSelected: boolean;
 }
 
-/** `#churn`, re-projected per period and mode from the every-year response. */
+/** `#churn`, re-projected per period from the every-year response. */
 export interface HealthMetricsMembersChurnView {
   /** Any year has churn figures. */
   measured: boolean;
   /** The selected period's year has churn figures. */
   yearMeasured: boolean;
   year: number;
-  /** The year lost at least one membership. */
-  hasChurn: boolean;
-  lostCount: number;
-  metaLabel: string;
-  heroLabel: string;
-  /** `null` renders no change: the prior year is not in the read. */
-  changeLabel: string | null;
-  /** A rise in churn is bad, so it renders red. */
-  changeTone: 'bad' | 'good' | 'neutral';
-  caption: string;
-  sides: HealthMetricsMembersChurnSideView[];
+  /** Revenue churn, logo churn and the dues lost, whatever the view switch. */
+  metrics: HealthMetricsMetricItem[];
+  /** Most dues lost first. */
   tiers: HealthMetricsMembersChurnTierRowView[];
-  inversion: HealthMetricsMembersChurnInversionView | null;
-  trendTitle: string;
-  trendSubtitle: string;
   trend: HealthMetricsMembersChurnTrendPointView[];
   /** The selected year's churn rose on the year before, so its bar warns. */
   trendRose: boolean;
 }
 
-/** One lost membership in "Who left"; an organization appears once per lost term. */
+/** One lost membership in Members lost; an organization appears once per lost term. */
 export interface HealthMetricsMembersChurnDepartureRowView {
   key: string;
   accountId: string;
-  accountName: string;
-  tierLabel: string;
+  name: string;
+  logoUrl: string;
+  membershipLabel: string;
+  tier: HealthMetricsMembersReservedTier | null;
   duesLabel: string;
   lapsedLabel: string;
   lastEngagedLabel: string;

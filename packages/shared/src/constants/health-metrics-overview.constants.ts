@@ -369,7 +369,7 @@ export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
     label: 'Explore Membership Churn',
     commands: [HEALTH_METRICS_BASE_PATH, 'members'],
     fragment: 'churn',
-    queryParams: { churnMode: null, churnPage: null },
+    queryParams: { churnView: null, churnPage: null },
   },
   balance: {
     label: 'Explore At-Risk & Balance',

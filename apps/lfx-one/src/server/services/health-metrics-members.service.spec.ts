@@ -1249,7 +1249,7 @@ function departureRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe('HealthMetricsMembersService.getChurnDepartures', () => {
-  const query = { foundationSlug: 'acme', year: 2025, offset: 25, pageSize: 25 };
+  const query = { foundationSlug: 'acme', year: 2025, offset: 25, pageSize: 25, sort: null };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1267,8 +1267,25 @@ describe('HealthMetricsMembersService.getChurnDepartures', () => {
     expect(scoped).toContain('AND lost._key IS NOT NULL');
     expect(scoped).toContain("AND lost.account_id <> ''");
     expect(sql).toContain('ORDER BY revenue_lost_sort_rank ASC NULLS LAST, churn_key ASC');
+    expect(sql).toContain('ROW_NUMBER() OVER (ORDER BY revenue_lost_sort_rank ASC NULLS LAST, churn_key ASC) AS page_position');
     expect(sql).toContain('LIMIT 25 OFFSET 25');
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+  });
+
+  it.each([
+    ['company', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(account_name, ''), account_id)"],
+    ['membership', 'desc', 'WHEN REGEXP_REPLACE(LOWER(TRIM(membership_tier'],
+    ['dues', 'asc', 'revenue_lost_usd ASC NULLS LAST, revenue_lost_sort_rank ASC NULLS LAST, churn_key ASC'],
+    ['lapsed', 'desc', 'lapsed_date DESC NULLS LAST, revenue_lost_sort_rank ASC NULLS LAST'],
+    ['engaged', 'asc', 'last_engaged_date ASC NULLS LAST, revenue_lost_sort_rank ASC NULLS LAST'],
+  ] as const)("sorts %s %s across every page, then the view's rank", async (key, direction, expected) => {
+    await new HealthMetricsMembersService().getChurnDepartures(req, { ...query, sort: { key, direction } });
+
+    const [sql, binds] = readOf('MEMBERSHIP_CHURNED_MEMBERS');
+    expect(sql).toContain(expected);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
   });
 
   // A downgrade's lapse is its movement date; one movement row per organization keeps the join from multiplying rows.
@@ -1317,6 +1334,7 @@ describe('HealthMetricsMembersService.getChurnDepartures', () => {
           key: 'term-acme',
           accountId: '0014100000AcmeAAAA',
           accountName: 'Acme Motors',
+          logoUrl: '',
           membershipTier: 'Gold',
           duesLostUsd: 150000,
           lapsedDate: '2025-03-31',
@@ -1326,6 +1344,7 @@ describe('HealthMetricsMembersService.getChurnDepartures', () => {
           key: 'term-vendor',
           accountId: '0014100000VendAAAA',
           accountName: '0014100000VendAAAA',
+          logoUrl: '',
           membershipTier: null,
           duesLostUsd: null,
           lapsedDate: '2025-06-30',
