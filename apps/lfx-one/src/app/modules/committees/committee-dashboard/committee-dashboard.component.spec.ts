@@ -264,6 +264,7 @@ describe('CSV import count reconciliation (#5731)', () => {
   let totals: number[];
   let committeeService: {
     getMyCommittees: ReturnType<typeof vi.fn>;
+    getMyCommitteesOrError: ReturnType<typeof vi.fn>;
     getCommitteesByProject: ReturnType<typeof vi.fn>;
     getCommitteesByProjectOrThrow: ReturnType<typeof vi.fn>;
     getMyCommitteeUids: ReturnType<typeof vi.fn>;
@@ -299,7 +300,11 @@ describe('CSV import count reconciliation (#5731)', () => {
   }
 
   function fetches(): number {
-    return committeeService.getMyCommittees.mock.calls.length + committeeService.getCommitteesByProjectOrThrow.mock.calls.length;
+    return (
+      committeeService.getMyCommittees.mock.calls.length +
+      committeeService.getMyCommitteesOrError.mock.calls.length +
+      committeeService.getCommitteesByProjectOrThrow.mock.calls.length
+    );
   }
 
   function shownTotal(): number | undefined {
@@ -316,6 +321,7 @@ describe('CSV import count reconciliation (#5731)', () => {
     lens = signal<string>(activeLens);
     committeeService = {
       getMyCommittees: vi.fn(list),
+      getMyCommitteesOrError: vi.fn(list),
       getCommitteesByProject: vi.fn(list),
       getCommitteesByProjectOrThrow: vi.fn(list),
       getMyCommitteeUids: vi.fn(() => of([])),
@@ -359,6 +365,7 @@ describe('CSV import count reconciliation (#5731)', () => {
       await fixture.whenStable();
     }
     committeeService.getMyCommittees.mockClear();
+    committeeService.getMyCommitteesOrError.mockClear();
     committeeService.getCommitteesByProject.mockClear();
   }
 
@@ -420,7 +427,7 @@ describe('CSV import count reconciliation (#5731)', () => {
   it.each(['me', 'project'] as const)('keeps the %s list visible while an import refresh is pending', async (activeLens) => {
     await setup(activeLens, [3]);
     const response = new Subject<MyCommittee[]>();
-    const method = activeLens === 'me' ? 'getMyCommittees' : 'getCommitteesByProject';
+    const method = activeLens === 'me' ? 'getMyCommitteesOrError' : 'getCommitteesByProjectOrThrow';
     committeeService[method].mockReturnValueOnce(response);
     settle();
     await step();
@@ -430,6 +437,30 @@ describe('CSV import count reconciliation (#5731)', () => {
     response.next([group('a-enabled', { total_members: 3 })]);
     response.complete();
     await step();
+  });
+
+  it.each(['me', 'project'] as const)('keeps the %s rows after both initial and final silent refreshes fail', async (activeLens) => {
+    await setup(activeLens, [3]);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const method = activeLens === 'me' ? 'getMyCommitteesOrError' : 'getCommitteesByProjectOrThrow';
+    const failed = () => throwError(() => new HttpErrorResponse({ status: 503, error: { message: 'private@example.com' } }));
+    committeeService[method].mockReturnValueOnce(failed());
+    if (activeLens === 'project') committeeService[method].mockReturnValueOnce(of([group('a-enabled', { total_members: 5 })]));
+    committeeService[method].mockReturnValueOnce(failed());
+    if (activeLens === 'me') committeeService.getMyCommittees.mockReturnValueOnce(of([group('a-enabled', { total_members: 5 })]));
+    settle();
+    await step();
+    expect(shownTotal()).toBe(3);
+    expect(fixture.componentInstance.myCommitteesLoading()).toBe(false);
+    expect(fixture.componentInstance.committeesLoading()).toBe(false);
+    await step(400);
+    expect(shownTotal()).toBe(3);
+    expect(log).toHaveBeenCalledTimes(2);
+    expect(log.mock.calls).toEqual([
+      ['Failed to refresh groups after CSV import', { status: 503 }],
+      ['Failed to refresh groups after CSV import', { status: 503 }],
+    ]);
+    log.mockRestore();
   });
 
   it('counts six completed refetches even when each request outlasts several timer ticks', async () => {
@@ -511,6 +542,7 @@ describe('CSV import count reconciliation (#5731)', () => {
     }
     if (change !== 'the page is destroyed') await fixture.whenStable();
     committeeService.getMyCommittees.mockClear();
+    committeeService.getMyCommitteesOrError.mockClear();
     committeeService.getCommitteesByProjectOrThrow.mockClear();
     vi.advanceTimersByTime(10_000);
 
@@ -523,11 +555,11 @@ describe('CSV import count reconciliation (#5731)', () => {
     expect(shownTotal()).toBe(3);
     settle();
     await step();
-    expect(committeeService.getCommitteesByProject).toHaveBeenCalledTimes(1);
+    expect(committeeService.getCommitteesByProject).not.toHaveBeenCalled();
     await step(400);
 
-    expect(committeeService.getCommitteesByProjectOrThrow).toHaveBeenCalledTimes(1);
-    expect(committeeService.getCommitteesByProject).toHaveBeenCalledTimes(2);
+    expect(committeeService.getCommitteesByProjectOrThrow).toHaveBeenCalledTimes(3);
+    expect(committeeService.getCommitteesByProject).not.toHaveBeenCalled();
     expect(shownTotal()).toBe(5);
   });
 
@@ -539,9 +571,11 @@ describe('CSV import count reconciliation (#5731)', () => {
     await step();
     await step(10_000);
 
-    expect(committeeService.getCommitteesByProjectOrThrow).toHaveBeenCalledTimes(6);
-    expect(committeeService.getCommitteesByProject).toHaveBeenCalledTimes(2);
-    expect(consoleError).toHaveBeenCalledTimes(6);
+    expect(committeeService.getCommitteesByProjectOrThrow).toHaveBeenCalledTimes(8);
+    expect(committeeService.getCommitteesByProject).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledTimes(8);
+    expect(consoleError).toHaveBeenCalledWith('Failed to refresh groups after CSV import', { status: 503 });
+    expect(shownTotal()).toBe(3);
     expect(consoleError).toHaveBeenCalledWith('Failed to refetch committees after CSV import', { status: 503 });
     consoleError.mockRestore();
   });

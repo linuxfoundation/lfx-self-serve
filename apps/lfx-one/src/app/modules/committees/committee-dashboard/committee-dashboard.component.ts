@@ -574,8 +574,17 @@ export class CommitteeDashboardComponent {
           }
 
           const scopeKey = this.importScopeKey();
-          if (!silent || this.loadedListScope() !== scopeKey) this.myCommitteesLoading.set(true);
-          return this.committeeService.getMyCommittees().pipe(
+          const keepRows = silent && this.loadedListScope() === scopeKey;
+          if (!keepRows) this.myCommitteesLoading.set(true);
+          const request$ = keepRows
+            ? this.committeeService.getMyCommitteesOrError().pipe(
+                catchError((error: unknown) => {
+                  console.error('Failed to refresh groups after CSV import', { status: error instanceof HttpErrorResponse ? error.status : 0 });
+                  return EMPTY;
+                })
+              )
+            : this.committeeService.getMyCommittees();
+          return request$.pipe(
             tap(() => this.loadedListScope.set(scopeKey)),
             finalize(() => this.myCommitteesLoading.set(false))
           );
@@ -702,13 +711,18 @@ export class CommitteeDashboardComponent {
           }
 
           const scopeKey = this.importScopeKey();
-          if (!silent || this.loadedListScope() !== scopeKey) this.committeesLoading.set(true);
-          return this.committeeService.getCommitteesByProject(project.uid).pipe(
+          const keepRows = silent && this.loadedListScope() === scopeKey;
+          if (!keepRows) this.committeesLoading.set(true);
+          const request$ = keepRows
+            ? this.committeeService.getCommitteesByProjectOrThrow(project.uid).pipe(
+                catchError((error: unknown) => {
+                  console.error('Failed to refresh groups after CSV import', { status: error instanceof HttpErrorResponse ? error.status : 0 });
+                  return EMPTY;
+                })
+              )
+            : this.committeeService.getCommitteesByProject(project.uid);
+          return request$.pipe(
             tap(() => this.loadedListScope.set(scopeKey)),
-            catchError((error) => {
-              console.error('Failed to load committees:', error);
-              return of([]);
-            }),
             finalize(() => this.committeesLoading.set(false))
           );
         })

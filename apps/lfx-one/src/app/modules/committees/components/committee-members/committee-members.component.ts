@@ -868,7 +868,14 @@ export class CommitteeMembersComponent implements OnInit {
             switchMap((summary) => {
               if (summary.added === 0 || this.members().length >= summary.reconciliationTarget) return EMPTY;
               return timer(MEMBER_IMPORT_RECONCILE_INTERVAL_MS, MEMBER_IMPORT_RECONCILE_INTERVAL_MS).pipe(
-                exhaustMap(() => this.committeeService.getCommitteeMembers(summary.committeeUid).pipe(catchError(() => of(null)))),
+                exhaustMap(() =>
+                  this.committeeService.getCommitteeMembers(summary.committeeUid).pipe(
+                    catchError((error: unknown) => {
+                      console.error('Failed to refetch members after CSV import', { status: error instanceof HttpErrorResponse ? error.status : 0 });
+                      return of(null);
+                    })
+                  )
+                ),
                 take(MEMBER_IMPORT_RECONCILE_MAX_ATTEMPTS),
                 first((members) => members !== null && members.length >= summary.reconciliationTarget, null),
                 tap(() => this.refreshMembers())

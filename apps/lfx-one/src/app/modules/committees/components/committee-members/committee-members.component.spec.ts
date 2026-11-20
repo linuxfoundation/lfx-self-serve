@@ -4,7 +4,7 @@
 // Members tab entry points for adding people, including the CSV import (GH-3849) and its retained
 // progress/report banner (#5731). Synthetic data only.
 
-import { HttpParams } from '@angular/common/http';
+import { HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -395,6 +395,20 @@ describe('CommitteeMembersComponent add-people actions', () => {
 
         expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(6);
         expect(refreshes).toBe(2);
+      });
+
+      it('logs only status on repeated roster failures and stops at the retry bound', () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        committeeService.getCommitteeMembers.mockReturnValue(
+          throwError(() => new HttpErrorResponse({ status: 503, error: { message: 'private@example.com' } }))
+        );
+        settle(importSummary({ added: 2, reconciliationTarget: 3 }));
+        vi.advanceTimersByTime(10_000);
+        expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(6);
+        expect(refreshes).toBe(2);
+        expect(log).toHaveBeenCalledTimes(6);
+        expect(log.mock.calls).toEqual(Array.from({ length: 6 }, () => ['Failed to refetch members after CSV import', { status: 503 }]));
+        log.mockRestore();
       });
 
       it('refreshes without polling when nothing was confirmed as added', () => {
