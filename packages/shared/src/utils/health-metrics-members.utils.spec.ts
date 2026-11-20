@@ -1188,6 +1188,12 @@ describe('members churn', () => {
     expect(view.tiers).toEqual([]);
     expect(view.metrics.map((item) => item.value)).toEqual(['0%', '0%', '$0']);
 
+    // With no opening dues the view has no rate, but a year that lost nothing still reads 0%.
+    const noOpening: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: 0, duesLostUsd: 0, revenueNotRenewedRate: null })], tiers: [] };
+    expect(buildHealthMetricsMembersChurnView(noOpening, 'YTD').metrics[0].value).toBe('0%');
+    const missing: HealthMetricsMembersChurn = { years: [churnYear(2026, { revenueNotRenewedRate: null })], tiers: [] };
+    expect(buildHealthMetricsMembersChurnView(missing, 'YTD').metrics[0].value).toBe('—');
+
     const unmeasured: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: null })], tiers: [] };
     expect(buildHealthMetricsMembersChurnView(unmeasured, 'YTD').yearMeasured).toBe(false);
     expect(buildHealthMetricsMembersChurnView({ years: [], tiers: [] }, 'YTD')).toMatchObject({ measured: false, yearMeasured: false, trend: [] });

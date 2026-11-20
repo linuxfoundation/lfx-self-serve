@@ -334,6 +334,17 @@ describe('MembersChurnComponent', () => {
     expect(text('members-churn-trend-empty')).toBe('Nothing matches this view.');
   });
 
+  it('settles an unmeasured year empty even when its Members lost read fails, since that list has nothing to show', async () => {
+    await render(
+      { years: [churnYear(2025)], tiers: [] },
+      throwError(() => new Error('gateway timeout'))
+    );
+
+    expect(verdicts).toEqual([true]);
+    expect(query('members-churn-metrics')).toBeNull();
+    expect(query('members-churn-departures-error')).toBeNull();
+  });
+
   it('holds the skeleton, not the old figures, while a newly selected foundation reads', async () => {
     await render();
     getMembersChurn.mockReturnValue(new Subject<HealthMetricsMembersChurn>());

@@ -579,18 +579,18 @@ export function buildHealthMetricsMembersChurnView(churn: HealthMetricsMembersCh
   const year = getYearForRange(range);
   const current = churn.years.find((row) => row.year === year) ?? null;
   const prior = churn.years.find((row) => row.year === year - 1) ?? null;
-  const revenue = current?.revenueNotRenewedRate ?? null;
-  const change = churnDifference(revenue, prior?.revenueNotRenewedRate ?? null);
+  const revenue = revenueChurnRate(current);
+  const change = churnDifference(revenue, revenueChurnRate(prior));
 
   return {
     measured: churn.years.length > 0,
     // A null count is unmeasured, so it must not read as "no churn".
     yearMeasured: current !== null && current.lostCount !== null,
     year,
-    metrics: buildChurnMetrics(current, year, change),
+    metrics: buildChurnMetrics(current, revenue, year, change),
     // A year that lost no membership has no loss to split, so By tier reads as empty rather than rows of zeroes.
     tiers: Math.round(current?.lostCount ?? 0) > 0 ? buildChurnTierRows(churn.tiers.filter((row) => row.year === year)) : [],
-    trend: buildChurnTrend(churn.years, year, (row) => row?.revenueNotRenewedRate ?? null),
+    trend: buildChurnTrend(churn.years, year, revenueChurnRate),
     // Follows the metric's change, so the bar and the metric never disagree on direction.
     trendRose: change !== null && Math.round(change * 10) > 0,
   };
@@ -614,6 +614,16 @@ export function buildHealthMetricsMembersChurnDepartureRows(rows: HealthMetricsM
   });
 }
 
+/**
+ * A year's revenue churn. The view has no rate without opening dues, but a year that lost no membership and no dues
+ * lost nothing, so it reads 0 rather than unmeasured; any other missing rate stays `null`.
+ */
+function revenueChurnRate(row: HealthMetricsMembersChurnYear | null): number | null {
+  if (!row) return null;
+  if (row.revenueNotRenewedRate !== null) return row.revenueNotRenewedRate;
+  return row.lostCount === 0 && (row.duesLostUsd ?? 0) === 0 ? 0 : null;
+}
+
 function churnDifference(current: number | null, previous: number | null): number | null {
   return current === null || previous === null ? null : current - previous;
 }
@@ -622,12 +632,17 @@ function churnDifference(current: number | null, previous: number | null): numbe
  * Revenue churn with its change on the year before (a fall is good news), logo churn with the memberships it counts,
  * and the dues lost against the year before. "This year" and "last year" name the running year only.
  */
-function buildChurnMetrics(current: HealthMetricsMembersChurnYear | null, year: number, change: number | null): HealthMetricsMetricItem[] {
+function buildChurnMetrics(
+  current: HealthMetricsMembersChurnYear | null,
+  revenueRate: number | null,
+  year: number,
+  change: number | null
+): HealthMetricsMetricItem[] {
   const isCurrentYear = year === getYearForRange('YTD');
   const lost = current?.lostCount ?? null;
   const opening = current?.openingCount ?? null;
   const priorDues = current?.duesLostPriorUsd ?? null;
-  const revenue: HealthMetricsMetricItem = { key: 'revenue', label: 'Revenue churn', value: formatRevenueChurn(current?.revenueNotRenewedRate ?? null) };
+  const revenue: HealthMetricsMetricItem = { key: 'revenue', label: 'Revenue churn', value: formatRevenueChurn(revenueRate) };
   if (change !== null) {
     revenue.descriptionLead = formatChurnChange(change);
     revenue.descriptionLeadTone = churnChangeTone(change);
