@@ -177,6 +177,7 @@ describe('NonMembersOrgsComponent', () => {
     const search = query('non-members-orgs-search');
     expect(search?.classList).toContain('w-full');
     expect(search?.querySelector('input')?.placeholder).toBe('Search company…');
+    expect(search?.querySelector('input')?.maxLength).toBe(100);
     expect(query('non-members-orgs-count')).toBeNull();
     expect(query('non-members-orgs-provisional')).toBeNull();
     expect(query('non-members-orgs-low-confidence')).toBeNull();

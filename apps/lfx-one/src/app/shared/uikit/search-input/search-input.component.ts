@@ -26,6 +26,8 @@ export class UiSearchInputComponent {
   public readonly ariaLabel = input<string>('Search');
   /** Disables the field. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Caps what can be typed or pasted, so the field never shows more than a search applies; `null` leaves it uncapped. */
+  public readonly maxlength = input<number | null>(null);
   /** The current text. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string>('');
 

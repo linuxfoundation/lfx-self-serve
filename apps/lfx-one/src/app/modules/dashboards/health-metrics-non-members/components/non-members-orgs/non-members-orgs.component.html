@@ -14,7 +14,13 @@
     <!-- The shell shows the section's empty state. -->
   } @else {
     <!-- Search only, filling the row; the cut sits in the card header. -->
-    <lfx-ui-search-input class="w-full" placeholder="Search company…" ariaLabel="Search company" [(value)]="searchText" data-testid="non-members-orgs-search" />
+    <lfx-ui-search-input
+      class="w-full"
+      placeholder="Search company…"
+      ariaLabel="Search company"
+      [maxlength]="maxSearchLength"
+      [(value)]="searchText"
+      data-testid="non-members-orgs-search" />
 
     @if (!loading() && totalRecords() === 0) {
       <lfx-empty-state

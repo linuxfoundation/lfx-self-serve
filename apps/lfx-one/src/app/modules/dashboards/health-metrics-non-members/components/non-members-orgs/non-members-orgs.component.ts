@@ -67,6 +67,8 @@ export class NonMembersOrgsComponent {
 
   protected readonly size = HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE;
   protected readonly contributionsTip = HEALTH_METRICS_NON_MEMBERS_CONTRIBUTIONS_TIP;
+  /** The field stops at the length the read applies, so it never shows text the search ignores. */
+  protected readonly maxSearchLength = HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH;
   protected readonly searchText = signal<string>(this.normalizeSearch(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsSearch) ?? ''));
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a foundation with no active companies, and the empty state below asserts the difference. */
