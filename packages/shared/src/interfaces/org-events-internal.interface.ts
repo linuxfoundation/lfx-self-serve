@@ -29,11 +29,8 @@ export interface OrgEventRow {
   TOTAL_RECORDS: number;
 }
 
-export interface OrgFamilyEventCreditFlagsRow {
-  EVENT_ID: string;
+export interface OrgFamilyEventRow extends OrgEventRow {
   ACCOUNT_ID: string;
-  HAS_FOOTPRINT: boolean;
-  IS_ORG_SPONSOR: boolean;
 }
 
 export interface OrgFamilyEventAttendeeRow {
@@ -89,8 +86,7 @@ export interface OrgEventSpeakersDrawerRow {
   SPEAKER_ID: string;
   NAME: string | null;
   JOB_TITLE: string | null;
-  IS_ACCEPTED: number;
-  EVENT_NAME: string | null;
+  IS_ACCEPTED: boolean;
 }
 
 /** Person × event row from `ORG_EVENT_PARTICIPATION` (attendee predicate, ended events, range window); everyone credited is listed. */

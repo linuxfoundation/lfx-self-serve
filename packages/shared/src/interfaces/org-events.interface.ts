@@ -47,8 +47,7 @@ export interface OrgEvent {
   readonly orgSpeakerAcceptedCount: number;
   readonly orgSpeakerSubmittedCount: number;
   readonly isOrgSponsor: boolean;
-  readonly organizations?: readonly OrgLensRowOrganization[];
-  readonly sponsors?: readonly OrgLensRowOrganization[];
+  readonly organization?: OrgLensRowOrganization;
 }
 
 /** Paginated response for org events. */
