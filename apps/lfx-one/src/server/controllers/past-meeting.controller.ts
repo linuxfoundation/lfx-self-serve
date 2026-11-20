@@ -1080,10 +1080,6 @@ export class PastMeetingController {
     }
   }
 
-  /**
-   * Resolves whether the requesting user is the organizer of a past meeting. Unauthenticated
-   * requests and access-check failures both default to false (fail closed).
-   */
   /** Sets `organizer` from the occurrence key each row's access grants use, keeping the row's own `id`. */
   private async withOccurrenceOrganizer(req: Request, meetings: PastMeeting[]): Promise<PastMeeting[]> {
     const checked = await this.accessCheckService.addAccessToResources(
@@ -1095,6 +1091,10 @@ export class PastMeetingController {
     return meetings.map((meeting, index) => ({ ...meeting, organizer: checked[index].organizer ?? false }));
   }
 
+  /**
+   * Resolves whether the requesting user is the organizer of a past meeting. Unauthenticated
+   * requests and access-check failures both default to false (fail closed).
+   */
   private async isPastMeetingOrganizer(req: Request, pastMeeting: PastMeeting, uid: string): Promise<boolean> {
     if (!req.oidc?.isAuthenticated()) {
       return false;
