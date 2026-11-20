@@ -328,6 +328,45 @@ describe('MeetingsHomeStore', () => {
       expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
     });
 
+    it('retires a self-invite once the feed lists it, so a later feed decides again', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+      store.markSelfInvited('organized', ['reg-self']);
+
+      upcoming$.next([{ ...organized, invited: true, my_registrant_ids: ['reg-self'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      upcoming$.next([organized]);
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+    });
+
+    it('keeps a self-invite without a uid until the feed lists a registration of the viewer', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: true, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+      store.markSelfInvited('organized', []);
+
+      upcoming$.next([organized]);
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-self'] }]);
+
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+    });
+
+    it('forgets the registrations the viewer removed from a self-invite', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-self', 'reg-other']);
+
+      store.forgetSelfInvite('organized', ['reg-self']);
+      expect(store.selfInviteOf('organized')).toEqual(['reg-other']);
+      store.forgetSelfInvite('organized', ['reg-other']);
+
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+    });
+
     it('forgets a self-invite on a viewer change', () => {
       const store = create();
       upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);

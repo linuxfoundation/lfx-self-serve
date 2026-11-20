@@ -101,10 +101,11 @@ export class MeetingsHomeStore {
   // Kept for the page's lifetime, so a refetch that still lists a deleted meeting or cancelled date does not bring it back.
   private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
   private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
-  /** Registrant uids of the meetings the viewer added themselves to here, until the feed's index lists them; a new viewer starts empty. */
+  /** Registrant uids of the meetings the viewer added themselves to here, until the feed's index lists them or the viewer removes them; a new viewer starts empty. */
   private readonly selfInvitedIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = linkedSignal({
-    source: this.feed.key,
-    computation: () => new Map<string, readonly string[]>(),
+    source: () => ({ key: this.feed.key(), meetings: this.upcomingMeetings() }),
+    computation: (source, previous): ReadonlyMap<string, readonly string[]> =>
+      previous?.source.key === source.key ? this.withoutListedSelfInvites(previous.value, source.meetings) : new Map(),
   });
   /** Key of the concurrent date picked on the Next meeting card; the first one when it is not among them. */
   private readonly nextCardKey: WritableSignal<string | null> = linkedSignal({ source: this.feed.key, computation: () => null });
@@ -388,6 +389,23 @@ export class MeetingsHomeStore {
   /** Marks the viewer invited to a meeting they just added themselves to, with the registrations the add confirmed. */
   public markSelfInvited(meetingId: string, registrantUids: readonly string[]): void {
     this.selfInvitedIds.update((ids) => new Map(ids).set(meetingId, registrantUids));
+  }
+
+  /** Registrant uids of a self-invite made here that the feed does not list yet; empty when the add returned none, undefined without one. */
+  public selfInviteOf(meetingId: string): readonly string[] | undefined {
+    return this.selfInvitedIds().get(meetingId);
+  }
+
+  /** Drops the registrations the viewer just removed from a self-invite made here, so a later removal never sends them again. */
+  public forgetSelfInvite(meetingId: string, removedRegistrantUids: readonly string[]): void {
+    this.selfInvitedIds.update((ids) => {
+      const kept = ids.get(meetingId)?.filter((uid) => !removedRegistrantUids.includes(uid));
+      if (!kept) return ids;
+      const next = new Map(ids);
+      if (kept.length) next.set(meetingId, kept);
+      else next.delete(meetingId);
+      return next;
+    });
   }
 
   /** Records an organizer's edit or approval of the summary opened from row `key`; the Last card takes it only while that row is last. */
@@ -701,6 +719,19 @@ export class MeetingsHomeStore {
     // Without a returned uid the registration is still confirmed, so no list stands in for it and `invited` decides.
     if (!added.length) return { ...meeting, invited: true, my_registrant_ids: meeting.my_registrant_ids?.length ? meeting.my_registrant_ids : undefined };
     return { ...meeting, invited: true, my_registrant_ids: [...new Set([...(meeting.my_registrant_ids ?? []), ...added])] };
+  }
+
+  /** Keeps only the self-invites the feed does not list yet: invited, with every saved uid, or with a registration of its own when none was saved. */
+  private withoutListedSelfInvites(ids: ReadonlyMap<string, readonly string[]>, meetings: Meeting[]): ReadonlyMap<string, readonly string[]> {
+    const listed = new Map(meetings.map((meeting) => [meeting.id, meeting]));
+    const kept = [...ids].filter(([meetingId, uids]) => {
+      const meeting = listed.get(meetingId);
+      if (!meeting?.invited) return true;
+      const registrantIds = meeting.my_registrant_ids;
+      if (!uids.length) return !!registrantIds && !registrantIds.length;
+      return !uids.every((uid) => registrantIds?.includes(uid));
+    });
+    return kept.length === ids.size ? ids : new Map(kept);
   }
 
   /** Loads one artifact of the last meeting, again whenever it changes; a missing or failed lookup reads as null. */

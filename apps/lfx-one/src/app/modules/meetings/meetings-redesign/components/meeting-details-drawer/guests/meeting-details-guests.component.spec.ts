@@ -104,6 +104,7 @@ describe('MeetingDetailsGuestsComponent', () => {
   let confirmedRsvps: WritableSignal<MeetingRsvp[]>;
   let toastShow: ReturnType<typeof vi.fn>;
   let refreshList: ReturnType<typeof vi.fn<() => void>>;
+  let markSelfInvited: ReturnType<typeof vi.fn>;
   let selfGuest$: BehaviorSubject<MeetingSelfGuest | null>;
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
@@ -148,6 +149,7 @@ describe('MeetingDetailsGuestsComponent', () => {
     confirmedRsvps = signal([]);
     toastShow = vi.fn();
     refreshList = vi.fn();
+    markSelfInvited = vi.fn();
 
     TestBed.configureTestingModule({
       imports: [MeetingDetailsGuestsComponent],
@@ -196,7 +198,7 @@ describe('MeetingDetailsGuestsComponent', () => {
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
-        { provide: MeetingDetailsSource, useValue: { hostRef: { close: closeDialog, closed: dialogClosed } } },
+        { provide: MeetingDetailsSource, useValue: { hostRef: { close: closeDialog, closed: dialogClosed }, markSelfInvited } },
       ],
     });
   });
@@ -799,6 +801,7 @@ describe('MeetingDetailsGuestsComponent', () => {
       ]);
       expect(modalOpen).not.toHaveBeenCalled();
       expect(refreshList).toHaveBeenCalled();
+      expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['self-1']);
       expect(document.activeElement).toBe(query('meeting-details-guests-add')?.querySelector('button'));
     });
 
@@ -861,6 +864,7 @@ describe('MeetingDetailsGuestsComponent', () => {
       if (outcome === 'success') {
         response.next(success);
         expect(meetingService['clearRemovedRegistration']).toHaveBeenCalledWith('synthetic-meeting');
+        expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['self-1']);
       } else {
         response.error(new HttpErrorResponse({ status: 503 }));
       }
@@ -898,6 +902,7 @@ describe('MeetingDetailsGuestsComponent', () => {
       expect(query('meeting-details-guests-add-self')).not.toBeNull();
       expect(guestCount()).toBe(3);
       expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+      expect(markSelfInvited).not.toHaveBeenCalled();
       clickSelf();
       await fixture.whenStable();
       expect(query('meeting-details-guests-add-self')).toBeNull();

@@ -123,7 +123,8 @@ export class MeetingDetailsGuestsComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly userService = inject(UserService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
+  private readonly source = inject(MeetingDetailsSource);
+  private readonly hostRef = this.source.hostRef;
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly stickSentinel = viewChild<ElementRef<HTMLElement>>('stickSentinel');
@@ -571,7 +572,11 @@ export class MeetingDetailsGuestsComponent {
       )
       .subscribe({
         next: (response) => {
-          if (response.summary.successful > 0) this.meetingService.clearRemovedRegistration(meetingId);
+          if (response.summary.successful > 0) {
+            this.meetingService.clearRemovedRegistration(meetingId);
+            const uid = response.successes[0]?.uid;
+            this.source.markSelfInvited?.(meetingId, uid ? [uid] : []);
+          }
           // A confirmed invite outlives its view, but a late reply must not touch a destroyed/new meeting view.
           if (this.destroyRef.destroyed || this.context.meeting().id !== meetingId) return;
           if (response.summary.successful < 1) {

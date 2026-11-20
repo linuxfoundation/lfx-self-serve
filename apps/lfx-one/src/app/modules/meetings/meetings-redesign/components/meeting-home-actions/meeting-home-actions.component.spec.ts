@@ -70,6 +70,8 @@ describe('MeetingHomeActionsComponent', () => {
   let add$: ReturnType<typeof vi.fn>;
   let addingSelf: WritableSignal<boolean>;
   let markSelfInvited: ReturnType<typeof vi.fn>;
+  let forgetSelfInvite: ReturnType<typeof vi.fn>;
+  let selfInvites: Map<string, readonly string[]>;
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -128,7 +130,9 @@ describe('MeetingHomeActionsComponent', () => {
     remove$ = vi.fn().mockReturnValue(of({ removed_registrant_ids: ['synthetic-reg'], remaining_registrant_ids: [] }));
     addingSelf = signal(false);
     add$ = vi.fn().mockReturnValue(of<MeetingSelfInviteResult>({ status: 'added', registrant: { uid: 'synthetic-self-reg' } as MeetingRegistrant }));
-    markSelfInvited = vi.fn();
+    selfInvites = new Map();
+    markSelfInvited = vi.fn((meetingId: string, uids: readonly string[]) => selfInvites.set(meetingId, uids));
+    forgetSelfInvite = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
@@ -147,7 +151,10 @@ describe('MeetingHomeActionsComponent', () => {
           provide: MeetingSelfInviteService,
           useValue: { add$, isPending: () => addingSelf(), describeFailure: () => 'Unable to add you to this meeting. Please try again.' },
         },
-        { provide: MeetingsHomeStore, useValue: { markSelfInvited } },
+        {
+          provide: MeetingsHomeStore,
+          useValue: { markSelfInvited, forgetSelfInvite, selfInviteOf: (meetingId: string) => selfInvites.get(meetingId) },
+        },
       ],
     });
     overlay = TestBed.inject(OverlayContainer).getContainerElement();
@@ -436,6 +443,38 @@ describe('MeetingHomeActionsComponent', () => {
       expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
       expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Removed from meeting' });
       expect(refreshUserMeetings).not.toHaveBeenCalled();
+      expect(forgetSelfInvite).toHaveBeenCalledWith('synthetic-meeting', ['synthetic-reg']);
+    });
+
+    it('removes a registration just added from the row by its saved uid, before the feed lists it', async () => {
+      const organizer = { ...INVITEE, organizer: true, invited: false, my_registrant_ids: [] } as Meeting;
+      await render(row(organizer));
+      await choose('meetings-home-row-actions-add-self');
+      fixture.componentRef.setInput('row', row({ ...organizer, invited: true, my_registrant_ids: ['synthetic-self-reg'] }));
+      await settle();
+      await confirmRemoval();
+
+      expect(remove$).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home', 'synthetic-self-reg');
+      expect(toastShow).toHaveBeenLastCalledWith({ variant: 'dark', message: 'Removed from meeting' });
+    });
+
+    it('says the invitation is still syncing when an add that returned no uid is not indexed yet', async () => {
+      selfInvites.set(INVITEE.id, []);
+      remove$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render(row({ ...INVITEE, organizer: true, my_registrant_ids: undefined }));
+      await confirmRemoval();
+
+      expect(remove$).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home');
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ message: 'Invitation syncing' }));
+      expect(toastShow).not.toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    });
+
+    it('reports a 404 as a failed removal when no self-invite is pending', async () => {
+      remove$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render(row(INVITEE));
+      await confirmRemoval();
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'Error' }));
     });
 
     it('keeps the dialog open, busy and undismissable until the removal settles', async () => {
@@ -532,12 +571,13 @@ describe('MeetingHomeActionsComponent', () => {
       );
     });
 
-    it('shows the trigger busy and sends nothing while an add is pending', async () => {
+    it('shows the trigger busy and keeps the menu closed while an add is pending', async () => {
       addingSelf.set(true);
       await render(row(ORGANIZER));
 
       expect(trigger().getAttribute('aria-busy')).toBe('true');
-      await choose('meetings-home-row-actions-add-self');
+      expect(await openMenu()).toEqual([]);
+      expect(find('meetings-home-row-actions-add-self')).toBeNull();
       expect(add$).not.toHaveBeenCalled();
     });
   });

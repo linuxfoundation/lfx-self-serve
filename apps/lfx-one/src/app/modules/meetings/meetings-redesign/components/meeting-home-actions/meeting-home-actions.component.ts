@@ -3,6 +3,7 @@
 
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DialogRef } from '@angular/cdk/dialog';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, TemplateRef, viewChild } from '@angular/core';
 import { MeetingDashboardView, MeetingHomeRow } from '@lfx-one/shared/interfaces';
 import { getMeetingOwnResendQuestion, getMeetingSelfRemovalNotes, getMeetingSelfRemovalQuestion, getPastMeetingResourceId } from '@lfx-one/shared/utils';
@@ -186,9 +187,12 @@ export class MeetingHomeActionsComponent {
     // A second click can land before the button renders as loading.
     if (this.removing()) return;
     const ref = this.dialogRef;
+    const meetingId = this.row().meeting.id;
+    // A self-invite made here may not be indexed yet, so its saved uid goes along, as the legacy card's does.
+    const selfInvite = this.store?.selfInviteOf(meetingId);
+    const savedUid = selfInvite?.at(-1);
     this.removing.set(true);
-    this.selfRemoval
-      .remove$(this.row().meeting.id, 'meetings-home')
+    (savedUid ? this.selfRemoval.remove$(meetingId, 'meetings-home', savedUid) : this.selfRemoval.remove$(meetingId, 'meetings-home'))
       .pipe(
         take(1),
         finalize(() => {
@@ -198,6 +202,7 @@ export class MeetingHomeActionsComponent {
       )
       .subscribe({
         next: (result) => {
+          this.store?.forgetSelfInvite(meetingId, result.removed_registrant_ids);
           if (result.remaining_registrant_ids.length > 0) {
             // The home list has no per-meeting refetch, so reload the feed to show what is left.
             this.userService.refreshUserMeetings();
@@ -206,7 +211,18 @@ export class MeetingHomeActionsComponent {
           }
           this.toast.show({ variant: 'dark', message: 'Removed from meeting' });
         },
-        error: (error: unknown) => this.showError('Error', this.selfRemoval.describeFailure(error)),
+        error: (error: unknown) => {
+          // An add that returned no uid can only be removed once it is indexed (legacy card's "Invitation syncing").
+          if (selfInvite?.length === 0 && error instanceof HttpErrorResponse && error.status === 404) {
+            this.toast.show({
+              position: 'bottom-center',
+              message: 'Invitation syncing',
+              description: 'Your invitation is saved but is still syncing. Try Remove Myself again shortly.',
+            });
+            return;
+          }
+          this.showError('Error', this.selfRemoval.describeFailure(error));
+        },
       });
   }
 
