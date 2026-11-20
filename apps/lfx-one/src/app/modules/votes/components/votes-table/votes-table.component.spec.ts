@@ -2038,6 +2038,16 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     expect(deleteVote).not.toHaveBeenCalled();
   });
 
+  it('escapes the vote name, since the dialog renders its message as HTML', async () => {
+    fixture.componentRef.setInput('votes', [vote('active', { writer: true, name: 'Approve <Q3> & "draft"' })]);
+    await settle();
+    (await cancelItem('active'))!.command!({});
+
+    const message = (confirm.mock.calls[0][0] as Confirmation).message!;
+    expect(message).toContain('"Approve &lt;Q3&gt; &amp; &quot;draft&quot;"');
+    expect(message).not.toContain('<Q3>');
+  });
+
   it('deletes once on accept, toasts and refreshes the list', async () => {
     (await acceptCancel())();
     await settle();

@@ -468,8 +468,9 @@ export class VoteService {
   /**
    * Deletes a vote directly via microservice proxy. Upstream deletes draft and active votes (cancelling an active one
    * notifies its voters and removes every response) and rejects an ended vote with a 400, surfaced here as a 409
-   * `VOTE_DELETE_ENDED` (#5968). The uid is validated before the call, so a 400 on this request can only mean "ended".
-   * The caller must hold `vote#writer`, enforced upstream by the gateway.
+   * `VOTE_DELETE_ENDED` (#5968). ITX's only 400 on delete is "ended polls cannot be deleted". The BFF checks only that
+   * the uid is present; a malformed uid would also earn a 400 from upstream's UUID check, but the gateway's `vote#writer`
+   * check normally answers it with a 403 first. The caller must hold `vote#writer`, enforced upstream by the gateway.
    */
   public async deleteVote(req: Request, voteUid: string): Promise<void> {
     logger.debug(req, 'delete_vote', 'Deleting vote', {

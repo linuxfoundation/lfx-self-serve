@@ -36,6 +36,7 @@ import {
   buildMailtoHref,
   buildVoteMailingListReminder,
   computeVoteRowParticipation,
+  escapeHtml,
   getEntityCommands,
   getMailingListEmail,
   getUserTimezone,
@@ -582,7 +583,8 @@ export class VotesTableComponent {
     const uid = vote.uid;
     this.confirmationService.confirm({
       ...VOTE_CANCEL_CONFIRMATION,
-      message: `Cancel the vote "${vote.name}"? The vote and all responses will be permanently deleted, and invited voters will be notified that it was cancelled. This can't be undone.`,
+      // The dialog renders message as HTML, so the name is escaped to show exactly as typed.
+      message: `Cancel the vote "${escapeHtml(vote.name)}"? The vote and all responses will be permanently deleted, and invited voters will be notified that it was cancelled. This can't be undone.`,
       accept: () => {
         // Still listed, still open, and not already being cancelled: a second accept must not queue another delete.
         const row = this.displayedVotes().find((r) => r.uid === uid);
