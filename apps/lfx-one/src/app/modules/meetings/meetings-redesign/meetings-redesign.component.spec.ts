@@ -1239,6 +1239,7 @@ describe('MeetingsRedesignComponent', () => {
           getPastMeetingRecording: () => of(null),
           getProjectMeetingsForHome: () => projectUpcoming$,
           getProjectPastMeetingsForHome: pastSearch,
+          getRollupFilterOptions: () => of({ projects: [], groups: [], complete: true }),
         },
       });
       const fixture = render();
