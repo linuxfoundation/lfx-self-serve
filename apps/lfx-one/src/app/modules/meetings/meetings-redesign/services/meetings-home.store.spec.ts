@@ -870,6 +870,7 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.hasMore()).toBe(true);
       store.loadMore();
+      TestBed.tick();
       expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
 
       pastPages[1].next(pastPage('b', 5));
@@ -886,6 +887,8 @@ describe('MeetingsHomeStore', () => {
         pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
         TestBed.tick();
         store.loadMore();
+        TestBed.tick();
+        TestBed.tick();
 
         store.setSearch(' weekly ');
         TestBed.tick();
@@ -907,7 +910,8 @@ describe('MeetingsHomeStore', () => {
       pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
       TestBed.tick();
       store.loadMore();
-      pastPages[1].next(pastPage('b', 2, 'cursor-2'));
+      TestBed.tick();
+      pastPages[1].next(pastPage('b', MEETINGS_HOME_PAGE_SIZE, 'cursor-2'));
       TestBed.tick();
 
       pastMeetingsRefresh$.next();
@@ -927,8 +931,57 @@ describe('MeetingsHomeStore', () => {
 
       store.setSearch('typed');
       store.loadMore();
+      TestBed.tick();
 
       expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+    });
+
+    it('keeps loading server pages while none of the loaded rows can be shown', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+
+      expect(past).toHaveBeenLastCalledWith('', 'cursor-1');
+      expect(store.loading()).toBe(true);
+      pastPages[1].next(pastPage('b', 3));
+      TestBed.tick();
+      expect(store.pastRows()).toHaveLength(3);
+      expect(store.loading()).toBe(false);
+    });
+
+    it('ignores a Load more while a page is loading', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      const count = store.visibleCount();
+
+      store.loadMore();
+
+      expect(store.visibleCount()).toBe(count);
+      expect(past).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops the failure of a next page the query has moved on from, and keeps the cursor when a reload fails', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+
+      pastMeetingsRefresh$.next();
+      pastPages[1].error(new Error('stale'));
+      expect(toast.show).not.toHaveBeenCalled();
+      pastPages[2].error(new Error('reload failed'));
+      TestBed.tick();
+
+      expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+      expect(store.hasMore()).toBe(true);
     });
 
     it('does not request a next page on the upcoming tab', () => {
@@ -937,6 +990,7 @@ describe('MeetingsHomeStore', () => {
       TestBed.tick();
 
       store.loadMore();
+      TestBed.tick();
 
       expect(past).toHaveBeenCalledTimes(1);
     });

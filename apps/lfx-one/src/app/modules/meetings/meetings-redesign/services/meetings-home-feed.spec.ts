@@ -120,6 +120,16 @@ describe('MeetingsHomeFeed', () => {
     expect(latest).toHaveBeenCalledTimes(2);
   });
 
+  it('falls back to start plus duration for the end, and drops rows whose end cannot be read', async () => {
+    const byDuration = { id: 'by-duration', start_time: '2026-01-01T10:00:00Z', duration: 60 } as unknown as PastMeeting;
+    const runningByDuration = { id: 'running', start_time: new Date(Date.now() - 60_000).toISOString(), duration: 60 } as unknown as PastMeeting;
+    const unreadable = { id: 'unreadable', start_time: 'not a date' } as unknown as PastMeeting;
+    meetingService.getProjectPastMeetingsForHome.mockReturnValue(of({ meetings: [byDuration, runningByDuration, unreadable] }));
+    const feed = inject();
+
+    await expect(firstValueFrom(feed.past(''))).resolves.toEqual({ meetings: [byDuration] });
+  });
+
   it('loads nothing until a project is active', async () => {
     projectUid.set('');
     const feed = inject();

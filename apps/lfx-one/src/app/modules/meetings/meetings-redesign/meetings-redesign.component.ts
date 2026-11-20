@@ -153,7 +153,10 @@ export class MeetingsRedesignComponent {
     return row ? [row] : [];
   });
   /** The active tab has no meetings at all. */
-  protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
+  protected readonly tabEmpty: Signal<boolean> = computed(
+    // A paged past feed searches on the server, so its empty rows under a query are no results, not an empty tab.
+    () => !this.store.loading() && this.store.tabRows().length === 0 && !(this.store.pagedPast && this.store.tab() === 'past' && this.store.hasActiveQuery())
+  );
   /** The active tab has meetings, but none match the search and filters. */
   protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
   /** No-results copy: search only, filters only, or both. */
