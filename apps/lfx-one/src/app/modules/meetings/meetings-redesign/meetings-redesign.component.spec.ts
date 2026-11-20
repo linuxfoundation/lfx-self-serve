@@ -934,6 +934,23 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
     });
 
+    it('closes an empty field left open beside Filters on the next press elsewhere', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      const filters = query(fixture, 'meetings-redesign-search')?.nextElementSibling as HTMLElement;
+      filters.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      searchInput(fixture)?.blur();
+      document.dispatchEvent(new PointerEvent('pointerup'));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      document.dispatchEvent(new PointerEvent('pointerup'));
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')?.classList).toContain('is-closing');
+    });
+
     it('waits for a pressed pointer to be released before closing, so the control under it is not moved', async () => {
       const fixture = await attached();
       await openSearch(fixture);

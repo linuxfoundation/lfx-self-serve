@@ -298,6 +298,9 @@ export class MeetingsRedesignComponent {
   protected onPointerDown(event: PointerEvent): void {
     this.pointerHeld = true;
     this.pressedInTools = !!this.searchTools()?.nativeElement.contains(event.target as Node | null);
+    // An empty field left open beside Filters closes on the next press elsewhere.
+    const field = this.searchFieldHost()?.nativeElement;
+    if (this.searchOpen() && !this.pressedInTools && !this.store.search().trim() && !field?.contains(document.activeElement)) this.closeOnRelease = true;
   }
 
   protected releasePointer(): void {
