@@ -172,12 +172,12 @@ export class MeetingsHomeStore {
   );
   /** The active tab's feed failed to load; its rows are empty but not confirmed empty. */
   public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastShowsError() : this.upcomingFailed()));
+  /** The past count is unknown: its load failed, or a next page failed with no past meetings loaded, whatever the tab. */
+  public readonly pastCountUnknown: Signal<boolean> = computed(() => this.pastFailed() || (this.pastPageFailedState() && this.pastMeetings().length === 0));
   /**
    * The past list is in its error state: its load failed, or, on the Past tab, a next page failed for the current search
    * with nothing to show, so the viewer gets Retry.
    */
-  /** The past count is unknown: its load failed, or a next page failed with no past meetings loaded, whatever the tab. */
-  public readonly pastCountUnknown: Signal<boolean> = computed(() => this.pastFailed() || (this.pastPageFailedState() && this.pastMeetings().length === 0));
   public readonly pastShowsError: Signal<boolean> = computed(
     () =>
       this.pastFailed() ||
