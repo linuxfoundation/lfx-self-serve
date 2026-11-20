@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
@@ -29,6 +30,7 @@ import {
   getMeetingWhenParts,
 } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
+import { Observable, switchMap } from 'rxjs';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -76,8 +78,8 @@ export class MeetingHomeRowComponent {
   private readonly store = inject(MeetingsHomeStore);
   private readonly joinService = inject(MeetingsHomeJoinService);
   private readonly details = inject(MeetingsHomeDetailsService);
-  // A project or foundation's list names no project on its rows; the drawer still does.
-  private readonly projectScope = inject(MeetingsHomeFeed, { optional: true })?.scope === 'project';
+  // A single project's list names no project on its rows; the drawer still does.
+  private readonly feed = inject(MeetingsHomeFeed, { optional: true });
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
 
@@ -92,7 +94,9 @@ export class MeetingHomeRowComponent {
   protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() =>
     getMeetingVisibilityBadges(this.row().meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC)
   );
-  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => (this.projectScope ? null : getMeetingHomeRowProject(this.row().meeting)));
+  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() =>
+    this.feed?.showsProject() === false ? null : getMeetingHomeRowProject(this.row().meeting)
+  );
   protected readonly when: Signal<string[]> = this.initWhen();
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
   protected readonly groups: Signal<string[]> = computed(() => getMeetingGroupNames(this.row().meeting));
@@ -109,15 +113,7 @@ export class MeetingHomeRowComponent {
   protected readonly joinUrl: Signal<string | null> = this.joinService.joinUrl(this.upcomingRow, this.joinable);
 
   public constructor() {
-    afterNextRender(() => {
-      const title = this.titleElement().nativeElement;
-      const projectName = this.projectNameElement()?.nativeElement;
-      const stop = this.resize.observe(projectName ? [title, projectName] : [title], () => {
-        this.titleTruncated.set(title.scrollWidth > title.clientWidth);
-        this.projectTruncated.set(!!projectName && projectName.scrollWidth > projectName.clientWidth);
-      });
-      this.destroyRef.onDestroy(stop);
-    });
+    this.initTruncation();
   }
 
   protected open(): void {
@@ -158,5 +154,23 @@ export class MeetingHomeRowComponent {
       const { startTime, durationMinutes } = this.row();
       return getMeetingWhenParts(startTime, durationMinutes);
     });
+  }
+
+  /** Watches the title, and the project name whenever the row shows one, for text cut off by its width. */
+  private initTruncation(): void {
+    toObservable(computed(() => ({ title: this.titleElement().nativeElement, projectName: this.projectNameElement()?.nativeElement })))
+      .pipe(
+        switchMap(
+          ({ title, projectName }) =>
+            new Observable<void>(() =>
+              this.resize.observe(projectName ? [title, projectName] : [title], () => {
+                this.titleTruncated.set(title.scrollWidth > title.clientWidth);
+                this.projectTruncated.set(!!projectName && projectName.scrollWidth > projectName.clientWidth);
+              })
+            )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
   }
 }

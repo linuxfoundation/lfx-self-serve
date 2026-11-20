@@ -71,7 +71,7 @@ function buildRow(meeting: Meeting, overrides: Partial<MeetingHomeRow> = {}): Me
 }
 
 describe('MeetingHomeRowComponent', () => {
-  const feedScope: { scope: 'me' | 'project' } = { scope: 'me' };
+  const feedScope = { showsProject: signal(true) };
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
@@ -130,17 +130,50 @@ describe('MeetingHomeRowComponent', () => {
   });
 
   afterEach(() => {
+    feedScope.showsProject.set(true);
     vi.unstubAllGlobals();
   });
 
   describe('upcoming', () => {
-    it('names no project on a project or foundation list', async () => {
-      feedScope.scope = 'project';
+    it('names no project on a single project list', async () => {
+      feedScope.showsProject.set(false);
       const fixture = await render(buildRow(buildMeeting()));
-      feedScope.scope = 'me';
+      feedScope.showsProject.set(true);
 
       expect(query(fixture, 'meetings-home-row-project')).toBeNull();
       expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
+    });
+
+    it('names the project once the list starts naming them, as on a foundation', async () => {
+      feedScope.showsProject.set(false);
+      const fixture = await render(buildRow(buildMeeting()));
+      expect(query(fixture, 'meetings-home-row-project')).toBeNull();
+
+      feedScope.showsProject.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(text(fixture, 'meetings-home-row-project-name')).toBe('Kubernetes');
+    });
+
+    it('watches a project name that appears after the row first renders, for its truncation tooltip', async () => {
+      const observed: Element[] = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          public observe = vi.fn((element: Element) => observed.push(element));
+          public unobserve = vi.fn();
+          public disconnect = vi.fn();
+        }
+      );
+      feedScope.showsProject.set(false);
+      const fixture = await render(buildRow(buildMeeting()));
+
+      feedScope.showsProject.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(observed).toContain(query(fixture, 'meetings-home-row-project-name'));
     });
 
     it('renders the date tile, project, title and meta line', async () => {
