@@ -2,54 +2,47 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import {
-  HEALTH_METRICS_L2_RANGES,
-  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
-  HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
-  HEALTH_METRICS_MEMBERS_NPS_UNMEASURED,
-  HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
-  lfxColors,
-} from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_L2_RANGES, HEALTH_METRICS_MEMBERS_NPS_UNMEASURED, HEALTH_METRICS_MEMBERS_QUERY_PARAMS } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsMembersNpsAudienceOptions,
+  buildHealthMetricsMembersNpsChart,
+  buildHealthMetricsMembersNpsLowResponseNote,
+  buildHealthMetricsMembersNpsMetrics,
   buildHealthMetricsMembersNpsSegments,
-  buildHealthMetricsMembersNpsSummary,
-  buildHealthMetricsMembersNpsTrend,
-  buildHealthMetricsMembersNpsTrendNote,
+  parseHealthMetricsMembersNpsAudience,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skipWhile, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsBarChartComponent } from '../../../components/health-metrics-bar-chart/health-metrics-bar-chart.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type { ChartData, ChartOptions } from 'chart.js';
 import type {
+  HealthMetricsBarChartView,
   HealthMetricsL2Range,
   HealthMetricsMembersNps,
   HealthMetricsMembersNpsAudience,
-  HealthMetricsMembersNpsAudienceOption,
+  HealthMetricsMembersNpsAudienceSwitch,
   HealthMetricsMembersNpsQuery,
   HealthMetricsMembersNpsSegmentView,
-  HealthMetricsMembersNpsSummaryView,
-  HealthMetricsMembersNpsTrendNote,
-  HealthMetricsMembersNpsTrendPointView,
+  HealthMetricsMetricItem,
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#nps` — one audience's latest survey in the selected period: the score with its response rate, the
- * response distribution with non-responses at full weight, and the score and rate over every wave.
+ * `#nps` — one audience's latest survey in the selected period: the score with its response rate, the response
+ * distribution with non-responses at full weight, and the score and rate over every quarter.
  */
 @Component({
   selector: 'lfx-members-nps',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsBarChartComponent, HealthMetricsMetricsRowComponent, Skeleton, UiNoteComponent],
   templateUrl: './members-nps.component.html',
 })
 export class MembersNpsComponent {
@@ -64,13 +57,15 @@ export class MembersNpsComponent {
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
+  /** The audiences the period surveyed and the one shown, for the page's header switch; empty until a read lands. */
+  public readonly audienceSwitch = output<HealthMetricsMembersNpsAudienceSwitch>();
 
-  protected readonly rateFloorPct = HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
+  /** The requested audience, owned by the page's header switch; `null` lets the read pick "All" or the first surveyed. */
+  public readonly audience = model<string | null>(null);
+
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a period without a survey, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
-  /** The requested audience; `null` lets the read pick the first one surveyed in the period. */
-  protected readonly audience = signal<string | null>(this.parseInitialAudience());
 
   private readonly foundationSlug = computed(() => this.projectContextService.selectedFoundation()?.slug ?? '');
   private readonly range = computed<HealthMetricsL2Range>(() => {
@@ -86,67 +81,34 @@ export class MembersNpsComponent {
   }));
   protected readonly response: Signal<HealthMetricsMembersNps> = this.initResponse();
 
-  protected readonly audienceOptions: Signal<HealthMetricsMembersNpsAudienceOption[]> = computed(() =>
-    buildHealthMetricsMembersNpsAudienceOptions(this.response().audiences)
-  );
   /** The read's own pick, so an audience the period did not survey never shows as selected. */
   protected readonly selectedAudience: Signal<HealthMetricsMembersNpsAudience | null> = computed(() => {
     const { audiences, selectedAudience } = this.response();
     return audiences.find((candidate) => candidate.audience === selectedAudience) ?? null;
   });
-  protected readonly summary: Signal<HealthMetricsMembersNpsSummaryView> = computed(() => buildHealthMetricsMembersNpsSummary(this.selectedAudience()));
-  protected readonly segments: Signal<HealthMetricsMembersNpsSegmentView[]> = computed(() => buildHealthMetricsMembersNpsSegments(this.selectedAudience()));
-  protected readonly trend: Signal<HealthMetricsMembersNpsTrendPointView[]> = computed(() => buildHealthMetricsMembersNpsTrend(this.response().trend));
-  protected readonly trendNote: Signal<HealthMetricsMembersNpsTrendNote | null> = computed(() => buildHealthMetricsMembersNpsTrendNote(this.trend()));
-  protected readonly hasLowConfidenceWave = computed(() => this.trend().some((point) => point.isLowConfidence));
+  protected readonly metrics: Signal<HealthMetricsMetricItem[]> = computed(() =>
+    buildHealthMetricsMembersNpsMetrics(this.selectedAudience(), this.response().trend)
+  );
+  protected readonly lowResponseNote = computed(() => buildHealthMetricsMembersNpsLowResponseNote(this.selectedAudience()));
+  protected readonly segments: Signal<HealthMetricsMembersNpsSegmentView[]> = computed(() =>
+    buildHealthMetricsMembersNpsSegments(this.selectedAudience()).filter((segment) => segment.widthPct > 0)
+  );
+  protected readonly legend: Signal<HealthMetricsMembersNpsSegmentView[]> = computed(() => buildHealthMetricsMembersNpsSegments(this.selectedAudience()));
+  protected readonly chart: Signal<HealthMetricsBarChartView> = computed(() => buildHealthMetricsMembersNpsChart(this.response().trend));
   protected readonly noSurvey = computed(() => this.selectedAudience() === null);
   /** No audience was surveyed in the period; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.noSurvey());
   protected readonly distributionLabel = computed(
     () =>
-      `Response distribution: ${this.segments()
+      `Response distribution: ${this.legend()
         .map((segment) => `${segment.label} ${segment.countLabel}`)
-        .join(', ')}, ${this.summary().surveyedLabel}.`
+        .join(', ')}.`
   );
-  protected readonly chartData: Signal<ChartData<'bar' | 'line'>> = computed(() => this.buildChart(this.trend()));
-  protected readonly chartLabel = computed(
-    () => `NPS score and response rate over ${this.trend().length} survey waves, oldest first. The following table lists the same values.`
-  );
-  protected readonly chartOptions: ChartOptions<'bar' | 'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        enabled: true,
-        callbacks: {
-          label: (item) => this.tooltipLabel(item.datasetIndex, item.dataIndex),
-        },
-      },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: lfxColors.gray[500], font: { size: 10 } } },
-      y: {
-        beginAtZero: true,
-        suggestedMax: 100,
-        grid: { color: lfxColors.gray[200] },
-        border: { display: false },
-        ticks: { color: lfxColors.gray[500], font: { size: 10 } },
-      },
-      y1: {
-        position: 'right',
-        min: 0,
-        max: 100,
-        grid: { display: false },
-        border: { display: false },
-        ticks: { color: lfxColors.amber[600], font: { size: 10 }, callback: (value) => `${value}%` },
-      },
-    },
-  };
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      const seeded = this.audience();
+      // The page seeds the switch from the same URL; inputs are not set yet while this constructor runs.
+      const seeded = parseHealthMetricsMembersNpsAudience(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.npsAudience));
       toObservable(this.audience)
         .pipe(
           // Drops the state just read out of the URL, but not a reset of it that lands before the first emission.
@@ -156,10 +118,6 @@ export class MembersNpsComponent {
         )
         .subscribe(() => this.syncUrl());
     }
-  }
-
-  protected onAudienceChange(id: string): void {
-    if (this.response().audiences.some((candidate) => candidate.audience === id)) this.audience.set(id);
   }
 
   private initResponse(): Signal<HealthMetricsMembersNps> {
@@ -204,6 +162,7 @@ export class MembersNpsComponent {
                 this.audience.set(null);
               }
               this.loading.set(!foundationSeen);
+              this.audienceSwitch.emit({ options: buildHealthMetricsMembersNpsAudienceOptions(response.audiences), selected: response.selectedAudience });
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (foundationSeen) {
                 this.settled.emit(!this.loadFailed() && !response.audiences.some((candidate) => candidate.audience === response.selectedAudience));
@@ -214,44 +173,6 @@ export class MembersNpsComponent {
       ),
       { initialValue: HEALTH_METRICS_MEMBERS_NPS_UNMEASURED }
     );
-  }
-
-  /** Score bars on the left axis, amber when low confidence; the response rate as a dashed line on the right, red below the floor. */
-  private buildChart(points: HealthMetricsMembersNpsTrendPointView[]): ChartData<'bar' | 'line'> {
-    const rateColors = points.map((point) => (point.isRateBelowFloor ? lfxColors.red[600] : lfxColors.amber[600]));
-    return {
-      labels: points.map((point) => point.label),
-      datasets: [
-        {
-          type: 'line',
-          label: 'Response rate',
-          data: points.map((point) => point.ratePct),
-          yAxisID: 'y1',
-          borderColor: lfxColors.amber[600],
-          borderWidth: 2,
-          borderDash: [4, 3],
-          pointBackgroundColor: rateColors,
-          pointBorderColor: rateColors,
-          pointRadius: points.map((point) => (point.isRateBelowFloor ? 4.5 : 3.5)),
-          spanGaps: true,
-        },
-        {
-          type: 'bar',
-          label: 'NPS score',
-          data: points.map((point) => point.score),
-          yAxisID: 'y',
-          backgroundColor: points.map((point) => (point.isLowConfidence ? lfxColors.amber[300] : lfxColors.blue[300])),
-          borderRadius: 2,
-          maxBarThickness: 52,
-        },
-      ],
-    } as ChartData<'bar' | 'line'>;
-  }
-
-  private tooltipLabel(datasetIndex: number, index: number): string {
-    const point = this.trend()[index];
-    if (!point) return '';
-    return datasetIndex === 0 ? `Response rate ${point.rateLabel}` : `NPS score ${point.scoreDescription}`;
   }
 
   private syncUrl(): void {
@@ -265,10 +186,5 @@ export class MembersNpsComponent {
       preserveFragment: true,
       replaceUrl: true,
     });
-  }
-
-  private parseInitialAudience(): string | null {
-    const value = this.route.snapshot.queryParamMap.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.npsAudience)?.trim() ?? '';
-    return value === '' ? null : value.slice(0, HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH);
   }
 }

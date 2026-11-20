@@ -27,8 +27,12 @@ import {
   HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
   HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS,
   HEALTH_METRICS_MEMBERS_GROWTH_PLOT,
-  HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
+  HEALTH_METRICS_MEMBERS_NPS_CHART,
+  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
+  HEALTH_METRICS_MEMBERS_NPS_RATE_COLOR,
   HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
+  HEALTH_METRICS_MEMBERS_NPS_SCORE_COLORS,
+  HEALTH_METRICS_MEMBERS_NPS_SCORE_GOOD,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_MEMBERS_RESERVED_TIERS,
@@ -84,9 +88,6 @@ import type {
   HealthMetricsMembersNpsAudienceOption,
   HealthMetricsMembersNpsQuarter,
   HealthMetricsMembersNpsSegmentView,
-  HealthMetricsMembersNpsSummaryView,
-  HealthMetricsMembersNpsTrendNote,
-  HealthMetricsMembersNpsTrendPointView,
   HealthMetricsMembersRenewal,
   HealthMetricsMembersRenewalRowView,
   HealthMetricsMembersRenewalsSummary,
@@ -507,47 +508,58 @@ export function buildHealthMetricsMembersNpsAudienceOptions(audiences: HealthMet
   return audiences.map((audience) => ({ id: audience.audience, label: audience.audience }));
 }
 
-/** The NPS hero, banner and footer for one audience; a sample below the rate floor keeps its score, marked as low confidence. */
-export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSummaryView {
-  const isUnscored = !audience || audience.npsScore === null;
+/** The audience from the URL, trimmed and capped; empty is `null`, which lets the read pick "All" or the first audience. */
+export function parseHealthMetricsMembersNpsAudience(value: string | null): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed === '' ? null : trimmed.slice(0, HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH);
+}
+
+/**
+ * The score with its change on the previous quarter (green when it held or rose, red when it fell), and the response
+ * rate with who responded. The change is left out with no previous quarter or no change to show.
+ */
+export function buildHealthMetricsMembersNpsMetrics(
+  audience: HealthMetricsMembersNpsAudience | null,
+  trend: HealthMetricsMembersNpsQuarter[]
+): HealthMetricsMetricItem[] {
+  const score: HealthMetricsMetricItem = {
+    key: 'score',
+    label: `NPS・${audience?.audience ?? '—'}`,
+    value: formatSignedScore(audience?.npsScore ?? null),
+  };
+  const change = audience?.npsScore === null ? null : (audience?.scoreChangePp ?? null);
+  const previous = npsPreviousQuarterLabel(trend, audience?.lastUpdatedQuarter ?? null);
+  if (change !== null && previous) {
+    score.descriptionLead = formatSignedScore(change);
+    score.descriptionLeadTone = Math.round(change) >= 0 ? 'up' : 'down';
+    score.description = ` vs ${previous}`;
+  }
+
   const recipients = audience?.recipientsCount ?? null;
   const responses = audience?.responsesCount ?? null;
-  const ratePct = toWholePct(audience?.responseRatePct ?? null);
-  const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
-  // The view's flag sits at 40%, so it stands in only when the rate itself is missing.
-  const isSampleTooSmall = ratePct === null ? audience?.isSampleTooSmall === true : isRateBelowFloor;
-  const change = isUnscored ? null : (audience?.scoreChangePp ?? null);
-  const respondedLabel = responses === null || recipients === null ? '—' : `${formatCount(responses)} of ${formatCount(recipients)}`;
-  const rateLabel = formatPct(audience?.responseRatePct ?? null);
+  return [
+    score,
+    {
+      key: 'rate',
+      label: 'Response rate',
+      value: formatPct(audience?.responseRatePct ?? null),
+      description: responses === null || recipients === null ? '' : `${formatCount(responses)} of ${formatCount(recipients)} responded`,
+    },
+  ];
+}
 
-  return {
-    isUnscored,
-    isLowConfidence: !isUnscored && isSampleTooSmall,
-    scoreLabel: isUnscored ? '—' : formatSignedScore(audience?.npsScore ?? null),
-    changeLabel: change === null ? null : `${formatSignedScore(change)}pp`,
-    changeDirection: directionOf(change),
-    caption: isUnscored ? 'Not enough responses to report a score' : `Net Promoter Score · ${audience?.audience.toLowerCase()} audience`,
-    respondedLabel,
-    rateLabel,
-    isRateBelowFloor,
-    lowSampleNote:
-      isSampleTooSmall && !isUnscored
-        ? `Only ${respondedLabel} responded (${rateLabel}). Below the confidence threshold, so read this score with caution.`
-        : null,
-    lastUpdatedLabel: audience?.lastUpdatedQuarter ? `Last updated ${audience.lastUpdatedQuarter}` : '',
-    surveyedLabel: `out of ${formatCount(recipients)} surveyed`,
-    footer: isRateBelowFloor
-      ? {
-          isBelowFloor: true,
-          lead: `${formatCount(audience?.noResponseCount ?? null)} of ${formatCount(recipients)} did not respond.`,
-          text: `A score computed on ${pluralize(Math.max(0, responses ?? 0), 'reply', 'replies')} is not a foundation-wide signal.`,
-        }
-      : {
-          isBelowFloor: false,
-          lead: null,
-          text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
-        },
-  };
+/** The warning over a score whose response rate is below the confidence floor; `null` otherwise or with no score. */
+export function buildHealthMetricsMembersNpsLowResponseNote(audience: HealthMetricsMembersNpsAudience | null): string | null {
+  if (!audience || audience.npsScore === null) return null;
+  const ratePct = toWholePct(audience.responseRatePct);
+  // The view's flag sits at 40%, so it stands in only when the rate itself is missing.
+  const belowFloor = ratePct === null ? audience.isSampleTooSmall : ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
+  if (!belowFloor) return null;
+  const counts =
+    audience.responsesCount === null || audience.recipientsCount === null
+      ? 'a few members'
+      : `${formatCount(audience.responsesCount)} of ${formatCount(audience.recipientsCount)}`;
+  return `Only ${counts} responded (${formatPct(audience.responseRatePct)}). Below the confidence threshold, so read this score with caution.`;
 }
 
 /** Promoters, passives, detractors and non-responses as shares of everyone surveyed. */
@@ -571,52 +583,46 @@ export function buildHealthMetricsMembersNpsSegments(audience: HealthMetricsMemb
   });
 }
 
-/** Trend points, oldest first; a below-floor wave, or a flagged one with no rate, keeps its score as low confidence. */
-export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsMembersNpsTrendPointView[] {
-  return trend.map((quarter) => {
-    const score = quarter.npsScore;
-    const ratePct = toShownPct(quarter.responseRatePct);
-    const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
-    const isLowConfidence = score !== null && (ratePct === null ? quarter.isSampleTooSmall === true : isRateBelowFloor);
-    const scoreLabel = score === null ? '—' : formatSignedScore(score);
-    return {
-      quarterStartDate: quarter.quarterStartDate,
-      label: quarter.quarterLabel ?? '—',
-      score,
-      scoreLabel,
-      scoreDescription: isLowConfidence ? `${scoreLabel} (low response)` : scoreLabel,
-      ratePct,
-      rateLabel: formatPct(quarter.responseRatePct),
-      isRateBelowFloor,
-      isLowConfidence,
-    };
-  });
-}
-
 /**
- * The sentence under the trend: a rising score on a falling rate that fell materially or ended below the floor
- * is flagged; else a below-floor rate, or a rate that moved under the drop threshold. `null` when neither applies.
+ * The design's trend: one bar per quarter, oldest first, coloured by score band, the latest solid and the rest at 30%,
+ * on a 0 to +100 axis; the response rate is a dashed line on its own 0–100% axis.
  */
-export function buildHealthMetricsMembersNpsTrendNote(points: HealthMetricsMembersNpsTrendPointView[]): HealthMetricsMembersNpsTrendNote | null {
-  const rated = points.filter((point) => point.ratePct !== null);
-  const latest = rated.at(-1);
-  if (points.length < 2 || !latest) return null;
+export function buildHealthMetricsMembersNpsChart(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsBarChartView {
+  const last = trend.length - 1;
+  const rateColor = HEALTH_METRICS_MEMBERS_NPS_RATE_COLOR;
 
-  const scored = rated.filter((point) => point.score !== null);
-  const first = scored[0];
-  const last = scored.at(-1);
-  if (first && last && first !== last) {
-    const scoreUp = (last.score ?? 0) - (first.score ?? 0);
-    const rateDrop = (first.ratePct ?? 0) - (last.ratePct ?? 0);
-    if (scoreUp > 0 && rateDrop > 0 && (rateDrop >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP || last.isRateBelowFloor)) {
-      return { kind: 'diverging', scoreChangeLabel: pluralize(scoreUp, 'point'), fromRateLabel: first.rateLabel, toRateLabel: last.rateLabel };
-    }
-  }
-
-  if (latest.isRateBelowFloor) return { kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
-  const rateMove = Math.abs((rated[0].ratePct ?? 0) - (latest.ratePct ?? 0));
-  if (rated.length < 2 || rateMove >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP) return null;
-  return { kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+  return buildHealthMetricsBarChart({
+    heightPx: HEALTH_METRICS_MEMBERS_NPS_CHART.heightPx,
+    barWidthPx: HEALTH_METRICS_MEMBERS_NPS_CHART.barWidthPx,
+    max: 100,
+    ticks: ['+100', '+75', '+50', '+25', '0'],
+    bars: trend.map((quarter, index) => {
+      const latest = index === last;
+      const color = npsScoreColor(quarter.npsScore);
+      const scoreLabel = formatSignedScore(quarter.npsScore);
+      const label = quarter.quarterLabel ?? '—';
+      return {
+        key: quarter.quarterStartDate,
+        label,
+        value: quarter.npsScore,
+        valueLabel: scoreLabel,
+        labelTone: latest ? 'strong' : 'muted',
+        color,
+        opacity: latest ? 1 : HEALTH_METRICS_MEMBERS_NPS_CHART.earlierOpacity,
+        lineValue: toShownPct(quarter.responseRatePct),
+        tip: {
+          title: label,
+          rows: [
+            { label: 'NPS', value: scoreLabel, color, separated: false },
+            { label: 'Response rate', value: formatPct(quarter.responseRatePct), color: rateColor, separated: false },
+          ],
+        },
+      };
+    }),
+    line: { color: rateColor, max: 100, ticks: ['100%', '75%', '50%', '25%', '0%'] },
+    legend: [{ key: 'rate', label: 'Response rate', color: rateColor, kind: 'line' }],
+    ariaLabel: `NPS and response rate over ${pluralize(trend.length, 'quarter')}, oldest first`,
+  });
 }
 
 /** `#churn` for the selected year: its metrics, the loss by tier and the trend of revenue churn. */
@@ -840,6 +846,20 @@ function formatRevenueChurn(pct: number | null): string {
   return formatHealthMetricsSmallPercent(pct) ?? `${pct.toFixed(1)}%`;
 }
 
+/** A score's band colour: good from +30, fair from 0, poor below; an unscored quarter draws no bar. */
+function npsScoreColor(score: number | null): string {
+  const colors = HEALTH_METRICS_MEMBERS_NPS_SCORE_COLORS;
+  if (score === null || Math.round(score) >= HEALTH_METRICS_MEMBERS_NPS_SCORE_GOOD) return colors.good;
+  return Math.round(score) >= 0 ? colors.fair : colors.poor;
+}
+
+/** The quarter before the audience's latest wave in the trend; the last but one when the wave is not named. */
+function npsPreviousQuarterLabel(trend: HealthMetricsMembersNpsQuarter[], latestLabel: string | null): string | null {
+  const named = latestLabel === null ? -1 : trend.findIndex((quarter) => quarter.quarterLabel === latestLabel);
+  const latest = named === -1 ? trend.length - 1 : named;
+  return latest > 0 ? (trend[latest - 1].quarterLabel ?? null) : null;
+}
+
 /** Below the cohort's level on the percent the cell shows, so a bar reading "90%" is never red under the board's 90%. */
 function isBoardBelowLevel(cohort: HealthMetricsMembersBoardCohort, shownPct: number | null): boolean {
   return shownPct !== null && shownPct < Math.round(HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].threshold * 100);
@@ -924,11 +944,6 @@ function formatSignedScore(value: number | null): string {
   const rounded = Math.round(value);
   if (rounded === 0) return '0';
   return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}`;
-}
-
-function directionOf(value: number | null): 'up' | 'down' | 'neutral' {
-  if (value === null || Math.round(value) === 0) return 'neutral';
-  return value > 0 ? 'up' : 'down';
 }
 
 /** A tier as the breakdown shows it: its rows merged under one label, with its members per year. */

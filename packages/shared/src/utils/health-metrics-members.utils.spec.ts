@@ -20,16 +20,17 @@ import {
   buildHealthMetricsMembersDirectoryRows,
   buildHealthMetricsMembersGrowthView,
   buildHealthMetricsMembersNpsAudienceOptions,
+  buildHealthMetricsMembersNpsChart,
+  buildHealthMetricsMembersNpsLowResponseNote,
+  buildHealthMetricsMembersNpsMetrics,
   buildHealthMetricsMembersNpsSegments,
-  buildHealthMetricsMembersNpsSummary,
-  buildHealthMetricsMembersNpsTrend,
-  buildHealthMetricsMembersNpsTrendNote,
   buildHealthMetricsMembersRenewalRows,
   buildHealthMetricsMembersRenewalsMetrics,
   buildHealthMetricsMembersSections,
   buildHealthMetricsMembersSubNavItems,
   parseHealthMetricsMembersAtRiskFilter,
   parseHealthMetricsMembersBoardCohort,
+  parseHealthMetricsMembersNpsAudience,
   parseHealthMetricsMembersRenewalsWindow,
 } from './health-metrics-members.utils';
 import { healthMetricsRowSortValue, resolveHealthMetricsMembersTier, sortHealthMetricsRows } from './health-metrics-table.utils';
@@ -743,114 +744,83 @@ describe('members nps', () => {
     isSampleTooSmall,
   });
 
-  it('builds the audience toggle in the read order', () => {
-    expect(buildHealthMetricsMembersNpsAudienceOptions([audience(), audience({ audience: 'Committers' })])).toEqual([
+  it('builds the audience switch in the read order', () => {
+    expect(buildHealthMetricsMembersNpsAudienceOptions([audience({ audience: 'All' }), audience(), audience({ audience: 'Committers' })])).toEqual([
+      { id: 'All', label: 'All' },
       { id: 'Board', label: 'Board' },
       { id: 'Committers', label: 'Committers' },
     ]);
   });
 
-  it('reports a sample it can trust with its change and the non-response footer', () => {
-    expect(buildHealthMetricsMembersNpsSummary(audience())).toEqual({
-      isUnscored: false,
-      isLowConfidence: false,
-      scoreLabel: '+62',
-      changeLabel: '+4pp',
-      changeDirection: 'up',
-      caption: 'Net Promoter Score · board audience',
-      respondedLabel: '18 of 26',
-      rateLabel: '69%',
-      isRateBelowFloor: false,
-      lowSampleNote: null,
-      lastUpdatedLabel: 'Last updated Q2 2026',
-      surveyedLabel: 'out of 26 surveyed',
-      footer: {
-        isBelowFloor: false,
-        lead: null,
-        text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
-      },
+  it.each([
+    ['  Board ', 'Board'],
+    ['', null],
+    [null, null],
+    ['x'.repeat(150), 'x'.repeat(100)],
+  ] as const)('reads the audience %s from the URL as %s', (value, expected) => {
+    expect(parseHealthMetricsMembersNpsAudience(value)).toBe(expected);
+  });
+
+  it('reports the score with its change on the previous quarter, and who responded', () => {
+    const trend = [quarter('2026-01-01', 58, 0.7), quarter('2026-04-01', 62, 0.69)];
+    const metrics = buildHealthMetricsMembersNpsMetrics(audience({ audience: 'All', lastUpdatedQuarter: trend[1].quarterLabel }), trend);
+
+    expect(metrics).toEqual([
+      { key: 'score', label: 'NPS・All', value: '+62', descriptionLead: '+4', descriptionLeadTone: 'up', description: ` vs ${trend[0].quarterLabel}` },
+      { key: 'rate', label: 'Response rate', value: '69%', description: '18 of 26 responded' },
+    ]);
+  });
+
+  it('greens a score that held, reds one that fell, and signs negatives with zero unsigned', () => {
+    const trend = [quarter('2026-01-01', 0, 0.5), quarter('2026-04-01', 0, 0.5)];
+
+    expect(buildHealthMetricsMembersNpsMetrics(audience({ npsScore: 0, scoreChangePp: 0 }), trend)[0]).toMatchObject({
+      value: '0',
+      descriptionLead: '0',
+      descriptionLeadTone: 'up',
+    });
+    expect(buildHealthMetricsMembersNpsMetrics(audience({ npsScore: -12, scoreChangePp: -3 }), trend)[0]).toMatchObject({
+      value: '−12',
+      descriptionLead: '−3',
+      descriptionLeadTone: 'down',
     });
   });
 
-  it('signs negative scores and changes, and leaves zero unsigned', () => {
-    expect(buildHealthMetricsMembersNpsSummary(audience({ npsScore: -12, scoreChangePp: -3 }))).toMatchObject({
-      scoreLabel: '−12',
-      changeLabel: '−3pp',
-      changeDirection: 'down',
-    });
-    expect(buildHealthMetricsMembersNpsSummary(audience({ npsScore: 0, scoreChangePp: 0 }))).toMatchObject({
-      scoreLabel: '0',
-      changeLabel: '0pp',
-      changeDirection: 'neutral',
-    });
-    expect(buildHealthMetricsMembersNpsSummary(audience({ scoreChangePp: null }))).toMatchObject({ changeLabel: null, changeDirection: 'neutral' });
-  });
-
-  it('reports a flagged sample as low confidence and explains why', () => {
+  it('leaves the change out with no previous quarter or no change, and dashes what is missing', () => {
+    expect(buildHealthMetricsMembersNpsMetrics(audience(), [quarter('2026-04-01', 62, 0.69)])[0]).toEqual({ key: 'score', label: 'NPS・Board', value: '+62' });
     expect(
-      buildHealthMetricsMembersNpsSummary(
-        audience({ npsScore: 80, recipientsCount: 24, responsesCount: 5, responseRatePct: 0.208, noResponseCount: 19, isSampleTooSmall: true })
-      )
-    ).toMatchObject({
-      isUnscored: false,
-      isLowConfidence: true,
-      scoreLabel: '+80',
-      changeLabel: '+4pp',
-      caption: 'Net Promoter Score · board audience',
-      lowSampleNote: 'Only 5 of 24 responded (21%). Below the confidence threshold, so read this score with caution.',
-      isRateBelowFloor: true,
-      footer: { isBelowFloor: true, lead: '19 of 24 did not respond.', text: 'A score computed on 5 replies is not a foundation-wide signal.' },
+      buildHealthMetricsMembersNpsMetrics(audience({ scoreChangePp: null }), [quarter('2026-01-01', 58, 0.7), quarter('2026-04-01', 62, 0.69)])[0]
+    ).toEqual({
+      key: 'score',
+      label: 'NPS・Board',
+      value: '+62',
     });
+    expect(buildHealthMetricsMembersNpsMetrics(null, []).map((item) => [item.label, item.value, item.description])).toEqual([
+      ['NPS・—', '—', undefined],
+      ['Response rate', '—', ''],
+    ]);
   });
 
-  it('marks a below-floor rate as low confidence without the flag, and an unscored audience as neither', () => {
-    expect(buildHealthMetricsMembersNpsSummary(audience({ responseRatePct: 0.34 }))).toMatchObject({
-      isLowConfidence: true,
-      lowSampleNote: 'Only 18 of 26 responded (34%). Below the confidence threshold, so read this score with caution.',
-    });
-    expect(buildHealthMetricsMembersNpsSummary(audience({ npsScore: null, responseRatePct: 0.2, isSampleTooSmall: true }))).toMatchObject({
-      isUnscored: true,
-      isLowConfidence: false,
-      scoreLabel: '—',
-      changeLabel: null,
-      caption: 'Not enough responses to report a score',
-      lowSampleNote: null,
-    });
-  });
-
-  // The view's flag sits at 40%; the rules put the floor at 35%, so the flag counts only without a rate.
-  it('judges the sample from the rate, reading the view flag only when the rate is missing', () => {
-    expect(buildHealthMetricsMembersNpsSummary(audience({ responseRatePct: 0.39, isSampleTooSmall: true }))).toMatchObject({
-      isLowConfidence: false,
-      isRateBelowFloor: false,
-      lowSampleNote: null,
-    });
-    expect(buildHealthMetricsMembersNpsSummary(audience({ responseRatePct: null, isSampleTooSmall: true }))).toMatchObject({ isLowConfidence: true });
-  });
-
-  it('keeps the singular reply and dashes a missing audience', () => {
-    expect(buildHealthMetricsMembersNpsSummary(audience({ responsesCount: 1, responseRatePct: 0.1 })).footer.text).toBe(
-      'A score computed on 1 reply is not a foundation-wide signal.'
+  it('warns below the 35% floor, reading the view flag only when the rate is missing', () => {
+    expect(buildHealthMetricsMembersNpsLowResponseNote(audience({ responsesCount: 6, responseRatePct: 0.23 }))).toBe(
+      'Only 6 of 26 responded (23%). Below the confidence threshold, so read this score with caution.'
     );
-    expect(buildHealthMetricsMembersNpsSummary(null)).toMatchObject({
-      isUnscored: true,
-      isLowConfidence: false,
-      scoreLabel: '—',
-      respondedLabel: '—',
-      rateLabel: '—',
-      lowSampleNote: null,
-      lastUpdatedLabel: '',
-      surveyedLabel: 'out of — surveyed',
-    });
+    expect(buildHealthMetricsMembersNpsLowResponseNote(audience({ responseRatePct: 0.35, isSampleTooSmall: true }))).toBeNull();
+    expect(buildHealthMetricsMembersNpsLowResponseNote(audience({ responseRatePct: null, isSampleTooSmall: true }))).toContain(
+      'Below the confidence threshold'
+    );
+    // An unscored audience has no score to caution.
+    expect(buildHealthMetricsMembersNpsLowResponseNote(audience({ npsScore: null, responseRatePct: 0.1 }))).toBeNull();
+    expect(buildHealthMetricsMembersNpsLowResponseNote(null)).toBeNull();
   });
 
   it('sizes each segment against everyone surveyed', () => {
     expect(
       buildHealthMetricsMembersNpsSegments(audience({ recipientsCount: 20, promotersCount: 10, passivesCount: 4, detractorsCount: 2, noResponseCount: 4 }))
     ).toEqual([
-      { key: 'promoters', label: 'Promoters', countLabel: '10', widthPct: 50, colorClass: 'bg-emerald-600' },
-      { key: 'passives', label: 'Passives', countLabel: '4', widthPct: 20, colorClass: 'bg-amber-600' },
-      { key: 'detractors', label: 'Detractors', countLabel: '2', widthPct: 10, colorClass: 'bg-red-600' },
+      { key: 'promoters', label: 'Promoters', countLabel: '10', widthPct: 50, colorClass: 'bg-emerald-500' },
+      { key: 'passives', label: 'Passives', countLabel: '4', widthPct: 20, colorClass: 'bg-amber-500' },
+      { key: 'detractors', label: 'Detractors', countLabel: '2', widthPct: 10, colorClass: 'bg-red-500' },
       { key: 'noResponse', label: 'No response', countLabel: '4', widthPct: 20, colorClass: 'bg-gray-200' },
     ]);
     expect(buildHealthMetricsMembersNpsSegments(null).map((segment) => [segment.countLabel, segment.widthPct])).toEqual([
@@ -861,137 +831,38 @@ describe('members nps', () => {
     ]);
   });
 
-  it('keeps a flagged or below-floor wave score, marked as low confidence', () => {
-    expect(
-      buildHealthMetricsMembersNpsTrend([
-        quarter('2025-07-01', 54, 0.71),
-        quarter('2025-10-01', 61, null, true),
-        quarter('2026-01-01', 70, 0.34),
-        quarter('2026-04-01', 80, 0.21, true),
-        quarter('2026-07-01', null, 0.1, true),
-      ])
-    ).toEqual([
-      {
-        quarterStartDate: '2025-07-01',
-        label: 'Q3 25',
-        score: 54,
-        scoreLabel: '+54',
-        scoreDescription: '+54',
-        ratePct: 71,
-        rateLabel: '71%',
-        isRateBelowFloor: false,
-        isLowConfidence: false,
-      },
-      {
-        quarterStartDate: '2025-10-01',
-        label: 'Q4 25',
-        score: 61,
-        scoreLabel: '+61',
-        scoreDescription: '+61 (low response)',
-        ratePct: null,
-        rateLabel: '—',
-        isRateBelowFloor: false,
-        isLowConfidence: true,
-      },
-      {
-        quarterStartDate: '2026-01-01',
-        label: 'Q1 26',
-        score: 70,
-        scoreLabel: '+70',
-        scoreDescription: '+70 (low response)',
-        ratePct: 34,
-        rateLabel: '34%',
-        isRateBelowFloor: true,
-        isLowConfidence: true,
-      },
-      {
-        quarterStartDate: '2026-04-01',
-        label: 'Q2 26',
-        score: 80,
-        scoreLabel: '+80',
-        scoreDescription: '+80 (low response)',
-        ratePct: 21,
-        rateLabel: '21%',
-        isRateBelowFloor: true,
-        isLowConfidence: true,
-      },
-      {
-        quarterStartDate: '2026-07-01',
-        label: 'Q3 26',
-        score: null,
-        scoreLabel: '—',
-        scoreDescription: '—',
-        ratePct: 10,
-        rateLabel: '10%',
-        isRateBelowFloor: true,
-        isLowConfidence: false,
-      },
+  it('charts quarters oldest first, coloured by score band, the latest solid, with the rate on its own axis', () => {
+    const chart = buildHealthMetricsMembersNpsChart([quarter('2025-10-01', 45, 0.62), quarter('2026-01-01', 12, 0.004), quarter('2026-04-01', -8, 0.31)]);
+
+    expect(chart.yTicks).toEqual(['+100', '+75', '+50', '+25', '0']);
+    expect(chart.rightTicks).toEqual(['100%', '75%', '50%', '25%', '0%']);
+    expect(chart.bars.map((bar) => [bar.heightPct, bar.valueLabel, bar.color, bar.opacity, bar.valueLabelClass])).toEqual([
+      [45, '+45', lfxColors.emerald[500], 0.3, 'text-gray-500'],
+      [12, '+12', lfxColors.amber[500], 0.3, 'text-gray-500'],
+      // The axis starts at 0, so a negative score keeps its label and draws no bar.
+      [0, '−8', lfxColors.red[500], 1, 'text-gray-900'],
     ]);
-  });
-
-  it('flags a rising score on a materially falling rate', () => {
-    const points = buildHealthMetricsMembersNpsTrend([quarter('2024-10-01', 45, 0.55), quarter('2025-07-01', 54, 0.5), quarter('2026-01-01', 60, 0.45)]);
-    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({
-      kind: 'diverging',
-      scoreChangeLabel: '15 points',
-      fromRateLabel: '55%',
-      toRateLabel: '45%',
+    // The rate plots as shown, one decimal under 1%.
+    expect(chart.line?.dots.map((dot) => dot.yPct)).toEqual([38, 99.6, 69]);
+    expect(chart.line?.color).toBe(lfxColors.blue[500]);
+    expect(chart.bars[2].tip).toEqual({
+      title: chart.bars[2].label,
+      rows: [
+        { label: 'NPS', value: '−8', color: lfxColors.red[500], separated: false },
+        { label: 'Response rate', value: '31%', color: lfxColors.blue[500], separated: false },
+      ],
     });
+    expect(chart.legend).toEqual([{ key: 'rate', label: 'Response rate', color: lfxColors.blue[500], kind: 'line' }]);
   });
 
-  it('flags a rising score whose last reportable rate is below the floor', () => {
-    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.36), quarter('2025-07-01', 51, 0.34)]);
-    expect(buildHealthMetricsMembersNpsTrendNote(points)).toMatchObject({ kind: 'diverging', scoreChangeLabel: '1 point' });
-  });
+  it('draws no bar for an unscored quarter and breaks the rate line where it is missing', () => {
+    const chart = buildHealthMetricsMembersNpsChart([quarter('2026-01-01', null, null), quarter('2026-04-01', 30, 0.5)]);
 
-  it('plots a rate under 1% as shown and flags its fall under a rising score', () => {
-    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.004), quarter('2025-07-01', 58, 0.001)]);
-    expect(points.map((point) => [point.ratePct, point.rateLabel])).toEqual([
-      [0.4, '0.4%'],
-      [0.1, '0.1%'],
+    expect(chart.bars.map((bar) => [bar.heightPct, bar.valueLabel, bar.color])).toEqual([
+      [0, '', lfxColors.emerald[500]],
+      [30, '+30', lfxColors.emerald[500]],
     ]);
-    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({
-      kind: 'diverging',
-      scoreChangeLabel: '8 points',
-      fromRateLabel: '0.4%',
-      toRateLabel: '0.1%',
-    });
-  });
-
-  it('never says a rising rate fell, sending one still below the floor to the floor note', () => {
-    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.2), quarter('2025-07-01', 58, 0.3)]);
-    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({ kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '30%' });
-  });
-
-  it('says nothing about a rate that moved materially without a rising score', () => {
-    const falling = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 60, 0.8), quarter('2025-07-01', 50, 0.5)]);
-    const rising = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.45), quarter('2025-07-01', 58, 0.7)]);
-    expect(buildHealthMetricsMembersNpsTrendNote(falling)).toBeNull();
-    expect(buildHealthMetricsMembersNpsTrendNote(rising)).toBeNull();
-  });
-
-  it('counts a flagged wave score in the comparison', () => {
-    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.7), quarter('2025-07-01', 55, 0.68), quarter('2026-01-01', 90, 0.3, true)]);
-    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({
-      kind: 'diverging',
-      scoreChangeLabel: '40 points',
-      fromRateLabel: '70%',
-      toRateLabel: '30%',
-    });
-  });
-
-  it('compares scored waves only, then judges the latest rate', () => {
-    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.7), quarter('2025-07-01', 55, 0.68), quarter('2026-01-01', null, 0.3, true)]);
-    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({ kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '30%' });
-  });
-
-  it('calls a steady rate meaningful, and says nothing without two waves or a rate', () => {
-    const steady = buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, 0.71), quarter('2026-01-01', 62, 0.69)]);
-    expect(buildHealthMetricsMembersNpsTrendNote(steady)).toEqual({ kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '69%' });
-    expect(buildHealthMetricsMembersNpsTrendNote(buildHealthMetricsMembersNpsTrend([quarter('2026-01-01', 62, 0.69)]))).toBeNull();
-    expect(
-      buildHealthMetricsMembersNpsTrendNote(buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, null), quarter('2026-01-01', 62, null)]))
-    ).toBeNull();
+    expect(chart.line?.dots.map((dot) => dot.key)).toEqual(['2026-04-01']);
   });
 });
 

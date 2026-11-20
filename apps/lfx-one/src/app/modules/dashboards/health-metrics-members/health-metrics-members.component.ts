@@ -18,6 +18,7 @@ import {
   buildHealthMetricsMembersSubNavItems,
   parseHealthMetricsMembersAtRiskFilter,
   parseHealthMetricsMembersBoardCohort,
+  parseHealthMetricsMembersNpsAudience,
   parseHealthMetricsMembersRenewalsWindow,
 } from '@lfx-one/shared/utils';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
@@ -38,6 +39,7 @@ import { MembersRenewalsComponent } from './components/members-renewals/members-
 import type {
   HealthMetricsMembersAtRiskFilter,
   HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersNpsAudienceSwitch,
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsMembersSubNavItem,
 } from '@lfx-one/shared/interfaces';
@@ -85,6 +87,11 @@ export class HealthMetricsMembersComponent {
   protected readonly boardCohort = signal<HealthMetricsMembersBoardCohort>(
     parseHealthMetricsMembersBoardCohort(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.boardCohort))
   );
+  /** The requested audience; `null` lets the read pick "All" or the first surveyed. The section reports what it shows. */
+  protected readonly npsAudience = signal<string | null>(
+    parseHealthMetricsMembersNpsAudience(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.npsAudience))
+  );
+  protected readonly npsSwitch = signal<HealthMetricsMembersNpsAudienceSwitch>({ options: [], selected: null });
   protected readonly riskNote = signal<string>('');
   protected readonly boardNote = signal<string>('');
   protected readonly subNavItems = computed<HealthMetricsMembersSubNavItem[]>(() =>

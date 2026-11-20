@@ -980,19 +980,20 @@ export class HealthMetricsMembersService {
 }
 
 /**
- * Audiences surveyed in the period, Board then Maintainers then the rest; binds the foundation slug, then
+ * Audiences surveyed in the period, All, Board and Maintainers first, then the rest; binds the foundation slug, then
  * any `leadingOrder` binds. `leadingOrder` is interpolated, so pass trusted SQL only.
  */
 function npsAudiencesSql(range: HealthMetricsL2Range, columns: string, leadingOrder = ''): string {
   const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range];
-  const [first, second] = HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES;
+  // The leading names are constants, never request input, so interpolating them is safe.
+  const leading = HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES.map((name, index) => `WHEN '${name}' THEN ${index}`).join(' ');
   return `
     SELECT ${columns}
     FROM ${MEMBERSHIP_NPS_BY_AUDIENCE_VIEW}
     WHERE foundation_slug = ?
       AND recipients_count_${suffix} > 0
       AND NULLIF(TRIM(audience_type), '') IS NOT NULL
-    ORDER BY ${leadingOrder ? `${leadingOrder}, ` : ''}CASE TRIM(audience_type) WHEN '${first}' THEN 0 WHEN '${second}' THEN 1 ELSE 2 END, TRIM(audience_type) ASC
+    ORDER BY ${leadingOrder ? `${leadingOrder}, ` : ''}CASE TRIM(audience_type) ${leading} ELSE ${HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES.length} END, TRIM(audience_type) ASC
   `;
 }
 
