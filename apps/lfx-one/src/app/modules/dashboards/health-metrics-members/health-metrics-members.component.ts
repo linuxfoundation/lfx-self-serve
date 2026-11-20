@@ -109,4 +109,10 @@ export class HealthMetricsMembersComponent {
   protected onBoardCohortChange(value: string | null): void {
     this.boardCohort.set(parseHealthMetricsMembersBoardCohort(value));
   }
+
+  /** Shows the pick at once, so the switch does not snap back to the last read's audience while the new one loads. */
+  protected onNpsAudienceChange(value: string | null): void {
+    this.npsAudience.set(value);
+    this.npsSwitch.update((current) => ({ ...current, selected: value }));
+  }
 }

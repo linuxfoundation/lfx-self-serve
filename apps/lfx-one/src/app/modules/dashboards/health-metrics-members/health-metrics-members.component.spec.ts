@@ -356,6 +356,8 @@ describe('HealthMetricsMembersComponent', () => {
     (section.querySelector('[data-testid="members-nps-audience-All"] input') as HTMLInputElement).click();
     await flush();
     expect(stub(NpsStubComponent).audience()).toBe('All');
+    // The switch shows the pick at once rather than snapping back to the last read's audience.
+    expect((section.querySelector('[data-testid="members-nps-audience-All"] input') as HTMLInputElement).checked).toBe(true);
   });
 
   it('falls back to the default bucket, window and cohort for URL values it does not know', async () => {

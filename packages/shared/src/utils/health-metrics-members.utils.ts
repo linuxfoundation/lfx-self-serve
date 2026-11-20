@@ -854,13 +854,13 @@ function npsScoreColor(score: number | null): string {
 }
 
 /**
- * The quarter before the audience's latest wave in the trend; the last but one when the wave is not found. The two
- * labels differ in form ("Q2 2026" against "Q2 26"), so they are compared as quarter and year.
+ * The quarter before the audience's latest wave in the trend, compared as quarter and year since the labels differ in
+ * form ("Q2 2026" against "Q2 26"). A named wave the trend lacks gives none; an unnamed one takes the last but one.
  */
 function npsPreviousQuarterLabel(trend: HealthMetricsMembersNpsQuarter[], latestLabel: string | null): string | null {
   const latestKey = npsQuarterKey(latestLabel);
-  const named = latestKey === null ? -1 : trend.findIndex((quarter) => npsQuarterKey(quarter.quarterLabel) === latestKey);
-  const latest = named === -1 ? trend.length - 1 : named;
+  let latest = trend.length - 1;
+  if (latestKey !== null) latest = trend.findIndex((quarter) => npsQuarterKey(quarter.quarterLabel) === latestKey);
   return latest > 0 ? (trend[latest - 1].quarterLabel ?? null) : null;
 }
 

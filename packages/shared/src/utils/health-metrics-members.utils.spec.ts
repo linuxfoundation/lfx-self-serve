@@ -774,8 +774,13 @@ describe('members nps', () => {
       { key: 'score', label: 'NPS・All', value: '+62', descriptionLead: '+4', descriptionLeadTone: 'up', description: ' vs Q4 25' },
       { key: 'rate', label: 'Response rate', value: '69%', description: '18 of 26 responded' },
     ]);
-    // A wave the trend does not carry falls back to the quarter before the last.
-    expect(buildHealthMetricsMembersNpsMetrics(audience({ lastUpdatedQuarter: 'Q3 2027' }), trend)[0].description).toBe(' vs Q1 26');
+    // A named wave the trend does not carry has no quarter to compare with; an unnamed one takes the last but one.
+    expect(buildHealthMetricsMembersNpsMetrics(audience({ lastUpdatedQuarter: 'Q3 2027' }), trend)[0]).toEqual({
+      key: 'score',
+      label: 'NPS・Board',
+      value: '+62',
+    });
+    expect(buildHealthMetricsMembersNpsMetrics(audience({ lastUpdatedQuarter: null }), trend)[0].description).toBe(' vs Q1 26');
   });
 
   it('greens a score that held, reds one that fell, and signs negatives with zero unsigned', () => {

@@ -34,6 +34,9 @@
             [style.flex-grow]="segment.widthPct"
             [attr.data-testid]="'members-nps-segment-' + segment.key"></div>
         }
+        @if (remainderPct() > 0) {
+          <div class="h-full min-w-0 basis-0" [style.flex-grow]="remainderPct()" data-testid="members-nps-segment-unknown"></div>
+        }
       </div>
       <ul class="m-0 flex list-none flex-wrap gap-x-[16px] gap-y-[6px] p-0 text-[12px]" aria-hidden="true" data-testid="members-nps-legend">
         @for (segment of legend(); track segment.key) {

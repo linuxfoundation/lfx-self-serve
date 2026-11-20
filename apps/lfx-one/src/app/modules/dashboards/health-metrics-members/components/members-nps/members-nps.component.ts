@@ -94,6 +94,12 @@ export class MembersNpsComponent {
     buildHealthMetricsMembersNpsSegments(this.selectedAudience()).filter((segment) => segment.widthPct > 0)
   );
   protected readonly legend: Signal<HealthMetricsMembersNpsSegmentView[]> = computed(() => buildHealthMetricsMembersNpsSegments(this.selectedAudience()));
+  /** The share no known count covers, left unfilled so partial counts never stretch to fill the bar. */
+  protected readonly remainderPct = computed(() => {
+    const known = this.segments().reduce((sum, segment) => sum + segment.widthPct, 0);
+    // Rounded to a tenth, so float drift on a full bar never adds a sliver.
+    return Math.max(0, Math.round((100 - known) * 10) / 10);
+  });
   protected readonly chart: Signal<HealthMetricsBarChartView> = computed(() => buildHealthMetricsMembersNpsChart(this.response().trend));
   protected readonly noSurvey = computed(() => this.selectedAudience() === null);
   /** No audience was surveyed in the period; the shell shows the section's empty state instead. */

@@ -158,10 +158,23 @@ describe('MembersNpsComponent', () => {
 
     expect(query('members-nps-segment-promoters')?.style.flexGrow).toBe('50');
     expect(query('members-nps-segment-noResponse')?.style.flexGrow).toBe('30');
+    // The counts cover everyone surveyed, so nothing is left unfilled.
+    expect(query('members-nps-segment-unknown')).toBeNull();
     expect(query('members-nps-segment-detractors')).toBeNull();
     const legend = [...(query('members-nps-legend-detractors')?.querySelectorAll('span') ?? [])].map((span) => span.textContent?.trim());
     expect(legend).toEqual(['', 'Detractors', '0']);
     expect(query('members-nps-bar')?.getAttribute('aria-label')).toBe('Response distribution: Promoters 10, Passives 4, Detractors 0, No response 6.');
+  });
+
+  it('leaves the share no count covers unfilled, so partial counts never stretch to fill the bar', async () => {
+    await render(
+      response({
+        audiences: [audience({ audience: 'All', recipientsCount: 20, promotersCount: 10, passivesCount: null, detractorsCount: null, noResponseCount: null })],
+      })
+    );
+
+    expect(query('members-nps-segment-promoters')?.style.flexGrow).toBe('50');
+    expect(query('members-nps-segment-unknown')?.style.flexGrow).toBe('50');
   });
 
   it('charts the quarters as score bars under a dashed response-rate line', async () => {

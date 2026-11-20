@@ -69,7 +69,7 @@
         size="small"
         ariaLabel="Audience"
         [value]="npsSwitch().selected"
-        (valueChange)="npsAudience.set($event)"
+        (valueChange)="onNpsAudienceChange($event)"
         data-testid="members-nps-audience">
         @for (option of npsSwitch().options; track option.id) {
           <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'members-nps-audience-' + option.id" />
