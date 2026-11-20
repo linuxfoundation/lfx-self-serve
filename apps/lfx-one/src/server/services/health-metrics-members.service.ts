@@ -440,8 +440,8 @@ export class HealthMetricsMembersService {
   }
 
   /**
-   * One page of the foundation's members whose balance is 60+ days overdue, in the view's `sort_rank`
-   * order, with the hero and aging totals over every such member whatever the bucket filter.
+   * One page of the foundation's members whose balance is 60+ days overdue, in the view's `sort_rank` order or a
+   * column the reader picked, with the balance and each bucket's totals over every such member whatever the switch.
    */
   public async getAtRisk(req: Request, query: HealthMetricsMembersAtRiskQuery): Promise<HealthMetricsMembersAtRisk> {
     const binds: string[] = [query.foundationSlug, ...HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS];
@@ -479,7 +479,7 @@ export class HealthMetricsMembersService {
         WHERE foundation_slug = ?
           AND account_id IS NOT NULL
           AND account_id <> ''
-          -- Balances under 60 days are not yet at risk, so they stay out of the hero, the aging and the table.
+          -- Balances under 60 days are not yet at risk, so they stay out of the metrics and the table.
           AND aging_bucket IN (${bucketPlaceholders})
       ),
       matched AS (

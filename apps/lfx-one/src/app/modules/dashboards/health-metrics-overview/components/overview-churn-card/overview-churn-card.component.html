@@ -51,7 +51,7 @@
             @if (tier.tier; as icon) {
               <lfx-health-metrics-tier-icon [tier]="icon" />
             }
-            <span class="truncate">{{ tier.label }}</span>
+            <span class="min-w-0 break-words">{{ tier.label }}</span>
           </span>
           <div class="flex items-center gap-[10px]" role="cell">
             <span class="relative h-[8px] flex-1 rounded-full bg-gray-100" aria-hidden="true">

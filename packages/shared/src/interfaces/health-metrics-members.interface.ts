@@ -303,7 +303,7 @@ export interface HealthMetricsMembersAtRiskQuery {
 /** The at-risk table's sortable columns; the spacer has no header and does not sort. */
 export type HealthMetricsMembersAtRiskSortKey = 'company' | 'membership' | 'overdue' | 'age';
 
-/** One at-risk member, in the view's own `sort_rank` order. Dates are ISO `YYYY-MM-DD`. */
+/** One at-risk member, in the view's `sort_rank` order or the picked column's. Dates are ISO `YYYY-MM-DD`. */
 export interface HealthMetricsMembersAtRiskMember {
   accountId: string;
   accountName: string;

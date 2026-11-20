@@ -20,7 +20,7 @@ describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
     expect(HEALTH_METRICS_MEMBERS_SECTIONS.filter((section) => 'note' in section)).toEqual([]);
   });
 
-  it('describes at-risk and renewals in the design\'s words', () => {
+  it("describes at-risk and renewals in the design's words", () => {
     const description = (key: string) => HEALTH_METRICS_MEMBERS_SECTIONS.find((section) => section.key === key)?.description;
 
     expect(description('risk')).toBe('Members with unpaid invoices who may not renew.');
