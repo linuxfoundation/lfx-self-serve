@@ -202,6 +202,17 @@ describe('MeetingsMiniCalendarComponent', () => {
     expect(query(fixture, 'meetings-mini-calendar-tooltip')?.style.top).toBe('90px');
   });
 
+  it('asks for the full calendar from Expand', async () => {
+    const fixture = await render();
+    let expanded = 0;
+    fixture.componentInstance.expand.subscribe(() => expanded++);
+
+    query(fixture, 'meetings-mini-calendar-expand')?.querySelector('button')?.click();
+
+    expect(query(fixture, 'meetings-mini-calendar-expand')?.textContent?.trim()).toBe('Expand');
+    expect(expanded).toBe(1);
+  });
+
   it('emits the clicked day with the tab that lists it', async () => {
     const fixture = await render([row('later', new Date(2026, 9, 20, 9))], [row('earlier', new Date(2026, 9, 5, 9))]);
     const selected: MeetingMiniCalendarDay[] = [];

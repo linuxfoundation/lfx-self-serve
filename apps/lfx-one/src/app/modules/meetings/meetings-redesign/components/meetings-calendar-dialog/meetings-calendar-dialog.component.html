@@ -1,0 +1,217 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<div class="relative z-[2] flex flex-none flex-col gap-[16px] bg-white px-[24px] pt-[24px]" data-testid="meetings-calendar-dialog-header">
+  <div class="flex items-start justify-between gap-[12px]">
+    <div class="flex min-w-0 flex-col gap-[6px]">
+      <span class="inline-flex min-w-0 items-center gap-[6px] text-[12px] leading-[16px] text-gray-500" data-testid="meetings-calendar-dialog-context">
+        <lfx-meeting-project-logo [src]="data.logoUrl" />
+        <span class="min-w-0 break-words">{{ data.name }}</span>
+      </span>
+      <h2 class="m-0 font-display text-[24px] font-light leading-[1.2] text-gray-900" [id]="titleId" data-testid="meetings-calendar-dialog-title">Calendar</h2>
+    </div>
+    <lfx-ui-button
+      class="-mr-[8px] -mt-[4px]"
+      variant="tertiary"
+      icon="fa-light fa-xmark"
+      iconOnly
+      ariaLabel="Close"
+      (click)="close()"
+      data-testid="meetings-calendar-dialog-close" />
+  </div>
+
+  <div class="flex flex-wrap items-center justify-between gap-x-[20px] gap-y-[12px]">
+    <div class="flex flex-wrap items-center gap-[8px]">
+      <lfx-ui-switch size="small" ariaLabel="Calendar view" [value]="view()" (valueChange)="setView($event)" data-testid="meetings-calendar-dialog-view">
+        <lfx-ui-switch-option value="month" label="Month" />
+        <lfx-ui-switch-option value="week" label="Week" />
+      </lfx-ui-switch>
+      <span class="w-[4px]" aria-hidden="true"></span>
+      <lfx-ui-button
+        variant="secondary"
+        size="small"
+        icon="fa-light fa-chevron-left"
+        iconOnly
+        ariaLabel="Previous"
+        (click)="step(-1)"
+        data-testid="meetings-calendar-dialog-previous" />
+      <lfx-ui-button
+        variant="secondary"
+        size="small"
+        icon="fa-light fa-chevron-right"
+        iconOnly
+        ariaLabel="Next"
+        (click)="step(1)"
+        data-testid="meetings-calendar-dialog-next" />
+      <span
+        class="ml-[4px] whitespace-nowrap text-[14px] font-semibold leading-[20px] text-gray-900"
+        aria-live="polite"
+        data-testid="meetings-calendar-dialog-period"
+        >{{ period() }}</span
+      >
+      @if (!todayInView()) {
+        <lfx-ui-button class="ml-[12px]" variant="secondary-accent" size="small" (click)="goToToday()" data-testid="meetings-calendar-dialog-today"
+          >Today</lfx-ui-button
+        >
+      }
+    </div>
+    <ul
+      class="flex flex-wrap items-center gap-x-[14px] gap-y-[6px] text-[12px] leading-[16px] text-gray-600"
+      aria-label="Meeting types"
+      data-testid="meetings-calendar-dialog-legend">
+      @for (item of legend; track item.type) {
+        <li class="inline-flex items-center gap-[6px]">
+          <span class="h-[8px] w-[8px] rounded-full" [style.background]="item.color" aria-hidden="true"></span>{{ item.type }}
+        </li>
+      }
+    </ul>
+  </div>
+
+  <!-- Day-of-week header; the week view adds the hour gutter and each day's date. -->
+  @if (view() === 'month') {
+    <div class="grid grid-cols-7 rounded-t-ui-md bg-gray-50 shadow-[inset_0_0_0_1px_theme(colors.gray.200)]" aria-hidden="true">
+      @for (weekday of weekdays; track weekday) {
+        <span class="px-[10px] py-[8px] text-[11px] font-semibold uppercase leading-[16px] tracking-[.04em] text-gray-500">{{ weekday }}</span>
+      }
+    </div>
+  } @else {
+    <div class="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] rounded-t-ui-md bg-gray-50 shadow-[inset_0_0_0_1px_theme(colors.gray.200)]" aria-hidden="true">
+      <span></span>
+      @for (day of weekDays(); track day.key) {
+        <span class="flex items-center gap-[6px] px-[10px] py-[8px]">
+          <span class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.04em] text-gray-500">{{ weekdays[$index] }}</span>
+          <span
+            class="inline-grid h-[22px] min-w-[22px] place-items-center rounded-full px-[4px] text-[12px] font-medium"
+            [class.bg-blue-500]="day.today"
+            [class.text-white]="day.today"
+            [class.text-gray-900]="!day.today"
+            >{{ day.day }}</span
+          >
+        </span>
+      }
+    </div>
+  }
+
+  <span
+    class="pointer-events-none absolute inset-x-0 top-full h-[28px] bg-gradient-to-b from-white via-white/85 to-white/0 transition-opacity duration-200 motion-reduce:transition-none"
+    [class.opacity-0]="!scrolled()"
+    aria-hidden="true"
+    data-testid="meetings-calendar-dialog-fade"></span>
+</div>
+
+<div
+  #body
+  class="min-h-0 flex-auto overflow-y-auto px-[24px] pb-[24px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+  (scroll)="onScroll()"
+  data-testid="meetings-calendar-dialog-body">
+  @if (view() === 'month') {
+    <div class="overflow-hidden rounded-b-ui-md bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.200)]" data-testid="meetings-calendar-dialog-month">
+      @for (week of monthWeeks(); track week[0].key) {
+        <div class="grid grid-cols-7 border-t border-gray-200 first:border-t-0">
+          @for (day of week; track day.key) {
+            <div
+              class="flex min-h-[116px] min-w-0 flex-col gap-[3px] border-l border-gray-200 p-[6px] first:border-l-0 max-[720px]:min-h-[72px]"
+              [class.bg-white]="day.inMonth"
+              [class.bg-gray-50]="!day.inMonth"
+              [attr.data-day]="day.key"
+              data-testid="meetings-calendar-dialog-day">
+              <span
+                class="inline-grid h-[24px] min-w-[24px] place-items-center self-start rounded-full px-[4px] text-[12px] font-medium"
+                [class.bg-blue-500]="day.today"
+                [class.text-white]="day.today"
+                [class.text-gray-900]="!day.today && day.inMonth"
+                [class.text-gray-400]="!day.today && !day.inMonth"
+                >{{ day.day }}</span
+              >
+              @for (chip of day.chips; track chip.key) {
+                <ng-container [ngTemplateOutlet]="chipTemplate" [ngTemplateOutletContext]="{ $implicit: chip }" />
+              }
+              @if (day.more) {
+                <button
+                  type="button"
+                  class="cursor-pointer self-start border-0 bg-transparent px-[6px] text-[11px] font-medium leading-[16px] text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                  [attr.aria-label]="'Show all ' + (day.chips.length + day.more) + ' meetings on ' + day.label"
+                  (click)="showWeek(day)"
+                  data-testid="meetings-calendar-dialog-more">
+                  +{{ day.more }} more
+                </button>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+  } @else {
+    <div
+      class="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-b-ui-md bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.200)]"
+      data-testid="meetings-calendar-dialog-week">
+      <div class="relative" [style.height.px]="hourPx * 24" aria-hidden="true">
+        @for (hour of hours; track $index) {
+          <span class="block -translate-y-[5px] pr-[8px] text-right text-[10px] leading-none text-gray-500" [style.height.px]="hourPx">{{ hour }}</span>
+        }
+      </div>
+      @for (day of weekDays(); track day.key) {
+        <div
+          class="relative bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_47px,theme(colors.gray.200)_47px,theme(colors.gray.200)_48px)] shadow-[inset_1px_0_0_theme(colors.gray.200)]"
+          [style.height.px]="hourPx * 24"
+          [attr.data-day]="day.key"
+          data-testid="meetings-calendar-dialog-week-day">
+          @for (event of day.events; track event.key) {
+            <button
+              type="button"
+              class="absolute flex cursor-pointer flex-col items-start overflow-hidden rounded-[6px] border-0 py-[4px] pl-[14px] pr-[7px] text-left text-[11px] leading-[14px] hover:brightness-[.96] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500"
+              [style.top.px]="event.top"
+              [style.height.px]="event.height"
+              [style.left]="'calc(' + (event.lane / event.lanes) * 100 + '% + 2px)'"
+              [style.width]="'calc(' + 100 / event.lanes + '% - 4px)'"
+              [style.background]="event.background"
+              [style.color]="event.ink"
+              [attr.aria-label]="event.title + ', ' + event.detail"
+              (click)="open(event)"
+              (mouseenter)="showTooltip(event, $event.currentTarget)"
+              (mouseleave)="tooltip.set(null)"
+              (focus)="showTooltip(event, $event.currentTarget)"
+              (blur)="tooltip.set(null)"
+              data-testid="meetings-calendar-dialog-event">
+              <span class="absolute bottom-[4px] left-[6px] top-[4px] w-[3px] rounded-full" [style.background]="event.bar" aria-hidden="true"></span>
+              <span class="whitespace-nowrap font-semibold">{{ event.time }}</span>
+              <span class="max-w-full truncate">{{ event.title }}</span>
+            </button>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>
+
+<ng-template #chipTemplate let-chip>
+  <button
+    type="button"
+    class="relative flex min-h-[24px] w-full min-w-0 cursor-pointer items-center gap-[5px] rounded-[6px] border-0 py-[4px] pl-[14px] pr-[7px] text-left text-[11px] leading-[16px] hover:brightness-[.96] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500"
+    [style.background]="chip.background"
+    [style.color]="chip.ink"
+    [attr.aria-label]="chip.title + ', ' + chip.detail"
+    (click)="open(chip)"
+    (mouseenter)="showTooltip(chip, $event.currentTarget)"
+    (mouseleave)="tooltip.set(null)"
+    (focus)="showTooltip(chip, $event.currentTarget)"
+    (blur)="tooltip.set(null)"
+    data-testid="meetings-calendar-dialog-chip">
+    <span class="absolute bottom-[4px] left-[6px] top-[4px] w-[3px] rounded-full" [style.background]="chip.bar" aria-hidden="true"></span>
+    <span class="flex-none font-semibold">{{ chip.time }}</span>
+    <span class="min-w-0 truncate max-[720px]:hidden">{{ chip.title }}</span>
+  </button>
+</ng-template>
+
+@if (tooltip(); as tip) {
+  <div
+    role="tooltip"
+    class="pointer-events-none fixed z-[2147483000] flex max-w-[280px] -translate-x-1/2 -translate-y-full flex-col gap-[2px] rounded-ui-sm bg-gray-900 px-[10px] py-[8px] text-[12px] leading-[16px] text-white shadow-medium"
+    [style.left.px]="tip.left"
+    [style.top.px]="tip.top"
+    data-testid="meetings-calendar-dialog-tooltip">
+    <span class="font-medium">{{ tip.title }}</span>
+    <span class="text-gray-300">{{ tip.detail }}</span>
+  </div>
+}
