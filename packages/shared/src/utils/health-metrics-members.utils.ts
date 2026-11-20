@@ -588,7 +588,8 @@ export function buildHealthMetricsMembersChurnView(churn: HealthMetricsMembersCh
     yearMeasured: current !== null && current.lostCount !== null,
     year,
     metrics: buildChurnMetrics(current, year, change),
-    tiers: buildChurnTierRows(churn.tiers.filter((row) => row.year === year)),
+    // A year that lost no membership has no loss to split, so By tier reads as empty rather than rows of zeroes.
+    tiers: Math.round(current?.lostCount ?? 0) > 0 ? buildChurnTierRows(churn.tiers.filter((row) => row.year === year)) : [],
     trend: buildChurnTrend(churn.years, year, (row) => row?.revenueNotRenewedRate ?? null),
     // Follows the metric's change, so the bar and the metric never disagree on direction.
     trendRose: change !== null && Math.round(change * 10) > 0,

@@ -1180,10 +1180,12 @@ describe('members churn', () => {
   it('reads 0% for a year that lost nothing, and an unread year as unmeasured', () => {
     const quiet: HealthMetricsMembersChurn = {
       years: [churnYear(2026, { lostCount: 0, revenueNotRenewedRate: 0, logoChurnRate: 0, duesLostUsd: 0 }), churnYear(2025, { revenueNotRenewedRate: 0 })],
-      tiers: [],
+      // The view keeps a zero row per tier for a year that lost nothing.
+      tiers: [tier(2026, 'Gold', 1, 0, 0, 0, 0), tier(2026, 'Silver', 2, 0, 0, 0, 0)],
     };
     const view = buildHealthMetricsMembersChurnView(quiet, 'YTD');
     expect(view.yearMeasured).toBe(true);
+    expect(view.tiers).toEqual([]);
     expect(view.metrics.map((item) => item.value)).toEqual(['0%', '0%', '$0']);
 
     const unmeasured: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: null })], tiers: [] };

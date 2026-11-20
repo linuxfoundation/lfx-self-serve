@@ -314,7 +314,10 @@ describe('MembersChurnComponent', () => {
 
     TestBed.resetTestingModule();
     await render(
-      { years: [churnYear(2026, { lostCount: 0, revenueNotRenewedRate: 0, logoChurnRate: 0, duesLostUsd: 0 })], tiers: [] },
+      {
+        years: [churnYear(2026, { lostCount: 0, revenueNotRenewedRate: 0, logoChurnRate: 0, duesLostUsd: 0 })],
+        tiers: [tier(2026, 'Gold', 1, 0, 0, 0, 0)],
+      },
       { rows: [], totalRecords: 0 }
     );
     expect(verdicts).toEqual([true, false]);
