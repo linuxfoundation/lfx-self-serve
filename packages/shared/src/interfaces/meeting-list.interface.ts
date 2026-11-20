@@ -8,6 +8,7 @@ import type { User } from './auth.interface';
 import type { FilterOption } from './filter.interface';
 import type {
   Meeting,
+  MeetingDashboardView,
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingResponseFilter,
@@ -532,4 +533,44 @@ export interface MeetingReconcileDialogData {
 export interface MeetingsHomePastPage {
   meetings: PastMeeting[];
   pageToken?: string;
+}
+
+/** One meeting date on the meetings home calendars, upcoming or past. */
+export interface MeetingCalendarEntry {
+  row: MeetingHomeRow;
+  past: boolean;
+}
+
+/** One day cell of the meetings home mini calendar. */
+export interface MeetingMiniCalendarDay {
+  /** Local day key, `YYYY-MM-DD`; list rows carry it as `data-day`. */
+  key: string;
+  /** Day of the month. */
+  day: number;
+  inMonth: boolean;
+  today: boolean;
+  /** Meetings that day, soonest first; empty outside the shown month. */
+  entries: MeetingCalendarEntry[];
+  /** Row keys of the day's dots, one per meeting up to three. */
+  dots: string[];
+  /** "Thu, Oct 1". */
+  label: string;
+  /** Tab that lists the day's meetings: past before today, and today when none of them is upcoming. */
+  tab: MeetingDashboardView;
+}
+
+/** One week row of the meetings home mini calendar. */
+export interface MeetingMiniCalendarWeek {
+  key: string;
+  days: MeetingMiniCalendarDay[];
+}
+
+/** Hover card over a meetings home calendar day. */
+export interface MeetingMiniCalendarTooltip {
+  left: number;
+  top: number;
+  head: string;
+  items: { key: string; time: string; title: string }[];
+  /** Meetings beyond the shown items. */
+  more: number;
 }

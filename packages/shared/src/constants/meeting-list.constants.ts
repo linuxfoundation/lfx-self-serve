@@ -177,3 +177,21 @@ export const MEETINGS_HOME_PROJECT_PAST_PAGE_SIZE = 50;
 
 /** Most max-size pages a project's meetings home reads for its upcoming feed, as the legacy calendar does. */
 export const MEETINGS_HOME_PROJECT_MAX_UPCOMING_PAGES = 10;
+
+/** Weekday initials of the meetings home calendars, Sunday first. */
+export const MEETINGS_HOME_CALENDAR_WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
+
+/** Most dots a mini calendar day shows, one per meeting. */
+export const MEETINGS_HOME_MINI_CALENDAR_MAX_DOTS = 3;
+
+/** Most meetings a mini calendar day's tooltip lists before "+N more". */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_ITEMS = 6;
+
+/** Tooltip centre never closer than this to the window's right edge (half its 280px width plus a margin). */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX = 152;
+
+/** Gap between the sticky tabs bar and the first row of a day picked on the calendar. */
+export const MEETINGS_HOME_DAY_SCROLL_OFFSET_PX = 36;
+
+/** Wait before scrolling to a picked day, so its rows have rendered. */
+export const MEETINGS_HOME_DAY_SCROLL_DELAY_MS = 120;
