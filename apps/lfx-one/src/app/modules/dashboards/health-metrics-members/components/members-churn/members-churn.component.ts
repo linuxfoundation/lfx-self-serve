@@ -7,54 +7,74 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router } from '@angular/router';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import {
   getYearForRange,
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_DEFAULT_SORT,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED,
-  HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS,
-  HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
+  HEALTH_METRICS_MEMBERS_CHURN_SECTION_OPTIONS,
+  HEALTH_METRICS_MEMBERS_CHURN_TIER_DEFAULT_SORT,
+  HEALTH_METRICS_MEMBERS_CHURN_TIER_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
   lfxColors,
 } from '@lfx-one/shared/constants';
 import {
-  buildHealthMetricsMembersChurnCountNote,
   buildHealthMetricsMembersChurnDepartureRows,
-  buildHealthMetricsMembersChurnDeparturesSubtitle,
   buildHealthMetricsMembersChurnView,
+  healthMetricsMembersChurnTierSortValue,
+  sortHealthMetricsRows,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
-  FilterPillOption,
   HealthMetricsL2Range,
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDepartureRowView,
   HealthMetricsMembersChurnDepartures,
   HealthMetricsMembersChurnDeparturesQuery,
-  HealthMetricsMembersChurnMode,
+  HealthMetricsMembersChurnSection,
+  HealthMetricsMembersChurnTierRowView,
   HealthMetricsMembersChurnTrendPointView,
   HealthMetricsMembersChurnView,
 } from '@lfx-one/shared/interfaces';
-import type { TablePageEvent } from 'primeng/table';
 
 /**
- * `#churn` — the selected year's revenue or logo churn, who left, where the loss sits by tier and the
- * churn trend. Every year is read once and re-projected per period; "Who left" pages server-side.
+ * `#churn` — the selected year's revenue churn, logo churn and dues lost, over one of the members lost, the loss by tier
+ * or the trend. Every year is read once and re-projected per period; Members lost pages and sorts server-side.
  */
 @Component({
   selector: 'lfx-members-churn',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
+  imports: [
+    ChartComponent,
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
+    Skeleton,
+    TableComponent,
+    UiBadgeComponent,
+    UiPaginationComponent,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
+  ],
   templateUrl: './members-churn.component.html',
 })
 export class MembersChurnComponent {
@@ -72,16 +92,14 @@ export class MembersChurnComponent {
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
-  protected readonly modeOptions: FilterPillOption[] = [...HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS];
-  protected readonly tierPillClass = HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS;
-  protected readonly shareBarClass = HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS;
+  protected readonly sectionOptions = HEALTH_METRICS_MEMBERS_CHURN_SECTION_OPTIONS;
   protected readonly size = HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE;
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a year without churn, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
   protected readonly departuresLoading = signal<boolean>(true);
   protected readonly departuresFailed = signal<boolean>(false);
-  protected readonly mode = signal<HealthMetricsMembersChurnMode>(this.parseInitialMode());
+  protected readonly section = signal<HealthMetricsMembersChurnSection>(this.parseInitialSection());
   /** The foundation the shown churn belongs to, so a new foundation holds the skeleton. */
   private readonly responseFoundation = signal<string | null>(null);
   // Both start pending so the first read to land cannot settle the section before the other starts.
@@ -95,47 +113,48 @@ export class MembersChurnComponent {
     return HEALTH_METRICS_L2_RANGES.find((candidate) => candidate === range) ?? 'YTD';
   });
   private readonly year = computed(() => getYearForRange(this.range()));
-  private readonly departuresScope = computed(() => `${this.foundationSlug()}|${this.year()}`);
 
-  /** A new foundation or year restarts paging, since its departures share nothing with the last. */
+  /** Members lost sorts on the server across every page; the default keeps the view's rank. */
+  protected readonly departuresSorting = injectHealthMetricsTableSort(
+    HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_SORT_COLUMNS,
+    HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_DEFAULT_SORT
+  );
+  /** By tier is not paged, so it sorts in the browser. */
+  protected readonly tierSorting = injectHealthMetricsTableSort(HEALTH_METRICS_MEMBERS_CHURN_TIER_SORT_COLUMNS, HEALTH_METRICS_MEMBERS_CHURN_TIER_DEFAULT_SORT);
+  /** Zero-based, as the pager counts. A new foundation, year or order restarts paging, since its departures share nothing with the last. */
   protected readonly page = linkedSignal<string, number>({
-    source: this.departuresScope,
-    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
+    source: computed(() => `${this.foundationSlug()}|${this.year()}|${JSON.stringify(this.departuresSorting.sort())}`),
+    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 0),
   });
 
   protected readonly response: Signal<HealthMetricsMembersChurn> = this.initResponse();
   protected readonly departuresQuery: Signal<HealthMetricsMembersChurnDeparturesQuery> = computed(() => ({
     foundationSlug: this.foundationSlug(),
     year: this.year(),
-    offset: (this.page() - 1) * this.size,
+    offset: this.page() * this.size,
     pageSize: this.size,
+    sort: this.departuresSorting.order(),
   }));
   protected readonly departures: Signal<HealthMetricsMembersChurnDepartures> = this.initDepartures();
 
-  protected readonly view: Signal<HealthMetricsMembersChurnView> = computed(() =>
-    buildHealthMetricsMembersChurnView(this.response(), this.range(), this.mode())
-  );
-  /** The period was never measured or lost no member; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.departuresFailed() && isEmptyView(this.view()));
+  protected readonly view: Signal<HealthMetricsMembersChurnView> = computed(() => buildHealthMetricsMembersChurnView(this.response(), this.range()));
+  /** The period was never measured; the shell shows the section's empty state instead. A year that lost nothing reads "0%". */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.departuresFailed() && !this.view().yearMeasured);
   protected readonly departureRows: Signal<HealthMetricsMembersChurnDepartureRowView[]> = computed(() =>
     buildHealthMetricsMembersChurnDepartureRows(this.departures().rows)
   );
-  protected readonly totalRecords = computed(() => this.departures().totalRecords);
-  protected readonly departuresSubtitle = computed(() => buildHealthMetricsMembersChurnDeparturesSubtitle(this.totalRecords(), this.view().lostCount));
-  protected readonly countNote = computed(() =>
-    this.departuresLoading() || this.departuresFailed() ? null : buildHealthMetricsMembersChurnCountNote(this.totalRecords(), this.view().lostCount)
+  protected readonly tierRows: Signal<HealthMetricsMembersChurnTierRowView[]> = computed(() =>
+    sortHealthMetricsRows(this.view().tiers, this.tierSorting.sort(), healthMetricsMembersChurnTierSortValue)
   );
-  protected readonly first = computed(() => (this.page() - 1) * this.size);
-  /** Holds the skeleton until a foundation's first read lands; a period or mode change re-projects in place. */
+  protected readonly totalRecords = computed(() => this.departures().totalRecords);
+  /** Holds the skeleton until a foundation's first read lands; a period change re-projects in place. */
   protected readonly firstRead = computed(
     () => this.loading() && (this.response() === HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED || this.responseFoundation() !== this.foundationSlug())
   );
   protected readonly trend: Signal<HealthMetricsMembersChurnTrendPointView[]> = computed(() => this.view().trend);
   protected readonly showTrend = computed(() => this.trend().filter((point) => point.value !== null).length > 1);
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.trend(), this.view().trendRose));
-  protected readonly chartLabel = computed(
-    () => `${this.view().trendTitle} over ${this.trend().length} years, oldest first. The following table lists the same values.`
-  );
+  protected readonly chartLabel = computed(() => `Revenue churn over ${this.trend().length} years, oldest first. The following table lists the same values.`);
   protected readonly chartOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -161,24 +180,19 @@ export class MembersChurnComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      toObservable(computed(() => ({ mode: this.mode(), page: this.page() })))
+      toObservable(computed(() => ({ section: this.section(), page: this.page() })))
         .pipe(
           // `skip(1)` drops the state just read out of the URL; writing it back would be a no-op during hydration.
           skip(1),
-          distinctUntilChanged((a, b) => a.mode === b.mode && a.page === b.page),
+          distinctUntilChanged((a, b) => a.section === b.section && a.page === b.page),
           takeUntilDestroyed()
         )
         .subscribe(() => this.syncUrl());
     }
   }
 
-  protected onModeChange(id: string): void {
-    const mode = HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS.find((candidate) => candidate.id === id)?.id;
-    if (mode) this.mode.set(mode);
-  }
-
-  protected onTablePage(event: TablePageEvent): void {
-    this.page.set(Math.floor((event.first ?? 0) / this.size) + 1);
+  protected onSectionChange(value: string | null): void {
+    this.section.set(this.toSection(value));
   }
 
   private initResponse(): Signal<HealthMetricsMembersChurn> {
@@ -267,7 +281,7 @@ export class MembersChurnComponent {
     if (!foundationSeen || this.churnPending || this.departuresPending) return;
 
     // A failure of either read keeps its error on screen, so neither settles empty.
-    this.settled.emit(!this.loadFailed() && !this.departuresFailed() && isEmptyView(buildHealthMetricsMembersChurnView(churn, this.range(), this.mode())));
+    this.settled.emit(!this.loadFailed() && !this.departuresFailed() && !buildHealthMetricsMembersChurnView(churn, this.range()).yearMeasured);
   }
 
   /** Earlier years pale, the selected one solid — red when its churn rose on the year before. */
@@ -277,7 +291,7 @@ export class MembersChurnComponent {
       labels: points.map((point) => point.label),
       datasets: [
         {
-          label: this.view().trendTitle,
+          label: 'Revenue churn',
           data: points.map((point) => point.value),
           backgroundColor: points.map((point) => (point.isSelected ? selectedColor : lfxColors.blue[200])),
           borderRadius: 2,
@@ -289,13 +303,14 @@ export class MembersChurnComponent {
 
   private syncUrl(): void {
     const page = this.page();
-    const mode = this.mode();
+    const section = this.section();
 
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {
-        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.churnMode]: mode === HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS[0].id ? null : mode,
-        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.churnPage]: page > 1 ? page : null,
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.churnView]: section === HEALTH_METRICS_MEMBERS_CHURN_SECTION_OPTIONS[0].id ? null : section,
+        // The URL counts pages from 1.
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.churnPage]: page > 0 ? page + 1 : null,
       },
       queryParamsHandling: 'merge',
       preserveFragment: true,
@@ -308,8 +323,8 @@ export class MembersChurnComponent {
    * the last page with rows, writing it back since the clamp can precede the sync's first emission.
    */
   private clampPage(response: HealthMetricsMembersChurnDepartures): boolean {
-    const lastPage = Math.max(1, Math.ceil(response.totalRecords / this.size));
-    // The sentinel's zero is no count, so a failed read keeps the page; an empty year moves to page 1.
+    const lastPage = Math.max(0, Math.ceil(response.totalRecords / this.size) - 1);
+    // The sentinel's zero is no count, so a failed read keeps the page; an empty year moves to the first page.
     if (response === HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED || this.page() <= lastPage) return false;
 
     this.page.set(lastPage);
@@ -317,18 +332,17 @@ export class MembersChurnComponent {
     return true;
   }
 
-  private parseInitialMode(): HealthMetricsMembersChurnMode {
-    const value = this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.churnMode);
-    return HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS.find((candidate) => candidate.id === value)?.id ?? HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS[0].id;
+  private parseInitialSection(): HealthMetricsMembersChurnSection {
+    return this.toSection(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.churnView));
   }
 
+  private toSection(value: string | null): HealthMetricsMembersChurnSection {
+    return HEALTH_METRICS_MEMBERS_CHURN_SECTION_OPTIONS.find((option) => option.id === value)?.id ?? HEALTH_METRICS_MEMBERS_CHURN_SECTION_OPTIONS[0].id;
+  }
+
+  /** The URL's 1-based page as the pager's 0-based one. */
   private parseInitialPage(): number {
     const page = Number(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.churnPage));
-    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+    return Number.isFinite(page) && page > 1 ? Math.floor(page) - 1 : 0;
   }
-}
-
-/** Whether the period has nothing to show: it was never measured, or no member lapsed or downgraded. */
-function isEmptyView(view: HealthMetricsMembersChurnView): boolean {
-  return !view.yearMeasured || !view.hasChurn;
 }

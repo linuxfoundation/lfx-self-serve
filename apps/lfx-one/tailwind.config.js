@@ -31,11 +31,9 @@ import {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
-  HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES,
-  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
   HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES,
@@ -237,8 +235,7 @@ export default {
     ...Object.values(HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES),
     // Events forecast goal-bar fills (HEALTH_METRICS_EVENTS_FORECAST_PACES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_EVENTS_FORECAST_PACES).map((pace) => pace.fillClass),
-    // Members tier pill, the All members NPS dots and engagement badges (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
-    ...HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS.split(' '),
+    // The All members NPS dots and engagement badges (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
     ...[...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES), HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS].flatMap((c) => c.split(' ')),
     ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES).flatMap((c) => c.split(' ')),
     // Members at-risk age and risk dots (HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES in @lfx-one/shared) — applied via [class].
@@ -247,8 +244,6 @@ export default {
     ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
     // Non-Members fit band dots (HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS),
-    // Members churn share-of-loss bar fill (HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
     // Engagement attendance bar fills and the board hero colour, per attendance tone — applied via [class] / [ngClass].
     ...Object.values(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS),
     // Newsletter recipient status dots (HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS in @lfx-one/shared) — applied via [class].

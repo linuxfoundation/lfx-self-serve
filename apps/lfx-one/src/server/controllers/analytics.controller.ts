@@ -23,6 +23,7 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_SORT_COLUMNS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
@@ -4099,7 +4100,18 @@ export class AnalyticsController {
       });
 
       const year = Number(rawYear);
-      const response = await this.healthMetricsMembersService.getChurnDepartures(req, { foundationSlug, year, offset, pageSize });
+      const response = await this.healthMetricsMembersService.getChurnDepartures(req, {
+        foundationSlug,
+        year,
+        offset,
+        pageSize,
+        // Only an allowed column and a known direction pass; anything else is the view's own rank.
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_SORT_COLUMNS.map((column) => column.key)
+        ),
+      });
 
       logger.success(req, 'get_members_churn_departures', startTime, {
         foundation_slug: foundationSlug,

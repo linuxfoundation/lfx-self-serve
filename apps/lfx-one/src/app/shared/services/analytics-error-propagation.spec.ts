@@ -228,7 +228,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getMembersChurnDepartures',
       url: '/api/analytics/members-churn-departures',
       // A swallowed failure would read as a year in which no membership lapsed.
-      call: () => service.getMembersChurnDepartures({ foundationSlug: 'aaif', year: 2026, offset: 0, pageSize: 25 }),
+      call: () => service.getMembersChurnDepartures({ foundationSlug: 'aaif', year: 2026, offset: 0, pageSize: 25, sort: null }),
     },
     {
       name: 'getNonMembersOrgs',

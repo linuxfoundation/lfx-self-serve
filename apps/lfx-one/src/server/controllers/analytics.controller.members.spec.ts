@@ -612,8 +612,17 @@ describe('AnalyticsController.getMembersChurnDepartures', () => {
       year: 2025,
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED);
+  });
+
+  it('passes an allowed sort, and drops an unknown column or direction', async () => {
+    await call({ ...valid, sortKey: 'lapsed', sortDir: 'asc' }, 'getMembersChurnDepartures').promise;
+    expect(getChurnDepartures).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'lapsed', direction: 'asc' } }));
+
+    await call({ ...valid, sortKey: 'revenue_lost_usd', sortDir: 'asc' }, 'getMembersChurnDepartures').promise;
+    expect(getChurnDepartures).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it('accepts a page within the cap and falls back past it', async () => {

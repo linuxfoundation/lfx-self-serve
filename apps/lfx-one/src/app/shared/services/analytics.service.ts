@@ -1484,11 +1484,12 @@ export class AnalyticsService {
   }
 
   public getMembersChurnDepartures(query: HealthMetricsMembersChurnDeparturesQuery): Observable<HealthMetricsMembersChurnDepartures> {
-    const params = strictHttpParams()
+    let params = strictHttpParams()
       .set('foundationSlug', query.foundationSlug)
       .set('year', String(query.year))
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the table shows its error state rather than an empty list of departures.
     return this.http.get<HealthMetricsMembersChurnDepartures>('/api/analytics/members-churn-departures', { params }).pipe(

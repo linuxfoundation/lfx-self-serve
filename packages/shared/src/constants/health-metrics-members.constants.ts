@@ -15,16 +15,18 @@ import type { HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces
 import type {
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskBucket,
-  HealthMetricsMembersAtRiskSortKey,
   HealthMetricsMembersAtRiskFilterOption,
-  HealthMetricsMembersBreakdownTableClasses,
+  HealthMetricsMembersAtRiskSortKey,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardCohort,
-  HealthMetricsMembersBoardLatestTone,
   HealthMetricsMembersBoardCohortOption,
+  HealthMetricsMembersBoardLatestTone,
+  HealthMetricsMembersBreakdownTableClasses,
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDepartures,
-  HealthMetricsMembersChurnModeOption,
+  HealthMetricsMembersChurnDeparturesSortKey,
+  HealthMetricsMembersChurnSectionOption,
+  HealthMetricsMembersChurnTierSortKey,
   HealthMetricsMembersDataSectionKey,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectorySortKey,
@@ -37,9 +39,9 @@ import type {
   HealthMetricsMembersRenewals,
   HealthMetricsMembersRenewalsSortKey,
   HealthMetricsMembersRenewalsWindow,
+  HealthMetricsMembersRenewalsWindowOption,
   HealthMetricsMembersReservedTier,
   HealthMetricsMembersTierIcon,
-  HealthMetricsMembersRenewalsWindowOption,
   HealthMetricsMembersTiers,
 } from '../interfaces/health-metrics-members.interface';
 import type { HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
@@ -107,8 +109,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-arrow-trend-down', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Membership churn',
     heading: 'Membership churn',
-    description:
-      'Lagging by definition and deliberately last: it reports members already gone. Revenue churn leads — logo churn counts a top-tier and an entry-tier loss as one each.',
+    description: 'Members who left, and the revenue that left with them.',
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
@@ -248,7 +249,7 @@ export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
   boardCohort: 'boardCohort',
   boardPage: 'boardPage',
   npsAudience: 'npsAudience',
-  churnMode: 'churnMode',
+  churnView: 'churnView',
   churnPage: 'churnPage',
 } as const satisfies Record<string, keyof HealthMetricsMembersQueryParams>;
 
@@ -296,9 +297,6 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_SEARCH_DEBOUNCE_MS = 200;
 
 /** Upper bound on the tier options read; a foundation has a handful. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP = 100;
-
-/** One pill style for every tier, as the design draws it. */
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS = 'bg-blue-50 text-blue-700';
 
 /** The All members table's sortable columns; Membership sorts by annual dues, the order the table opens in. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersDirectorySortKey>[] = [
@@ -523,10 +521,11 @@ export const HEALTH_METRICS_MEMBERS_NPS_SEGMENTS = [
 /** Read-failed / no-foundation value: no churn rows, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED: HealthMetricsMembersChurn = { years: [], tiers: [] };
 
-/** The toggle over the hero; revenue churn leads. */
-export const HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS: readonly HealthMetricsMembersChurnModeOption[] = [
-  { id: 'revenue', label: 'Revenue churn' },
-  { id: 'logo', label: 'Logo churn' },
+/** The view switch under the metrics; the first is the default. */
+export const HEALTH_METRICS_MEMBERS_CHURN_SECTION_OPTIONS: readonly HealthMetricsMembersChurnSectionOption[] = [
+  { id: 'members', label: 'Members lost' },
+  { id: 'tiers', label: 'By tier' },
+  { id: 'trend', label: 'Churn trend' },
 ];
 
 /** Upper bound on churn rows read: the busiest foundation has around a hundred, about nine a year. */
@@ -535,17 +534,41 @@ export const HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP = 1000;
 /** Years the trend plots, ending at the selected one. */
 export const HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS = 4;
 
-/** A tier churn rate (percent) at or above this renders in the Needs action colour. */
+/** A tier churn rate (percent) at or above this reads as a danger badge. */
 export const HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT = 25;
 
-/** The share-of-loss bar fill. */
-export const HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS = 'bg-red-600';
+/** By tier's sortable columns; it is not paged, so it sorts in the browser. */
+export const HEALTH_METRICS_MEMBERS_CHURN_TIER_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersChurnTierSortKey>[] = [
+  { key: 'membership', kind: 'tier' },
+  { key: 'lost', kind: 'number' },
+  { key: 'rate', kind: 'number' },
+  { key: 'dues', kind: 'number' },
+  { key: 'share', kind: 'number' },
+];
 
-/** Read-failed value for "Who left". */
+/** By tier opens on the most dues lost first, as the design orders it. */
+export const HEALTH_METRICS_MEMBERS_CHURN_TIER_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersChurnTierSortKey> = { key: 'dues', direction: 'desc' };
+
+/** Members lost's sortable columns. */
+export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersChurnDeparturesSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'membership', kind: 'tier' },
+  { key: 'dues', kind: 'number' },
+  { key: 'lapsed', kind: 'date' },
+  { key: 'engaged', kind: 'date' },
+];
+
+/** Members lost opens on the view's rank, the most dues lost first. */
+export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersChurnDeparturesSortKey> = {
+  key: 'dues',
+  direction: 'desc',
+};
+
+/** Read-failed value for Members lost. */
 export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED: HealthMetricsMembersChurnDepartures = { rows: [], totalRecords: 0 };
 
-/** Rows per page of "Who left". */
-export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE = 25;
+/** Rows per page of Members lost. */
+export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE = 10;
 
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE = 100;

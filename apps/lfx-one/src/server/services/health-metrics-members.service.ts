@@ -53,6 +53,7 @@ import type {
   HealthMetricsMembersChurnDeparture,
   HealthMetricsMembersChurnDepartures,
   HealthMetricsMembersChurnDeparturesQuery,
+  HealthMetricsMembersChurnDeparturesSortKey,
   HealthMetricsMembersChurnQuery,
   HealthMetricsMembersChurnRisk,
   HealthMetricsMembersChurnTier,
@@ -256,9 +257,12 @@ interface ChurnRow {
 interface ChurnDepartureRow {
   TOTAL_RECORDS: number | null;
   IS_PAGE_ROW: boolean | null;
+  /** The row's place in the picked order, which the outer select keeps after the logo join. */
+  PAGE_POSITION: number | null;
   CHURN_KEY: string | null;
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
+  LOGO_URL: string | null;
   MEMBERSHIP_TIER: string | null;
   REVENUE_LOST_USD: number | null;
   LAPSED_DATE: Date | string | null;
@@ -697,12 +701,14 @@ export class HealthMetricsMembersService {
   }
 
   /**
-   * One page of the memberships lost in a year, non-renewals and downgrades, highest revenue lost first. Each
-   * row takes its lapse and last engagement from the same organization's movement row for that year.
+   * One page of the memberships lost in a year, non-renewals and downgrades, highest revenue lost first or in a column
+   * the reader picked. Each row takes its lapse and last engagement from the same organization's movement row.
    */
   public async getChurnDepartures(req: Request, query: HealthMetricsMembersChurnDeparturesQuery): Promise<HealthMetricsMembersChurnDepartures> {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+    // A column the reader picked, over every page; with none, the view's rank. Only these expressions reach the SQL.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, churnDepartureSortColumns(), 'revenue_lost_sort_rank ASC NULLS LAST, churn_key ASC');
 
     // `pageSize`/`offset` are clamped above, never taken raw from the request, so interpolating them is safe.
     const sql = `
@@ -745,17 +751,20 @@ export class HealthMetricsMembersService {
         SELECT
           *,
           -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
-          TRUE AS is_page_row
+          TRUE AS is_page_row,
+          -- The row's place in the page's order, which the outer select keeps after the logo join.
+          ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM scoped
         -- NULLS LAST pins null placement, so a pooled session's null ordering cannot drift rows between pages.
-        ORDER BY revenue_lost_sort_rank ASC NULLS LAST, churn_key ASC
+        ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
-      SELECT totals.*, page.*
+      SELECT totals.*, page.*, ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.revenue_lost_sort_rank ASC NULLS LAST, page.churn_key ASC
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const binds = [query.foundationSlug, query.year, query.foundationSlug, query.year];
@@ -1071,6 +1080,17 @@ function renewalsSortColumns(): Record<HealthMetricsMembersRenewalsSortKey, Heal
   };
 }
 
+/** Each Members lost column as its cell shows it; the tier sorts by rank. */
+function churnDepartureSortColumns(): Record<HealthMetricsMembersChurnDeparturesSortKey, HealthMetricsSqlSortColumn> {
+  return {
+    company: { expression: "COALESCE(NULLIF(account_name, ''), account_id)", kind: 'text' },
+    membership: { expression: 'membership_tier', kind: 'tier' },
+    dues: { expression: 'revenue_lost_usd', kind: 'number' },
+    lapsed: { expression: 'lapsed_date', kind: 'date' },
+    engaged: { expression: 'last_engaged_date', kind: 'date' },
+  };
+}
+
 function mapDirectoryMember(row: DirectoryRow): HealthMetricsMembersDirectoryMember[] {
   if (!row.ACCOUNT_ID) return [];
 
@@ -1243,6 +1263,7 @@ function mapChurnDeparture(row: ChurnDepartureRow): HealthMetricsMembersChurnDep
       key: row.CHURN_KEY,
       accountId: row.ACCOUNT_ID,
       accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      logoUrl: row.LOGO_URL ?? '',
       membershipTier: row.MEMBERSHIP_TIER || null,
       duesLostUsd: toNullableNumber(row.REVENUE_LOST_USD),
       lapsedDate: toIsoDate(row.LAPSED_DATE),
