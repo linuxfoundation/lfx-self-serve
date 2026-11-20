@@ -26,6 +26,7 @@ import type {
   HealthMetricsMembersChurnModeOption,
   HealthMetricsMembersDataSectionKey,
   HealthMetricsMembersDirectory,
+  HealthMetricsMembersDirectorySortKey,
   HealthMetricsMembersDirectoryTierOption,
   HealthMetricsMembersEngagementLevel,
   HealthMetricsMembersGrowth,
@@ -39,6 +40,7 @@ import type {
   HealthMetricsMembersRenewalsWindowOption,
   HealthMetricsMembersTiers,
 } from '../interfaces/health-metrics-members.interface';
+import type { HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
 
 /**
  * The eight Members sections in render order. `key` is the section's URL fragment and the scroll-spy
@@ -66,8 +68,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'All members',
     heading: 'All members',
-    description:
-      "The full directory — PCC's most-used table, carried over with its columns intact and the engagement touchpoints added. Sorted by annual dues, highest first, so the accounts that carry the revenue lead; within a tier, least engaged first.",
+    description: 'Every member, with dues and engagement.',
   },
   {
     key: 'risk',
@@ -285,13 +286,10 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED: HealthMetricsMembersDi
   rows: [],
   totalRecords: 0,
   scopeTotal: 0,
-  atRiskCount: 0,
 };
 
-/** Rows per page, and the design's rows-per-page choices; the largest foundation has several hundred members. */
+/** Rows per page on the numbered pager; the largest foundation has several hundred members. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE = 10;
-
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
 
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE = 100;
@@ -309,22 +307,37 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP = 100;
 /** One pill style for every tier, as the design draws it. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS = 'bg-blue-50 text-blue-700';
 
-/** NPS chips after the member's name. */
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES: Record<HealthMetricsMembersNpsCategory, string> = {
-  Promoter: 'bg-emerald-50 text-emerald-700',
-  Passive: 'bg-gray-100 text-gray-500',
-  Detractor: 'bg-red-50 text-red-700',
+/** The All members table's sortable columns; Membership sorts by annual dues, the order the table opens in. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersDirectorySortKey>[] = [
+  { key: 'name', kind: 'text' },
+  { key: 'membership', kind: 'number' },
+  { key: 'renewal', kind: 'date' },
+  { key: 'sponsorship', kind: 'number' },
+  { key: 'engagement', kind: 'number' },
+];
+
+/** All members opens on the view's rank: highest annual dues first, then least engaged. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersDirectorySortKey> = {
+  key: 'membership',
+  direction: 'desc',
 };
 
-/** Engagement band dots. */
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES: Record<HealthMetricsMembersEngagementLevel, string> = {
-  High: 'bg-emerald-600',
-  Medium: 'bg-amber-600',
-  Low: 'bg-red-600',
+/** The dot before a member's NPS description, in its category's colour. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES: Record<HealthMetricsMembersNpsCategory, string> = {
+  Promoter: 'fa-solid fa-circle-small text-emerald-500',
+  Passive: 'fa-solid fa-circle-small text-amber-400',
+  Detractor: 'fa-solid fa-circle-small text-red-400',
 };
 
-/** Hover text on a not-tracked cell. */
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_NOT_TRACKED = 'Not tracked yet for this foundation';
+/** The gray dot before "No NPS response". */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS = 'fa-solid fa-circle-small text-gray-300';
+
+/** The Engagement badge's tone per level. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES: Record<HealthMetricsMembersEngagementLevel, string> = {
+  High: 'bg-emerald-50 text-emerald-700',
+  Medium: 'bg-amber-50 text-amber-800',
+  Low: 'bg-red-50 text-red-700',
+};
 
 /** `MEMBERSHIP_AT_RISK`'s buckets past 60 days, oldest last; the section leaves out balances under 60 days. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS = ['60_89_days', '90_plus_days'] as const;

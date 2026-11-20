@@ -16,13 +16,11 @@ import {
   buildHealthMetricsMembersBoardSummary,
   buildHealthMetricsMembersBoardTrend,
   buildHealthMetricsMembersBreakdownView,
-  buildHealthMetricsMembersChurnDepartureRows,
   buildHealthMetricsMembersChurnCountNote,
+  buildHealthMetricsMembersChurnDepartureRows,
   buildHealthMetricsMembersChurnDeparturesSubtitle,
   buildHealthMetricsMembersChurnView,
   buildHealthMetricsMembersDirectoryRows,
-  buildHealthMetricsMembersDirectorySearchPlaceholder,
-  buildHealthMetricsMembersDirectorySummary,
   buildHealthMetricsMembersGrowthView,
   buildHealthMetricsMembersNpsAudienceOptions,
   buildHealthMetricsMembersNpsSegments,
@@ -34,6 +32,7 @@ import {
   buildHealthMetricsMembersRenewalsSummary,
   buildHealthMetricsMembersSections,
   buildHealthMetricsMembersSubNavItems,
+  resolveHealthMetricsMembersTier,
 } from './health-metrics-members.utils';
 
 import type {
@@ -73,100 +72,110 @@ describe('buildHealthMetricsMembersSubNavItems', () => {
 });
 
 describe('buildHealthMetricsMembersDirectoryRows', () => {
-  function member(overrides: Partial<HealthMetricsMembersDirectoryMember> = {}): HealthMetricsMembersDirectoryMember {
-    return {
-      accountId: '0014100000AcmeDir1',
-      accountName: 'Acme Robotics',
-      membershipTier: 'Gold Membership',
-      annualDuesUsd: 89_500,
-      engagementLevel: 'Low',
-      engagementScore: 2.26,
-      npsCategory: 'Detractor',
-      isAtRisk: true,
-      renewalDate: '2027-01-11',
-      renewalDuesUsd: 95_000,
-      lastEngagedDate: '2026-02-03',
-      contributionCount: 1_204,
-      sponsorshipUsd: 12_499.6,
-      trainingEnrollmentCount: 0,
-      eventRegistrationCount: 7,
-      ...overrides,
-    };
-  }
+  const member: HealthMetricsMembersDirectoryMember = {
+    accountId: 'a-1',
+    accountName: 'Acme Corp',
+    logoUrl: 'https://logos.example/acme.png',
+    membershipTier: 'Platinum Membership',
+    annualDuesUsd: 120000,
+    engagementLevel: 'Low',
+    engagementScore: 2.34,
+    npsCategory: 'Promoter',
+    npsScore: 9,
+    isAtRisk: true,
+    renewalDate: '2027-03-31',
+    renewalDuesUsd: 100000,
+    lastEngagedDate: '2026-09-14',
+    contributionCount: 12,
+    sponsorshipUsd: 25000.4,
+    trainingEnrollmentCount: 0,
+    eventRegistrationCount: null,
+  };
 
-  it('formats a tracked member', () => {
-    const [row] = buildHealthMetricsMembersDirectoryRows([member()]);
-
-    expect(row).toMatchObject({
-      accountId: '0014100000AcmeDir1',
-      npsLabel: 'Detractor',
-      npsClass: 'bg-red-50 text-red-700',
+  it('leads with the company, its NPS line and the at-risk flag, then the tier, the renewal and the sponsorship', () => {
+    expect(buildHealthMetricsMembersDirectoryRows([member])[0]).toMatchObject({
+      accountId: 'a-1',
+      name: 'Acme Corp',
+      logoUrl: 'https://logos.example/acme.png',
       isAtRisk: true,
-      tierLabel: 'Gold Membership',
-      duesLabel: '$89.5K',
-      engagementLabel: 'Low',
-      engagementDotClass: 'bg-red-600',
-      scoreLabel: '2.3',
-      renewsLabel: 'Jan 11, 2027',
-      renewalDuesLabel: '$95K',
-      lastEngagedLabel: 'Feb 3, 2026',
+      npsLabel: 'Promoter · NPS 9',
+      npsIconClass: 'fa-solid fa-circle-small text-emerald-500',
+      membershipLabel: 'Platinum',
+      tier: 'platinum',
+      renewalLabel: 'Mar 31, 2027',
+      renewalDuesLabel: '$100K dues',
+      sponsorshipLabel: '$25K',
     });
-    expect(row.activity).toEqual([
-      { key: 'contribution', label: '1,204', tracked: true },
-      { key: 'sponsorship', label: '$12.5K', tracked: true },
-      { key: 'training', label: '0', tracked: true },
-      { key: 'events', label: '7', tracked: true },
-    ]);
   });
 
-  it('renders every missing value as a dash, and an untracked activity as not tracked rather than 0', () => {
+  it('opens a Level-and-score badge whose popup reads a zero or untracked count as a dash', () => {
+    expect(buildHealthMetricsMembersDirectoryRows([member])[0].engagement).toEqual({
+      label: 'Low 2.3',
+      badgeClass: 'bg-red-50 text-red-700',
+      tip: {
+        title: 'Low engagement · 2.3',
+        rows: [
+          { label: 'Contribution', value: '12', color: null, separated: false },
+          { label: 'Training', value: '—', color: null, separated: false },
+          { label: 'Events', value: '—', color: null, separated: false },
+          { label: 'Last engaged', value: 'Sep 14, 2026', color: null, separated: false },
+        ],
+      },
+    });
+  });
+
+  it('reads a member with nothing on record as dashes, with no badge and the gray "No NPS response" dot', () => {
     const [row] = buildHealthMetricsMembersDirectoryRows([
-      member({
+      {
+        ...member,
         membershipTier: null,
-        annualDuesUsd: null,
         engagementLevel: null,
-        engagementScore: null,
         npsCategory: null,
+        npsScore: null,
         isAtRisk: false,
         renewalDate: null,
         renewalDuesUsd: null,
-        lastEngagedDate: null,
-        contributionCount: null,
-        sponsorshipUsd: null,
-        trainingEnrollmentCount: null,
-        eventRegistrationCount: null,
-      }),
+        sponsorshipUsd: 0,
+      },
     ]);
 
     expect(row).toMatchObject({
-      npsLabel: null,
-      npsClass: '',
-      tierLabel: '—',
-      duesLabel: '—',
-      engagementLabel: '—',
-      engagementDotClass: '',
-      scoreLabel: '—',
-      renewsLabel: '—',
-      renewalDuesLabel: '—',
-      lastEngagedLabel: '—',
+      npsLabel: 'No NPS response',
+      npsIconClass: 'fa-solid fa-circle-small text-gray-300',
+      membershipLabel: '—',
+      tier: null,
+      renewalLabel: '—',
+      renewalDuesLabel: '',
+      sponsorshipLabel: '—',
+      engagement: null,
     });
-    expect(row.activity.every((cell) => cell.label === '—' && !cell.tracked)).toBe(true);
+  });
+
+  it('shows the category alone without a score, renewal dues only when they differ, and an unreserved tier without an icon', () => {
+    const [row] = buildHealthMetricsMembersDirectoryRows([
+      { ...member, npsCategory: 'Detractor', npsScore: null, renewalDuesUsd: 120000, membershipTier: 'Associate Member', engagementScore: null },
+    ]);
+
+    expect(row).toMatchObject({
+      npsLabel: 'Detractor',
+      npsIconClass: 'fa-solid fa-circle-small text-red-400',
+      renewalDuesLabel: '',
+      membershipLabel: 'Associate',
+      tier: null,
+    });
+    expect(row.engagement).toMatchObject({ label: 'Low', tip: { title: 'Low engagement' } });
   });
 });
 
-describe('buildHealthMetricsMembersDirectorySummary', () => {
-  it('counts the members and the at-risk ones', () => {
-    expect(buildHealthMetricsMembersDirectorySummary(1_204, 12)).toBe('1,204 members · 12 at risk · highest dues first');
-  });
-
-  it('drops the at-risk part when none is at risk', () => {
-    expect(buildHealthMetricsMembersDirectorySummary(1, 0)).toBe('1 member · highest dues first');
-  });
-});
-
-describe('buildHealthMetricsMembersDirectorySearchPlaceholder', () => {
-  it('sizes the placeholder to the foundation', () => {
-    expect(buildHealthMetricsMembersDirectorySearchPlaceholder(725)).toBe('Search 725 members…');
+describe('resolveHealthMetricsMembersTier', () => {
+  it.each([
+    ['Gold Membership', 'Gold', 'gold'],
+    ['DIAMOND', 'Diamond', 'diamond'],
+    ['  Silver Member ', 'Silver', 'silver'],
+    ['End User Supporter', 'End User Supporter', null],
+    ['Membership', 'Membership', null],
+  ])('reads %s as %s', (raw, label, reserved) => {
+    expect(resolveHealthMetricsMembersTier(raw)).toEqual({ label, reserved });
   });
 });
 

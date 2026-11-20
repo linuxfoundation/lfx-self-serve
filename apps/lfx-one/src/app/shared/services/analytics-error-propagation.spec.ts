@@ -186,7 +186,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getMembersDirectory',
       url: '/api/analytics/members-directory',
       // A swallowed failure would read as a foundation with no members.
-      call: () => service.getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: '', nps: '', search: '', offset: 0, pageSize: 10 }),
+      call: () => service.getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: '', nps: '', search: '', offset: 0, pageSize: 10, sort: null }),
     },
     {
       name: 'getMembersDirectoryTiers',
@@ -398,13 +398,38 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
   });
 
   it('getMembersDirectory sends a typed plus sign encoded and leaves empty filters out', () => {
-    service.getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: 'Gold+', nps: '', search: 'A+E', offset: 0, pageSize: 10 }).subscribe();
+    service
+      .getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: 'Gold+', nps: '', search: 'A+E', offset: 0, pageSize: 10, sort: null })
+      .subscribe();
 
     const req = http.expectOne((request) => request.url === '/api/analytics/members-directory');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
     expect(req.request.urlWithParams).toContain('tier=Gold%2B');
     expect(req.request.params.has('nps')).toBe(false);
-    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, atRiskCount: 0 });
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
+  it('getMembersDirectory sends a picked sort, and none for the default order', () => {
+    service
+      .getMembersDirectory({
+        foundationSlug: 'aaif',
+        range: 'YTD',
+        tier: '',
+        nps: '',
+        search: '',
+        offset: 0,
+        pageSize: 10,
+        sort: { key: 'renewal', direction: 'asc' },
+      })
+      .subscribe();
+    service.getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: '', nps: '', search: '', offset: 10, pageSize: 10, sort: null }).subscribe();
+
+    const [sorted, unsorted] = http.match((request) => request.url === '/api/analytics/members-directory');
+    expect(sorted.request.params.get('sortKey')).toBe('renewal');
+    expect(sorted.request.params.get('sortDir')).toBe('asc');
+    expect(unsorted.request.params.has('sortKey')).toBe(false);
+    sorted.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+    unsorted.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 
   it('getNonMembersOrgs sends a typed plus sign encoded and leaves the default filter out', () => {

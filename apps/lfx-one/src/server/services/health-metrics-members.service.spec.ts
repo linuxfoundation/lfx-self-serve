@@ -215,21 +215,22 @@ describe('HealthMetricsMembersService.getTiers', () => {
 });
 
 describe('HealthMetricsMembersService.getDirectory', () => {
-  const query = { foundationSlug: 'acme', range: 'YTD' as const, tier: '', nps: '' as const, search: '', offset: 0, pageSize: 10 };
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, tier: '', nps: '' as const, search: '', offset: 0, pageSize: 10, sort: null };
 
   function directoryRow(overrides: Record<string, unknown> = {}) {
     return {
       SCOPE_TOTAL: 725,
       TOTAL_RECORDS: 16,
-      AT_RISK_COUNT: 27,
       IS_PAGE_ROW: true,
       ACCOUNT_ID: '0014100000AcmeAAAA',
       ACCOUNT_NAME: 'Acme Motors',
+      LOGO_URL: 'https://logos.example/acme.png',
       MEMBERSHIP_TIER: 'Gold Membership',
       ANNUAL_DUES_USD: 89500,
       ENGAGEMENT_LEVEL: 'Low',
       ENGAGEMENT_SCORE: 2.26,
       NPS_CATEGORY: 'Detractor',
+      NPS_SCORE: 4,
       IS_AT_RISK: true,
       RENEWAL_DATE: new Date(Date.UTC(2027, 0, 11)),
       RENEWAL_DUES_USD: null,
@@ -285,21 +286,39 @@ describe('HealthMetricsMembersService.getDirectory', () => {
     expect(sql).toContain("WHERE TRIM(membership_tier) = ? AND nps_category = ? AND account_name ILIKE ? ESCAPE '!'");
   });
 
-  it("counts the foundation and its at-risk members before the filters, and pages in the view's sort_rank order", async () => {
+  it("counts the foundation before the filters, and pages in the view's sort_rank order with each company's logo", async () => {
     await new HealthMetricsMembersService().getDirectory(req, query);
 
     const [sql] = directoryRead();
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
     expect(scoped).toContain('AND account_id IS NOT NULL');
     expect(scoped).toContain("AND account_id <> ''");
+    expect(scoped).toContain('nps_score,');
     expect(sql).toContain('(SELECT COUNT(*) FROM scoped) AS scope_total');
-    expect(sql).toContain('(SELECT COUNT_IF(is_at_risk) FROM scoped) AS at_risk_count');
     expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
+    expect(sql).not.toContain('at_risk_count');
     expect(scoped).toContain('sort_rank,');
+    expect(sql).toContain('ROW_NUMBER() OVER (ORDER BY sort_rank ASC NULLS LAST, account_id ASC) AS page_position');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC\n        LIMIT');
-    expect(sql).toContain('ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC');
     expect(sql).toContain('LIMIT 10 OFFSET 0');
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).toContain("NULLIF(TRIM(logos.logo_url), '') AS logo_url");
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+  });
+
+  it.each([
+    ['name', 'asc', "COLLATE(NULLIF(NULLIF(TRIM(COALESCE(NULLIF(account_name, ''), account_id)"],
+    ['membership', 'asc', 'annual_dues_usd ASC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC'],
+    ['renewal', 'desc', 'renewal_date DESC NULLS LAST, sort_rank ASC NULLS LAST'],
+    ['sponsorship', 'desc', 'NULLIF(sponsorship_usd, 0) DESC NULLS LAST'],
+    ['engagement', 'asc', "IFF(engagement_level IN ('High', 'Medium', 'Low'), ROUND(engagement_score, 1), NULL) ASC NULLS LAST"],
+  ] as const)("sorts %s %s across every page, then the view's rank", async (key, direction, expected) => {
+    await new HealthMetricsMembersService().getDirectory(req, { ...query, sort: { key, direction } });
+
+    const [sql, binds] = directoryRead();
+    expect(sql).toContain(expected);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
   });
 
   it('clamps an oversized page and offset before interpolating them', async () => {
@@ -316,16 +335,17 @@ describe('HealthMetricsMembersService.getDirectory', () => {
     expect(response).toEqual({
       totalRecords: 16,
       scopeTotal: 725,
-      atRiskCount: 27,
       rows: [
         {
           accountId: '0014100000AcmeAAAA',
           accountName: 'Acme Motors',
+          logoUrl: 'https://logos.example/acme.png',
           membershipTier: 'Gold Membership',
           annualDuesUsd: 89500,
           engagementLevel: 'Low',
           engagementScore: 2.26,
           npsCategory: 'Detractor',
+          npsScore: 4,
           isAtRisk: true,
           renewalDate: '2027-01-11',
           renewalDuesUsd: null,
@@ -340,7 +360,17 @@ describe('HealthMetricsMembersService.getDirectory', () => {
   });
 
   it('drops an unknown engagement band or NPS category, and a blank tier or name', async () => {
-    respondDirectory([directoryRow({ ENGAGEMENT_LEVEL: 'Extreme', NPS_CATEGORY: 'Neutral', MEMBERSHIP_TIER: '', ACCOUNT_NAME: '', IS_AT_RISK: null })]);
+    respondDirectory([
+      directoryRow({
+        ENGAGEMENT_LEVEL: 'Extreme',
+        NPS_CATEGORY: 'Neutral',
+        NPS_SCORE: null,
+        MEMBERSHIP_TIER: '',
+        ACCOUNT_NAME: '',
+        IS_AT_RISK: null,
+        LOGO_URL: null,
+      }),
+    ]);
 
     const response = await new HealthMetricsMembersService().getDirectory(req, query);
 
@@ -349,16 +379,18 @@ describe('HealthMetricsMembersService.getDirectory', () => {
       membershipTier: null,
       engagementLevel: null,
       npsCategory: null,
+      npsScore: null,
       isAtRisk: false,
+      logoUrl: '',
     });
   });
 
   it('keeps the totals when the page is past the end', async () => {
-    respondDirectory([{ SCOPE_TOTAL: 725, TOTAL_RECORDS: 16, AT_RISK_COUNT: 27, IS_PAGE_ROW: null, ACCOUNT_ID: null }]);
+    respondDirectory([{ SCOPE_TOTAL: 725, TOTAL_RECORDS: 16, IS_PAGE_ROW: null, ACCOUNT_ID: null }]);
 
     const response = await new HealthMetricsMembersService().getDirectory(req, query);
 
-    expect(response).toMatchObject({ rows: [], totalRecords: 16, scopeTotal: 725, atRiskCount: 27 });
+    expect(response).toEqual({ rows: [], totalRecords: 16, scopeTotal: 725 });
   });
 
   it('rethrows a failed read', async () => {

@@ -195,6 +195,7 @@ describe('AnalyticsController.getMembersDirectory', () => {
       search: '',
       offset: 0,
       pageSize: HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED);
   });
@@ -214,7 +215,21 @@ describe('AnalyticsController.getMembersDirectory', () => {
       search: 'a'.repeat(HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH),
       offset: 20,
       pageSize: 10,
+      sort: null,
     });
+  });
+
+  it('passes an allowed sort, and drops an unknown column or direction', async () => {
+    await call({ ...valid, sortKey: 'engagement', sortDir: 'asc' }, 'getMembersDirectory').promise;
+    expect(getDirectory).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'engagement', direction: 'asc' } }));
+
+    for (const [sortKey, sortDir] of [
+      ['annual_dues_usd', 'desc'],
+      ['membership', 'sideways'],
+    ]) {
+      await call({ ...valid, sortKey, sortDir }, 'getMembersDirectory').promise;
+      expect(getDirectory).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
+    }
   });
 
   it('falls back to the default page size past the cap', async () => {

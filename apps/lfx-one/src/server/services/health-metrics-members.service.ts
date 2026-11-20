@@ -30,6 +30,8 @@ import {
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { healthMetricsL2PeriodEndPredicate, healthMetricsL2PeriodPredicate, isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { healthMetricsAccountLogoJoinSql, healthMetricsAccountLogoSql } from '../helpers/health-metrics-logo.helper';
+import { buildHealthMetricsSortOrderBy } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -57,6 +59,7 @@ import type {
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersDirectoryQuery,
+  HealthMetricsMembersDirectorySortKey,
   HealthMetricsMembersDirectoryTiers,
   HealthMetricsMembersDirectoryTiersQuery,
   HealthMetricsMembersEngagementLevel,
@@ -72,9 +75,10 @@ import type {
   HealthMetricsMembersRenewals,
   HealthMetricsMembersRenewalsQuery,
   HealthMetricsMembersRenewalsWindow,
+  HealthMetricsMembersTierYear,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
-  HealthMetricsMembersTierYear,
+  HealthMetricsSqlSortColumn,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -120,15 +124,18 @@ interface TierYearRow {
 interface DirectoryRow {
   SCOPE_TOTAL: number | null;
   TOTAL_RECORDS: number | null;
-  AT_RISK_COUNT: number | null;
   IS_PAGE_ROW: boolean | null;
+  /** The row's place in the picked order, which the outer select keeps after the logo join. */
+  PAGE_POSITION: number | null;
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
+  LOGO_URL: string | null;
   MEMBERSHIP_TIER: string | null;
   ANNUAL_DUES_USD: number | null;
   ENGAGEMENT_LEVEL: string | null;
   ENGAGEMENT_SCORE: number | null;
   NPS_CATEGORY: string | null;
+  NPS_SCORE: number | null;
   IS_AT_RISK: boolean | null;
   RENEWAL_DATE: Date | string | null;
   RENEWAL_DUES_USD: number | null;
@@ -315,8 +322,8 @@ export class HealthMetricsMembersService {
   }
 
   /**
-   * One page of the foundation's members in the view's own `sort_rank` order (highest dues first, then
-   * least engaged), with the activity counts for the period.
+   * One page of the foundation's members, in the view's own `sort_rank` order (highest dues first, then least
+   * engaged) or a column the reader picked, with the activity counts for the period.
    */
   public async getDirectory(req: Request, query: HealthMetricsMembersDirectoryQuery): Promise<HealthMetricsMembersDirectory> {
     // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
@@ -341,6 +348,9 @@ export class HealthMetricsMembersService {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
 
+    // A column the reader picked, over every page; with none, the view's rank. Only these expressions reach the SQL.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, directorySortColumns(), 'sort_rank ASC NULLS LAST, account_id ASC');
+
     const sql = `
       WITH scoped AS (
         SELECT
@@ -351,6 +361,7 @@ export class HealthMetricsMembersService {
           engagement_level,
           engagement_score,
           nps_category,
+          nps_score,
           is_at_risk,
           renewal_date,
           renewal_dues_usd,
@@ -370,24 +381,22 @@ export class HealthMetricsMembersService {
         SELECT * FROM scoped ${matchClause}
       ),
       totals AS (
-        SELECT
-          (SELECT COUNT(*) FROM scoped) AS scope_total,
-          -- Counts rows on the model's own at-risk flag; the page never derives the risk itself.
-          (SELECT COUNT_IF(is_at_risk) FROM scoped) AS at_risk_count,
-          (SELECT COUNT(*) FROM matched) AS total_records
+        SELECT (SELECT COUNT(*) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
-        SELECT *, TRUE AS is_page_row
+        -- The row's place in the page's order, which the outer select keeps after the logo join.
+        SELECT *, TRUE AS is_page_row, ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM matched
         -- account_id breaks any tie, and NULLS LAST pins placement against the session's null ordering.
-        ORDER BY sort_rank ASC NULLS LAST, account_id ASC
+        ORDER BY ${orderBy}
         LIMIT ${pageSize} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
-      SELECT totals.*, page.*
+      SELECT totals.*, page.*, ${healthMetricsAccountLogoSql('logos')} AS logo_url
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC
+      ${healthMetricsAccountLogoJoinSql('logos', 'page.account_id')}
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<DirectoryRow>(this.snowflakeService, req, sql, binds, {
@@ -401,7 +410,6 @@ export class HealthMetricsMembersService {
       rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapDirectoryMember),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
-      atRiskCount: Number(first?.AT_RISK_COUNT ?? 0),
     };
   }
 
@@ -1026,6 +1034,24 @@ function capWholeYears<T extends { YEAR: number | null }>(rows: T[], cap: number
   return yearWasSplit && capped.some((row) => row.YEAR !== cutYear) ? capped.filter((row) => row.YEAR !== cutYear) : capped;
 }
 
+/** Each column as the cell shows it, so the server's order matches what the reader sees. */
+function directorySortColumns(): Record<HealthMetricsMembersDirectorySortKey, HealthMetricsSqlSortColumn> {
+  return {
+    // A member with no name shows its account id, so it sorts by that.
+    name: { expression: "COALESCE(NULLIF(account_name, ''), account_id)", kind: 'text' },
+    // The column shows the tier but sorts by the dues the table opens in, so its arrow can reverse that order.
+    membership: { expression: 'annual_dues_usd', kind: 'number' },
+    renewal: { expression: 'renewal_date', kind: 'date' },
+    // $0 reads "—", so it is empty.
+    sponsorship: { expression: 'NULLIF(sponsorship_usd, 0)', kind: 'number' },
+    // The badge's one-decimal score. A level the mapper drops reads "—", so it is empty too; the levels are constants.
+    engagement: {
+      expression: `IFF(engagement_level IN (${HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS.map((level) => `'${level}'`).join(', ')}), ROUND(engagement_score, 1), NULL)`,
+      kind: 'number',
+    },
+  };
+}
+
 function mapDirectoryMember(row: DirectoryRow): HealthMetricsMembersDirectoryMember[] {
   if (!row.ACCOUNT_ID) return [];
 
@@ -1033,12 +1059,14 @@ function mapDirectoryMember(row: DirectoryRow): HealthMetricsMembersDirectoryMem
     {
       accountId: row.ACCOUNT_ID,
       accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      logoUrl: row.LOGO_URL ?? '',
       membershipTier: row.MEMBERSHIP_TIER || null,
       annualDuesUsd: toNullableNumber(row.ANNUAL_DUES_USD),
       engagementLevel:
         row.ENGAGEMENT_LEVEL && ENGAGEMENT_LEVELS.has(row.ENGAGEMENT_LEVEL) ? (row.ENGAGEMENT_LEVEL as HealthMetricsMembersEngagementLevel) : null,
       engagementScore: toNullableNumber(row.ENGAGEMENT_SCORE),
       npsCategory: row.NPS_CATEGORY && NPS_CATEGORIES.has(row.NPS_CATEGORY) ? (row.NPS_CATEGORY as HealthMetricsMembersNpsCategory) : null,
+      npsScore: toNullableNumber(row.NPS_SCORE),
       isAtRisk: row.IS_AT_RISK === true,
       renewalDate: toIsoDate(row.RENEWAL_DATE),
       renewalDuesUsd: toNullableNumber(row.RENEWAL_DUES_USD),

@@ -1388,6 +1388,7 @@ export class AnalyticsService {
     if (query.tier) params = params.set('tier', query.tier);
     if (query.nps) params = params.set('nps', query.nps);
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsMembersDirectory>('/api/analytics/members-directory', { params }).pipe(
