@@ -70,7 +70,9 @@ export class MeetingHomeActionsComponent {
   /** Registered to this upcoming meeting; an organizer only with a registration of their own (legacy `isRegisteredAttendee`). */
   protected readonly canRemove: Signal<boolean> = this.initCanRemove();
   /** A resend goes to the viewer's own registrant row, so one must exist (legacy `canResendInvite`). */
-  protected readonly canResend: Signal<boolean> = computed(() => this.canRemove() && this.hasOwnRegistration());
+  protected readonly canResend: Signal<boolean> = computed(
+    () => this.canRemove() && this.hasOwnRegistration() && this.store?.selfInviteOf(this.row().meeting.id) === undefined
+  );
   /** The other half of Remove Myself, for whoever can manage the guests (legacy `canAddMyself`); the service checks the roster first. */
   protected readonly canAddSelf: Signal<boolean> = this.initCanAddSelf();
   protected readonly removalQuestion: Signal<string> = computed(() => getMeetingSelfRemovalQuestion(this.row().title));
@@ -161,6 +163,10 @@ export class MeetingHomeActionsComponent {
   protected resend(): void {
     // A second click can land before the button renders as loading.
     if (this.resending()) return;
+    if (!this.canResend()) {
+      this.dialogRef?.close();
+      return;
+    }
     const ref = this.dialogRef;
     this.inviteResend
       .resendOwn$(this.row().meeting.id, this.row().occurrenceId)

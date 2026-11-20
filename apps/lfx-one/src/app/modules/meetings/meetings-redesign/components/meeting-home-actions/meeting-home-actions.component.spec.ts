@@ -316,6 +316,31 @@ describe('MeetingHomeActionsComponent', () => {
   });
 
   describe('Resend Invite', () => {
+    it('keeps removal available but hides resend until the self-invite is indexed', async () => {
+      selfInvites.set(INVITEE.id, ['synthetic-self-reg']);
+      await render(row(INVITEE));
+      const items = await openMenu();
+      expect(items).toContain('Remove Myself');
+      expect(items).not.toContain('Resend Invite');
+
+      selfInvites.delete(INVITEE.id);
+      fixture.componentRef.setInput('row', row(INVITEE));
+      await settle();
+      (fixture.componentInstance as unknown as { resend: () => void }).resend();
+      expect(resendOwn$).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not resend from an open confirmation after a self-invite starts syncing', async () => {
+      await render(row(INVITEE));
+      await choose('meetings-home-row-actions-resend');
+      selfInvites.set(INVITEE.id, []);
+      fixture.componentRef.setInput('row', row(INVITEE));
+      find('meetings-home-row-actions-resend-confirm')?.querySelector('button')?.click();
+      await settle();
+      expect(resendOwn$).not.toHaveBeenCalled();
+      expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+    });
+
     it('asks first in an alertdialog with the meeting and the resend question, and sends nothing yet', async () => {
       await render(row(INVITEE));
       await choose('meetings-home-row-actions-resend');

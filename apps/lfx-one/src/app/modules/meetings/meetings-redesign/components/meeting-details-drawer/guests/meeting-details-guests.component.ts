@@ -326,6 +326,13 @@ export class MeetingDetailsGuestsComponent {
       if (!this.canAddGuests() || !this.context.canViewGuests() || this.load().status !== 'ready' || !self?.first_name || !self.last_name) return false;
       // Keep our own loading button visible, but block another entry point's pending self-invite.
       if (!this.selfSubmitting() && this.selfInvite.isPending(this.context.meeting().id)) return false;
+      const meetingId = this.context.meeting().id;
+      if (!this.selfSubmitting() && !this.meetingService.removedRegistrationMeetingIds().has(meetingId)) {
+        if (this.source.selfInviteOf?.(meetingId) !== undefined) return false;
+        // The host feed can confirm the invite before this drawer's older roster catches up.
+        const hosted = this.source.upcomingRows?.().find((row) => row.meeting.id === meetingId)?.meeting;
+        if (hosted?.invited && (hosted.my_registrant_ids ? hosted.my_registrant_ids.length > 0 : true)) return false;
+      }
       // A row already marked as the viewer ("You") is the user too, whatever address it lists.
       const rows = this.rows();
       return (

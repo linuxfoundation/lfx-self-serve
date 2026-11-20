@@ -113,7 +113,10 @@ describe('MeetingHomeRowComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl, navigate } },
-        { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null), approvedSummaries: signal(new Map()), now: signal(new Date()) } },
+        {
+          provide: MeetingsHomeStore,
+          useValue: { lastMeeting: signal(null), approvedSummaries: signal(new Map()), now: signal(new Date()), selfInviteOf: () => undefined },
+        },
         { provide: MeetingsHomeFeed, useValue: feedScope },
         { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getPublicMeetingJoinUrl } },
