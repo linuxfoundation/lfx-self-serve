@@ -156,6 +156,26 @@ describe('MeetingHomeRowComponent', () => {
       expect(text(fixture, 'meetings-home-row-project-name')).toBe('Kubernetes');
     });
 
+    it('watches a project name that appears after the row first renders, for its truncation tooltip', async () => {
+      const observed: Element[] = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          public observe = vi.fn((element: Element) => observed.push(element));
+          public unobserve = vi.fn();
+          public disconnect = vi.fn();
+        }
+      );
+      feedScope.showsProject.set(false);
+      const fixture = await render(buildRow(buildMeeting()));
+
+      feedScope.showsProject.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(observed).toContain(query(fixture, 'meetings-home-row-project-name'));
+    });
+
     it('renders the date tile, project, title and meta line', async () => {
       const fixture = await render(buildRow(buildMeeting()));
 
