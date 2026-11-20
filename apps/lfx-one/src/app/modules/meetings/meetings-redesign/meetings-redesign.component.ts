@@ -11,6 +11,7 @@ import {
   DestroyRef,
   ElementRef,
   inject,
+  Injector,
   PLATFORM_ID,
   Signal,
   signal,
@@ -21,7 +22,7 @@ import {
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DAY_HEADING_GAP_PX, PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
+import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DAY_HEADING_GAP_PX, MEETINGS_HOME_SEARCH_CLOSE_MS, PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
 import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
@@ -85,6 +86,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     AppFooterComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
+  styleUrl: './meetings-redesign.component.scss',
   providers: [...provideMeetingsHomeFeed(), MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService, MeetingsHomeDetailsService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -101,6 +103,7 @@ export class MeetingsRedesignComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly createArtifactDialog = inject(CreateArtifactDialogService);
   private readonly composer = inject(MeetingComposerService);
   private readonly appService = inject(AppService);
@@ -115,6 +118,8 @@ export class MeetingsRedesignComponent {
   private readonly list = viewChild<ElementRef<HTMLElement>>('list');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
   private readonly chips = viewChild(UiChipGroupComponent, { read: ElementRef });
+  private readonly searchField = viewChild(UiSearchInputComponent);
+  private readonly searchButton = viewChild<UiButtonComponent>('searchButton');
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
   /** Takes focus when the last filter chip is removed. */
@@ -143,6 +148,12 @@ export class MeetingsRedesignComponent {
   protected readonly tabsStuck: WritableSignal<boolean> = signal(false);
   /** True while the list runs under the tabs bar, so a day heading is stuck there; the fade then sits under the heading. */
   protected readonly dayHeadingStuck: WritableSignal<boolean> = signal(false);
+  /** The Search button was used; the field then stays until it is left empty. */
+  protected readonly searchOpen: WritableSignal<boolean> = signal(false);
+  /** True while the field plays its closing animation, before the button takes its place back. */
+  protected readonly searchClosing: WritableSignal<boolean> = signal(false);
+  /** The field shows while opened, while it has text, or while it closes. */
+  protected readonly searchExpanded: Signal<boolean> = computed(() => this.searchOpen() || !!this.store.search().trim() || this.searchClosing());
   /** Where the day headings stick: below the sticky header and tabs bar. */
   protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
@@ -176,8 +187,11 @@ export class MeetingsRedesignComponent {
     return this.store.search().trim() ? 'No meetings match your filters' : 'Try adjusting your filter criteria';
   });
 
+  private searchCloseTimer: ReturnType<typeof setTimeout> | undefined;
+
   public constructor() {
     this.destroyRef.onDestroy(this.appService.claimFooter());
+    this.destroyRef.onDestroy(() => clearTimeout(this.searchCloseTimer));
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
     this.initLoadMore();
     // The list comes and goes with the tab's state without a scroll, so re-check the stuck day heading then.
@@ -221,6 +235,47 @@ export class MeetingsRedesignComponent {
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
+  }
+
+  protected openSearch(): void {
+    this.searchOpen.set(true);
+    afterNextRender(() => this.searchField()?.focus(), { injector: this.injector });
+  }
+
+  /** Leaving an empty field closes it; focus moving to or from its clear button stays inside. */
+  protected onSearchFocusOut(event: FocusEvent): void {
+    if ((event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) return;
+    if (!this.store.search().trim()) this.closeSearch(false);
+  }
+
+  /** The field clears its text on the first Esc; one with no text closes it. */
+  protected onSearchEscape(): void {
+    if (!this.store.search().trim()) this.closeSearch(true);
+  }
+
+  /** Plays the closing animation, then shows the button; `restoreFocus` moves focus to it, for a close from the keyboard or the clear button. */
+  protected closeSearch(restoreFocus: boolean): void {
+    // Also ignores the focusout some browsers fire as the closed field leaves the page.
+    if (this.searchClosing() || !this.searchExpanded()) return;
+    this.searchOpen.set(false);
+    const done = (): void => {
+      this.searchClosing.set(false);
+      if (restoreFocus) afterNextRender(() => this.searchButton()?.focus(), { injector: this.injector });
+    };
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      done();
+      return;
+    }
+    this.searchClosing.set(true);
+    this.searchCloseTimer = setTimeout(done, MEETINGS_HOME_SEARCH_CLOSE_MS);
+  }
+
+  /** The No results reset also clears the search, so the field gives way to the button at once. */
+  protected resetFilters(): void {
+    this.store.resetFilters();
+    clearTimeout(this.searchCloseTimer);
+    this.searchOpen.set(false);
+    this.searchClosing.set(false);
   }
 
   protected createMeeting(): void {
