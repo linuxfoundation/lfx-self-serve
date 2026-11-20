@@ -156,7 +156,6 @@ function addEvent(fixture: EventFixture = {}): string {
   const date = dayOffset(daysFromToday);
   insert('ORG_EVENTS', {
     ACCOUNT_ID: fixture.account ?? ACCOUNT,
-    FAMILY_ACCOUNT_ID: ACCOUNT,
     EVENT_ID: eventId,
     EVENT_NAME: fixture.name ?? 'Community Summit',
     FOUNDATION_ID: fixture.foundationId ?? 'foundation-one',
@@ -193,8 +192,6 @@ interface ParticipantFixture {
   attended?: boolean;
   /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the drawer must ignore it. */
   listable?: boolean;
-  account?: string;
-  crossRef?: number;
 }
 
 /** The three row-level conjunction flags dbt computes for Employee match: (registered | attended | registered or attended). */
@@ -214,11 +211,9 @@ function countsFlags(fixture: { companyEmail?: boolean; roster?: boolean; regist
 
 function addParticipant(fixture: ParticipantFixture): void {
   insert('ORG_EVENT_PARTICIPATION', {
-    ACCOUNT_ID: fixture.account ?? ACCOUNT,
-    FAMILY_ACCOUNT_ID: ACCOUNT,
+    ACCOUNT_ID: ACCOUNT,
     EVENT_ID: fixture.eventId ?? 'event-one',
     PARTICIPANT_REF: fixture.ref,
-    CROSS_ACCOUNT_PARTICIPANT_REF: fixture.crossRef ?? fixture.ref,
     DISPLAY_NAME: fixture.name === undefined ? `Person ${fixture.ref}` : fixture.name,
     JOB_TITLE: fixture.title === undefined ? 'Engineer' : fixture.title,
     ...countsFlags(fixture),
@@ -261,7 +256,7 @@ beforeEach(() => {
   database = new DatabaseSync(':memory:');
   database.exec(
     `CREATE TABLE ORG_EVENTS (
-      ACCOUNT_ID TEXT, FAMILY_ACCOUNT_ID TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
+      ACCOUNT_ID TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
       EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, IS_PAST_EVENT INTEGER,
       EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT, EVENT_URL TEXT, EVENT_REGISTRATION_URL TEXT,
       EVENT_REGISTRATIONS_GOAL INTEGER, ORG_SPEAKER_ACCEPTED_COUNT INTEGER, ORG_SPEAKER_SUBMITTED_COUNT INTEGER, IS_ORG_SPONSOR INTEGER,
@@ -270,7 +265,7 @@ beforeEach(() => {
   );
   database.exec(
     `CREATE TABLE ORG_EVENT_PARTICIPATION (
-      ACCOUNT_ID TEXT, FAMILY_ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, CROSS_ACCOUNT_PARTICIPANT_REF INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
+      ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
       IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ALL_VERIFIED INTEGER,
       IS_LISTABLE INTEGER
     )`
@@ -780,35 +775,20 @@ describe('OrgLensEventsService family roll-up', () => {
     expect([...first.data, ...second.data].map((event) => event.organization)).toEqual([PARENT_CO, SUBSIDIARY_CO]);
   });
 
-  it("shows each company's own attendee count on its row, and a drawer scoped to that company lists only its people", async () => {
+  it("shows each company's own attendee count on its row", async () => {
     addEvent({ eventId: 'shared', isPast: true, account: ACCOUNT, registered: { verified: 1 } });
     addEvent({ eventId: 'shared', isPast: true, account: OTHER_ACCOUNT, registered: { verified: 2 } });
-    addParticipant({ ref: 1, eventId: 'shared', account: ACCOUNT, crossRef: 77, name: 'Ada Parent', title: null });
-    addParticipant({ ref: 9, eventId: 'shared', account: OTHER_ACCOUNT, crossRef: 77, name: 'Ada Subsidiary', title: 'Architect' });
-    addParticipant({ ref: 2, eventId: 'shared', account: OTHER_ACCOUNT, name: 'Bea Subsidiary' });
 
     const list = await service.getFamilyOrgEvents(REQ, family(), listOptions({ isPast: true, participation: 'registered' }));
-    const scoped = await service.getFamilyEventAttendees(REQ, family(OTHER_ACCOUNT), 'shared', { participation: 'registered' });
-    const unscoped = await service.getFamilyEventAttendees(REQ, family(), 'shared', { participation: 'registered' });
 
     expect(list.data.map((event) => [event.organization, event.orgAttendeeCount])).toEqual([
       [PARENT_CO, 1],
       [SUBSIDIARY_CO, 2],
     ]);
-    expect(scoped.data).toEqual([
-      { contactId: '0', name: 'Ada Subsidiary', jobTitle: 'Architect', organizations: [SUBSIDIARY_CO] },
-      { contactId: '1', name: 'Bea Subsidiary', jobTitle: 'Engineer', organizations: [SUBSIDIARY_CO] },
-    ]);
-    expect(unscoped.total).toBe(2);
-    expect(unscoped.data[0]).toEqual({ contactId: '0', name: 'Ada Parent', jobTitle: 'Architect', organizations: [PARENT_CO, SUBSIDIARY_CO] });
   });
 
   it("serves exactly one organization's own figures for a family of one", async () => {
     addEvent({ isPast: true, registered: { verified: 2 }, speakers: { accepted: 1, submitted: 2 } });
-    addParticipant({ ref: 1 });
-    addParticipant({ ref: 2 });
-    addSpeaker('spk-1', 'Grace', 'Hopper', 'Accepted');
-    addSpeaker('spk-2', 'Alan', 'Turing', 'Submitted');
     const one = service.familyScope(rollUp({ members: [{ uid: ACCOUNT, ...PARENT_CO, logoUrl: null }] }));
     const options = listOptions({ isPast: true, participation: 'registered' });
 
@@ -817,16 +797,10 @@ describe('OrgLensEventsService family roll-up', () => {
       await service.getOrgEventsSummary(REQ, ACCOUNT, FILTERS),
       await service.getFamilyOrgEventsSummary(REQ, one, FILTERS),
     ];
-    const singleSpeakers = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one');
-    const rolledSpeakers = await service.getFamilyEventSpeakers(REQ, one, 'event-one');
-    const singleAttendees = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { participation: 'registered' });
-    const rolledAttendees = await service.getFamilyEventAttendees(REQ, one, 'event-one', { participation: 'registered' });
 
     expect(rolled.data).toEqual(single.data.map((event) => ({ ...event, organization: PARENT_CO })));
     expect(rolled.total).toBe(single.total);
     expect(rolledSummary).toMatchObject(singleSummary);
-    expect([rolledSpeakers.acceptedCount, rolledSpeakers.submittedCount]).toEqual([singleSpeakers.acceptedCount, singleSpeakers.submittedCount]);
-    expect(rolledAttendees.total).toBe(singleAttendees.total);
   });
 
   it("shows each company's own Event Sponsor flag, and the Event Sponsor status keeps only the sponsoring company's row", async () => {
@@ -899,40 +873,36 @@ describe('OrgLensEventsService family roll-up', () => {
     expect(foundations.data.map((foundation) => foundation.id)).toEqual(['foundation-one', 'foundation-two']);
   });
 
-  it('lists a speaker once, accepted when any proposal was, with each organization they are credited through', async () => {
+  it("shows each company's own speaker counts on its row", async () => {
     addEvent({ eventId: 'shared', account: ACCOUNT, speakers: { submitted: 1 } });
     addEvent({ eventId: 'shared', account: OTHER_ACCOUNT, speakers: { accepted: 1, submitted: 2 } });
-    addSpeaker('spk-1', 'Grace', 'Hopper', 'Submitted', 'shared', ACCOUNT);
-    addSpeaker('spk-1', 'Grace', 'Hopper', 'Accepted', 'shared', OTHER_ACCOUNT);
-    addSpeaker('spk-2', 'Alan', 'Turing', 'Submitted', 'shared', OTHER_ACCOUNT);
 
-    const drawer = await service.getFamilyEventSpeakers(REQ, family(), 'shared');
     const list = await service.getFamilyOrgEvents(REQ, family(), listOptions());
 
-    expect(drawer).toMatchObject({ acceptedCount: 1, submittedCount: 2 });
-    expect(drawer.data.map((speaker) => [speaker.name, speaker.status, speaker.organizations])).toEqual([
-      ['Alan Turing', 'SUBMITTED', [SUBSIDIARY_CO]],
-      ['Grace Hopper', 'ACCEPTED', [PARENT_CO, SUBSIDIARY_CO]],
-    ]);
     expect(list.data.map((event) => [event.organization, event.orgSpeakerAcceptedCount, event.orgSpeakerSubmittedCount])).toEqual([
       [PARENT_CO, 0, 1],
       [SUBSIDIARY_CO, 1, 2],
     ]);
   });
 
-  it("keeps a speaker's accepted credit and every company when a name search matches only one of their rows", async () => {
+  it("lists one company's speakers with the accepted flag of that company's own row, and a name search narrows them", async () => {
     addEvent({ eventId: 'shared', account: ACCOUNT });
     addEvent({ eventId: 'shared', account: OTHER_ACCOUNT });
     addSpeaker('spk-1', 'Grace', 'Hopper', 'Submitted', 'shared', ACCOUNT);
-    addSpeaker('spk-1', null, null, 'Accepted', 'shared', OTHER_ACCOUNT);
+    addSpeaker('spk-1', 'Grace', 'Hopper', 'Accepted', 'shared', OTHER_ACCOUNT);
     addSpeaker('spk-2', 'Alan', 'Turing', 'Submitted', 'shared', OTHER_ACCOUNT);
 
-    const drawer = await service.getFamilyEventSpeakers(REQ, family(), 'shared', 'hopper');
+    const subsidiary = await service.getEventSpeakers(REQ, OTHER_ACCOUNT, 'shared');
+    const searched = await service.getEventSpeakers(REQ, OTHER_ACCOUNT, 'shared', 'hopper');
+    const parent = await service.getEventSpeakers(REQ, ACCOUNT, 'shared');
 
-    expect(drawer).toMatchObject({ acceptedCount: 1, submittedCount: 1 });
-    expect(drawer.data.map((speaker) => [speaker.name, speaker.status, speaker.organizations])).toEqual([
-      ['Grace Hopper', 'ACCEPTED', [PARENT_CO, SUBSIDIARY_CO]],
+    expect(subsidiary).toMatchObject({ acceptedCount: 1, submittedCount: 2 });
+    expect(subsidiary.data.map((speaker) => [speaker.name, speaker.status])).toEqual([
+      ['Alan Turing', 'SUBMITTED'],
+      ['Grace Hopper', 'ACCEPTED'],
     ]);
+    expect(searched.data.map((speaker) => [speaker.name, speaker.status])).toEqual([['Grace Hopper', 'ACCEPTED']]);
+    expect(parent.data.map((speaker) => [speaker.name, speaker.status])).toEqual([['Grace Hopper', 'SUBMITTED']]);
   });
 
   it('keeps callers who can read different organizations of one family on separate cache entries', async () => {
@@ -960,10 +930,8 @@ describe('OrgLensEventsService family roll-up', () => {
     await service.getFamilyOrgEvents(REQ, family(), filtered);
     await service.getFamilyOrgEventsSummary(REQ, family(), { ...FILTERS, foundation: 'foundation-one' });
     await service.getFamilyOrgEventFoundations(REQ, family(), { scope: 'activity' });
-    await service.getFamilyEventAttendees(REQ, family(), 'event-one', { participation: 'registered', searchQuery: 'ada' });
-    await service.getFamilyEventSpeakers(REQ, family(), 'event-one', 'ada');
 
-    expect(execute).toHaveBeenCalledTimes(6);
+    expect(execute).toHaveBeenCalledTimes(3);
     for (const [sql, binds] of execute.mock.calls as [string, string[]][]) {
       expect(sql.match(/\?/g)?.length ?? 0).toBe(binds.length);
     }
@@ -973,31 +941,29 @@ describe('OrgLensEventsService family roll-up', () => {
     ['summary', (scope: ReturnType<typeof family>) => service.getFamilyOrgEventsSummary(REQ, scope, FILTERS)],
     ['list', (scope: ReturnType<typeof family>) => service.getFamilyOrgEvents(REQ, scope, listOptions())],
     ['foundations', (scope: ReturnType<typeof family>) => service.getFamilyOrgEventFoundations(REQ, scope, { scope: 'activity' })],
-    ['attendees', (scope: ReturnType<typeof family>) => service.getFamilyEventAttendees(REQ, scope, 'event-one', { participation: 'all' })],
-    ['speakers', (scope: ReturnType<typeof family>) => service.getFamilyEventSpeakers(REQ, scope, 'event-one')],
   ])('rejects, rather than answering with nothing, when the family %s read fails', async (_read, read) => {
     execute.mockRejectedValue(new Error('warehouse down'));
 
     await expect(read(family())).rejects.toThrow('warehouse down');
   });
 
-  it.each([
-    ['summary', (scope: ReturnType<typeof family>) => service.getFamilyOrgEventsSummary(REQ, scope, FILTERS)],
-    ['list', (scope: ReturnType<typeof family>) => service.getFamilyOrgEvents(REQ, scope, listOptions())],
-    ['foundations', (scope: ReturnType<typeof family>) => service.getFamilyOrgEventFoundations(REQ, scope, { scope: 'activity' })],
-    ['attendees', (scope: ReturnType<typeof family>) => service.getFamilyEventAttendees(REQ, scope, 'event-one', { participation: 'all' })],
-  ])('rejects the family %s read while the events table has no family column', async (_read, read) => {
-    addEvent();
-    database.exec('ALTER TABLE ORG_EVENTS DROP COLUMN FAMILY_ACCOUNT_ID');
+  it('reads the family summary, list and foundations from the per-account events rows alone, with no family column', async () => {
+    addEvent({ eventId: 'shared', isPast: true, account: ACCOUNT });
+    addEvent({ eventId: 'shared', isPast: true, account: OTHER_ACCOUNT });
 
-    await expect(read(family())).rejects.toThrow(/FAMILY_ACCOUNT_ID/);
+    const summary = await service.getFamilyOrgEventsSummary(REQ, family(), FILTERS);
+    const list = await service.getFamilyOrgEvents(REQ, family(), listOptions({ isPast: true }));
+    const foundations = await service.getFamilyOrgEventFoundations(REQ, family(), { scope: 'activity' });
+
+    expect(summary.pastEvents).toBe(2);
+    expect(list.total).toBe(2);
+    expect(foundations.data.map((foundation) => foundation.id)).toEqual(['foundation-one']);
   });
 
-  it('rejects both speakers drawers while the warehouse speaker table is missing', async () => {
+  it('rejects the speakers drawer, rather than answering with no speakers, while the warehouse speaker table is missing', async () => {
     addEvent();
     database.exec('DROP TABLE ORG_EVENT_SPEAKERS');
 
     await expect(service.getEventSpeakers(REQ, ACCOUNT, 'event-one')).rejects.toThrow(/ORG_EVENT_SPEAKERS/);
-    await expect(service.getFamilyEventSpeakers(REQ, family(), 'event-one')).rejects.toThrow(/ORG_EVENT_SPEAKERS/);
   });
 });

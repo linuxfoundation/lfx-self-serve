@@ -103,7 +103,6 @@ export interface GetOrgEventsOptions {
 
 export interface OrgEventsFamilyScope {
   readonly rollUpKey: string;
-  readonly familyAccountId: string;
   readonly members: readonly OrgRollUpSetOrg[];
   readonly organizations: readonly OrgRollUpSetOrg[];
   readonly coverage: OrgLensRollUpCoverage;
@@ -114,7 +113,6 @@ export interface OrgEventAttendee {
   readonly contactId: string;
   readonly name: string;
   readonly jobTitle: string | null;
-  readonly organizations?: readonly OrgLensRowOrganization[];
 }
 
 /** Attendee row with presentation fields pre-baked for template rendering (avoids method calls in template). */
@@ -149,7 +147,6 @@ export interface OrgEventSpeaker {
   readonly name: string;
   readonly jobTitle: string | null;
   readonly status: 'ACCEPTED' | 'SUBMITTED';
-  readonly organizations?: readonly OrgLensRowOrganization[];
 }
 
 /** Speaker row with presentation fields pre-baked for template rendering (avoids method calls in template). */

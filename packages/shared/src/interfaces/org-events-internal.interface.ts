@@ -6,8 +6,6 @@
 // They live in the shared package because AGENTS.md prohibits module-level interfaces
 // inside apps/lfx-one/; they are not part of the public API surface consumed by the frontend.
 
-import type { OrgLensRowOrganization } from './org-memberships.interface';
-
 /** Row from ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS (platinum_lfx_one_org_events). */
 export interface OrgEventRow {
   EVENT_ID: string;
@@ -31,35 +29,6 @@ export interface OrgEventRow {
 
 export interface OrgFamilyEventRow extends OrgEventRow {
   ACCOUNT_ID: string;
-}
-
-export interface OrgFamilyEventAttendeeRow {
-  PERSON_KEY: string;
-  ACCOUNT_ID: string;
-  DISPLAY_NAME: string | null;
-  JOB_TITLE: string | null;
-}
-
-export interface OrgFamilyEventSpeakerRow {
-  SPEAKER_ID: string;
-  ACCOUNT_ID: string;
-  NAME: string | null;
-  JOB_TITLE: string | null;
-  IS_ACCEPTED: boolean;
-}
-
-export interface OrgFamilyEventCreditRow {
-  key: string;
-  accountId: string;
-  name: string | null;
-  jobTitle: string | null;
-}
-
-export interface OrgFamilyEventPerson {
-  key: string;
-  name: string | null;
-  jobTitle: string | null;
-  organizations: OrgLensRowOrganization[];
 }
 
 /** Raw row returned by the org events summary (stat strip) Snowflake query. */

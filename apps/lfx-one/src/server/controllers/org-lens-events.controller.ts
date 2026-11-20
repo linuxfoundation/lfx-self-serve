@@ -159,12 +159,8 @@ export class OrgLensEventsController {
 
       const { participation } = parseOrgEventsFilters(req, 'get_event_attendees');
       const searchQuery = getStringQueryParam(req, 'searchQuery');
-      const response = isOrgRollUpSegment(accountId)
-        ? await this.service.getFamilyEventAttendees(req, await this.familyScope(req, accountId, 'get_event_attendees'), eventId, {
-            participation,
-            searchQuery,
-          })
-        : await this.service.getEventAttendees(req, accountId, eventId, { participation, searchQuery });
+      const target = isOrgRollUpSegment(accountId) ? await this.rollUpDrawerAccount(req, accountId, 'get_event_attendees') : accountId;
+      const response = await this.service.getEventAttendees(req, target, eventId, { participation, searchQuery });
 
       logger.success(req, 'get_event_attendees', startTime, { account_id: accountId, event_id: eventId, count: response.total });
 
@@ -194,9 +190,8 @@ export class OrgLensEventsController {
       }
 
       const searchQuery = getStringQueryParam(req, 'searchQuery');
-      const response = isOrgRollUpSegment(accountId)
-        ? await this.service.getFamilyEventSpeakers(req, await this.familyScope(req, accountId, 'get_event_speakers'), eventId, searchQuery ?? undefined)
-        : await this.service.getEventSpeakers(req, accountId, eventId, searchQuery ?? undefined);
+      const target = isOrgRollUpSegment(accountId) ? await this.rollUpDrawerAccount(req, accountId, 'get_event_speakers') : accountId;
+      const response = await this.service.getEventSpeakers(req, target, eventId, searchQuery ?? undefined);
 
       logger.success(req, 'get_event_speakers', startTime, {
         account_id: accountId,
@@ -219,6 +214,15 @@ export class OrgLensEventsController {
       throw ServiceValidationError.forField(ORG_EVENTS_COMPANY_QUERY_PARAM, 'company must be an organization in this roll-up', { operation });
     }
     return this.service.familyScope(rollUp, company);
+  }
+
+  private async rollUpDrawerAccount(req: Request, rollUpKey: string, operation: string): Promise<string> {
+    const company = getStringQueryParam(req, ORG_EVENTS_COMPANY_QUERY_PARAM);
+    if (!company) {
+      throw ServiceValidationError.forField(ORG_EVENTS_COMPANY_QUERY_PARAM, 'company is required for a roll-up drawer', { operation });
+    }
+    await this.familyScope(req, rollUpKey, operation);
+    return company;
   }
 
   private assertEventsTarget(accountId: string | undefined, operation: string): asserts accountId is string {
