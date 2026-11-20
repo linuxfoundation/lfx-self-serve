@@ -342,6 +342,26 @@ describe('CommitteeMemberImportService', () => {
         },
         { severity: 'error', summary: 'Import Failed', detail: expect.stringContaining('no members added, 2 not added.') },
       ],
+      [
+        'all-skipped',
+        (): void => {
+          pending[0].response.next({
+            results: [
+              { index: 0, email: 'person0@example.com', status: 'skipped', reason: 'already_member', retryable: false },
+              { index: 1, email: 'person1@example.com', status: 'skipped', reason: 'duplicate_in_request', retryable: false },
+            ],
+            added: 0,
+            skipped: 2,
+            failed: 0,
+          });
+          pending[0].response.complete();
+        },
+        {
+          severity: 'info',
+          summary: 'Import Finished',
+          detail: "Import into Group group-a finished: no members added. Open the report from the group's Members tab.",
+        },
+      ],
     ] as const)('names the group and distinguishes a %s outcome in one root toast', (_label, finish, notice) => {
       service.start(input('group-a', readyRows(2)));
       finish();

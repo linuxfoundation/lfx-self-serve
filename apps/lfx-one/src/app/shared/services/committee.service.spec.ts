@@ -141,6 +141,15 @@ describe('CommitteeService detail cache aliases', () => {
     expect(strictParams.has('auditor')).toBe(false);
   });
 
+  it.each([undefined, { auditor: true }, { strictWriter: true }, { strictWriter: true, auditor: true }])(
+    'encodes the detail ID as one URL path segment with options %j',
+    (options) => {
+      service.getCommitteeDetail('group/with ?#%', options).subscribe();
+
+      expect(http.get.mock.calls[0][0]).toBe('/api/committees/group%2Fwith%20%3F%23%25');
+    }
+  );
+
   it('does not cache a failed strict-writer read', () => {
     http.get.mockReturnValueOnce(throwError(() => new Error('access check unavailable')));
     service.getCommitteeDetail(UID, { strictWriter: true }).subscribe({ error: vi.fn() });

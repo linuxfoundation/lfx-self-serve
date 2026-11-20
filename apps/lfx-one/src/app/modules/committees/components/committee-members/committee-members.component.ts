@@ -508,9 +508,9 @@ export class CommitteeMembersComponent implements OnInit {
       this.importService.dismiss(committeeUid);
       return;
     }
-    const unresolved = summary.retryable + summary.unknown;
     this.confirmationService.confirm({
-      message: `${unresolved} ${unresolved === 1 ? 'row has' : 'rows have'} not been confirmed as added. Dismissing the report removes the option to retry them here. Members already added stay in the group.`,
+      message:
+        'Some rows have not been confirmed as added. Dismissing the report removes the option to retry them here. Members already added stay in the group.',
       header: 'Dismiss Import Report',
       acceptLabel: 'Dismiss report',
       rejectLabel: 'Keep report',
@@ -855,9 +855,9 @@ export class CommitteeMembersComponent implements OnInit {
    * Polls getCommitteeMembers until the count reaches at least `countBefore + expected`,
    * absorbing the query-service indexing lag after a direct-add write (same pattern as
    * refreshCommitteeAfterMembershipChange in committee-view.component.ts).
-   * `expected` is the number of successfully added members from the dialog — using it instead
-   * of a fixed +1 avoids stopping the poll early in batch-add scenarios where multiple members
-   * are added at once but only the first one is indexed on the initial poll tick.
+   * Direct adds use their confirmed addition count as `expected`; CSV settlement passes the retained
+   * reconciliation target as `countBefore` with `expected = 0`, so reopening or retrying never adds
+   * earlier confirmed rows to the target twice.
    * Fires a final refreshMembers() when all new rows are detected, or gives up after 6 attempts.
    */
   private pollUntilMemberAdded(countBefore: number, expected = 1): void {

@@ -20,8 +20,9 @@ import { CommitteeService } from './committee.service';
  * It never runs imports: CommitteeMemberImportService owns every write, so closing or reopening a
  * view cannot stop, restart or resubmit a run.
  *
- * Reopening and every status surface first confirm manager access with a fresh, side-effect-free
- * strict-writer detail read (never `getCommittee`, which replaces the page's current group). Denial
+ * Reopening and the Groups-table status entry first confirm manager access with a fresh, side-effect-free
+ * strict-writer detail read (never `getCommittee`, which replaces the page's current group). The Members-tab
+ * banner relies on the page's loaded writer flag. Denial
  * (`writer: false` from a check that completed, or 403/404) discards that run's retained details and
  * closes its view; a failed check reveals nothing but keeps the results for a later attempt, because the
  * strict read fails instead of degrading to `writer: false`. Results for a replaced subject or run are ignored.
@@ -38,7 +39,7 @@ export class CommitteeMemberImportDialogService {
   private readonly dialogs = new Map<string, DynamicDialogRef>();
   /** Reopen checks in flight, so a double click opens one dialog. */
   private readonly pendingOpens = new Map<string, Subscription>();
-  /** In-flight access probes, shared by every status surface showing the group. */
+  /** In-flight access probes, shared by reopening and Groups-table rows showing the group. */
   private readonly probes = new Map<string, Observable<MemberImportAccessCheck>>();
   private readonly access = signal(new Map<string, { owner: string; state: MemberImportAccessState }>());
 

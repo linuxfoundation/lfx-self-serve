@@ -150,7 +150,9 @@ export class CommitteeService {
   public getCommitteeDetail(id: string, options?: { skipCache?: boolean; auditor?: boolean; strictWriter?: boolean }): Observable<Committee> {
     if (options?.strictWriter) {
       const strictParams = new HttpParams().set('strict_writer', 'true');
-      return this.http.get<Committee>(`/api/committees/${id}`, { params: options.auditor ? strictParams.set('auditor', 'true') : strictParams });
+      return this.http.get<Committee>(`/api/committees/${encodeURIComponent(id)}`, {
+        params: options.auditor ? strictParams.set('auditor', 'true') : strictParams,
+      });
     }
     const cacheKey = options?.auditor ? `${id}:aud` : id;
     const cached = this.lookupCommitteeDetailCache(cacheKey);
@@ -163,7 +165,8 @@ export class CommitteeService {
     const params = options?.auditor ? new HttpParams().set('auditor', 'true') : undefined;
     // Preserve the single-argument call shape when no params apply — existing callers (and their
     // cache-key/test expectations) pass no options object at all.
-    const get$ = params ? this.http.get<Committee>(`/api/committees/${id}`, { params }) : this.http.get<Committee>(`/api/committees/${id}`);
+    const url = `/api/committees/${encodeURIComponent(id)}`;
+    const get$ = params ? this.http.get<Committee>(url, { params }) : this.http.get<Committee>(url);
     const request$ = get$.pipe(
       tap({
         next: (committee) => this.aliasCommitteeDetailCache(cacheKey, committee),

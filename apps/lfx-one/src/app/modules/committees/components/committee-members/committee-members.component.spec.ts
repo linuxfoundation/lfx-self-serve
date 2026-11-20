@@ -290,14 +290,18 @@ describe('CommitteeMembersComponent add-people actions', () => {
         expect(importService.dismiss).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid);
       });
 
-      it('warns before dismissing a report with retryable or unknown rows, and never dismisses an active run', async () => {
+      it.each([
+        { retryable: 1, unknown: 1 }, // One unknown row can also be retryable.
+        { retryable: 0, unknown: 1 },
+        { retryable: 1, unknown: 0 },
+      ])('warns before dismissing unresolved rows (%j), and never dismisses an active run', async (counts) => {
         const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
-        await setRetained(importSummary({ phase: 'settled', retryable: 2, unknown: 1 }));
+        await setRetained(importSummary({ phase: 'settled', ...counts }));
         component.dismissImportReport();
 
         expect(importService.dismiss).not.toHaveBeenCalled();
         const request = confirm.mock.calls[0][0];
-        expect(request.message).toContain('3 rows have not been confirmed as added');
+        expect(request.message).toContain('Some rows have not been confirmed as added.');
         expect(request.message).toContain('Members already added stay in the group.');
         request.accept?.();
         expect(importService.dismiss).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid);
