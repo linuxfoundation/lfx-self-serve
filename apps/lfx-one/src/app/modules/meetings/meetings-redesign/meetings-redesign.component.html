@@ -150,7 +150,7 @@
     <lfx-app-footer class="mt-auto block shrink-0 px-[32px]" data-testid="meetings-redesign-footer" />
   </div>
 
-  <!-- Right column: fixed 360px, 24px padding; the project lens's own column comes with its calendar -->
+  <!-- Right column: fixed 360px, 24px padding; a project's column holds its calendar, hidden at 1024px and below -->
   @if (!projectScope) {
     <aside
       class="hidden w-[360px] flex-none flex-col gap-[24px] border-l border-gray-200 p-[24px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:flex min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -158,6 +158,22 @@
       aria-label="Meeting highlights"
       data-testid="meetings-redesign-right-column">
       <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'rail' }" />
+    </aside>
+  } @else {
+    <aside
+      class="hidden w-[360px] flex-none flex-col gap-[20px] border-l border-gray-200 px-[24px] pb-[40px] pt-[24px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:flex min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      tabindex="0"
+      aria-label="Meetings calendar"
+      data-testid="meetings-redesign-project-column">
+      <!-- shortcut: past dots come from the loaded past rows, which a paged feed searches on the server. revisit: when the calendar gets its own unsearched past feed. -->
+      <lfx-meetings-mini-calendar
+        [upcomingRows]="store.upcomingRows()"
+        [pastRows]="store.pastRows()"
+        [now]="store.now()"
+        [loading]="store.upcomingLoading() || store.pastLoading()"
+        (daySelected)="showDay($event)"
+        (olderMonthShown)="store.showPastFrom($event)"
+        data-testid="meetings-redesign-mini-calendar" />
     </aside>
   }
 </div>

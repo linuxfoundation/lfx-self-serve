@@ -1,0 +1,126 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<div class="flex flex-col gap-[12px]">
+  <div class="flex items-center gap-[8px]">
+    <span
+      class="min-w-0 flex-[0_1_auto] truncate text-[14px] font-semibold leading-[20px] text-gray-900"
+      aria-live="polite"
+      data-testid="meetings-mini-calendar-title"
+      >{{ title() }}</span
+    >
+    <span class="inline-flex flex-none items-center gap-[2px]">
+      <lfx-ui-button
+        variant="tertiary"
+        size="tiny"
+        icon="fa-light fa-chevron-left"
+        iconOnly
+        ariaLabel="Previous month"
+        (click)="step(-1)"
+        data-testid="meetings-mini-calendar-previous" />
+      <lfx-ui-button
+        variant="tertiary"
+        size="tiny"
+        icon="fa-light fa-chevron-right"
+        iconOnly
+        ariaLabel="Next month"
+        (click)="step(1)"
+        data-testid="meetings-mini-calendar-next" />
+    </span>
+  </div>
+
+  <div class="flex flex-col gap-[2px]">
+    <div class="mb-[4px] grid grid-cols-7 border-b border-gray-200 pb-[6px]" aria-hidden="true">
+      @for (weekday of weekdays; track $index) {
+        <span class="text-center text-[11px] font-semibold uppercase leading-[16px] tracking-[.04em] text-gray-500">{{ weekday }}</span>
+      }
+    </div>
+    @if (loading()) {
+      <div class="flex flex-col gap-[2px]" role="status" aria-label="Loading meetings" data-testid="meetings-mini-calendar-loading">
+        @for (week of skeletonWeeks; track week) {
+          <div class="grid grid-cols-7">
+            @for (day of skeletonDays; track day) {
+              <span class="flex h-[44px] justify-center pt-[2px]">
+                <lfx-ui-skeleton shape="circle" width="28px" height="28px" />
+              </span>
+            }
+          </div>
+        }
+      </div>
+    } @else {
+      @for (week of weeks(); track week.key) {
+        <div class="grid grid-cols-7" data-testid="meetings-mini-calendar-week">
+          @for (day of week.days; track day.key) {
+            @if (day.entries.length) {
+              <button
+                type="button"
+                class="group flex h-[44px] cursor-pointer flex-col items-center justify-start gap-[3px] border-0 bg-transparent pt-[2px] focus-visible:outline-none"
+                [attr.aria-label]="day.label + ': ' + day.entries.length + (day.entries.length === 1 ? ' meeting' : ' meetings')"
+                [attr.aria-current]="day.today ? 'date' : null"
+                (click)="select(day)"
+                (mouseenter)="showTooltip(day, $event.currentTarget)"
+                (mouseleave)="tooltip.set(null)"
+                (focus)="showTooltip(day, $event.currentTarget)"
+                (blur)="tooltip.set(null)"
+                [attr.data-day]="day.key"
+                data-testid="meetings-mini-calendar-day">
+                <span
+                  class="grid h-[28px] w-[28px] place-items-center rounded-full text-[12px] font-semibold transition-colors duration-150 group-focus-visible:ring-2 group-focus-visible:ring-blue-600 motion-reduce:transition-none"
+                  [class.bg-blue-500]="day.today"
+                  [class.text-white]="day.today"
+                  [class.text-gray-900]="!day.today"
+                  [class.group-hover:bg-gray-100]="!day.today"
+                  data-testid="meetings-mini-calendar-day-number"
+                  >{{ day.day }}</span
+                >
+                <span class="flex h-[6px] gap-[3px]">
+                  @for (dot of day.dots; track dot) {
+                    <span class="h-[6px] w-[6px] rounded-full bg-blue-500" data-testid="meetings-mini-calendar-dot"></span>
+                  }
+                </span>
+              </button>
+            } @else {
+              <span
+                class="flex h-[44px] flex-col items-center justify-start gap-[3px] pt-[2px]"
+                [attr.aria-current]="day.today ? 'date' : null"
+                [attr.data-day]="day.key"
+                data-testid="meetings-mini-calendar-empty-day">
+                <span
+                  class="grid h-[28px] w-[28px] place-items-center rounded-full text-[12px]"
+                  [class.bg-blue-500]="day.today"
+                  [class.font-semibold]="day.today"
+                  [class.text-white]="day.today"
+                  [class.text-gray-400]="!day.today && day.inMonth"
+                  [class.text-gray-300]="!day.today && !day.inMonth"
+                  data-testid="meetings-mini-calendar-day-number"
+                  >{{ day.day }}</span
+                >
+              </span>
+            }
+          }
+        </div>
+      }
+    }
+  </div>
+</div>
+
+@if (tooltip(); as tip) {
+  <div
+    role="tooltip"
+    class="pointer-events-none fixed z-[2147483200] flex w-max max-w-[280px] -translate-x-1/2 -translate-y-full flex-col gap-[4px] rounded-ui-sm bg-gray-900 px-[10px] py-[8px] text-[12px] leading-[16px] text-white shadow-medium"
+    [style.left.px]="tip.left"
+    [style.top.px]="tip.top"
+    data-testid="meetings-mini-calendar-tooltip">
+    <span class="font-medium">{{ tip.head }}</span>
+    @for (item of tip.items; track item.key) {
+      <span class="flex min-w-0 items-start gap-[6px]" data-testid="meetings-mini-calendar-tooltip-item">
+        <span class="flex-none text-gray-300">{{ item.time }}</span>
+        <span class="min-w-0 break-words">{{ item.title }}</span>
+      </span>
+    }
+    @if (tip.more) {
+      <span class="text-gray-300" data-testid="meetings-mini-calendar-tooltip-more">+{{ tip.more }} more</span>
+    }
+  </div>
+}
