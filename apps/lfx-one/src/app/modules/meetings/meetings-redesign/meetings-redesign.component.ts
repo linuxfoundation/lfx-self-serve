@@ -30,7 +30,7 @@ import {
   MEETINGS_HOME_SEARCH_CLOSE_MS,
   PHONE_MEDIA_QUERY,
 } from '@lfx-one/shared/constants';
-import { MeetingDashboardView, MeetingHomeRow, MeetingMiniCalendarDay, UiTabItem } from '@lfx-one/shared/interfaces';
+import { MeetingCalendarDialogData, MeetingDashboardView, MeetingHomeRow, MeetingMiniCalendarDay, UiTabItem } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
 import { AppService } from '@services/app.service';
@@ -42,6 +42,7 @@ import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
 import { UiChipComponent } from '@shared/uikit/chip/chip.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
@@ -50,6 +51,7 @@ import { debounceTime, EMPTY, filter, Observable, skip, switchMap } from 'rxjs';
 
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
 import { MeetingHomeActionsComponent } from './components/meeting-home-actions/meeting-home-actions.component';
+import { MeetingsCalendarDialogComponent } from './components/meetings-calendar-dialog/meetings-calendar-dialog.component';
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { MeetingsMiniCalendarComponent } from './components/meetings-mini-calendar/meetings-mini-calendar.component';
@@ -122,6 +124,8 @@ export class MeetingsRedesignComponent {
   private readonly appService = inject(AppService);
   protected readonly store = inject(MeetingsHomeStore);
   private readonly projectContext = inject(ProjectContextService);
+  private readonly modal = inject(UiModalService);
+  private readonly details = inject(MeetingsHomeDetailsService);
   /** A project or foundation's list: no Next/Last cards or project labels, and its own copy. */
   protected readonly projectScope: boolean = inject(MeetingsHomeFeed).scope === 'project';
   /** The viewer and project the meetings come from. */
@@ -359,6 +363,20 @@ export class MeetingsRedesignComponent {
     clearTimeout(this.searchCloseTimer);
     this.searchOpen.set(false);
     this.searchClosing.set(false);
+  }
+
+  /** Opens the full calendar; a meeting picked there opens its details drawer above it. */
+  protected openCalendar(): void {
+    const context = this.projectContext.activeContext();
+    const data: MeetingCalendarDialogData = {
+      upcomingRows: this.store.upcomingRows,
+      pastRows: this.store.pastRows,
+      now: this.store.now,
+      name: context?.name ?? '',
+      logoUrl: context?.logoUrl ?? '',
+      openMeeting: (row) => this.details.open(row, 'calendar'),
+    };
+    this.modal.open(MeetingsCalendarDialogComponent, { data }, { height: 'calc(100vh - 32px)' });
   }
 
   protected createMeeting(): void {

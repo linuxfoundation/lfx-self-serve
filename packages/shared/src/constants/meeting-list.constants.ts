@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibilityKind } from '../enums';
+import { RECURRENCE_DAYS_OF_WEEK } from './meeting.constants';
 import type {
+  MeetingCalendarTypeColor,
   MeetingDetailsFeature,
   MeetingGroupTypePattern,
   MeetingHomeArtifact,
@@ -204,3 +206,25 @@ export const MEETINGS_HOME_DAY_SCROLL_OFFSET_PX = 36;
 
 /** Wait before scrolling to a picked day, so its rows have rendered. */
 export const MEETINGS_HOME_DAY_SCROLL_DELAY_MS = 120;
+
+/** Meeting types of the calendar dialog's legend, in order, with their chip colour; any other type uses the last. */
+export const MEETINGS_HOME_CALENDAR_TYPE_COLORS: readonly MeetingCalendarTypeColor[] = [
+  { type: 'Board', color: 'var(--ui-danger-500)' },
+  { type: 'Maintainers', color: 'var(--ui-accent-500)' },
+  { type: 'Marketing', color: 'var(--ui-success-500)' },
+  { type: 'Technical', color: 'var(--ui-feature-500)' },
+  { type: 'Legal', color: 'var(--ui-warning-500)' },
+  { type: 'Other', color: 'var(--ui-neutral-500)' },
+];
+
+/** Weekday names of the calendar dialog, Sunday first. */
+export const MEETINGS_HOME_CALENDAR_WEEKDAY_NAMES: readonly string[] = RECURRENCE_DAYS_OF_WEEK.map((day) => day.label);
+
+/** Height of one hour in the calendar dialog's week view. */
+export const MEETINGS_HOME_CALENDAR_HOUR_PX = 48;
+
+/** Hour the week view opens scrolled to. */
+export const MEETINGS_HOME_CALENDAR_START_HOUR = 8;
+
+/** Chips a month view cell shows before "+N more". */
+export const MEETINGS_HOME_CALENDAR_MONTH_CHIPS = 3;

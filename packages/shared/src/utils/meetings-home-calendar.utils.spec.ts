@@ -6,10 +6,19 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
+import { MEETINGS_HOME_CALENDAR_WEEKDAY_NAMES } from '../constants/meeting-list.constants';
 import { MeetingVisibility } from '../enums';
 import type { Meeting, MeetingHomeRow, PastMeeting } from '../interfaces';
 import {
+  buildMeetingCalendarDialogDays,
+  formatMeetingCalendarHourLabel,
   buildMeetingMiniCalendarWeeks,
+  formatMeetingCalendarWeekRange,
+  getMeetingCalendarMonthDates,
+  getMeetingCalendarTypeColor,
+  getMeetingCalendarWeekStart,
+  layoutMeetingCalendarWeekDay,
+  toMeetingCalendarChip,
   formatMeetingCalendarDay,
   formatMeetingCalendarMonth,
   formatMeetingCalendarTime,
@@ -46,7 +55,10 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
   };
 }
 
-function row(key: string, start: Date, meeting: Meeting = buildMeeting({ id: key })): MeetingHomeRow {
+const typed = (key: string, start: Date, type = 'Board', durationMinutes = 60): MeetingHomeRow =>
+  row(key, start, buildMeeting({ id: key, meeting_type: type }), durationMinutes);
+
+function row(key: string, start: Date, meeting: Meeting = buildMeeting({ id: key }), durationMinutes = 60): MeetingHomeRow {
   return {
     key,
     meeting,
@@ -54,7 +66,7 @@ function row(key: string, start: Date, meeting: Meeting = buildMeeting({ id: key
     title: key,
     occurrenceId: null,
     startTime: start.toISOString(),
-    durationMinutes: 60,
+    durationMinutes,
   };
 }
 
@@ -169,5 +181,86 @@ describe('meetings home calendar utils', () => {
     const day = buildMeetingMiniCalendarWeeks(new Date(2026, 9, 1), days, new Date(2026, 9, 1))[0].days[5];
 
     expect(day.dots).toEqual(['m1', 'm2', 'm3']);
+  });
+
+  describe('calendar dialog', () => {
+    it('starts weeks on Sunday and names the second month only when it differs', () => {
+      expect(getMeetingCalendarWeekStart(new Date(2026, 9, 1, 15))).toEqual(new Date(2026, 8, 27));
+      expect(formatMeetingCalendarWeekRange(new Date(2026, 8, 27))).toBe('Sep 27 – Oct 3, 2026');
+      expect(formatMeetingCalendarWeekRange(new Date(2026, 9, 4))).toBe('Oct 4 – 10, 2026');
+      expect(getMeetingCalendarMonthDates(new Date(2026, 9, 1))).toHaveLength(35);
+    });
+
+    it('colours chips by type, faded for past meetings, and falls back to Other', () => {
+      expect(getMeetingCalendarTypeColor('board')).toBe('var(--ui-danger-500)');
+      expect(getMeetingCalendarTypeColor('Unknown')).toBe('var(--ui-neutral-500)');
+      expect(getMeetingCalendarTypeColor(null)).toBe('var(--ui-neutral-500)');
+
+      const upcoming = toMeetingCalendarChip({ row: typed('a', new Date(2026, 9, 1, 10)), past: false });
+      expect(upcoming).toMatchObject({
+        time: '10:00 AM',
+        background: 'color-mix(in srgb, var(--ui-danger-500) 16%, var(--ui-white))',
+        ink: 'color-mix(in srgb, var(--ui-danger-500) 75%, var(--ui-black))',
+        bar: 'var(--ui-danger-500)',
+        detail: 'Thu, Oct 1 · 10:00 AM · Board',
+      });
+      const past = toMeetingCalendarChip({ row: typed('b', new Date(2026, 9, 1, 10), ''), past: true });
+      expect(past).toMatchObject({
+        background: 'color-mix(in srgb, var(--ui-neutral-500) 7%, var(--ui-white))',
+        ink: 'color-mix(in srgb, var(--ui-neutral-500) 50%, var(--ui-white))',
+        bar: 'color-mix(in srgb, var(--ui-neutral-500) 35%, var(--ui-white))',
+        detail: 'Thu, Oct 1 · 10:00 AM · Other · Past',
+      });
+    });
+
+    it('places week events by time and puts overlapping ones in greedy lanes', () => {
+      const events = layoutMeetingCalendarWeekDay([
+        { row: typed('late', new Date(2026, 9, 1, 11), 'Board', 60), past: false },
+        { row: typed('early', new Date(2026, 9, 1, 9), 'Board', 120), past: false },
+        { row: typed('short', new Date(2026, 9, 1, 9, 30), 'Board', 10), past: false },
+        { row: typed('alone', new Date(2026, 9, 1, 14), 'Board', 60), past: false },
+      ]);
+
+      expect(events.map((event) => [event.key, event.top, event.height, event.lane, event.lanes])).toEqual([
+        ['early', 432, 94, 0, 2],
+        ['short', 456, 22, 1, 2],
+        ['late', 528, 46, 0, 1],
+        ['alone', 672, 46, 0, 1],
+      ]);
+    });
+
+    it('gives every meeting of a chain of overlaps the same lane count', () => {
+      const events = layoutMeetingCalendarWeekDay([
+        { row: typed('E', new Date(2026, 9, 1, 9), 'Board', 60), past: false },
+        { row: typed('F', new Date(2026, 9, 1, 9), 'Board', 120), past: false },
+        { row: typed('G', new Date(2026, 9, 1, 10), 'Board', 90), past: false },
+        { row: typed('H', new Date(2026, 9, 1, 10, 30), 'Board', 60), past: false },
+      ]);
+
+      // E and H never overlap, but F and G link them: all four share three lanes.
+      expect(events.map((event) => [event.key, event.lane, event.lanes])).toEqual([
+        ['E', 0, 3],
+        ['F', 1, 3],
+        ['G', 0, 3],
+        ['H', 2, 3],
+      ]);
+    });
+
+    it('labels the hour gutter and the weekdays', () => {
+      expect([0, 1, 11, 12, 13, 23].map(formatMeetingCalendarHourLabel)).toEqual(['', '1 AM', '11 AM', '12 PM', '1 PM', '11 PM']);
+      expect(MEETINGS_HOME_CALENDAR_WEEKDAY_NAMES).toEqual(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+    });
+
+    it('keeps three chips per month cell and counts the rest', () => {
+      const entries = groupMeetingCalendarEntries(
+        [8, 9, 10, 11, 12].map((hour) => typed(`m${hour}`, new Date(2026, 9, 1, hour))),
+        []
+      );
+      const [first, outside] = buildMeetingCalendarDialogDays([new Date(2026, 9, 1), new Date(2026, 10, 1)], entries, new Date(2026, 9, 1), 9, 3);
+
+      expect(first).toMatchObject({ key: '2026-10-01', label: 'Thu, Oct 1', inMonth: true, today: true, more: 2, events: [] });
+      expect(first.chips.map((chip) => chip.key)).toEqual(['m8', 'm9', 'm10']);
+      expect(outside.inMonth).toBe(false);
+    });
   });
 });
