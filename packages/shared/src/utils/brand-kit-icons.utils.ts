@@ -5,6 +5,7 @@
 // Pure, so the web card, the print sheet and the Slides export's PNGs all
 // take the same three colours from the same kit.
 
+import { BRAND_KIT_ICON_STRIP_INK } from '../constants/brand-kit-icons.constants';
 import { BRAND_KIT_HEX_REGEX } from '../constants/brand-kit.constants';
 import { BrandKitIconColours } from '../interfaces/brand-kit-icons.interface';
 import { BrandKitPaletteEntry, BrandKitRevision } from '../interfaces/brand-kit.interface';
@@ -26,7 +27,9 @@ function namedInRules(entry: BrandKitPaletteEntry, rules: readonly string[]): bo
  * tiles' ink and the strip's ground are the kit's dark; the highlight (the
  * one strip icon not in white) is the colour the kit's own Iconography rule
  * names ("Lilac only for a single active state": the last palette colour
- * the rules name, in palette order), else the kit's spark when it is a
+ * the rules name, in palette order, leaving out the kit's dark and the
+ * strip's white ink, which a rule names for the icons themselves and which
+ * would vanish on the dark strip), else the kit's spark when it is a
  * colour, else the accent. The rule wins over the spark because a kit's
  * spark and the colour its rule reserves for the active state can differ,
  * and the samples show what the rule says.
@@ -34,7 +37,10 @@ function namedInRules(entry: BrandKitPaletteEntry, rules: readonly string[]): bo
 export function brandKitIconColours(kit: BrandKitRevision): BrandKitIconColours {
   const { dark, accent, spark } = kit.kit;
   const rules = kit.chapters.visual.icons.rules;
-  const named = kit.chapters.color.palette.filter((entry) => BRAND_KIT_HEX_REGEX.test(entry.hex) && namedInRules(entry, rules));
+  const invisible = new Set([dark, BRAND_KIT_ICON_STRIP_INK].map((hex) => hex.toUpperCase()));
+  const named = kit.chapters.color.palette.filter(
+    (entry) => BRAND_KIT_HEX_REGEX.test(entry.hex) && !invisible.has(entry.hex.toUpperCase()) && namedInRules(entry, rules)
+  );
   const last = named.at(-1);
   let highlight = accent;
   if (last) {
