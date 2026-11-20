@@ -7,6 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingsHomeFilters } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
+import { MeetingsHomeFeed } from '../../services/meetings-home-feed';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
@@ -42,6 +43,7 @@ const FOUNDATION_ROWS = [
 ];
 
 describe('MeetingsFiltersComponent', () => {
+  const feedScope: { scope: 'me' | 'project' } = { scope: 'me' };
   let fixture: ComponentFixture<MeetingsFiltersComponent>;
   let emitted: MeetingsHomeFilters[];
   let outside: HTMLButtonElement;
@@ -103,6 +105,7 @@ describe('MeetingsFiltersComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: PersonaService, useValue: persona },
+        { provide: MeetingsHomeFeed, useValue: feedScope },
         { provide: BreakpointObserver, useValue: { observe: () => of({ matches: phone, breakpoints: {} }) } },
       ],
     });
@@ -158,6 +161,23 @@ describe('MeetingsFiltersComponent', () => {
     expect(await optionLabels('meetings-home-filters-rsvp')).toEqual(['Any RSVP', 'Needs response', 'Going', 'Not going', 'Maybe']);
     expect(byTestId('meetings-home-filters-organized')?.textContent).toContain('Organized by me');
     expect(byTestId('meetings-home-filters-hide-declined')?.textContent).toContain('Hide declined meeting series');
+  });
+
+  it('offers only Meeting type on a project or foundation list', async () => {
+    feedScope.scope = 'project';
+    await render();
+    feedScope.scope = 'me';
+    await open();
+
+    expect(byTestId('meetings-home-filters-type')).toBeTruthy();
+    for (const testId of [
+      'meetings-home-filters-foundation',
+      'meetings-home-filters-project',
+      'meetings-home-filters-rsvp',
+      'meetings-home-filters-organized',
+    ]) {
+      expect(byTestId(testId)).toBeNull();
+    }
   });
 
   it('offers only Project and Meeting type on Past', async () => {

@@ -1028,9 +1028,9 @@ describe('MeetingsRedesignComponent', () => {
 
     beforeEach(() => {
       pastPage$ = new Subject();
-      TestBed.overrideProvider(LensService, { useValue: { activeLens: signal('project') } });
+      routeData = { lens: 'project' };
       TestBed.overrideProvider(ProjectContextService, {
-        useValue: { activeContextUid: signal('project-1'), isFoundationContext: signal(false) },
+        useValue: { activeContext: signal(null), activeContextUid: signal('project-1'), isFoundationContext: signal(false), canWriteMeetings: signal(true) },
       });
       TestBed.overrideProvider(MeetingService, {
         useValue: {
