@@ -1558,6 +1558,26 @@ describe('MeetingsHomeStore', () => {
         }
       });
 
+      it('keeps a day picked while a filtered past load is in flight when that load fails', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const store = createPaged();
+        store.setTab('past');
+        pastPages[0].next(pastPage('a', 1));
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, group: 'c-1' });
+        TestBed.tick();
+        expect(past).toHaveBeenLastCalledWith('', { ...MEETINGS_HOME_NO_PAST_FILTERS, committeeUid: 'c-1' });
+        const day = getLocalDayKey(inDays(-1));
+
+        // The day clears the filters; the filtered load fails before the unfiltered reload starts.
+        store.showDay(day, 'past');
+        pastPages[1].error(new Error('filtered load failed'));
+        TestBed.tick();
+        pastPages[pastPages.length - 1].next(pastPage('a', 2));
+        TestBed.tick();
+
+        expect(store.revealedDay()).toBe(day);
+      });
+
       it('does not hold a covered day back while a next page loads', () => {
         const store = createPaged();
         pastPages[0].next(pastPage('a', 3, 'cursor-1'));

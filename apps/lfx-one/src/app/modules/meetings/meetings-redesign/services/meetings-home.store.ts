@@ -536,7 +536,8 @@ export class MeetingsHomeStore {
       tap({
         // A failed reload of the past list the day waits on leaves it unreachable, so the list stops waiting for it.
         error: () => {
-          if (version === this.pastQueryVersion && this.tab() === 'past' && query === this.search().trim()) this.revealDayState.set(null);
+          const current = query === this.search().trim() && this.samePastFilters(filters, this.pastServerFilters());
+          if (version === this.pastQueryVersion && this.tab() === 'past' && current) this.revealDayState.set(null);
         },
       }),
       map((page) => page.meetings)
