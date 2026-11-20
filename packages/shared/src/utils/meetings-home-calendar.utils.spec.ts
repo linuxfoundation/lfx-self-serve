@@ -253,7 +253,7 @@ describe('meetings home calendar utils', () => {
       const past = toMeetingCalendarChip({ row: typed('b', new Date(2026, 9, 1, 10), ''), past: true });
       expect(past).toMatchObject({
         background: 'color-mix(in srgb, var(--ui-neutral-500) 7%, var(--ui-white))',
-        ink: 'color-mix(in srgb, var(--ui-neutral-500) 50%, var(--ui-white))',
+        ink: 'color-mix(in srgb, var(--ui-neutral-500) 75%, var(--ui-white))',
         bar: 'color-mix(in srgb, var(--ui-neutral-500) 35%, var(--ui-white))',
         detail: 'Thu, Oct 1 · 10:00 AM · Other · Past',
       });
