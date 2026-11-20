@@ -8,7 +8,7 @@
   iconOnly
   [menu]="actionsMenu"
   menuAlign="end"
-  [loading]="resending() || removing() || checkingEdit()"
+  [loading]="resending() || removing() || checkingEdit() || addingSelf()"
   data-testid="meetings-home-row-actions-trigger" />
 
 <ng-template #actionsMenu>
@@ -25,6 +25,11 @@
     @if (canRemove()) {
       <lfx-ui-menu-item icon="fa-light fa-user-minus" (triggered)="confirmRemove()" data-testid="meetings-home-row-actions-remove"
         >Remove Myself</lfx-ui-menu-item
+      >
+    }
+    @if (canAddSelf()) {
+      <lfx-ui-menu-item icon="fa-light fa-user-plus" [disabled]="addingSelf()" (triggered)="addSelf()" data-testid="meetings-home-row-actions-add-self"
+        >Add Myself</lfx-ui-menu-item
       >
     }
     @if (canDelete()) {

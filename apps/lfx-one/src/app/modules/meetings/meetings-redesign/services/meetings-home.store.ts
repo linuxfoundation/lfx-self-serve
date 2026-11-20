@@ -101,6 +101,11 @@ export class MeetingsHomeStore {
   // Kept for the page's lifetime, so a refetch that still lists a deleted meeting or cancelled date does not bring it back.
   private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
   private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
+  /** Registrant uids of the meetings the viewer added themselves to here, until the feed's index lists them; a new viewer starts empty. */
+  private readonly selfInvitedIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = linkedSignal({
+    source: this.feed.key,
+    computation: () => new Map<string, readonly string[]>(),
+  });
   /** Key of the concurrent date picked on the Next meeting card; the first one when it is not among them. */
   private readonly nextCardKey: WritableSignal<string | null> = linkedSignal({ source: this.feed.key, computation: () => null });
   /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
@@ -380,6 +385,11 @@ export class MeetingsHomeStore {
     this.cancelledOccurrenceIds.update((ids) => new Map(ids).set(meetingId, [...(ids.get(meetingId) ?? []), occurrenceId]));
   }
 
+  /** Marks the viewer invited to a meeting they just added themselves to, with the registrations the add confirmed. */
+  public markSelfInvited(meetingId: string, registrantUids: readonly string[]): void {
+    this.selfInvitedIds.update((ids) => new Map(ids).set(meetingId, registrantUids));
+  }
+
   /** Records an organizer's edit or approval of the summary opened from row `key`; the Last card takes it only while that row is last. */
   public applySummaryChange(key: string, summary: PastMeetingSummary): void {
     if (this.lastMeeting()?.key === key) this.lastMeetingSummaryState.set(summary);
@@ -656,6 +666,7 @@ export class MeetingsHomeStore {
         .filter((meeting) => !deleted.has(meeting.id) && (meeting.organizer || keepsRemoved || !removed.has(meeting.id)))
         .map((meeting) => this.withLocalCancellations(meeting))
         .map((meeting) => (removed.has(meeting.id) ? { ...meeting, invited: false, my_registrant_ids: [], my_rsvp: null, my_rsvps: [] } : meeting))
+        .map((meeting) => (removed.has(meeting.id) ? meeting : this.withSelfInvite(meeting)))
         .map((meeting) => this.withCurrentRsvps(meeting));
       return expandMeetingOccurrences(meetings, this.now()).map((row) => this.withConfirmedRowRsvp(row));
     });
@@ -681,6 +692,15 @@ export class MeetingsHomeStore {
   private withLocalCancellations(meeting: Meeting): Meeting {
     const ids = this.cancelledOccurrenceIds().get(meeting.id);
     return ids ? { ...meeting, cancelled_occurrences: [...(meeting.cancelled_occurrences ?? []), ...ids] } : meeting;
+  }
+
+  /** Applies a self-invite made this session, which the feed can still miss while it indexes. */
+  private withSelfInvite(meeting: Meeting): Meeting {
+    const added = this.selfInvitedIds().get(meeting.id);
+    if (!added) return meeting;
+    // Without a returned uid the registration is still confirmed, so no list stands in for it and `invited` decides.
+    if (!added.length) return { ...meeting, invited: true, my_registrant_ids: meeting.my_registrant_ids?.length ? meeting.my_registrant_ids : undefined };
+    return { ...meeting, invited: true, my_registrant_ids: [...new Set([...(meeting.my_registrant_ids ?? []), ...added])] };
   }
 
   /** Loads one artifact of the last meeting, again whenever it changes; a missing or failed lookup reads as null. */

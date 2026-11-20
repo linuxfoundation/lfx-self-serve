@@ -8,6 +8,7 @@ import { MeetingDashboardView, MeetingHomeRow } from '@lfx-one/shared/interfaces
 import { getMeetingOwnResendQuestion, getMeetingSelfRemovalNotes, getMeetingSelfRemovalQuestion, getPastMeetingResourceId } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -22,11 +23,12 @@ import { finalize, take } from 'rxjs';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDialogContextComponent } from '../meeting-dialog-context/meeting-dialog-context.component';
 
 /**
- * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Edit Meeting, Resend Invite, Remove Myself and Delete Meeting.
- * @description Edit, Delete, Resend and Remove follow the legacy meeting card's gates. Feedback is uikit toasts at the bottom centre.
+ * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Edit Meeting, Resend Invite, Remove Myself or Add Myself, and Delete Meeting.
+ * @description Edit, Delete, Resend, Remove and Add follow the legacy meeting card's gates. Feedback is uikit toasts at the bottom centre.
  */
 @Component({
   selector: 'lfx-meeting-home-actions',
@@ -41,10 +43,12 @@ export class MeetingHomeActionsComponent {
   private readonly modal = inject(UiModalService);
   private readonly inviteResend = inject(MeetingOwnInviteResendService);
   private readonly selfRemoval = inject(MeetingSelfRemovalService);
+  private readonly selfInvite = inject(MeetingSelfInviteService);
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
   private readonly editService = inject(MeetingsHomeEditService);
   private readonly deleteService = inject(MeetingsHomeDeleteService);
+  private readonly store = inject(MeetingsHomeStore, { optional: true });
   private readonly removeDialog = viewChild.required<TemplateRef<unknown>>('removeDialog');
   private readonly resendDialog = viewChild.required<TemplateRef<unknown>>('resendDialog');
   private dialogRef: DialogRef | null = null;
@@ -55,6 +59,7 @@ export class MeetingHomeActionsComponent {
   protected readonly removing = signal(false);
   protected readonly resending: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.row().meeting.id));
   protected readonly checkingEdit: Signal<boolean> = computed(() => this.editService.isChecking(this.row().meeting.id));
+  protected readonly addingSelf: Signal<boolean> = computed(() => this.selfInvite.isPending(this.row().meeting.id));
   /** `organizer` is the meeting's FGA organizer relation; the edit route needs the project slug (legacy edit button). */
   protected readonly canEdit: Signal<boolean> = computed(
     () => this.view() === 'upcoming' && this.row().meeting.organizer === true && !!this.row().meeting.project_slug
@@ -65,6 +70,8 @@ export class MeetingHomeActionsComponent {
   protected readonly canRemove: Signal<boolean> = this.initCanRemove();
   /** A resend goes to the viewer's own registrant row, so one must exist (legacy `canResendInvite`). */
   protected readonly canResend: Signal<boolean> = computed(() => this.canRemove() && this.hasOwnRegistration());
+  /** The other half of Remove Myself, for whoever can manage the guests (legacy `canAddMyself`); the service checks the roster first. */
+  protected readonly canAddSelf: Signal<boolean> = this.initCanAddSelf();
   protected readonly removalQuestion: Signal<string> = computed(() => getMeetingSelfRemovalQuestion(this.row().title));
   protected readonly resendQuestion: Signal<string> = computed(() => getMeetingOwnResendQuestion(this.row().title));
   protected readonly removalNotes: Signal<string[]> = computed(() =>
@@ -109,6 +116,36 @@ export class MeetingHomeActionsComponent {
 
   protected deleteMeeting(): void {
     this.deleteService.delete(this.row());
+  }
+
+  /** Invites the viewer to every date, as the legacy card's Add Myself does; the row turns invited without waiting for the index. */
+  protected addSelf(): void {
+    if (this.addingSelf() || !this.canAddSelf()) return;
+    const meetingId = this.row().meeting.id;
+    this.selfInvite
+      .add$(meetingId)
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          if (result.status === 'unavailable') {
+            this.showError('Add Yourself', "We couldn't add you automatically. Open the meeting's Guests tab and use Add Guests to invite yourself.");
+            return;
+          }
+          if (result.status === 'added') {
+            this.store?.markSelfInvited(meetingId, result.registrant?.uid ? [result.registrant.uid] : []);
+            this.toast.show({ variant: 'dark', message: 'Added to meeting' });
+          } else {
+            this.store?.markSelfInvited(
+              meetingId,
+              (result.registrants ?? []).map((registrant) => registrant.uid)
+            );
+            this.toast.show({ variant: 'dark', message: "You're already a guest of this meeting" });
+          }
+          // Picks up the new guest count once the index has it; the store keeps the row invited until then.
+          this.userService.refreshUserMeetings();
+        },
+        error: (error: unknown) => this.showError('Error', this.selfInvite.describeFailure(error)),
+      });
   }
 
   protected confirmResend(): void {
@@ -176,6 +213,12 @@ export class MeetingHomeActionsComponent {
   private initCanRemove(): Signal<boolean> {
     return computed(
       () => this.view() === 'upcoming' && this.userService.authenticated() && this.invited() && (!this.row().meeting.organizer || this.hasOwnRegistration())
+    );
+  }
+
+  private initCanAddSelf(): Signal<boolean> {
+    return computed(
+      () => this.view() === 'upcoming' && this.userService.authenticated() && this.row().meeting.organizer === true && !this.canRemove() && !this.removing()
     );
   }
 

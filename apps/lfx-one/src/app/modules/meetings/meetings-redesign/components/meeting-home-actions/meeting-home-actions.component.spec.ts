@@ -7,8 +7,17 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { environment } from '@environments/environment';
-import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingRegistrationRemovalResult, PastMeeting } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingDashboardView,
+  MeetingHomeRow,
+  MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
+  MeetingSelfInviteResult,
+  PastMeeting,
+} from '@lfx-one/shared/interfaces';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -18,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeActionsComponent } from './meeting-home-actions.component';
 
 const INVITEE = {
@@ -57,6 +67,9 @@ describe('MeetingHomeActionsComponent', () => {
   let edit: ReturnType<typeof vi.fn>;
   let deleteMeeting: ReturnType<typeof vi.fn>;
   let checkingEdit: WritableSignal<boolean>;
+  let add$: ReturnType<typeof vi.fn>;
+  let addingSelf: WritableSignal<boolean>;
+  let markSelfInvited: ReturnType<typeof vi.fn>;
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -113,6 +126,9 @@ describe('MeetingHomeActionsComponent', () => {
     deleteMeeting = vi.fn();
     checkingEdit = signal(false);
     remove$ = vi.fn().mockReturnValue(of({ removed_registrant_ids: ['synthetic-reg'], remaining_registrant_ids: [] }));
+    addingSelf = signal(false);
+    add$ = vi.fn().mockReturnValue(of<MeetingSelfInviteResult>({ status: 'added', registrant: { uid: 'synthetic-self-reg' } as MeetingRegistrant }));
+    markSelfInvited = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
@@ -127,6 +143,11 @@ describe('MeetingHomeActionsComponent', () => {
         { provide: MeetingSelfRemovalService, useValue: { remove$, describeFailure: () => 'Unable to remove you from this meeting. Please try again.' } },
         { provide: MeetingsHomeEditService, useValue: { edit, isChecking: () => checkingEdit() } },
         { provide: MeetingsHomeDeleteService, useValue: { delete: deleteMeeting } },
+        {
+          provide: MeetingSelfInviteService,
+          useValue: { add$, isPending: () => addingSelf(), describeFailure: () => 'Unable to add you to this meeting. Please try again.' },
+        },
+        { provide: MeetingsHomeStore, useValue: { markSelfInvited } },
       ],
     });
     overlay = TestBed.inject(OverlayContainer).getContainerElement();
@@ -157,10 +178,29 @@ describe('MeetingHomeActionsComponent', () => {
       expect(await openMenu()).toEqual(['Copy Link', 'Remove Myself']);
     });
 
-    it('offers an organizer Copy Link and Delete Meeting without a registration of their own', async () => {
+    it('offers an organizer Add Myself without a registration of their own', async () => {
       await render(row({ ...INVITEE, organizer: true, my_registrant_ids: [] }));
 
-      expect(await openMenu()).toEqual(['Copy Link', 'Delete Meeting']);
+      expect(await openMenu()).toEqual(['Copy Link', 'Add Myself', 'Delete Meeting']);
+    });
+
+    it('offers an organizer who is not invited Add Myself', async () => {
+      await render(row({ ...INVITEE, organizer: true, invited: false, my_registrant_ids: [] }));
+
+      expect(await openMenu()).toEqual(['Copy Link', 'Add Myself', 'Delete Meeting']);
+    });
+
+    it('offers an organizer Add Myself again once their registration was removed', async () => {
+      removedIds.set(new Set([INVITEE.id]));
+      await render(row({ ...INVITEE, organizer: true }));
+
+      expect(await openMenu()).toEqual(['Copy Link', 'Add Myself', 'Delete Meeting']);
+    });
+
+    it('never offers Add Myself on a past meeting', async () => {
+      await render(row({ ...INVITEE, organizer: true, invited: false, my_registrant_ids: [] }), 'past');
+
+      expect(await openMenu()).toEqual(['Copy Link']);
     });
 
     it('offers a registered organizer the attendee actions', async () => {
@@ -446,6 +486,59 @@ describe('MeetingHomeActionsComponent', () => {
         expect.objectContaining({ variant: 'error', message: 'Error', description: 'Unable to remove you from this meeting. Please try again.' })
       );
       expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
+    });
+  });
+
+  describe('Add Myself', () => {
+    const ORGANIZER = { ...INVITEE, organizer: true, invited: false, my_registrant_ids: [] } as Meeting;
+
+    it('adds the viewer, marks the row invited and confirms with a dark toast', async () => {
+      await render(row(ORGANIZER));
+      await choose('meetings-home-row-actions-add-self');
+
+      expect(add$).toHaveBeenCalledWith('synthetic-meeting');
+      expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['synthetic-self-reg']);
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Added to meeting' });
+      expect(refreshUserMeetings).toHaveBeenCalledWith();
+    });
+
+    it('marks the row invited with the listed rows when the roster already has the viewer', async () => {
+      add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'already-listed', registrants: [{ uid: 'synthetic-listed' } as MeetingRegistrant] }));
+      await render(row(ORGANIZER));
+      await choose('meetings-home-row-actions-add-self');
+
+      expect(markSelfInvited).toHaveBeenCalledWith('synthetic-meeting', ['synthetic-listed']);
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: "You're already a guest of this meeting" });
+    });
+
+    it('points to Add Guests when the viewer cannot be resolved as a guest', async () => {
+      add$.mockReturnValue(of<MeetingSelfInviteResult>({ status: 'unavailable' }));
+      await render(row(ORGANIZER));
+      await choose('meetings-home-row-actions-add-self');
+
+      expect(markSelfInvited).not.toHaveBeenCalled();
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'Add Yourself' }));
+      expect(refreshUserMeetings).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed add', async () => {
+      add$.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      await render(row(ORGANIZER));
+      await choose('meetings-home-row-actions-add-self');
+
+      expect(markSelfInvited).not.toHaveBeenCalled();
+      expect(toastShow).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: 'error', message: 'Error', description: 'Unable to add you to this meeting. Please try again.' })
+      );
+    });
+
+    it('shows the trigger busy and sends nothing while an add is pending', async () => {
+      addingSelf.set(true);
+      await render(row(ORGANIZER));
+
+      expect(trigger().getAttribute('aria-busy')).toBe('true');
+      await choose('meetings-home-row-actions-add-self');
+      expect(add$).not.toHaveBeenCalled();
     });
   });
 });

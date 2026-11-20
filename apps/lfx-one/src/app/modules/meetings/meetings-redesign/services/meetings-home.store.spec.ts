@@ -297,6 +297,49 @@ describe('MeetingsHomeStore', () => {
       expect(organized.myRsvp ?? null).toBeNull();
     });
 
+    it('keeps a self-invited meeting invited, with its new registration, while a refetch still misses it', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+
+      store.markSelfInvited('organized', ['reg-self']);
+      upcoming$.next([organized]);
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: true, my_registrant_ids: ['reg-self'] });
+    });
+
+    it('lets invited decide when the self-invite returned no registration uid', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+
+      store.markSelfInvited('organized', []);
+
+      expect(store.upcomingRows()[0].meeting.invited).toBe(true);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toBeUndefined();
+    });
+
+    it('lets a later removal win over a self-invite', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+
+      store.markSelfInvited('organized', ['reg-self']);
+      removed.set(new Set(['organized']));
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+    });
+
+    it('forgets a self-invite on a viewer change', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-self']);
+
+      identity.set('viewer-b');
+      TestBed.tick();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+    });
+
     it('shows an answer confirmed this session on the date it applies to', () => {
       const first = inDays(2);
       const second = inDays(9);
