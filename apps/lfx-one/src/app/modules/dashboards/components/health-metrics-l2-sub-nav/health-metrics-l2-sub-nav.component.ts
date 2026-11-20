@@ -56,16 +56,9 @@ export class HealthMetricsL2SubNavComponent {
     this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-item[aria-current]')?.focus();
   }
 
-  /** Shuts the collapsed panel; the wide column has nothing to close, so it keeps the reader's focus. */
+  /** Shuts the panel and lets go of the focused item, which would otherwise hold it open. */
   protected dismiss(focused: HTMLElement | null = this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-item:focus')): void {
-    if (!this.isCollapsed()) return;
     this.closed.set(true);
     focused?.blur();
-  }
-
-  /** The rail only shows while the page is narrow enough to collapse the nav. */
-  private isCollapsed(): boolean {
-    const rail = this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-rail');
-    return !!rail && getComputedStyle(rail).display !== 'none';
   }
 }

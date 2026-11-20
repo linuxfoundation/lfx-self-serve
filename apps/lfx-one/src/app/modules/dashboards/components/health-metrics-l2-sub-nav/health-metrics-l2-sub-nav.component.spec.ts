@@ -81,16 +81,14 @@ describe('HealthMetricsL2SubNavComponent', () => {
     expect(host.style.top).toBe('');
   });
 
-  // jsdom applies no container query, so the rail shows and the nav reads as collapsed unless a test hides it.
-  it('keeps focus on the picked item on the wide layout, where there is no panel to shut', () => {
-    (host.querySelector('.hmn-rail') as HTMLElement).style.display = 'none';
+  it('shuts the panel and lets go of focus after a keyboard pick', () => {
     item('orgs').focus();
 
     item('orgs').click();
     fixture.detectChanges();
 
-    expect(host.classList).not.toContain('hmn-closed');
-    expect(document.activeElement).toBe(item('orgs'));
+    expect(host.classList).toContain('hmn-closed');
+    expect(document.activeElement).not.toBe(item('orgs'));
   });
 
   it('emits the picked section rather than scrolling itself, then shuts the panel until the pointer leaves', () => {
