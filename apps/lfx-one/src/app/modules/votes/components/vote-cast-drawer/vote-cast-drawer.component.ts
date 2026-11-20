@@ -122,9 +122,10 @@ export class VoteCastDrawerComponent {
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
   public readonly listVote = input<Vote | null>(null);
-  /** Review mode (#4331): shows the voter's submitted ballot without allowing changes. */
-  public readonly readOnly = input<boolean>(false);
-  /** Change mode (#4723): reviews the voter's own submitted ballot, allowing edits and PUT only when eligible. */
+  /**
+   * Change mode (#4723), the drawer's only recorded-ballot mode: reviews the voter's own submitted ballot,
+   * allowing edits and PUT only when eligible. An ineligible or impersonated ballot stays read-only.
+   */
   public readonly changeMode = input<boolean>(false);
 
   // === Model Signals (two-way binding) ===
@@ -159,8 +160,8 @@ export class VoteCastDrawerComponent {
   private readonly cancelSubmit$ = new Subject<void>();
 
   // === Derived Signals (from API) ===
-  /** Both review and change mode show the voter's recorded ballot; only review locks it. */
-  protected readonly showsRecordedBallot: Signal<boolean> = computed(() => this.readOnly() || this.changeMode());
+  /** Change mode shows the voter's recorded ballot; `ballotReadOnly` decides whether it stays locked. */
+  protected readonly showsRecordedBallot: Signal<boolean> = computed(() => this.changeMode());
   protected readonly vote: Signal<Vote | null> = this.initVote();
   protected readonly myBallot: Signal<MyVoteBallot | null> = this.initMyBallot();
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
@@ -168,7 +169,7 @@ export class VoteCastDrawerComponent {
   // === Computed Signals ===
   /** A change request never unlocks a ballot until the caller's own saved ballot confirms eligibility. */
   protected readonly ballotReadOnly: Signal<boolean> = computed(() => {
-    if (this.readOnly() || this.impersonating()) return true;
+    if (this.impersonating()) return true;
     if (!this.changeMode()) return false;
     const vote = this.vote();
     const ballot = this.myBallot();
@@ -195,7 +196,7 @@ export class VoteCastDrawerComponent {
   protected readonly reviewNotice = 'Your vote has been recorded.';
   /** Pre-submit notice on a first ballot when the vote makes submitted ballots final (#4723); a missing setting means allowed. */
   protected readonly finalNotice: Signal<string | null> = computed(() =>
-    !this.readOnly() && !this.changeMode() && !this.impersonating() && !isVoteChangeAllowed(this.vote()) ? VOTE_BALLOT_FINAL_NOTICE : null
+    !this.changeMode() && !this.impersonating() && !isVoteChangeAllowed(this.vote()) ? VOTE_BALLOT_FINAL_NOTICE : null
   );
   protected readonly ballotLoadError = "Couldn't load your submitted ballot. Close this panel and try again.";
   // Footer is hidden (not removed) until a ballot exists — see drawer-pattern.md § Sticky footer.
@@ -229,13 +230,13 @@ export class VoteCastDrawerComponent {
         this.applyBallotPrefill();
       });
 
-    // Review mode: display the form once the voter's recorded ballot loads.
+    // Change mode: display the form once the voter's recorded ballot loads.
     toObservable(this.myBallot)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.applyBallotPrefill());
 
     // A reused drawer must not carry recorded choices or disabled controls into a first ballot.
-    toObservable(computed(() => `${this.readOnly()}|${this.changeMode()}`))
+    toObservable(this.changeMode)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.appliedPrefillKey = null;
@@ -265,7 +266,7 @@ export class VoteCastDrawerComponent {
     });
 
     // A persistent drawer's selection/mode changes end the previous submit session, including its body-appended dialog.
-    toObservable(computed(() => [this.visible(), this.voteId(), this.readOnly(), this.changeMode()] as const))
+    toObservable(computed(() => [this.visible(), this.voteId(), this.changeMode()] as const))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(([visible]) => {
         this.submissionGeneration++;

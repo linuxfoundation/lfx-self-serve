@@ -658,9 +658,17 @@ describe('VoteDetailComponent', () => {
     voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
     const fixture = await setup();
 
-    expect(testId(fixture, 'vote-detail-manager-ballot')).toBeNull();
-    expect(testId(fixture, 'vote-detail-manager-change-vote')).toBeNull();
-    expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+    // The stubbed drawer records every bound input, so binding change mode here fails this test.
+    const drawer = fixture.debugElement.query(By.css('lfx-vote-cast-drawer'));
+    expect(drawer).not.toBeNull();
+    expect(drawer.properties['changeMode']).toBeUndefined();
+    expect(voteService.updateMyResponse).not.toHaveBeenCalled();
+    // Static `label="…"` lands in attributes and bound `[label]` in properties; check both.
+    const buttonLabels = [
+      ...fixture.debugElement.queryAll(By.css('lfx-button')).map((button) => String(button.properties['label'] ?? button.attributes['label'] ?? '')),
+      ...fixture.debugElement.queryAll(By.css('button')).map((button) => (button.nativeElement as HTMLElement).textContent ?? ''),
+    ];
+    expect(buttonLabels.filter((label) => /update/i.test(label))).toEqual([]);
     expect(read(fixture, 'castDrawerVisible')).toBe(false);
   });
 
