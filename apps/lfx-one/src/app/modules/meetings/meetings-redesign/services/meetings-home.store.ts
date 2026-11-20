@@ -149,7 +149,9 @@ export class MeetingsHomeStore {
     this.feed.pastRefresh$,
     this.pastLoadingState,
     this.pastFailedState,
-    this.initPastReloads()
+    this.initPastReloads(),
+    // A failed changed search shows the error state, not a toast about keeping a list that no longer matches.
+    () => this.pastFailedQuery() === this.search().trim()
   );
   private readonly pastNextPages: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.pastFirstPage, computation: () => [] as PastMeeting[] });
   private readonly pastMeetings: Signal<PastMeeting[]> = computed(() => [...this.pastFirstPage(), ...this.pastNextPages()]);
@@ -419,7 +421,8 @@ export class MeetingsHomeStore {
     refresh$: Observable<void>,
     loading: WritableSignal<boolean>,
     failed: WritableSignal<boolean>,
-    reload$: Observable<unknown> = of(undefined)
+    reload$: Observable<unknown> = of(undefined),
+    quietFailure: () => boolean = () => false
   ): Signal<T[]> {
     if (!isPlatformBrowser(this.platformId)) return signal<T[]>([]);
     let previousIdentity: string | null = null;
@@ -446,8 +449,8 @@ export class MeetingsHomeStore {
               error: (error: unknown) => {
                 console.error('Failed to load meetings for the meetings home page:', error);
                 loading.set(false);
-                if (loaded && !fromError) this.showRefreshFailedToast();
-                else failed.set(true);
+                if (!loaded || fromError) failed.set(true);
+                else if (!quietFailure()) this.showRefreshFailedToast();
               },
             }),
             // The shared feed ends on an error, so subscribe again when the next refresh is requested.
@@ -549,6 +552,8 @@ export class MeetingsHomeStore {
         },
       }),
       tap({ error: () => version === this.pastQueryVersion && this.pastFailedQuery.set(query) }),
+      // A failed refresh of the loaded search keeps its rows; only a changed search is left without a list.
+      tap({ error: () => version === this.pastQueryVersion && query !== this.pastQuery() && this.pastFailedQuery.set(query) }),
       map((page) => page.meetings)
     );
   }
