@@ -653,6 +653,8 @@ export interface MeetingCalendarDialogData {
   openMeeting: (row: MeetingHomeRow) => void;
   /** Asks for past meetings back to a local day (`YYYY-MM-DD`), the first one shown, so its past meetings can load. */
   showPastFrom: (day: string) => void;
+  /** Loading those older past meetings failed; asking again with {@link showPastFrom} retries. */
+  pastFailed: Signal<boolean>;
   /** A date in the month to open on; the current month without one. */
   month?: Date;
 }

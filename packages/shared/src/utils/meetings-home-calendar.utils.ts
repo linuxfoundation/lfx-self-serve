@@ -110,14 +110,23 @@ export function formatMeetingCalendarHourLabel(hour: number): string {
   return `${hour - 12} PM`;
 }
 
-/** Wall-clock minutes of a meeting from the local midnight of `day`, which can be negative or past a day, and its end. */
-function getMeetingCalendarDayMinutes(entry: MeetingCalendarEntry, day: Date): { start: number; end: number } {
-  const start = new Date(entry.row.startTime);
-  const startMidnight = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
-  const dayMidnight = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+/** Wall-clock minutes of `instant` from `dayMidnight`, which can be negative or past a day. */
+function getWallMinutesFrom(instant: Date, dayMidnight: number): number {
+  const midnight = new Date(instant.getFullYear(), instant.getMonth(), instant.getDate()).getTime();
   // Rounded, so a day with a clock change still counts as one.
-  const minutes = Math.round((startMidnight - dayMidnight) / 86_400_000) * 1440 + start.getHours() * 60 + start.getMinutes();
-  return { start: minutes, end: minutes + Math.max(30, entry.row.durationMinutes || 60) };
+  return Math.round((midnight - dayMidnight) / 86_400_000) * 1440 + instant.getHours() * 60 + instant.getMinutes();
+}
+
+/**
+ * Wall-clock start and end minutes of a meeting from the local midnight of `day`; the end is read at the real end instant,
+ * so a clock change inside the meeting moves it, and is at least `minimum` minutes after the start.
+ */
+function getMeetingCalendarDayMinutes(entry: MeetingCalendarEntry, day: Date, minimum = 30): { start: number; end: number } {
+  const start = new Date(entry.row.startTime);
+  const dayMidnight = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+  const startMinutes = getWallMinutesFrom(start, dayMidnight);
+  const end = new Date(start.getTime() + (entry.row.durationMinutes || 60) * 60_000);
+  return { start: startMinutes, end: Math.max(getWallMinutesFrom(end, dayMidnight), startMinutes + minimum) };
 }
 
 /**
@@ -179,7 +188,7 @@ export function buildMeetingCalendarDialogDays(
     const entries = days.get(key) ?? [];
     const previous = days.get(getLocalDayKey(new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1))) ?? [];
     // Week columns also show the part after midnight of a meeting that started the day before.
-    const running = previous.filter((entry) => getMeetingCalendarDayMinutes(entry, date).end > 0);
+    const running = previous.filter((entry) => getMeetingCalendarDayMinutes(entry, date, 0).end > 0);
     return {
       key,
       date,

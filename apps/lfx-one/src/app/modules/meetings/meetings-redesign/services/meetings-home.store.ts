@@ -281,6 +281,8 @@ export class MeetingsHomeStore {
     const from = this.pastCalendarFromState();
     return !!from && this.pastPageToken() !== undefined && this.oldestPastDayAtOrAfter(from);
   });
+  /** A past page the calendar asked for failed; {@link showPastFrom} retries it. */
+  public readonly calendarPastFailed: Signal<boolean> = computed(() => this.pastPageFailedState() && this.calendarNeedsOlderPast());
   /** The picked day once every one of its rows is loaded and shown; the page then scrolls to it and calls {@link completeReveal}. */
   public readonly revealedDay: Signal<string | null> = computed(() => {
     const day = this.revealDayState();
