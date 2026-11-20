@@ -170,6 +170,7 @@
         [upcomingRows]="store.upcomingRows()"
         [pastRows]="store.pastRows()"
         [now]="store.now()"
+        [scope]="feedKey()"
         [loading]="store.upcomingLoading() || store.pastLoading()"
         (daySelected)="showDay($event)"
         (olderMonthShown)="store.showPastFrom($event)"

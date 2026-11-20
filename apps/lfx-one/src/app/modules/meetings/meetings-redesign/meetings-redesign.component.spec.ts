@@ -5,7 +5,8 @@ import { BreakpointObserver } from '@angular/cdk/layout';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { Location } from '@angular/common';
+import { ActivatedRoute, convertToParamMap, DefaultUrlSerializer, ParamMap, Router, UrlTree } from '@angular/router';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
@@ -73,6 +74,8 @@ describe('MeetingsRedesignComponent', () => {
   let latestPast$: Subject<PastMeeting[]>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let navigate: ReturnType<typeof vi.fn>;
+  let livePath: string;
+  let replaceState: ReturnType<typeof vi.fn>;
   let observerCallback: IntersectionObserverCallback | null;
   let openCreateDialog: ReturnType<typeof vi.fn>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
@@ -111,6 +114,8 @@ describe('MeetingsRedesignComponent', () => {
     latestPast$ = new Subject();
     queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
     navigate = vi.fn().mockResolvedValue(true);
+    livePath = '/project/meetings?project=live';
+    replaceState = vi.fn((path: string) => (livePath = path));
     observerCallback = null;
     openCreateDialog = vi.fn();
     refreshUserMeetings = vi.fn();
@@ -176,7 +181,20 @@ describe('MeetingsRedesignComponent', () => {
         { provide: PersonaService, useValue: { personaLoaded, hasBoardRole: signal(false), hasProjectRole: signal(true) } },
         { provide: LensService, useValue: { activeLens: signal('me') } },
         { provide: ProjectContextService, useValue: { activeContext: signal(null), activeContextUid: signal(''), canWriteMeetings: signal(true) } },
-        { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
+        {
+          provide: Router,
+          useFactory: () => {
+            const serializer = new DefaultUrlSerializer();
+            return {
+              navigate,
+              navigateByUrl: navigate,
+              getCurrentNavigation: () => null,
+              parseUrl: (url: string) => serializer.parse(url),
+              serializeUrl: (tree: UrlTree) => serializer.serialize(tree),
+            };
+          },
+        },
+        { provide: Location, useFactory: () => ({ path: () => livePath, replaceState, subscribe: () => ({ unsubscribe: () => undefined }) }) },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$, snapshot: { pathFromRoot: [{ data: routeData }] } }) },
         { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
         { provide: SegmentService, useValue: { trackEvent: vi.fn() } },
@@ -185,6 +203,7 @@ describe('MeetingsRedesignComponent', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     delete (HTMLElement.prototype as Partial<HTMLElement>).scrollBy;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -956,11 +975,13 @@ describe('MeetingsRedesignComponent', () => {
 
       query(fixture, 'ui-tab-past')?.click();
       await fixture.whenStable();
-      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { time: 'past' }, replaceUrl: true }));
+      // The live address keeps the project the selector put there, which the Router's own params may not hold yet.
+      expect(replaceState).toHaveBeenLastCalledWith('/project/meetings?project=live&time=past');
 
       query(fixture, 'ui-tab-upcoming')?.click();
       await fixture.whenStable();
-      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { time: null } }));
+      expect(replaceState).toHaveBeenLastCalledWith('/project/meetings?project=live');
+      expect(navigate).not.toHaveBeenCalled();
     });
   });
 
@@ -1026,6 +1047,9 @@ describe('MeetingsRedesignComponent', () => {
     });
 
     it('lists a past day picked on the calendar on the Past tab, scrolled below the tabs and flashed', async () => {
+      // Mid-month, so the day three days back is on the calendar's month whatever the real date.
+      vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+      vi.setSystemTime(new Date(2026, 9, 15, 12));
       const start = new Date(Date.now() - 3 * DAY_MS);
       const pastMeeting = { ...buildMeeting(7, { start_time: start.toISOString(), title: 'Board Review' }), occurrence_id: '' } as PastMeeting;
       TestBed.overrideProvider(MeetingService, {
@@ -1047,7 +1071,7 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
 
       expect(query(fixture, 'meetings-redesign-list-past')?.hidden).toBe(false);
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { time: 'past' } }));
+      expect(replaceState).toHaveBeenLastCalledWith('/project/meetings?project=live&time=past');
       const row = fixture.nativeElement.querySelector(`[data-testid="meetings-home-day-group-row"][data-day="${day}"]`);
       expect(row).toBeTruthy();
 

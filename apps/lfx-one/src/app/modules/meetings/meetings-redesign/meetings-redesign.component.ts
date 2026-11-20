@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { isPlatformBrowser, Location, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
   afterRenderEffect,
@@ -105,6 +105,7 @@ export class MeetingsRedesignComponent {
   private readonly userService = inject(UserService);
   private readonly personaService = inject(PersonaService);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly route = inject(ActivatedRoute);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
@@ -116,6 +117,8 @@ export class MeetingsRedesignComponent {
   private readonly projectContext = inject(ProjectContextService);
   /** A project or foundation's list: no Next/Last cards or project labels, and its own copy. */
   protected readonly projectScope: boolean = inject(MeetingsHomeFeed).scope === 'project';
+  /** The viewer and project the meetings come from. */
+  protected readonly feedKey: Signal<string> = inject(MeetingsHomeFeed).key;
 
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
@@ -320,13 +323,16 @@ export class MeetingsRedesignComponent {
     return unknown ? { value, label } : { value, label, count, countLabel: `${count} ${count === 1 ? 'meeting' : 'meetings'}` };
   }
 
+  /**
+   * Rewrites `time` on the live address: the project selector moves `?project=` with `Location.replaceState`, so merging the
+   * Router's own query params could put a previous project back.
+   */
   private syncTabParam(tab: MeetingDashboardView): void {
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { time: tab === 'past' ? 'past' : null },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
+    if (this.router.getCurrentNavigation()) return;
+    const url = this.router.parseUrl(this.location.path(true));
+    if (tab === 'past') url.queryParams['time'] = 'past';
+    else delete url.queryParams['time'];
+    this.location.replaceState(this.router.serializeUrl(url));
   }
 
   /** Scrolls the first row of `day` to just below the sticky tabs bar and flashes every row of that day. */

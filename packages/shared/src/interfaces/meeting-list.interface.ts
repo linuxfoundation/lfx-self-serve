@@ -567,8 +567,12 @@ export interface MeetingMiniCalendarWeek {
 
 /** Hover card over a meetings home calendar day. */
 export interface MeetingMiniCalendarTooltip {
+  /** Key of the day it describes. */
+  day: string;
   left: number;
   top: number;
+  /** Opens above the day; false when it would leave the top of the window, so it opens below. */
+  above: boolean;
   head: string;
   items: { key: string; time: string; title: string }[];
   /** Meetings beyond the shown items. */
