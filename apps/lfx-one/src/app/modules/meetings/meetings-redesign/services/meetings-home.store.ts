@@ -138,8 +138,8 @@ export class MeetingsHomeStore {
   private readonly pastQuery: WritableSignal<string> = signal('');
   private readonly pastFilters: WritableSignal<MeetingsHomePastFilters> = signal(MEETINGS_HOME_NO_PAST_FILTERS);
   private readonly pastPageFailedState: WritableSignal<boolean> = signal(false);
-  // Past meetings of the last load without server filters; server-filtered rows only hold the picked values.
-  private readonly pastOptionMeetings: WritableSignal<PastMeeting[]> = signal([]);
+  // Past meetings of the last load without server filters; server-filtered rows only hold the picked values. A new scope drops them.
+  private readonly pastOptionMeetings: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.feed.key, computation: (): PastMeeting[] => [] });
   // Carries `recording_share_url` / `has_ai_summary` for the Recording and AI Summary buttons, and organizer attendance.
   private readonly pastFirstPage: Signal<PastMeeting[]> = this.initFeed(
     () => this.loadFirstPastPage(),
@@ -432,18 +432,22 @@ export class MeetingsHomeStore {
   }
 
   /**
-   * The server matches a group type on categories only, so it gets one only when it is a category and no uncategorised group in
-   * scope reads as the same type; otherwise the loaded rows are filtered and further pages load as needed.
+   * The server matches a group type on the selected group's own category, so it gets one only with no group picked, a complete scope,
+   * and no uncategorised group in scope or on loaded rows reading as that type; otherwise the loaded rows are filtered.
    */
   private initPastServerFilters(): Signal<MeetingsHomePastFilters> {
     return computed(() => {
       if (!this.feed.pagedPast || this.tab() !== 'past') return MEETINGS_HOME_NO_PAST_FILTERS;
       const { project, group, groupType, meetingType } = this.filters();
-      const groups = this.scopeOptions().groups;
+      const { groups, complete } = this.scopeOptions();
+      const categories = this.groupCategories();
+      const rowGroups = this.pastOptionMeetings().flatMap((meeting) => (meeting.committees ?? []).map(({ uid, name }) => ({ uid, name: name ?? '' })));
       const serverType =
         !!groupType &&
-        [...this.groupCategories().values()].includes(groupType) &&
-        !groups.some((scoped) => !this.groupCategories().has(scoped.uid) && getMeetingGroupType(scoped.name) === groupType);
+        !group &&
+        complete &&
+        [...categories.values()].includes(groupType) &&
+        ![...groups, ...rowGroups].some((scoped) => !categories.has(scoped.uid) && getMeetingGroupType(scoped.name) === groupType);
       return { projectUid: project, committeeUid: group, groupType: serverType ? groupType : null, meetingType };
     });
   }
@@ -451,7 +455,8 @@ export class MeetingsHomeStore {
   private initFilterOptionRows(): Signal<MeetingHomeRow[]> {
     return computed(() => {
       if (this.tab() !== 'past') return this.upcomingRows();
-      return this.isNarrowed(this.pastServerFilters()) ? this.toPastRows(this.pastOptionMeetings()) : this.pastRows();
+      // Narrowed rows add values the unfiltered snapshot may lack, for when roll-up options fail.
+      return this.isNarrowed(this.pastServerFilters()) ? [...this.toPastRows(this.pastOptionMeetings()), ...this.pastRows()] : this.pastRows();
     });
   }
 

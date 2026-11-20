@@ -964,7 +964,8 @@ describe('MeetingsHomeStore', () => {
         });
         TestBed.tick();
 
-        const applied = { projectUid: 'p-1', committeeUid: 'c-1', groupType: 'Technical Steering Committee', meetingType: 'Technical' };
+        // With a group picked, its type stays on the client: the server would need the picked group itself to be of that type.
+        const applied = { projectUid: 'p-1', committeeUid: 'c-1', groupType: null, meetingType: 'Technical' };
         expect(past).toHaveBeenLastCalledWith('', applied);
         pastPages[1].next({ meetings: [buildPastMeeting('c', inDays(-3), { committees: [tsc] })], pageToken: 'cursor-2' });
         TestBed.tick();
@@ -1069,6 +1070,75 @@ describe('MeetingsHomeStore', () => {
 
         expect(past).toHaveBeenCalledTimes(1);
         expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['u2']);
+      });
+
+      it('keeps a meeting whose picked group and group type are on different groups, filtering the type on the client', () => {
+        const store = createPaged();
+        scope$.next({
+          projects: [],
+          groups: [
+            { uid: 'c-1', name: 'TSC', category: 'Board', project_uid: 'p-1' },
+            { uid: 'c-2', name: 'Docs WG', category: 'Working Group', project_uid: 'p-1' },
+          ],
+          complete: true,
+        });
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, group: 'c-1', groupType: 'Working Group' });
+        TestBed.tick();
+        expect(past).toHaveBeenLastCalledWith('', { ...MEETINGS_HOME_NO_PAST_FILTERS, committeeUid: 'c-1' });
+        pastPages[1].next({ meetings: [buildPastMeeting('both', inDays(-1), { committees: [tsc, wg] })] });
+        TestBed.tick();
+
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['both']);
+      });
+
+      it('keeps a category on the client while the scope is incomplete', () => {
+        const store = createPaged();
+        scope$.next({ projects: [], groups: [{ uid: 'c-2', name: 'Docs WG', category: 'Special Interest Group', project_uid: 'p-1' }], complete: false });
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Special Interest Group' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+      });
+
+      it('keeps a category on the client when an uncategorised group on the loaded rows reads as the same type', () => {
+        const store = createPaged();
+        scope$.next({ projects: [], groups: [{ uid: 'c-1', name: 'TSC', category: 'Working Group', project_uid: 'p-1' }], complete: true });
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Working Group' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['a', 'b']);
+      });
+
+      it("drops the previous scope's filter options when the feed changes before its first past page loads", () => {
+        const store = createPaged();
+        loadPast(store);
+
+        identity.set('viewer-b');
+        TestBed.tick();
+        store.setTab('past');
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-2' });
+        TestBed.tick();
+
+        expect(store.filterOptionRows().map((row) => row.meeting.id)).toEqual([]);
+      });
+
+      it('offers values from the narrowed rows too, beside the last unfiltered load', () => {
+        const store = createPaged();
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-2' });
+        TestBed.tick();
+        pastPages[1].next({ meetings: [buildPastMeeting('old', inDays(-30), { project_uid: 'p-2', project_name: 'Project Two' })] });
+        TestBed.tick();
+
+        expect(store.filterOptionRows().map((row) => row.meeting.id)).toEqual(['a', 'b', 'old']);
       });
     });
 
@@ -1225,9 +1295,11 @@ describe('MeetingsHomeStore', () => {
       store.setTab('past');
       pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
       TestBed.tick();
-      store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, meetingType: 'Board' });
+      // A group type read from names, with no scope loaded, filters on the client, so the next page is a cursor page.
+      store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Working Group' });
       TestBed.tick();
 
+      expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
       pastPages[1].error(new Error('next page failed'));
       TestBed.tick();
 
