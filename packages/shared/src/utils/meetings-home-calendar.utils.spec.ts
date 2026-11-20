@@ -189,6 +189,18 @@ describe('meetings home calendar utils', () => {
       expect(formatMeetingCalendarWeekRange(new Date(2026, 8, 27))).toBe('Sep 27 – Oct 3, 2026');
       expect(formatMeetingCalendarWeekRange(new Date(2026, 9, 4))).toBe('Oct 4 – 10, 2026');
       expect(getMeetingCalendarMonthDates(new Date(2026, 9, 1))).toHaveLength(35);
+      // A week across New Year names both years.
+      expect(formatMeetingCalendarWeekRange(new Date(2026, 11, 27))).toBe('Dec 27, 2026 – Jan 2, 2027');
+    });
+
+    it('shows a meeting that crosses midnight on both days of the week, clipped to each', () => {
+      const days = groupMeetingCalendarEntries([typed('late', new Date(2026, 9, 3, 23, 30), 'Board', 60)], []);
+      const dates = [new Date(2026, 9, 3), new Date(2026, 9, 4)];
+
+      const [saturday, sunday] = buildMeetingCalendarDialogDays(dates, days, new Date(2026, 9, 1), null, 0);
+
+      expect(saturday.events.map((event) => [event.key, event.top, event.height])).toEqual([['late', 1128, 22]]);
+      expect(sunday.events.map((event) => [event.key, event.top, event.height])).toEqual([['late', 0, 22]]);
     });
 
     it('colours chips by type, faded for past meetings, and falls back to Other', () => {

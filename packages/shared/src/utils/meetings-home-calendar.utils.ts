@@ -69,12 +69,13 @@ export function getMeetingCalendarWeekStart(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() - date.getDay());
 }
 
-/** "Sep 27 – Oct 3, 2026", naming the second month only when it differs. */
+/** "Sep 27 – Oct 3, 2026", naming the second month only when it differs, and the first year when the week crosses one. */
 export function formatMeetingCalendarWeekRange(start: Date): string {
   const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
   const month = (date: Date): string => date.toLocaleDateString('en-US', { month: 'short' });
   const endMonth = end.getMonth() === start.getMonth() ? '' : `${month(end)} `;
-  return `${month(start)} ${start.getDate()} – ${endMonth}${end.getDate()}, ${end.getFullYear()}`;
+  const startYear = end.getFullYear() === start.getFullYear() ? '' : `, ${start.getFullYear()}`;
+  return `${month(start)} ${start.getDate()}${startYear} – ${endMonth}${end.getDate()}, ${end.getFullYear()}`;
 }
 
 /** Chip colour of a meeting type; types outside the legend take the last (Other) colour. */
@@ -109,16 +110,28 @@ export function formatMeetingCalendarHourLabel(hour: number): string {
   return `${hour - 12} PM`;
 }
 
+/** Wall-clock minutes of a meeting from the local midnight of `day`, which can be negative or past a day, and its end. */
+function getMeetingCalendarDayMinutes(entry: MeetingCalendarEntry, day: Date): { start: number; end: number } {
+  const start = new Date(entry.row.startTime);
+  const startMidnight = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+  const dayMidnight = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+  // Rounded, so a day with a clock change still counts as one.
+  const minutes = Math.round((startMidnight - dayMidnight) / 86_400_000) * 1440 + start.getHours() * 60 + start.getMinutes();
+  return { start: minutes, end: minutes + Math.max(30, entry.row.durationMinutes || 60) };
+}
+
 /**
- * Places a day's meetings in the week view: top and height from start and duration (30 minutes at least), and greedy lanes
- * so overlapping meetings sit side by side. Meetings that overlap, directly or through others, form a cluster that shares
- * one lane count, so every one of them is as wide as the cluster's narrowest lane.
+ * Places a day's meetings in the week view: top and height from start and duration (30 minutes at least), clipped to the
+ * day, and greedy lanes so overlapping meetings sit side by side. Meetings that overlap, directly or through others, form a
+ * cluster that shares one lane count, so every one of them is as wide as the cluster's narrowest lane.
+ * @param day Day of the column; a meeting running into it from the day before shows from midnight. Defaults to each start's day.
  */
-export function layoutMeetingCalendarWeekDay(entries: readonly MeetingCalendarEntry[]): MeetingCalendarWeekEvent[] {
+export function layoutMeetingCalendarWeekDay(entries: readonly MeetingCalendarEntry[], day?: Date): MeetingCalendarWeekEvent[] {
   const placed = entries
     .map((entry) => {
-      const start = new Date(entry.row.startTime);
-      return { entry, start: start.getHours() * 60 + start.getMinutes(), duration: Math.max(30, entry.row.durationMinutes || 60), lane: 0, lanes: 1 };
+      const minutes = getMeetingCalendarDayMinutes(entry, day ?? new Date(entry.row.startTime));
+      const start = Math.max(0, minutes.start);
+      return { entry, start, duration: Math.min(1440, minutes.end) - start, lane: 0, lanes: 1 };
     })
     .sort((a, b) => a.start - b.start);
 
@@ -164,6 +177,9 @@ export function buildMeetingCalendarDialogDays(
   return dates.map((date) => {
     const key = getLocalDayKey(date);
     const entries = days.get(key) ?? [];
+    const previous = days.get(getLocalDayKey(new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1))) ?? [];
+    // Week columns also show the part after midnight of a meeting that started the day before.
+    const running = previous.filter((entry) => getMeetingCalendarDayMinutes(entry, date).end > 0);
     return {
       key,
       date,
@@ -173,7 +189,7 @@ export function buildMeetingCalendarDialogDays(
       today: key === todayKey,
       chips: entries.slice(0, chipLimit).map(toMeetingCalendarChip),
       more: Math.max(0, entries.length - chipLimit),
-      events: shownMonth === null ? layoutMeetingCalendarWeekDay(entries) : [],
+      events: shownMonth === null ? layoutMeetingCalendarWeekDay([...running, ...entries], date) : [],
     };
   });
 }

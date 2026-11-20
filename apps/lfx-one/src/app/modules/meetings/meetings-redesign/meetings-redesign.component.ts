@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Overlay } from '@angular/cdk/overlay';
 import { isPlatformBrowser, Location, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
@@ -45,7 +46,7 @@ import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
-import { debounceTime, EMPTY, filter, Observable, skip, switchMap } from 'rxjs';
+import { debounceTime, EMPTY, filter, Observable, skip, switchMap, take } from 'rxjs';
 
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
 import { MeetingHomeActionsComponent } from './components/meeting-home-actions/meeting-home-actions.component';
@@ -118,6 +119,7 @@ export class MeetingsRedesignComponent {
   protected readonly store = inject(MeetingsHomeStore);
   private readonly projectContext = inject(ProjectContextService);
   private readonly modal = inject(UiModalService);
+  private readonly overlay = inject(Overlay);
   private readonly details = inject(MeetingsHomeDetailsService);
   /** A project or foundation's list: no Next/Last cards or project labels, and its own copy. */
   protected readonly projectScope: boolean = inject(MeetingsHomeFeed).scope === 'project';
@@ -250,8 +252,8 @@ export class MeetingsRedesignComponent {
     this.syncTabParam(day.tab);
   }
 
-  /** Opens the full calendar; a meeting picked there opens its details drawer above it. */
-  protected openCalendar(): void {
+  /** Opens the full calendar on `month`; a meeting picked there opens its details drawer above it. */
+  protected openCalendar(month: Date): void {
     const context = this.projectContext.activeContext();
     const data: MeetingCalendarDialogData = {
       upcomingRows: this.store.upcomingRows,
@@ -260,8 +262,22 @@ export class MeetingsRedesignComponent {
       name: context?.name ?? '',
       logoUrl: context?.logoUrl ?? '',
       openMeeting: (row) => this.details.open(row, 'calendar'),
+      showPastFrom: (day) => this.store.showPastFrom(day),
+      month,
     };
-    this.modal.open(MeetingsCalendarDialogComponent, { data }, { height: 'calc(100vh - 32px)' });
+    // Below an impersonation banner, as the drawers sit, so Stop impersonating stays reachable.
+    const ref = this.modal.open(
+      MeetingsCalendarDialogComponent,
+      { data },
+      {
+        height: 'calc(100vh - 32px - var(--lfx-banner-height, 0px))',
+        positionStrategy: this.overlay.position().global().top('calc(16px + var(--lfx-banner-height, 0px))').centerHorizontally(),
+      }
+    );
+    ref.overlayRef.backdropElement?.style.setProperty('top', 'var(--lfx-banner-height, 0px)');
+    // The modal service outlives the page, so leaving the page, for example from the drawer's project link, closes it.
+    const unregister = this.destroyRef.onDestroy(() => ref.close());
+    ref.closed.pipe(take(1)).subscribe(() => unregister());
   }
 
   protected createMeeting(): void {

@@ -155,6 +155,8 @@
         <div
           class="relative bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_47px,theme(colors.gray.200)_47px,theme(colors.gray.200)_48px)] shadow-[inset_1px_0_0_theme(colors.gray.200)]"
           [style.height.px]="hourPx * 24"
+          role="group"
+          [attr.aria-label]="day.label"
           [attr.data-day]="day.key"
           data-testid="meetings-calendar-dialog-week-day">
           @for (event of day.events; track event.key) {

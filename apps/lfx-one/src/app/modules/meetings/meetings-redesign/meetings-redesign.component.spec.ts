@@ -1107,6 +1107,26 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
     });
 
+    it('opens the full calendar on the month the mini calendar shows, and closes it when the page goes', async () => {
+      const fixture = render();
+      projectUpcoming$.next([]);
+      await fixture.whenStable();
+      const mini = query(fixture, 'meetings-redesign-mini-calendar') as HTMLElement;
+      const shown = mini.querySelector('[data-testid="meetings-mini-calendar-title"]')?.textContent?.trim();
+      mini.querySelector<HTMLElement>('[data-testid="meetings-mini-calendar-previous"] button')?.click();
+      await fixture.whenStable();
+      const previous = mini.querySelector('[data-testid="meetings-mini-calendar-title"]')?.textContent?.trim();
+      expect(previous).not.toBe(shown);
+
+      mini.querySelector<HTMLElement>('[data-testid="meetings-mini-calendar-expand"] button')?.click();
+      await fixture.whenStable();
+      expect(document.querySelector('[data-testid="meetings-calendar-dialog-period"]')?.textContent?.trim()).toBe(previous);
+
+      fixture.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(document.querySelector('[data-testid="meetings-calendar-dialog"]')).toBeNull();
+    });
+
     it('uses the project copy for an empty Upcoming tab', async () => {
       const fixture = render();
       projectUpcoming$.next([]);
