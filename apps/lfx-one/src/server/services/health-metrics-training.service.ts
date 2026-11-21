@@ -51,6 +51,9 @@ type SummaryRow = { DELIVERY_TYPE: string; IS_LISTED_DELIVERY_TYPE?: boolean | n
 interface YearRow {
   ENROLLMENT_YEAR: number;
   ENROLLMENT_COUNT: number | null;
+  CERTIFICATION_EXAM_COUNT: number | null;
+  MICROCOURSE_COUNT: number | null;
+  INSTRUCTOR_LED_COUNT: number | null;
 }
 
 /** Totals ride on every row; a page past the end leaves one totals-only row whose course columns are NULL. */
@@ -106,8 +109,9 @@ export class HealthMetricsTrainingService {
       FROM ${TRAINING_SUMMARY_VIEW}
       WHERE foundation_slug = ?
     `;
+    // The three named types per year; the chart's Other is the total less them, so a new type still counts.
     const trendSql = `
-      SELECT enrollment_year, enrollment_count
+      SELECT enrollment_year, enrollment_count, certification_exam_count, microcourse_count, instructor_led_count
       FROM ${TRAINING_ENROLLMENTS_BY_YEAR_VIEW}
       WHERE foundation_slug = ?
       ORDER BY enrollment_year ASC
@@ -131,7 +135,13 @@ export class HealthMetricsTrainingService {
     return {
       measured: true,
       periods,
-      trend: trend.rows.map((row) => ({ year: Number(row.ENROLLMENT_YEAR), enrollments: toNullableNumber(row.ENROLLMENT_COUNT) })),
+      trend: trend.rows.map((row) => ({
+        year: Number(row.ENROLLMENT_YEAR),
+        enrollments: toNullableNumber(row.ENROLLMENT_COUNT),
+        certificationExams: toNullableNumber(row.CERTIFICATION_EXAM_COUNT),
+        microcourses: toNullableNumber(row.MICROCOURSE_COUNT),
+        instructorLed: toNullableNumber(row.INSTRUCTOR_LED_COUNT),
+      })),
       // Goals ride on the `All` row only; a goal of zero or less is no goal.
       goals: Object.fromEntries(HEALTH_METRICS_L2_RANGES.map((range) => [range, toGoals(all, range)])) as Record<
         HealthMetricsL2Range,

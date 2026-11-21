@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HealthMetricsChartTipView } from './health-metrics-l2.interface';
+import type { HealthMetricsChartTipRowView, HealthMetricsChartTipView } from './health-metrics-l2.interface';
 
 /** One stacked series, bottom up: its legend and popup label and its colour. */
 export interface HealthMetricsColumnChartSeries {
@@ -23,6 +23,8 @@ export interface HealthMetricsColumnChartInputColumn {
   /** Drawn at the design's 35% so the current column stands out. */
   muted: boolean;
   tipTitle: string;
+  /** The popup's rows in place of one per series and a Total row, for a chart whose rows read differently. */
+  tipRows?: HealthMetricsChartTipRowView[];
 }
 
 /** What `buildHealthMetricsColumnChart` needs: the series, the columns and how to label them. */
@@ -35,6 +37,8 @@ export interface HealthMetricsColumnChartInput {
   barWidthPx: number;
   formatTotal: (value: number) => string;
   formatValue: (value: number) => string;
+  /** The y axis labels; the compact chart format, such as `24K`, by default. */
+  formatTick?: (value: number) => string;
   ariaLabel: string;
 }
 

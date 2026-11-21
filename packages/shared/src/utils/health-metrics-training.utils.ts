@@ -2,29 +2,36 @@
 // SPDX-License-Identifier: MIT
 
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
+import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
 import {
   HEALTH_METRICS_TRAINING_COURSE_FREE_LABEL,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
   HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES,
   HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS,
+  HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_BAR_WIDTH_PX,
+  HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_HEIGHT_PX,
+  HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS,
   HEALTH_METRICS_TRAINING_NOT_AVAILABLE,
   HEALTH_METRICS_TRAINING_SECTIONS,
   HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES,
   HEALTH_METRICS_TRAINING_TREND_YEARS,
 } from '../constants/health-metrics-training.constants';
+import { buildHealthMetricsColumnChart, formatHealthMetricsChartCompact } from './health-metrics-column-chart.utils';
+import { formatHealthMetricsPercent } from './health-metrics-table.utils';
 import { formatCurrency } from './number.utils';
 
-import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsColumnChartInputColumn, HealthMetricsColumnChartSeries } from '../interfaces/health-metrics-column-chart.interface';
+import type { HealthMetricsChartTipRowView, HealthMetricsL2Range, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsTrainingCourse,
   HealthMetricsTrainingCourseRowView,
   HealthMetricsTrainingEnrollment,
   HealthMetricsTrainingEnrollmentMetric,
-  HealthMetricsTrainingEnrollmentStatView,
+  HealthMetricsTrainingEnrollmentPeriod,
   HealthMetricsTrainingEnrollmentType,
-  HealthMetricsTrainingEnrollmentTypeView,
   HealthMetricsTrainingEnrollmentView,
+  HealthMetricsTrainingEnrollmentYear,
   HealthMetricsTrainingSubNavItem,
 } from '../interfaces/health-metrics-training.interface';
 
@@ -71,70 +78,85 @@ export function formatHealthMetricsTrainingCoursesCountLabel(total: number | nul
   return `${formatHealthMetricsTrainingCount(total)} ${total === 1 ? 'course' : 'courses'}`;
 }
 
-/** Render-ready Enrollment & revenue section for the period, with the by-type list ranked by `metric`. */
+/**
+ * Render-ready Enrollment & revenue: the period's three figures with the selected measure first, and the selected measure
+ * by delivery type over the current year and the five before it. Revenue by type only reaches back four years.
+ */
 export function buildHealthMetricsTrainingEnrollmentView(
   enrollment: HealthMetricsTrainingEnrollment,
   range: HealthMetricsL2Range,
   metric: HealthMetricsTrainingEnrollmentMetric
 ): HealthMetricsTrainingEnrollmentView {
-  const { totals, change, byType } = enrollment.periods[range];
-  const stat = (
-    key: HealthMetricsTrainingEnrollmentStatView['key'],
-    label: string,
-    value: string,
-    fraction: number | null
-  ): HealthMetricsTrainingEnrollmentStatView => ({ key, label, value, ...formatTrainingDelta(fraction) });
+  const currentYear = getYearForRange('YTD');
+  const years = Array.from({ length: HEALTH_METRICS_TRAINING_TREND_YEARS }, (_, index) => currentYear - HEALTH_METRICS_TRAINING_TREND_YEARS + 1 + index);
+  const columns = years.map((year) => {
+    const label = year === currentYear ? `${year} YTD` : String(year);
+    return metric === 'revenue'
+      ? revenueColumn(enrollment, year, label)
+      : enrollmentColumn(
+          enrollment.trend.find((row) => row.year === year),
+          label
+        );
+  });
 
-  const partialYear = getYearForRange('YTD');
+  // Other drops out of the chart and its legend when it is zero in every year shown.
+  const otherIndex = HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.findIndex((segment) => segment.key === 'other');
+  const keep = HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map(
+    (_, index) => index !== otherIndex || columns.some((column) => (column.values?.[index] ?? 0) > 0)
+  );
+  const series: HealthMetricsColumnChartSeries[] = HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.filter((_, index) => keep[index]).map(
+    ({ key, label, color }) => ({
+      key,
+      label,
+      color,
+    })
+  );
+  const keepRow = (row: HealthMetricsChartTipRowView) => series.some((entry) => entry.label === row.label);
+  const isRevenue = metric === 'revenue';
+  // The design's totals read "{N}" for enrollments and "${N}K" for revenue; the axis stays compact either way.
+  const formatTotal = isRevenue ? formatTrainingChartUsd : formatHealthMetricsTrainingCount;
+  const formatTick = isRevenue ? formatTrainingChartUsd : formatHealthMetricsChartCompact;
+
+  const chartColumns: HealthMetricsColumnChartInputColumn[] = columns.map((column, columnIndex) => ({
+    key: String(years[columnIndex]),
+    label: column.label,
+    sub: '',
+    values: column.values ? column.values.filter((_, index) => keep[index]) : null,
+    total: column.total,
+    muted: years[columnIndex] !== currentYear,
+    tipTitle: column.tipTitle,
+    tipRows: column.tipRows.filter(keepRow),
+  }));
+  const subHeading = isRevenue ? 'Revenue by type over the years' : 'Enrollments by type over the years';
 
   return {
-    baselineLabel: change ? 'all against the same point last year' : 'no year-over-year comparison for this period',
-    headline: stat('enrollments', 'Enrollments', formatHealthMetricsTrainingCount(totals.enrollments), change?.enrollments ?? null),
-    side: [
-      stat('certifications', 'Certifications earned', formatHealthMetricsTrainingCount(totals.certifications), change?.certifications ?? null),
-      stat('revenue', 'Revenue', formatHealthMetricsTrainingRevenue(totals.revenueUsd), change?.revenueUsd ?? null),
-    ],
-    typeCountLabel: formatTrainingTypeCount(byType.filter(hasEnrollments).length),
-    byType: buildTrainingTypeRows(byType, metric),
-    trend: [...enrollment.trend]
-      .sort((a, b) => a.year - b.year)
-      .slice(-HEALTH_METRICS_TRAINING_TREND_YEARS)
-      .map((year) => {
-        const isPartialYear = year.year === partialYear;
-        return {
-          year: year.year,
-          enrollments: year.enrollments,
-          isPartialYear,
-          yearLabel: isPartialYear ? `${year.year} (partial year)` : String(year.year),
-          enrollmentsLabel: formatHealthMetricsTrainingCount(year.enrollments),
-        };
-      }),
+    metrics: buildTrainingMetrics(enrollment.periods[range], metric),
+    subHeading,
+    chart: buildHealthMetricsColumnChart({
+      series,
+      columns: chartColumns,
+      peak: Math.max(0, ...columns.map((column) => Math.max(column.total ?? 0, stackHeight(column.values)))),
+      heightPx: HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_HEIGHT_PX,
+      barWidthPx: HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_BAR_WIDTH_PX,
+      formatTotal,
+      formatValue: formatTotal,
+      formatTick,
+      ariaLabel: `${subHeading}, ${years[0]} to ${currentYear}`,
+    }),
+    table: {
+      headers: ['Year', ...series.map((entry) => entry.label), 'Total'],
+      rows: chartColumns.map((column) => ({
+        key: column.key,
+        cells: [
+          column.label,
+          ...series.map((_, index) =>
+            column.values?.[index] === null || column.values?.[index] === undefined ? '—' : formatTrainingValue(column.values[index], isRevenue)
+          ),
+          column.total === null ? '—' : formatTrainingValue(column.total, isRevenue),
+        ],
+      })),
+    },
   };
-}
-
-/** Enrollments keep the model's `sort_rank` order, showing listed types with any; revenue drops edX and ranks highest first. */
-function buildTrainingTypeRows(
-  types: HealthMetricsTrainingEnrollmentType[],
-  metric: HealthMetricsTrainingEnrollmentMetric
-): HealthMetricsTrainingEnrollmentTypeView[] {
-  const pick = (type: HealthMetricsTrainingEnrollmentType): number | null => (metric === 'revenue' ? type.revenueUsd : type.enrollments);
-  const shown =
-    metric === 'revenue' ? types.filter((type) => !HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES.includes(type.deliveryType)) : types.filter(hasEnrollments);
-  const ordered = metric === 'revenue' ? [...shown].sort((a, b) => (pick(b) ?? -Infinity) - (pick(a) ?? -Infinity)) : shown;
-
-  return ordered.map((type) => {
-    const value = pick(type);
-    return {
-      deliveryType: type.deliveryType,
-      label: getHealthMetricsTrainingDeliveryTypeLabel(type.deliveryType),
-      value: metric === 'revenue' ? formatHealthMetricsTrainingRevenue(value) : formatHealthMetricsTrainingCount(value),
-    };
-  });
-}
-
-/** The by-type list and its count: a type the model lists, with enrollments in the period. */
-function hasEnrollments(type: HealthMetricsTrainingEnrollmentType): boolean {
-  return type.isListed && (type.enrollments ?? 0) > 0;
 }
 
 /** Negative net revenue (refunds) shows as it is; free is reach, and an uncaptured course is not available. */
@@ -144,16 +166,98 @@ function formatCourseRevenue(course: HealthMetricsTrainingCourse, measured: bool
   return measured ? formatCurrency(course.revenueUsd ?? 0) : HEALTH_METRICS_TRAINING_NOT_AVAILABLE;
 }
 
-function formatTrainingTypeCount(count: number): string {
-  return `${count} ${count === 1 ? 'delivery type' : 'delivery types'}`;
+interface TrainingColumn {
+  label: string;
+  /** One per segment, bottom up; `null` for a year with no data for the measure. */
+  values: (number | null)[] | null;
+  total: number | null;
+  tipTitle: string;
+  tipRows: HealthMetricsChartTipRowView[];
 }
 
-/** The model's change fraction as a whole percent; `not available` when the model has none. */
-function formatTrainingDelta(fraction: number | null): Pick<HealthMetricsTrainingEnrollmentStatView, 'delta' | 'deltaDirection'> {
-  if (fraction === null) return { delta: HEALTH_METRICS_TRAINING_NOT_AVAILABLE, deltaDirection: 'neutral' };
+/** The period's Enrollments, Certifications earned and Revenue, the selected measure first; an unset figure reads "—". */
+function buildTrainingMetrics(period: HealthMetricsTrainingEnrollmentPeriod, metric: HealthMetricsTrainingEnrollmentMetric): HealthMetricsMetricItem[] {
+  const { enrollments, certifications, revenueUsd } = period.totals;
+  const items: Record<'enrollments' | 'certifications' | 'revenue', HealthMetricsMetricItem> = {
+    enrollments: { key: 'enrollments', label: 'Enrollments', value: enrollments === null ? '—' : formatHealthMetricsTrainingCount(enrollments) },
+    certifications: {
+      key: 'certifications',
+      label: 'Certifications earned',
+      value: certifications === null ? '—' : formatHealthMetricsTrainingCount(certifications),
+    },
+    revenue: { key: 'revenue', label: 'Revenue', value: revenueUsd === null ? '—' : formatTrainingChartUsd(revenueUsd) },
+  };
+  return metric === 'revenue' ? [items.revenue, items.enrollments, items.certifications] : [items.enrollments, items.certifications, items.revenue];
+}
 
-  const rounded = Math.round(fraction * 100);
-  if (rounded === 0) return { delta: '0%', deltaDirection: 'neutral' };
+/** A year's enrollments by type: Other is the total less the three named types, so a new type still counts. No row is a quiet year. */
+function enrollmentColumn(row: HealthMetricsTrainingEnrollmentYear | undefined, label: string): TrainingColumn {
+  const named = [row?.certificationExams ?? 0, row?.microcourses ?? 0, row?.instructorLed ?? 0];
+  const total = row?.enrollments ?? 0;
+  const values = [...named, Math.max(0, total - named.reduce((sum, value) => sum + value, 0))];
+  const share = (value: number) => (total > 0 ? ` · ${formatHealthMetricsPercent((value / total) * 100)}` : '');
 
-  return { delta: `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}%`, deltaDirection: rounded > 0 ? 'up' : 'down' };
+  return {
+    label,
+    values,
+    // A year with no activity keeps its column at zero, with no total over it.
+    total: total > 0 ? total : null,
+    tipTitle: `${label} · ${formatHealthMetricsTrainingCount(total)} ${total === 1 ? 'enrollment' : 'enrollments'}`,
+    tipRows: HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map((segment, index) => ({
+      label: segment.label,
+      value: `${formatHealthMetricsTrainingCount(values[index])}${share(values[index])}`,
+      color: segment.color,
+      separated: false,
+    })),
+  };
+}
+
+/**
+ * A year's revenue by type, from the period that covers it. Other sums every other type except edX, whose revenue is never
+ * captured; a type with no captured revenue has no row, and one at zero reads "Free". Years before the four periods have none.
+ */
+function revenueColumn(enrollment: HealthMetricsTrainingEnrollment, year: number, label: string): TrainingColumn {
+  const range = HEALTH_METRICS_L2_RANGES.find((candidate) => getYearForRange(candidate) === year);
+  const period = range ? enrollment.periods[range] : null;
+  const types = (period?.byType ?? []).filter((type) => !HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES.includes(type.deliveryType));
+  if (!period || !enrollment.measured || types.every((type) => type.revenueUsd === null)) {
+    return { label, values: null, total: null, tipTitle: `Revenue not available for ${year}`, tipRows: [] };
+  }
+
+  const named = new Set(HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map((segment) => segment.deliveryType).filter(Boolean));
+  const values = HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map((segment) =>
+    sumRevenue(types.filter((type) => (segment.deliveryType === null ? !named.has(type.deliveryType) : type.deliveryType === segment.deliveryType)))
+  );
+  const total = period.totals.revenueUsd;
+
+  return {
+    label,
+    values,
+    total,
+    tipTitle: `${label} · ${total === null ? '—' : formatTrainingChartUsd(total)} revenue`,
+    tipRows: HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.flatMap((segment, index) => {
+      const value = values[index];
+      if (value === null) return [];
+      return [{ label: segment.label, value: value === 0 ? 'Free' : formatTrainingChartUsd(value), color: segment.color, separated: false }];
+    }),
+  };
+}
+
+/** The captured revenue of a set of types; `null` when none of them has any captured, which no row or bar shows. */
+function sumRevenue(types: HealthMetricsTrainingEnrollmentType[]): number | null {
+  const captured = types.map((type) => type.revenueUsd).filter((value): value is number => value !== null);
+  return captured.length ? captured.reduce((sum, value) => sum + value, 0) : null;
+}
+
+/** A column's stacked height: its positive values summed, as the chart stacks them. */
+function stackHeight(values: (number | null)[] | null): number {
+  return (values ?? []).reduce((sum: number, value) => sum + Math.max(0, value ?? 0), 0);
+}
+
+function formatTrainingChartUsd(value: number): string {
+  return `${value < 0 ? '−' : ''}$${formatHealthMetricsChartCompact(Math.abs(value))}`;
+}
+
+function formatTrainingValue(value: number, isRevenue: boolean): string {
+  return isRevenue ? formatTrainingChartUsd(value) : formatHealthMetricsTrainingCount(value);
 }

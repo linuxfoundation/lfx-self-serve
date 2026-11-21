@@ -11,8 +11,15 @@
   [blank]="blank"
   navLabel="Training sections"
   testIdPrefix="training">
+  <ng-template lfxHealthMetricsL2SectionControls="enroll">
+    <lfx-ui-switch size="small" ariaLabel="Measure" [value]="enrollMetric()" (valueChange)="onEnrollMetricChange($event)" data-testid="training-enroll-metric">
+      @for (option of enrollMetrics; track option.id) {
+        <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'training-enroll-metric-' + option.id" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="enroll">
-    <lfx-training-enroll (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll', $event)" />
+    <lfx-training-enroll [(metric)]="enrollMetric" (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="courses">
     <lfx-training-courses (reading)="shell.sectionReading('courses')" (settled)="shell.sectionSettled('courses', $event)" />
