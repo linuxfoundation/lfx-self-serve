@@ -89,7 +89,7 @@ describe('OrgEventsTableComponent', () => {
     expect(el.querySelector('[data-testid="org-events-attendees-owner"]')?.textContent?.trim()).toBe(ORG_EVENTS_ROLL_UP_PAGE_COPY.attendeesOwner);
   });
 
-  it("says it could not read the organizations' events in a roll-up, and the company's otherwise", async () => {
+  it("says it could not read the companies' events in a roll-up, and the company's otherwise", async () => {
     const rollUp = await render({ rollUp: true, loadFailed: true, events: [] });
     expect(rollUp.querySelector('[data-testid="org-events-load-error"]')?.textContent).toContain(ORG_EVENTS_ROLL_UP_PAGE_COPY.loadError);
     TestBed.resetTestingModule();
