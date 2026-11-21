@@ -3,7 +3,19 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from './campaign-meta-lead-form.utils';
+import {
+  hasMetaLeadFormKeyVariant,
+  metaCallToActionAllowedWithLeadForm,
+  metaLeadFormChoices,
+  metaLeadFormDraftRefusal,
+  metaLeadFormForObjective,
+  metaLeadFormId,
+  metaLeadFormPickerView,
+  metaLeadFormRefusal,
+  metaLeadFormRestore,
+  metaObjectiveAfterFoundationSwitch,
+  metaObjectiveChoices,
+} from './campaign-meta-lead-form.utils';
 
 describe('metaLeadFormRefusal', () => {
   it.each([
@@ -57,5 +69,111 @@ describe('hasMetaLeadFormKeyVariant', () => {
     expect(hasMetaLeadFormKeyVariant({ leadFormId: '1' })).toBe(false);
     expect(hasMetaLeadFormKeyVariant({ objective: 'leads' })).toBe(false);
     expect(hasMetaLeadFormKeyVariant(undefined)).toBe(false);
+  });
+});
+
+describe('metaObjectiveChoices', () => {
+  it('hides leads unless lead forms are enabled', () => {
+    expect(metaObjectiveChoices(false)).toEqual(['awareness', 'traffic', 'engagement', 'conversions']);
+    expect(metaObjectiveChoices(true)).toEqual(['awareness', 'traffic', 'engagement', 'leads', 'conversions']);
+  });
+});
+
+describe('metaLeadFormChoices', () => {
+  it('lets only an ACTIVE form with a valid id be picked, and shows the others with their status', () => {
+    expect(
+      metaLeadFormChoices([
+        { id: '111', name: 'Registrations', status: 'ACTIVE' },
+        { id: '222', name: 'Old form', status: 'ARCHIVED' },
+        { id: 'not-digits', name: 'Odd id', status: 'active' },
+        { id: '333', name: 'No status', status: ' ' },
+      ])
+    ).toEqual([
+      { value: '111', label: 'Registrations', disabled: false },
+      { value: '222', label: 'Old form (archived)', disabled: true },
+      { value: 'not-digits', label: 'Odd id (active)', disabled: true },
+      { value: '333', label: 'No status (unknown)', disabled: true },
+    ]);
+  });
+});
+
+describe('metaLeadFormForObjective', () => {
+  it('keeps the form only on leads', () => {
+    expect(metaLeadFormForObjective('leads', '111')).toBe('111');
+    expect(metaLeadFormForObjective('traffic', '111')).toBe('');
+  });
+});
+
+describe('metaCallToActionAllowedWithLeadForm', () => {
+  it.each([
+    ['SIGN_UP', true, true],
+    [' learn_more ', true, true],
+    ['BUY_TICKETS', true, false],
+    ['BUY_TICKETS', false, true],
+  ])('%s with a lead form %s -> %s', (cta, withForm, allowed) => {
+    expect(metaCallToActionAllowedWithLeadForm(cta, withForm)).toBe(allowed);
+  });
+});
+
+describe('metaLeadFormDraftRefusal', () => {
+  const draft = { leadFormsEnabled: true, objective: 'leads' as const, leadFormId: '111', manualBidding: false };
+
+  it.each([
+    ['lead forms off, on leads without a form (a draft from before lead forms)', { ...draft, leadFormsEnabled: false, leadFormId: '' }],
+    ['lead forms off, on another objective', { ...draft, leadFormsEnabled: false, objective: 'traffic' as const, leadFormId: '' }],
+    ['another objective', { ...draft, objective: 'traffic' as const, leadFormId: '' }],
+    ['a form on leads', draft],
+    ['a form with a call to action it can carry', { ...draft, callToAction: 'SIGN_UP' }],
+  ])('accepts %s', (_label, value) => {
+    expect(metaLeadFormDraftRefusal(value)).toBeNull();
+  });
+
+  it.each([
+    ['leads with no form', { ...draft, leadFormId: '  ' }, 'metaConfig.leadFormId'],
+    ['a form held while lead forms are off', { ...draft, leadFormsEnabled: false }, 'metaConfig.leadFormId'],
+    ['a typed id that is not digits', { ...draft, leadFormId: 'abc' }, 'metaConfig.leadFormId'],
+    ['manual bidding', { ...draft, manualBidding: true }, 'metaConfig.leadFormId'],
+    ['a call to action a form cannot carry', { ...draft, callToAction: 'BUY_TICKETS' }, 'metaConfig.callToAction'],
+  ])('refuses %s', (_label, value, field) => {
+    expect(metaLeadFormDraftRefusal(value)?.field).toBe(field);
+  });
+});
+
+describe('metaObjectiveAfterFoundationSwitch', () => {
+  it('drops leads to the default and keeps every other objective', () => {
+    expect(metaObjectiveAfterFoundationSwitch('leads')).toBe('traffic');
+    expect(metaObjectiveAfterFoundationSwitch('conversions')).toBe('conversions');
+  });
+});
+
+describe('metaLeadFormRestore', () => {
+  it('restores the form only under the foundation it was picked under, and only on leads', () => {
+    expect(metaLeadFormRestore({ objective: 'leads', leadFormId: '111', project: 'tlf' }, 'tlf')).toEqual({ objective: 'leads', leadFormId: '111' });
+    expect(metaLeadFormRestore({ objective: 'traffic', leadFormId: '111', project: 'tlf' }, 'tlf')).toEqual({ objective: 'traffic', leadFormId: '' });
+  });
+
+  it('drops leads and the form when the draft was saved under another foundation', () => {
+    expect(metaLeadFormRestore({ objective: 'leads', leadFormId: '111', project: 'tlf' }, 'cncf')).toEqual({ objective: 'traffic', leadFormId: '' });
+    expect(metaLeadFormRestore({ objective: 'conversions', leadFormId: '', project: 'tlf' }, 'cncf')).toEqual({ objective: 'conversions', leadFormId: '' });
+  });
+
+  it('changes nothing for a draft without a saved form, or while the foundation is unknown', () => {
+    expect(metaLeadFormRestore({ objective: 'leads' }, 'cncf')).toEqual({ objective: 'leads', leadFormId: null });
+    expect(metaLeadFormRestore({ objective: 'leads', leadFormId: '111', project: 'tlf' }, '')).toEqual({ objective: 'leads', leadFormId: null });
+  });
+});
+
+describe('metaLeadFormPickerView', () => {
+  const choices = [{ value: '111', label: 'Registrations', disabled: false }];
+
+  it('shows the select for listed forms, with a held id the list does not show as its own option', () => {
+    expect(metaLeadFormPickerView(choices, '')).toEqual({ empty: false, select: true, heldIdUnlisted: false });
+    expect(metaLeadFormPickerView(choices, '111')).toEqual({ empty: false, select: true, heldIdUnlisted: false });
+    expect(metaLeadFormPickerView(choices, '999')).toEqual({ empty: false, select: true, heldIdUnlisted: true });
+  });
+
+  it('keeps a held id visible when the Page has no forms, and shows only the empty text otherwise', () => {
+    expect(metaLeadFormPickerView([], '999')).toEqual({ empty: true, select: true, heldIdUnlisted: true });
+    expect(metaLeadFormPickerView([], '')).toEqual({ empty: true, select: false, heldIdUnlisted: false });
   });
 });

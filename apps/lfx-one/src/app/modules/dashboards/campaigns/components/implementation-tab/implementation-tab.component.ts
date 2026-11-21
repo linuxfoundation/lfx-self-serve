@@ -86,7 +86,6 @@ import {
   MICROSOFT_NEW_KEYWORD_MATCH_TYPE,
   MICROSOFT_MIN_CPC_BID,
   META_OBJECTIVE_LABELS,
-  META_SELECTABLE_OBJECTIVES,
   META_PLACEMENT_LABELS,
   META_SELECTABLE_PLACEMENTS,
   META_INELIGIBLE_COUNTRIES,
@@ -480,12 +479,19 @@ import {
   metaAdOptionApplies,
   metaAdOptionLabel,
   metaAdOptionsRefusal,
+  metaCallToActionAllowedWithLeadForm,
+  metaLeadFormDraftRefusal,
+  metaLeadFormForObjective,
+  metaLeadFormRestore,
+  metaObjectiveAfterFoundationSwitch,
+  metaObjectiveChoices,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
+import { MetaLeadFormPickerComponent } from '../meta-lead-form-picker/meta-lead-form-picker.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
 import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
@@ -568,6 +574,7 @@ let linkedInVariantKeySequence = 0;
     CampaignBiddingControlComponent,
     CampaignGoogleDemographicTargetingComponent,
     MetaAudienceTargetingComponent,
+    MetaLeadFormPickerComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
     CampaignGoogleSearchAdsPanelComponent,
@@ -979,6 +986,14 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaAdOptionsEnabled = input<Partial<Record<MetaAdOptionKey, boolean | null>>>({});
 
   /**
+   * Whether THIS caller may create a Meta lead ad (#5940) — `CampaignListResult.metaLeadFormsEnabled`: the
+   * deployment flag `LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS` and `global_marketing_ops` on the project.
+   * Only an explicit `true` offers the Leads objective and its form picker; otherwise `leads` stays hidden.
+   */
+  public readonly metaLeadFormsEnabled = input<boolean | null>(null);
+  protected readonly metaLeadFormsAvailable = computed<boolean>(() => this.metaLeadFormsEnabled() === true);
+
+  /**
    * Whether this deployment can SEARCH Google's geo target table for postal-code targets —
    * `CampaignListResult.googleGeoSearchEnabled`, behind `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH`.
    * `null` (unanswered) and `false` keep the typed-id box, which is the section exactly as it was
@@ -1232,11 +1247,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaCharLimits = META_CHAR_LIMITS;
   protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
   /**
-   * Read from `META_SELECTABLE_OBJECTIVES`, NOT from the labels map's keys: the labels map stays
-   * total over `MetaObjective` so restored objectives still render a name, and `leads` is hidden
-   * from the picker only. See that constant for why.
+   * `META_SELECTABLE_OBJECTIVES`, plus `leads` only for a caller who may send a lead form (#5940): the labels
+   * map stays total over `MetaObjective` so restored objectives still render a name, and `leads` without a
+   * form would run as traffic. See that constant for why.
    */
-  protected readonly metaObjectiveOptions = META_SELECTABLE_OBJECTIVES;
+  protected readonly metaObjectiveOptions = computed<MetaObjective[]>(() => metaObjectiveChoices(this.metaLeadFormsAvailable()));
   /**
    * True when the restored objective is one the picker no longer offers — today only `leads`.
    *
@@ -1251,12 +1266,9 @@ export class ImplementationTabComponent implements OnInit {
    * Rendering it as a disabled option is what makes display and dispatch agree; disabled is what
    * keeps it visible without letting anyone newly choose it.
    *
-   * The widening cast is deliberate: `META_SELECTABLE_OBJECTIVES` is narrowed to
-   * `SelectableMetaObjective` so a hidden objective cannot be listed in it, which also makes
-   * `.includes()` reject the very value this asks about. Widening for the membership test is
-   * what keeps that narrowing — the guard against re-adding `leads` — intact.
+   * Read from {@link metaObjectiveOptions}, so `leads` counts as available exactly when it is offered.
    */
-  protected readonly metaObjectiveIsUnavailable = computed(() => !(META_SELECTABLE_OBJECTIVES as readonly MetaObjective[]).includes(this.metaObjective()));
+  protected readonly metaObjectiveIsUnavailable = computed(() => !this.metaObjectiveOptions().includes(this.metaObjective()));
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
@@ -1568,6 +1580,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaAudienceTargeting = signal<MetaAudienceTargetingDraft>(this.defaultMetaAudienceTargeting());
   /** The Meta call to action, conversion event and optimization goal as chosen (#5934); an absent key is "Not set". */
   protected readonly metaAdOptions = signal<MetaAdOptions>({});
+  /** The Meta Instant Form picked or typed in `lfx-meta-lead-form-picker` (#5940); blank is none. Sent only under `leads`. */
+  protected readonly metaLeadFormId = signal('');
   protected readonly creationProgress = signal<string[]>([]);
   protected readonly results = signal<CampaignCreateResult[]>([]);
   /**
@@ -3404,7 +3418,9 @@ export class ImplementationTabComponent implements OnInit {
         options: field.values.map((value) => ({
           value,
           label: metaAdOptionLabel(value),
-          disabled: field.key === 'optimizationGoal' && value === 'LANDING_PAGE_VIEWS' && this.metaManualBidding(),
+          disabled:
+            (field.key === 'optimizationGoal' && value === 'LANDING_PAGE_VIEWS' && this.metaManualBidding()) ||
+            (field.key === 'callToAction' && !metaCallToActionAllowedWithLeadForm(value, this.metaLeadFormRequested())),
         })),
       })
     )
@@ -3412,6 +3428,19 @@ export class ImplementationTabComponent implements OnInit {
   /** Why the Meta ad choices cannot be sent, or `null`: the create route's own rules. */
   protected readonly metaAdOptionsError = computed<string | null>(
     () => metaAdOptionsRefusal(this.metaAdOptions(), this.metaObjective(), this.metaManualBidding())?.message ?? null
+  );
+  /** Whether the create carries a lead form (#5940): only `leads`, and only for a caller who may send one. */
+  protected readonly metaLeadFormRequested = computed<boolean>(() => this.metaLeadFormsAvailable() && this.metaObjective() === 'leads');
+  /** Why the Meta lead form holds Create, or `null`: `leads` needs a form, and the form the create route's own rules (#5940). */
+  protected readonly metaLeadFormError = computed<string | null>(
+    () =>
+      metaLeadFormDraftRefusal({
+        leadFormsEnabled: this.metaLeadFormsAvailable(),
+        objective: this.metaObjective(),
+        leadFormId: this.metaLeadFormId(),
+        manualBidding: this.metaManualBidding(),
+        callToAction: this.metaAdOptions().callToAction,
+      })?.message ?? null
   );
   protected readonly metaAdOptionsBlock: Signal<CampaignBiddingCapabilityBlock | null> = this.initMetaAdOptionsBlock();
 
@@ -3977,6 +4006,7 @@ export class ImplementationTabComponent implements OnInit {
     if (metaSelected && this.metaAudienceTargetingError() !== null) return `Meta Ads: ${this.metaAudienceTargetingError()}`;
     if (metaSelected && this.metaAdOptionsBlock() !== null) return `Meta Ads: ${this.metaAdOptionsBlock()?.message}`;
     if (metaSelected && this.metaAdOptionsError() !== null) return `Meta Ads: ${this.metaAdOptionsError()}`;
+    if (metaSelected && this.metaLeadFormError() !== null) return `Meta Ads: ${this.metaLeadFormError()}`;
 
     // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
     // than a refusal, which is why they are caught here — the operator would otherwise learn at
@@ -4945,6 +4975,10 @@ export class ImplementationTabComponent implements OnInit {
         this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
         // The Meta ad choices (#5934) are reset too: their capabilities are re-read for this foundation.
         this.metaAdOptions.set({});
+        // So is the lead form (#5940): it belongs to the previous foundation's Page. A `leads` objective falls back
+        // too, since lead forms are re-read for this foundation and `leads` without a form would go out as traffic.
+        this.metaLeadFormId.set('');
+        this.metaObjective.set(metaObjectiveAfterFoundationSwitch(this.metaObjective()));
         this.emitDraft();
       });
   }
@@ -5619,6 +5653,8 @@ export class ImplementationTabComponent implements OnInit {
     this.metaObjective.set((event.target as HTMLSelectElement).value as MetaObjective);
     // A conversion event or optimization goal the new objective does not take is cleared, not kept hidden (#5934).
     this.dropInapplicableMetaAdOptions();
+    // Only `leads` carries a lead form, so leaving it clears the form (#5940).
+    this.metaLeadFormId.set(metaLeadFormForObjective(this.metaObjective(), this.metaLeadFormId()));
     // Every Meta mutation emits. These signals are invisible to `campaignForm.valueChanges`, so
     // without this the parent's draft never learns the edit and a tab switch reverts it.
     this.emitDraft();
@@ -5651,6 +5687,12 @@ export class ImplementationTabComponent implements OnInit {
       else next[key] = value;
       return next;
     });
+    this.emitDraft();
+  }
+
+  /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
+  protected onMetaLeadFormChange(leadFormId: string): void {
+    this.metaLeadFormId.set(leadFormId);
     this.emitDraft();
   }
 
@@ -6741,6 +6783,8 @@ export class ImplementationTabComponent implements OnInit {
               ...this.metaTargetingField(),
               // Only the choices this deployment confirmed; any other holds Create ({@link metaAdOptionsBlock}).
               ...this.metaAdOptionsField(),
+              // Only under `leads` for a caller who may send one; `canSubmit` has already refused a missing or bad form (#5940).
+              ...(this.metaLeadFormRequested() ? { leadFormId: this.metaLeadFormId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('meta-ads'),
             },
@@ -8864,6 +8908,17 @@ export class ImplementationTabComponent implements OnInit {
       this.metaAdOptions.set(compactMetaAdOptions(draft.metaAdOptions));
       this.dropInapplicableMetaAdOptions();
     }
+    // The lead form (#5940) on the same foundation rule, and only if the restored objective takes one. A draft
+    // saved under another foundation also drops `leads`, as the in-place switch does: this component may be new
+    // since the switch (left the tab and came back), so that handler never ran for it.
+    const leadFormRestore = metaLeadFormRestore(
+      { objective: this.metaObjective(), leadFormId: draft.metaLeadFormId, project: draft.metaLeadFormProject },
+      this.activeFoundationSlug()
+    );
+    this.metaObjective.set(leadFormRestore.objective);
+    if (leadFormRestore.leadFormId !== null) {
+      this.metaLeadFormId.set(leadFormRestore.leadFormId);
+    }
     if (draft.metaGeoTargets !== undefined) {
       this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));
     }
@@ -9414,6 +9469,8 @@ export class ImplementationTabComponent implements OnInit {
       metaAudienceTargetingProject: this.activeFoundationSlug(),
       metaAdOptions: { ...this.metaAdOptions() },
       metaAdOptionsProject: this.activeFoundationSlug(),
+      metaLeadFormId: this.metaLeadFormId(),
+      metaLeadFormProject: this.activeFoundationSlug(),
       metaBudgetUsd: this.metaBudgetUsd(),
       metaLifetimeBudget: this.metaLifetimeBudget(),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
@@ -9803,6 +9860,7 @@ export class ImplementationTabComponent implements OnInit {
     // Another brief's audiences must never reach a live create either, nor its Meta ad choices.
     this.metaAudienceTargeting.set(this.defaultMetaAudienceTargeting());
     this.metaAdOptions.set({});
+    this.metaLeadFormId.set('');
     this.metaBudgetUsd.set(DEFAULT_META_BUDGET_USD);
     this.metaLifetimeBudget.set(false);
     this.metaImageUrl.set('');
