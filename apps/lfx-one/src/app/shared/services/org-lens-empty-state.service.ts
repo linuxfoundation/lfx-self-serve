@@ -9,6 +9,7 @@ import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
+import { OrgLensViewModeService } from './org-lens-view-mode.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
@@ -20,7 +21,7 @@ import { PersonaService } from './persona.service';
  * incomplete roll-up must not veto an organization that is present. So the order is
  *
  *   1. caller holds the selected organization (or is in a company-wide team, or reaches it only as its
- *      CLA Manager — M3)                                       → render the page (`null`)
+ *      CLA Manager — M3, or through the all employee view — #5845) → render the page (`null`)
  *   2. lookup failed outright (roster never loaded)             → `could-not-load`
  *   3. lookup partial (or the M3 CLA-manager lookup failed)
  *      AND caller holds nothing loaded                          → `could-not-load`
@@ -54,6 +55,7 @@ export class OrgLensEmptyStateService {
   private readonly persona = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
+  private readonly viewMode = inject(OrgLensViewModeService);
 
   /**
    * Generation of the list fetch the last `retry()` started, or `null` before any. `orgNavigation.loading`
@@ -69,7 +71,15 @@ export class OrgLensEmptyStateService {
    * the page must ask the server whether it is readable. `null` for everyone else.
    */
   private readonly contractorProbeUid: Signal<string | null> = computed(() => {
-    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly() || this.selectionAwaitsClaOnlyRows()) {
+    if (
+      !this.roleGrants.loaded() ||
+      !this.roleGrants.isContractor() ||
+      this.selectedHeld() ||
+      this.selectedClaOnly() ||
+      this.viewMode.isEmployeeView() ||
+      this.viewMode.isFullAccessReader() ||
+      this.selectionAwaitsClaOnlyRows()
+    ) {
       return null;
     }
     const uid = this.accountContext.selectedAccount().uid;
@@ -198,7 +208,8 @@ export class OrgLensEmptyStateService {
     if (!this.settled()) {
       return null;
     }
-    if (this.selectedHeld() || this.selectedClaOnly()) {
+    // Epic #5845 — the all employee view opens the selected company read-only, so the page renders (redacted by the server).
+    if (this.selectedHeld() || this.selectedClaOnly() || this.viewMode.isEmployeeView() || this.viewMode.isFullAccessReader()) {
       return null;
     }
     const holdsAnything = this.accountContext.hasOrgSelectorAccess();

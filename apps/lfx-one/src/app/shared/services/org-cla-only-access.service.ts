@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
@@ -23,14 +23,20 @@ export class OrgClaOnlyAccessService {
   /** Selector entries. */
   public readonly claOnlyOrgUids: Signal<ReadonlySet<string>> = this.orgRoleGrants.claManagerOrgSet;
 
-  /** The caller's CLA-manager companies could not be read, so `claOnlyOrgUids` being empty is unknown. */
-  public readonly lookupFailed: Signal<boolean> = this.orgRoleGrants.claManagerLookupFailed;
+  /**
+   * Something the caller might hold could not be read, so "holds nothing" is unknown and the empty state shows the retryable outage
+   * state: their CLA-manager companies (`claOnlyOrgUids` being empty is unknown) or, epic #5845, their all employee view company.
+   */
+  public readonly lookupFailed: Signal<boolean> = computed(() => this.orgRoleGrants.claManagerLookupFailed() || this.orgRoleGrants.employeeViewLookupFailed());
 
   public isClaOnly(uid: string | null | undefined): boolean {
     if (!uid) return false;
     // A grant that arrived after the address was resolved wins: the selected organization skips the
     // resolver on later navigations, so nothing else would clear the note.
     if (this.holdsOrgLensAccess(uid)) return false;
+    // Proven employee access supersedes CLA-only (epic #5845): otherwise a qualifying employee who also manages the
+    // company's CLAs would be confined to EasyCLA and redirected there from every other page.
+    if (this.orgRoleGrants.employeeViewOrgUids().has(uid) || this.orgRoleGrants.fullAccessOrgUids().has(uid)) return false;
     return this.claOnlyOrgUids().has(uid) || this.addressedClaOnlyUids().has(uid);
   }
 

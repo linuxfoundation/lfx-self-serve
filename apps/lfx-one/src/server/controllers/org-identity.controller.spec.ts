@@ -3,6 +3,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../services/org-employee-view.service', () => ({
+  OrgEmployeeViewService: class {
+    public resolve = vi.fn().mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
+    public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
+  },
+}));
+
 const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants, getRollUpSet, getClaManagerOrgs, getRoleGrantAffiliation } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
@@ -268,6 +275,18 @@ describe('OrgIdentityController.resolveSegment', () => {
 
     expect(res.status).toHaveBeenCalledWith(502);
     expect(res.json).toHaveBeenCalledWith({ error: 'Upstream query-service failure' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('preserves a qualification-lookup outage as a structured 503, not a 502 or a 404 (#5845)', async () => {
+    resolveSegment.mockRejectedValue(new MicroserviceError('Try again.', 503, 'ROLE_GRANTS_UNAVAILABLE', { operation: 'op', service: 'svc' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgIdentityController().resolveSegment(request('acme'), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Try again.', code: 'ROLE_GRANTS_UNAVAILABLE' });
     expect(next).not.toHaveBeenCalled();
   });
 

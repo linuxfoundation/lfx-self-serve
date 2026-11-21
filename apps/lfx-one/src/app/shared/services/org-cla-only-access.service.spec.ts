@@ -12,14 +12,20 @@ describe('OrgClaOnlyAccessService', () => {
   const UID = '0014100000ClaOnlyA';
   const claManagerOrgSet = signal(new Set<string>());
   const claManagerLookupFailed = signal(false);
+  const employeeViewLookupFailed = signal(false);
   const writerSet = signal(new Set<string>());
   const inheritedAuditorSet = signal(new Set<string>());
   const isStaff = signal(false);
+  const employeeViewOrgUids = signal<ReadonlySet<string>>(new Set());
+  const fullAccessOrgUids = signal<ReadonlySet<string>>(new Set());
   let service: OrgClaOnlyAccessService;
 
   beforeEach(() => {
+    employeeViewOrgUids.set(new Set());
+    fullAccessOrgUids.set(new Set());
     claManagerOrgSet.set(new Set([UID]));
     claManagerLookupFailed.set(false);
+    employeeViewLookupFailed.set(false);
     writerSet.set(new Set());
     inheritedAuditorSet.set(new Set());
     isStaff.set(false);
@@ -30,11 +36,14 @@ describe('OrgClaOnlyAccessService', () => {
           useValue: {
             claManagerOrgSet,
             claManagerLookupFailed,
+            employeeViewLookupFailed,
             isStaff,
             writerSet,
             auditorSet: signal(new Set<string>()),
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet,
+            employeeViewOrgUids,
+            fullAccessOrgUids,
           },
         },
       ],
@@ -49,6 +58,18 @@ describe('OrgClaOnlyAccessService', () => {
     expect(service.isClaOnly(null)).toBe(false);
   });
 
+  it('lets proven employee access supersede CLA-only for the same company', () => {
+    employeeViewOrgUids.set(new Set([UID]));
+
+    expect(service.isClaOnly(UID)).toBe(false);
+  });
+
+  it('treats a company read at full width through the authorizer as full, not CLA-only, even for a CLA Manager', () => {
+    fullAccessOrgUids.set(new Set([UID]));
+
+    expect(service.isClaOnly(UID)).toBe(false);
+  });
+
   it('never narrows an organization the grants hold, even when the server set names it', () => {
     writerSet.set(new Set([UID]));
     expect(service.isClaOnly(UID)).toBe(false);
@@ -61,6 +82,17 @@ describe('OrgClaOnlyAccessService', () => {
   it('reports a failed CLA-manager lookup', () => {
     expect(service.lookupFailed()).toBe(false);
 
+    claManagerLookupFailed.set(true);
+    expect(service.lookupFailed()).toBe(true);
+  });
+
+  it('reports a failed all employee view lookup too, so the empty state offers Retry instead of "not an employee"', () => {
+    expect(service.lookupFailed()).toBe(false);
+
+    employeeViewLookupFailed.set(true);
+    expect(service.lookupFailed()).toBe(true);
+
+    employeeViewLookupFailed.set(false);
     claManagerLookupFailed.set(true);
     expect(service.lookupFailed()).toBe(true);
   });

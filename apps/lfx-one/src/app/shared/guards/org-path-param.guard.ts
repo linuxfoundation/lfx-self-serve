@@ -12,6 +12,7 @@ import { catchError, map, of } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
 import { OrgClaOnlyAccessService } from '../services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '../services/org-lens-view-mode.service';
 import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
 
 /**
@@ -54,6 +55,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   const accountContext = inject(AccountContextService);
   const resolver = inject(OrgSlugResolverService);
   const claOnlyAccess = inject(OrgClaOnlyAccessService);
+  const viewMode = inject(OrgLensViewModeService);
 
   const notFound = router.createUrlTree([ORG_NOT_FOUND_PATH]);
   /**
@@ -165,6 +167,9 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
         slug: resolved.slug,
       };
       claOnlyAccess.noteAddressed(resolved.uid, resolved.claOnly === true);
+      // Epic #5845: the same for a company reached only through the all employee view.
+      viewMode.noteAddressed(resolved.uid, resolved.employeeView === true);
+      viewMode.noteFullAccessAddressed(resolved.uid, resolved.fullAccess === true);
       accountContext.adoptFromAddress(account);
       // Spec 020 US4 — fire-and-forget canonical reconciliation fills display fields.
       void accountContext.refreshCanonicalRecord(account);

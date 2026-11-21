@@ -26,6 +26,7 @@ import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { OrgAffiliationService } from '../services/org-affiliation.service';
 import { OrgClaOnlyOrgsService } from '../services/org-cla-only-orgs.service';
+import { OrgEmployeeViewService } from '../services/org-employee-view.service';
 import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
@@ -39,6 +40,7 @@ export class OrgIdentityController {
   private readonly orgSlugResolver: OrgSlugResolverService;
   private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
   private readonly affiliation: OrgAffiliationService;
+  private readonly employeeView: OrgEmployeeViewService;
 
   public constructor() {
     this.orgRoleGrantsService = new OrgRoleGrantsService();
@@ -46,6 +48,7 @@ export class OrgIdentityController {
     this.orgLensAddressesService = new OrgLensAddressesService();
     this.claOnlyOrgs = new OrgClaOnlyOrgsService();
     this.affiliation = new OrgAffiliationService();
+    this.employeeView = new OrgEmployeeViewService();
     this.orgSlugResolver = new OrgSlugResolverService(this.microserviceProxy, this.claOnlyOrgs);
   }
 
@@ -68,11 +71,13 @@ export class OrgIdentityController {
       const grants: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
       // Both run only for a caller who holds nothing, and neither can throw — a failed lookup reports
       // itself on the wire so the client can say "unknown" instead of asserting something wrong.
-      const [claManagerOrgs, affiliation] = await Promise.all([
+      // Epic #5845 — the all employee view rests on a verified company email alone, so it runs alongside them.
+      const [claManagerOrgs, affiliation, employeeView] = await Promise.all([
         this.claOnlyOrgs.getRoleGrantClaManagerOrgs(req, grants),
         this.affiliation.getRoleGrantAffiliation(req, grants),
+        this.employeeView.getRoleGrantEmployeeView(req, grants),
       ]);
-      const result: RoleGrantsResponse = { ...grants, ...claManagerOrgs, ...affiliation };
+      const result: RoleGrantsResponse = { ...grants, ...claManagerOrgs, ...affiliation, ...employeeView };
 
       logger.success(req, 'get_org_role_grants', startTime, {
         writer_count: result.writers.length,
@@ -82,6 +87,8 @@ export class OrgIdentityController {
         affiliation_lookup: result.affiliation?.lookup,
         affiliation_has_employer: result.affiliation?.hasEmployer,
         affiliation_employer_is_member: result.affiliation?.employerIsMember,
+        employee_view: !!result.employeeView,
+        employee_view_lookup: result.employeeViewLookup,
         lookup_outcome: result.lookupOutcome,
         staff_check: result.staffCheck,
       });
@@ -190,6 +197,13 @@ export class OrgIdentityController {
       // as not found). Query-service answers "no rows" with an empty 200, so an upstream 4xx — a
       // routing 404, a 409, a 429 — is a transport failure, never an answer about the address; only
       // the resolver's own outcomes (200/404/409) and local validation (400) may carry those codes.
+      // The one exception: the employee-view qualification could not be verified (epic #5845). That is a retriable 503 with
+      // its code, not a transport failure of query-service, so the client does not cache it as "not found".
+      if (error instanceof MicroserviceError && error.statusCode === 503 && error.code === 'ROLE_GRANTS_UNAVAILABLE') {
+        logger.warning(req, 'resolve_org_segment', 'Qualification lookup unavailable', { err: error, outcome: 'unavailable' });
+        res.status(503).json({ error: error.message, code: error.code });
+        return;
+      }
       if (error instanceof MicroserviceError) {
         logger.warning(req, 'resolve_org_segment', 'Upstream failure', { err: error, upstream_status: error.statusCode, outcome: 'upstream_error' });
         res.status(502).json({ error: 'Upstream query-service failure' });

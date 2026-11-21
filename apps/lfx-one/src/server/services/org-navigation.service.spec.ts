@@ -4,6 +4,14 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { resolveEmployeeView } = vi.hoisted(() => ({ resolveEmployeeView: vi.fn() }));
+vi.mock('./org-employee-view.service', () => ({
+  OrgEmployeeViewService: class {
+    public resolveReduced = resolveEmployeeView;
+    public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
+  },
+}));
+
 // Mirrors org-role-grants.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub.
 vi.mock('@lfx-one/shared/constants', () => ({
@@ -61,6 +69,8 @@ beforeEach(() => {
   // resetAllMocks, not clearAllMocks: a queued `mockResolvedValueOnce` survives the latter and would
   // be answered to the next test's first request.
   vi.resetAllMocks();
+  delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
   getEffectiveUsername.mockReturnValue('staffer');
   // The defining staff shape: the catalogue is the only source of rows.
   getAccessAwareOrgs.mockResolvedValue({
@@ -456,5 +466,107 @@ describe('OrgNavigationService — CLA-only organizations', () => {
 
     expect(listClaOnlyOrgs).not.toHaveBeenCalled();
     expect(response).toMatchObject({ items: [], next_page_token: null });
+  });
+});
+
+describe('OrgNavigationService — all employee view company (#5845)', () => {
+  const COMPANY_A = '001A000000AAAAAAAA';
+  const COMPANY_B = '001B000000BBBBBBBB';
+  const eligible = { eligible: true, org: { orgUid: COMPANY_A, orgName: 'Acme Corp', orgSlug: null } };
+
+  beforeEach(() => {
+    process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'] = 'true';
+    getEffectiveUsername.mockReturnValue('employee');
+    getAccessAwareOrgs.mockResolvedValue({
+      resolved: new Map(),
+      orgDocByUid: new Map(),
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: 'employee',
+      isStaff: false,
+    });
+    listClaOnlyOrgs.mockResolvedValue({ orgs: [], failed: false });
+  });
+
+  it('lists the employee company as a row flagged employeeView for a caller who holds nothing', async () => {
+    resolveEmployeeView.mockResolvedValue(eligible);
+
+    const response = await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(response.items).toEqual([expect.objectContaining({ uid: COMPANY_A, name: 'Acme Corp', isAssigned: true, employeeView: true })]);
+    expect(response.items[0].claOnly).toBeUndefined();
+    expect(response).toMatchObject({ upstream_failed: false, total: 1 });
+  });
+
+  it('lists nothing extra for a caller who does not qualify', async () => {
+    const response = await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(response.items).toEqual([]);
+    expect(response.upstream_failed).toBe(false);
+  });
+
+  it('lets employee access supersede a CLA-only row for the same company, keeping other CLA-only rows', async () => {
+    resolveEmployeeView.mockResolvedValue(eligible);
+    listClaOnlyOrgs.mockResolvedValue({
+      orgs: [
+        { uid: COMPANY_A, name: 'Acme Corp' },
+        { uid: COMPANY_B, name: 'Beta Corp' },
+      ],
+      failed: false,
+    });
+
+    const response = await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(response.items.map((item) => [item.uid, item.claOnly === true, item.employeeView === true])).toEqual([
+      [COMPANY_A, false, true],
+      [COMPANY_B, true, false],
+    ]);
+  });
+
+  it('reports an unavailable lookup as upstream_failed, not as no companies', async () => {
+    resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+
+    const response = await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(response.items).toEqual([]);
+    expect(response.upstream_failed).toBe(true);
+  });
+
+  it('does not ask while the flag is off', async () => {
+    delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+
+    await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(resolveEmployeeView).not.toHaveBeenCalled();
+  });
+
+  it('returns the company slug on the row, so the indexed row never overwrites the resolver slug', async () => {
+    resolveEmployeeView.mockResolvedValue({ eligible: true, org: { orgUid: COMPANY_A, orgName: 'Acme Corp', orgSlug: 'acme-corp' } });
+
+    const response = await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(response.items[0]).toMatchObject({ uid: COMPANY_A, slug: 'acme-corp' });
+  });
+
+  it('lists an authorizer-only reader as a full-access company, superseding their CLA-only row and never marking it employee-view', async () => {
+    resolveEmployeeView.mockResolvedValue({
+      eligible: false,
+      reason: 'holds-full-access',
+      org: { orgUid: COMPANY_A, orgName: 'Acme Corp', orgSlug: 'acme-corp' },
+    });
+    listClaOnlyOrgs.mockResolvedValue({
+      orgs: [
+        { uid: COMPANY_A, name: 'Acme Corp' },
+        { uid: COMPANY_B, name: 'Beta Corp' },
+      ],
+      failed: false,
+    });
+
+    const response = await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(response.items.map((item) => [item.uid, item.claOnly === true, item.employeeView === true, item.fullAccess === true, item.slug])).toEqual([
+      [COMPANY_A, false, false, true, 'acme-corp'],
+      [COMPANY_B, true, false, false, null],
+    ]);
   });
 });
