@@ -310,6 +310,11 @@ export default {
         card: `inset 0 0 0 1px ${lfxColors.gray[100]}, 0px 1px 2px -1px rgba(0, 0, 0, 0.05), 0px 1px 3px 0px rgba(0, 0, 0, 0.05)`,
       },
       keyframes: {
+        // A meetings home row picked on the calendar: an accent wash that fades out.
+        'meetings-row-flash': {
+          '0%, 40%': { backgroundColor: lfxColors.blue[50] },
+          '100%': { backgroundColor: 'transparent' },
+        },
         'step-in': {
           '0%': { opacity: '0', transform: 'translateY(4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
@@ -329,6 +334,7 @@ export default {
         'fade-in-up': 'fade-in-up 1s ease-out forwards', // Adjust duration and easing
         // A new row or card settling in (Marketing OS run feed and questions stepper); used behind `motion-safe:`.
         'step-in': 'step-in 180ms ease-out both',
+        'meetings-row-flash': 'meetings-row-flash 1.6s ease',
       },
       fontWeight: {
         normal: 400,
