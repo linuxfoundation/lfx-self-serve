@@ -190,6 +190,12 @@ export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_ITEMS = 6;
 /** Tooltip centre never closer than this to the window's right edge (half its 280px width plus a margin). */
 export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX = 152;
 
+/** Room a full mini calendar tooltip needs above its day; with less, and more room below, it opens below the day. */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_MAX_HEIGHT_PX = 220;
+
+/** Delay before a mini calendar tooltip closes once the pointer leaves its day, so the pointer can move onto it. */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS = 120;
+
 /** Gap between the sticky tabs bar and the first row of a day picked on the calendar. */
 export const MEETINGS_HOME_DAY_SCROLL_OFFSET_PX = 36;
 
