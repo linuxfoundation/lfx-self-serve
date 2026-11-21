@@ -46,15 +46,15 @@ export const ORG_EVENTS_PAGE_COPY: OrgEventsPageCopy = {
 };
 
 export const ORG_EVENTS_ROLL_UP_PAGE_COPY: OrgEventsPageCopy = {
-  description: "Your organizations' event footprint across LF events.",
-  upcomingEmpty: 'No upcoming events were found for your organizations.',
-  pastEmpty: 'No past events were found for your organizations.',
+  description: "Your companies' event footprint across LF events.",
+  upcomingEmpty: 'No upcoming events were found for your companies.',
+  pastEmpty: 'No past events were found for your companies.',
   attendeesOwner: 'My Company',
-  loadError: "Something went wrong reading your organizations' events.",
+  loadError: "Something went wrong reading your companies' events.",
 };
 
 export const ORG_EVENTS_ALL_COMPANIES_LABEL = 'All Companies';
 
-export const ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE = 'Some organizations in this family are not included because you do not have access to them.';
+export const ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE = 'Some companies in this family are not included because you do not have access to them.';
 
-export const ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE = "This family's organizations could not all be loaded, so these figures may be incomplete.";
+export const ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE = "This family's companies could not all be loaded, so these figures may be incomplete.";
