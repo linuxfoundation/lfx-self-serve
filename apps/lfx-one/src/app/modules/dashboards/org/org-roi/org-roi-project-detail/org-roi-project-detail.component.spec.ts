@@ -56,6 +56,7 @@ describe('OrgRoiProjectDetailComponent — page-level empty state (#2961)', () =
           useValue: {
             pageState,
             hasPageState: computed(() => pageState() !== null),
+            employerName: signal(null),
             pageReady,
             settled: signal(true),
             retrying: signal(false),
