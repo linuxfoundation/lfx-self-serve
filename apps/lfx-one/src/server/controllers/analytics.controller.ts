@@ -40,13 +40,17 @@ import {
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS,
   HEALTH_METRICS_PROJECT_SLUG_PATTERN,
+  HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES,
   HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_SORT_COLUMNS,
   HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
@@ -4281,6 +4285,11 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
@@ -4317,7 +4326,18 @@ export class AnalyticsController {
         maxPageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
       });
 
-      const response = await this.healthMetricsNonMembersService.getPeople(req, { foundationSlug, range, search, offset, pageSize });
+      const response = await this.healthMetricsNonMembersService.getPeople(req, {
+        foundationSlug,
+        range,
+        search,
+        offset,
+        pageSize,
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS.map((column) => column.key)
+        ),
+      });
 
       // Counts only: the search text can name a person, so it stays out of this metadata.
       logger.success(req, 'get_non_members_people', startTime, {
@@ -4334,7 +4354,7 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate and its warmest high-fit organizations. */
+  /** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate, high-fit and new counts, and its warmest companies (any fit band). */
   public async getNonMembersConversion(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_non_members_conversion');
 
@@ -4396,7 +4416,11 @@ export class AnalyticsController {
         throw ServiceValidationError.forField('range', 'Training courses have no data for this range', { operation: 'get_training_courses' });
       }
 
-      const type = getStringQueryParam(req, 'type') || 'all';
+      // An older client's value still means its cut, so a tab open across a deploy keeps working.
+      const requestedType = getStringQueryParam(req, 'type') || 'all';
+      const type = Object.hasOwn(HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES, requestedType)
+        ? HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES[requestedType]
+        : requestedType;
       if (!TRAINING_COURSES_TYPES.has(type)) {
         throw ServiceValidationError.forField('type', `Invalid type value. Allowed: ${[...TRAINING_COURSES_TYPES].join(', ')}`, {
           operation: 'get_training_courses',
@@ -4416,6 +4440,11 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_TRAINING_COURSES_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match course names, which the request URL also logs.
@@ -4426,6 +4455,7 @@ export class AnalyticsController {
         has_search: search.length > 0,
         total_records: response.totalRecords,
         scope_total: response.scopeTotal,
+        active_total: response.activeTotal,
       });
 
       res.json(response);

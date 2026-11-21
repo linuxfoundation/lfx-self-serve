@@ -9,8 +9,7 @@ import {
   buildHealthMetricsTrainingEnrollmentView,
   buildHealthMetricsTrainingSubNavItems,
   formatHealthMetricsTrainingCount,
-  formatHealthMetricsTrainingCoursesCountLabel,
-  formatHealthMetricsTrainingRevenue,
+  parseHealthMetricsTrainingCoursesType,
   getHealthMetricsTrainingDeliveryTypeLabel,
 } from './health-metrics-training.utils';
 
@@ -50,8 +49,8 @@ function withPeriod(overrides: Partial<HealthMetricsTrainingEnrollmentPeriod> = 
     measured: true,
     periods: { YTD: period, COMPLETED_YEAR: period, COMPLETED_YEAR_2: period, COMPLETED_YEAR_3: period },
     trend: [
-      { year: 2026, enrollments: 3850 },
-      { year: 2025, enrollments: 3400 },
+      { year: 2026, enrollments: 3850, certificationExams: 620, microcourses: 100, instructorLed: 330 },
+      { year: 2025, enrollments: 3400, certificationExams: 500, microcourses: 0, instructorLed: 300 },
     ],
     goals: HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED.goals,
   };
@@ -59,13 +58,11 @@ function withPeriod(overrides: Partial<HealthMetricsTrainingEnrollmentPeriod> = 
 
 const ENROLLMENT = withPeriod();
 
-describe('formatHealthMetricsTrainingCount / formatHealthMetricsTrainingRevenue', () => {
+describe('formatHealthMetricsTrainingCount', () => {
   it('renders NULL as not available and a measured zero as zero', () => {
     expect(formatHealthMetricsTrainingCount(null)).toBe('not available');
     expect(formatHealthMetricsTrainingCount(0)).toBe('0');
     expect(formatHealthMetricsTrainingCount(3850)).toBe('3,850');
-    expect(formatHealthMetricsTrainingRevenue(null)).toBe('not available');
-    expect(formatHealthMetricsTrainingRevenue(0)).toBe('$0');
   });
 });
 
@@ -87,136 +84,209 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     vi.useRealTimers();
   });
 
-  it("builds the KPI strip from the totals, each delta from the model's change", () => {
-    const view = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments');
-
-    expect(view.headline).toEqual({ key: 'enrollments', label: 'Enrollments', value: '3,850', delta: '+10%', deltaDirection: 'up' });
-    expect(view.side.map((stat) => [stat.key, stat.value, stat.delta, stat.deltaDirection])).toEqual([
-      ['certifications', '620', '0%', 'neutral'],
-      ['revenue', '$100K', '−20%', 'down'],
+  it('leads the metrics row with the selected measure, revenue in compact currency, with no change or baseline', () => {
+    const enrollments = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments').metrics;
+    expect(enrollments).toEqual([
+      { key: 'enrollments', label: 'Enrollments', value: '3,850' },
+      { key: 'certifications', label: 'Certifications earned', value: '620' },
+      { key: 'revenue', label: 'Revenue', value: '$100K' },
     ]);
+
+    const revenue = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'revenue').metrics;
+    expect(revenue.map((item) => item.key)).toEqual(['revenue', 'enrollments', 'certifications']);
   });
 
-  it('projects the selected period from the one read', () => {
-    const enrollment: HealthMetricsTrainingEnrollment = {
-      ...ENROLLMENT,
-      periods: { ...ENROLLMENT.periods, COMPLETED_YEAR: { ...PERIOD, totals: { enrollments: 4100, certifications: 700, revenueUsd: 90000 } } },
-    };
-
-    expect(buildHealthMetricsTrainingEnrollmentView(enrollment, 'YTD', 'enrollments').headline.value).toBe('3,850');
-    expect(buildHealthMetricsTrainingEnrollmentView(enrollment, 'COMPLETED_YEAR', 'enrollments').headline.value).toBe('4,100');
-  });
-
-  it('names the comparison when the period has one', () => {
-    expect(buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments').baselineLabel).toBe('all against the same point last year');
-  });
-
-  it('shows not available for every delta when the period has no comparison', () => {
-    const view = buildHealthMetricsTrainingEnrollmentView(withPeriod({ change: null }), 'COMPLETED_YEAR', 'enrollments');
-
-    expect(view.baselineLabel).toBe('no year-over-year comparison for this period');
-    expect([view.headline, ...view.side].every((stat) => stat.delta === 'not available' && stat.deltaDirection === 'neutral')).toBe(true);
-  });
-
-  it('shows not available for a change the model leaves NULL, and a measured zero as 0%', () => {
+  it('dashes an unset figure in the metrics row', () => {
     const view = buildHealthMetricsTrainingEnrollmentView(
-      withPeriod({
-        totals: { enrollments: 10, certifications: null, revenueUsd: 50 },
-        change: { enrollments: null, certifications: 0, revenueUsd: null },
-      }),
+      withPeriod({ totals: { enrollments: null, certifications: 0, revenueUsd: null } }),
       'YTD',
       'enrollments'
     );
 
-    expect(view.headline.delta).toBe('not available');
-    expect(view.side[0]).toMatchObject({ value: 'not available', delta: '0%', deltaDirection: 'neutral' });
-    expect(view.side[1].delta).toBe('not available');
+    expect(view.metrics.map((item) => item.value)).toEqual(['—', '0', '—']);
   });
 
-  it('ranks the by-type list by the toggle', () => {
-    const enrollments = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments');
-    expect(enrollments.byType.map((row) => [row.label, row.value])).toEqual([
-      ['eLearning', '2,900'],
-      ['Certification exams', '620'],
-      ['Instructor-led', '330'],
-    ]);
+  it('charts the current year and the five before it, oldest first, the current year full and the rest muted', () => {
+    const view = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments');
 
-    const revenue = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'revenue');
-    expect(revenue.byType.map((row) => [row.label, row.value])).toEqual([
-      ['Certification exams', '$70K'],
-      ['Instructor-led', '$30K'],
-      ['eLearning', '$0'],
+    expect(view.subHeading).toBe('Enrollments by type over the years');
+    expect(view.chart.columns.map((column) => column.label)).toEqual(['2021', '2022', '2023', '2024', '2025', '2026 YTD']);
+    expect(view.chart.columns.map((column) => column.opacity)).toEqual([0.35, 0.35, 0.35, 0.35, 0.35, 1]);
+    expect(view.chart.heightPx).toBe(220);
+    expect(view.chart.barWidthPx).toBe(44);
+  });
+
+  it('stacks enrollments by type with Other as the rest of the total, and shares in the popup', () => {
+    const column = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments').chart.columns.at(-1);
+
+    expect(column?.segments.map((segment) => segment.key)).toEqual(['certification', 'microcourse', 'instructorLed', 'other']);
+    expect(column?.total).toBe('3,850');
+    expect(column?.tip.title).toBe('2026 YTD · 3,850 enrollments');
+    expect(column?.tip.rows.map((row) => `${row.label}: ${row.value}`)).toEqual([
+      'Certification exams: 620 · 16%',
+      'Microcourses: 100 · 3%',
+      'Instructor-led: 330 · 9%',
+      'Other: 2,800 · 73%',
     ]);
   });
 
-  it('sorts a type with unmeasured revenue last', () => {
+  it('keeps a year with no activity at zero, with no total over it', () => {
+    const column = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments').chart.columns[0];
+
+    expect(column.total).toBe('');
+    expect(column.segments.every((segment) => segment.heightPct === 0)).toBe(true);
+    expect(column.tip.title).toBe('2021 · 0 enrollments');
+  });
+
+  it('charts revenue by type for the four years the summary covers, Free for a zero, and none for the two before', () => {
+    const paidElearning = withPeriod({
+      byType: [
+        { deliveryType: 'E-Learning', isListed: true, isListedRevenue: true, enrollments: 2900, revenueUsd: 12000 },
+        { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 620, revenueUsd: 70000 },
+        { deliveryType: 'Instructor Led', isListed: true, isListedRevenue: true, enrollments: 330, revenueUsd: 0 },
+      ],
+    });
+    const view = buildHealthMetricsTrainingEnrollmentView(paidElearning, 'YTD', 'revenue');
+    const [oldest, , , , , current] = view.chart.columns;
+
+    expect(view.subHeading).toBe('Revenue by type over the years');
+    expect(view.chart.yTicks[0].startsWith('$')).toBe(true);
+    expect(current.tip.title).toBe('2026 YTD · $100K revenue');
+    expect(current.total).toBe('$100K');
+    // Microcourses has no row in the period, so no captured revenue and no popup row; Instructor-led's zero is Free.
+    expect(current.tip.rows.map((row) => `${row.label}: ${row.value}`)).toEqual(['Certification exams: $70K', 'Instructor-led: Free', 'Other: $12K']);
+    expect(oldest.segments).toEqual([]);
+    expect(oldest.total).toBe('');
+    expect(oldest.tip).toEqual({ title: 'Revenue not available for 2021', rows: [] });
+  });
+
+  it('leaves edX out of Other in Revenue, as its revenue is never captured', () => {
     const view = buildHealthMetricsTrainingEnrollmentView(
-      withPeriod({ byType: [{ deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 40, revenueUsd: null }, ...PERIOD.byType] }),
+      withPeriod({
+        byType: [
+          { deliveryType: 'E-Learning', isListed: true, isListedRevenue: true, enrollments: 2900, revenueUsd: 12000 },
+          { deliveryType: 'edX', isListed: true, isListedRevenue: false, enrollments: 50, revenueUsd: 5000 },
+        ],
+      }),
       'YTD',
       'revenue'
     );
 
-    expect(view.byType.at(-1)).toEqual({ deliveryType: 'MicroCourse', label: 'Microcourses', value: 'not available' });
+    expect(view.chart.columns.at(-1)?.tip.rows.find((row) => row.label === 'Other')?.value).toBe('$12K');
   });
 
-  it('keeps the model order for the enrollment rows rather than re-sorting', () => {
-    const byType = [PERIOD.byType[2], PERIOD.byType[0], PERIOD.byType[1]];
+  it('hides Other in Revenue when every year shown has none', () => {
+    const view = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'revenue');
 
-    const view = buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'enrollments');
-    expect(view.byType.map((row) => row.deliveryType)).toEqual(['Instructor Led', 'E-Learning', 'Certification Exam']);
+    expect(view.chart.series.map((series) => series.key)).not.toContain('other');
   });
 
-  // MicroCourse has enrollments but the model does not list it, as in PCC; it still counts in the totals.
-  it('lists only the types the model lists, with enrollments, and leaves edX off the revenue list', () => {
-    const byType = [
-      ...PERIOD.byType,
-      { deliveryType: 'Bundle', isListed: false, isListedRevenue: false, enrollments: 0, revenueUsd: 90000 },
-      { deliveryType: 'edX', isListed: true, isListedRevenue: true, enrollments: 500, revenueUsd: 0 },
-      { deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 3154, revenueUsd: 0 },
+  it('reads a year with no measured total as not available, and keeps a missing type out of Other', () => {
+    const partial = withPeriod();
+    partial.trend = [
+      { year: 2026, enrollments: 1000, certificationExams: null, microcourses: 100, instructorLed: 300 },
+      { year: 2025, enrollments: null, certificationExams: null, microcourses: null, instructorLed: null },
     ];
+    const columns = buildHealthMetricsTrainingEnrollmentView(partial, 'YTD', 'enrollments').chart.columns;
+    const [current, last] = [columns.at(-1), columns.at(-2)];
 
-    const enrollments = buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'enrollments');
-    expect(enrollments.byType.map((row) => row.deliveryType)).toEqual(['E-Learning', 'Certification Exam', 'Instructor Led', 'edX']);
-
-    const revenue = buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'revenue');
-    expect(revenue.byType.map((row) => row.deliveryType)).toEqual(['Bundle', 'Certification Exam', 'Instructor Led', 'E-Learning', 'MicroCourse']);
-  });
-
-  it('counts the listed delivery types with enrollments, never Bundle or MicroCourse', () => {
-    expect(buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments').typeCountLabel).toBe('3 delivery types');
-    expect(buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType: PERIOD.byType.slice(0, 1) }), 'YTD', 'enrollments').typeCountLabel).toBe(
-      '1 delivery type'
-    );
-    const byType = [
-      ...PERIOD.byType,
-      { deliveryType: 'Bundle', isListed: false, isListedRevenue: false, enrollments: 0, revenueUsd: 90000 },
-      { deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 3154, revenueUsd: 0 },
-    ];
-    expect(buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'revenue').typeCountLabel).toBe('3 delivery types');
-  });
-
-  it('orders the trend by year and marks the running year partial', () => {
-    expect(buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'COMPLETED_YEAR', 'revenue').trend).toEqual([
-      { year: 2025, enrollments: 3400, isPartialYear: false, yearLabel: '2025', enrollmentsLabel: '3,400' },
-      { year: 2026, enrollments: 3850, isPartialYear: true, yearLabel: '2026 (partial year)', enrollmentsLabel: '3,850' },
+    expect(last?.segments).toEqual([]);
+    expect(last?.tip).toEqual({ title: '2025 · enrollments not available', rows: [] });
+    // Other is unknown in every year shown, so it drops out like an all-zero Other.
+    expect(current?.tip.rows.map((row) => `${row.label}: ${row.value}`)).toEqual([
+      'Certification exams: —',
+      'Microcourses: 100 · 10%',
+      'Instructor-led: 300 · 30%',
     ]);
   });
 
-  // The view returns every year from 2016; the design draws the latest six.
-  it('keeps the latest six years of a longer trend', () => {
-    const trend = Array.from({ length: 11 }, (_, index) => ({ year: 2016 + index, enrollments: 1000 + index }));
-    const view = buildHealthMetricsTrainingEnrollmentView({ ...ENROLLMENT, trend }, 'YTD', 'enrollments');
+  it('counts only types active in the year in Revenue, so a quiet type never reads Free, and puts no total over a quiet year', () => {
+    const quiet = withPeriod({
+      totals: { enrollments: 0, certifications: 0, revenueUsd: 0 },
+      byType: [
+        { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 0, revenueUsd: 0 },
+        { deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 0, revenueUsd: 0 },
+      ],
+    });
+    const current = buildHealthMetricsTrainingEnrollmentView(quiet, 'YTD', 'revenue').chart.columns.at(-1);
 
-    expect(view.trend.map((point) => point.year)).toEqual([2021, 2022, 2023, 2024, 2025, 2026]);
-    expect(view.trend.at(-1)).toMatchObject({ isPartialYear: true, yearLabel: '2026 (partial year)' });
+    expect(current?.tip.rows).toEqual([]);
+    expect(current?.total).toBe('');
   });
 
-  it('builds an empty view from the unmeasured read', () => {
-    const view = buildHealthMetricsTrainingEnrollmentView(HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED, 'YTD', 'enrollments');
+  it("keeps a refund-only Other, which still counts in the year's net total", () => {
+    const refunds = withPeriod({
+      byType: [
+        { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 620, revenueUsd: 70000 },
+        { deliveryType: 'E-Learning', isListed: true, isListedRevenue: true, enrollments: 10, revenueUsd: -200 },
+      ],
+    });
+    const view = buildHealthMetricsTrainingEnrollmentView(refunds, 'YTD', 'revenue');
 
-    expect(view.headline.value).toBe('not available');
-    expect(view.byType).toEqual([]);
-    expect(view.trend).toEqual([]);
+    expect(view.chart.series.map((series) => series.key)).toContain('other');
+    expect(view.chart.columns.at(-1)?.tip.rows.find((row) => row.label === 'Other')?.value).toBe('−$200');
+  });
+
+  it('draws a known revenue total with no split as one neutral bar, said so in its popup', () => {
+    const unsplit = withPeriod({ byType: [] });
+    const view = buildHealthMetricsTrainingEnrollmentView(unsplit, 'YTD', 'revenue');
+    const current = view.chart.columns.at(-1);
+
+    expect(view.chart.series.at(-1)).toEqual({ key: 'unsplit', label: 'Not split by type', color: expect.any(String) });
+    expect(current?.segments.find((segment) => segment.key === 'unsplit')?.heightPct).toBeGreaterThan(0);
+    expect(current?.total).toBe('$100K');
+    expect(current?.tip).toEqual({ title: '2026 YTD · $100K revenue · split by type not available', rows: [] });
+    expect(view.table.headers.at(-2)).toBe('Not split by type');
+  });
+
+  it('keeps a quiet $0 year with no split on the quiet path: no label, no neutral bar or legend entry', () => {
+    const quiet = withPeriod({ totals: { enrollments: 0, certifications: 0, revenueUsd: 0 }, byType: [] });
+    const view = buildHealthMetricsTrainingEnrollmentView(quiet, 'YTD', 'revenue');
+
+    expect(view.chart.series.map((series) => series.key)).not.toContain('unsplit');
+    expect(view.chart.columns.at(-1)?.total).toBe('');
+    expect(view.table.rows.at(-1)?.cells.at(-1)).toBe('$0');
+  });
+
+  it('judges a missing split on the active types only, so quiet zero rows do not hide it', () => {
+    const view = buildHealthMetricsTrainingEnrollmentView(
+      withPeriod({
+        byType: [
+          { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 620, revenueUsd: null },
+          { deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 0, revenueUsd: 0 },
+        ],
+      }),
+      'YTD',
+      'revenue'
+    );
+
+    expect(view.chart.columns.at(-1)?.tip.title).toBe('2026 YTD · $100K revenue · split by type not available');
+  });
+
+  it('drops Other from the chart and legend when it is zero in every year shown', () => {
+    const noOther = withPeriod();
+    noOther.trend = [{ year: 2026, enrollments: 1050, certificationExams: 620, microcourses: 100, instructorLed: 330 }];
+    const view = buildHealthMetricsTrainingEnrollmentView(noOther, 'YTD', 'enrollments');
+
+    expect(view.chart.series.map((series) => series.key)).toEqual(['certification', 'microcourse', 'instructorLed']);
+    expect(view.chart.columns.at(-1)?.tip.rows.map((row) => row.label)).not.toContain('Other');
+    expect(view.table.headers).toEqual(['Year', 'Certification exams', 'Microcourses', 'Instructor-led', 'Total']);
+  });
+
+  it('gives screen readers a row per year with a column per type and the total', () => {
+    const view = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments');
+
+    expect(view.table.headers).toEqual(['Year', 'Certification exams', 'Microcourses', 'Instructor-led', 'Other', 'Total']);
+    expect(view.table.rows.at(-1)).toEqual({ key: '2026', cells: ['2026 YTD', '620', '100', '330', '2,800', '3,850'] });
+    // A quiet year's total reads 0 to screen readers, though no label sits over its empty column.
+    expect(view.table.rows[0].cells.at(-1)).toBe('0');
+  });
+
+  it('builds an all-dash view from the unmeasured read, with revenue not available for every year', () => {
+    const view = buildHealthMetricsTrainingEnrollmentView(HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED, 'YTD', 'revenue');
+
+    expect(view.metrics.map((item) => item.value)).toEqual(['—', '—', '—']);
+    expect(view.chart.columns.every((column) => column.tip.title.startsWith('Revenue not available'))).toBe(true);
   });
 });
 
@@ -231,50 +301,74 @@ const COURSE: HealthMetricsTrainingCourse = {
 };
 
 describe('buildHealthMetricsTrainingCourseRowView', () => {
-  it('labels a paid, covered certification with its revenue and the certification pill', () => {
+  it('labels a paid, covered certification with its revenue and the certification badge', () => {
     expect(buildHealthMetricsTrainingCourseRowView(COURSE)).toEqual({
       courseKey: 'course-1',
       courseName: 'Example Practitioner Exam',
       typeLabel: 'Certification',
       typeClass: 'bg-blue-50 text-blue-700',
+      typeIcon: 'fa-light fa-award',
       enrollmentsLabel: '1,250',
       revenueLabel: '$45K',
-      revenueMeasured: true,
+      revenueFree: false,
     });
   });
 
-  it('shows free for a free course rather than $0', () => {
+  it('shows Free for a free course rather than $0', () => {
     const view = buildHealthMetricsTrainingCourseRowView({ ...COURSE, deliveryType: 'E-Learning', isFree: true, hasPurchaseCoverage: false, revenueUsd: 0 });
 
-    expect(view).toMatchObject({ typeLabel: 'eLearning', typeClass: 'bg-gray-100 text-gray-600', revenueLabel: 'free', revenueMeasured: false });
+    expect(view).toMatchObject({
+      typeLabel: 'eLearning',
+      typeClass: 'bg-gray-100 text-gray-600',
+      typeIcon: 'fa-light fa-laptop',
+      revenueLabel: 'Free',
+      revenueFree: true,
+    });
   });
 
-  it('shows not available where purchases are not captured, LF Education does not say whether it is free, or revenue is NULL', () => {
-    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, hasPurchaseCoverage: false, revenueUsd: 0 }).revenueLabel).toBe('not available');
+  it('shows a dash, never Free, where purchases are not captured, LF Education does not say whether it is free, or revenue is NULL', () => {
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, hasPurchaseCoverage: false, revenueUsd: 0 }).revenueLabel).toBe('—');
     expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, deliveryType: 'edX', isFree: null, revenueUsd: 0 })).toMatchObject({
       typeLabel: 'edX',
-      revenueLabel: 'not available',
-      revenueMeasured: false,
+      typeIcon: 'fa-light fa-laptop',
+      revenueLabel: '—',
+      revenueFree: false,
     });
-    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: null }).revenueLabel).toBe('not available');
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: null }).revenueLabel).toBe('—');
   });
 
-  it('keeps a refund-driven negative revenue as it is', () => {
+  it('keeps a refund-driven negative revenue, written as the chart writes it', () => {
     expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, deliveryType: 'Instructor Led', revenueUsd: -1200 })).toMatchObject({
       typeLabel: 'Instructor-led',
-      revenueLabel: '-$1.2K',
+      typeIcon: 'fa-light fa-chalkboard-user',
+      revenueLabel: '−$1.2K',
     });
   });
 
-  it('renders NULL enrollments as not available', () => {
-    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, enrollments: null }).enrollmentsLabel).toBe('not available');
+  it('gives Microcourse its own label with the eLearning icon', () => {
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, deliveryType: 'MicroCourse' })).toMatchObject({
+      typeLabel: 'Microcourse',
+      typeClass: 'bg-gray-100 text-gray-600',
+      typeIcon: 'fa-light fa-laptop',
+    });
+  });
+
+  it('keeps the cents of a nonzero amount that would round to $0, a refund included', () => {
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: 0.42 }).revenueLabel).toBe('$0.42');
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: -0.35 }).revenueLabel).toBe('−$0.35');
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: 0 }).revenueLabel).toBe('$0');
+  });
+
+  it('renders NULL enrollments as a dash', () => {
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, enrollments: null }).enrollmentsLabel).toBe('—');
   });
 });
 
-describe('formatHealthMetricsTrainingCoursesCountLabel', () => {
-  it('counts courses, singular for one, and a dash while unmeasured', () => {
-    expect(formatHealthMetricsTrainingCoursesCountLabel(1)).toBe('1 course');
-    expect(formatHealthMetricsTrainingCoursesCountLabel(1760)).toBe('1,760 courses');
-    expect(formatHealthMetricsTrainingCoursesCountLabel(null)).toBe('—');
+describe('parseHealthMetricsTrainingCoursesType', () => {
+  it('keeps a known type, maps an older link value to its new cut, and falls back to All types', () => {
+    expect(parseHealthMetricsTrainingCoursesType('instructor-led')).toBe('instructor-led');
+    expect(parseHealthMetricsTrainingCoursesType('certifications')).toBe('certification');
+    expect(parseHealthMetricsTrainingCoursesType('toString')).toBe('all');
+    expect(parseHealthMetricsTrainingCoursesType(null)).toBe('all');
   });
 });

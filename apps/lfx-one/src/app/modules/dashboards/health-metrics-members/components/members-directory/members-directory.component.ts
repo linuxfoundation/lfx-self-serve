@@ -83,6 +83,8 @@ export class MembersDirectoryComponent {
 
   protected readonly npsOptions: readonly FilterOption<string>[] = HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_OPTIONS;
   protected readonly size = HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE;
+  /** The field stops at the length the read applies, so it never shows text the search ignores. */
+  protected readonly maxSearchLength = HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH;
   protected readonly searchText = signal<string>(this.normalizeSearch(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directorySearch) ?? ''));
   protected readonly tierValue = signal<string | null>(this.parseInitialTier());
   protected readonly npsValue = signal<string | null>(this.toNps(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryNps)));
