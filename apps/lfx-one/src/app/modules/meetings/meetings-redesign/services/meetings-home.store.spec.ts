@@ -1986,6 +1986,20 @@ describe('MeetingsHomeStore', () => {
         expect(store.pastRows()).toHaveLength(15);
       });
 
+      it('reports a failed first past page to the calendar, and retries it from the first page', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const store = createPaged();
+        pastPages[0].error(new Error('down'));
+        TestBed.tick();
+
+        expect(store.calendarPastFailed()).toBe(true);
+
+        store.retryCalendarPast(getLocalDayKey(inDays(-30)));
+        TestBed.tick();
+        expect(past).toHaveBeenCalledTimes(2);
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS);
+      });
+
       it('stops, without retrying, when an older page fails', () => {
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const store = createPaged();
@@ -1998,12 +2012,14 @@ describe('MeetingsHomeStore', () => {
         TestBed.tick();
 
         expect(past).toHaveBeenCalledTimes(2);
+        expect(store.calendarPastFailed()).toBe(true);
 
         // Going back another month retries the page from the kept cursor.
         store.showPastFrom(getLocalDayKey(inDays(-90)));
         TestBed.tick();
         expect(past).toHaveBeenCalledTimes(3);
         expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+        expect(store.calendarPastFailed()).toBe(false);
       });
     });
 

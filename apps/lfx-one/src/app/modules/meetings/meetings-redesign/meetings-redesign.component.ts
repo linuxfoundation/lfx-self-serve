@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Overlay } from '@angular/cdk/overlay';
 import { isPlatformBrowser, Location, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
@@ -30,7 +31,7 @@ import {
   MEETINGS_HOME_SEARCH_CLOSE_MS,
   PHONE_MEDIA_QUERY,
 } from '@lfx-one/shared/constants';
-import { MeetingDashboardView, MeetingHomeRow, MeetingMiniCalendarDay, UiTabItem } from '@lfx-one/shared/interfaces';
+import { MeetingCalendarDialogData, MeetingDashboardView, MeetingHomeRow, MeetingMiniCalendarDay, UiTabItem } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
 import { AppService } from '@services/app.service';
@@ -42,14 +43,16 @@ import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
 import { UiChipComponent } from '@shared/uikit/chip/chip.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
-import { debounceTime, EMPTY, filter, Observable, skip, switchMap } from 'rxjs';
+import { debounceTime, EMPTY, filter, Observable, skip, switchMap, take } from 'rxjs';
 
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
 import { MeetingHomeActionsComponent } from './components/meeting-home-actions/meeting-home-actions.component';
+import { MeetingsCalendarDialogComponent } from './components/meetings-calendar-dialog/meetings-calendar-dialog.component';
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { MeetingsMiniCalendarComponent } from './components/meetings-mini-calendar/meetings-mini-calendar.component';
@@ -122,6 +125,9 @@ export class MeetingsRedesignComponent {
   private readonly appService = inject(AppService);
   protected readonly store = inject(MeetingsHomeStore);
   private readonly projectContext = inject(ProjectContextService);
+  private readonly modal = inject(UiModalService);
+  private readonly overlay = inject(Overlay);
+  private readonly details = inject(MeetingsHomeDetailsService);
   /** A project or foundation's list: no Next/Last cards or project labels, and its own copy. */
   protected readonly projectScope: boolean = inject(MeetingsHomeFeed).scope === 'project';
   /** The viewer and project the meetings come from. */
@@ -359,6 +365,38 @@ export class MeetingsRedesignComponent {
     clearTimeout(this.searchCloseTimer);
     this.searchOpen.set(false);
     this.searchClosing.set(false);
+  }
+
+  /** Opens the full calendar on `month`; a meeting picked there opens its details drawer above it. */
+  protected openCalendar(month: Date): void {
+    const context = this.projectContext.activeContext();
+    const data: MeetingCalendarDialogData = {
+      upcomingRows: this.store.upcomingRows,
+      pastRows: this.store.pastRows,
+      now: this.store.now,
+      name: context?.name ?? '',
+      logoUrl: context?.logoUrl ?? '',
+      openMeeting: (row) => this.details.open(row, 'calendar'),
+      showPastFrom: (day) => this.store.showPastFrom(day),
+      pastFailed: this.store.calendarPastFailed,
+      retryPast: (day) => this.store.retryCalendarPast(day),
+      upcomingFailed: this.store.upcomingFailed,
+      retryUpcoming: () => this.store.retry(),
+      month,
+    };
+    // Below an impersonation banner, as the drawers sit, so Stop impersonating stays reachable.
+    const ref = this.modal.open(
+      MeetingsCalendarDialogComponent,
+      { data },
+      {
+        height: 'calc(100vh - 32px - var(--lfx-banner-height, 0px))',
+        positionStrategy: this.overlay.position().global().top('calc(16px + var(--lfx-banner-height, 0px))').centerHorizontally(),
+      }
+    );
+    ref.overlayRef.backdropElement?.style.setProperty('top', 'var(--lfx-banner-height, 0px)');
+    // The modal service outlives the page, so leaving the page, for example from the drawer's project link, closes it.
+    const unregister = this.destroyRef.onDestroy(() => ref.close());
+    ref.closed.pipe(take(1)).subscribe(() => unregister());
   }
 
   protected createMeeting(): void {

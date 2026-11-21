@@ -28,6 +28,15 @@
         (click)="step(1)"
         data-testid="meetings-mini-calendar-next" />
     </span>
+    <lfx-ui-button
+      class="ml-auto flex-none"
+      variant="secondary"
+      size="tiny"
+      icon="fa-light fa-expand"
+      (click)="expand.emit(month())"
+      data-testid="meetings-mini-calendar-expand">
+      Expand
+    </lfx-ui-button>
   </div>
 
   <div class="flex flex-col gap-[2px]">

@@ -49,6 +49,8 @@ export class MeetingsMiniCalendarComponent {
   public readonly daySelected = output<MeetingMiniCalendarDay>();
   /** The current month or an older one is shown: the local day (`YYYY-MM-DD`) it starts on, so its past meetings can load. */
   public readonly olderMonthShown = output<string>();
+  /** Expand was clicked, to open the full calendar. */
+  public readonly expand = output<Date>();
 
   protected readonly weekdays = MEETINGS_HOME_CALENDAR_WEEKDAYS;
   protected readonly skeletonWeeks = [0, 1, 2, 3, 4];
