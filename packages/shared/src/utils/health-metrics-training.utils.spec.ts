@@ -27,16 +27,8 @@ describe('buildHealthMetricsTrainingSubNavItems', () => {
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_TRAINING_SECTIONS.map((section) => section.label));
   });
 
-  it('carries no note before Courses reports its count, or for a zero count', () => {
+  it('carries no note on any section', () => {
     expect(buildHealthMetricsTrainingSubNavItems().every((item) => item.note === '')).toBe(true);
-    expect(buildHealthMetricsTrainingSubNavItems(0).every((item) => item.note === '')).toBe(true);
-  });
-
-  it('notes the course count on Courses only, singular for one', () => {
-    const notes = (count: number) => buildHealthMetricsTrainingSubNavItems(count).map((item) => `${item.key}:${item.note}`);
-
-    expect(notes(1760)).toEqual(['enroll:', 'courses:1,760 courses']);
-    expect(notes(1)).toEqual(['enroll:', 'courses:1 course']);
   });
 });
 

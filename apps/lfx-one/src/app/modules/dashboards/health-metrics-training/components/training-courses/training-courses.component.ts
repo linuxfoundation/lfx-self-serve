@@ -58,8 +58,6 @@ export class TrainingCoursesComponent {
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
-  /** Every course ever enrolled in, for the sub-nav's count; `null` when the read failed or was not measured. */
-  public readonly countChange = output<number | null>();
 
   private readonly searchInput = viewChild(UiSearchInputComponent);
 
@@ -168,9 +166,7 @@ export class TrainingCoursesComponent {
 
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (!foundationSeen) return;
-              this.settled.emit(!this.loadFailed() && isEmptyPeriod(response));
-              this.countChange.emit(response.scopeTotal);
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyPeriod(response));
             })
           )
         )

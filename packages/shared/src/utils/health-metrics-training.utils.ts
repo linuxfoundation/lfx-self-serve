@@ -41,10 +41,8 @@ import type {
 } from '../interfaces/health-metrics-training.interface';
 
 /** Sub-nav items for the Training tab; no section here carries a note. */
-/** The sub-nav, with Courses carrying its course count once read, e.g. `176 courses`; no note while the count is unset or zero. */
-export function buildHealthMetricsTrainingSubNavItems(coursesCount: number | null = null): HealthMetricsTrainingSubNavItem[] {
-  const coursesNote = coursesCount ? `${formatHealthMetricsTrainingCount(coursesCount)} ${coursesCount === 1 ? 'course' : 'courses'}` : '';
-  return HEALTH_METRICS_TRAINING_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: section.key === 'courses' ? coursesNote : '' }));
+export function buildHealthMetricsTrainingSubNavItems(): HealthMetricsTrainingSubNavItem[] {
+  return HEALTH_METRICS_TRAINING_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '' }));
 }
 
 /** A rounded, `en-US`-pinned count, so the server render and the hydrated one agree; `not available` for unmeasured. */
