@@ -30,7 +30,7 @@ describe('MeetingsDayGroupComponent', () => {
         { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
         { provide: MeetingsHomeDeleteService, useValue: {} },
         { provide: MeetingsHomeDetailsService, useValue: {} },
-        { provide: MeetingsHomeStore, useValue: { now: signal(new Date()) } },
+        { provide: MeetingsHomeStore, useValue: { now: signal(new Date()), selfInviteOf: () => undefined } },
       ],
     });
   });

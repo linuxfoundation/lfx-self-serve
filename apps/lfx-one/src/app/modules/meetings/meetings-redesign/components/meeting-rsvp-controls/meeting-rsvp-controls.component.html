@@ -46,6 +46,17 @@
   </span>
 }
 
+@if (invitationSyncing()) {
+  <lfx-ui-button
+    variant="tertiary"
+    [size]="size()"
+    icon="fa-light fa-arrows-rotate"
+    (click)="refreshInvitation()"
+    data-testid="meetings-home-invitation-refresh">
+    Refresh invitation
+  </lfx-ui-button>
+}
+
 <ng-template #rsvpMenu>
   <lfx-ui-menu ariaLabel="Change RSVP" data-testid="meetings-home-rsvp-menu">
     @for (choice of choices; track choice.response) {

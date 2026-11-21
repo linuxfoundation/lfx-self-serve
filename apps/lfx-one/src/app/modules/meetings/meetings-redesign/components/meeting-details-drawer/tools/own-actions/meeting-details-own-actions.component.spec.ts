@@ -12,6 +12,7 @@ import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsContext } from '../../meeting-details.context';
+import { MeetingDetailsSource } from '../../meeting-details.source';
 import { MeetingDetailsOwnActionsComponent } from './meeting-details-own-actions.component';
 
 const MEETING = {
@@ -29,6 +30,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
   let meetingService: Record<string, ReturnType<typeof vi.fn>>;
   let toastShow: ReturnType<typeof vi.fn>;
   let refreshList: ReturnType<typeof vi.fn>;
+  let selfInvite: WritableSignal<readonly string[] | undefined>;
   const listedSelfRegistrantUids = signal<readonly string[]>([]);
 
   const settle = async (): Promise<void> => {
@@ -56,6 +58,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
     listedSelfRegistrantUids.set([]);
     meeting = signal(MEETING);
     state = signal<MeetingDetailsState>('far');
+    selfInvite = signal(undefined);
     meetingService = {
       resendMyMeetingInvitation: vi.fn().mockReturnValue(of({ message: 'ok' })),
       removeMyMeetingRegistration: vi.fn().mockReturnValue(of({ removed_registrant_ids: ['reg-me'], remaining_registrant_ids: [] })),
@@ -79,6 +82,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingDetailsContext, useValue: context },
+        { provide: MeetingDetailsSource, useValue: { selfInviteOf: () => selfInvite() } },
         { provide: MeetingService, useValue: meetingService },
         {
           provide: UserService,
@@ -98,6 +102,21 @@ describe('MeetingDetailsOwnActionsComponent', () => {
   afterEach(() => {
     fixture?.destroy();
     TestBed.inject(OverlayContainer).ngOnDestroy();
+  });
+
+  it('blocks resend but preserves removal while an invite is syncing, including an open confirmation', async () => {
+    await render();
+    await click(find('meeting-details-resend'));
+    selfInvite.set([]);
+    await click(overlay('meeting-details-resend-confirm'));
+    expect(meetingService['resendMyMeetingInvitation']).not.toHaveBeenCalled();
+    expect(overlay('meeting-details-resend-dialog')).toBeNull();
+    expect(find('meeting-details-resend')).toBeNull();
+    expect(find('meeting-details-remove')).not.toBeNull();
+
+    selfInvite.set(undefined);
+    await settle();
+    expect(find('meeting-details-resend')).not.toBeNull();
   });
 
   it('asks before resending, in an alertdialog naming the meeting, and sends nothing yet', async () => {

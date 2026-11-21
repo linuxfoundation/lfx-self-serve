@@ -59,6 +59,7 @@ import {
   selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { MeetingSelfInviteService } from '@services/meeting-self-invite.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
@@ -120,10 +121,12 @@ import { MeetingDetailsSource } from '../meeting-details.source';
 export class MeetingDetailsGuestsComponent {
   protected readonly context = inject(MeetingDetailsContext);
   private readonly meetingService = inject(MeetingService);
+  private readonly selfInvite = inject(MeetingSelfInviteService);
   private readonly committeeService = inject(CommitteeService);
   private readonly userService = inject(UserService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
+  private readonly source = inject(MeetingDetailsSource);
+  private readonly hostRef = this.source.hostRef;
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly stickSentinel = viewChild<ElementRef<HTMLElement>>('stickSentinel');
@@ -321,6 +324,15 @@ export class MeetingDetailsGuestsComponent {
     return computed(() => {
       const self = this.selfGuest();
       if (!this.canAddGuests() || !this.context.canViewGuests() || this.load().status !== 'ready' || !self?.first_name || !self.last_name) return false;
+      // Keep our own loading button visible, but block another entry point's pending self-invite.
+      if (!this.selfSubmitting() && this.selfInvite.isPending(this.context.meeting().id)) return false;
+      const meetingId = this.context.meeting().id;
+      if (!this.selfSubmitting() && !this.meetingService.removedRegistrationMeetingIds().has(meetingId)) {
+        if (this.source.selfInviteOf?.(meetingId) !== undefined) return false;
+        // The host feed can confirm the invite before this drawer's older roster catches up.
+        const hosted = this.source.upcomingRows?.().find((row) => row.meeting.id === meetingId)?.meeting;
+        if (hosted?.invited && (hosted.my_registrant_ids ? hosted.my_registrant_ids.length > 0 : true)) return false;
+      }
       // A row already marked as the viewer ("You") is the user too, whatever address it lists.
       const rows = this.rows();
       return (
@@ -563,15 +575,19 @@ export class MeetingDetailsGuestsComponent {
       ...(registrant.occurrence_id ? { occurrence_id: registrant.occurrence_id } : {}),
     };
     this.selfSubmitting.set(true);
-    this.meetingService
-      .addMeetingRegistrants(meetingId, [payload])
+    this.selfInvite
+      .withPendingInvite$(meetingId, () => this.meetingService.addMeetingRegistrants(meetingId, [payload]))
       .pipe(
         take(1),
         finalize(() => this.selfSubmitting.set(false))
       )
       .subscribe({
         next: (response) => {
-          if (response.summary.successful > 0) this.meetingService.clearRemovedRegistration(meetingId);
+          if (response.summary.successful > 0) {
+            this.meetingService.clearRemovedRegistration(meetingId);
+            const uid = response.successes[0]?.uid;
+            this.source.markSelfInvited?.(meetingId, uid ? [uid] : []);
+          }
           // A confirmed invite outlives its view, but a late reply must not touch a destroyed/new meeting view.
           if (this.destroyRef.destroyed || this.context.meeting().id !== meetingId) return;
           if (response.summary.successful < 1) {
