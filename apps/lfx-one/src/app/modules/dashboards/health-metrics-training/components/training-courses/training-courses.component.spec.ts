@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -14,7 +15,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { TrainingCoursesComponent } from './training-courses.component';
 
-import type { HealthMetricsTrainingCourse, HealthMetricsTrainingCourses } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsTrainingCourse, HealthMetricsTrainingCourses, HealthMetricsTrainingCoursesType } from '@lfx-one/shared/interfaces';
 
 const COURSE_KEY = 'course-1';
 
@@ -43,11 +44,12 @@ describe('TrainingCoursesComponent', () => {
   let lifecycle: string[];
   let verdicts: boolean[];
 
-  // `payload` answers the first read; `followUpPayload` every read after it.
+  // `payload` answers the first read; `followUpPayload` every read after it. `type` is the page's header select.
   async function render(
     payload: HealthMetricsTrainingCourses = response(),
     queryParams: Record<string, string> = {},
-    followUpPayload?: HealthMetricsTrainingCourses
+    followUpPayload?: HealthMetricsTrainingCourses,
+    type: HealthMetricsTrainingCoursesType = 'all'
   ): Promise<void> {
     getTrainingCourses = vi
       .fn()
@@ -68,6 +70,7 @@ describe('TrainingCoursesComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(TrainingCoursesComponent);
+    fixture.componentRef.setInput('type', type);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -86,6 +89,22 @@ describe('TrainingCoursesComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
+  function text(testId: string): string | undefined {
+    return query(testId)?.textContent?.replace(/\s+/g, ' ').trim();
+  }
+
+  function cell(column: string, key = COURSE_KEY): HTMLElement | null {
+    return query(`training-courses-row-${key}-${column}`);
+  }
+
+  function cellText(column: string, key = COURSE_KEY): string | undefined {
+    return cell(column, key)?.querySelector('[data-testid="health-metrics-cell-text"]')?.textContent?.trim();
+  }
+
+  function sortBy(key: string): void {
+    (query(`training-courses-sort-${key}`)?.querySelector('button') as HTMLButtonElement).click();
+  }
+
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
@@ -93,20 +112,36 @@ describe('TrainingCoursesComponent', () => {
     verdicts = [];
   });
 
-  it('reads the selected foundation and period, renders the page, and settles', async () => {
+  it('reads the selected foundation and period in the default order, renders the page and settles', async () => {
     await render();
 
-    expect(getTrainingCourses).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 });
-    expect(query(`training-courses-row-${COURSE_KEY}-name`)?.textContent?.trim()).toBe('Widget Administrator Exam');
-    expect(query(`training-courses-row-${COURSE_KEY}-type`)?.textContent?.trim()).toBe('Certification');
-    expect(query(`training-courses-row-${COURSE_KEY}-enrollments`)?.textContent?.trim()).toBe('1,204');
-    expect(query(`training-courses-row-${COURSE_KEY}-revenue`)?.textContent?.trim()).toBe('$45K');
-    expect(query('training-courses-count')?.textContent?.trim()).toBe('1 course');
+    expect(getTrainingCourses).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 10, sort: null });
+    expect(cellText('name')).toBe('Widget Administrator Exam');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
   });
 
-  it('reads free courses as free and uncaptured revenue as not available, both muted', async () => {
+  it('draws the four columns, with Enrollments marked as the default order', async () => {
+    await render();
+
+    const headers = [...(query('training-courses-table')?.querySelectorAll('th') ?? [])].map((th) => th.textContent?.trim());
+    expect(headers).toEqual(['Course', 'Type', 'Enrollments', 'Revenue']);
+    expect(query('training-courses-sort-enrollments')?.parentElement?.getAttribute('aria-sort')).toBe('descending');
+  });
+
+  it('renders a course the way the design draws it', async () => {
+    await render();
+
+    const type = cell('type');
+    expect(type?.textContent?.trim()).toBe('Certification');
+    expect(type?.classList).toContain('bg-blue-50');
+    expect(type?.querySelector('i')?.className).toContain('fa-award');
+    expect(cellText('enrollments')).toBe('1,204');
+    expect(cellText('revenue')).toBe('$45K');
+    expect(cell('revenue')?.querySelector('[data-testid="health-metrics-cell-text"]')?.className).not.toContain('text-gray-500');
+  });
+
+  it('reads a free course as Free in muted ink, and uncaptured revenue as a muted dash', async () => {
     await render(
       response({
         rows: [
@@ -117,34 +152,72 @@ describe('TrainingCoursesComponent', () => {
       })
     );
 
-    const free = query('training-courses-row-free-1-revenue');
-    const edx = query('training-courses-row-edx-1-revenue');
-    expect(free?.textContent?.trim()).toBe('free');
-    expect(edx?.textContent?.trim()).toBe('not available');
-    expect(free?.classList).toContain('text-gray-500');
-    expect(edx?.classList).toContain('text-gray-500');
-    expect(query(`training-courses-row-free-1-type`)?.textContent?.trim()).toBe('eLearning');
+    expect(cellText('revenue', 'free-1')).toBe('Free');
+    expect(cell('revenue', 'free-1')?.querySelector('[data-testid="health-metrics-cell-text"]')?.className).toContain('text-gray-500');
+    expect(cellText('revenue', 'edx-1')).toBe('—');
+    expect(cell('revenue', 'edx-1')?.querySelector('[data-testid="health-metrics-cell-text"]')?.className).toContain('text-gray-400');
+    expect(cell('type', 'free-1')?.textContent?.trim()).toBe('eLearning');
+    expect(cell('type', 'free-1')?.querySelector('i')?.className).toContain('fa-laptop');
+  });
+
+  it('searches courses from a box that fills the row, with no count line, pills or rows-per-page choice', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+
+    const input = query('training-courses-search')?.querySelector('input');
+    expect(query('training-courses-search')?.classList).toContain('w-full');
+    expect(input?.placeholder).toBe('Search course…');
+    expect(input?.maxLength).toBe(HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH);
+    expect(query('training-courses-count')).toBeNull();
+    expect(query('training-courses-types')).toBeNull();
+    expect(fixture.nativeElement.querySelector('lfx-ui-pagination')).not.toBeNull();
   });
 
   it('re-reads from page 1 when the type changes, and writes it to the URL with the fragment kept', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { trnPage: '3' });
     getTrainingCourses.mockClear();
 
-    fixture.componentInstance['onTypeChange']('certifications');
+    fixture.componentRef.setInput('type', 'instructor-led');
     await settle();
 
-    expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ type: 'certifications', offset: 0 }));
+    expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ type: 'instructor-led', offset: 0 }));
     expect(navigate).toHaveBeenLastCalledWith(
       [],
-      expect.objectContaining({ queryParams: { trnType: 'certifications', trnSearch: null, trnPage: null }, preserveFragment: true, replaceUrl: true })
+      expect.objectContaining({ queryParams: { trnType: 'instructor-led', trnSearch: null, trnPage: null }, preserveFragment: true, replaceUrl: true })
     );
+  });
+
+  it('sorts on the server from page 1, keeping the search and type', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }), { trnPage: '3', trnSearch: 'widget' }, undefined, 'certification');
+    getTrainingCourses.mockClear();
+
+    sortBy('revenue');
+    await settle();
+    expect(getTrainingCourses).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'certification', search: 'widget', offset: 0, sort: { key: 'revenue', direction: 'desc' } })
+    );
+
+    sortBy('course');
+    await settle();
+    expect(getTrainingCourses).toHaveBeenLastCalledWith(expect.objectContaining({ sort: { key: 'course', direction: 'asc' } }));
+  });
+
+  it('reverses the default on Enrollments, and returns to the default order a click later', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+
+    sortBy('enrollments');
+    await settle();
+    expect(getTrainingCourses).toHaveBeenLastCalledWith(expect.objectContaining({ sort: { key: 'enrollments', direction: 'asc' } }));
+
+    sortBy('enrollments');
+    await settle();
+    expect(getTrainingCourses).toHaveBeenLastCalledWith(expect.objectContaining({ sort: null }));
   });
 
   it('re-reads a debounced, trimmed search from page 1', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { trnPage: '2' });
     getTrainingCourses.mockClear();
 
-    fixture.componentInstance['searchForm'].controls.search.setValue('  widget ');
+    fixture.componentInstance['searchText'].set('  widget ');
     await new Promise((resolve) => setTimeout(resolve, 250));
     await settle();
 
@@ -153,32 +226,27 @@ describe('TrainingCoursesComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { trnType: null, trnSearch: 'widget', trnPage: null } }));
   });
 
-  it('pages through the table and writes the page to the URL', async () => {
+  it('pages through the table and writes the 1-based page to the URL', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }));
     getTrainingCourses.mockClear();
 
-    fixture.componentInstance['onTablePage']({ first: 50, rows: 25 });
+    fixture.componentInstance['page'].set(2);
     await settle();
 
-    expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ offset: 50, pageSize: 25 }));
+    expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ offset: 20, pageSize: 10 }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { trnType: null, trnSearch: null, trnPage: 3 } }));
   });
 
-  it('starts on the type, search and page the URL carries', async () => {
-    await render(response({ totalRecords: 80, scopeTotal: 80 }), { trnType: 'elearning', trnSearch: 'widget', trnPage: '2' });
+  it('starts on the search and page the URL carries, in one read', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }), { trnSearch: 'widget', trnPage: '2' }, undefined, 'elearning');
 
-    expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ type: 'elearning', search: 'widget', offset: 25 }));
-    expect((fixture.nativeElement.querySelector('#training-courses-search') as HTMLInputElement).value).toBe('widget');
+    expect(getTrainingCourses).toHaveBeenCalledTimes(1);
+    expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ type: 'elearning', search: 'widget', offset: 10 }));
+    expect(query('training-courses-search')?.querySelector('input')?.value).toBe('widget');
   });
 
-  it('falls back to the defaults for URL values it cannot honour', async () => {
-    await render(response(), { trnType: 'bundles', trnPage: '-2' });
-
-    expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ type: 'all', offset: 0 }));
-  });
-
-  it('starts on page 1 for a fractional URL page below 1', async () => {
-    await render(response(), { trnPage: '0.5' });
+  it.each(['-2', '0.5', 'two'])('falls back to the first page for the URL page %s', async (trnPage) => {
+    await render(response(), { trnPage });
 
     expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
   });
@@ -207,18 +275,17 @@ describe('TrainingCoursesComponent', () => {
   it('lands on the last page holding rows, settling once and rewriting the URL', async () => {
     await render(response({ rows: [], totalRecords: 34, scopeTotal: 34 }), { trnPage: '9' }, response({ totalRecords: 34, scopeTotal: 34 }));
 
-    expect(getTrainingCourses).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 200 }));
-    expect(getTrainingCourses).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 25 }));
+    expect(getTrainingCourses).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 80 }));
+    expect(getTrainingCourses).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 30 }));
     expect(getTrainingCourses).toHaveBeenCalledTimes(2);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { trnType: null, trnSearch: null, trnPage: 2 } }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { trnType: null, trnSearch: null, trnPage: 4 } }));
   });
 
   it('settles empty, with no body, when the period has no course with enrollments', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 0 }));
 
     expect(verdicts).toEqual([true]);
-    expect(query('training-courses-controls')).toBeNull();
     expect(query('training-courses-table')).toBeNull();
     expect(query('training-courses-search')).toBeNull();
   });
@@ -228,7 +295,6 @@ describe('TrainingCoursesComponent', () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }));
 
     expect(verdicts).toEqual([true]);
-    expect(query('training-courses-controls')).toBeNull();
     expect(query('training-courses-table')).toBeNull();
   });
 
@@ -239,30 +305,25 @@ describe('TrainingCoursesComponent', () => {
     expect(query('training-courses-table')).toBeNull();
   });
 
-  it('keeps the controls and the table, with a no-match row spanning every column, when a filter matches nothing', async () => {
-    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { trnType: 'certifications' });
-    const cell = query('training-courses-no-match') as HTMLTableCellElement | null;
+  it('keeps the search when a cut matches nothing, and Reset filters clears the search, type and page, not the sort', async () => {
+    const noMatch = response({ rows: [], totalRecords: 0, scopeTotal: 40 });
+    await render(response({ totalRecords: 40, scopeTotal: 40 }), { trnSearch: 'zeta', trnPage: '2' }, noMatch, 'certification');
+    sortBy('course');
+    await settle();
 
-    expect(cell?.tagName).toBe('TD');
-    expect(cell?.colSpan).toBe(4);
-    expect(cell?.textContent?.trim()).toBe('No course matches this filter.');
-    expect(cell?.closest('[data-testid="training-courses-table"]')).not.toBeNull();
-    expect(query('training-courses-controls')).not.toBeNull();
+    expect(text('training-courses-no-match')).toContain('No matching courses');
+    expect(text('training-courses-no-match')).toContain('No course matches this search or filter.');
+    expect(query('training-courses-search')).not.toBeNull();
     // A filter miss is not an empty period, so the shell must not take the section over.
-    expect(verdicts).toEqual([false]);
-  });
+    expect(verdicts.every((empty) => !empty)).toBe(true);
 
-  it('names the search in the no-match row when a search matches nothing', async () => {
-    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { trnSearch: 'zeta' });
+    getTrainingCourses.mockClear();
+    (query('training-courses-no-match')?.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
+    await settle();
 
-    expect(query('training-courses-no-match')?.textContent?.trim()).toBe('No course matches “zeta”.');
-    expect(verdicts).toEqual([false]);
-  });
-
-  it('uses the ellipsis character in the search placeholder', async () => {
-    await render();
-
-    expect((fixture.nativeElement.querySelector('#training-courses-search') as HTMLInputElement).placeholder).toBe('Search course…');
+    expect(fixture.componentInstance.type()).toBe('all');
+    expect(getTrainingCourses).toHaveBeenCalledTimes(1);
+    expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ type: 'all', search: '', offset: 0, sort: { key: 'course', direction: 'asc' } }));
   });
 
   // A failed read must not render copy that asserts the foundation had no courses.
@@ -271,7 +332,7 @@ describe('TrainingCoursesComponent', () => {
     lifecycle.length = 0;
     getTrainingCourses.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
-    fixture.componentInstance['onTypeChange']('certifications');
+    sortBy('course');
     await settle();
 
     expect(query('training-courses-error')).not.toBeNull();
@@ -285,6 +346,5 @@ describe('TrainingCoursesComponent', () => {
 
     expect(getTrainingCourses).not.toHaveBeenCalled();
     expect(lifecycle).not.toContain('settled');
-    expect(query('training-courses-count')?.textContent?.trim()).toBe('—');
   });
 });

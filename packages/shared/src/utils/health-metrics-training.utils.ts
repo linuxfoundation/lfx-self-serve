@@ -4,10 +4,13 @@
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
 import {
+  HEALTH_METRICS_TRAINING_COURSE_DEFAULT_TYPE_ICON,
   HEALTH_METRICS_TRAINING_COURSE_FREE_LABEL,
+  HEALTH_METRICS_TRAINING_COURSE_TYPE_ICONS,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
-  HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES,
+  HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES,
+  HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
   HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS,
   HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_BAR_WIDTH_PX,
   HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_HEIGHT_PX,
@@ -20,13 +23,13 @@ import {
 } from '../constants/health-metrics-training.constants';
 import { buildHealthMetricsColumnChart, formatHealthMetricsChartCompact } from './health-metrics-column-chart.utils';
 import { formatHealthMetricsPercent } from './health-metrics-table.utils';
-import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsColumnChartInputColumn, HealthMetricsColumnChartSeries } from '../interfaces/health-metrics-column-chart.interface';
 import type { HealthMetricsChartTipRowView, HealthMetricsL2Range, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsTrainingCourse,
   HealthMetricsTrainingCourseRowView,
+  HealthMetricsTrainingCoursesType,
   HealthMetricsTrainingEnrollment,
   HealthMetricsTrainingEnrollmentMetric,
   HealthMetricsTrainingEnrollmentPeriod,
@@ -53,7 +56,7 @@ export function getHealthMetricsTrainingDeliveryTypeLabel(deliveryType: string):
 
 /** A courses row ready to render; revenue reads as a figure only for a paid course whose purchases are captured. */
 export function buildHealthMetricsTrainingCourseRowView(course: HealthMetricsTrainingCourse): HealthMetricsTrainingCourseRowView {
-  const isCertification = course.deliveryType === HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES.certifications;
+  const isCertification = course.deliveryType === 'Certification Exam';
   const revenueMeasured = course.isFree === false && course.hasPurchaseCoverage && course.revenueUsd !== null;
 
   return {
@@ -61,17 +64,19 @@ export function buildHealthMetricsTrainingCourseRowView(course: HealthMetricsTra
     courseName: course.courseName,
     typeLabel: HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS[course.deliveryType] ?? course.deliveryType,
     typeClass: isCertification ? HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES.certification : HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES.other,
-    enrollmentsLabel: formatHealthMetricsTrainingCount(course.enrollments),
+    typeIcon: Object.hasOwn(HEALTH_METRICS_TRAINING_COURSE_TYPE_ICONS, course.deliveryType)
+      ? HEALTH_METRICS_TRAINING_COURSE_TYPE_ICONS[course.deliveryType]
+      : HEALTH_METRICS_TRAINING_COURSE_DEFAULT_TYPE_ICON,
+    enrollmentsLabel: course.enrollments === null ? '—' : formatHealthMetricsTrainingCount(course.enrollments),
     revenueLabel: formatCourseRevenue(course, revenueMeasured),
-    revenueMeasured,
+    revenueFree: course.isFree === true,
   };
 }
 
-/** The count line over the courses table, e.g. `176 courses`; `—` while unmeasured. */
-export function formatHealthMetricsTrainingCoursesCountLabel(total: number | null): string {
-  if (total === null) return '—';
-
-  return `${formatHealthMetricsTrainingCount(total)} ${total === 1 ? 'course' : 'courses'}`;
+/** The Course type from the URL or the select; an older link's value maps to its new cut, and anything else is All types. */
+export function parseHealthMetricsTrainingCoursesType(value: string | null | undefined): HealthMetricsTrainingCoursesType {
+  if (value && Object.hasOwn(HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES, value)) return HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES[value];
+  return HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.find((option) => option.id === value)?.id ?? 'all';
 }
 
 /**
@@ -160,11 +165,11 @@ export function buildHealthMetricsTrainingEnrollmentView(
   };
 }
 
-/** Negative net revenue (refunds) shows as it is; free is reach, and an uncaptured course is not available. */
+/** Net revenue as compact currency, as the chart writes it, negative after refunds; a free course reads "Free", and uncaptured revenue "—", never "Free". */
 function formatCourseRevenue(course: HealthMetricsTrainingCourse, measured: boolean): string {
   if (course.isFree === true) return HEALTH_METRICS_TRAINING_COURSE_FREE_LABEL;
 
-  return measured ? formatCurrency(course.revenueUsd ?? 0) : HEALTH_METRICS_TRAINING_NOT_AVAILABLE;
+  return measured ? formatTrainingChartUsd(course.revenueUsd ?? 0) : '—';
 }
 
 interface TrainingColumn {

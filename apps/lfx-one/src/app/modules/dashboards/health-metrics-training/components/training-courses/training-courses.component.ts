@@ -2,32 +2,34 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_TRAINING_COURSES_DEFAULT_SORT,
   HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_SEARCH_DEBOUNCE_MS,
-  HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
+  HEALTH_METRICS_TRAINING_COURSES_SORT_COLUMNS,
   HEALTH_METRICS_TRAINING_COURSES_UNMEASURED,
   HEALTH_METRICS_TRAINING_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsTrainingCourseRowView, formatHealthMetricsTrainingCoursesCountLabel } from '@lfx-one/shared/utils';
+import { buildHealthMetricsTrainingCourseRowView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
+import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
+import { catchError, debounce, distinctUntilChanged, map, of, skip, switchMap, tap, timer } from 'rxjs';
 
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
-  FilterPillOption,
   HealthMetricsL2Range,
   HealthMetricsTrainingCourseRowView,
   HealthMetricsTrainingCourses,
@@ -36,12 +38,12 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#courses` — every course ever enrolled in, ranked by the period's enrollments; a quiet course shows 0.
- * Paged, filtered and searched server-side: the view's `sort_rank_<period>` only holds across the full set.
+ * `#courses` — every course ever enrolled in, ranked by the period's enrollments; a quiet course shows 0. Paged,
+ * filtered, searched and sorted server-side: the view's `sort_rank_<period>` only holds across the full set.
  */
 @Component({
   selector: 'lfx-training-courses',
-  imports: [EmptyStateComponent, FilterPillsComponent, InputTextComponent, TableComponent],
+  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsThComponent, TableComponent, UiPaginationComponent, UiSearchInputComponent],
   templateUrl: './training-courses.component.html',
 })
 export class TrainingCoursesComponent {
@@ -57,29 +59,36 @@ export class TrainingCoursesComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  /** The Course type select in the card header; the page owns it, and this section keeps it in the URL. */
+  public readonly type = model<HealthMetricsTrainingCoursesType>('all');
+
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
-  protected readonly searchForm = new FormGroup({ search: new FormControl<string>(this.parseInitialSearch(), { nonNullable: true }) });
-
-  protected readonly typeOptions: FilterPillOption[] = [...HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS];
-  protected readonly type = signal<HealthMetricsTrainingCoursesType>(this.toType(this.initialParams.get(HEALTH_METRICS_TRAINING_QUERY_PARAMS.coursesType)));
-  protected readonly size = signal<number>(HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE);
+  protected readonly size = HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE;
+  /** The field stops at the length the read applies, so it never shows text the search ignores. */
+  protected readonly maxSearchLength = HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH;
+  protected readonly searchText = signal<string>(this.normalizeSearch(this.initialParams.get(HEALTH_METRICS_TRAINING_QUERY_PARAMS.coursesSearch) ?? ''));
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a foundation without courses, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
 
-  // Debounced so a keystroke does not fire a warehouse read; trimmed so padding cannot re-read the same cut.
+  // Typing is debounced so a keystroke does not fire a warehouse read; a cleared search applies at once, so a reset never lags.
   protected readonly search: Signal<string> = toSignal(
-    this.searchForm.controls.search.valueChanges.pipe(
-      debounceTime(HEALTH_METRICS_TRAINING_COURSES_SEARCH_DEBOUNCE_MS),
-      map((value) => this.normalizeSearch(value))
+    toObservable(this.searchText).pipe(
+      map((value) => this.normalizeSearch(value)),
+      debounce((term) => (term ? timer(HEALTH_METRICS_TRAINING_COURSES_SEARCH_DEBOUNCE_MS) : of(0)))
     ),
-    { initialValue: this.parseInitialSearch() }
+    { initialValue: this.searchText() }
   );
-  /** Any change to the cut restarts paging, since a page from a wider cut can sit past the end of a narrower one. */
+  /** Sorted on the server across every page; the default keeps the view's rank. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_TRAINING_COURSES_SORT_COLUMNS, HEALTH_METRICS_TRAINING_COURSES_DEFAULT_SORT);
+  /** Zero-based, as the pager counts. Any change to the cut or the order restarts paging, since a wider cut's page can sit past a narrower one's end. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.range()}|${this.type()}|${this.search()}`),
-    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
+    source: computed(
+      () =>
+        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.range()}|${this.type()}|${this.search()}|${JSON.stringify(this.sorting.sort())}`
+    ),
+    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 0),
   });
 
   protected readonly query: Signal<HealthMetricsTrainingCoursesQuery> = this.initQuery();
@@ -87,12 +96,8 @@ export class TrainingCoursesComponent {
 
   protected readonly rowViews: Signal<HealthMetricsTrainingCourseRowView[]> = computed(() => this.response().rows.map(buildHealthMetricsTrainingCourseRowView));
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly scopeTotal = computed(() => this.response().scopeTotal);
   /** No course had a learner in the period; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyPeriod(this.response(), this.query()));
-  protected readonly first = computed(() => (this.page() - 1) * this.size());
-  protected readonly countLabel = computed(() => formatHealthMetricsTrainingCoursesCountLabel(this.totalRecords()));
-  protected readonly noMatchLabel = computed(() => (this.search() ? `No course matches “${this.search()}”.` : 'No course matches this filter.'));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -107,14 +112,10 @@ export class TrainingCoursesComponent {
     }
   }
 
-  protected onTypeChange(id: string): void {
-    this.type.set(this.toType(id));
-  }
-
-  protected onTablePage(event: { first?: number; rows?: number }): void {
-    const rows = event.rows ?? this.size();
-    this.size.set(rows);
-    this.page.set(Math.floor((event.first ?? 0) / rows) + 1);
+  /** Clears the search, the type and the page, as the empty state offers; the sort stays. */
+  protected onResetFilters(): void {
+    this.searchText.set('');
+    this.type.set('all');
   }
 
   private initQuery(): Signal<HealthMetricsTrainingCoursesQuery> {
@@ -123,8 +124,9 @@ export class TrainingCoursesComponent {
       range: this.range(),
       type: this.type(),
       search: this.search(),
-      offset: (this.page() - 1) * this.size(),
-      pageSize: this.size(),
+      offset: this.page() * this.size,
+      pageSize: this.size,
+      sort: this.sorting.order(),
     }));
   }
 
@@ -184,7 +186,8 @@ export class TrainingCoursesComponent {
       queryParams: {
         [HEALTH_METRICS_TRAINING_QUERY_PARAMS.coursesType]: query.type === 'all' ? null : query.type,
         [HEALTH_METRICS_TRAINING_QUERY_PARAMS.coursesSearch]: query.search || null,
-        [HEALTH_METRICS_TRAINING_QUERY_PARAMS.coursesPage]: page > 1 ? page : null,
+        // The URL counts pages from 1.
+        [HEALTH_METRICS_TRAINING_QUERY_PARAMS.coursesPage]: page > 0 ? page + 1 : null,
       },
       queryParamsHandling: 'merge',
       preserveFragment: true,
@@ -197,7 +200,7 @@ export class TrainingCoursesComponent {
    * the last page with rows, writing it back since the clamp can precede the sync's first emission.
    */
   private clampPage(totalRecords: number): boolean {
-    const lastPage = Math.max(1, Math.ceil(totalRecords / this.size()));
+    const lastPage = Math.max(0, Math.ceil(totalRecords / this.size) - 1);
     if (totalRecords === 0 || this.page() <= lastPage) return false;
 
     this.page.set(lastPage);
@@ -205,21 +208,14 @@ export class TrainingCoursesComponent {
     return true;
   }
 
-  private parseInitialSearch(): string {
-    return this.normalizeSearch(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_TRAINING_QUERY_PARAMS.coursesSearch) ?? '');
-  }
-
+  /** The URL's 1-based page as the pager's 0-based one. */
   private parseInitialPage(): number {
     const page = Number(this.initialParams.get(HEALTH_METRICS_TRAINING_QUERY_PARAMS.coursesPage));
-    return Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1;
+    return Number.isFinite(page) && page > 1 ? Math.floor(page) - 1 : 0;
   }
 
   private normalizeSearch(value: string): string {
     return value.trim().slice(0, HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH);
-  }
-
-  private toType(id: string | null): HealthMetricsTrainingCoursesType {
-    return HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.find((option) => option.id === id)?.id ?? 'all';
   }
 }
 

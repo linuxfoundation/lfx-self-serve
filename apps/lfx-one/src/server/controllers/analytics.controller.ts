@@ -49,6 +49,7 @@ import {
   HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_SORT_COLUMNS,
   HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
@@ -4434,6 +4435,11 @@ export class AnalyticsController {
         search,
         offset,
         pageSize,
+        sort: parseHealthMetricsTableSort(
+          getStringQueryParam(req, 'sortKey'),
+          getStringQueryParam(req, 'sortDir'),
+          HEALTH_METRICS_TRAINING_COURSES_SORT_COLUMNS.map((column) => column.key)
+        ),
       });
 
       // The search text stays out of this metadata; it can only match course names, which the request URL also logs.

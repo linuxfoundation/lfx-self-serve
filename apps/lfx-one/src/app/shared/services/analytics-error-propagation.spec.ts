@@ -258,7 +258,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getTrainingCourses',
       url: '/api/analytics/training-courses',
       // A swallowed failure would read as a foundation with no courses.
-      call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }),
+      call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25, sort: null }),
     },
     {
       name: 'getOverviewParticipatingOrgs',
@@ -386,13 +386,26 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     unfiltered.flush({ rows: [], totalRecords: 0, events: [] });
   });
 
-  it('getTrainingCourses sends a typed plus sign encoded and leaves an empty search out', () => {
-    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: 'C++', offset: 0, pageSize: 25 }).subscribe();
-    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }).subscribe();
+  it('getTrainingCourses sends a typed plus sign encoded and a picked sort, and leaves an empty search and the default order out', () => {
+    service
+      .getTrainingCourses({
+        foundationSlug: 'aaif',
+        range: 'YTD',
+        type: 'all',
+        search: 'C++',
+        offset: 0,
+        pageSize: 25,
+        sort: { key: 'revenue', direction: 'asc' },
+      })
+      .subscribe();
+    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25, sort: null }).subscribe();
 
     const [withSearch, withoutSearch] = http.match((request) => request.url === '/api/analytics/training-courses');
     expect(withSearch.request.urlWithParams).toContain('search=C%2B%2B');
+    expect(withSearch.request.params.get('sortKey')).toBe('revenue');
+    expect(withSearch.request.params.get('sortDir')).toBe('asc');
     expect(withoutSearch.request.params.has('search')).toBe(false);
+    expect(withoutSearch.request.params.has('sortKey')).toBe(false);
     withSearch.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
     withoutSearch.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });

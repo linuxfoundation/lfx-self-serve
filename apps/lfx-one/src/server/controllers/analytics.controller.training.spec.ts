@@ -114,7 +114,15 @@ describe('AnalyticsController.getTrainingCourses', () => {
     await promise;
 
     expect(next).not.toHaveBeenCalled();
-    expect(getCourses).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 });
+    expect(getCourses).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'YTD',
+      type: 'all',
+      search: '',
+      offset: 0,
+      pageSize: 10,
+      sort: null,
+    });
     expect(res.json).toHaveBeenCalledWith(courses);
     expect(vi.mocked(logger.success).mock.calls[0]?.[3]).toEqual({
       foundation_slug: 'acme',
@@ -129,7 +137,7 @@ describe('AnalyticsController.getTrainingCourses', () => {
   it('passes the parsed query, with the search trimmed and capped', async () => {
     const search = `  ${'a'.repeat(HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH + 20)}  `;
     const { promise } = call(
-      { foundationSlug: 'acme', range: 'COMPLETED_YEAR_2', type: 'certifications', search, offset: '50', pageSize: '25' },
+      { foundationSlug: 'acme', range: 'COMPLETED_YEAR_2', type: 'certification', search, offset: '50', pageSize: '25', sortKey: 'revenue', sortDir: 'asc' },
       'getTrainingCourses'
     );
     await promise;
@@ -137,10 +145,11 @@ describe('AnalyticsController.getTrainingCourses', () => {
     expect(getCourses).toHaveBeenCalledWith(expect.anything(), {
       foundationSlug: 'acme',
       range: 'COMPLETED_YEAR_2',
-      type: 'certifications',
+      type: 'certification',
       search: 'a'.repeat(HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH),
       offset: 50,
       pageSize: 25,
+      sort: { key: 'revenue', direction: 'asc' },
     });
     expect(vi.mocked(logger.success).mock.calls[0]?.[3]).toMatchObject({ has_search: true });
     expect(JSON.stringify(vi.mocked(logger.success).mock.calls[0]?.[3])).not.toContain('aaa');
@@ -152,6 +161,7 @@ describe('AnalyticsController.getTrainingCourses', () => {
     [{ foundationSlug: 'acme', range: 'LAST_WEEK' }, 'range'],
     [{ foundationSlug: 'acme', range: 'COMPLETED_YEAR_4' }, 'range'],
     [{ foundationSlug: 'acme', type: 'bundles' }, 'type'],
+    [{ foundationSlug: 'acme', type: 'certifications' }, 'type'],
   ])('rejects %o on %s', async (query, field) => {
     const { next, promise } = call(query as Record<string, string>, 'getTrainingCourses');
     await promise;

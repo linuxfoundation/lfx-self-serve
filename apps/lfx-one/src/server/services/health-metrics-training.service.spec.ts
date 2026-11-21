@@ -245,7 +245,7 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
 });
 
 describe('HealthMetricsTrainingService.getCourses', () => {
-  const QUERY = { foundationSlug: 'acme', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 } as const;
+  const QUERY = { foundationSlug: 'acme', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25, sort: null } as const;
 
   const pageRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
     SCOPE_TOTAL: 40,
@@ -286,7 +286,8 @@ describe('HealthMetricsTrainingService.getCourses', () => {
     expect(sql).toContain("AND NULLIF(TRIM(course_name), '') IS NOT NULL");
     expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd`);
     expect(sql).toContain(`sort_rank_${suffix} AS sort_rank`);
-    expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, course_key ASC');
+    expect(sql).toContain('ROW_NUMBER() OVER (ORDER BY sort_rank ASC NULLS LAST, course_key ASC) AS page_position');
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
   });
 
   it('binds only the foundation with no type or search', async () => {
@@ -303,20 +304,41 @@ describe('HealthMetricsTrainingService.getCourses', () => {
   it('binds the type and an escaped search, one placeholder each', async () => {
     execute.mockResolvedValue({ rows: [] });
 
-    await new HealthMetricsTrainingService().getCourses(req, { ...QUERY, type: 'certifications', search: '50%_off!' });
+    await new HealthMetricsTrainingService().getCourses(req, { ...QUERY, type: 'certification', search: '50%_off!' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(sql).toContain("WHERE delivery_type = ? AND course_name ILIKE ? ESCAPE '!'");
+    expect(sql).toContain("WHERE delivery_type IN (?) AND course_name ILIKE ? ESCAPE '!'");
     expect(binds).toEqual(['acme', 'Certification Exam', '%50!%!_off!!%']);
     expect(countPlaceholders(sql)).toBe(binds.length);
   });
 
-  it('maps eLearning to its delivery type', async () => {
+  it.each([
+    ['elearning', ['E-Learning', 'MicroCourse', 'edX']],
+    ['instructor-led', ['Instructor Led']],
+  ] as const)('maps %s to every delivery type it keeps, one placeholder each', async (type, deliveryTypes) => {
     execute.mockResolvedValue({ rows: [] });
 
-    await new HealthMetricsTrainingService().getCourses(req, { ...QUERY, type: 'elearning' });
+    await new HealthMetricsTrainingService().getCourses(req, { ...QUERY, type });
 
-    expect(execute.mock.calls[0][1]).toEqual(['acme', 'E-Learning']);
+    const [sql, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['acme', ...deliveryTypes]);
+    expect(countPlaceholders(sql)).toBe(binds.length);
+  });
+
+  it.each([
+    ['course', 'asc', 'COLLATE(NULLIF(NULLIF(TRIM(course_name'],
+    ['type', 'desc', "CASE delivery_type WHEN 'E-Learning' THEN 'eLearning'"],
+    ['enrollments', 'asc', 'enrollment_count ASC NULLS LAST'],
+    ['revenue', 'desc', 'CASE WHEN is_free THEN 0 WHEN is_free = FALSE AND has_purchase_coverage THEN revenue_usd END DESC NULLS LAST'],
+  ] as const)('orders every page by %s %s, the view rank breaking ties, with no added binds', async (key, direction, expression) => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await new HealthMetricsTrainingService().getCourses(req, { ...QUERY, sort: { key, direction } });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(sql).toContain(expression);
+    expect(sql).toContain('NULLS LAST, sort_rank ASC NULLS LAST, course_key ASC) AS page_position');
+    expect(binds).toEqual(['acme']);
   });
 
   it('clamps the page size and offset it interpolates', async () => {

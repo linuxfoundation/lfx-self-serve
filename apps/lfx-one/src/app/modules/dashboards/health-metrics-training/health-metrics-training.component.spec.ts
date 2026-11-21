@@ -4,7 +4,7 @@
 import { Component, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_TRAINING_BLANK, HEALTH_METRICS_TRAINING_SECTIONS } from '@lfx-one/shared/constants';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -27,6 +27,7 @@ class EnrollStubComponent {
 /** Stands in for Courses, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-training-courses', template: '<div data-testid="training-courses-stub"></div>' })
 class CoursesStubComponent {
+  public readonly type = model<string>('all');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -37,14 +38,20 @@ describe('HealthMetricsTrainingComponent', () => {
   let fixture: ComponentFixture<HealthMetricsTrainingComponent>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
 
-  async function setup(initialFragment: string | null = null): Promise<void> {
+  async function setup(initialFragment: string | null = null, queryParams: Record<string, string> = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsTrainingComponent],
       providers: [
         HealthMetricsChromeService,
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            fragment: new BehaviorSubject<string | null>(initialFragment).asObservable(),
+            snapshot: { queryParamMap: convertToParamMap(queryParams) },
+          },
+        },
       ],
     })
       .overrideComponent(HealthMetricsTrainingComponent, {
@@ -113,6 +120,27 @@ describe('HealthMetricsTrainingComponent', () => {
     fixture.componentInstance['onEnrollMetricChange']('bogus');
     fixture.detectChanges();
     expect(stub(EnrollStubComponent).metric()).toBe('revenue');
+  });
+
+  it("puts the Course type select in Courses' card header, All types by default, and hands the pick down", async () => {
+    await setup();
+
+    expect(testId('training-controls-courses')?.querySelector('[data-testid="training-courses-type"]')).not.toBeNull();
+    expect(stub(CoursesStubComponent).type()).toBe('all');
+
+    fixture.componentInstance['onCoursesTypeChange']('instructor-led');
+    fixture.detectChanges();
+    expect(stub(CoursesStubComponent).type()).toBe('instructor-led');
+
+    fixture.componentInstance['onCoursesTypeChange']('bogus');
+    fixture.detectChanges();
+    expect(stub(CoursesStubComponent).type()).toBe('all');
+  });
+
+  it("starts Courses on the URL's type, reading an older link's value as its new cut", async () => {
+    await setup(null, { trnType: 'certifications' });
+
+    expect(stub(CoursesStubComponent).type()).toBe('certification');
   });
 
   it('lists every section in the sub-nav, with no note', async () => {

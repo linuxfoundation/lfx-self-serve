@@ -6,6 +6,7 @@ import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS,
   HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES,
   HEALTH_METRICS_TRAINING_ENROLLMENT_COMPARED_RANGES,
   HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED,
@@ -13,6 +14,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { buildHealthMetricsSortOrderBy } from '../helpers/health-metrics-sort.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -21,7 +23,9 @@ import type {
   HealthMetricsL2Range,
   HealthMetricsTrainingCourse,
   HealthMetricsTrainingCourses,
+  HealthMetricsSqlSortColumn,
   HealthMetricsTrainingCoursesQuery,
+  HealthMetricsTrainingCoursesSortKey,
   HealthMetricsTrainingEnrollment,
   HealthMetricsTrainingEnrollmentGoals,
   HealthMetricsTrainingEnrollmentPeriod,
@@ -69,7 +73,7 @@ interface CourseRow {
   ENROLLMENT_COUNT: number | null;
   REVENUE_USD: number | null;
   /** Orders the page only; `toCourse` leaves it out of the response. */
-  SORT_RANK: number | null;
+  PAGE_POSITION: number | null;
 }
 
 /** Snowflake reads behind the Health Metrics Training tab; every figure is foundation-wide. */
@@ -158,8 +162,9 @@ export class HealthMetricsTrainingService {
 
     const predicates: string[] = [];
     if (query.type !== 'all') {
-      predicates.push('delivery_type = ?');
-      binds.push(HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES[query.type]);
+      const deliveryTypes = HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES[query.type];
+      predicates.push(`delivery_type IN (${deliveryTypes.map(() => '?').join(', ')})`);
+      binds.push(...deliveryTypes);
     }
     if (query.search) {
       predicates.push("course_name ILIKE ? ESCAPE '!'");
@@ -169,6 +174,8 @@ export class HealthMetricsTrainingService {
 
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE, HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+    // A picked column orders every page; the view's rank, then the key, breaks its ties.
+    const orderBy = buildHealthMetricsSortOrderBy(query.sort, courseSortColumns(), 'sort_rank ASC NULLS LAST, course_key ASC');
 
     // Totals are joined onto the page rather than read as `COUNT(*) OVER()`, so a page past the end still reports them.
     const sql = `
@@ -199,16 +206,18 @@ export class HealthMetricsTrainingService {
       ),
       page AS (
         -- Named columns, so scope_courses_count rides only on the totals, not every page row.
-        SELECT course_key, course_name, delivery_type, is_free, has_purchase_coverage, enrollment_count, revenue_usd, sort_rank, TRUE AS is_page_row
+        SELECT
+          course_key, course_name, delivery_type, is_free, has_purchase_coverage, enrollment_count, revenue_usd, TRUE AS is_page_row,
+          ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS page_position
         FROM matched
-        -- course_key breaks any tie, and NULLS LAST pins placement against the session's null ordering.
-        ORDER BY sort_rank ASC NULLS LAST, course_key ASC
+        -- The position carries the order, with course_key as the last tie-break and NULLS LAST pinned in every column.
+        ORDER BY page_position ASC
         LIMIT ${pageSize} OFFSET ${offset}
       )
       SELECT totals.*, page.*
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.course_key ASC
+      ORDER BY page.page_position ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<CourseRow>(this.snowflakeService, req, sql, binds, {
@@ -224,6 +233,20 @@ export class HealthMetricsTrainingService {
       scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
     };
   }
+}
+
+/** Each sortable column's SQL; Type sorts by the badge's label, and a free course's revenue sorts as $0. */
+function courseSortColumns(): Record<HealthMetricsTrainingCoursesSortKey, HealthMetricsSqlSortColumn> {
+  const labels = Object.entries(HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS)
+    .map(([deliveryType, label]) => `WHEN '${deliveryType}' THEN '${label}'`)
+    .join(' ');
+  return {
+    course: { expression: 'course_name', kind: 'text' },
+    type: { expression: `CASE delivery_type ${labels} ELSE delivery_type END`, kind: 'text' },
+    enrollments: { expression: 'enrollment_count', kind: 'number' },
+    // Uncaptured revenue reads "—", so it sorts last in both directions.
+    revenue: { expression: 'CASE WHEN is_free THEN 0 WHEN is_free = FALSE AND has_purchase_coverage THEN revenue_usd END', kind: 'number' },
+  };
 }
 
 /** A page row as a course; a row missing its key or name cannot render, so it is dropped. */
