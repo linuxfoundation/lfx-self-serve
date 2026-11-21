@@ -26,8 +26,8 @@
           <!-- A value the data leaves unset reads "—" in neutral-400, as every Health Metrics dash. -->
           <span
             class="whitespace-nowrap text-[34px] font-light leading-[1.1] tracking-[-0.01em] max-[640px]:text-[28px]"
-            [class.text-gray-900]="item.value !== '—'"
-            [class.text-gray-400]="item.value === '—'"
+            [class.text-gray-900]="item.value !== dash"
+            [class.text-gray-400]="item.value === dash"
             [attr.data-testid]="testId() + '-' + item.key + '-value'"
             >{{ item.value }}</span
           >

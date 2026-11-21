@@ -163,6 +163,14 @@ describe('NonMembersConversionComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
+  it('drops the sub-heading and table, keeping the figures, when no company was active', async () => {
+    await render(conversion({ warmest: [] }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('non-members-conversion-metrics')).not.toBeNull();
+    expect(query('non-members-conversion-warmest')).toBeNull();
+  });
+
   it('settles empty, with no body, when the period has no conversion row and no active company', async () => {
     await render(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
 

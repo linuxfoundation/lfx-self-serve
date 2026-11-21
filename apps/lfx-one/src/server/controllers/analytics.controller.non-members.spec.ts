@@ -242,7 +242,7 @@ describe('AnalyticsController.getNonMembersConversion', () => {
     ...HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
     measured: true,
     highFitCount: 2,
-    warmest: [{ accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 }],
+    warmest: [{ accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', logoUrl: null, meetingsAttended: 12, contributions: 400 }],
   };
 
   beforeEach(() => {

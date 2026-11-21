@@ -4352,7 +4352,7 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate and its warmest high-fit organizations. */
+  /** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate, high-fit and new counts, and its warmest companies (any fit band). */
   public async getNonMembersConversion(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_non_members_conversion');
 
