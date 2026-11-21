@@ -5,6 +5,7 @@ import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingS
 import type {
   BehavioralClassDisplayConfig,
   CommitteeCategoryInfo,
+  CommitteeSettingsFeature,
   CommitteeTab,
   GroupBehavioralClass,
   GroupsHomeFilters,
@@ -521,7 +522,7 @@ const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide a com
  * Committee settings features for Step 2 form
  * @description Feature toggles for committee settings
  */
-export const COMMITTEE_SETTINGS_FEATURES = [
+export const COMMITTEE_SETTINGS_FEATURES: CommitteeSettingsFeature[] = [
   {
     key: 'business_email_required',
     icon: 'fa-light fa-shield',
@@ -568,6 +569,14 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     description:
       'Let guests see who else is invited, and who has accepted, on the meeting in LFX. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board meetings never share their guest list.',
     color: lfxColors.blue[500],
+  },
+  {
+    key: 'members_can_view_social_listening',
+    icon: 'fa-light fa-ear-listen',
+    title: 'Members Can View Social Listening',
+    description:
+      "Let this group's members view Social Listening for the whole foundation and filter it by project. Applies to the foundation's own groups, not its projects' groups. Executive Directors and LF staff always have access.",
+    color: lfxColors.violet[500],
   },
 ];
 

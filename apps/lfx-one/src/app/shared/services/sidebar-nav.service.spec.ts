@@ -26,6 +26,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
 import { Observable, of, Subject } from 'rxjs';
@@ -61,6 +62,8 @@ describe('SidebarNavService', () => {
   const selectedProject = signal<{ slug: string } | null>(null);
   const activeProject = signal<{ uid: string; parent_uid?: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
+  const hasBoardRole = signal(false);
+  const getSocialListeningAccess = vi.fn(() => of({ canView: false, reason: 'none' }));
   const personaLoaded = signal(true);
   const personaLookupFailed = signal(false);
   const marketingOpsEnabled = signal(false);
@@ -113,6 +116,8 @@ describe('SidebarNavService', () => {
     selectedOrgUid.set(null);
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
+    hasBoardRole.set(false);
+    getSocialListeningAccess.mockReset().mockReturnValue(of({ canView: false, reason: 'none' }));
     personaLoaded.set(true);
     personaLookupFailed.set(false);
     marketingOpsEnabled.set(false);
@@ -145,7 +150,7 @@ describe('SidebarNavService', () => {
         {
           provide: PersonaService,
           useValue: {
-            hasBoardRole: signal(false),
+            hasBoardRole,
             isRootWriter: hasFullFoundationAccess,
             isLFStaff: lfStaff,
             canViewExecutiveDashboards: hasFullFoundationAccess,
@@ -214,6 +219,7 @@ describe('SidebarNavService', () => {
             claManagerLookupFailed: signal(false),
           },
         },
+        { provide: SocialListeningService, useValue: { getAccess: getSocialListeningAccess } },
       ],
     });
   });
@@ -1058,6 +1064,56 @@ describe('SidebarNavService', () => {
       gatewazeEmbedEnabled.set(true);
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
+  });
+  describe('foundation-lens Metrics for group members (lfx-self-serve-ops#387)', () => {
+    beforeEach(() => {
+      authenticated.set(true);
+      hasFullFoundationAccess.set(false);
+      hasBoardRole.set(true);
+      currentPersona.set('board-member');
+      selectedFoundation.set({ slug: 'tlf' });
+    });
+
+    it('keeps the full Metrics section for the executive-dashboard audience without asking the access endpoint', () => {
+      hasFullFoundationAccess.set(true);
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Health Metrics', 'Social Listening', 'Participating companies']);
+      expect(getSocialListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it('shows only Social Listening when one of the user’s groups on the foundation has the setting on', () => {
+      getSocialListeningAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(getSocialListeningAccess).toHaveBeenCalledWith('tlf');
+      expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Social Listening']);
+    });
+
+    it('does not show Participating companies to a group member', () => {
+      getSocialListeningAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Social Listening']);
+    });
+
+    it('does not probe for an anonymous visitor', () => {
+      authenticated.set(false);
+      TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(getSocialListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it('shows no Metrics section when no group grants access', () => {
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(sectionItems(service.sidebarItems(), 'Metrics')).toEqual([]);
     });
   });
 
