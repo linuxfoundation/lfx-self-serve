@@ -31,6 +31,11 @@ export class UiSearchInputComponent {
   /** The current text. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string>('');
 
+  /** Moves focus to the field, e.g. after a reset removes the control that had it. */
+  public focus(): void {
+    this.host.nativeElement.querySelector('input')?.focus();
+  }
+
   /** Esc clears the text and keeps the event from closing an enclosing dialog; with no text the event passes through. */
   protected onEscape(event: Event): void {
     // Esc during IME composition cancels the composition only; keep the committed text and the dialog.
@@ -47,6 +52,6 @@ export class UiSearchInputComponent {
   protected clear(): void {
     this.value.set('');
     // The clear button leaves the page with the text, so hand focus back to the field.
-    this.host.nativeElement.querySelector('input')?.focus();
+    this.focus();
   }
 }

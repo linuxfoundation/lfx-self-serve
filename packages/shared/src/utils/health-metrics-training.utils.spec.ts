@@ -9,7 +9,7 @@ import {
   buildHealthMetricsTrainingEnrollmentView,
   buildHealthMetricsTrainingSubNavItems,
   formatHealthMetricsTrainingCount,
-  formatHealthMetricsTrainingCoursesCountLabel,
+  parseHealthMetricsTrainingCoursesType,
   getHealthMetricsTrainingDeliveryTypeLabel,
 } from './health-metrics-training.utils';
 
@@ -301,50 +301,74 @@ const COURSE: HealthMetricsTrainingCourse = {
 };
 
 describe('buildHealthMetricsTrainingCourseRowView', () => {
-  it('labels a paid, covered certification with its revenue and the certification pill', () => {
+  it('labels a paid, covered certification with its revenue and the certification badge', () => {
     expect(buildHealthMetricsTrainingCourseRowView(COURSE)).toEqual({
       courseKey: 'course-1',
       courseName: 'Example Practitioner Exam',
       typeLabel: 'Certification',
       typeClass: 'bg-blue-50 text-blue-700',
+      typeIcon: 'fa-light fa-award',
       enrollmentsLabel: '1,250',
       revenueLabel: '$45K',
-      revenueMeasured: true,
+      revenueFree: false,
     });
   });
 
-  it('shows free for a free course rather than $0', () => {
+  it('shows Free for a free course rather than $0', () => {
     const view = buildHealthMetricsTrainingCourseRowView({ ...COURSE, deliveryType: 'E-Learning', isFree: true, hasPurchaseCoverage: false, revenueUsd: 0 });
 
-    expect(view).toMatchObject({ typeLabel: 'eLearning', typeClass: 'bg-gray-100 text-gray-600', revenueLabel: 'free', revenueMeasured: false });
+    expect(view).toMatchObject({
+      typeLabel: 'eLearning',
+      typeClass: 'bg-gray-100 text-gray-600',
+      typeIcon: 'fa-light fa-laptop',
+      revenueLabel: 'Free',
+      revenueFree: true,
+    });
   });
 
-  it('shows not available where purchases are not captured, LF Education does not say whether it is free, or revenue is NULL', () => {
-    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, hasPurchaseCoverage: false, revenueUsd: 0 }).revenueLabel).toBe('not available');
+  it('shows a dash, never Free, where purchases are not captured, LF Education does not say whether it is free, or revenue is NULL', () => {
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, hasPurchaseCoverage: false, revenueUsd: 0 }).revenueLabel).toBe('—');
     expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, deliveryType: 'edX', isFree: null, revenueUsd: 0 })).toMatchObject({
       typeLabel: 'edX',
-      revenueLabel: 'not available',
-      revenueMeasured: false,
+      typeIcon: 'fa-light fa-laptop',
+      revenueLabel: '—',
+      revenueFree: false,
     });
-    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: null }).revenueLabel).toBe('not available');
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: null }).revenueLabel).toBe('—');
   });
 
-  it('keeps a refund-driven negative revenue as it is', () => {
+  it('keeps a refund-driven negative revenue, written as the chart writes it', () => {
     expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, deliveryType: 'Instructor Led', revenueUsd: -1200 })).toMatchObject({
       typeLabel: 'Instructor-led',
-      revenueLabel: '-$1.2K',
+      typeIcon: 'fa-light fa-chalkboard-user',
+      revenueLabel: '−$1.2K',
     });
   });
 
-  it('renders NULL enrollments as not available', () => {
-    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, enrollments: null }).enrollmentsLabel).toBe('not available');
+  it('gives Microcourse its own label with the eLearning icon', () => {
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, deliveryType: 'MicroCourse' })).toMatchObject({
+      typeLabel: 'Microcourse',
+      typeClass: 'bg-gray-100 text-gray-600',
+      typeIcon: 'fa-light fa-laptop',
+    });
+  });
+
+  it('keeps the cents of a nonzero amount that would round to $0, a refund included', () => {
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: 0.42 }).revenueLabel).toBe('$0.42');
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: -0.35 }).revenueLabel).toBe('−$0.35');
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: 0 }).revenueLabel).toBe('$0');
+  });
+
+  it('renders NULL enrollments as a dash', () => {
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, enrollments: null }).enrollmentsLabel).toBe('—');
   });
 });
 
-describe('formatHealthMetricsTrainingCoursesCountLabel', () => {
-  it('counts courses, singular for one, and a dash while unmeasured', () => {
-    expect(formatHealthMetricsTrainingCoursesCountLabel(1)).toBe('1 course');
-    expect(formatHealthMetricsTrainingCoursesCountLabel(1760)).toBe('1,760 courses');
-    expect(formatHealthMetricsTrainingCoursesCountLabel(null)).toBe('—');
+describe('parseHealthMetricsTrainingCoursesType', () => {
+  it('keeps a known type, maps an older link value to its new cut, and falls back to All types', () => {
+    expect(parseHealthMetricsTrainingCoursesType('instructor-led')).toBe('instructor-led');
+    expect(parseHealthMetricsTrainingCoursesType('certifications')).toBe('certification');
+    expect(parseHealthMetricsTrainingCoursesType('toString')).toBe('all');
+    expect(parseHealthMetricsTrainingCoursesType(null)).toBe('all');
   });
 });

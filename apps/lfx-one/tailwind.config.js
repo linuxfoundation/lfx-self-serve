@@ -257,7 +257,7 @@ export default {
     ...Object.values(HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES)
       .flatMap((value) => (typeof value === 'string' ? [value] : Object.values(value)))
       .flatMap((classes) => classes.split(' ')),
-    // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
+    // Training course type badges (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
     // Key-contact role pills — People → Key Contacts, the All Employees Key Contact column and the
     // person-detail drawer all colour a role from ORG_KEY_CONTACT_ROLE_PILL_CLASSES in @lfx-one/shared,

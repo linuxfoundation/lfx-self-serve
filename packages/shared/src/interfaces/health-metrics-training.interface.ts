@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type { HEALTH_METRICS_TRAINING_SECTIONS } from '../constants/health-metrics-training.constants';
-import type { FilterPillOption } from './dashboard-metric.interface';
 import type { HealthMetricsColumnChartView } from './health-metrics-column-chart.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
+import type { HealthMetricsTableSort } from './health-metrics-table.interface';
 
 /** Section key from the design's `T2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsTrainingSectionKey = (typeof HEALTH_METRICS_TRAINING_SECTIONS)[number]['key'];
@@ -115,13 +115,17 @@ export interface HealthMetricsTrainingEnrollmentView {
   table: HealthMetricsTrainingEnrollmentTableView;
 }
 
-/** The delivery-type cut over the courses table. */
-export type HealthMetricsTrainingCoursesType = 'all' | 'certifications' | 'elearning';
+/** The delivery-type cut in the Courses card header. */
+export type HealthMetricsTrainingCoursesType = 'all' | 'certification' | 'elearning' | 'instructor-led';
 
-/** A type pill whose id is the cut it applies. */
-export interface HealthMetricsTrainingCoursesTypeOption extends FilterPillOption {
+/** One choice in the Course type select. */
+export interface HealthMetricsTrainingCoursesTypeOption {
   id: HealthMetricsTrainingCoursesType;
+  label: string;
 }
+
+/** The Courses table's sortable columns. */
+export type HealthMetricsTrainingCoursesSortKey = 'course' | 'type' | 'enrollments' | 'revenue';
 
 /** Query params the Courses section reads on arrival and writes back; `null` clears one the URL carries. */
 export interface HealthMetricsTrainingQueryParams {
@@ -139,6 +143,8 @@ export interface HealthMetricsTrainingCoursesQuery {
   search: string;
   offset: number;
   pageSize: number;
+  /** A column the reader picked, over every page; `null` keeps the view's rank. */
+  sort: HealthMetricsTableSort<HealthMetricsTrainingCoursesSortKey> | null;
 }
 
 /** One course's figures for the period. `isFree` is `null` where LF Education does not say (edX). */
@@ -153,13 +159,15 @@ export interface HealthMetricsTrainingCourse {
   revenueUsd: number | null;
 }
 
-/** `GET /api/analytics/training-courses` — one page, ranked by enrollments. */
+/** `GET /api/analytics/training-courses` — one page, in the view's rank or a picked column's order. */
 export interface HealthMetricsTrainingCourses {
   rows: HealthMetricsTrainingCourse[];
   /** Courses matching the type and search. */
   totalRecords: number;
   /** Every course ever enrolled in (`scope_courses_count`); `null` when the read was not measured. */
   scopeTotal: number | null;
+  /** Courses with enrollments or revenue in the period, over every type and search, so no sort or filter moves it. */
+  activeTotal: number | null;
 }
 
 /** A courses row with every label ready to render. */
@@ -167,10 +175,13 @@ export interface HealthMetricsTrainingCourseRowView {
   courseKey: string;
   courseName: string;
   typeLabel: string;
+  /** The type badge's fill and ink. */
   typeClass: string;
+  /** The type badge's 12px Font Awesome icon. */
+  typeIcon: string;
   enrollmentsLabel: string;
-  /** `free` for a free course, `not available` where revenue is not captured; never a `$0` that reads as none sold. */
+  /** Compact currency, negative after refunds; "Free" for a free course; "—" where revenue is not captured. */
   revenueLabel: string;
-  /** Whether `revenueLabel` is a figure rather than a note, which renders muted. */
-  revenueMeasured: boolean;
+  /** "Free" reads in neutral-500; a figure and "—" take the cell's own ink and dash. */
+  revenueFree: boolean;
 }

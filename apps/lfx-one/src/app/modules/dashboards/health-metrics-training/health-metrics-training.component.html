@@ -21,7 +21,14 @@
   <ng-template lfxHealthMetricsL2Section="enroll">
     <lfx-training-enroll [(metric)]="enrollMetric" (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="courses">
+    <lfx-ui-select size="small" ariaLabel="Course type" [value]="coursesType()" (valueChange)="onCoursesTypeChange($event)" data-testid="training-courses-type">
+      @for (option of coursesTypes; track option.id) {
+        <lfx-ui-option [value]="option.id" [label]="option.label" />
+      }
+    </lfx-ui-select>
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="courses">
-    <lfx-training-courses (reading)="shell.sectionReading('courses')" (settled)="shell.sectionSettled('courses', $event)" />
+    <lfx-training-courses [(type)]="coursesType" (reading)="shell.sectionReading('courses')" (settled)="shell.sectionSettled('courses', $event)" />
   </ng-template>
 </lfx-health-metrics-l2-shell>
