@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { lfxColors } from './colors.constants';
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
+import type { HealthMetricsColumnChartSeries } from '../interfaces/health-metrics-column-chart.interface';
 import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsTrainingCourses,
@@ -11,6 +13,7 @@ import type {
   HealthMetricsTrainingEnrollmentMetric,
   HealthMetricsTrainingEnrollmentMetricOption,
   HealthMetricsTrainingEnrollmentPeriod,
+  HealthMetricsTrainingEnrollmentSegment,
   HealthMetricsTrainingQueryParams,
   HealthMetricsTrainingSectionKey,
 } from '../interfaces/health-metrics-training.interface';
@@ -25,7 +28,7 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     empty: { icon: 'fa-light fa-graduation-cap', source: HEALTH_METRICS_L2_EMPTY_SOURCES.courses },
     label: 'Enrollment & revenue',
     heading: 'Enrollment & revenue',
-    description: 'Training is the third revenue stream and the widest top-of-funnel the foundation has — most enrollments are people who are not members yet.',
+    description: 'Course enrollments and the revenue they bring in.',
     provisional: true,
   },
   {
@@ -92,7 +95,7 @@ export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainin
   },
 };
 
-/** The toggle above the by-type list. */
+/** The header switch; Enrollments is the default, and the pick is local, not in the URL. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS: readonly HealthMetricsTrainingEnrollmentMetricOption[] = [
   { id: 'enrollments', label: 'Enrollments' },
   { id: 'revenue', label: 'Revenue' },
@@ -107,10 +110,37 @@ export const HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS: Readonly<Record<strin
   Bundle: 'Bundles',
 };
 
+/**
+ * The chart's segments, bottom to top, in the design's colours and with the delivery types' own labels. Other collects every
+ * other type: eLearning and edX in Enrollments, eLearning and Bundle in Revenue, where edX's never-captured revenue is left out.
+ */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS: readonly HealthMetricsTrainingEnrollmentSegment[] = [
+  {
+    key: 'certification',
+    label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['Certification Exam'],
+    color: lfxColors.blue[500],
+    deliveryType: 'Certification Exam',
+  },
+  { key: 'microcourse', label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['MicroCourse'], color: lfxColors.blue[900], deliveryType: 'MicroCourse' },
+  { key: 'instructorLed', label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['Instructor Led'], color: lfxColors.violet[500], deliveryType: 'Instructor Led' },
+  { key: 'other', label: 'Other', color: lfxColors.gray[300], deliveryType: null },
+];
+
+/** A neutral, total-only bar for a year whose revenue total is known but not split by type; shown only when a year needs it. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNSPLIT_SERIES: HealthMetricsColumnChartSeries = {
+  key: 'unsplit',
+  label: 'Not split by type',
+  color: lfxColors.gray[200],
+};
+
+/** The design's 220px plot and 44px columns. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_HEIGHT_PX = 220;
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_BAR_WIDTH_PX = 44;
+
 /** Types left out of revenue by type: edX revenue is never captured, so its zero is coverage, not free training. */
 export const HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES: readonly string[] = ['edX'];
 
-/** Years the enrollment trend draws, ending with the current one; the view now goes back to 2016. */
+/** Years the chart draws, ending with the current one; the view now goes back to 2016. */
 export const HEALTH_METRICS_TRAINING_TREND_YEARS = 6;
 
 /** Read-failed / no-foundation value: no rows and no scope total, so nothing reads as zero courses. */

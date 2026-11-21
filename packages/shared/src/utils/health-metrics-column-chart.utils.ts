@@ -22,7 +22,7 @@ export function buildHealthMetricsColumnChart(input: HealthMetricsColumnChartInp
   return {
     heightPx: input.heightPx,
     barWidthPx: input.barWidthPx,
-    yTicks: [1, 0.75, 0.5, 0.25, 0].map((share) => formatHealthMetricsChartCompact(top * share)),
+    yTicks: [1, 0.75, 0.5, 0.25, 0].map((share) => (input.formatTick ?? formatHealthMetricsChartCompact)(top * share)),
     columns: input.columns.map((column) => buildColumn(input, column, top)),
     series: input.series,
     ariaLabel: input.ariaLabel,
@@ -58,12 +58,14 @@ function buildColumn(input: HealthMetricsColumnChartInput, column: HealthMetrics
   const topmost = segments.map((segment) => segment.heightPct > 0).lastIndexOf(true);
   if (topmost >= 0) segments[topmost].top = true;
   const total = values ? column.total : null;
-  const rows: HealthMetricsChartTipRowView[] = values
-    ? [
-        ...input.series.map((series, index) => ({ label: series.label, value: formatValue(input, values[index]), color: series.color, separated: false })),
-        { label: 'Total', value: formatValue(input, total), color: 'transparent', separated: false },
-      ]
-    : [];
+  const rows: HealthMetricsChartTipRowView[] =
+    column.tipRows ??
+    (values
+      ? [
+          ...input.series.map((series, index) => ({ label: series.label, value: formatValue(input, values[index]), color: series.color, separated: false })),
+          { label: 'Total', value: formatValue(input, total), color: 'transparent', separated: false },
+        ]
+      : []);
 
   return {
     key: column.key,

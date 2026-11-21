@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, signal } from '@angular/core';
+import { Component, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
@@ -19,6 +19,7 @@ import { HealthMetricsTrainingComponent } from './health-metrics-training.compon
 /** Stands in for Enrollment & revenue, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-training-enroll', template: '<div data-testid="training-enroll-stub"></div>' })
 class EnrollStubComponent {
+  public readonly metric = model<string>('enrollments');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -95,6 +96,23 @@ describe('HealthMetricsTrainingComponent', () => {
     expect(fixture.nativeElement.querySelector('#sec-trn-enroll [data-testid="training-enroll-stub"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('#sec-trn-courses [data-testid="training-courses-stub"]')).not.toBeNull();
     expect(testId('health-metrics-training-page')?.textContent).not.toContain('Awaiting data');
+  });
+
+  it("puts Enrollment & revenue's Enrollments / Revenue switch in its card header, Enrollments first, and hands the pick down", async () => {
+    await setup();
+    const controls = testId('training-controls-enroll') as HTMLElement;
+    const labels = [...controls.querySelectorAll('[data-testid^="training-enroll-metric-"]')].map((option) => option.textContent?.trim());
+
+    expect(labels).toEqual(['Enrollments', 'Revenue']);
+    expect(stub(EnrollStubComponent).metric()).toBe('enrollments');
+
+    fixture.componentInstance['onEnrollMetricChange']('revenue');
+    fixture.detectChanges();
+    expect(stub(EnrollStubComponent).metric()).toBe('revenue');
+
+    fixture.componentInstance['onEnrollMetricChange']('bogus');
+    fixture.detectChanges();
+    expect(stub(EnrollStubComponent).metric()).toBe('revenue');
   });
 
   it('lists every section in the sub-nav, with no note', async () => {

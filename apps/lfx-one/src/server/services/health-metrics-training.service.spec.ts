@@ -118,6 +118,15 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
     expect(sql).not.toMatch(/prev_ytd|baseline/);
   });
 
+  it('reads each year with the three named delivery types beside the total', async () => {
+    mockReads(summaryRows, []);
+
+    await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
+
+    const sql = execute.mock.calls.map(([query]) => query as string).find((query) => query.includes('TRAINING_ENROLLMENTS_BY_YEAR')) ?? '';
+    expect(sql).toContain('SELECT enrollment_year, enrollment_count, certification_exam_count, microcourse_count, instructor_led_count');
+  });
+
   it('binds only the foundation, once per read', async () => {
     mockReads(summaryRows, []);
 
@@ -132,8 +141,8 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
 
   it('maps the All row to the totals, the other rows to the by-type split, and keeps NULL as NULL', async () => {
     mockReads(summaryRows, [
-      { ENROLLMENT_YEAR: 2025, ENROLLMENT_COUNT: 3400 },
-      { ENROLLMENT_YEAR: '2026', ENROLLMENT_COUNT: null },
+      { ENROLLMENT_YEAR: 2025, ENROLLMENT_COUNT: 3400, CERTIFICATION_EXAM_COUNT: 500, MICROCOURSE_COUNT: 0, INSTRUCTOR_LED_COUNT: 300 },
+      { ENROLLMENT_YEAR: '2026', ENROLLMENT_COUNT: null, CERTIFICATION_EXAM_COUNT: null, MICROCOURSE_COUNT: null, INSTRUCTOR_LED_COUNT: null },
     ]);
 
     const enrollment = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
@@ -148,8 +157,8 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
       ],
     });
     expect(enrollment.trend).toEqual([
-      { year: 2025, enrollments: 3400 },
-      { year: 2026, enrollments: null },
+      { year: 2025, enrollments: 3400, certificationExams: 500, microcourses: 0, instructorLed: 300 },
+      { year: 2026, enrollments: null, certificationExams: null, microcourses: null, instructorLed: null },
     ]);
   });
 
