@@ -54,6 +54,8 @@ export class NonMembersConversionComponent {
   public readonly reading = output<void>();
 
   protected readonly contributionsTip = HEALTH_METRICS_NON_MEMBERS_CONTRIBUTIONS_TIP;
+  /** One placeholder per metrics-row item while the figures load. */
+  protected readonly metricPlaceholders = ['pipeline', 'high-fit', 'new'];
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
   /** No pager, so the rows sort in the browser; sorting reorders them and never changes which companies show. */

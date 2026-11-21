@@ -193,9 +193,11 @@ describe('NonMembersConversionComponent', () => {
     await render();
 
     expect(getNonMembersConversion).not.toHaveBeenCalled();
-    // The metrics row's and the table's own skeletons, not one block.
-    expect(query('non-members-conversion-loading-metrics')).not.toBeNull();
-    expect(query('non-members-conversion-loading-table')).not.toBeNull();
+    // The metrics row's own shape and the table's own loading rows, not one block.
+    expect(query('non-members-conversion-loading-metrics')?.querySelectorAll('p-skeleton')).toHaveLength(6);
+    expect(query('non-members-conversion-loading-metrics')?.className).toContain('grid-cols-3');
+    expect(query('non-members-conversion-warmest-table')).not.toBeNull();
+    expect(query('non-members-conversion-metrics')).toBeNull();
     expect(lifecycle).toEqual(['reading']);
   });
 });

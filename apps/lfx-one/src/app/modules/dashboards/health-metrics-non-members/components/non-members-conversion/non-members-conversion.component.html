@@ -10,15 +10,24 @@
       title="Conversion opportunity unavailable"
       subtitle="We could not load the conversion opportunity for this foundation. Refresh the page to try again."
       data-testid="non-members-conversion-error" />
-  } @else if (loading()) {
-    <!-- The metrics row's and the table's own shapes, not one block. -->
-    <p-skeleton height="7rem" borderRadius="0.5rem" data-testid="non-members-conversion-loading-metrics" aria-hidden="true" />
-    <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="non-members-conversion-loading-table" aria-hidden="true" />
   } @else if (!empty()) {
-    <lfx-health-metrics-metrics-row [items]="view().metrics" testId="non-members-conversion-metrics" />
+    @if (loading()) {
+      <!-- The metrics row's own shape while it loads: three items, a label over a value, two per row on phones. -->
+      <div class="grid grid-cols-3 border-y border-gray-200 max-[640px]:grid-cols-2" aria-hidden="true" data-testid="non-members-conversion-loading-metrics">
+        @for (placeholder of metricPlaceholders; track placeholder) {
+          <div class="flex flex-col gap-[8px] py-[18px] pr-[24px]">
+            <p-skeleton width="6rem" height="0.9rem" />
+            <p-skeleton width="5rem" height="2.2rem" />
+          </div>
+        }
+      </div>
+    } @else {
+      <lfx-health-metrics-metrics-row [items]="view().metrics" testId="non-members-conversion-metrics" />
+    }
 
-    <!-- No table empty state: with no active company there is nothing to rank, so the sub-heading and table drop out. -->
-    @if (warmestRows().length) {
+    <!-- No table empty state: with no active company there is nothing to rank, so the sub-heading and table drop out. The
+         table stays mounted while loading, for its own placeholder rows. -->
+    @if (loading() || warmestRows().length) {
       <div class="flex flex-col gap-[10px]" data-testid="non-members-conversion-warmest">
         <h3 class="m-0 mt-[4px] text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500">Warmest companies</h3>
         <!-- The design's 520px minimum; a narrower card scrolls the table sideways. -->
@@ -26,6 +35,7 @@
           styleClass="hm-table"
           [rowHover]="false"
           [value]="warmestRows()"
+          [loading]="loading()"
           [paginator]="false"
           [tableStyle]="{ 'min-width': '520px' }"
           data-testid="non-members-conversion-warmest-table">
