@@ -156,6 +156,13 @@ describe('AnalyticsController.getTrainingCourses', () => {
     expect(JSON.stringify(vi.mocked(logger.success).mock.calls[0]?.[3])).not.toContain('aaa');
   });
 
+  it("reads an older client's certifications type as the certification cut", async () => {
+    const { promise } = call({ foundationSlug: 'acme', type: 'certifications' }, 'getTrainingCourses');
+    await promise;
+
+    expect(getCourses).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ type: 'certification' }));
+  });
+
   it.each([
     ['course_name; DROP TABLE x', 'asc'],
     ['revenue', 'sideways'],
@@ -173,7 +180,6 @@ describe('AnalyticsController.getTrainingCourses', () => {
     [{ foundationSlug: 'acme', range: 'LAST_WEEK' }, 'range'],
     [{ foundationSlug: 'acme', range: 'COMPLETED_YEAR_4' }, 'range'],
     [{ foundationSlug: 'acme', type: 'bundles' }, 'type'],
-    [{ foundationSlug: 'acme', type: 'certifications' }, 'type'],
   ])('rejects %o on %s', async (query, field) => {
     const { next, promise } = call(query as Record<string, string>, 'getTrainingCourses');
     await promise;

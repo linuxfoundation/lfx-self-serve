@@ -28,6 +28,7 @@ class EnrollStubComponent {
 @Component({ selector: 'lfx-training-courses', template: '<div data-testid="training-courses-stub"></div>' })
 class CoursesStubComponent {
   public readonly type = model<string>('all');
+  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -141,6 +142,16 @@ describe('HealthMetricsTrainingComponent', () => {
     await setup(null, { trnType: 'certifications' });
 
     expect(stub(CoursesStubComponent).type()).toBe('certification');
+  });
+
+  it("notes Courses' course count in the sub-nav once the section reports it", async () => {
+    await setup();
+    expect(testId('training-sub-nav-courses')?.textContent).not.toContain('courses');
+
+    stub(CoursesStubComponent).countChange.emit(176);
+    fixture.detectChanges();
+
+    expect(testId('training-sub-nav-courses')?.textContent).toContain('176 courses');
   });
 
   it('lists every section in the sub-nav, with no note', async () => {

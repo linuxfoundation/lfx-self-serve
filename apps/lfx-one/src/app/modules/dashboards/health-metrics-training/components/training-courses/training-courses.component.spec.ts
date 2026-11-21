@@ -43,6 +43,7 @@ describe('TrainingCoursesComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
   let verdicts: boolean[];
+  let counts: (number | null)[];
 
   // `payload` answers the first read; `followUpPayload` every read after it. `type` is the page's header select.
   async function render(
@@ -72,6 +73,7 @@ describe('TrainingCoursesComponent', () => {
     fixture = TestBed.createComponent(TrainingCoursesComponent);
     fixture.componentRef.setInput('type', type);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
+    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
       verdicts.push(empty);
@@ -110,6 +112,7 @@ describe('TrainingCoursesComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
     verdicts = [];
+    counts = [];
   });
 
   it('reads the selected foundation and period in the default order, renders the page and settles', async () => {
@@ -119,6 +122,17 @@ describe('TrainingCoursesComponent', () => {
     expect(cellText('name')).toBe('Widget Administrator Exam');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
+  });
+
+  it('reports every course ever enrolled in for the sub-nav, whatever the cut, and no count for a failed read', async () => {
+    await render(response({ totalRecords: 3, scopeTotal: 176 }));
+    expect(counts).toEqual([176]);
+
+    getTrainingCourses.mockReturnValue(throwError(() => new Error('gateway timeout')));
+    sortBy('course');
+    await settle();
+
+    expect(counts).toEqual([176, null]);
   });
 
   it('draws the four columns, with Enrollments marked as the default order', async () => {
@@ -323,9 +337,13 @@ describe('TrainingCoursesComponent', () => {
     expect(verdicts.every((empty) => !empty)).toBe(true);
 
     getTrainingCourses.mockClear();
+    document.body.appendChild(fixture.nativeElement);
     (query('training-courses-no-match')?.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
     await settle();
 
+    // The reset button leaves with the empty state, so focus lands on the search rather than the page.
+    expect(document.activeElement).toBe(query('training-courses-search')?.querySelector('input'));
+    fixture.nativeElement.remove();
     expect(fixture.componentInstance.type()).toBe('all');
     expect(getTrainingCourses).toHaveBeenCalledTimes(1);
     expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ type: 'all', search: '', offset: 0, sort: { key: 'course', direction: 'asc' } }));

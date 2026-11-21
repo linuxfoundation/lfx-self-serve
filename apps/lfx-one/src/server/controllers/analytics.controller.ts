@@ -46,6 +46,7 @@ import {
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS,
   HEALTH_METRICS_PROJECT_SLUG_PATTERN,
+  HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES,
   HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
@@ -4415,7 +4416,11 @@ export class AnalyticsController {
         throw ServiceValidationError.forField('range', 'Training courses have no data for this range', { operation: 'get_training_courses' });
       }
 
-      const type = getStringQueryParam(req, 'type') || 'all';
+      // An older client's value still means its cut, so a tab open across a deploy keeps working.
+      const requestedType = getStringQueryParam(req, 'type') || 'all';
+      const type = Object.hasOwn(HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES, requestedType)
+        ? HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES[requestedType]
+        : requestedType;
       if (!TRAINING_COURSES_TYPES.has(type)) {
         throw ServiceValidationError.forField('type', `Invalid type value. Allowed: ${[...TRAINING_COURSES_TYPES].join(', ')}`, {
           operation: 'get_training_courses',

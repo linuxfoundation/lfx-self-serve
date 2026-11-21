@@ -105,6 +105,15 @@ describe('UiSearchInputComponent', () => {
     expect(clear()?.classList).toContain('cursor-pointer');
   });
 
+  it('moves focus to the field on request', async () => {
+    document.body.appendChild(host);
+
+    fixture.componentInstance.focus();
+
+    expect(document.activeElement).toBe(input());
+    host.remove();
+  });
+
   it('clears the text, hides the button and returns focus to the field', async () => {
     document.body.appendChild(host);
     fixture.componentInstance.value.set('kube');

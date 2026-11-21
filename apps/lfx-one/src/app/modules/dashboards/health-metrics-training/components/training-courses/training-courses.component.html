@@ -51,22 +51,22 @@
                 (sorted)="sorting.toggle('course')"
                 data-testid="training-courses-sort-course" />
             </th>
-            <!-- Exact %: the design's 0.7 / 0.6 / 0.6 shares of its 4.1fr row, Course taking the rest. -->
-            <th scope="col" class="w-[17%]" [attr.aria-sort]="sorting.headers().type.ariaSort">
+            <!-- Exact %: the design's 0.7 / 0.6 / 0.6 shares of its 4.1fr row, Course taking the rest; exact px: its column minimums. -->
+            <th scope="col" class="w-[17%] min-w-[120px]" [attr.aria-sort]="sorting.headers().type.ariaSort">
               <lfx-health-metrics-th
                 label="Type"
                 [sort]="sorting.headers().type.state"
                 (sorted)="sorting.toggle('type')"
                 data-testid="training-courses-sort-type" />
             </th>
-            <th scope="col" class="w-[15%]" [attr.aria-sort]="sorting.headers().enrollments.ariaSort">
+            <th scope="col" class="w-[15%] min-w-[100px]" [attr.aria-sort]="sorting.headers().enrollments.ariaSort">
               <lfx-health-metrics-th
                 label="Enrollments"
                 [sort]="sorting.headers().enrollments.state"
                 (sorted)="sorting.toggle('enrollments')"
                 data-testid="training-courses-sort-enrollments" />
             </th>
-            <th scope="col" class="w-[15%]" [attr.aria-sort]="sorting.headers().revenue.ariaSort">
+            <th scope="col" class="w-[15%] min-w-[100px]" [attr.aria-sort]="sorting.headers().revenue.ariaSort">
               <lfx-health-metrics-th
                 label="Revenue"
                 [sort]="sorting.headers().revenue.state"

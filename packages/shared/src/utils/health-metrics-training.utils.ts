@@ -41,8 +41,10 @@ import type {
 } from '../interfaces/health-metrics-training.interface';
 
 /** Sub-nav items for the Training tab; no section here carries a note. */
-export function buildHealthMetricsTrainingSubNavItems(): HealthMetricsTrainingSubNavItem[] {
-  return HEALTH_METRICS_TRAINING_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '' }));
+/** The sub-nav, with Courses carrying its course count once read, e.g. `176 courses`; no note while the count is unset or zero. */
+export function buildHealthMetricsTrainingSubNavItems(coursesCount: number | null = null): HealthMetricsTrainingSubNavItem[] {
+  const coursesNote = coursesCount ? `${formatHealthMetricsTrainingCount(coursesCount)} ${coursesCount === 1 ? 'course' : 'courses'}` : '';
+  return HEALTH_METRICS_TRAINING_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: section.key === 'courses' ? coursesNote : '' }));
 }
 
 /** A rounded, `en-US`-pinned count, so the server render and the hydrated one agree; `not available` for unmeasured. */
@@ -170,7 +172,11 @@ export function buildHealthMetricsTrainingEnrollmentView(
 function formatCourseRevenue(course: HealthMetricsTrainingCourse, measured: boolean): string {
   if (course.isFree === true) return HEALTH_METRICS_TRAINING_COURSE_FREE_LABEL;
 
-  return measured ? formatTrainingChartUsd(course.revenueUsd ?? 0) : '—';
+  if (!measured) return '—';
+  const revenue = course.revenueUsd ?? 0;
+  // A nonzero amount that would round to $0 keeps its cents, so a small sale or refund never reads as none.
+  if (revenue !== 0 && Math.abs(revenue) < 0.5) return `${revenue < 0 ? '−' : ''}$${Math.abs(revenue).toFixed(2)}`;
+  return formatTrainingChartUsd(revenue);
 }
 
 interface TrainingColumn {

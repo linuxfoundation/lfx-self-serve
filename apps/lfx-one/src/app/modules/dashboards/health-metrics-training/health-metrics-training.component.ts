@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import {
   HEALTH_METRICS_TRAINING_BLANK,
@@ -52,7 +52,9 @@ export class HealthMetricsTrainingComponent {
   protected readonly idPrefix = HEALTH_METRICS_TRAINING_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_TRAINING_DATA_SECTIONS;
   protected readonly blank = HEALTH_METRICS_TRAINING_BLANK;
-  protected readonly subNavItems: HealthMetricsTrainingSubNavItem[] = buildHealthMetricsTrainingSubNavItems();
+  /** Courses reports its course count once read, for its sub-nav entry. */
+  protected readonly coursesCount = signal<number | null>(null);
+  protected readonly subNavItems = computed<HealthMetricsTrainingSubNavItem[]>(() => buildHealthMetricsTrainingSubNavItems(this.coursesCount()));
   protected readonly enrollMetrics = HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS;
   /** The header switch's measure: local to the page, not written to the URL, and Enrollments by default. */
   protected readonly enrollMetric = signal<HealthMetricsTrainingEnrollmentMetric>('enrollments');

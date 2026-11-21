@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, linkedSignal, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, model, output, PLATFORM_ID, type Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -58,6 +58,10 @@ export class TrainingCoursesComponent {
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
+  /** Every course ever enrolled in, for the sub-nav's count; `null` when the read failed or was not measured. */
+  public readonly countChange = output<number | null>();
+
+  private readonly searchInput = viewChild(UiSearchInputComponent);
 
   /** The Course type select in the card header; the page owns it, and this section keeps it in the URL. */
   public readonly type = model<HealthMetricsTrainingCoursesType>('all');
@@ -116,6 +120,8 @@ export class TrainingCoursesComponent {
   protected onResetFilters(): void {
     this.searchText.set('');
     this.type.set('all');
+    // The reset button leaves with the empty state, so focus stays in Courses rather than dropping to the page.
+    this.searchInput()?.focus();
   }
 
   private initQuery(): Signal<HealthMetricsTrainingCoursesQuery> {
@@ -162,7 +168,9 @@ export class TrainingCoursesComponent {
 
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyPeriod(response));
+              if (!foundationSeen) return;
+              this.settled.emit(!this.loadFailed() && isEmptyPeriod(response));
+              this.countChange.emit(response.scopeTotal);
             })
           )
         )

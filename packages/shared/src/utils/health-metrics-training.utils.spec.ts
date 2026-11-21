@@ -27,8 +27,16 @@ describe('buildHealthMetricsTrainingSubNavItems', () => {
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_TRAINING_SECTIONS.map((section) => section.label));
   });
 
-  it('carries no note on any section', () => {
+  it('carries no note before Courses reports its count, or for a zero count', () => {
     expect(buildHealthMetricsTrainingSubNavItems().every((item) => item.note === '')).toBe(true);
+    expect(buildHealthMetricsTrainingSubNavItems(0).every((item) => item.note === '')).toBe(true);
+  });
+
+  it('notes the course count on Courses only, singular for one', () => {
+    const notes = (count: number) => buildHealthMetricsTrainingSubNavItems(count).map((item) => `${item.key}:${item.note}`);
+
+    expect(notes(1760)).toEqual(['enroll:', 'courses:1,760 courses']);
+    expect(notes(1)).toEqual(['enroll:', 'courses:1 course']);
   });
 });
 
@@ -351,6 +359,12 @@ describe('buildHealthMetricsTrainingCourseRowView', () => {
       typeClass: 'bg-gray-100 text-gray-600',
       typeIcon: 'fa-light fa-laptop',
     });
+  });
+
+  it('keeps the cents of a nonzero amount that would round to $0, a refund included', () => {
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: 0.42 }).revenueLabel).toBe('$0.42');
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: -0.35 }).revenueLabel).toBe('−$0.35');
+    expect(buildHealthMetricsTrainingCourseRowView({ ...COURSE, revenueUsd: 0 }).revenueLabel).toBe('$0');
   });
 
   it('renders NULL enrollments as a dash', () => {
