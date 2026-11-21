@@ -11,6 +11,7 @@ import {
   DestroyRef,
   ElementRef,
   inject,
+  Injector,
   PLATFORM_ID,
   Signal,
   signal,
@@ -26,6 +27,7 @@ import {
   MEETINGS_HOME_DAY_HEADING_GAP_PX,
   MEETINGS_HOME_DAY_SCROLL_DELAY_MS,
   MEETINGS_HOME_DAY_SCROLL_OFFSET_PX,
+  MEETINGS_HOME_SEARCH_CLOSE_MS,
   PHONE_MEDIA_QUERY,
 } from '@lfx-one/shared/constants';
 import { MeetingDashboardView, MeetingHomeRow, MeetingMiniCalendarDay, UiTabItem } from '@lfx-one/shared/interfaces';
@@ -93,12 +95,16 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     AppFooterComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
+  styleUrl: './meetings-redesign.component.scss',
   providers: [...provideMeetingsHomeFeed(), MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService, MeetingsHomeDetailsService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block -mx-5 -my-6 md:-mx-8',
     '(window:resize)': 'measure()',
     '(window:scroll)': 'updateScroll()',
+    '(document:pointerdown)': 'onPointerDown($event)',
+    '(document:pointerup)': 'releasePointer()',
+    '(document:pointercancel)': 'releasePointer()',
   },
 })
 export class MeetingsRedesignComponent {
@@ -110,6 +116,7 @@ export class MeetingsRedesignComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly createArtifactDialog = inject(CreateArtifactDialogService);
   private readonly composer = inject(MeetingComposerService);
   private readonly appService = inject(AppService);
@@ -126,6 +133,10 @@ export class MeetingsRedesignComponent {
   private readonly list = viewChild<ElementRef<HTMLElement>>('list');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
   private readonly chips = viewChild(UiChipGroupComponent, { read: ElementRef });
+  private readonly searchField = viewChild(UiSearchInputComponent);
+  private readonly searchFieldHost = viewChild(UiSearchInputComponent, { read: ElementRef });
+  private readonly searchButton = viewChild<UiButtonComponent>('searchButton');
+  private readonly searchTools = viewChild<ElementRef<HTMLElement>>('searchTools');
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
   /** Takes focus when the last filter chip is removed. */
@@ -156,6 +167,14 @@ export class MeetingsRedesignComponent {
   protected readonly tabsStuck: WritableSignal<boolean> = signal(false);
   /** True while the list runs under the tabs bar, so a day heading is stuck there; the fade then sits under the heading. */
   protected readonly dayHeadingStuck: WritableSignal<boolean> = signal(false);
+  /** The Search button was used; the field then stays until it is left empty. */
+  protected readonly searchOpen: WritableSignal<boolean> = signal(false);
+  /** True while the field plays its closing animation, before the button takes its place back. */
+  protected readonly searchClosing: WritableSignal<boolean> = signal(false);
+  /** A close was called off, so the field stays as it is rather than playing its opening animation again. */
+  protected readonly searchKept: WritableSignal<boolean> = signal(false);
+  /** The field shows while opened, while it has text, or while it closes. */
+  protected readonly searchExpanded: Signal<boolean> = computed(() => this.searchOpen() || !!this.store.search().trim() || this.searchClosing());
   /** Where the day headings stick: below the sticky header and tabs bar. */
   protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
@@ -179,18 +198,32 @@ export class MeetingsRedesignComponent {
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(
     // A paged past feed searches on the server, so its empty rows under a query are no results, not an empty tab.
-    () => !this.store.loading() && this.store.tabRows().length === 0 && !(this.store.pagedPast && this.store.tab() === 'past' && this.store.hasActiveQuery())
+    () =>
+      !this.store.loading() &&
+      this.store.tabRows().length === 0 &&
+      !(this.store.pagedPast && this.store.tab() === 'past' && (this.store.hasActiveQuery() || this.store.pastQueryPending()))
   );
   /** The active tab has meetings, but none match the search and filters. */
-  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
+  protected readonly noResults: Signal<boolean> = computed(
+    // Until a changed past search loads, its empty rows are not yet an answer.
+    () => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0 && !(this.store.tab() === 'past' && this.store.pastQueryPending())
+  );
   /** No-results copy: search only, filters only, or both. */
   protected readonly noResultsDescription: Signal<string> = computed(() => {
     if (countAppliedMeetingFilters(this.store.filters()) === 0) return 'No meetings match your search';
     return this.store.search().trim() ? 'No meetings match your filters' : 'Try adjusting your filter criteria';
   });
 
+  private searchCloseTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A pointer is down; a focus-out it causes closes the search on release, so the control under it keeps its place. */
+  private pointerHeld = false;
+  // The press is on another control beside the search, such as Filters, whose popover anchors to where it is now.
+  private pressedInTools = false;
+  private closeOnRelease = false;
+
   public constructor() {
     this.destroyRef.onDestroy(this.appService.claimFooter());
+    this.destroyRef.onDestroy(() => clearTimeout(this.searchCloseTimer));
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
     this.initLoadMore();
     // The list comes and goes with the tab's state without a scroll, so re-check the stuck day heading then.
@@ -244,6 +277,88 @@ export class MeetingsRedesignComponent {
   protected showDay(day: MeetingMiniCalendarDay): void {
     this.store.showDay(day.key, day.tab);
     this.syncTabParam(day.tab);
+  }
+
+  protected openSearch(): void {
+    this.searchKept.set(false);
+    this.searchOpen.set(true);
+    afterNextRender(() => this.searchField()?.focus(), { injector: this.injector });
+  }
+
+  /** Leaving an empty field closes it; focus moving to or from its clear button stays inside. */
+  protected onSearchFocusOut(event: FocusEvent): void {
+    if ((event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) return;
+    if (this.store.search().trim()) return;
+    // An empty field stays open beside a control the viewer moved to, so that control and its popover do not shift.
+    if (this.searchTools()?.nativeElement.contains(event.relatedTarget as Node | null) || (this.pointerHeld && this.pressedInTools)) return;
+    if (this.pointerHeld) this.closeOnRelease = true;
+    else this.closeSearch(false);
+  }
+
+  protected onPointerDown(event: PointerEvent): void {
+    this.pointerHeld = true;
+    // An open Filters panel and its menus render in overlays outside the row, so a press there counts as in it.
+    this.pressedInTools =
+      !!this.searchTools()?.nativeElement.contains(event.target as Node | null) || !!(event.target as Element | null)?.closest?.('.cdk-overlay-container');
+    // An empty field left open beside Filters closes on the next press elsewhere.
+    const field = this.searchFieldHost()?.nativeElement;
+    if (this.searchOpen() && !this.pressedInTools && !this.store.search().trim() && !field?.contains(document.activeElement)) this.closeOnRelease = true;
+  }
+
+  protected releasePointer(): void {
+    this.pointerHeld = false;
+    if (!this.closeOnRelease) return;
+    this.closeOnRelease = false;
+    if (!this.store.search().trim() && !this.searchFieldHost()?.nativeElement.contains(document.activeElement)) this.closeSearch(false);
+  }
+
+  /** Composing text with an input method keeps a closing field open; its text reaches the store only when composed. */
+  protected cancelSearchClose(): void {
+    if (!this.searchClosing()) return;
+    clearTimeout(this.searchCloseTimer);
+    this.searchKept.set(true);
+    this.searchClosing.set(false);
+    this.searchOpen.set(true);
+  }
+
+  /** The field clears its text on the first Esc; one with no text closes it. */
+  protected onSearchEscape(): void {
+    if (!this.store.search().trim()) this.closeSearch(true);
+  }
+
+  /** Plays the closing animation, then shows the button; `restoreFocus` moves focus to it, for a close from the keyboard or the clear button. */
+  protected closeSearch(restoreFocus: boolean): void {
+    // Also ignores the focusout some browsers fire as the closed field leaves the page.
+    if (this.searchClosing() || !this.searchExpanded()) return;
+    this.searchOpen.set(false);
+    const done = (): void => {
+      this.searchClosing.set(false);
+      // Text typed while it was closing keeps the field open.
+      if (this.store.search().trim()) {
+        this.searchKept.set(true);
+        this.searchOpen.set(true);
+        return;
+      }
+      // Only take focus back from the closing field, not from wherever the user moved on to.
+      const active = document.activeElement;
+      const field: HTMLElement | undefined = this.searchFieldHost()?.nativeElement;
+      const fromField = !active || active === document.body || !!field?.contains(active);
+      if (restoreFocus && fromField) afterNextRender(() => this.searchButton()?.focus(), { injector: this.injector });
+    };
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      done();
+      return;
+    }
+    this.searchClosing.set(true);
+    this.searchCloseTimer = setTimeout(done, MEETINGS_HOME_SEARCH_CLOSE_MS);
+  }
+
+  /** The No results reset also clears the search, so the field gives way to the button at once. */
+  protected resetFilters(): void {
+    this.store.resetFilters();
+    clearTimeout(this.searchCloseTimer);
+    this.searchOpen.set(false);
+    this.searchClosing.set(false);
   }
 
   protected createMeeting(): void {

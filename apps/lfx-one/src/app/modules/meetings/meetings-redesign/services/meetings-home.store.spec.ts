@@ -321,6 +321,23 @@ describe('MeetingsHomeStore', () => {
       expect(store.revealedDay()).toBe(day);
     });
 
+    it('keeps the loaded past rows, searched locally, when a reload after a search change fails on the whole feed', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = create();
+      past$.next([buildPastMeeting('a', inDays(-1))]);
+      upcoming$.error(new Error('down'));
+      (userService['getUserMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(of([]));
+      (userService['getUserPastMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(throwError(() => new Error('past down')));
+      store.setTab('past');
+      store.setSearch('Past');
+
+      store.retry();
+      TestBed.tick();
+
+      expect(store.pastShowsError()).toBe(false);
+      expect(store.pastRows()).toHaveLength(1);
+    });
+
     it('keeps the loaded rows on a failed refresh, shows one toast and takes the next refresh', () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const store = create();
@@ -1643,6 +1660,51 @@ describe('MeetingsHomeStore', () => {
       TestBed.tick();
 
       expect(store.failed()).toBe(false);
+    });
+
+    it('shows no kept-list toast when a changed search fails after the field moved on', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 2));
+        TestBed.tick();
+
+        store.setSearch('board');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        store.setSearch('boards');
+        TestBed.tick();
+        pastPages[1].error(new Error('search failed'));
+        TestBed.tick();
+
+        expect(toast.show).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('treats the past count as unknown on Upcoming when the first page for a changed search fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 2));
+        TestBed.tick();
+
+        store.setSearch('board');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        pastPages[1].error(new Error('search failed'));
+        TestBed.tick();
+
+        expect(store.tab()).toBe('upcoming');
+        expect(store.pastCountUnknown()).toBe(true);
+        store.setTab('past');
+        expect(store.pastShowsError()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('treats the past count as unknown on any tab when a next page failed with nothing loaded', () => {
