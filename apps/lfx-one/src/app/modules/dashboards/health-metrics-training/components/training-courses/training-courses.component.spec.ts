@@ -33,7 +33,7 @@ function course(overrides: Partial<HealthMetricsTrainingCourse> = {}): HealthMet
 }
 
 function response(overrides: Partial<HealthMetricsTrainingCourses> = {}): HealthMetricsTrainingCourses {
-  return { rows: [course()], totalRecords: 1, scopeTotal: 1, ...overrides };
+  return { rows: [course()], totalRecords: 1, scopeTotal: 1, activeTotal: 1, ...overrides };
 }
 
 describe('TrainingCoursesComponent', () => {
@@ -282,27 +282,32 @@ describe('TrainingCoursesComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { trnType: null, trnSearch: null, trnPage: 4 } }));
   });
 
-  it('settles empty, with no body, when the period has no course with enrollments', async () => {
-    await render(response({ rows: [], totalRecords: 0, scopeTotal: 0 }));
+  it('settles empty, with no body, when no course was ever enrolled in', async () => {
+    await render(response({ rows: [], totalRecords: 0, scopeTotal: 0, activeTotal: 0 }));
 
     expect(verdicts).toEqual([true]);
     expect(query('training-courses-table')).toBeNull();
     expect(query('training-courses-search')).toBeNull();
   });
 
-  // The scope total counts every year, so an unfiltered period read with no row is still an empty period.
-  it('settles empty, with no body, when the unfiltered period has no course though other years do', async () => {
-    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }));
+  // The scope total counts every year; the period's own count decides, whatever the page holds.
+  it('settles empty, with no body, when no course had enrollments or revenue in the period though other years did', async () => {
+    await render(response({ rows: [course({ enrollments: 0, revenueUsd: null })], totalRecords: 40, scopeTotal: 40, activeTotal: 0 }));
 
     expect(verdicts).toEqual([true]);
     expect(query('training-courses-table')).toBeNull();
   });
 
-  it('settles empty when the first unfiltered page holds courses from other years with nothing in this period', async () => {
-    await render(response({ rows: [course({ enrollments: 0, revenueUsd: null })], totalRecords: 1, scopeTotal: 1 }));
+  it('keeps the table when a sort puts only quiet courses on the first page of an active period', async () => {
+    const quietPage = response({ rows: [course({ enrollments: 0, revenueUsd: null })], totalRecords: 40, scopeTotal: 40, activeTotal: 6 });
+    await render(response({ totalRecords: 40, scopeTotal: 40, activeTotal: 6 }), {}, quietPage);
 
-    expect(verdicts).toEqual([true]);
-    expect(query('training-courses-table')).toBeNull();
+    sortBy('enrollments');
+    await settle();
+
+    expect(getTrainingCourses).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, sort: { key: 'enrollments', direction: 'asc' } }));
+    expect(verdicts.every((empty) => !empty)).toBe(true);
+    expect(query('training-courses-table')).not.toBeNull();
   });
 
   it('keeps the search when a cut matches nothing, and Reset filters clears the search, type and page, not the sort', async () => {

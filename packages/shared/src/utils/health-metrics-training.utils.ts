@@ -10,6 +10,7 @@ import {
   HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
   HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES,
+  HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES,
   HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
   HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS,
   HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_BAR_WIDTH_PX,
@@ -56,7 +57,7 @@ export function getHealthMetricsTrainingDeliveryTypeLabel(deliveryType: string):
 
 /** A courses row ready to render; revenue reads as a figure only for a paid course whose purchases are captured. */
 export function buildHealthMetricsTrainingCourseRowView(course: HealthMetricsTrainingCourse): HealthMetricsTrainingCourseRowView {
-  const isCertification = course.deliveryType === 'Certification Exam';
+  const isCertification = HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES.certification.includes(course.deliveryType);
   const revenueMeasured = course.isFree === false && course.hasPurchaseCoverage && course.revenueUsd !== null;
 
   return {

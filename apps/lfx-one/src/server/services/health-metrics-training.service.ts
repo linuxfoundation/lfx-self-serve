@@ -63,6 +63,7 @@ interface YearRow {
 /** Totals ride on every row; a page past the end leaves one totals-only row whose course columns are NULL. */
 interface CourseRow {
   SCOPE_TOTAL: number | null;
+  ACTIVE_TOTAL: number | null;
   TOTAL_RECORDS: number;
   IS_PAGE_ROW: boolean | null;
   COURSE_KEY: string | null;
@@ -154,7 +155,7 @@ export class HealthMetricsTrainingService {
     };
   }
 
-  /** One page of every course ever enrolled in, ranked by the view for the period, with the totals beside it. */
+  /** One page of every course ever enrolled in, in the view's rank for the period or a picked column's order, with the totals beside it. */
   public async getCourses(req: Request, query: HealthMetricsTrainingCoursesQuery): Promise<HealthMetricsTrainingCourses> {
     // The suffix comes from a fixed map keyed by the validated range, never from the request.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
@@ -201,8 +202,11 @@ export class HealthMetricsTrainingService {
         SELECT * FROM scoped ${matchClause}
       ),
       totals AS (
-        -- The scope total is the view's own count, repeated on every row and the same in every period.
-        SELECT (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
+        -- The scope total is the view's own count, the same in every period; the active total is the period's, over every type.
+        SELECT
+          (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total,
+          (SELECT COUNT(*) FROM matched) AS total_records,
+          (SELECT COUNT_IF(COALESCE(enrollment_count, 0) > 0 OR COALESCE(revenue_usd, 0) <> 0) FROM scoped) AS active_total
       ),
       page AS (
         -- Named columns, so scope_courses_count rides only on the totals, not every page row.
@@ -231,6 +235,7 @@ export class HealthMetricsTrainingService {
       rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap((row) => toCourse(row) ?? []),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
+      activeTotal: Number(first?.ACTIVE_TOTAL ?? 0),
     };
   }
 }

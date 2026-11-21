@@ -4450,6 +4450,7 @@ export class AnalyticsController {
         has_search: search.length > 0,
         total_records: response.totalRecords,
         scope_total: response.scopeTotal,
+        active_total: response.activeTotal,
       });
 
       res.json(response);

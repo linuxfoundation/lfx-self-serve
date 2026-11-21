@@ -249,6 +249,7 @@ describe('HealthMetricsTrainingService.getCourses', () => {
 
   const pageRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
     SCOPE_TOTAL: 40,
+    ACTIVE_TOTAL: 9,
     TOTAL_RECORDS: 12,
     IS_PAGE_ROW: true,
     COURSE_KEY: 'course-1',
@@ -281,7 +282,8 @@ describe('HealthMetricsTrainingService.getCourses', () => {
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.TRAINING_COURSES');
     expect(sql).toContain('AND has_enrollment_all_time');
     expect(sql).not.toContain(`enrollment_count_${suffix} > 0`);
-    expect(sql).toContain('SELECT (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total');
+    expect(sql).toContain('(SELECT MAX(scope_courses_count) FROM scoped) AS scope_total');
+    expect(sql).toContain('(SELECT COUNT_IF(COALESCE(enrollment_count, 0) > 0 OR COALESCE(revenue_usd, 0) <> 0) FROM scoped) AS active_total');
     expect(sql).toContain('AND _key IS NOT NULL');
     expect(sql).toContain("AND NULLIF(TRIM(course_name), '') IS NOT NULL");
     expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd`);
@@ -377,14 +379,15 @@ describe('HealthMetricsTrainingService.getCourses', () => {
       ],
       totalRecords: 12,
       scopeTotal: 40,
+      activeTotal: 9,
     });
   });
 
   // MAX over no courses is NULL: a foundation never enrolled in reads as 0, the empty state, not as unmeasured.
   it('reads a foundation with no course ever enrolled in as a zero scope', async () => {
-    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: null, TOTAL_RECORDS: 0, IS_PAGE_ROW: null, COURSE_KEY: null, COURSE_NAME: null }] });
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: null, ACTIVE_TOTAL: 0, TOTAL_RECORDS: 0, IS_PAGE_ROW: null, COURSE_KEY: null, COURSE_NAME: null }] });
 
-    await expect(new HealthMetricsTrainingService().getCourses(req, QUERY)).resolves.toEqual({ rows: [], totalRecords: 0, scopeTotal: 0 });
+    await expect(new HealthMetricsTrainingService().getCourses(req, QUERY)).resolves.toEqual({ rows: [], totalRecords: 0, scopeTotal: 0, activeTotal: 0 });
   });
 
   it('keeps the scope count off the page rows', async () => {
@@ -399,12 +402,13 @@ describe('HealthMetricsTrainingService.getCourses', () => {
   });
 
   it('still reports the totals for a page past the end', async () => {
-    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 40, TOTAL_RECORDS: 12, IS_PAGE_ROW: null, COURSE_KEY: null, COURSE_NAME: null }] });
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 40, ACTIVE_TOTAL: 9, TOTAL_RECORDS: 12, IS_PAGE_ROW: null, COURSE_KEY: null, COURSE_NAME: null }] });
 
     await expect(new HealthMetricsTrainingService().getCourses(req, { ...QUERY, offset: 500 })).resolves.toEqual({
       rows: [],
       totalRecords: 12,
       scopeTotal: 40,
+      activeTotal: 9,
     });
   });
 

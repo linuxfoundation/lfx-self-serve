@@ -101,7 +101,7 @@ describe('AnalyticsController.getTrainingEnrollment', () => {
 });
 
 describe('AnalyticsController.getTrainingCourses', () => {
-  const courses = { rows: [], totalRecords: 3, scopeTotal: 7 };
+  const courses = { rows: [], totalRecords: 3, scopeTotal: 7, activeTotal: 5 };
 
   beforeEach(() => {
     vi.mocked(logger.success).mockClear();
@@ -131,6 +131,7 @@ describe('AnalyticsController.getTrainingCourses', () => {
       has_search: false,
       total_records: 3,
       scope_total: 7,
+      active_total: 5,
     });
   });
 
@@ -153,6 +154,17 @@ describe('AnalyticsController.getTrainingCourses', () => {
     });
     expect(vi.mocked(logger.success).mock.calls[0]?.[3]).toMatchObject({ has_search: true });
     expect(JSON.stringify(vi.mocked(logger.success).mock.calls[0]?.[3])).not.toContain('aaa');
+  });
+
+  it.each([
+    ['course_name; DROP TABLE x', 'asc'],
+    ['revenue', 'sideways'],
+    ['__proto__', 'asc'],
+  ])('keeps the default order for an unknown sort %s %s', async (sortKey, sortDir) => {
+    const { promise } = call({ foundationSlug: 'acme', sortKey, sortDir }, 'getTrainingCourses');
+    await promise;
+
+    expect(getCourses).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it.each([

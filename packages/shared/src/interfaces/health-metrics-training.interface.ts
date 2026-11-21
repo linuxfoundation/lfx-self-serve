@@ -159,13 +159,15 @@ export interface HealthMetricsTrainingCourse {
   revenueUsd: number | null;
 }
 
-/** `GET /api/analytics/training-courses` — one page, ranked by enrollments. */
+/** `GET /api/analytics/training-courses` — one page, in the view's rank or a picked column's order. */
 export interface HealthMetricsTrainingCourses {
   rows: HealthMetricsTrainingCourse[];
   /** Courses matching the type and search. */
   totalRecords: number;
   /** Every course ever enrolled in (`scope_courses_count`); `null` when the read was not measured. */
   scopeTotal: number | null;
+  /** Courses with enrollments or revenue in the period, over every type and search, so no sort or filter moves it. */
+  activeTotal: number | null;
 }
 
 /** A courses row with every label ready to render. */

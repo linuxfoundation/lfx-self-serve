@@ -147,7 +147,7 @@ export const HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES: readonly string[]
 export const HEALTH_METRICS_TRAINING_TREND_YEARS = 6;
 
 /** Read-failed / no-foundation value: no rows and no scope total, so nothing reads as zero courses. */
-export const HEALTH_METRICS_TRAINING_COURSES_UNMEASURED: HealthMetricsTrainingCourses = { rows: [], totalRecords: 0, scopeTotal: null };
+export const HEALTH_METRICS_TRAINING_COURSES_UNMEASURED: HealthMetricsTrainingCourses = { rows: [], totalRecords: 0, scopeTotal: null, activeTotal: null };
 
 /** The Course type select in the card header; the first is the default. */
 export const HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS: readonly HealthMetricsTrainingCoursesTypeOption[] = [

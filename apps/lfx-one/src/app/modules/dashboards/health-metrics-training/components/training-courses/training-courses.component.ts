@@ -97,7 +97,7 @@ export class TrainingCoursesComponent {
   protected readonly rowViews: Signal<HealthMetricsTrainingCourseRowView[]> = computed(() => this.response().rows.map(buildHealthMetricsTrainingCourseRowView));
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   /** No course had a learner in the period; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyPeriod(this.response(), this.query()));
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyPeriod(this.response()));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -162,7 +162,7 @@ export class TrainingCoursesComponent {
 
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyPeriod(response, query));
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyPeriod(response));
             })
           )
         )
@@ -219,12 +219,7 @@ export class TrainingCoursesComponent {
   }
 }
 
-/**
- * Nothing ever enrolled, or the unfiltered first page holds no course with figures for the period. The scope and
- * match counts span every year, but rows rank the period's figures first, so the top of the page decides.
- */
-function isEmptyPeriod(response: HealthMetricsTrainingCourses, query: HealthMetricsTrainingCoursesQuery): boolean {
-  if (!response.scopeTotal) return true;
-  const unfiltered = query.type === 'all' && !query.search && query.offset === 0;
-  return unfiltered && !response.rows.some((row) => row.enrollments || row.revenueUsd);
+/** Nothing ever enrolled, or no course had enrollments or revenue in the period; an unset count is not zero. */
+function isEmptyPeriod(response: HealthMetricsTrainingCourses): boolean {
+  return !response.scopeTotal || response.activeTotal === 0;
 }
