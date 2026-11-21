@@ -6,8 +6,8 @@ import type {
   HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
   HEALTH_METRICS_NON_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-non-members.constants';
-import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
-import type { HealthMetricsTableSort } from './health-metrics-table.interface';
+import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
+import type { HealthMetricsSortValue, HealthMetricsTableSort } from './health-metrics-table.interface';
 
 /** Section key from the design's `N2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsNonMembersSectionKey = (typeof HEALTH_METRICS_NON_MEMBERS_SECTIONS)[number]['key'];
@@ -158,57 +158,54 @@ export interface HealthMetricsNonMembersPersonRowView {
   lastAttendedLabel: string;
 }
 
-/** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate and its warmest organizations. */
+/** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate and its warmest companies. */
 export interface HealthMetricsNonMembersConversionQuery {
   foundationSlug: string;
-  /** Picks the period columns for the counts, the estimate and the high-fit set. */
+  /** Picks the period columns for the counts, the estimate and the warmest companies. */
   range: HealthMetricsL2Range;
 }
 
-/** A high-fit organization, in the fit model's rank. `null` is no feed, not zero. */
+/** One of the period's warmest active non-member companies, in Company participation's rank. `null` is no feed, not zero. */
 export interface HealthMetricsNonMembersWarmOrg {
   accountId: string;
   accountName: string;
+  /** The company's mapped logo; `null` shows its first letter. */
+  logoUrl: string | null;
   meetingsAttended: number | null;
   contributions: number | null;
 }
 
-/** One `NON_MEMBER_CONVERSION_OPPORTUNITY` row for the period; `null` is not available, never zero. */
+/** The period's `NON_MEMBER_CONVERSION_OPPORTUNITY` figures and warmest companies; `null` is not available, never zero. */
 export interface HealthMetricsNonMembersConversion {
-  /** False when the foundation has no conversion row, so nothing below is meaningful. */
+  /** False when the foundation has no conversion row; the figures read "—" and the warmest companies still show. */
   measured: boolean;
-  entryTierName: string | null;
-  entryTierFeeUsd: number | null;
-  organizationsTracked: number | null;
   highFitCount: number | null;
   newCount: number | null;
-  /** High-fit count × entry-tier fee; `null` when the foundation has no entry-tier fee. */
   estimatedPipelineUsd: number | null;
-  /** Top high-fit organizations by fit rank, from the High-band active set the count covers. */
+  /** The period's top active companies, any fit band, by meetings attended, then contributions, then name. */
   warmest: HealthMetricsNonMembersWarmOrg[];
 }
 
-export interface HealthMetricsNonMembersConversionStatView {
-  key: 'high-fit' | 'new';
-  label: string;
-  value: string;
-}
+/** Warmest companies' sortable columns. */
+export type HealthMetricsNonMembersWarmestSortKey = 'company' | 'meetings' | 'contributions';
 
+/** One Warmest companies row as it renders, with the values its columns sort by. */
 export interface HealthMetricsNonMembersWarmOrgRowView {
   accountId: string;
-  label: string;
-  valueLabel: string;
+  accountName: string;
+  logoUrl: string | null;
+  meetingsLabel: string;
+  contributionsLabel: string;
+  sortValues: Readonly<Record<HealthMetricsNonMembersWarmestSortKey, HealthMetricsSortValue>>;
 }
 
 /** The Conversion opportunity section as it renders. */
 export interface HealthMetricsNonMembersConversionView {
-  measured: boolean;
-  summary: string;
-  pipelineValue: string;
-  pipelineLabel: string;
-  hasEstimate: boolean;
-  side: HealthMetricsNonMembersConversionStatView[];
+  /** Estimated pipeline, High-fit and New; a figure the view leaves unset reads "—". */
+  metrics: HealthMetricsMetricItem[];
   warmest: HealthMetricsNonMembersWarmOrgRowView[];
+  /** Nothing to show for the period: no conversion row and no active company. */
+  empty: boolean;
 }
 
 /** Each section's filter and page state in the URL; `null` clears a param the URL already carries. */
