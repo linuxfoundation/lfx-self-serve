@@ -40,7 +40,8 @@ export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMember
     const people = row.distinctPeople === null ? 0 : Math.round(row.distinctPeople);
     return {
       accountId: row.accountId,
-      accountName: row.accountName,
+      // Trimmed as the Company sort trims it, so a blank name shows the account id it sorts by.
+      accountName: row.accountName.trim() || row.accountId,
       logoUrl: row.logoUrl,
       lastEngagedLabel: row.lastEngagedDate ? `Last engaged ${formatIsoDateLabel(row.lastEngagedDate)}` : '',
       otherMemberships: buildHealthMetricsNonMembersOtherMemberships(row.otherMemberships),
@@ -84,22 +85,23 @@ export function parseHealthMetricsNonMembersOrgsFilter(value: string | null | un
   return HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS.find((filter) => filter === value) ?? 'all';
 }
 
-/** People rows. A person with no matched organization, or no attended date, renders a dash. */
+/** People rows. A person with no matched company, or no attended date, renders a dash; no job title, no description. */
 export function buildHealthMetricsNonMembersPersonRows(rows: HealthMetricsNonMembersPerson[]): HealthMetricsNonMembersPersonRowView[] {
-  return rows.map((row) => ({
-    rowKey: row.rowKey,
-    displayName: row.displayName,
-    jobTitle: row.jobTitle?.trim() || null,
-    organizationLabel: row.accountName || row.accountId || '—',
-    meetingsLabel: formatCount(row.meetingsAttended),
-    lastAttendedLabel: row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—',
-  }));
-}
-
-/** The People count line: "214 engaged individuals". */
-export function buildHealthMetricsNonMembersPeopleCountLabel(count: number | null): string {
-  if (count === null) return 'Engaged individuals not available';
-  return `${count.toLocaleString('en-US')} engaged ${count === 1 ? 'individual' : 'individuals'}`;
+  return rows.map((row) => {
+    const company = row.accountName?.trim() || row.accountId || '';
+    const words = row.displayName.trim().split(/\s+/).filter(Boolean);
+    return {
+      rowKey: row.rowKey,
+      displayName: row.displayName,
+      initials: words.length === 1 ? Array.from(words[0])[0].toUpperCase() : '',
+      jobTitle: row.jobTitle?.trim() || '',
+      companyLabel: company || '—',
+      hasCompany: !!company,
+      logoUrl: row.logoUrl,
+      meetingsLabel: formatCount(row.meetingsAttended),
+      lastAttendedLabel: row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—',
+    };
+  });
 }
 
 /** Conversion opportunity. The estimate always carries its qualifier, and a NULL figure reads "not available", never 0. */

@@ -170,6 +170,7 @@ describe('AnalyticsController.getNonMembersPeople', () => {
       search: '',
       offset: 0,
       pageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith({ ...HEALTH_METRICS_NON_MEMBERS_PEOPLE_UNMEASURED, totalRecords: 3, scopeTotal: 214 });
   });
@@ -184,7 +185,16 @@ describe('AnalyticsController.getNonMembersPeople', () => {
       search: 'a'.repeat(HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH),
       offset: 20,
       pageSize: 25,
+      sort: null,
     });
+  });
+
+  it('passes a sort on a known People column and drops anything else', async () => {
+    await people({ ...valid, sortKey: 'lastAttended', sortDir: 'desc' }).promise;
+    expect(getPeople).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: { key: 'lastAttended', direction: 'desc' } }));
+
+    await people({ ...valid, sortKey: 'fit', sortDir: 'desc' }).promise;
+    expect(getPeople).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it('falls back to the default page size past the cap', async () => {
