@@ -3,6 +3,7 @@
 
 import { lfxColors } from './colors.constants';
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
+import type { HealthMetricsColumnChartSeries } from '../interfaces/health-metrics-column-chart.interface';
 import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsTrainingCourses,
@@ -124,6 +125,13 @@ export const HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS: readonly HealthMetrics
   { key: 'instructorLed', label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['Instructor Led'], color: lfxColors.violet[500], deliveryType: 'Instructor Led' },
   { key: 'other', label: 'Other', color: lfxColors.gray[300], deliveryType: null },
 ];
+
+/** A neutral, total-only bar for a year whose revenue total is known but not split by type; shown only when a year needs it. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNSPLIT_SERIES: HealthMetricsColumnChartSeries = {
+  key: 'unsplit',
+  label: 'Not split by type',
+  color: lfxColors.gray[200],
+};
 
 /** The design's 220px plot and 44px columns. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_HEIGHT_PX = 220;

@@ -214,6 +214,31 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     expect(current?.total).toBe('');
   });
 
+  it("keeps a refund-only Other, which still counts in the year's net total", () => {
+    const refunds = withPeriod({
+      byType: [
+        { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 620, revenueUsd: 70000 },
+        { deliveryType: 'E-Learning', isListed: true, isListedRevenue: true, enrollments: 10, revenueUsd: -200 },
+      ],
+    });
+    const view = buildHealthMetricsTrainingEnrollmentView(refunds, 'YTD', 'revenue');
+
+    expect(view.chart.series.map((series) => series.key)).toContain('other');
+    expect(view.chart.columns.at(-1)?.tip.rows.find((row) => row.label === 'Other')?.value).toBe('−$200');
+  });
+
+  it('draws a known revenue total with no split as one neutral bar, said so in its popup', () => {
+    const unsplit = withPeriod({ byType: [] });
+    const view = buildHealthMetricsTrainingEnrollmentView(unsplit, 'YTD', 'revenue');
+    const current = view.chart.columns.at(-1);
+
+    expect(view.chart.series.at(-1)).toEqual({ key: 'unsplit', label: 'Not split by type', color: expect.any(String) });
+    expect(current?.segments.find((segment) => segment.key === 'unsplit')?.heightPct).toBeGreaterThan(0);
+    expect(current?.total).toBe('$100K');
+    expect(current?.tip).toEqual({ title: '2026 YTD · $100K revenue · split by type not available', rows: [] });
+    expect(view.table.headers.at(-2)).toBe('Not split by type');
+  });
+
   it('drops Other from the chart and legend when it is zero in every year shown', () => {
     const noOther = withPeriod();
     noOther.trend = [{ year: 2026, enrollments: 1050, certificationExams: 620, microcourses: 100, instructorLed: 330 }];

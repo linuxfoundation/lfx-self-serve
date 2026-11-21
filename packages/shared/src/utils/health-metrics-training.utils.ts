@@ -12,6 +12,7 @@ import {
   HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_BAR_WIDTH_PX,
   HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_HEIGHT_PX,
   HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS,
+  HEALTH_METRICS_TRAINING_ENROLLMENT_UNSPLIT_SERIES,
   HEALTH_METRICS_TRAINING_NOT_AVAILABLE,
   HEALTH_METRICS_TRAINING_SECTIONS,
   HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES,
@@ -96,8 +97,9 @@ export function buildHealthMetricsTrainingEnrollmentView(
 
   // Other drops out of the chart and its legend when it is zero in every year shown.
   const otherIndex = HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.findIndex((segment) => segment.key === 'other');
+  // A refund keeps it too: net revenue below zero is still part of the year's total.
   const keep = HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map(
-    (_, index) => index !== otherIndex || columns.some((column) => (column.values?.[index] ?? 0) > 0)
+    (_, index) => index !== otherIndex || columns.some((column) => (column.values?.[index] ?? 0) !== 0)
   );
   const series: HealthMetricsColumnChartSeries[] = HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.filter((_, index) => keep[index]).map(
     ({ key, label, color }) => ({
@@ -106,6 +108,9 @@ export function buildHealthMetricsTrainingEnrollmentView(
       color,
     })
   );
+  // A year with a revenue total but no split by type draws it as one neutral bar, in its own series.
+  const unsplit = columns.some((column) => column.unsplit !== undefined);
+  if (unsplit) series.push(HEALTH_METRICS_TRAINING_ENROLLMENT_UNSPLIT_SERIES);
   const keepRow = (row: HealthMetricsChartTipRowView) => series.some((entry) => entry.label === row.label);
   const isRevenue = metric === 'revenue';
   // The design's totals read "{N}" for enrollments and "${N}K" for revenue; the axis stays compact either way.
@@ -116,7 +121,7 @@ export function buildHealthMetricsTrainingEnrollmentView(
     key: String(years[columnIndex]),
     label: column.label,
     sub: '',
-    values: column.values ? column.values.filter((_, index) => keep[index]) : null,
+    values: column.values ? [...column.values.filter((_, index) => keep[index]), ...(unsplit ? [column.unsplit ?? null] : [])] : null,
     total: column.total,
     muted: years[columnIndex] !== currentYear,
     tipTitle: column.tipTitle,
@@ -170,6 +175,8 @@ interface TrainingColumn {
   total: number | null;
   /** The total the screen-reader table reads: 0 for a quiet year, `null` only where the measure is not available. */
   tableTotal: number | null;
+  /** A revenue total known only as a whole, drawn as one neutral bar; absent for a year split by type. */
+  unsplit?: number;
   tipTitle: string;
   tipRows: HealthMetricsChartTipRowView[];
 }
@@ -231,8 +238,22 @@ function revenueColumn(enrollment: HealthMetricsTrainingEnrollment, year: number
   const range = HEALTH_METRICS_L2_RANGES.find((candidate) => getYearForRange(candidate) === year);
   const period = range ? enrollment.periods[range] : null;
   const covered = (period?.byType ?? []).filter((type) => !HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES.includes(type.deliveryType));
-  if (!period || !enrollment.measured || covered.every((type) => type.revenueUsd === null)) {
+  if (!period || !enrollment.measured) {
     return { label, values: null, total: null, tableTotal: null, tipTitle: `Revenue not available for ${year}`, tipRows: [] };
+  }
+  const known = period.totals.revenueUsd;
+  if (covered.every((type) => type.revenueUsd === null)) {
+    // A known total with no split still draws, as one neutral bar; with neither, the year is not available.
+    if (known === null) return { label, values: null, total: null, tableTotal: null, tipTitle: `Revenue not available for ${year}`, tipRows: [] };
+    return {
+      label,
+      values: HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map(() => null),
+      unsplit: known,
+      total: known,
+      tableTotal: known,
+      tipTitle: `${label} · ${formatTrainingChartUsd(known)} revenue · split by type not available`,
+      tipRows: [],
+    };
   }
   // Every type has a row in every period; only one active in the year counts, so a quiet type never reads "Free".
   const types = covered.filter((type) => (type.enrollments ?? 0) > 0 || (type.revenueUsd ?? 0) !== 0);
