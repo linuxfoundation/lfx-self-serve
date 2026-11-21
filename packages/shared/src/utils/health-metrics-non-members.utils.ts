@@ -5,13 +5,12 @@ import {
   HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES,
   HEALTH_METRICS_NON_MEMBERS_FOUNDATION_SHORT_NAMES,
   HEALTH_METRICS_NON_MEMBERS_FIT_BANDS,
-  HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
   HEALTH_METRICS_NON_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-non-members.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { healthMetricsTierSortRank, resolveHealthMetricsMembersTier } from './health-metrics-table.utils';
-import { formatCurrency } from './number.utils';
+import { formatCompactRounded } from './number.utils';
 
 import type {
   HealthMetricsNonMembersConversion,
@@ -24,8 +23,6 @@ import type {
   HealthMetricsNonMembersPerson,
   HealthMetricsNonMembersPersonRowView,
   HealthMetricsNonMembersSubNavItem,
-  HealthMetricsNonMembersWarmOrg,
-  HealthMetricsNonMembersWarmOrgRowView,
 } from '../interfaces/health-metrics-non-members.interface';
 
 /** Sub-nav items for the Non-Members tab; no section here carries a note. */
@@ -104,25 +101,40 @@ export function buildHealthMetricsNonMembersPersonRows(rows: HealthMetricsNonMem
   });
 }
 
-/** Conversion opportunity. The estimate always carries its qualifier, and a NULL figure reads "not available", never 0. */
+/**
+ * Conversion opportunity: its three figures, each "—" when the view leaves it unset, and its warmest companies. With no
+ * conversion row the figures all read "—" while the companies still show; with neither, the section is empty.
+ */
 export function buildHealthMetricsNonMembersConversionView(conversion: HealthMetricsNonMembersConversion): HealthMetricsNonMembersConversionView {
-  const pipeline = conversion.estimatedPipelineUsd;
-  const hasEstimate = pipeline !== null;
   return {
-    measured: conversion.measured,
-    summary:
-      conversion.organizationsTracked === null
-        ? `Companies tracked ${HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE}`
-        : `${pluralize(conversion.organizationsTracked, 'company', 'companies')} tracked`,
-    pipelineValue: hasEstimate ? formatCurrency(pipeline) : '—',
-    pipelineLabel: hasEstimate ? 'Estimated pipeline' : 'Estimated pipeline · not enough data',
-    hasEstimate,
-    side: [
-      { key: 'high-fit', label: 'High-fit companies', value: formatStat(conversion.highFitCount) },
-      { key: 'new', label: 'New this period', value: formatStat(conversion.newCount) },
+    metrics: [
+      { key: 'pipeline', label: 'Estimated pipeline', value: formatPipeline(conversion.estimatedPipelineUsd) },
+      { key: 'high-fit', label: 'High-fit', value: formatStat(conversion.highFitCount) },
+      { key: 'new', label: 'New', value: formatStat(conversion.newCount) },
     ],
-    warmest: buildWarmestRows(conversion.warmest),
+    warmest: conversion.warmest.map((org) => ({
+      accountId: org.accountId,
+      accountName: org.accountName,
+      logoUrl: org.logoUrl,
+      meetingsLabel: formatCount(org.meetingsAttended),
+      contributionsLabel: formatCount(org.contributions),
+      // Each column sorts on what its cell shows; a dashed count is empty, so it sorts last.
+      sortValues: {
+        company: org.accountName,
+        meetings: positiveOrNull(org.meetingsAttended),
+        contributions: positiveOrNull(org.contributions),
+      },
+    })),
+    empty: !conversion.measured && conversion.warmest.length === 0,
   };
+}
+
+function formatCount(value: number | null): string {
+  return value === null || value <= 0 ? '—' : Math.round(value).toLocaleString('en-US');
+}
+
+function pluralize(count: number, noun: string, plural = `${noun}s`): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? noun : plural}`;
 }
 
 // Silver and up keep the sort's rank, which reads warehouse forms such as "Silver (100 - 499)"; every other tier, or none,
@@ -140,25 +152,16 @@ function foundationShortName(membership: HealthMetricsNonMembersOtherMembership)
   return membership.foundationName.trim() || membership.foundationSlug;
 }
 
-function formatCount(value: number | null): string {
-  return value === null || value <= 0 ? '—' : Math.round(value).toLocaleString('en-US');
+function formatPipeline(value: number | null): string {
+  return value === null ? '—' : formatCompactRounded(Math.round(value), '$');
 }
 
-function pluralize(count: number, noun: string, plural = `${noun}s`): string {
-  return `${count.toLocaleString('en-US')} ${count === 1 ? noun : plural}`;
-}
-
-// Name and value only, as the design's ranked list; a NULL count reads as not available.
-function buildWarmestRows(orgs: HealthMetricsNonMembersWarmOrg[]): HealthMetricsNonMembersWarmOrgRowView[] {
-  return orgs.map((org) => ({
-    accountId: org.accountId,
-    label: `${org.accountName} · ${org.meetingsAttended === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : pluralize(org.meetingsAttended, 'meeting')}`,
-    valueLabel: org.contributions === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : pluralize(org.contributions, 'contribution'),
-  }));
+function positiveOrNull(value: number | null): number | null {
+  return value === null || value <= 0 ? null : value;
 }
 
 function formatStat(value: number | null): string {
-  return value === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : Math.round(value).toLocaleString('en-US');
+  return value === null ? '—' : Math.round(value).toLocaleString('en-US');
 }
 
 // Only a band the model scores gets a badge; unscored reads "—", which the Fit sort puts last too.

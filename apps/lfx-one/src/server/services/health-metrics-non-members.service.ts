@@ -42,7 +42,6 @@ import type { Request } from 'express';
 
 const NON_MEMBER_CONVERSION_OPPORTUNITY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_CONVERSION_OPPORTUNITY';
 const NON_MEMBER_COMPANY_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_COMPANY_PARTICIPATION';
-const NON_MEMBER_FIT_SCORE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_FIT_SCORE';
 const NON_MEMBER_PEOPLE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_PEOPLE';
 const MEMBERSHIP_DIRECTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY';
 
@@ -93,9 +92,6 @@ interface PersonRow {
 }
 
 interface ConversionRow {
-  ENTRY_TIER_NAME: string | null;
-  ENTRY_TIER_FEE_USD: number | null;
-  ORGANIZATIONS_TRACKED_COUNT: number | null;
   HIGH_FIT_ORG_COUNT: number | null;
   NEW_ORG_COUNT: number | null;
   ESTIMATED_PIPELINE_USD: number | null;
@@ -106,6 +102,7 @@ interface WarmOrgRow {
   ACCOUNT_NAME: string | null;
   MEETINGS_ATTENDED_COUNT: number | null;
   CONTRIBUTIONS_COUNT: number | null;
+  LOGO_URL: string | null;
 }
 
 /** True when the Non-Members views carry columns for the range; for a controller to check before binding. */
@@ -307,7 +304,7 @@ export class HealthMetricsNonMembersService {
     };
   }
 
-  /** The period's pipeline estimate, and its warmest organizations from the same high-fit set the count uses. */
+  /** The period's pipeline estimate, and its warmest companies: Company participation's top active companies, any fit band. */
   public async getConversion(req: Request, query: HealthMetricsNonMembersConversionQuery): Promise<HealthMetricsNonMembersConversion> {
     // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
@@ -316,9 +313,6 @@ export class HealthMetricsNonMembersService {
     // One row per foundation; ordering by the model key still pins `LIMIT 1` should a duplicate appear.
     const summarySql = `
       SELECT
-        entry_tier_name,
-        entry_tier_fee_usd,
-        organizations_tracked_count_${suffix} AS organizations_tracked_count,
         high_fit_org_count_${suffix} AS high_fit_org_count,
         new_org_count_${suffix} AS new_org_count,
         estimated_pipeline_usd_${suffix} AS estimated_pipeline_usd
@@ -328,21 +322,29 @@ export class HealthMetricsNonMembersService {
       LIMIT 1
     `;
 
+    // The same active set and rank as Company participation (meetings, then contributions, then name), any fit band.
     const warmestSql = `
-      SELECT
-        account_id,
-        account_name,
-        meetings_attended_count_${suffix} AS meetings_attended_count,
-        contributions_count_${suffix} AS contributions_count
-      FROM ${NON_MEMBER_FIT_SCORE_VIEW}
-      WHERE foundation_slug = ?
-        -- The flag is the High band among active rows, the same set getOrgs filters as high-fit.
-        AND is_high_fit_${suffix}
-        AND account_id IS NOT NULL
-        AND account_id <> ''
-      -- The fit model's rank; account_id breaks any tie.
-      ORDER BY sort_rank_${suffix} ASC NULLS LAST, account_id ASC
-      LIMIT ${HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT}
+      WITH warmest AS (
+        SELECT
+          p.account_id,
+          p.account_name,
+          p.meetings_attended_count_${suffix} AS meetings_attended_count,
+          p.contributions_count_${suffix} AS contributions_count,
+          p.sort_rank_${suffix} AS sort_rank
+        FROM ${NON_MEMBER_COMPANY_PARTICIPATION_VIEW} p
+        WHERE p.foundation_slug = ?
+          AND p.account_id IS NOT NULL
+          AND p.account_id <> ''
+          AND (COALESCE(p.meetings_attended_count_${suffix}, 0) > 0 OR COALESCE(p.contributions_count_${suffix}, 0) > 0)
+        -- account_id breaks any tie.
+        ORDER BY sort_rank ASC NULLS LAST, p.account_id ASC
+        LIMIT ${HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT}
+      )
+      SELECT warmest.account_id, warmest.account_name, warmest.meetings_attended_count, warmest.contributions_count,
+        ${healthMetricsAccountLogoSql('logos')} AS logo_url
+      FROM warmest
+      ${healthMetricsAccountLogoJoinSql('logos', 'warmest.account_id')}
+      ORDER BY warmest.sort_rank ASC NULLS LAST, warmest.account_id ASC
     `;
 
     const [summary, warmest] = await Promise.all([
@@ -350,20 +352,22 @@ export class HealthMetricsNonMembersService {
         ...options,
         view: NON_MEMBER_CONVERSION_OPPORTUNITY_VIEW,
       }),
-      executeSnowflakeViewRead<WarmOrgRow>(this.snowflakeService, req, warmestSql, [query.foundationSlug], { ...options, view: NON_MEMBER_FIT_SCORE_VIEW }),
+      executeSnowflakeViewRead<WarmOrgRow>(this.snowflakeService, req, warmestSql, [query.foundationSlug], {
+        ...options,
+        view: NON_MEMBER_COMPANY_PARTICIPATION_VIEW,
+      }),
     ]);
 
     const row = summary.rows[0];
-    if (!row) return HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED;
-
+    // No conversion row leaves the figures unset ("—"), while the warmest companies still show.
     return {
-      measured: true,
-      entryTierName: row.ENTRY_TIER_NAME || null,
-      entryTierFeeUsd: toNullableNumber(row.ENTRY_TIER_FEE_USD),
-      organizationsTracked: toNullableNumber(row.ORGANIZATIONS_TRACKED_COUNT),
-      highFitCount: toNullableNumber(row.HIGH_FIT_ORG_COUNT),
-      newCount: toNullableNumber(row.NEW_ORG_COUNT),
-      estimatedPipelineUsd: toNullableNumber(row.ESTIMATED_PIPELINE_USD),
+      ...HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
+      ...(row && {
+        measured: true,
+        highFitCount: toNullableNumber(row.HIGH_FIT_ORG_COUNT),
+        newCount: toNullableNumber(row.NEW_ORG_COUNT),
+        estimatedPipelineUsd: toNullableNumber(row.ESTIMATED_PIPELINE_USD),
+      }),
       warmest: warmest.rows.flatMap(mapWarmOrg),
     };
   }
@@ -423,7 +427,9 @@ function mapWarmOrg(row: WarmOrgRow): HealthMetricsNonMembersWarmOrg[] {
   return [
     {
       accountId: row.ACCOUNT_ID,
-      accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      // Trimmed as the Company sort trims it, so a blank name shows the account id it sorts by.
+      accountName: row.ACCOUNT_NAME?.trim() || row.ACCOUNT_ID,
+      logoUrl: row.LOGO_URL || null,
       meetingsAttended: toNullableNumber(row.MEETINGS_ATTENDED_COUNT),
       contributions: toNullableNumber(row.CONTRIBUTIONS_COUNT),
     },

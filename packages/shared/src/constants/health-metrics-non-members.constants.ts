@@ -13,6 +13,7 @@ import type {
   HealthMetricsNonMembersOrgsSortKey,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersPeopleSortKey,
+  HealthMetricsNonMembersWarmestSortKey,
   HealthMetricsNonMembersQueryParams,
   HealthMetricsNonMembersSectionKey,
 } from '../interfaces/health-metrics-non-members.interface';
@@ -41,7 +42,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Conversion opportunity',
     heading: 'Conversion opportunity',
-    description: 'What the pipeline is worth if the warmest companies convert. Framed as upside — this section carries no risk badges, only opportunity.',
+    description: 'Potential revenue if your top leads become members.',
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
@@ -171,20 +172,27 @@ export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS = 200;
 
-/** Read-failed / no-foundation value: nothing measured, so the hero shows a muted dash and no warmest list. */
+/** Read-failed / no-foundation value: no conversion row and no warmest company. */
 export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED: HealthMetricsNonMembersConversion = {
   measured: false,
-  entryTierName: null,
-  entryTierFeeUsd: null,
-  organizationsTracked: null,
   highFitCount: null,
   newCount: null,
   estimatedPipelineUsd: null,
   warmest: [],
 };
 
-/** How many high-fit organizations the warmest list shows. */
-export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT = 10;
+/** How many of the period's top active companies Warmest companies shows. */
+export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT = 8;
 
-/** A NULL count or estimate is not zero; the section says so in words. */
-export const HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE = 'not available';
+/** Warmest companies' sortable columns; it has no pager, so they sort in the browser over the rows shown. */
+export const HEALTH_METRICS_NON_MEMBERS_WARMEST_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsNonMembersWarmestSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'meetings', kind: 'number' },
+  { key: 'contributions', kind: 'number' },
+];
+
+/** Warmest companies opens in the read's order: meetings attended, then contributions, then name. */
+export const HEALTH_METRICS_NON_MEMBERS_WARMEST_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsNonMembersWarmestSortKey> = {
+  key: 'meetings',
+  direction: 'desc',
+};

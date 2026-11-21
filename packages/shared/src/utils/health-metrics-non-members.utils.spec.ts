@@ -34,15 +34,12 @@ const ORG: HealthMetricsNonMembersOrg = {
 
 const CONVERSION: HealthMetricsNonMembersConversion = {
   measured: true,
-  entryTierName: 'Silver',
-  entryTierFeeUsd: 25000,
-  organizationsTracked: 412,
   highFitCount: 2,
   newCount: 37,
   estimatedPipelineUsd: 50000,
   warmest: [
-    { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 },
-    { accountId: '0014100000VendAAAA', accountName: 'Vendor Corp', meetingsAttended: 1, contributions: 100 },
+    { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', meetingsAttended: 12, contributions: 1400 },
+    { accountId: '0014100000VendAAAA', accountName: 'Vendor Corp', logoUrl: null, meetingsAttended: 1, contributions: 0 },
   ],
 };
 
@@ -206,56 +203,41 @@ describe('buildHealthMetricsNonMembersPersonRows', () => {
 });
 
 describe('buildHealthMetricsNonMembersConversionView', () => {
-  it('qualifies the estimate and counts the side stats', () => {
-    const view = buildHealthMetricsNonMembersConversionView(CONVERSION);
-
-    expect(view).toMatchObject({
-      measured: true,
-      summary: '412 companies tracked',
-      pipelineValue: '$50K',
-      pipelineLabel: 'Estimated pipeline',
-      hasEstimate: true,
-    });
-    expect(view.side).toEqual([
-      { key: 'high-fit', label: 'High-fit companies', value: '2' },
-      { key: 'new', label: 'New this period', value: '37' },
+  it('shows the pipeline as compact currency beside the high-fit and new counts, with no trend or description', () => {
+    expect(buildHealthMetricsNonMembersConversionView(CONVERSION).metrics).toEqual([
+      { key: 'pipeline', label: 'Estimated pipeline', value: '$50K' },
+      { key: 'high-fit', label: 'High-fit', value: '2' },
+      { key: 'new', label: 'New', value: '37' },
     ]);
   });
 
-  it('lists the warmest organizations with contributions, labelled with meetings', () => {
-    expect(buildHealthMetricsNonMembersConversionView(CONVERSION).warmest).toEqual([
-      { accountId: '0014100000AcmeAAAA', label: 'Acme Motors · 12 meetings', valueLabel: '400 contributions' },
-      { accountId: '0014100000VendAAAA', label: 'Vendor Corp · 1 meeting', valueLabel: '100 contributions' },
-    ]);
-  });
+  it('lists the warmest companies with their logos, dashing a zero, and sorting on the values shown', () => {
+    const [acme, vendor] = buildHealthMetricsNonMembersConversionView(CONVERSION).warmest;
 
-  it('says not enough data, never $0, when the foundation has no entry-tier fee', () => {
-    const view = buildHealthMetricsNonMembersConversionView({ ...CONVERSION, entryTierName: null, entryTierFeeUsd: null, estimatedPipelineUsd: null });
-
-    expect(view.pipelineValue).toBe('—');
-    expect(view.pipelineLabel).toBe('Estimated pipeline · not enough data');
-    expect(view.hasEstimate).toBe(false);
-  });
-
-  it('renders a NULL count as not available but keeps a real zero', () => {
-    const view = buildHealthMetricsNonMembersConversionView({
-      ...CONVERSION,
-      organizationsTracked: null,
-      highFitCount: 0,
-      newCount: null,
-      warmest: [{ accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: null, contributions: null }],
+    expect(acme).toEqual({
+      accountId: '0014100000AcmeAAAA',
+      accountName: 'Acme Motors',
+      logoUrl: 'https://logos.example/acme.png',
+      meetingsLabel: '12',
+      contributionsLabel: '1,400',
+      sortValues: { company: 'Acme Motors', meetings: 12, contributions: 1400 },
     });
-
-    expect(view.summary).toBe('Companies tracked not available');
-    expect(view.side.map((stat) => stat.value)).toEqual(['0', 'not available']);
-    expect(view.warmest).toEqual([{ accountId: '0014100000AcmeAAAA', label: 'Acme Motors · not available', valueLabel: 'not available' }]);
+    expect(vendor).toMatchObject({ contributionsLabel: '—', sortValues: { contributions: null } });
   });
 
-  it('marks the unmeasured value as not measured, with a dashed, qualified estimate', () => {
-    const view = buildHealthMetricsNonMembersConversionView(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
+  it('dashes an unset figure, never 0, and keeps a real zero', () => {
+    const view = buildHealthMetricsNonMembersConversionView({ ...CONVERSION, estimatedPipelineUsd: null, highFitCount: 0, newCount: null });
 
-    expect(view.measured).toBe(false);
-    expect(view.warmest).toEqual([]);
-    expect(view).toMatchObject({ pipelineValue: '—', pipelineLabel: 'Estimated pipeline · not enough data', hasEstimate: false });
+    expect(view.metrics.map((metric) => metric.value)).toEqual(['—', '0', '—']);
+  });
+
+  it('dashes every figure with no conversion row but still lists the companies, and is empty only with neither', () => {
+    const unmeasured = buildHealthMetricsNonMembersConversionView({ ...HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED, warmest: CONVERSION.warmest });
+    expect(unmeasured.metrics.map((metric) => metric.value)).toEqual(['—', '—', '—']);
+    expect(unmeasured.warmest).toHaveLength(2);
+    expect(unmeasured.empty).toBe(false);
+
+    expect(buildHealthMetricsNonMembersConversionView(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED).empty).toBe(true);
+    expect(buildHealthMetricsNonMembersConversionView({ ...CONVERSION, warmest: [] }).empty).toBe(false);
   });
 });

@@ -475,16 +475,15 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
 describe('HealthMetricsNonMembersService.getConversion', () => {
   const query = { foundationSlug: 'acme', range: 'YTD' as const };
 
-  const summaryRow = {
-    ENTRY_TIER_NAME: 'Silver',
-    ENTRY_TIER_FEE_USD: 25000,
-    ORGANIZATIONS_TRACKED_COUNT: 412,
-    HIGH_FIT_ORG_COUNT: 2,
-    NEW_ORG_COUNT: 37,
-    ESTIMATED_PIPELINE_USD: 50000,
-  };
+  const summaryRow = { HIGH_FIT_ORG_COUNT: 2, NEW_ORG_COUNT: 37, ESTIMATED_PIPELINE_USD: 50000 };
 
-  const warmRow = { ACCOUNT_ID: '0014100000AcmeAAAA', ACCOUNT_NAME: 'Acme Motors', MEETINGS_ATTENDED_COUNT: 12, CONTRIBUTIONS_COUNT: 400 };
+  const warmRow = {
+    ACCOUNT_ID: '0014100000AcmeAAAA',
+    ACCOUNT_NAME: 'Acme Motors',
+    MEETINGS_ATTENDED_COUNT: 12,
+    CONTRIBUTIONS_COUNT: 400,
+    LOGO_URL: 'https://logos.example/acme.png',
+  };
 
   // The two reads run in parallel; route each mock result by the view it reads.
   function mockReads(summary: unknown[], warmest: unknown[]) {
@@ -512,52 +511,57 @@ describe('HealthMetricsNonMembersService.getConversion', () => {
 
       const [summarySql, summaryBinds] = readFor('NON_MEMBER_CONVERSION_OPPORTUNITY');
       expect(summarySql).toContain(`high_fit_org_count_${suffix} AS high_fit_org_count`);
+      expect(summarySql).toContain(`new_org_count_${suffix} AS new_org_count`);
       expect(summarySql).toContain(`estimated_pipeline_usd_${suffix} AS estimated_pipeline_usd`);
+      // The tracked count and entry tier fed the removed chip and footnote, so they are no longer read.
+      expect(summarySql).not.toMatch(/organizations_tracked|entry_tier/);
       expect(summarySql).toContain('ORDER BY _key ASC\n      LIMIT 1');
       expect(summaryBinds).toEqual(['acme']);
 
-      const [warmSql, warmBinds] = readFor('NON_MEMBER_FIT_SCORE');
-      expect(warmSql).toContain(`AND is_high_fit_${suffix}`);
-      expect(warmSql).toContain(`ORDER BY sort_rank_${suffix} ASC NULLS LAST, account_id ASC`);
-      expect(warmSql).toContain('LIMIT 10');
+      const [warmSql, warmBinds] = readFor('NON_MEMBER_COMPANY_PARTICIPATION');
+      expect(warmSql).not.toContain('NON_MEMBER_FIT_SCORE');
+      expect(warmSql).not.toContain('is_high_fit');
+      expect(warmSql).toContain(`p.meetings_attended_count_${suffix} AS meetings_attended_count`);
+      expect(warmSql).toContain(`AND (COALESCE(p.meetings_attended_count_${suffix}, 0) > 0 OR COALESCE(p.contributions_count_${suffix}, 0) > 0)`);
+      expect(warmSql).toContain('ORDER BY sort_rank ASC NULLS LAST, p.account_id ASC\n        LIMIT 8');
+      expect(warmSql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = warmest.account_id');
+      expect(warmSql).toContain('ORDER BY warmest.sort_rank ASC NULLS LAST, warmest.account_id ASC');
       expect(warmBinds).toEqual(['acme']);
+      expect(warmSql.match(/\?/g)).toHaveLength(warmBinds.length);
     }
   });
 
-  it('maps the summary and the warmest organizations, dropping a row without an account', async () => {
-    mockReads([summaryRow], [warmRow, { ...warmRow, ACCOUNT_ID: null }, { ...warmRow, ACCOUNT_ID: '0014100000VendAAAA', ACCOUNT_NAME: null }]);
+  it('maps the figures and the warmest companies, dropping a row without an account', async () => {
+    mockReads([summaryRow], [warmRow, { ...warmRow, ACCOUNT_ID: null }, { ...warmRow, ACCOUNT_ID: '0014100000VendAAAA', ACCOUNT_NAME: '  ', LOGO_URL: null }]);
 
     const response = await new HealthMetricsNonMembersService().getConversion(req, query);
 
     expect(response).toEqual({
       measured: true,
-      entryTierName: 'Silver',
-      entryTierFeeUsd: 25000,
-      organizationsTracked: 412,
       highFitCount: 2,
       newCount: 37,
       estimatedPipelineUsd: 50000,
       warmest: [
-        { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 },
-        { accountId: '0014100000VendAAAA', accountName: '0014100000VendAAAA', meetingsAttended: 12, contributions: 400 },
+        { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', meetingsAttended: 12, contributions: 400 },
+        { accountId: '0014100000VendAAAA', accountName: '0014100000VendAAAA', logoUrl: null, meetingsAttended: 12, contributions: 400 },
       ],
     });
   });
 
-  it('keeps a NULL fee and estimate as NULL, never zero', async () => {
-    mockReads([{ ...summaryRow, ENTRY_TIER_NAME: null, ENTRY_TIER_FEE_USD: null, ESTIMATED_PIPELINE_USD: null }], []);
+  it('keeps a NULL figure as NULL, never zero', async () => {
+    mockReads([{ ...summaryRow, ESTIMATED_PIPELINE_USD: null, NEW_ORG_COUNT: null }], []);
 
     const response = await new HealthMetricsNonMembersService().getConversion(req, query);
 
-    expect(response).toMatchObject({ measured: true, entryTierName: null, entryTierFeeUsd: null, estimatedPipelineUsd: null, warmest: [] });
+    expect(response).toMatchObject({ measured: true, highFitCount: 2, newCount: null, estimatedPipelineUsd: null, warmest: [] });
   });
 
-  it('reports a foundation with no conversion row as not measured', async () => {
+  it('leaves the figures unset with no conversion row, but still lists the warmest companies', async () => {
     mockReads([], [warmRow]);
 
     const response = await new HealthMetricsNonMembersService().getConversion(req, query);
 
-    expect(response).toEqual(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
+    expect(response).toEqual({ ...HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED, warmest: [expect.objectContaining({ accountId: '0014100000AcmeAAAA' })] });
   });
 
   it('rethrows a failed read', async () => {
