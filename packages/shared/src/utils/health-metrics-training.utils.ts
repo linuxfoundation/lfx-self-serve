@@ -242,9 +242,11 @@ function revenueColumn(enrollment: HealthMetricsTrainingEnrollment, year: number
     return { label, values: null, total: null, tableTotal: null, tipTitle: `Revenue not available for ${year}`, tipRows: [] };
   }
   const known = period.totals.revenueUsd;
-  if (covered.every((type) => type.revenueUsd === null)) {
-    // A known total with no split still draws, as one neutral bar; with neither, the year is not available.
-    if (known === null) return { label, values: null, total: null, tableTotal: null, tipTitle: `Revenue not available for ${year}`, tipRows: [] };
+  // Every type has a row in every period; only one active in the year counts, so a quiet type never reads "Free".
+  const types = covered.filter((type) => (type.enrollments ?? 0) > 0 || (type.revenueUsd ?? 0) !== 0);
+  // Whether the split is known is judged on the active types alone, so quiet zero rows never stand in for a missing split.
+  if (!types.some((type) => type.revenueUsd !== null) && known !== null && known !== 0) {
+    // A known total with no split still draws, as one neutral bar.
     return {
       label,
       values: HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map(() => null),
@@ -255,8 +257,9 @@ function revenueColumn(enrollment: HealthMetricsTrainingEnrollment, year: number
       tipRows: [],
     };
   }
-  // Every type has a row in every period; only one active in the year counts, so a quiet type never reads "Free".
-  const types = covered.filter((type) => (type.enrollments ?? 0) > 0 || (type.revenueUsd ?? 0) !== 0);
+  if (known === null && !types.some((type) => type.revenueUsd !== null)) {
+    return { label, values: null, total: null, tableTotal: null, tipTitle: `Revenue not available for ${year}`, tipRows: [] };
+  }
 
   const named = new Set(HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map((segment) => segment.deliveryType).filter(Boolean));
   const values = HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map((segment) =>

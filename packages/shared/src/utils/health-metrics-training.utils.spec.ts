@@ -239,6 +239,30 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     expect(view.table.headers.at(-2)).toBe('Not split by type');
   });
 
+  it('keeps a quiet $0 year with no split on the quiet path: no label, no neutral bar or legend entry', () => {
+    const quiet = withPeriod({ totals: { enrollments: 0, certifications: 0, revenueUsd: 0 }, byType: [] });
+    const view = buildHealthMetricsTrainingEnrollmentView(quiet, 'YTD', 'revenue');
+
+    expect(view.chart.series.map((series) => series.key)).not.toContain('unsplit');
+    expect(view.chart.columns.at(-1)?.total).toBe('');
+    expect(view.table.rows.at(-1)?.cells.at(-1)).toBe('$0');
+  });
+
+  it('judges a missing split on the active types only, so quiet zero rows do not hide it', () => {
+    const view = buildHealthMetricsTrainingEnrollmentView(
+      withPeriod({
+        byType: [
+          { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 620, revenueUsd: null },
+          { deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 0, revenueUsd: 0 },
+        ],
+      }),
+      'YTD',
+      'revenue'
+    );
+
+    expect(view.chart.columns.at(-1)?.tip.title).toBe('2026 YTD · $100K revenue · split by type not available');
+  });
+
   it('drops Other from the chart and legend when it is zero in every year shown', () => {
     const noOther = withPeriod();
     noOther.trend = [{ year: 2026, enrollments: 1050, certificationExams: 620, microcourses: 100, instructorLed: 330 }];
