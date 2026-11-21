@@ -10,7 +10,6 @@ import {
   buildHealthMetricsTrainingSubNavItems,
   formatHealthMetricsTrainingCount,
   formatHealthMetricsTrainingCoursesCountLabel,
-  formatHealthMetricsTrainingRevenue,
   getHealthMetricsTrainingDeliveryTypeLabel,
 } from './health-metrics-training.utils';
 
@@ -59,13 +58,11 @@ function withPeriod(overrides: Partial<HealthMetricsTrainingEnrollmentPeriod> = 
 
 const ENROLLMENT = withPeriod();
 
-describe('formatHealthMetricsTrainingCount / formatHealthMetricsTrainingRevenue', () => {
+describe('formatHealthMetricsTrainingCount', () => {
   it('renders NULL as not available and a measured zero as zero', () => {
     expect(formatHealthMetricsTrainingCount(null)).toBe('not available');
     expect(formatHealthMetricsTrainingCount(0)).toBe('0');
     expect(formatHealthMetricsTrainingCount(3850)).toBe('3,850');
-    expect(formatHealthMetricsTrainingRevenue(null)).toBe('not available');
-    expect(formatHealthMetricsTrainingRevenue(0)).toBe('$0');
   });
 });
 
@@ -184,6 +181,39 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     expect(view.chart.series.map((series) => series.key)).not.toContain('other');
   });
 
+  it('reads a year with no measured total as not available, and keeps a missing type out of Other', () => {
+    const partial = withPeriod();
+    partial.trend = [
+      { year: 2026, enrollments: 1000, certificationExams: null, microcourses: 100, instructorLed: 300 },
+      { year: 2025, enrollments: null, certificationExams: null, microcourses: null, instructorLed: null },
+    ];
+    const columns = buildHealthMetricsTrainingEnrollmentView(partial, 'YTD', 'enrollments').chart.columns;
+    const [current, last] = [columns.at(-1), columns.at(-2)];
+
+    expect(last?.segments).toEqual([]);
+    expect(last?.tip).toEqual({ title: '2025 · enrollments not available', rows: [] });
+    // Other is unknown in every year shown, so it drops out like an all-zero Other.
+    expect(current?.tip.rows.map((row) => `${row.label}: ${row.value}`)).toEqual([
+      'Certification exams: —',
+      'Microcourses: 100 · 10%',
+      'Instructor-led: 300 · 30%',
+    ]);
+  });
+
+  it('counts only types active in the year in Revenue, so a quiet type never reads Free, and puts no total over a quiet year', () => {
+    const quiet = withPeriod({
+      totals: { enrollments: 0, certifications: 0, revenueUsd: 0 },
+      byType: [
+        { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 0, revenueUsd: 0 },
+        { deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 0, revenueUsd: 0 },
+      ],
+    });
+    const current = buildHealthMetricsTrainingEnrollmentView(quiet, 'YTD', 'revenue').chart.columns.at(-1);
+
+    expect(current?.tip.rows).toEqual([]);
+    expect(current?.total).toBe('');
+  });
+
   it('drops Other from the chart and legend when it is zero in every year shown', () => {
     const noOther = withPeriod();
     noOther.trend = [{ year: 2026, enrollments: 1050, certificationExams: 620, microcourses: 100, instructorLed: 330 }];
@@ -199,7 +229,8 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
 
     expect(view.table.headers).toEqual(['Year', 'Certification exams', 'Microcourses', 'Instructor-led', 'Other', 'Total']);
     expect(view.table.rows.at(-1)).toEqual({ key: '2026', cells: ['2026 YTD', '620', '100', '330', '2,800', '3,850'] });
-    expect(view.table.rows[0].cells.at(-1)).toBe('—');
+    // A quiet year's total reads 0 to screen readers, though no label sits over its empty column.
+    expect(view.table.rows[0].cells.at(-1)).toBe('0');
   });
 
   it('builds an all-dash view from the unmeasured read, with revenue not available for every year', () => {

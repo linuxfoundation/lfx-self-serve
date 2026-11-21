@@ -45,11 +45,6 @@ export function formatHealthMetricsTrainingCount(value: number | null): string {
   return value === null ? HEALTH_METRICS_TRAINING_NOT_AVAILABLE : Math.round(value).toLocaleString('en-US');
 }
 
-/** A compact dollar figure; `not available` for unmeasured. */
-export function formatHealthMetricsTrainingRevenue(value: number | null): string {
-  return value === null ? HEALTH_METRICS_TRAINING_NOT_AVAILABLE : formatCurrency(value);
-}
-
 /** The design's name for an LF Education delivery type. */
 export function getHealthMetricsTrainingDeliveryTypeLabel(deliveryType: string): string {
   return HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS[deliveryType] ?? deliveryType;
@@ -117,7 +112,7 @@ export function buildHealthMetricsTrainingEnrollmentView(
   const formatTotal = isRevenue ? formatTrainingChartUsd : formatHealthMetricsTrainingCount;
   const formatTick = isRevenue ? formatTrainingChartUsd : formatHealthMetricsChartCompact;
 
-  const chartColumns: HealthMetricsColumnChartInputColumn[] = columns.map((column, columnIndex) => ({
+  const chartColumns: (HealthMetricsColumnChartInputColumn & { tableTotal: number | null })[] = columns.map((column, columnIndex) => ({
     key: String(years[columnIndex]),
     label: column.label,
     sub: '',
@@ -126,6 +121,7 @@ export function buildHealthMetricsTrainingEnrollmentView(
     muted: years[columnIndex] !== currentYear,
     tipTitle: column.tipTitle,
     tipRows: column.tipRows.filter(keepRow),
+    tableTotal: column.tableTotal,
   }));
   const subHeading = isRevenue ? 'Revenue by type over the years' : 'Enrollments by type over the years';
 
@@ -152,7 +148,7 @@ export function buildHealthMetricsTrainingEnrollmentView(
           ...series.map((_, index) =>
             column.values?.[index] === null || column.values?.[index] === undefined ? '—' : formatTrainingValue(column.values[index], isRevenue)
           ),
-          column.total === null ? '—' : formatTrainingValue(column.total, isRevenue),
+          column.tableTotal === null ? '—' : formatTrainingValue(column.tableTotal, isRevenue),
         ],
       })),
     },
@@ -170,7 +166,10 @@ interface TrainingColumn {
   label: string;
   /** One per segment, bottom up; `null` for a year with no data for the measure. */
   values: (number | null)[] | null;
+  /** The label over the stack; `null` hides it for a year with no activity. */
   total: number | null;
+  /** The total the screen-reader table reads: 0 for a quiet year, `null` only where the measure is not available. */
+  tableTotal: number | null;
   tipTitle: string;
   tipRows: HealthMetricsChartTipRowView[];
 }
@@ -190,25 +189,37 @@ function buildTrainingMetrics(period: HealthMetricsTrainingEnrollmentPeriod, met
   return metric === 'revenue' ? [items.revenue, items.enrollments, items.certifications] : [items.enrollments, items.certifications, items.revenue];
 }
 
-/** A year's enrollments by type: Other is the total less the three named types, so a new type still counts. No row is a quiet year. */
+/**
+ * A year's enrollments by type: Other is the total less the three named types, so a new type still counts. No row is a quiet
+ * year at zero; a NULL total is not measured, and a NULL named count stays unknown rather than folding into Other.
+ */
 function enrollmentColumn(row: HealthMetricsTrainingEnrollmentYear | undefined, label: string): TrainingColumn {
-  const named = [row?.certificationExams ?? 0, row?.microcourses ?? 0, row?.instructorLed ?? 0];
+  if (row && row.enrollments === null) {
+    return { label, values: null, total: null, tableTotal: null, tipTitle: `${label} · enrollments not available`, tipRows: [] };
+  }
+
   const total = row?.enrollments ?? 0;
-  const values = [...named, Math.max(0, total - named.reduce((sum, value) => sum + value, 0))];
+  const named = row ? [row.certificationExams, row.microcourses, row.instructorLed] : [0, 0, 0];
+  const other = named.some((value) => value === null) ? null : Math.max(0, total - named.reduce((sum: number, value) => sum + (value ?? 0), 0));
+  const values = [...named, other];
   const share = (value: number) => (total > 0 ? ` · ${formatHealthMetricsPercent((value / total) * 100)}` : '');
 
   return {
     label,
     values,
-    // A year with no activity keeps its column at zero, with no total over it.
+    // A year with no activity keeps its column at zero, with no total over it; the table still reads its 0.
     total: total > 0 ? total : null,
+    tableTotal: total,
     tipTitle: `${label} · ${formatHealthMetricsTrainingCount(total)} ${total === 1 ? 'enrollment' : 'enrollments'}`,
-    tipRows: HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map((segment, index) => ({
-      label: segment.label,
-      value: `${formatHealthMetricsTrainingCount(values[index])}${share(values[index])}`,
-      color: segment.color,
-      separated: false,
-    })),
+    tipRows: HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map((segment, index) => {
+      const value = values[index];
+      return {
+        label: segment.label,
+        value: value === null ? '—' : `${formatHealthMetricsTrainingCount(value)}${share(value)}`,
+        color: segment.color,
+        separated: false,
+      };
+    }),
   };
 }
 
@@ -219,21 +230,26 @@ function enrollmentColumn(row: HealthMetricsTrainingEnrollmentYear | undefined, 
 function revenueColumn(enrollment: HealthMetricsTrainingEnrollment, year: number, label: string): TrainingColumn {
   const range = HEALTH_METRICS_L2_RANGES.find((candidate) => getYearForRange(candidate) === year);
   const period = range ? enrollment.periods[range] : null;
-  const types = (period?.byType ?? []).filter((type) => !HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES.includes(type.deliveryType));
-  if (!period || !enrollment.measured || types.every((type) => type.revenueUsd === null)) {
-    return { label, values: null, total: null, tipTitle: `Revenue not available for ${year}`, tipRows: [] };
+  const covered = (period?.byType ?? []).filter((type) => !HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES.includes(type.deliveryType));
+  if (!period || !enrollment.measured || covered.every((type) => type.revenueUsd === null)) {
+    return { label, values: null, total: null, tableTotal: null, tipTitle: `Revenue not available for ${year}`, tipRows: [] };
   }
+  // Every type has a row in every period; only one active in the year counts, so a quiet type never reads "Free".
+  const types = covered.filter((type) => (type.enrollments ?? 0) > 0 || (type.revenueUsd ?? 0) !== 0);
 
   const named = new Set(HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map((segment) => segment.deliveryType).filter(Boolean));
   const values = HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.map((segment) =>
     sumRevenue(types.filter((type) => (segment.deliveryType === null ? !named.has(type.deliveryType) : type.deliveryType === segment.deliveryType)))
   );
   const total = period.totals.revenueUsd;
+  // A year with no activity keeps its column at zero, with no total over it, as Enrollments does.
+  const active = (period.totals.enrollments ?? 0) > 0 || (total ?? 0) !== 0;
 
   return {
     label,
     values,
-    total,
+    total: active ? total : null,
+    tableTotal: total,
     tipTitle: `${label} · ${total === null ? '—' : formatTrainingChartUsd(total)} revenue`,
     tipRows: HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS.flatMap((segment, index) => {
       const value = values[index];

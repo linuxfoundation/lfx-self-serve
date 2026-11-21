@@ -110,13 +110,18 @@ export const HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS: Readonly<Record<strin
 };
 
 /**
- * The chart's segments, bottom to top, in the design's colours. Other collects every other delivery type (eLearning and
- * edX, plus Bundle in Revenue), so a new type still counts.
+ * The chart's segments, bottom to top, in the design's colours and with the delivery types' own labels. Other collects every
+ * other type: eLearning and edX in Enrollments, eLearning and Bundle in Revenue, where edX's never-captured revenue is left out.
  */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS: readonly HealthMetricsTrainingEnrollmentSegment[] = [
-  { key: 'certification', label: 'Certification exams', color: lfxColors.blue[500], deliveryType: 'Certification Exam' },
-  { key: 'microcourse', label: 'Microcourses', color: lfxColors.blue[900], deliveryType: 'MicroCourse' },
-  { key: 'instructorLed', label: 'Instructor-led', color: lfxColors.violet[500], deliveryType: 'Instructor Led' },
+  {
+    key: 'certification',
+    label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['Certification Exam'],
+    color: lfxColors.blue[500],
+    deliveryType: 'Certification Exam',
+  },
+  { key: 'microcourse', label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['MicroCourse'], color: lfxColors.blue[900], deliveryType: 'MicroCourse' },
+  { key: 'instructorLed', label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['Instructor Led'], color: lfxColors.violet[500], deliveryType: 'Instructor Led' },
   { key: 'other', label: 'Other', color: lfxColors.gray[300], deliveryType: null },
 ];
 
