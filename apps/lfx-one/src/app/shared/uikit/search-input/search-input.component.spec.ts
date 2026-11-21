@@ -199,6 +199,34 @@ describe('UiSearchInputComponent', () => {
     expect(outer).toHaveBeenCalledTimes(1);
   });
 
+  it('emits cleared from the clear button only, not from Escape', async () => {
+    const cleared = vi.fn();
+    fixture.componentInstance.cleared.subscribe(cleared);
+    fixture.componentInstance.value.set('kube');
+    await fixture.whenStable();
+
+    input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    expect(cleared).not.toHaveBeenCalled();
+
+    fixture.componentInstance.value.set('kube');
+    await fixture.whenStable();
+    (clear() as HTMLButtonElement).click();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe('');
+    expect(cleared).toHaveBeenCalledOnce();
+  });
+
+  it('moves focus into the field from focus()', () => {
+    document.body.appendChild(host);
+
+    fixture.componentInstance.focus();
+
+    expect(document.activeElement).toBe(input());
+    host.remove();
+  });
+
   it('hides the clear button while disabled', async () => {
     fixture.componentInstance.value.set('kube');
     await set('disabled', true);

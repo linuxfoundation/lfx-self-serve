@@ -135,9 +135,16 @@ export class MeetingsHomeStore {
   private pastNextPage: Subscription | null = null;
   // Bumped whenever the first past page is requested, so a next page for an older query is dropped.
   private pastQueryVersion = 0;
+  private pastChangedSearchFailed = false;
   // Search and filters the first past page was loaded with; its cursor only continues that query.
   private readonly pastQuery: WritableSignal<string> = signal('');
   private readonly pastFilters: WritableSignal<MeetingsHomePastFilters> = signal(MEETINGS_HOME_NO_PAST_FILTERS);
+  // Search whose first past page failed after an earlier one loaded; its list is then the error state, not still pending.
+  private readonly pastFailedQuery: WritableSignal<string | null> = linkedSignal({ source: this.feed.key, computation: (): string | null => null });
+  /** A paged past feed's first page for the current search failed, so its rows are another search's. */
+  private readonly pastSearchFailed: Signal<boolean> = computed(
+    () => this.pastQuery() !== this.search().trim() && this.pastFailedQuery() === this.search().trim()
+  );
   private readonly pastPageFailedState: WritableSignal<boolean> = signal(false);
   // Past meetings of the last load without server filters; server-filtered rows only hold the picked values. A new scope drops them.
   private readonly pastOptionMeetings: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.feed.key, computation: (): PastMeeting[] => [] });
@@ -147,7 +154,9 @@ export class MeetingsHomeStore {
     this.feed.pastRefresh$,
     this.pastLoadingState,
     this.pastFailedState,
-    this.initPastReloads()
+    this.initPastReloads(),
+    // A failed changed search leaves no list to keep, so no toast says one was kept.
+    () => this.pastChangedSearchFailed
   );
   private readonly pastNextPages: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.pastFirstPage, computation: () => [] as PastMeeting[] });
   private readonly pastMeetings: Signal<PastMeeting[]> = computed(() => [...this.pastFirstPage(), ...this.pastNextPages()]);
@@ -195,7 +204,9 @@ export class MeetingsHomeStore {
   /** The active tab's feed failed to load; its rows are empty but not confirmed empty. */
   public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastShowsError() : this.upcomingFailed()));
   /** The past count is unknown: its load failed, or a next page failed with no past meetings loaded, whatever the tab. */
-  public readonly pastCountUnknown: Signal<boolean> = computed(() => this.pastFailed() || (this.pastPageFailedState() && this.pastMeetings().length === 0));
+  public readonly pastCountUnknown: Signal<boolean> = computed(
+    () => this.pastFailed() || this.pastSearchFailed() || (this.pastPageFailedState() && this.pastMeetings().length === 0)
+  );
   /**
    * The past list is in its error state: its load failed, or, on the Past tab, a next page failed for the current search
    * with nothing to show, so the viewer gets Retry.
@@ -203,7 +214,8 @@ export class MeetingsHomeStore {
   public readonly pastShowsError: Signal<boolean> = computed(
     () =>
       this.pastFailed() ||
-      (this.tab() === 'past' && this.pastPageFailedState() && this.search().trim() === this.pastQuery() && this.filteredRows().length === 0)
+      (this.tab() === 'past' && this.pastPageFailedState() && this.search().trim() === this.pastQuery() && this.filteredRows().length === 0) ||
+      (this.tab() === 'past' && this.pastSearchFailed())
   );
   /** The active tab's rows before search and filters. */
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
@@ -287,6 +299,10 @@ export class MeetingsHomeStore {
   /** Share URL of the last meeting's recording: undefined while loading, null when there is none or the lookup failed. */
   public readonly lastMeetingRecordingUrl: Signal<string | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingRecording(id).pipe(map((recording) => getLargestSessionShareUrl(recording)))
+  );
+  /** A paged past search changed and its first page has not loaded yet, so the rows shown are the old query's. */
+  public readonly pastQueryPending: Signal<boolean> = computed(
+    () => this.pagedPast && this.search().trim() !== this.pastQuery() && this.search().trim() !== this.pastFailedQuery()
   );
   public readonly hasActiveQuery: Signal<boolean> = computed(() => this.search().trim() !== '' || countAppliedMeetingFilters(this.filters()) > 0);
   /** One chip per applied filter. */
@@ -412,7 +428,8 @@ export class MeetingsHomeStore {
     refresh$: Observable<void>,
     loading: WritableSignal<boolean>,
     failed: WritableSignal<boolean>,
-    reload$: Observable<unknown> = of(undefined)
+    reload$: Observable<unknown> = of(undefined),
+    quietFailure: () => boolean = () => false
   ): Signal<T[]> {
     if (!isPlatformBrowser(this.platformId)) return signal<T[]>([]);
     let previousIdentity: string | null = null;
@@ -439,8 +456,8 @@ export class MeetingsHomeStore {
               error: (error: unknown) => {
                 console.error('Failed to load meetings for the meetings home page:', error);
                 loading.set(false);
-                if (loaded && !fromError) this.showRefreshFailedToast();
-                else failed.set(true);
+                if (!loaded || fromError) failed.set(true);
+                else if (!quietFailure()) this.showRefreshFailedToast();
               },
             }),
             // The shared feed ends on an error, so subscribe again when the next refresh is requested.
@@ -529,6 +546,7 @@ export class MeetingsHomeStore {
         if (version !== this.pastQueryVersion) return;
         this.pastQuery.set(query);
         this.pastFilters.set(filters);
+        this.pastFailedQuery.set(null);
         this.pastPageFailedState.set(false);
         this.pastPageToken.set(page.pageToken);
         if (!this.isNarrowed(filters)) this.pastOptionMeetings.set(page.meetings);
@@ -538,6 +556,14 @@ export class MeetingsHomeStore {
         error: () => {
           const current = query === this.search().trim() && this.samePastFilters(filters, this.pastServerFilters());
           if (version === this.pastQueryVersion && this.tab() === 'past' && current) this.revealDayState.set(null);
+        },
+      }),
+      // A failed refresh of the loaded search keeps its rows; only a changed search is left without a list.
+      tap({
+        error: () => {
+          // Judged on the query that failed, not on what the field holds by now.
+          this.pastChangedSearchFailed = this.feed.pagedPast && query !== this.pastQuery();
+          if (this.pastChangedSearchFailed && version === this.pastQueryVersion) this.pastFailedQuery.set(query);
         },
       }),
       map((page) => page.meetings)
