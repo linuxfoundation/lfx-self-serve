@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { CampaignBriefOutput, ProjectContext } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignImplementationDraft, ProjectContext } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -20,7 +20,7 @@ stubCreativeLibraryUpload();
  * Wiring only (#5940). Which objectives are offered, when a form holds Create and which call to action a form
  * may carry are rules in `campaign-meta-lead-form.utils.ts`, tested there; the picker is tested in its own spec.
  * Here: the input reaches the objective list, the helper's answer reaches Create and the request, and a foundation
- * switch reaches the reset.
+ * switch and a draft restored under another foundation reach the reset.
  */
 describe('ImplementationTabComponent meta lead form', () => {
   let createCampaign: ReturnType<typeof vi.fn>;
@@ -109,5 +109,26 @@ describe('ImplementationTabComponent meta lead form', () => {
     await f.whenStable();
     expect(c(f)['metaObjective']()).toBe('traffic');
     expect(c(f)['metaLeadFormId']()).toBe('');
+  });
+
+  it('drops Leads and the form when a draft saved under another foundation is restored', async () => {
+    const f = await mount(true);
+    let saved: CampaignImplementationDraft | null = null;
+    f.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (saved = d));
+    c(f)['onMetaLeadFormChange']('111');
+    f.detectChanges();
+    await f.whenStable();
+    expect(saved).not.toBeNull();
+    f.destroy();
+
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-cncf', slug: 'cncf', name: 'cncf' } as ProjectContext, false);
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('metaLeadFormsEnabled', true);
+    restored.componentRef.setInput('draft', saved);
+    restored.componentRef.setInput('briefData', brief());
+    restored.detectChanges();
+    await restored.whenStable();
+    expect(c(restored)['metaObjective']()).toBe('traffic');
+    expect(c(restored)['metaLeadFormId']()).toBe('');
   });
 });

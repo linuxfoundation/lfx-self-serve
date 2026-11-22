@@ -114,18 +114,15 @@ export function metaCallToActionAllowedWithLeadForm(callToAction: string, withLe
 }
 
 /**
- * Why the Implement tab's Meta draft cannot be created with its lead form, or `null`. While lead forms are enabled
- * for this caller, `leads` needs a form, so self-serve never sends the traffic-mapped `leads`, and the form must pass
- * the create route's own rules ({@link metaLeadFormRefusal}). While they are off (or not yet read) no form is sent,
- * so a `leads` draft that holds one is held rather than sent as traffic; a `leads` draft without one (saved before
- * lead forms existed) is left as it always was.
+ * Why the Implement tab's Meta draft cannot be created with its lead form, or `null`. `leads` is only ever sent with
+ * a form, so self-serve never sends the traffic-mapped `leads`. While lead forms are enabled for this caller it needs
+ * one that passes the create route's own rules ({@link metaLeadFormRefusal}); while they are off (or not yet read) no
+ * form can be sent, so any `leads` draft, with or without a form, is held until another objective is chosen.
  */
 export function metaLeadFormDraftRefusal(draft: MetaLeadFormDraft): MetaConfigRefusal | null {
   if (draft.objective !== 'leads') return null;
+  if (!draft.leadFormsEnabled) return { field: 'metaConfig.leadFormId', message: META_LEAD_FORM_UNAVAILABLE_REFUSAL };
   const leadFormId = draft.leadFormId.trim();
-  if (!draft.leadFormsEnabled) {
-    return leadFormId === '' ? null : { field: 'metaConfig.leadFormId', message: META_LEAD_FORM_UNAVAILABLE_REFUSAL };
-  }
   if (leadFormId === '') return { field: 'metaConfig.leadFormId', message: 'Choose a lead form for the Leads objective.' };
   return metaLeadFormRefusal({ leadFormId, objective: draft.objective, callToAction: draft.callToAction }, draft.manualBidding);
 }

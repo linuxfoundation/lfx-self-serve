@@ -119,7 +119,6 @@ describe('metaLeadFormDraftRefusal', () => {
   const draft = { leadFormsEnabled: true, objective: 'leads' as const, leadFormId: '111', manualBidding: false };
 
   it.each([
-    ['lead forms off, on leads without a form (a draft from before lead forms)', { ...draft, leadFormsEnabled: false, leadFormId: '' }],
     ['lead forms off, on another objective', { ...draft, leadFormsEnabled: false, objective: 'traffic' as const, leadFormId: '' }],
     ['another objective', { ...draft, objective: 'traffic' as const, leadFormId: '' }],
     ['a form on leads', draft],
@@ -131,6 +130,7 @@ describe('metaLeadFormDraftRefusal', () => {
   it.each([
     ['leads with no form', { ...draft, leadFormId: '  ' }, 'metaConfig.leadFormId'],
     ['a form held while lead forms are off', { ...draft, leadFormsEnabled: false }, 'metaConfig.leadFormId'],
+    ['leads without a form while lead forms are off (never sent as traffic)', { ...draft, leadFormsEnabled: false, leadFormId: '' }, 'metaConfig.leadFormId'],
     ['a typed id that is not digits', { ...draft, leadFormId: 'abc' }, 'metaConfig.leadFormId'],
     ['manual bidding', { ...draft, manualBidding: true }, 'metaConfig.leadFormId'],
     ['a call to action a form cannot carry', { ...draft, callToAction: 'BUY_TICKETS' }, 'metaConfig.callToAction'],
