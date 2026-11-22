@@ -57,7 +57,7 @@ export class MailingListSyncSettingsComponent {
   // the wrong committee whenever the caller (the Auto Sync drawer, one instance per committee) is
   // showing a list linked to more than one (#4899 review). Left undefined on the standalone
   // mailing-list view page (#4024), which has no "current committee" of its own to pass — falls back
-  // to `committees[0]` there.
+  // to the actively-synced committee entry there (see `committee` below).
   public readonly committeeUid = input<string | undefined>(undefined);
   // Set by the Auto Sync drawer while a *different* card is mid-save (#4899 review). Two cards can
   // each read the same associatedMailingLists() snapshot and both pass their own "no active sync
@@ -112,7 +112,13 @@ export class MailingListSyncSettingsComponent {
     if (scopedUid) {
       return committees?.find((c) => c.uid === scopedUid) ?? null;
     }
-    return committees?.[0] ?? null;
+    // No caller-supplied scope (the standalone mailing-list page, #4024) — each committees[] entry
+    // can carry its own independent sync_mode (see CommitteeReference.sync_mode doc comment), so an
+    // arbitrary committees[0] can show/operate on a committee this list isn't actually synced with
+    // while a different, actually-synced entry sits later in the array (live data bug reported by
+    // Stephan QA, #6037: a list's sync status showed an unrelated committee). Prefer the entry with
+    // an active (non-manual) sync_mode; only fall back to committees[0] when none is configured yet.
+    return committees?.find((c) => !!c.sync_mode && c.sync_mode !== MailingListSyncMode.MANUAL) ?? committees?.[0] ?? null;
   });
 
   // Writable, not a computed off mailingList().sync_mode: a failed save leaves mailingList()
