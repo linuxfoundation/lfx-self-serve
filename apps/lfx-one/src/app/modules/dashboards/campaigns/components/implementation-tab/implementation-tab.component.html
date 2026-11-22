@@ -4307,7 +4307,7 @@
                 (change)="onMetaObjectiveChange($event)"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-meta-objective">
-                @for (objective of metaObjectiveOptions; track objective) {
+                @for (objective of metaObjectiveOptions(); track objective) {
                   <option [value]="objective" [selected]="objective === metaObjective()">{{ metaObjectiveLabels[objective] }}</option>
                 }
                 <!--
@@ -4577,6 +4577,19 @@
                   data-testid="implementation-meta-audience-targeting-clear" />
               }
             </div>
+          }
+
+          <!-- The lead form of a Leads create (#5940): only under `leads`, which is offered only to a caller who may send one. -->
+          @if (metaLeadFormRequested()) {
+            <lfx-meta-lead-form-picker
+              class="mb-4 block"
+              [projectSlug]="activeFoundationSlug()"
+              [leadFormId]="metaLeadFormId()"
+              (leadFormIdChange)="onMetaLeadFormChange($event)"
+              data-testid="implementation-meta-lead-form" />
+          }
+          @if (metaLeadFormError(); as error) {
+            <p role="alert" class="mb-4 text-xs text-red-600" data-testid="implementation-meta-lead-form-error">{{ error }}</p>
           }
 
           <!-- Call to action, conversion event and optimization goal (#5934), each offered only on an explicit yes
