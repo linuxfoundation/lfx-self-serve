@@ -186,7 +186,12 @@ export class MailingListSyncSettingsComponent {
       // can be reused across navigation) would suppress syncing the toggle to the newly-displayed
       // list's actual persisted state (#4899 review).
       if (untracked(this.saving) && untracked(this.savingUid) === ml.uid) return;
-      this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
+      // Read the resolved committee's own sync_mode, not ml's top-level field — a mailing list can
+      // be linked to more than one committee with independent sync_mode values (see `committee`
+      // above), so the top-level field can disagree with the committee this instance is actually
+      // showing/operating on (greptile-apps, cursor, copilot, lfx-one bot, #6038 review).
+      const syncMode = this.committee()?.sync_mode;
+      this.syncOn.set(!!syncMode && syncMode !== MailingListSyncMode.MANUAL);
     });
 
     // Keep the selector's displayed value in sync with the persisted sync_mode (e.g. on initial
@@ -199,7 +204,9 @@ export class MailingListSyncSettingsComponent {
       // previously-displayed list must not block syncing the selector to the newly-displayed list's
       // actual persisted state (#4899 review).
       if (untracked(this.saving) && untracked(this.savingUid) === ml.uid) return;
-      const syncMode = ml.sync_mode;
+      // Read the resolved committee's own sync_mode, not ml's top-level field — see the syncOn
+      // effect above for why (greptile-apps, cursor, copilot, lfx-one bot, #6038 review).
+      const syncMode = this.committee()?.sync_mode;
       // Falls back to the default direction, not just "leave the selector alone", when the
       // newly-displayed list has no active auto sync (MANUAL or unset) — otherwise navigating from a
       // list with one direction configured to a list with none left the selector showing the
@@ -294,8 +301,12 @@ export class MailingListSyncSettingsComponent {
           // rollback for a now-hidden list must not clobber the newly-displayed list's own state
           // with `ml`'s stale persisted mode (#4899 review).
           if (this.mailingList().uid === ml.uid) {
-            this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
-            const persisted = ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL ? ml.sync_mode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
+            // Same committee-scoped sync_mode as the constructor effects above, not ml's top-level
+            // field (greptile-apps, cursor, copilot, lfx-one bot, #6038 review).
+            const persistedSyncMode = this.committee()?.sync_mode;
+            this.syncOn.set(!!persistedSyncMode && persistedSyncMode !== MailingListSyncMode.MANUAL);
+            const persisted =
+              persistedSyncMode && persistedSyncMode !== MailingListSyncMode.MANUAL ? persistedSyncMode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
             this.form.controls.direction.setValue(persisted, { emitEvent: false });
           }
           return of(null);

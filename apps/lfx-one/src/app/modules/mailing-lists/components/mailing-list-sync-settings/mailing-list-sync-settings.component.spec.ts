@@ -512,6 +512,26 @@ describe('MailingListSyncSettingsComponent', () => {
     );
   });
 
+  it('falls back to the committee with an active sync_mode, not committees[0], when no committeeUid is given (#6038 review)', async () => {
+    // Reverting `committee`'s no-committeeUid fallback to `committees?.[0]` would resolve
+    // committee-1 (MANUAL) here and still pass every other test in this file, since none of them
+    // exercise a multi-committee list without a committeeUid — this must assert against the
+    // second, actively-synced entry to catch that regression (greptile-apps/cursor/copilot/lfx-one
+    // bot, #6038 review).
+    const multiCommitteeList: GroupsIOMailingList = {
+      ...baseList,
+      committees: [
+        { uid: 'committee-1', name: 'Technical Steering Committee', sync_mode: MailingListSyncMode.MANUAL },
+        { uid: 'committee-2', name: 'Marketing Committee', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST },
+      ],
+    };
+    await render(multiCommitteeList);
+
+    fixture.componentInstance['onToggleChange'](false);
+
+    expect(updateMailingList).toHaveBeenCalledWith('list-1', expect.objectContaining({ committee_uid: 'committee-2' }));
+  });
+
   it('does not open the Sync Now dialog when no committee is resolved', async () => {
     await render({ ...baseList, committees: [] });
     // DialogService is provided at the component level (see `providers: [DialogService]` on the

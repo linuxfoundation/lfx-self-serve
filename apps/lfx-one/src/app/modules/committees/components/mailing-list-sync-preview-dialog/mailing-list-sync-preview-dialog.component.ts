@@ -372,6 +372,11 @@ export class MailingListSyncPreviewDialogComponent {
       ...diff,
       adds: diff.adds.filter((add) => !GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS.includes(add.email?.toLowerCase() ?? '')),
       removes: diff.removes.filter((remove) => !GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS.includes(remove.email?.toLowerCase() ?? '')),
+      conflicts: diff.conflicts.filter(
+        (conflict) =>
+          !GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS.includes(conflict.committee_email?.toLowerCase() ?? '') &&
+          !GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS.includes(conflict.mailing_list_email?.toLowerCase() ?? '')
+      ),
     };
 
     this.diff.set(filteredDiff);
