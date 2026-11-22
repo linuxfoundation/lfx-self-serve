@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { COMMITTEE_LABEL, MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS, MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
 import { MailingListSyncDirection, MailingListSyncMode } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
@@ -210,9 +210,13 @@ export class MailingListSyncPreviewDialogComponent {
   private initTabOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
       const diff = this.diff();
+      // The bracket count is how many rows this tab would change, not how many are currently
+      // checked — it must read diff.adds/removes (the full candidate set), not
+      // selectedAdds()/selectedRemoves() (only the checked subset), or it reads 0 until the admin
+      // starts checking rows (Stephan review, #5790).
       return [
-        { id: 'adds', label: `Add (${this.selectedAdds().length})` },
-        { id: 'removes', label: `Remove (${this.selectedRemoves().length})` },
+        { id: 'adds', label: `Add (${diff?.adds.length ?? 0})` },
+        { id: 'removes', label: `Remove (${diff?.removes.length ?? 0})` },
         { id: 'conflicts', label: `Conflicts (${diff?.conflicts.length ?? 0})` },
       ];
     });
@@ -361,20 +365,29 @@ export class MailingListSyncPreviewDialogComponent {
       return;
     }
 
-    this.diff.set(diff);
+    // ITX subscribes a system/automation account to every synced subgroup for its own webhook
+    // integration (groupsio-automation-bot@...) — it isn't a person, so it should never surface
+    // as something an admin adds, removes, or resolves a conflict for (Stephan QA feedback).
+    const filteredDiff: SyncDiff = {
+      ...diff,
+      adds: diff.adds.filter((add) => !GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS.includes(add.email?.toLowerCase() ?? '')),
+      removes: diff.removes.filter((remove) => !GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS.includes(remove.email?.toLowerCase() ?? '')),
+    };
+
+    this.diff.set(filteredDiff);
 
     // member_id is unique within a single diff's adds/removes and used directly as the
     // FormGroup key. FormGroup.get() treats a dot as a nested-path separator, so this assumes
     // member_id never contains one — true for the UID-shaped ids the backend returns today.
     const addControls: Record<string, FormControl<boolean>> = {};
-    diff.adds.forEach((add) => {
+    filteredDiff.adds.forEach((add) => {
       addControls[add.member_id] = new FormControl(false, { nonNullable: true });
     });
     this.addCheckboxForm = new FormGroup(addControls);
     this.addCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.addFormVersion.update((v) => v + 1));
 
     const removeControls: Record<string, FormControl<boolean>> = {};
-    diff.removes.forEach((remove) => {
+    filteredDiff.removes.forEach((remove) => {
       removeControls[remove.member_id] = new FormControl(false, { nonNullable: true });
     });
     this.removeCheckboxForm = new FormGroup(removeControls);
