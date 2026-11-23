@@ -170,7 +170,11 @@ describe('MailingListSyncSettingsComponent', () => {
     // synchronous throwError (as plain updateResult: 'error' produces) completes save()'s
     // catchError before onToggleChange() even returns, so the "immediately" assertion below would
     // already be observing the post-revert state instead of the optimistic one.
-    const syncedList = { ...baseList, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST };
+    const syncedList = {
+      ...baseList,
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committees: [{ ...baseList.committees![0], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
+    };
     await render(syncedList, { updateDeferred: true });
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -201,13 +205,23 @@ describe('MailingListSyncSettingsComponent', () => {
     // another (take(1), not takeUntilDestroyed, so a save survives the input swap). A guard keyed
     // on a bare `saving` boolean would wrongly skip syncing the toggle to list-2's own persisted
     // state because *some* save is still in flight — even though it belongs to list-1, not list-2.
-    const listOne = { ...baseList, uid: 'list-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST };
+    const listOne = {
+      ...baseList,
+      uid: 'list-1',
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committees: [{ ...baseList.committees![0], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
+    };
     await render(listOne, { updateDeferred: true });
 
     fixture.componentInstance['onToggleChange'](false);
     expect(fixture.componentInstance['syncOn']()).toBe(false);
 
-    const listTwo = { ...baseList, uid: 'list-2', sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE };
+    const listTwo = {
+      ...baseList,
+      uid: 'list-2',
+      sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE,
+      committees: [{ ...baseList.committees![0], sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE }],
+    };
     fixture.componentRef.setInput('mailingList', listTwo);
     fixture.detectChanges();
     await fixture.whenStable();

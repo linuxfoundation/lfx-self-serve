@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS } from '@lfx-one/shared/constants';
 import { MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import type { GroupsIOMailingList, MailingListMember } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
@@ -86,7 +87,7 @@ describe('MailingListMembersComponent load recovery', () => {
     const bot: MailingListMember = {
       uid: 'bot-1',
       mailing_list_uid: 'list-1',
-      email: 'GroupsIO-Automation-Bot@LinuxFoundation.org',
+      email: GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS[0].toUpperCase(),
       first_name: 'Automation',
       last_name: 'Bot',
       member_type: MailingListMemberType.DIRECT,

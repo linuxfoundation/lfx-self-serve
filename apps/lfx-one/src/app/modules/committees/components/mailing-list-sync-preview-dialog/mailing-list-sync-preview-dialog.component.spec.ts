@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
-import { MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
+import { GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS, MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
 import { MailingListSyncMode, SyncMemberType } from '@lfx-one/shared/enums';
 import { MailingListSyncPreviewDialogData, SyncApplyJobStatus, SyncDiff, SyncDiffJobStatus, SyncJobResultEntry } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
@@ -269,19 +269,14 @@ describe('MailingListSyncPreviewDialogComponent diff selection', () => {
 
 describe('MailingListSyncPreviewDialogComponent automation bot filtering', () => {
   it('filters the groups.io automation bot out of adds, removes, and conflicts, case-insensitively', async () => {
+    const botEmail = GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS[0];
     const diffWithBot: SyncDiff = {
       ...DIFF,
-      adds: [
-        ...DIFF.adds,
-        { email: 'GroupsIO-Automation-Bot@LinuxFoundation.org', member_id: 'bot-add', member_type: SyncMemberType.COMMITTEE_MEMBER, name: 'Bot' },
-      ],
-      removes: [
-        ...DIFF.removes,
-        { email: 'groupsio-automation-bot@linuxfoundation.org', member_id: 'bot-remove', member_type: SyncMemberType.MAILING_LIST_MEMBER },
-      ],
+      adds: [...DIFF.adds, { email: botEmail.toUpperCase(), member_id: 'bot-add', member_type: SyncMemberType.COMMITTEE_MEMBER, name: 'Bot' }],
+      removes: [...DIFF.removes, { email: botEmail, member_id: 'bot-remove', member_type: SyncMemberType.MAILING_LIST_MEMBER }],
       conflicts: [
         {
-          committee_email: 'groupsio-automation-bot@linuxfoundation.org',
+          committee_email: botEmail,
           mailing_list_email: 'someone-else@example.org',
           name: 'Bot Conflict',
         },
