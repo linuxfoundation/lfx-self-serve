@@ -37,7 +37,7 @@ function job(organization: string, startDate = 'Jan 2024', endDate?: string) {
   return { id: `we-${organization}`, organization, jobTitle: 'Engineer', startDate, endDate, source: 'manual' as const };
 }
 
-const acme: Doc = { name: 'Acme Motors', primary_domain: 'acme-motors.example' };
+const acme: Doc = { name: 'Acme Motors', is_member: true, primary_domain: 'acme-motors.example' };
 
 function page(entries: [string, Doc][]) {
   return { resources: entries.map(([uid, data]) => ({ id: `b2b_org:${uid}`, type: 'b2b_org', data })) };
@@ -150,7 +150,14 @@ describe('OrgEmployeeViewService.resolve', () => {
   });
 
   it('never treats a personal mailbox provider as an employer', async () => {
-    const { svc, proxy } = build({ emails: [`dev@${'gmail'}.com`] });
+    const { svc, proxy } = build({ emails: ['dev@gmail.example'] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('never treats the Linux.com forwarding alias as an employer', async () => {
+    const { svc, proxy } = build({ emails: ['dev@linux.com', 'dev@mail.linux.com'] });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
     expect(proxy.proxyRequest).not.toHaveBeenCalled();
@@ -205,7 +212,7 @@ describe('OrgEmployeeViewService.resolve', () => {
   });
 
   it('re-checks every returned record, and ignores one the index marks as a non-member', async () => {
-    const unrelated = build({ orgs: [[ORG_UID, { name: 'Acme Motors', primary_domain: 'unrelated.example' }]] });
+    const unrelated = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: 'unrelated.example' }]] });
     await expect(unrelated.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
 
     OrgEmployeeViewService.clearCache();
@@ -215,7 +222,7 @@ describe('OrgEmployeeViewService.resolve', () => {
 
   it('matches any registered domain (primary or Salesforce alias) of the company', async () => {
     const { svc } = build({
-      orgs: [[ORG_UID, { name: 'Acme Motors', primary_domain: 'acme-motors.example', domain_aliases: ['Acme-Group.example', 'bad host'] }]],
+      orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: 'acme-motors.example', domain_aliases: ['Acme-Group.example', 'bad host'] }]],
       emails: ['dev@eng.acme-group.example'],
     });
 
@@ -229,7 +236,7 @@ describe('OrgEmployeeViewService.resolve', () => {
   });
 
   describe('with several companies the email and work history both name', () => {
-    const zeta = { name: 'Zeta Holdings', primary_domain: 'zeta-holdings.example' };
+    const zeta = { name: 'Zeta Holdings', is_member: true, primary_domain: 'zeta-holdings.example' };
     const both: [string, Doc][] = [
       [ORG_UID, acme],
       [OTHER_UID, zeta],

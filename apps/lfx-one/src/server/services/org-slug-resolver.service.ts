@@ -169,7 +169,13 @@ export class OrgSlugResolverService {
         this.employeeView.resolveReduced(req),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
-            () => reject(new Error(`Employee-view slug check exceeded ${ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}ms budget`)),
+            () =>
+              reject(
+                new MicroserviceError(`Employee-view slug check exceeded ${ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
+                  operation: 'resolve_org_slug',
+                  service: 'LFX_V2_SERVICE',
+                })
+              ),
             ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS
           );
         }),

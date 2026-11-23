@@ -62,6 +62,13 @@ describe('resolveVerifiedUserEmails', () => {
     await expect(resolveVerifiedUserEmails(req, svc)).resolves.toEqual(['jane@beta-coastal.example']);
   });
 
+  it('when strict, omits an auth-service primary that differs from the verified session email', async () => {
+    getEffectiveEmail.mockReturnValue('jane@acme-motors.example');
+    getUserEmails.mockResolvedValue({ primary_email: 'other@beta-coastal.example', alternate_emails: [{ email: 'jane@gamma.example', verified: true }] });
+
+    await expect(resolveVerifiedUserEmails(req, svc, { strict: true })).resolves.toEqual(['jane@gamma.example']);
+  });
+
   it('falls back to the lowercased session email when auth-service is unavailable', async () => {
     getEffectiveEmail.mockReturnValue('Jane@Acme-Motors.EXAMPLE');
     getUserEmails.mockResolvedValue(null);

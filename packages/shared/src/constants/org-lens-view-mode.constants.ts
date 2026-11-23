@@ -13,6 +13,14 @@ export const ORG_LENS_EMPLOYEE_VIEW: OrgLensViewMode = 'employee';
 /** Error code a route behind a hidden page or panel answers with in the all employee view. */
 export const ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE = 'EMPLOYEE_VIEW_FORBIDDEN';
 
+/**
+ * The `/api/orgs/:orgUid/lens/*` paths (relative to the `/lens` mount) an all-employee caller may reach.
+ * Anything not listed is refused by default, so a newly added lens route can never return names or
+ * emails to an employee by accident. A page that is approved for the employee view adds its own entry
+ * (and applies `redactForEmployeeView` in its handler).
+ */
+export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS: readonly RegExp[] = [/^\/(read-check|edit-check)\/?$/];
+
 /** User-safe 403 message for the all employee view. Says "company": copy-terminology rule, epic #5060. */
 export const ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE = 'This part of the company view is not available to all employees.';
 

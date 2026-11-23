@@ -21,6 +21,7 @@ import type { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { MicroserviceError } from '../errors/microservice.error';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -79,6 +80,16 @@ export function normalizeCompanyName(name: string | null | undefined): string {
 
 /** The caller's single answer, held per caller: the company they are granted, or why there is none. */
 type EmployeeViewOutcome = { chosen: OrgLensEmployeeViewGrant } | { denial: OrgEmployeeViewDenial };
+
+/**
+ * The Linux.com forwarding alias is an address LFX hands to any user (`add_alias`), not a company mailbox,
+ * so it never proves employment. Covers the production domain and whatever this stage configures.
+ */
+function isForwardingAliasDomain(domain: string): boolean {
+  const configured = (process.env['LINUX_FORWARD_DOMAIN'] || '').trim().toLowerCase();
+  const normalized = domain.toLowerCase();
+  return ['linux.com', configured].filter(Boolean).some((alias) => normalized === alias || normalized.endsWith(`.${alias}`));
+}
 
 /**
  * Epic #5845 — decides whether a caller may open the all employee view of a company.
@@ -214,7 +225,13 @@ export class OrgEmployeeViewService {
         this.resolveReduced(req),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
-            () => reject(new Error(`Employee-view lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`)),
+            () =>
+              reject(
+                new MicroserviceError(`Employee-view lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
+                  operation: 'get_role_grant_employee_view',
+                  service: 'LFX_V2_SERVICE',
+                })
+              ),
             ORG_AFFILIATION_LOOKUP_TIMEOUT_MS
           );
         }),
@@ -275,7 +292,7 @@ export class OrgEmployeeViewService {
       ...new Set(
         emails.flatMap((email) => {
           const domain = emailDomain(email);
-          return domain && !isPersonalEmailDomain(domain) ? candidateMemberDomains(domain) : [];
+          return domain && !isPersonalEmailDomain(domain) && !isForwardingAliasDomain(domain) ? candidateMemberDomains(domain) : [];
         })
       ),
     ];
@@ -336,7 +353,7 @@ export class OrgEmployeeViewService {
     const wanted = new Set(domains);
     const companies = new Map<string, OrgLensEmployeeViewGrant>();
     for (const doc of docs) {
-      if (!doc.uid || doc.is_member === false) continue;
+      if (!doc.uid || doc.is_member !== true) continue;
       const own = [doc.primary_domain, ...(doc.domain_aliases ?? [])].map((value) => normalizeDomain(value));
       if (!own.some((domain) => domain && wanted.has(domain))) continue;
       companies.set(doc.uid, { orgUid: doc.uid, orgName: doc.name ?? '', orgSlug: doc.slug?.trim().toLowerCase() || null });
