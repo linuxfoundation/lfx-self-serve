@@ -137,8 +137,11 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null): R
   if (!results?.poll_results?.length) return [];
 
   return results.poll_results.map((pr) => {
-    // Choice text: prefer winner_info.poll_choices, fall back to question.choices.
-    const choiceTextById = new Map((pr.ranked_choice_winner_info?.poll_choices ?? pr.question.choices ?? []).map((c) => [c.choice_id, c.choice_text]));
+    // Choice text from question.choices, overlaid by winner_info.poll_choices — which holds only the winners (#5969).
+    const choiceTextById = new Map((pr.question.choices ?? []).map((c) => [c.choice_id, c.choice_text]));
+    for (const c of pr.ranked_choice_winner_info?.poll_choices ?? []) {
+      if (c.choice_text) choiceTextById.set(c.choice_id, c.choice_text);
+    }
 
     const choiceDistributions = (pr.ranked_choice_votes ?? []).map((rcv) => {
       const totalRanked = rcv.rank_counts.reduce((sum, rc) => sum + rc.count, 0);
@@ -167,7 +170,7 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null): R
 /**
  * Joins names as "a", "a and b" or "a, b and c"
  */
-function joinNames(names: string[]): string {
+export function joinNames(names: string[]): string {
   if (names.length <= 1) return names[0] ?? '';
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }

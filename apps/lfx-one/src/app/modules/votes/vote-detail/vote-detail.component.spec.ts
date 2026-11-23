@@ -11,7 +11,7 @@ import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/ro
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS, VOTE_DETAIL_RESULTS_POLL_OPTIONS } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
+import { CondorcetOutcome, IndexedVoteResponseStatus, PollStatus, PollType, VoteVoterStatus } from '@lfx-one/shared/enums';
 import {
   CommentResponseView,
   MyVoteBallot,
@@ -25,6 +25,7 @@ import {
   VoteDetailState,
   VoteDetailTabOption,
   VoteResultsResponse,
+  VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { VoteDescriptionPipe } from '../pipes/vote-description.pipe';
@@ -42,6 +43,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
 import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
+import { VoteCondorcetResultsComponent } from '../components/vote-condorcet-results/vote-condorcet-results.component';
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
@@ -405,13 +407,154 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
     });
 
-    it('renders a ranked vote with the ranked note and distributions', async () => {
-      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV })));
+    it.each([PollType.INSTANT_RUNOFF_VOTE, PollType.MEEK_STV])('renders a %s vote with the ranked note and distributions', async (pollType) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: pollType })));
       const fixture = await setup();
 
       expect(testId(fixture, 'vote-detail-results-ranked-method')).not.toBeNull();
       expect(element(fixture, 'lfx-vote-ranked-question-results')).not.toBeNull();
+      expect(element(fixture, 'lfx-vote-condorcet-results')).toBeNull();
       expect(element(fixture, 'lfx-vote-option-results')).toBeNull();
+    });
+
+    it('renders a Condorcet IRV vote with the Condorcet results, never the ranked distributions (#5969)', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV })));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-ranked-method')).not.toBeNull();
+      expect(element(fixture, 'lfx-vote-condorcet-results')).not.toBeNull();
+      expect(element(fixture, 'lfx-vote-ranked-question-results')).toBeNull();
+      expect(element(fixture, 'lfx-vote-option-results')).toBeNull();
+    });
+  });
+
+  describe('Condorcet IRV results (#5969)', () => {
+    /** "No" wins per the voting service although "Yes" holds the most first choices. */
+    function condorcetResults(): VoteResultsResponse {
+      const results = makeMethodResults();
+      results.poll_results[0] = {
+        ...results.poll_results[0],
+        ranked_choice_votes: [
+          {
+            choice_id: 'choice-yes',
+            rank_counts: [
+              { rank: 1, count: 2 },
+              { rank: 2, count: 1 },
+            ],
+            condorcet_matrix: [{ choice_id: 'choice-yes', other_choice_id: 'choice-no', choice_id_wins: 1, other_choice_id_wins: 2, result: '' }],
+          },
+          {
+            choice_id: 'choice-no',
+            rank_counts: [
+              { rank: 1, count: 1 },
+              { rank: 2, count: 2 },
+            ],
+            condorcet_matrix: [{ choice_id: 'choice-no', other_choice_id: 'choice-yes', choice_id_wins: 2, other_choice_id_wins: 1, result: '' }],
+          },
+        ],
+        ranked_choice_winner_info: { poll_choices: [{ choice_id: 'choice-no', choice_text: 'No' }], condorcet_irv_used_for_eliminations: false },
+      };
+      return results;
+    }
+    const namedBallot = (uid: string, ranking: string[]): VoteVoter => ({
+      uid,
+      status: VoteVoterStatus.VOTED,
+      poll_answers: [
+        {
+          prompt: 'Approve the roadmap?',
+          question_id: 'question-1',
+          type: 'single_choice',
+          user_choice: [],
+          ranked_user_choice: ranking.map((choiceId, index) => ({ choice_id: choiceId, choice_text: choiceId, choice_rank: index + 1 })),
+        },
+      ],
+    });
+    const condorcetQuestion = (fixture: ComponentFixture<VoteDetailComponent>): VoteCondorcetResultsComponent =>
+      fixture.debugElement.query(By.directive(VoteCondorcetResultsComponent))?.componentInstance as VoteCondorcetResultsComponent;
+    const summary = (fixture: ComponentFixture<VoteDetailComponent>): string =>
+      testId(fixture, 'vote-detail-overview-summary-question-1')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED, pseudo_anonymity: false })));
+      voteService.getVoteResults.mockReturnValue(of(condorcetResults()));
+      voteService.getVoteVoters.mockReturnValue(
+        of([namedBallot('ballot-1', ['choice-no', 'choice-yes']), namedBallot('ballot-2', ['choice-no', 'choice-yes'])])
+      );
+    });
+
+    it('renders the service winner and the named ballot patterns on the Results tab', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+
+      const question = condorcetQuestion(fixture).question();
+      expect(question.outcome).toBe(CondorcetOutcome.CONDORCET_WINNER);
+      expect(question.winnerNames).toEqual(['No']);
+      expect(question.ballotPatterns).toEqual([{ count: 2, ranking: ['No', 'Yes'] }]);
+      expect(condorcetQuestion(fixture).isClosed()).toBe(true);
+      expect(testId(fixture, 'vote-condorcet-outcome-message')?.textContent).toContain('No is the winner');
+      expect(voteService.getVoteVoters).toHaveBeenCalledWith('vote-1');
+    });
+
+    it('names the service winner on the Overview of a closed vote, not the first-choice leader', async () => {
+      const fixture = await setup('browser', [VoteOptionResultsComponent, VoteAbstainResultComponent]);
+      await fixture.whenStable();
+
+      expect(summary(fixture)).toBe('Winner: No');
+    });
+
+    it('keeps the first-choice summary while the vote is open', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, pseudo_anonymity: false })));
+      const fixture = await setup('browser', [VoteOptionResultsComponent, VoteAbstainResultComponent]);
+      await fixture.whenStable();
+
+      expect(summary(fixture)).toBe('Most first choices: Yes (2 voters)');
+    });
+
+    it.each([
+      { name: 'a pseudo-anonymous vote', manager: true, vote: { pseudo_anonymity: true } },
+      { name: 'a vote with no privacy flag', manager: true, vote: { pseudo_anonymity: undefined } },
+      { name: 'a voter', manager: false, vote: {} },
+      { name: 'an Instant Runoff vote', manager: true, vote: { poll_type: PollType.INSTANT_RUNOFF_VOTE } },
+    ])('never reads ballots for $name', async ({ manager, vote }) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED, pseudo_anonymity: false, ...vote })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+
+      expect(voteService.getVoteVoters).not.toHaveBeenCalled();
+      expect(condorcetQuestion(fixture)?.question().ballotPatterns ?? null).toBeNull();
+    });
+
+    it('falls back to the unavailable note when the ballots read fails', async () => {
+      voteService.getVoteVoters.mockReturnValue(httpError(500));
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+
+      expect(condorcetQuestion(fixture).question().ballotPatterns).toBeNull();
+      expect(condorcetQuestion(fixture).ballotsLoading()).toBe(false);
+      expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).not.toBeNull();
+    });
+
+    it('shows the ballots as loading, not unavailable, while the read is in flight', async () => {
+      const voters = new Subject<VoteVoter[]>();
+      voteService.getVoteVoters.mockReturnValue(voters);
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+
+      expect(condorcetQuestion(fixture).ballotsLoading()).toBe(true);
+      expect(testId(fixture, 'vote-condorcet-ballots-loading')).not.toBeNull();
+      expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).toBeNull();
+
+      voters.next([namedBallot('ballot-1', ['choice-no', 'choice-yes'])]);
+      fixture.detectChanges();
+      expect(condorcetQuestion(fixture).ballotsLoading()).toBe(false);
+      expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ count: 1, ranking: ['No', 'Yes'] }]);
     });
   });
 
@@ -420,7 +563,7 @@ describe('VoteDetailComponent', () => {
       queryParamMap.next(convertToParamMap({ tab: 'results' }));
       projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
       voteService.fetchVote.mockReturnValue(
-        of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED, allow_abstain: true, pseudo_anonymity: false }))
+        of(makeVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE, status: PollStatus.ENDED, allow_abstain: true, pseudo_anonymity: false }))
       );
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
       const results = makeMethodResults();

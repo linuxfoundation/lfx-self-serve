@@ -1265,7 +1265,8 @@ describe('buildRankedQuestionViews', () => {
     ]);
   });
 
-  it('prefers winner-info choice text and falls back to the choice id', () => {
+  it('overlays winner-info text on question choices, keeping non-winners labelled (#5969)', () => {
+    // poll_choices holds only the winners, so the non-winning c2 keeps its question text.
     const [view] = buildRankedQuestionViews(
       resultsWith([
         rankedQuestion({
@@ -1273,7 +1274,14 @@ describe('buildRankedQuestionViews', () => {
         }),
       ])
     );
-    expect(view.choiceDistributions.map((d) => d.choiceText)).toEqual(['Winner-info One', 'c2']);
+    expect(view.choiceDistributions.map((d) => d.choiceText)).toEqual(['Winner-info One', 'Candidate Two']);
+  });
+
+  it('falls back to the choice id for a choice missing from the question', () => {
+    const question = rankedQuestion();
+    question.question.choices = [{ choice_id: 'c1', choice_text: 'Candidate One' }];
+    const [view] = buildRankedQuestionViews(resultsWith([question]));
+    expect(view.choiceDistributions.map((d) => d.choiceText)).toEqual(['Candidate One', 'c2']);
   });
 
   it('treats missing ranked votes as no distributions', () => {
@@ -1285,7 +1293,7 @@ describe('buildRankedQuestionViews', () => {
 
   it('flags a round summary for IRV and Meek STV only', () => {
     const views = buildRankedQuestionViews(
-      resultsWith([rankedQuestion({ irv_round_summary: { rounds: [] } }), rankedQuestion({ meek_stv_round_summary: { rounds: [] } }), rankedQuestion()])
+      resultsWith([rankedQuestion({ irv_round_summary: [] }), rankedQuestion({ meek_stv_round_summary: { rounds: [] } }), rankedQuestion()])
     );
     expect(views.map((v) => v.hasRoundSummary)).toEqual([true, true, false]);
   });

@@ -25,9 +25,10 @@ import {
   VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
   VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT,
 } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
   CommentResponseView,
+  CondorcetQuestionView,
   MyVoteBallot,
   MyVoteResponse,
   PollCommentPrompt,
@@ -48,8 +49,11 @@ import {
   VoteResultsResponse,
   VoteResultsSummaryLine,
   VoterResultsState,
+  VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildCondorcetQuestionViews,
+  buildCondorcetSummaryLines,
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
@@ -103,6 +107,7 @@ import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vo
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
 import { VoteCommentResultsComponent } from '../components/vote-comment-results/vote-comment-results.component';
+import { VoteCondorcetResultsComponent } from '../components/vote-condorcet-results/vote-condorcet-results.component';
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteMyBallotComponent } from '../components/vote-my-ballot/vote-my-ballot.component';
@@ -153,6 +158,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     VoteCastDrawerComponent,
     VoteCommentItemComponent,
     VoteCommentResultsComponent,
+    VoteCondorcetResultsComponent,
     VoteDetailFactsComponent,
     VoteDetailHeaderComponent,
     VoteMyBallotComponent,
@@ -312,10 +318,28 @@ export class VoteDetailComponent {
   protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary' }> = this.initResultsStatusTag();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
-  /** One leader/winner line per question for the Overview results card; the full breakdown stays on the Results tab. */
-  protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = computed(() =>
-    buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed())
+  /** Condorcet IRV gets its own results layout (#5969); Instant Runoff and Meek STV keep the ranked distributions. */
+  protected readonly isCondorcetPoll: Signal<boolean> = computed(() => this.vote()?.poll_type === PollType.CONDORCET_IRV);
+  /** Which vote's named ballots to read for the Condorcet ballot ranking distribution — a manager on a named vote only (#5969). */
+  private readonly condorcetBallotsKey: Signal<{ uid: string; tick: number } | null> = this.initCondorcetBallotsKey();
+  /** The latest ballots read and the vote it belongs to; `voters` is null when the read failed. */
+  private readonly condorcetBallotsRead: Signal<{ uid: string; voters: VoteVoter[] | null } | null> = this.initCondorcetBallotsRead();
+  /** Ballots for the current vote; null hides the table behind the "not available" note. */
+  private readonly condorcetBallots: Signal<VoteVoter[] | null> = computed(() => {
+    const read = this.condorcetBallotsRead();
+    if (!this.condorcetBallotsKey() || !read || read.uid !== this.vote()?.uid) return null;
+    return read.voters;
+  });
+  /** The first read for this vote is still in flight, so the table isn't "not available" yet. */
+  protected readonly condorcetBallotsLoading: Signal<boolean> = computed(() => {
+    const key = this.condorcetBallotsKey();
+    return !!key && this.condorcetBallotsRead()?.uid !== key.uid;
+  });
+  protected readonly condorcetQuestions: Signal<CondorcetQuestionView[]> = computed(() =>
+    buildCondorcetQuestionViews(this.voteResults(), this.condorcetBallots())
   );
+  /** One leader/winner line per question for the Overview results card; the full breakdown stays on the Results tab. */
+  protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = this.initOverviewSummary();
   /** The lone generic question that renders as bars on the Overview results card; null for ranked and multi-question votes (#4769). */
   protected readonly overviewQuestion: Signal<VoteResultsQuestion | null> = computed(() => {
     const questions = this.questionsWithResults();
@@ -805,6 +829,47 @@ export class VoteDetailComponent {
       if (this.isActive()) return { value: 'Voting in progress', severity: 'success' };
       return { value: 'Not open yet', severity: 'secondary' };
     });
+  }
+
+  /** A closed Condorcet vote names the voting service's winner; anything else (and an open Condorcet vote) keeps the leader summary. */
+  private initOverviewSummary(): Signal<VoteResultsSummaryLine[]> {
+    return computed(() => {
+      if (this.isCondorcetPoll() && this.isVoteClosed()) {
+        const lines = buildCondorcetSummaryLines(this.condorcetQuestions(), true);
+        if (lines.length) return lines;
+      }
+      return buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed());
+    });
+  }
+
+  /**
+   * A manager of a named Condorcet vote reads the voters list once per vote (and after a ballot from this page), so the
+   * Results tab can count identical ballot orderings. Pseudo-anonymous votes return participation-only rows, and voters
+   * can't read ballots at all, so neither gets a key and the table gives way to a note (#5969).
+   */
+  private initCondorcetBallotsKey(): Signal<{ uid: string; tick: number } | null> {
+    return computed(() => {
+      const uid = this.vote()?.uid;
+      if (!uid || !this.isCondorcetPoll() || this.audience() !== 'creator' || this.isPseudoAnonymous() || !this.showsResults()) return null;
+      return { uid, tick: this.refreshTick() };
+    });
+  }
+
+  /** A failed read settles with null voters, so it ends the loading state and shows the "not available" note. */
+  private initCondorcetBallotsRead(): Signal<{ uid: string; voters: VoteVoter[] | null } | null> {
+    return toSignal(
+      toObservable(this.condorcetBallotsKey).pipe(
+        distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.tick === b?.tick),
+        switchMap((key) => {
+          if (!key) return of(null);
+          return this.voteService.getVoteVoters(key.uid).pipe(
+            map((voters) => ({ uid: key.uid, voters: voters.filter((voter): voter is VoteVoter => 'uid' in voter) })),
+            catchError(() => of({ uid: key.uid, voters: null }))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
   }
 
   /** A failed results fetch suppresses comments entirely, so a load failure never reads as "no responses yet". */

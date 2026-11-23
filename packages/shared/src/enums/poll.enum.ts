@@ -71,3 +71,16 @@ export enum VoteVoterStatus {
   ABSTAINED = 'abstained',
   NOT_VOTED = 'not_voted',
 }
+
+/**
+ * How a closed Condorcet IRV question was decided (#5969), read from the voting service's winner info.
+ * @description `CONDORCET_WINNER` — one winner who beat every other candidate head-to-head; `IRV_WINNER` — one winner
+ * after the instant-runoff fallback; `TIE` — several, but not all, candidates share the win; `NO_WINNER` — no winner,
+ * or every candidate returned.
+ */
+export enum CondorcetOutcome {
+  CONDORCET_WINNER = 'condorcet_winner',
+  IRV_WINNER = 'irv_winner',
+  TIE = 'tie',
+  NO_WINNER = 'no_winner',
+}

@@ -261,6 +261,14 @@
                 (viewVoters)="onViewOptionVoters(question.questionId, $event)" />
             </div>
           }
+        } @else if (isCondorcetPoll()) {
+          @for (question of condorcetQuestions(); track question.questionId; let idx = $index) {
+            <lfx-vote-condorcet-results
+              [question]="question"
+              [questionNumber]="condorcetQuestions().length > 1 ? idx + 1 : undefined"
+              [isClosed]="isVoteClosed()"
+              [ballotsLoading]="condorcetBallotsLoading()" />
+          }
         } @else {
           @for (question of rankedQuestions(); track question.questionId; let idx = $index) {
             <lfx-vote-ranked-question-results

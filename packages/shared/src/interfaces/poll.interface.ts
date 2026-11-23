@@ -3,6 +3,7 @@
 
 import type { VOTE_DETAIL_SUMMARY_CARD_ACTIONS } from '../constants/vote.constants';
 import type {
+  CondorcetOutcome,
   IndexedVoteResponseStatus,
   IndividualVoteStatus,
   PollStatus,
@@ -1140,8 +1141,57 @@ export interface RankedChoiceVoteResult {
   choice_id: string;
   /** Distribution of ranks assigned to this choice */
   rank_counts: RankCount[];
-  /** Condorcet pairwise comparison matrix entries */
-  condorcet_matrix: any[];
+  /** Condorcet pairwise comparison matrix entries — one per other choice */
+  condorcet_matrix?: CondorcetMatrixEntry[];
+}
+
+/**
+ * One pairwise comparison in a ranked question's Condorcet matrix
+ * @description Upstream `CondorcetMatrixEntry` (lfx-v2-voting-service), converted field-for-field from ITX.
+ */
+export interface CondorcetMatrixEntry {
+  /** Row choice identifier */
+  choice_id: string;
+  /** Column choice identifier */
+  other_choice_id: string;
+  /** Voters who ranked `choice_id` above `other_choice_id` */
+  choice_id_wins: number;
+  /** Voters who ranked `other_choice_id` above `choice_id` */
+  other_choice_id_wins: number;
+  /** Upstream display string, e.g. "23(10)" — not rendered */
+  result: string;
+}
+
+/** Vote count for one choice in an instant-runoff round (upstream `VoteCount`). */
+export interface IrvRoundVote {
+  /** Choice identifier */
+  choice_id: string;
+  /** Votes the choice holds in this round */
+  vote_count: number;
+  /** Share of the round's votes (0-100) */
+  percentage?: number;
+}
+
+/** One instant-runoff elimination round (upstream `IRVRoundSummary`). */
+export interface IrvRoundSummary {
+  /** Round number, starting at 1 */
+  round_number: number;
+  /** Vote counts per remaining choice */
+  votes: IrvRoundVote[];
+  /** Total votes counted in this round */
+  total_votes: number;
+  /** Minimum vote count in this round */
+  min_votes?: number;
+  /** Ballots with no remaining ranked choice */
+  exhausted_votes: number;
+  /** Votes transferred from the eliminated choice */
+  transferred_votes?: IrvRoundVote[];
+  /** Votes needed to win */
+  threshold: number;
+  /** Choice eliminated at the end of this round */
+  eliminated_choice_id?: string;
+  /** Upstream round message */
+  message: string;
 }
 
 /**
@@ -1149,7 +1199,7 @@ export interface RankedChoiceVoteResult {
  * @description Contains winning choices and algorithm metadata
  */
 export interface RankedChoiceWinnerInfo {
-  /** Choices participating in the ranked vote */
+  /** The winning choices only: one winner, several for a tie, or none */
   poll_choices: { choice_id: string; choice_text: string }[];
   /** Whether Condorcet-IRV hybrid was used for tie-breaking */
   condorcet_irv_used_for_eliminations: boolean;
@@ -1184,7 +1234,7 @@ export interface PollQuestionResult {
   /** Winner information for ranked-choice voting */
   ranked_choice_winner_info?: RankedChoiceWinnerInfo;
   /** IRV round-by-round elimination summary */
-  irv_round_summary?: any;
+  irv_round_summary?: IrvRoundSummary[];
   /** Meek STV round-by-round summary */
   meek_stv_round_summary?: any;
 }
@@ -1591,6 +1641,73 @@ export interface RankedQuestionView {
   prompt: string;
   choiceDistributions: RankedChoiceDistribution[];
   hasRoundSummary: boolean;
+}
+
+/** A candidate in a Condorcet IRV question, in `question.choices` order (#5969). */
+export interface CondorcetCandidate {
+  choiceId: string;
+  choiceText: string;
+}
+
+/** One row of a Condorcet IRV question's standings (#5969). */
+export interface CondorcetStandingRow {
+  /** Competition rank ("1, 2, 2, 4") */
+  rank: number;
+  choiceId: string;
+  choiceText: string;
+  /** Head-to-head matchups this candidate won */
+  winCount: number;
+  /** Head-to-head matchups possible — 0 when the matrix is missing */
+  totalMatchups: number;
+  isWinner: boolean;
+  /** A winner who shares the win */
+  isTied: boolean;
+  /** Instant-runoff round that eliminated the candidate; null when not eliminated */
+  eliminatedInRound: number | null;
+}
+
+/** One pairwise comparison table cell: "{rowWins}–{colWins}" with its result for the row candidate (#5969). */
+export interface CondorcetPairwiseCell {
+  value: string;
+  result: 'win' | 'loss' | 'tie' | 'neutral' | 'self';
+}
+
+/** One row of the pairwise comparison table (#5969). */
+export interface CondorcetPairwiseRow {
+  candidate: CondorcetCandidate;
+  cells: CondorcetPairwiseCell[];
+}
+
+/** One row of the candidate rank summary: voters per rank position, index 0 = 1st (#5969). */
+export interface CondorcetRankSummaryRow {
+  candidate: CondorcetCandidate;
+  counts: number[];
+}
+
+/** One distinct ballot ordering and how many ballots used it (#5969). */
+export interface CondorcetBallotPatternRow {
+  count: number;
+  /** Candidate names, 1st choice first; partial ballots are shorter than the candidate list */
+  ranking: string[];
+}
+
+/** Results view model for a Condorcet IRV question — built by `buildCondorcetQuestionViews`, rendered by `lfx-vote-condorcet-results` (#5969). */
+export interface CondorcetQuestionView {
+  questionId: string;
+  prompt: string;
+  candidates: CondorcetCandidate[];
+  outcome: CondorcetOutcome;
+  /** Winner names from the voting service; several for a tie, empty for no winner */
+  winnerNames: string[];
+  /** The service fell back to instant-runoff elimination */
+  usedIrv: boolean;
+  standings: CondorcetStandingRow[];
+  pairwise: CondorcetPairwiseRow[];
+  /** Rank positions 1..N, one per candidate */
+  ranks: number[];
+  rankSummary: CondorcetRankSummaryRow[];
+  /** Distinct ballot orderings, most common first; null when individual ballots aren't available */
+  ballotPatterns: CondorcetBallotPatternRow[] | null;
 }
 
 /**

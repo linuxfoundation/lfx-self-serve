@@ -1,0 +1,203 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let q = question();
+<div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-5" [attr.data-testid]="'vote-condorcet-question-' + q.questionId">
+  <h4 class="text-base font-semibold text-gray-900 break-words">
+    @if (questionNumber(); as number) {
+      Q{{ number }}.
+    }
+    {{ q.prompt }}
+  </h4>
+
+  <!-- 1. Outcome: how the voting service decided the winner -->
+  <section class="flex flex-col gap-2" data-testid="vote-condorcet-outcome">
+    <h5 class="text-sm font-semibold text-gray-900">
+      {{ q.usedIrv ? 'Instant Runoff Voting (IRV) – Final Voting Outcome' : 'Condorcet IRV – Final Voting Outcome' }}
+    </h5>
+    @if (!isClosed()) {
+      <p class="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800" data-testid="vote-condorcet-in-progress">
+        <i class="fa-light fa-clock mt-0.5" aria-hidden="true"></i>
+        <span>The vote is currently in progress. Final results will be available once voting has ended.</span>
+      </p>
+    } @else if (hasWinner()) {
+      <p
+        class="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-gray-800"
+        data-testid="vote-condorcet-outcome-message">
+        <i class="fa-light fa-trophy mt-0.5 text-amber-600" aria-hidden="true"></i>
+        <span>{{ outcomeMessage() }}</span>
+      </p>
+    } @else if (isTie()) {
+      <p class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-gray-800" data-testid="vote-condorcet-outcome-message">
+        <i class="fa-light fa-handshake mt-0.5 text-amber-600" aria-hidden="true"></i>
+        <span>{{ outcomeMessage() }}</span>
+      </p>
+    } @else {
+      <p class="flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600" data-testid="vote-condorcet-outcome-message">
+        <i class="fa-light fa-circle-xmark mt-0.5 text-gray-500" aria-hidden="true"></i>
+        <span>{{ outcomeMessage() }}</span>
+      </p>
+    }
+  </section>
+
+  <!-- 2. Standings (closed votes only) -->
+  @if (isClosed() && q.standings.length > 0) {
+    <section class="flex flex-col gap-2 border-t border-slate-200 pt-4" data-testid="vote-condorcet-standings">
+      <h5 class="text-sm font-semibold text-gray-900">Standings</h5>
+      <ol class="flex flex-col gap-1">
+        @for (standing of q.standings; track standing.choiceId) {
+          <li class="flex items-start gap-3 rounded-md px-2 py-1.5 text-sm" [attr.data-testid]="'vote-condorcet-standing-' + standing.choiceId">
+            <span class="w-10 flex-shrink-0 font-semibold text-slate-500">{{ ordinal(standing.rank) }}</span>
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-semibold text-gray-900 break-words">{{ standing.choiceText }}</span>
+                @if (standing.isTied) {
+                  <lfx-tag value="Tied" severity="warn" />
+                } @else if (standing.isWinner) {
+                  <lfx-tag value="Winner" severity="success" />
+                }
+              </div>
+              @if (standing.eliminatedInRound !== null) {
+                <span class="text-xs text-slate-500">Eliminated in round {{ standing.eliminatedInRound }}</span>
+              } @else if (standing.totalMatchups > 0) {
+                <span class="text-xs text-slate-500"> Won {{ standing.winCount }} out of {{ standing.totalMatchups }} possible head-to-head matchups </span>
+              }
+            </div>
+          </li>
+        }
+      </ol>
+    </section>
+  }
+
+  <!-- 3. Pairwise comparison -->
+  <section class="flex flex-col gap-2 border-t border-slate-200 pt-4" data-testid="vote-condorcet-pairwise">
+    <h5 class="text-sm font-semibold text-gray-900">Pairwise Comparison</h5>
+    <div class="relative overflow-x-auto rounded-lg border border-gray-200">
+      <table class="w-full border-collapse text-xs">
+        <caption class="sr-only">
+          Voters preferring each row candidate over each column candidate, and the reverse
+        </caption>
+        <thead>
+          <tr class="bg-gray-50">
+            <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-500">Candidates</th>
+            @for (candidate of q.candidates; track candidate.choiceId) {
+              <th scope="col" class="px-3 py-2 text-left font-medium text-gray-500 whitespace-nowrap">{{ candidate.choiceText }}</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of q.pairwise; track row.candidate.choiceId) {
+            <tr class="border-t border-gray-100">
+              <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900 whitespace-nowrap">
+                {{ row.candidate.choiceText }}
+              </th>
+              @for (cell of row.cells; track $index) {
+                <td class="px-3 py-2 whitespace-nowrap text-gray-700" [attr.data-result]="cell.result">
+                  <span class="flex items-center gap-1.5">
+                    {{ cell.value }}
+                    @switch (cell.result) {
+                      @case ('win') {
+                        <i class="fa-solid fa-circle-check text-emerald-600" aria-hidden="true"></i>
+                        <span class="sr-only">Win</span>
+                      }
+                      @case ('loss') {
+                        <i class="fa-solid fa-circle-xmark text-red-600" aria-hidden="true"></i>
+                        <span class="sr-only">Loss</span>
+                      }
+                      @case ('tie') {
+                        <i class="fa-solid fa-handshake-simple text-amber-500" aria-hidden="true"></i>
+                        <span class="sr-only">Tie</span>
+                      }
+                    }
+                  </span>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="text-xs text-slate-500">
+      Each cell in the table contains two values: the first number represents voters who ranked the row candidate higher than the column candidate, while the
+      second number shows voters who ranked the column candidate higher than the row candidate.
+    </p>
+  </section>
+
+  <!-- 4. Ballot ranking distribution (named ballots only) -->
+  <section class="flex flex-col gap-2 border-t border-slate-200 pt-4" data-testid="vote-condorcet-ballots">
+    <h5 class="text-sm font-semibold text-gray-900">Ballot Ranking Distribution</h5>
+    @if (q.ballotPatterns; as patterns) {
+      @if (patterns.length > 0) {
+        <div class="relative overflow-x-auto rounded-lg border border-gray-200">
+          <table class="w-full border-collapse text-xs">
+            <caption class="sr-only">
+              Number of ballots for each ranking order
+            </caption>
+            <thead>
+              <tr class="bg-gray-50">
+                <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-500">Voters</th>
+                @for (rank of q.ranks; track rank) {
+                  <th scope="col" class="px-3 py-2 text-left font-medium text-gray-500">{{ ordinal(rank) }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (pattern of patterns; track $index) {
+                <tr class="border-t border-gray-100">
+                  <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900">{{ pattern.count }}</th>
+                  @for (rank of q.ranks; track rank; let i = $index) {
+                    <td class="px-3 py-2 whitespace-nowrap text-gray-700">{{ pattern.ranking[i] }}</td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-slate-500">
+          Each row shows the number of ballots where voters selected a specific order of candidates, with their ranked preferences listed across the columns.
+        </p>
+      } @else {
+        <p class="text-sm text-slate-500" data-testid="vote-condorcet-ballots-empty">No ranked ballots recorded yet.</p>
+      }
+    } @else if (ballotsLoading()) {
+      <p class="text-sm text-slate-500" data-testid="vote-condorcet-ballots-loading">Loading ballot rankings…</p>
+    } @else {
+      <p class="text-sm text-slate-500" data-testid="vote-condorcet-ballots-unavailable">Ballot-by-ballot rankings aren't available for this vote.</p>
+    }
+  </section>
+
+  <!-- 5. Candidate rank summary -->
+  <section class="flex flex-col gap-2 border-t border-slate-200 pt-4" data-testid="vote-condorcet-rank-summary">
+    <h5 class="text-sm font-semibold text-gray-900">Candidate Rank Summary</h5>
+    <div class="relative overflow-x-auto rounded-lg border border-gray-200">
+      <table class="w-full border-collapse text-xs">
+        <caption class="sr-only">
+          Number of voters who ranked each candidate at each position
+        </caption>
+        <thead>
+          <tr class="bg-gray-50">
+            <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-500">Candidates</th>
+            @for (rank of q.ranks; track rank) {
+              <th scope="col" class="px-3 py-2 text-left font-medium text-gray-500">{{ ordinal(rank) }}</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of q.rankSummary; track row.candidate.choiceId) {
+            <tr class="border-t border-gray-100">
+              <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900 whitespace-nowrap">
+                {{ row.candidate.choiceText }}
+              </th>
+              @for (count of row.counts; track $index) {
+                <td class="px-3 py-2 text-gray-700">{{ count }}</td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="text-xs text-slate-500">
+      Each cell in the table represents the number of votes a candidate (row) received for a specific rank position (column).
+    </p>
+  </section>
+</div>
