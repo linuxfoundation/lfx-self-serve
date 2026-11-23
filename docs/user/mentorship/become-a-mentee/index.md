@@ -13,14 +13,14 @@ Registering creates your mentee profile. Program mentors read it when they revie
 
 ## Before you begin
 
-- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your LF account.
 - You must be at least 18, or turn 18 by the time the program starts, and able to commit consistent hours for a full term.
 - Have your introduction, the skills you have, and the skills you want to learn ready.
 
 ## Steps
 
 1. Go to [app.lfx.dev/mentorship/mentee](https://app.lfx.dev/mentorship/mentee).
-2. Check the **From Your LFX Profile** card at the top. Your name, email and picture come from your LFX account, not from this form. To change them, select **Edit LFX Profile**. See [Your LFX Profile Card](../lfx-profile-card/).
+2. Check the **From Your LFX Profile** card at the top. Your name, email and picture come from your LFX profile, not from this form. To change them, select **Edit LFX Profile**. See [Your LFX Profile Card](../lfx-profile-card/).
 3. Fill in the registration form:
    - **Introduction** — answer "Tell us a little bit about yourself." Mentors read this first.
    - **Skills** — add **What skills do you currently have?** and **What skills would you like to improve?** from the skills list. You can add up to 100 skills of up to 300 characters each.

@@ -498,10 +498,10 @@ export const MENTORSHIP_ADMIN_MENTOR_INVITE_DIALOG_HEADER = 'Invite a mentor';
 export const MENTORSHIP_ADMIN_MENTOR_INVITE_DIALOG_SUBTITLE = 'Search LF users, or enter an email to invite someone new.';
 
 /** Placeholder of the Invite a mentor dialog's search. */
-export const MENTORSHIP_ADMIN_MENTOR_INVITE_SEARCH_PLACEHOLDER = 'Name, LFID or email';
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_SEARCH_PLACEHOLDER = 'Name, LF username or email';
 
 /** The Invite a mentor dialog's empty state, before a search of at least two characters. */
-export const MENTORSHIP_ADMIN_MENTOR_INVITE_PROMPT = 'Start typing a name, LFID or email.';
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_PROMPT = 'Start typing a name, LF username or email.';
 
 /** Leads the email invite's steps in the Invite a mentor dialog, so the admin reads them as the invitee's to do, not their own. */
 export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS_INTRO = 'Once you send it, the invitee will need to:';

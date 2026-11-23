@@ -23,7 +23,7 @@ The apply page confirms your profile and your eligibility, then submits your app
 ## Steps
 
 1. Open the apply page from the program's **Apply to This Program** button. The page is headed **Apply to** and the program's name.
-2. Check the **From Your LFX Profile** card. Your name, email and picture are used from your LFX account. Select **Edit LFX Profile** to change them. See [Your LFX Profile Card](../lfx-profile-card/).
+2. Check the **From Your LFX Profile** card. Your name, email and picture are used from your LFX profile. Select **Edit LFX Profile** to change them. See [Your LFX Profile Card](../lfx-profile-card/).
 3. Check **Your Mentee Profile**. This is what the mentors reviewing your application read. Select **Edit Mentee Profile** to change it without leaving the page. See [Edit Your Mentee Profile](../mentee-profile/).
 4. Check **Demographics**. It is optional, and never shared with mentors. Select **Edit Demographics** to change your answers in a side panel, then select **Save Changes**.
 5. Under **Before You Apply**, tick each statement:

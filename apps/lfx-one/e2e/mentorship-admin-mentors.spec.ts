@@ -208,7 +208,7 @@ test.describe('Admin Mentors tab — invite a mentor', () => {
     const dialog = await openInviteDialog(page);
 
     await expect(dialog).toContainText('Search LF users, or enter an email to invite someone new.');
-    await expect(page.getByTestId('mentorship-mentors-invite-prompt')).toContainText('Start typing a name, LFID or email.');
+    await expect(page.getByTestId('mentorship-mentors-invite-prompt')).toContainText('Start typing a name, LF username or email.');
     await expect(sendButton(page)).toBeDisabled();
   });
 

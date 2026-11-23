@@ -47,7 +47,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 /**
- * Invite a mentor dialog of the Mentors tab. The admin searches LF users by name, LFID or full email and picks one, or,
+ * Invite a mentor dialog of the Mentors tab. The admin searches LF users by name, LF username or full email and picks one, or,
  * when a full email matches no LF account, invites that address by email; Send invite posts `{ lfid }` or `{ email }`.
  * The dialog sends the invite itself so a refused one keeps the search and the pick for a retry. It closes with `true`
  * when the Mentors list changed (sent, or upstream says the person is already on the program), so the tab reloads.

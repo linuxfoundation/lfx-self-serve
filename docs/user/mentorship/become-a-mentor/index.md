@@ -13,13 +13,13 @@ Registering creates your mentor profile. Program Admins and applicants both read
 
 ## Before you begin
 
-- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your LF account.
 - Have your introduction and your skills ready, and know which programs you want to mentor.
 
 ## Steps
 
 1. Go to [app.lfx.dev/mentorship/mentor](https://app.lfx.dev/mentorship/mentor). The **Become a Mentor** form opens. Fields marked **\*** are required.
-2. Check the **From Your LFX Profile** card at the top. It shows the details your mentor profile takes from your LFX account. Use **Edit LFX Profile** to change them, or **Connect** to link your GitHub or LinkedIn account. See [Your LFX Profile Card](../lfx-profile-card/).
+2. Check the **From Your LFX Profile** card at the top. It shows the details your mentor profile takes from your LFX profile. Use **Edit LFX Profile** to change them, or **Connect** to link your GitHub or LinkedIn account. See [Your LFX Profile Card](../lfx-profile-card/).
 3. Under **Mentorship Program Details**, open **Select LFX Mentorship** and pick a program. You can type to search, and pick more than one. Each pick is listed in the table below with the status **Pending**. To drop a pick, select **Withdraw** on its row and confirm.
 4. Under **Introduction**, fill in **Tell us a little bit about yourself.** (required). The placeholder suggests what to cover: your contributor experience, why you want to mentor, and what makes you unique. Up to 3,000 characters.
 5. Under **Skills**, answer **Which of your skills should we feature?** (required). Type or choose a skill and select **Add Skill**. Add at least one skill, and up to 100 skills of up to 300 characters each. Select the **×** on a skill to remove it.

@@ -18,14 +18,14 @@ Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentee 
 ## What the tab shows
 
 - **From Your LFX Profile** — your name, email and other account details. See [Your LFX Profile Card](../lfx-profile-card/).
-- **Mentee Profile** — your **About Me**, **Skills**, **Areas to Improve**, **Additional Notes** and **Country of residence**.
+- **Mentee Profile** — your **Introduction**, **Skills**, **Areas to Improve**, **Additional Notes** and **Country of residence**.
 - **Application History** — every program you have applied to.
 
 ## Steps
 
 1. Open [app.lfx.dev/mentorship/mentee/profile](https://app.lfx.dev/mentorship/mentee/profile).
 2. Select **Edit Mentee Profile**. A panel opens on the right.
-3. Edit **About Me**. It is required.
+3. Edit **Introduction**. It is required.
 4. Under **Skills**, adjust **What skills are you currently proficient in?** and **What areas do you want to improve in?** from the skills list. Up to 100 skills, each up to 300 characters.
 5. Edit **Anything else you want mentors to know?** if you wish. It shows on your profile as **Additional Notes**, up to 1,000 characters.
 6. Check your **Country of residence**. It is required.
@@ -62,4 +62,4 @@ Each row has up to two actions:
 - [Become a Mentee](../become-a-mentee/)
 - [Your LFX Profile Card](../lfx-profile-card/)
 - [Withdraw an Application](../withdraw-an-application/)
-- [Profile](../../profile/) — your wider LFX account details
+- [Profile](../../profile/) — your wider LFX profile
