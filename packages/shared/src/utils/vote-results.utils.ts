@@ -136,9 +136,9 @@ export function buildVoteResultsQuestions(results: VoteResultsResponse | null, i
  * Builds the ranked-choice per-question view model from the results API payload
  * @description Choice text comes from the question's own choices. `ranked_choice_winner_info.poll_choices` holds only
  * the winning choices, so it only fills ids the question does not list, and the id is the last resort. The outcome and
- * standings follow the server-computed winners in `poll_choices` for every method; the Condorcet matrix supplies only
- * head-to-head counts and the round summaries supply elimination and election rounds. An unrecognized `pollType`
- * yields no outcome.
+ * winner labels follow the server-computed winners in `poll_choices` for every method. Condorcet standings are ordered
+ * by matrix head-to-head wins; runoff and Meek STV standings put server winners first and use round summaries for
+ * elimination and election order. An unrecognized `pollType` yields no outcome.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @param pollType - The vote's poll type, which selects the counting method's outcome and standings rules
  * @returns One RankedQuestionView per poll question, in API order
