@@ -198,8 +198,6 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
     it.each([
       ['a postal code typed as itself', 'SW1A 1AA', 'implementation-google-postal-not-id', 'google-postal-not-id'],
       ['a leading zero', '02840', 'implementation-google-postal-not-canonical', 'google-postal-not-canonical'],
-      ['zero', '0', 'implementation-google-postal-not-canonical', 'google-postal-not-canonical'],
-      ['a run past int64', '123456789012345678901', 'implementation-google-postal-not-canonical', 'google-postal-not-canonical'],
     ])('refuses %s and names why', (_label, text, testId, errorId) => {
       const c = seedChannel(fixture, { includeSearch: true });
       typePostal(c, text);

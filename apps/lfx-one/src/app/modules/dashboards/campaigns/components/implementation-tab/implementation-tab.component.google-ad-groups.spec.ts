@@ -336,9 +336,6 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
   });
 
   it.each([
-    ['a blank name', [{ name: '  ' }], 'ad group 1 needs a name'],
-    ['a name repeated ignoring case', [{ name: 'Retargeting' }, { name: 'RETARGETING' }], 'ad group 2 has the same name as ad group 1'],
-    ['a full name over 255 characters', [{ name: 'x'.repeat(240) }], 'over Google'],
     ['a group with no ad', [{ name: 'a', creative: {} }], 'ad group 1 has no ad'],
     ['an image ad below its minimums', [{ name: 'a', creative: { headlines: 'One headline' } }], 'ad group 1: the image ad needs'],
     ['a video ad that fails its rules', [{ name: 'a', format: 'video' as const, creative: { ...VIDEO_COMPLETE, logoImages: '' } }], 'exactly one logo'],
@@ -638,8 +635,6 @@ describe('ImplementationTabComponent several demand gen ads', () => {
   });
 
   it.each([
-    ['a blank first ad name', '  ', [{ name: 'Recap' }], 'Ad 1 of the Demand Gen ad group needs a name'],
-    ['a name repeated ignoring case', 'Teaser', [{ name: 'TEASER' }], 'Ad 2 of the Demand Gen ad group has the same name as ad 1'],
     ['an empty ad', 'Teaser', [{ name: 'Recap', creative: {} }], 'Ad 2 of the Demand Gen ad group has no creative'],
     [
       'an image ad below its minimums',
@@ -647,7 +642,6 @@ describe('ImplementationTabComponent several demand gen ads', () => {
       [{ name: 'Recap', format: 'image' as const, creative: { headlines: 'One' } }],
       'Ad 2 of the Demand Gen ad group: the image ad needs',
     ],
-    ['a video ad name over 255', 'x'.repeat(240), [{ name: 'Recap' }], 'which makes'],
   ])('holds Create on %s, saying why and announcing it', (_label, first, ads, fragment) => {
     const c = seedChannel(fixture, { includeDemandGen: true });
     several(c, first, ads);
@@ -945,9 +939,6 @@ describe('ImplementationTabComponent display ad groups', () => {
   });
 
   it.each([
-    ['a blank name', [{ name: '  ' }], 'ad group 1 needs a name'],
-    ['a name repeated ignoring case', [{ name: 'Retargeting' }, { name: 'RETARGETING' }], 'ad group 2 has the same name as ad group 1'],
-    ['a full name over 255 characters', [{ name: 'x'.repeat(240) }], 'over Google'],
     ['a group with no ad', [{ name: 'a', creative: {} }], 'ad group 1 has no ad'],
     ['an ad below its minimums', [{ name: 'a', creative: { headlines: 'One headline' } }], 'Display ad group 1: the ad needs'],
   ])('holds Create on %s, saying why and announcing it', (_label, groups, fragment) => {

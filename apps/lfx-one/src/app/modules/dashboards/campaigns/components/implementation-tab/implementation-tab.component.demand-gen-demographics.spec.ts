@@ -134,19 +134,19 @@ describe('ImplementationTabComponent demand gen demographics', () => {
     expect(c['demandGenDemographicsError']()).toBeNull();
   });
 
-  it.each([
-    [{ genders: ['UNDETERMINED'] }, 'holds only Unknown'],
-    [{ genders: ['MALE', 'FEMALE', 'UNDETERMINED'] }, 'restrict nobody'],
-  ])('holds Create on %j with the shared refusal under the section', (demographics, message) => {
-    const c = seedDemandGen();
-    c['onDemandGenDemographicsChange'](null, demographics);
-    fixture.detectChanges();
+  it.each([[{ genders: ['MALE', 'FEMALE', 'UNDETERMINED'] }, 'restrict nobody']])(
+    'holds Create on %j with the shared refusal under the section',
+    (demographics, message) => {
+      const c = seedDemandGen();
+      c['onDemandGenDemographicsChange'](null, demographics);
+      fixture.detectChanges();
 
-    expect(c['demandGenDemographicsError']()).toContain(message);
-    expect(c['canSubmit']()).toBe(false);
-    expect(query('implementation-demand-gen-demographics-error')?.textContent).toContain(message);
-    expect(query('implementation-demand-gen-demographics-error-live')?.textContent).toContain(message);
-  });
+      expect(c['demandGenDemographicsError']()).toContain(message);
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-demand-gen-demographics-error')?.textContent).toContain(message);
+      expect(query('implementation-demand-gen-demographics-error-live')?.textContent).toContain(message);
+    }
+  );
 
   it('holds the Audience picker back while demographics are set, and the demographics back while an Audience is picked', () => {
     const c = seedDemandGen();

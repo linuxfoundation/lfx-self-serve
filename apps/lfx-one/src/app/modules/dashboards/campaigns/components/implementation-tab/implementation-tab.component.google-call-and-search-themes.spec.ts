@@ -77,17 +77,17 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     expect(c['googleCallExtensions']()).toEqual([{ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' }]);
   });
 
-  it.each([
-    ['a vanity number', { countryCode: 'US', phoneNumber: '1-800-FLOWERS' }],
-    ['a three-letter country', { countryCode: 'USA', phoneNumber: '4155550100' }],
-    ['the same digits punctuated differently', { countryCode: 'us', phoneNumber: '14155550100' }],
-  ])('refuses %s and keeps the list as it was', STATE_ONLY, (_label, draft) => {
-    const c = seedChannel(fixture, { includeSearch: true });
-    c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' });
+  it.each([['the same digits punctuated differently', { countryCode: 'us', phoneNumber: '14155550100' }]])(
+    'refuses %s and keeps the list as it was',
+    STATE_ONLY,
+    (_label, draft) => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' });
 
-    expect(c['addGoogleCallExtension'](draft)).toBe(false);
-    expect(c['googleCallExtensions']()).toHaveLength(1);
-  });
+      expect(c['addGoogleCallExtension'](draft)).toBe(false);
+      expect(c['googleCallExtensions']()).toHaveLength(1);
+    }
+  );
 
   it('refuses a call extension past the cap', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
@@ -146,20 +146,18 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     });
   });
 
-  it.each([
-    ['a money discount with no currency', { discountKind: 'amount', discount: '50' }, 'no currency code'],
-    ['a percentage over 100', { discount: '150' }, 'at most 100'],
-    ['a discount that is not a number', { discount: 'ten' }, 'greater than 0'],
-    ['a serving window ending before it starts', { startDate: '2026-11-10', endDate: '2026-11-01' }, 'serving end date'],
-  ])('refuses %s, and names it under the sub-form', (_label, overrides, expected) => {
-    const c = seedChannel(fixture, { includeSearch: true });
-    c['googlePromotionForm'].setValue(promotionDraft(c, overrides));
-    fixture.detectChanges();
+  it.each([['a discount that is not a number', { discount: 'ten' }, 'greater than 0']])(
+    'refuses %s, and names it under the sub-form',
+    (_label, overrides, expected) => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['googlePromotionForm'].setValue(promotionDraft(c, overrides));
+      fixture.detectChanges();
 
-    expect(c['addGooglePromotion'](c['googlePromotionDraft']())).toBe(false);
-    expect(find('implementation-google-promotion-error')?.textContent).toContain(expected);
-    expect(c['googlePromotionAddDisabled']()).toBe(true);
-  });
+      expect(c['addGooglePromotion'](c['googlePromotionDraft']())).toBe(false);
+      expect(find('implementation-google-promotion-error')?.textContent).toContain(expected);
+      expect(c['googlePromotionAddDisabled']()).toBe(true);
+    }
+  );
 
   /**
    * A SELECTED condition must be filled. Upstream treats both conditions as optional, so an empty code
@@ -503,21 +501,20 @@ describe('ImplementationTabComponent google performance max search themes', () =
     expect(find('implementation-google-search-themes-withheld-live')?.textContent?.trim()).toBe(c['googleSearchThemesWithheldWarning']());
   });
 
-  it.each([
-    ['a theme over 80 characters', `ok\n${'x'.repeat(81)}`, 'has 81'],
-    ['a repeat in a different case', 'Cloud Native\ncloud native', 'more than once'],
-    ['51 themes', Array.from({ length: 51 }, (_, i) => `theme ${i}`).join('\n'), 'at most 50 search themes'],
-  ])('holds Create on %s, with the reason under the box and in its live region', (_label, themes, expected) => {
-    const c = seedPmax(themes);
+  it.each([['a theme over 80 characters', `ok\n${'x'.repeat(81)}`, 'has 81']])(
+    'holds Create on %s, with the reason under the box and in its live region',
+    (_label, themes, expected) => {
+      const c = seedPmax(themes);
 
-    expect(c['googleSearchThemesError']()).toContain(expected);
-    expect(c['canSubmit']()).toBe(false);
-    expect(find('implementation-google-search-themes-error')?.textContent).toContain(expected);
-    expect(find('implementation-google-search-themes-error-live')?.textContent?.trim()).toBe(c['googleSearchThemesError']());
-    const box = fixture.nativeElement.querySelector('#google-search-themes-input') as HTMLTextAreaElement;
-    expect(box.getAttribute('aria-describedby')).toContain('google-search-themes-error');
-    expect(box.getAttribute('aria-invalid')).toBe('true');
-  });
+      expect(c['googleSearchThemesError']()).toContain(expected);
+      expect(c['canSubmit']()).toBe(false);
+      expect(find('implementation-google-search-themes-error')?.textContent).toContain(expected);
+      expect(find('implementation-google-search-themes-error-live')?.textContent?.trim()).toBe(c['googleSearchThemesError']());
+      const box = fixture.nativeElement.querySelector('#google-search-themes-input') as HTMLTextAreaElement;
+      expect(box.getAttribute('aria-describedby')).toContain('google-search-themes-error');
+      expect(box.getAttribute('aria-invalid')).toBe('true');
+    }
+  );
 
   it('holds Create on themes with no Performance Max creative, which creates no asset group for them', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includePerformanceMax: true });

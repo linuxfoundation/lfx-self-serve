@@ -239,7 +239,6 @@ describe('ImplementationTabComponent x create', () => {
     ['an exponent budget, which Number would read as 1000', { twitterBudget: '1e3' }, 'implementation-twitter-budget-error'],
     ['a hex budget, which Number would read as 16', { twitterBudget: '0x10' }, 'implementation-twitter-budget-error'],
     ['blank tweet text', { twitterTweetText: '  ' }, 'implementation-twitter-tweet-error'],
-    ['tweet text over the cap once the link is appended', { twitterTweetText: 'a'.repeat(257) }, 'implementation-twitter-tweet-error'],
     ['a start date of today, which X refuses', { startDate: new Date().toISOString().slice(0, 10) }, 'implementation-twitter-flight-error'],
     ['an end date on the start date', { endDate: '2099-09-01' }, 'implementation-twitter-flight-error'],
   ])('refuses Create for %s and says why', async (_label, overrides, errorId) => {

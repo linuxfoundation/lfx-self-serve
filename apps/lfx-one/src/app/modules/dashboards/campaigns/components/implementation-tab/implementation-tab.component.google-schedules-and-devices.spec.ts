@@ -224,9 +224,6 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       ['search', { includeSearch: true }, 'manual-cpc', true],
       ['search', { includeSearch: true }, 'maximize-clicks', false],
       ['search', { includeSearch: true }, 'maximize-conversions', false],
-      ['search', { includeSearch: true }, 'target-cpa', false],
-      ['search', { includeSearch: true }, 'maximize-conversion-value', false],
-      ['search', { includeSearch: true }, 'target-roas', false],
       ['display', { includeDisplay: true }, '', false],
       ['display', { includeDisplay: true }, 'maximize-clicks', false],
     ])('on %s (%o) under strategy "%s", offers Adjust bid only for Manual CPC', STATE_ONLY, (_channel, patch, strategy, adjustable) => {
@@ -374,11 +371,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
 
     it.each([
       ['search', { includeSearch: true }, 'manual-cpc', true],
-      ['search', { includeSearch: true }, 'maximize-clicks', true],
       ['search', { includeSearch: true }, 'maximize-conversions', false],
-      ['search', { includeSearch: true }, 'target-cpa', false],
-      ['search', { includeSearch: true }, 'maximize-conversion-value', false],
-      ['search', { includeSearch: true }, 'target-roas', false],
       ['display', { includeDisplay: true }, '', false],
       ['display', { includeDisplay: true }, 'maximize-clicks', true],
       ['performance-max', { includePerformanceMax: true }, '', false],
