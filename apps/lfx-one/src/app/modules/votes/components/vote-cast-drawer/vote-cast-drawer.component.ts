@@ -28,6 +28,7 @@ import {
   VOTE_LAST_VOTER_CONFIRMATION,
   VOTE_RATE_LIMITED_MESSAGE,
   VOTE_UPSTREAM_ENDED,
+  VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES,
   VOTE_VOTER_REMOVED_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
@@ -828,7 +829,10 @@ export class VoteCastDrawerComponent {
             this.ballotUnavailable.emit(voteUid);
             return;
           }
-          if (status === 404 && body?.code === VOTE_VOTER_REMOVED_ERROR_CODE) {
+          if (
+            (status === 404 && body?.code === VOTE_VOTER_REMOVED_ERROR_CODE) ||
+            (status === 400 && VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES.some((fragment) => message.includes(fragment)))
+          ) {
             this.messageService.add({ severity: 'warn', summary: "You're no longer a voter", detail: VOTE_BALLOT_REMOVED_STATE, life: 5000 });
             this.changeBlockedFor.update((ids) => new Set(ids).add(voteUid));
             this.visible.set(false);

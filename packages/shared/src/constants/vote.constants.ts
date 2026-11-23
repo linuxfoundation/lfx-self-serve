@@ -293,7 +293,14 @@ export const VOTE_UPSTREAM_ENDED = 'ended';
 /** Upstream 400 message (lowercased substring) when a vote link's voter was removed from the vote (#5964). */
 export const VOTE_UPSTREAM_REMOVED = 'removed';
 
-/** BFF 404 `code` when a ballot update finds the caller's voter row missing or removed, distinct from the generic `NOT_FOUND` (#5964). */
+/** Verified upstream 400 message fragments rejecting ballot updates after voter removal or loss of committee membership (#5964). */
+export const VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES = [
+  'vote cannot be updated for a removed voter',
+  'vote cannot be changed for a removed or missing voter',
+  'user is no longer in the committee for this poll',
+] as const;
+
+/** BFF 404 `code` when a ballot update finds the caller's voter row explicitly removed; missing rows keep generic `NOT_FOUND` (#5964). */
 export const VOTE_VOTER_REMOVED_ERROR_CODE = 'VOTE_VOTER_REMOVED';
 
 /** Shown when a ballot update is rejected because the vote has ended (#5964). */

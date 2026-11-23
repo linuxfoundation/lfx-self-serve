@@ -1337,21 +1337,24 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(updateMyResponse).toHaveBeenCalledOnce();
   });
 
-  it('keeps the drawer open with an error toast for any other update failure', async () => {
-    const updateMyResponse = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
-    await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
-    const success = vi.fn();
-    fixture.componentInstance.voteSubmitted.subscribe(success);
+  it.each([{ status: 500 }, { status: 400, error: { error: 'invalid ballot answer' } }, { status: 400, error: { error: 'a removed choice is invalid' } }])(
+    'keeps the drawer open with an error toast for another update failure: %j',
+    async (init) => {
+      const updateMyResponse = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse(init)));
+      await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
+      const success = vi.fn();
+      fixture.componentInstance.voteSubmitted.subscribe(success);
 
-    fixture.componentInstance['onSubmit']();
+      fixture.componentInstance['onSubmit']();
 
-    expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Unable to update vote' }));
-    expect(fixture.componentInstance.visible()).toBe(true);
-    expect(success).not.toHaveBeenCalled();
-    expect(fixture.componentInstance['submitDisabled']()).toBe(false);
-    fixture.componentInstance['onSubmit']();
-    expect(updateMyResponse).toHaveBeenCalledTimes(2);
-  });
+      expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Unable to update vote' }));
+      expect(fixture.componentInstance.visible()).toBe(true);
+      expect(success).not.toHaveBeenCalled();
+      expect(fixture.componentInstance['submitDisabled']()).toBe(false);
+      fixture.componentInstance['onSubmit']();
+      expect(updateMyResponse).toHaveBeenCalledTimes(2);
+    }
+  );
 
   it.each([
     ['the vote has ended', { status: 400, error: { error: 'poll has ended' } }, 'warn', 'This vote has ended', VOTE_BALLOT_ENDED_STATE],
@@ -1362,7 +1365,12 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
       "You're no longer a voter",
       VOTE_BALLOT_REMOVED_STATE,
     ],
-  ])('closes, refreshes the host and locks review when an update is rejected because %s (#5964)', async (_label, init, severity, summary, detail) => {
+    ...[
+      'vote cannot be updated for a removed voter',
+      'vote cannot be changed for a removed or missing voter',
+      'user is no longer in the committee for this poll',
+    ].map((message) => [message, { status: 400, error: { error: message } }, 'warn', "You're no longer a voter", VOTE_BALLOT_REMOVED_STATE] as const),
+  ] as const)('closes, refreshes the host and locks review when an update is rejected because %s (#5964)', async (_label, init, severity, summary, detail) => {
     const updateMyResponse = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse(init)));
     await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
     const component = fixture.componentInstance;
