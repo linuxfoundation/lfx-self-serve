@@ -30,7 +30,7 @@ import {
   OrganizationResolveResult,
 } from '@lfx-one/shared/interfaces';
 import { buildCommitteeOrganizationPayload, formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
-import { acceptedMemberVotingStatus } from '@lfx-one/shared/validators';
+import { acceptedMemberVotingStatus, trimmedRequired } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -131,8 +131,8 @@ export class MemberFormComponent {
 
       // Prepare member data using form values, mapping to new structure
       const memberData: CreateCommitteeMemberRequest = {
-        first_name: formValue.first_name || null,
-        last_name: formValue.last_name || null,
+        first_name: formValue.first_name.trim() || null,
+        last_name: formValue.last_name.trim() || null,
         email: formValue.email,
         job_title: formValue.job_title || null,
         linkedin_profile: formValue.linkedin_profile || null,
@@ -328,8 +328,8 @@ export class MemberFormComponent {
   private createMemberFormGroup(): FormGroup {
     return new FormGroup(
       {
-        first_name: new FormControl('', [Validators.required]),
-        last_name: new FormControl('', [Validators.required]),
+        first_name: new FormControl('', [Validators.required, trimmedRequired()]),
+        last_name: new FormControl('', [Validators.required, trimmedRequired()]),
         email: new FormControl('', [Validators.required, Validators.email]),
         job_title: new FormControl(''),
         linkedin_profile: new FormControl('', [Validators.pattern(LINKEDIN_PROFILE_PATTERN)]),
