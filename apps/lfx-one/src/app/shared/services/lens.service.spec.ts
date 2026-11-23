@@ -98,6 +98,19 @@ describe('LensService — menu lens preview', () => {
     expect(lens.previewingMenuLens()).toBe(false);
   });
 
+  it('puts back the page lens, not an earlier pending switch, when a quick second switch fails', () => {
+    const { lens, events } = setup('org');
+
+    lens.switchLens('project');
+    events.next(new NavigationStart(11, '/project/overview'));
+    lens.switchLens('me');
+    events.next(new NavigationCancel(11, '/project/overview', 'superseded', NavigationCancellationCode.SupersededByNewNavigation));
+    events.next(new NavigationStart(12, '/me'));
+    events.next(new NavigationCancel(12, '/me', 'declined', NavigationCancellationCode.GuardRejected));
+
+    expect(lens.activeLens()).toBe('org');
+  });
+
   it('keeps the new lens once the switch lands', () => {
     const { lens, events } = setup('me');
 
