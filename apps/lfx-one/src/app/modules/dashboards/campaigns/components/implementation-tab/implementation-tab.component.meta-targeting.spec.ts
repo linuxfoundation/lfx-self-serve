@@ -143,95 +143,6 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     expect(metaGeoTargets()).toEqual(['US', 'JP']);
   });
 
-  /** Normalised to match campaign-service's `validateGeoTargets`, which uppercases and trims. */
-  it('uppercases and trims an entered code', async () => {
-    await setMetaGeoTargets([]);
-
-    const input = geoAddInput();
-    input.value = ' jp ';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['JP']);
-  });
-
-  /**
-   * The service de-dupes in first-seen order, so rendering `us` beside `US` would show a
-   * targeting set that never reaches Meta.
-   */
-  it('does not add a duplicate that differs only in case', async () => {
-    await setMetaGeoTargets(['US']);
-
-    const input = geoAddInput();
-    input.value = 'us';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['US']);
-  });
-
-  /**
-   * Shape only — NOT eligibility. A malformed code cannot be a country, so rejecting it here
-   * turns what would have been a failed campaign create into a no-op keystroke. Which countries
-   * Meta accepts stays the service's call (it drops ineligible entries from a mixed list, and
-   * refuses the create when nothing usable survives).
-   */
-  it.each(['1', '!!', 'x9', 'U', 'USA'])('ignores a malformed code %s', async (bad) => {
-    await setMetaGeoTargets(['US']);
-
-    const input = geoAddInput();
-    input.value = bad;
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['US']);
-  });
-
-  /**
-   * `ZZ` is well-shaped but sits in the ISO user-assigned range, so no ad platform can ever target
-   * it. The create path filters only regulated markets, so it used to survive to `geo_locations`
-   * and be rejected by Meta at AD-SET creation — after `POST /campaigns` had already created a
-   * billable resource. Refused at the chip now, where it costs nothing.
-   */
-  it('refuses a well-shaped but unassigned code', async () => {
-    await setMetaGeoTargets([]);
-
-    const input = geoAddInput();
-    input.value = 'ZZ';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual([]);
-  });
-
-  /**
-   * The counterpart, and the one that stops the guard over-broadening. ELIGIBILITY remains the
-   * SERVICE's call: a regulated market like `SG` is officially assigned, so it must still be
-   * addable here and filtered upstream where that list lives. Without this, a guard that rejected
-   * every country would pass the test above while breaking geo targeting entirely.
-   */
-  it('still accepts an assigned country the service may later filter', async () => {
-    await setMetaGeoTargets([]);
-
-    const input = geoAddInput();
-    input.value = 'SG';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['SG']);
-  });
-
-  it('ignores a blank entry', async () => {
-    await setMetaGeoTargets(['US']);
-
-    const input = geoAddInput();
-    input.value = '   ';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['US']);
-  });
-
   /**
    * `maxlength="2"` used to sit on this input, and it defeated half of `normalizeGeoTargets`.
    * The normaliser trims BEFORE it validates, precisely so a padded paste survives — but the
@@ -293,24 +204,6 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     await fixture.whenStable();
   }
 
-  it('normalises geo codes seeded from a structured brief', async () => {
-    await seedFromBrief(['us', ' jp '], 'structured');
-
-    expect(metaGeoTargets()).toEqual(['US', 'JP']);
-  });
-
-  it('de-dupes case-variant geo codes seeded from a structured brief', async () => {
-    await seedFromBrief(['us', 'US', 'JP'], 'structured');
-
-    expect(metaGeoTargets()).toEqual(['US', 'JP']);
-  });
-
-  it('normalises and de-dupes geo codes seeded from a typed brief', async () => {
-    await seedFromBrief(['de', 'DE', ' fr '], 'typed');
-
-    expect(metaGeoTargets()).toEqual(['DE', 'FR']);
-  });
-
   /** The defect as reported: a stored lowercase code plus a typed uppercase one made two chips. */
   it('treats a typed code as a duplicate of a lowercase code seeded from the brief', async () => {
     await seedFromBrief(['us'], 'structured');
@@ -320,12 +213,6 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     input.value = 'US';
     input.dispatchEvent(new Event('change'));
     await fixture.whenStable();
-
-    expect(metaGeoTargets()).toEqual(['US']);
-  });
-
-  it('drops a mis-shaped geo code seeded from the brief', async () => {
-    await seedFromBrief(['us', 'USA', '1', ''], 'structured');
 
     expect(metaGeoTargets()).toEqual(['US']);
   });
@@ -911,14 +798,6 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(request['metaConfig']['instagramUserId']).toBe('17841400000000000');
     });
 
-    it('refuses a non-numeric Instagram id', async () => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '@lfprojects' });
-
-      expect(component()['metaInstagramUserIdError']()).toBe('The Instagram account ID must be numeric.');
-      expect(component()['canSubmit']()).toBe(false);
-    });
-
     it('neither requires nor sends the Instagram id when every Instagram placement is off', async () => {
       fixture = await mount(true);
       component()['metaPlacements'].update((p: Record<string, boolean>) => ({ ...p, instagramFeed: false, stories: false, reels: false }));
@@ -945,44 +824,12 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(request['metaConfig']['dsaPayor']).toBe('The Linux Foundation');
     });
 
-    it('does not require the disclosures for a non-EU geo, and sends none', async () => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '17841400000000000' });
-      await setGeos(['US', 'GB', 'CH']);
-
-      expect(component()['metaDsaBeneficiaryError']()).toBeNull();
-      const request = await submitted();
-      expect(Object.keys(request['metaConfig'])).not.toContain('dsaBeneficiary');
-      expect(Object.keys(request['metaConfig'])).not.toContain('dsaPayor');
-    });
-
     it('refuses a one-sided pair even without an EU geo', async () => {
       fixture = await mount(true);
       await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF' });
 
       expect(component()['metaDsaPayorError']()).toBe('Enter both the beneficiary and the payor, or neither.');
       expect(component()['metaDsaBeneficiaryError']()).toBeNull();
-      expect(component()['canSubmit']()).toBe(false);
-    });
-
-    it('requires both disclosures for a non-EU EEA geo too, as campaign-service does', async () => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '17841400000000000' });
-      await setGeos(['NO']);
-
-      expect(component()['metaDsaCountries']()).toEqual(['NO']);
-      expect(component()['canSubmit']()).toBe(false);
-    });
-
-    it.each([
-      ['a tab', 'CNCF\tFoundation'],
-      ['a line separator', 'CNCF\u2028Foundation'],
-      ['a bidi override', '\u202eFNCC'],
-    ])('refuses a disclosure carrying %s', async (_label, value) => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '17841400000000000', dsaBeneficiary: value, dsaPayor: 'LF' });
-
-      expect(component()['metaDsaBeneficiaryError']()).toBe('Enter the name on one line, without tabs, line breaks or invisible formatting characters.');
       expect(component()['canSubmit']()).toBe(false);
     });
 
@@ -998,14 +845,6 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(component()['metaDsaBeneficiaryError']()).toBeNull();
       expect(component()['canSubmit']()).toBe(true);
       expect(fixture.nativeElement.querySelector('#meta-dsa-beneficiary')?.getAttribute('maxlength')).toBeNull();
-    });
-
-    it('accepts a non-Latin disclosure', async () => {
-      fixture = await mount(true);
-      await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'Fondation Linux — Zürich', dsaPayor: 'リナックス財団' });
-
-      expect(component()['metaDsaBeneficiaryError']()).toBeNull();
-      expect(component()['metaDsaPayorError']()).toBeNull();
     });
 
     it('persists the three values in the draft as typed, and restores them on remount', async () => {

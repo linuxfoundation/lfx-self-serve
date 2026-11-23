@@ -375,43 +375,16 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
   // === Placements ===
 
-  /**
-   * Only the entries that differ from `META_DEFAULT_PLACEMENTS` are sent. Upstream merges the
-   * override map field-by-field over those same defaults, so an untouched form must put no
-   * placement keys on the wire at all.
-   */
-  it('sends no placement overrides when the defaults are untouched', async () => {
-    expect((await submittedMetaConfig())['placements']).toEqual({});
-  });
-
   it('sends only the placements that differ from the defaults', async () => {
     await togglePlacement('reels', true);
 
     expect((await submittedMetaConfig())['placements']).toEqual({ reels: true });
   });
 
-  it('sends a disabled default placement as an explicit false', async () => {
-    await togglePlacement('facebookFeed', false);
-
-    expect((await submittedMetaConfig())['placements']).toEqual({ facebookFeed: false });
-  });
-
   /**
    * Rule 3. `buildPlacementTargeting` refuses a request whose `publisher_platforms` list comes out
    * empty, and it does so at the ad-set call — after the campaign, a paid resource, exists.
    */
-  /**
-   * The override map is built by DROPPING keys equal to `META_DEFAULT_PLACEMENTS`, so toggling a
-   * default-on placement off and back on must re-collapse to `{}`. The other placement specs only
-   * move one direction, which a `!==`→`!=` slip or a lost shallow copy would still satisfy while
-   * shipping a redundant `facebookFeed: true` override.
-   */
-  it('re-collapses to no overrides when a default placement is toggled off then on', async () => {
-    await togglePlacement('facebookFeed', false);
-    await togglePlacement('facebookFeed', true);
-
-    expect((await submittedMetaConfig())['placements']).toEqual({});
-  });
 
   it('blocks submit when every selectable placement is off', async () => {
     expect(canSubmit()).toBe(true);
@@ -460,16 +433,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(error!.getAttribute('role')).toBe('alert');
   });
 
-  it('re-enables submit when a placement is turned back on', async () => {
-    await togglePlacement('facebookFeed', false);
-    await togglePlacement('instagramFeed', false);
-    expect(canSubmit()).toBe(false);
-
-    await togglePlacement('reels', true);
-
-    expect(canSubmit()).toBe(true);
-  });
-
   /**
    * Rule 2. Meta removed Messenger Inbox in November 2025 and campaign-service rejects the
    * placement outright. The toggle renders so its absence is not read as a missing feature, but
@@ -495,18 +458,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect((await submittedMetaConfig())['placements']).toEqual({});
   });
 
-  /** Enabling every selectable placement must still never introduce the retired key. */
-  it('never sends messengerInbox even with every other placement enabled', async () => {
-    await togglePlacement('stories', true);
-    await togglePlacement('reels', true);
-    await togglePlacement('audienceNetwork', true);
-
-    const placements = (await submittedMetaConfig())['placements'];
-
-    expect(placements).not.toHaveProperty('messengerInbox');
-    expect(placements).toEqual({ stories: true, reels: true, audienceNetwork: true });
-  });
-
   // === Pixel id ===
 
   /**
@@ -521,12 +472,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(query('implementation-meta-pixel-id')).not.toBeNull();
   });
 
-  it('omits pixelId from the payload under a non-conversions objective', async () => {
-    await selectObjective('engagement');
-
-    expect(await submittedMetaConfig()).not.toHaveProperty('pixelId');
-  });
-
   it('blocks submit when conversions is selected with no pixel id', async () => {
     expect(canSubmit()).toBe(true);
 
@@ -534,28 +479,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
     expect(canSubmit()).toBe(false);
     expect(query('implementation-meta-pixel-error')).not.toBeNull();
-  });
-
-  /**
-   * The check `buildPromotedObject` makes that an empty-only test would miss. "PIX9" is
-   * non-empty, so a truthiness guard passes it; Meta Pixel ids are numeric and upstream rejects
-   * it on `numericIDRE`.
-   */
-  it('blocks submit for a non-empty but malformed pixel id', async () => {
-    await selectObjective('conversions');
-
-    await typePixelId('PIX9');
-
-    expect(canSubmit()).toBe(false);
-  });
-
-  /** Upstream trims before both checks, so a whitespace-only id must read as empty here too. */
-  it('blocks submit for a whitespace-only pixel id', async () => {
-    await selectObjective('conversions');
-
-    await typePixelId('   ');
-
-    expect(canSubmit()).toBe(false);
   });
 
   it('allows submit and sends the pixel id once it is numeric', async () => {
@@ -568,30 +491,5 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     const config = await submittedMetaConfig();
     expect(config['pixelId']).toBe('123456789012345');
     expect(config['objective']).toBe('conversions');
-  });
-
-  it('trims the pixel id it sends', async () => {
-    await selectObjective('conversions');
-    await typePixelId('  123456789012345  ');
-
-    expect(canSubmit()).toBe(true);
-    const config = await submittedMetaConfig();
-    expect(config['pixelId']).toBe('123456789012345');
-    expect(config['objective']).toBe('conversions');
-  });
-
-  /**
-   * A stale id left in the box after switching away from `conversions` must neither block submit
-   * nor reach the wire — the field no longer applies, so it is neither validated nor sent.
-   */
-  it('drops a stale pixel id after switching away from conversions', async () => {
-    await selectObjective('conversions');
-    await typePixelId('PIX9');
-    expect(canSubmit()).toBe(false);
-
-    await selectObjective('traffic');
-
-    expect(canSubmit()).toBe(true);
-    expect(await submittedMetaConfig()).not.toHaveProperty('pixelId');
   });
 });

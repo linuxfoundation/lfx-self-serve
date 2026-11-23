@@ -2323,6 +2323,33 @@ export interface MetaBriefCopy {
   recommendedGeos: string[];
 }
 
+/** The Instagram account and DSA text as the operator typed it. */
+export interface MetaInstagramDsaInput {
+  instagramUserId: string;
+  dsaBeneficiary: string;
+  dsaPayor: string;
+}
+
+/** The Meta copy a brief seeds the form with: its variants and its eligible recommended geos. */
+export interface MetaBriefSeed {
+  variants: MetaAdVariant[];
+  geoTargets: string[];
+}
+
+/** The Meta state `metaCreateRefusal` (`campaign-meta-form.utils.ts`) reads. Each `string | null` is a section's message, `null` when clear. */
+export interface MetaCreateRefusalInput {
+  variants: readonly Pick<MetaAdVariant, 'primaryText' | 'headline'>[];
+  hasPlacement: boolean;
+  pixelValid: boolean;
+  /** Whether the Instagram id or either EU DSA disclosure has an error. */
+  instagramDsaInvalid: boolean;
+  audienceTargetingBlock: string | null;
+  audienceTargetingError: string | null;
+  adOptionsBlock: string | null;
+  adOptionsError: string | null;
+  leadFormError: string | null;
+}
+
 export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
 
 /**

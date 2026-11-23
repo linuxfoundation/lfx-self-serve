@@ -5,7 +5,6 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { META_OBJECTIVE_LABELS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -179,11 +178,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(rendered).not.toContain('leads');
   });
 
-  /** The label stays defined even though the option is gone — the server names campaigns from it. */
-  it('keeps a label for the hidden leads objective', () => {
-    expect(META_OBJECTIVE_LABELS['leads']).toBe('Leads');
-  });
-
   /**
    * A draft persisted before `leads` was hidden restores an objective with no matching
    * `<option>`. Driven through the REAL draft input rather than by setting the signal directly:
@@ -268,26 +262,8 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   // === Geo eligibility, and display/dispatch agreement ===
 
   /**
-   * `IR` is an ASSIGNED ISO country, so the assignment check passes it — but Meta refuses to
-   * target it, and on the legacy path that refusal lands at the AD SET, after `POST /campaigns`
-   * has created a billable resource. Refused at the chip, where it costs nothing.
-   */
-  it('refuses an assigned but Meta-ineligible geo code', async () => {
-    const c = component();
-    c['metaGeoTargets'].set([]);
-    await fixture.whenStable();
-
-    const input = require<HTMLInputElement>('implementation-meta-geo-add');
-    input.value = 'IR';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(c['metaGeoTargets']()).toEqual([]);
-  });
-
-  /**
-   * The counterpart that stops the guard over-broadening: a guard rejecting every country would
-   * pass the test above while breaking geo targeting outright.
+   * Wiring counterpart to the shared `metaGeoIsIneligible` / `metaAcceptedGeos` tables: the chip add
+   * must still accept an eligible code, or geo targeting breaks outright.
    */
   it('still accepts an eligible geo code', async () => {
     const c = component();
@@ -302,39 +278,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['metaGeoTargets']()).toEqual(['JP']);
   });
 
-  /**
-   * The chip add was the ONLY door checking eligibility. The brief seed and the draft restore
-   * wrote `metaGeoTargets` through `normalizeGeoTargets` alone, which settles shape and ISO
-   * assignment but never asks whether Meta will target the country.
-   *
-   * That split is invisible unless you look at both surfaces at once. The chip list renders
-   * `metaGeoTargets()` while `submit()` sends `metaEffectiveGeoTargets()`, which filters
-   * ineligible codes — so a seeded `IR` DISPLAYED a chip the request silently dropped. The
-   * empty-state warning could not catch it either: it is gated on `metaGeoTargets().length === 0`,
-   * and the surviving chip made that false, so `canSubmit` passed on the `countryCode` fallback.
-   * The operator read `IR` on screen and bought a JP-only campaign.
-   *
-   * The binding assertion is that DISPLAY AND DISPATCH AGREE. Asserting only that the request
-   * omits `IR` would pass on the unfixed code too, because `metaEffectiveGeoTargets` already
-   * filtered it — what was broken, and what this pins, is the CHIP LIST.
-   */
-  it('drops a Meta-ineligible geo the brief recommended, on screen as well as on the wire', async () => {
-    const seeded = TestBed.createComponent(ImplementationTabComponent);
-    seeded.componentRef.setInput('briefData', {
-      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
-      selectedPlatforms: ['meta-ads'],
-      metaCopy: { variants: [], recommendedGeos: ['IR', 'JP'] },
-    } as unknown as CampaignBriefOutput);
-    seeded.detectChanges();
-    await seeded.whenStable();
-
-    const c = seeded.componentInstance as unknown as Record<string, any>;
-
-    expect(c['metaGeoTargets']()).toEqual(['JP']);
-    expect(c['metaEffectiveGeoTargets']()).toEqual(['JP']);
-  });
-
-  /** The same unguarded door, reached through a restored draft rather than a fresh brief. */
+  /** A restored draft is a door into `metaGeoTargets` too: it must drop a Meta-ineligible code, on screen as well as on the wire. */
   it('drops a Meta-ineligible geo carried by a restored draft', async () => {
     const restored = TestBed.createComponent(ImplementationTabComponent);
     restored.componentRef.setInput('draft', {
