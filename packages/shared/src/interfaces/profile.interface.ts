@@ -14,6 +14,29 @@ export interface DeveloperTokenInfo {
 /**
  * Profile tab configuration for the profile layout navigation
  */
+/** One page in the Account & Settings left nav and on its landing page (#6067). */
+export interface AccountSettingsNavItem {
+  /** Route segment under `/account`, e.g. `identities`. */
+  route: string;
+  label: string;
+  /** Font Awesome classes for the nav item and the landing row's tile. */
+  icon: string;
+  /** One-line description shown on the landing page. */
+  blurb: string;
+}
+
+/** A path plus the optional `#fragment` it lands on. */
+export interface AccountSettingsTarget {
+  path: string;
+  fragment?: string;
+}
+
+/** A labelled group of Account & Settings pages ("Account", "Settings"). */
+export interface AccountSettingsNavGroup {
+  label: string;
+  items: AccountSettingsNavItem[];
+}
+
 export interface ProfileTab {
   id: string;
   label: string;

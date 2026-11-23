@@ -99,6 +99,7 @@ export * from './committee-engagement-classifier.utils';
 export * from './committee-engagement-display.utils';
 export * from './committee-engagement-freshness.utils';
 export * from './public-profile.utils';
+export * from './account-settings.utils';
 export * from './mentorship-lfx-profile-card.utils';
 export * from './boilerplates.utils';
 export * from './brand-kit-book.utils';

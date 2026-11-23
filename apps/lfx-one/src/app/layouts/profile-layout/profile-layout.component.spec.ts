@@ -6,9 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Toast, ToastModule } from 'primeng/toast';
-import { PrimeTemplate } from 'primeng/api';
-import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { LinkedEmailSupportToastComponent } from '@components/linked-email-support-toast/linked-email-support-toast.component';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@shared/providers/runtime-config.provider';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
@@ -922,7 +920,7 @@ describe('ProfileLayoutComponent — rendered linked-email callback support (#55
     // Only unrelated page/panel/drawer/router children are inert custom elements.
     TestBed.overrideComponent(ProfileLayoutComponent, {
       set: {
-        imports: [ToastModule, PrimeTemplate, ToastMessageComponent, OpenIntercomDirective],
+        imports: [LinkedEmailSupportToastComponent],
         schemas: [NO_ERRORS_SCHEMA],
       },
     });

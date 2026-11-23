@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ACCOUNT_IDENTITIES_PATH,
+  ACCOUNT_LINUX_EMAIL_PATH,
   ALLOWED_AVATAR_MIME_TYPES,
   AUTH0_LINKED_ONLY_IDENTITY_COMBOS,
   AUTH0_TO_CDP_PROVIDER_MAP,
@@ -135,6 +137,9 @@ export class ProfileController {
     // Not a profile page, but it embeds the same Add-identity dialog, so a mentor who links an
     // account mid-registration has to come back to the form instead of the Identities tab.
     '/mentorship/mentor',
+    // Account & Settings pages that start Flow C from their own address (the redesign flag, #6067).
+    ACCOUNT_IDENTITIES_PATH,
+    ACCOUNT_LINUX_EMAIL_PATH,
   ]);
 
   private auth0Service: Auth0Service = new Auth0Service();

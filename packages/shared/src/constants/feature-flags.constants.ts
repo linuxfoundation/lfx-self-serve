@@ -132,6 +132,13 @@ export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-ena
 export const GATEWAZE_EMBED_ENABLED_FLAG = 'gatewaze-embed-enabled';
 
 /**
+ * Dark-launch gate for the Profile, Account & Settings and public profile redesign (#6067). Default false:
+ * `/profile` keeps the Profile & Account hub and `/account` sends a user back to the matching hub tab.
+ * **UI-only**, read by `profileRedesignEnabledGuard` and `profileRedesignRedirectGuard`.
+ */
+export const PROFILE_REDESIGN_FLAG = 'profile-redesign-enabled';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *

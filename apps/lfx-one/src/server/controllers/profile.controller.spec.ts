@@ -143,6 +143,8 @@ const {
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', () => ({
+  ACCOUNT_IDENTITIES_PATH: '/account/identities',
+  ACCOUNT_LINUX_EMAIL_PATH: '/account/linux-email',
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
   AUTH0_LINKED_ONLY_IDENTITY_COMBOS: new Set(['gitlab+username']),
   AUTH0_TO_CDP_PROVIDER_MAP: auth0ToCdpProviderMap,
@@ -1314,6 +1316,15 @@ describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
 
     expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=profile_auth_not_configured');
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['/account/identities', '/account/linux-email'])('keeps the Account & Settings page %s as an allowed returnTo', async (returnTo) => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.startProfileAuth(buildReq({ query: { returnTo } }), res, next);
+
+    expect(res.redirect).toHaveBeenCalledWith(`${returnTo}?error=profile_auth_not_configured`);
   });
 
   it('forwards a rejected getAuthorizationUrl to next instead of leaving it unhandled', async () => {

@@ -86,6 +86,8 @@ export class AccountSettingsComponent {
 
   // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
   public readonly embedded = this.route.snapshot.data['embedded'] === true;
+  // One section alone (route data `section`) on its own Account & Settings page; null shows all three with the contents list.
+  public readonly section: string | null = (this.route.snapshot.data['section'] as string | undefined) ?? null;
   // Latched in afterNextRender (a no-op on the server): the non-production localStorage override in
   // FeatureFlagService reads synchronously, so without it a pre-seeded `true` would render the group on
   // the first client pass and mismatch the SSR DOM (same fix as health-metrics-gate.component.ts).

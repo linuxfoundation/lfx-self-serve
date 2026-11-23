@@ -1,7 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CdpIdentityType, EmailVerificationCallbackStatus, EmailVerificationStatus, IdentityProvider, IdentityProviderOption, ProfileTab } from '../interfaces';
+import {
+  AccountSettingsNavGroup,
+  AccountSettingsTarget,
+  CdpIdentityType,
+  EmailVerificationCallbackStatus,
+  EmailVerificationStatus,
+  IdentityProvider,
+  IdentityProviderOption,
+  ProfileTab,
+} from '../interfaces';
 
 /**
  * sessionStorage key for a profile-edit form interrupted by a Flow C
@@ -336,6 +345,91 @@ export const ACCOUNT_SETTINGS_SECTIONS = {
   PASSWORD: 'password',
   DEVELOPER_SETTINGS: 'developer-settings',
 } as const;
+
+/** Base path of the Account & Settings area that replaces the Profile & Account hub's tabs (#6067). */
+export const ACCOUNT_BASE_PATH = '/account';
+export const ACCOUNT_IDENTITIES_PATH = '/account/identities';
+export const ACCOUNT_LINUX_EMAIL_PATH = '/account/linux-email';
+export const ACCOUNT_EMAIL_SETTINGS_PATH = '/account/email-settings';
+export const ACCOUNT_PASSWORD_PATH = '/account/password';
+export const ACCOUNT_DEVELOPER_SETTINGS_PATH = '/account/developer-settings';
+
+export const ACCOUNT_SETTINGS_TITLE = 'Account & Settings';
+export const ACCOUNT_SETTINGS_DESCRIPTION = 'Manage your work history, linked identities, agreements, billing and sign-in.';
+
+/** The Account & Settings pages in nav order; the landing page reads the same list. */
+export const ACCOUNT_SETTINGS_NAV: AccountSettingsNavGroup[] = [
+  {
+    label: 'Account',
+    items: [
+      {
+        route: 'personal-information',
+        label: 'Personal information',
+        icon: 'fa-light fa-id-card',
+        blurb: 'Your name, bio, job title, contact email and location.',
+      },
+      {
+        route: 'work-history',
+        label: 'Work history & Affiliations',
+        icon: 'fa-light fa-briefcase',
+        blurb: 'Your employment history and the company credited for each project you contribute to.',
+      },
+      { route: 'identities', label: 'Identities', icon: 'fa-light fa-fingerprint', blurb: 'GitHub, GitLab, social and email identities linked to your work.' },
+      { route: 'linux-email', label: 'Linux.com email', icon: 'fa-light fa-at', blurb: 'Your personal @linux.com alias and where its email is forwarded.' },
+      {
+        route: 'individual-enrollment',
+        label: 'Individual Enrollment',
+        icon: 'fa-light fa-heart',
+        blurb: 'Your Linux Foundation Individual Supporter membership and auto-renew.',
+      },
+      { route: 'clas', label: 'CLAs', icon: 'fa-light fa-file-signature', blurb: 'Individual CLAs you signed and corporate CLAs that cover you.' },
+      { route: 'transactions', label: 'Transactions', icon: 'fa-light fa-receipt', blurb: 'Receipts for memberships, certifications and event registrations.' },
+    ],
+  },
+  {
+    label: 'Settings',
+    items: [
+      {
+        route: 'email-settings',
+        label: 'Email settings',
+        icon: 'fa-light fa-envelope',
+        blurb: 'Addresses on your account and which one receives notifications.',
+      },
+      { route: 'password', label: 'Password', icon: 'fa-light fa-lock', blurb: 'Change your password and set up two-factor authentication.' },
+      { route: 'developer-settings', label: 'Developer settings', icon: 'fa-light fa-code', blurb: 'Personal API tokens for scripts and integrations.' },
+    ],
+  },
+];
+
+/**
+ * Where each old Profile & Account tab lives under `/account` once the redesign flag is on. Settings is keyed by
+ * its section fragment, since the old Settings tab held all three pages.
+ */
+export const PROFILE_TAB_ACCOUNT_ROUTES: Readonly<Record<string, string>> = {
+  identities: 'identities',
+  'linux-email': 'linux-email',
+  'individual-enrollment': 'individual-enrollment',
+  clas: 'clas',
+  transactions: 'transactions',
+  settings: 'email-settings',
+  'settings#email-settings': 'email-settings',
+  'settings#password': 'password',
+  'settings#developer-settings': 'developer-settings',
+};
+
+/** The Profile & Account hub page each `/account` page falls back to while the redesign flag is off. */
+export const ACCOUNT_ROUTE_PROFILE_TARGETS: Readonly<Record<string, AccountSettingsTarget>> = {
+  'personal-information': { path: '/profile' },
+  'work-history': { path: '/profile/attributions' },
+  identities: { path: '/profile/identities' },
+  'linux-email': { path: '/profile/linux-email' },
+  'individual-enrollment': { path: '/profile/individual-enrollment' },
+  clas: { path: '/profile/clas' },
+  transactions: { path: '/profile/transactions' },
+  'email-settings': { path: PROFILE_SETTINGS_PATH, fragment: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS },
+  password: { path: PROFILE_SETTINGS_PATH, fragment: ACCOUNT_SETTINGS_SECTIONS.PASSWORD },
+  'developer-settings': { path: PROFILE_SETTINGS_PATH, fragment: ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS },
+};
 
 /**
  * Error codes from the Flow C profile-auth (`/passwordless/callback`) round trip,
