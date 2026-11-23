@@ -7622,6 +7622,20 @@ export interface CampaignMetaAudienceTargetingBlock {
   message: string;
 }
 
+/** The Meta audience-targeting state `metaAudienceTargetingBlock` (`campaign-meta-audience-targeting.utils.ts`) reads, as plain values. */
+export interface MetaAudienceTargetingBlockInput {
+  /** The targeting the draft holds. */
+  targeting: MetaAudienceTargeting | null;
+  targetingEnabled: boolean | null;
+  customAudiencesEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** The per-option capability answers for the Meta ad choices: `true` yes, `false` no, `null` or absent unanswered. */
+export type MetaAdOptionsEnabled = Partial<Record<MetaAdOptionKey, boolean | null>>;
+
 /**
  * Why Create is blocked for Demand Gen audiences (#5244) the draft still holds but the request cannot
  * carry. The kinds mean what they do on {@link CampaignGoogleAudienceSegmentsBlock}: `restricted` is an

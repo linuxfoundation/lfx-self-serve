@@ -707,6 +707,8 @@ describe('ImplementationTabComponent meta audience targeting', () => {
   it('sends the compacted targeting only on an explicit yes', async () => {
     const { f } = await mount(true, true);
     expect(query(f, 'implementation-meta-audience-targeting')).not.toBeNull();
+    // The custom-audiences answer reaches the child, which offers the picker before any audience is chosen.
+    expect(query(f, 'meta-audience-targeting-custom-audiences')).not.toBeNull();
     await edit(f, { ageMin: 25, genders: ['female'], customAudiences: ['1001'] });
 
     expect((await submittedMeta(f))['targeting']).toEqual({ ageMin: 25, genders: ['female'], customAudiences: ['1001'] });
@@ -723,14 +725,12 @@ describe('ImplementationTabComponent meta audience targeting', () => {
     expect(c(f)['createBlockedReason']()).toContain('Advantage+ audience');
   });
 
-  it.each([
-    [false, 'restricted'],
-    [null, 'failed'],
-  ])('holds Create, keeping each audience removable, when custom audiences are held and the caller answer is %s', async (answer, kind) => {
-    const { f } = await mount(true, answer, held({ excludedCustomAudiences: ['1001'] }));
+  // Wiring for the hold with Remove; the unanswered (`failed`, `pending`) kinds are rows in `metaAudienceTargetingBlock`'s helper table.
+  it('holds Create, keeping each audience removable, when custom audiences are restricted for the caller', async () => {
+    const { f } = await mount(true, false, held({ excludedCustomAudiences: ['1001'] }));
 
     expect(c(f)['createBlockedReason']()).toContain('custom audiences');
-    expect(query(f, `implementation-meta-audience-targeting-block-${kind}`)).not.toBeNull();
+    expect(query(f, 'implementation-meta-audience-targeting-block-restricted')).not.toBeNull();
     expect(query(f, 'implementation-meta-audience-targeting-clear')).toBeNull();
     query(f, 'meta-audience-targeting-excludedCustomAudiences-remove-1001')?.click();
     f.detectChanges();
@@ -749,14 +749,12 @@ describe('ImplementationTabComponent meta audience targeting', () => {
   });
 
   // An unanswered capability (the list loading or failed) is not a no: Create waits, and nothing destructive is offered.
-  it.each([
-    ['pending', 'pending'],
-    ['failed', 'failed'],
-  ] as const)('holds Create without offering Clear while the capability read is %s', async (read, kind) => {
-    const { f } = await mount(null, null, held({ advantageAudience: false }), read);
+  // The `failed` and `unsaved` kinds are rows in `metaAudienceTargetingBlock`'s helper table.
+  it('holds Create without offering Clear while the capability read is pending', async () => {
+    const { f } = await mount(null, null, held({ advantageAudience: false }), 'pending');
 
     expect(c(f)['createBlockedReason']()).toContain('Meta audience targeting');
-    expect(query(f, `implementation-meta-audience-targeting-block-${kind}`)).not.toBeNull();
+    expect(query(f, 'implementation-meta-audience-targeting-block-pending')).not.toBeNull();
     expect(query(f, 'implementation-meta-audience-targeting-clear')).toBeNull();
   });
 
@@ -930,24 +928,12 @@ describe('ImplementationTabComponent meta ad options', () => {
   });
 
   // An unanswered capability (the read loading or failed) is not a no: Create waits, and Clear is not offered.
-  it.each([
-    ['pending', 'pending'],
-    ['failed', 'failed'],
-  ] as const)('holds a restored choice without offering Clear while the capability read is %s', async (read, kind) => {
-    const { f } = await mount({ callToAction: null }, { metaAdOptions: { callToAction: 'SIGN_UP' }, metaAdOptionsProject: 'tlf' }, read);
+  // The `failed` and `unsaved` kinds are rows in `metaAdOptionsBlock`'s helper table; the Retry test below renders `failed`.
+  it('holds a restored choice without offering Clear while the capability read is pending', async () => {
+    const { f } = await mount({ callToAction: null }, { metaAdOptions: { callToAction: 'SIGN_UP' }, metaAdOptionsProject: 'tlf' }, 'pending');
 
     expect(c(f)['createBlockedReason']()).toContain('call to action');
-    expect(query(f, `implementation-meta-ad-options-block-${kind}`)).not.toBeNull();
-    expect(query(f, 'implementation-meta-ad-options-clear')).toBeNull();
-  });
-
-  it('holds a restored choice on an unsaved brief, asking for a save instead of offering Clear', async () => {
-    const { f } = await mount({ callToAction: null }, { metaAdOptions: { callToAction: 'SIGN_UP' }, metaAdOptionsProject: 'tlf' });
-    f.componentRef.setInput('briefPersistence', { status: 'idle', briefId: null, message: null, approved: false });
-    f.detectChanges();
-
-    expect(c(f)['createBlockedReason']()).toContain('call to action');
-    expect(query(f, 'implementation-meta-ad-options-block-unsaved')).not.toBeNull();
+    expect(query(f, 'implementation-meta-ad-options-block-pending')).not.toBeNull();
     expect(query(f, 'implementation-meta-ad-options-clear')).toBeNull();
   });
 

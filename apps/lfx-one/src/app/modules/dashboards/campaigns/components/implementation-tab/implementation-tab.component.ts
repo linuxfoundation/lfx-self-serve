@@ -233,7 +233,6 @@ import {
   isCanonicalGoogleAdsResourceId,
   isGoogleAdsServableUrl,
   DEFAULT_META_AUDIENCE_TARGETING,
-  META_AD_OPTION_FIELDS,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
@@ -464,13 +463,18 @@ import {
   linkedInTargetingAfterRemovals,
   linkedInVariantTextError,
   metaAcceptedGeos,
-  metaAdOptionApplies,
-  metaAdOptionLabel,
+  metaAdOptionsBlock,
+  metaAdOptionsForCreate,
+  metaAdOptionsForObjective,
   metaAdOptionsRefusal,
+  metaAdOptionsWithChoice,
+  metaAdOptionsWithoutUnsupported,
+  metaAdOptionViews,
+  metaAudienceTargetingBlock,
+  metaAudienceTargetingCapabilities,
   metaAudienceTargetingRefusal,
   metaBasicsRefusal,
   metaBriefSeed,
-  metaCallToActionAllowedWithLeadForm,
   metaCreateRefusal,
   metaDsaCountries,
   metaDsaFieldError,
@@ -499,7 +503,6 @@ import {
   metaPlacementOverrides,
   metaPreviewImageLabel,
   metaRequiresPixel,
-  metaTargetingNamesCustomAudiences,
   metaUsesInstagram,
   metaVariantsWithImage,
   parseNegativeKeywordInput,
@@ -1001,9 +1004,11 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaAudienceTargetingEnabled = input<boolean | null>(null);
   /** Whether THIS caller may pick custom audiences — `CampaignListResult.metaCustomAudiencesEnabled` (`global_marketing_ops`). */
   public readonly metaCustomAudiencesEnabled = input<boolean | null>(null);
-  protected readonly metaAudienceTargetingAvailable = computed<boolean>(() => this.metaAudienceTargetingEnabled() === true);
+  protected readonly metaAudienceTargetingAvailable = computed<boolean>(
+    () => metaAudienceTargetingCapabilities(this.metaAudienceTargetingEnabled(), this.metaCustomAudiencesEnabled()).targetingAvailable
+  );
   protected readonly metaCustomAudiencesAvailable = computed<boolean>(
-    () => this.metaAudienceTargetingAvailable() && this.metaCustomAudiencesEnabled() === true
+    () => metaAudienceTargetingCapabilities(this.metaAudienceTargetingEnabled(), this.metaCustomAudiencesEnabled()).customAudiencesAvailable
   );
 
   /**
@@ -3423,20 +3428,7 @@ export class ImplementationTabComponent implements OnInit {
   private readonly metaManualBidding = computed<boolean>(() => this.biddingField('meta-ads').bidding?.strategy === 'manual');
   /** The Meta ad choice dropdowns offered (#5934): each only on an explicit yes and where the objective fits. */
   protected readonly metaAdOptionViews = computed<MetaAdOptionView[]>(() =>
-    META_AD_OPTION_FIELDS.filter((field) => this.metaAdOptionsEnabled()[field.key] === true && metaAdOptionApplies(field, this.metaObjective())).map(
-      (field) => ({
-        key: field.key,
-        label: field.label,
-        notSetLabel: `Not set (${metaAdOptionLabel(field.values[0])})`,
-        options: field.values.map((value) => ({
-          value,
-          label: metaAdOptionLabel(value),
-          disabled:
-            (field.key === 'optimizationGoal' && value === 'LANDING_PAGE_VIEWS' && this.metaManualBidding()) ||
-            (field.key === 'callToAction' && !metaCallToActionAllowedWithLeadForm(value, this.metaLeadFormRequested())),
-        })),
-      })
-    )
+    metaAdOptionViews(this.metaAdOptionsEnabled(), this.metaObjective(), this.metaManualBidding(), this.metaLeadFormRequested())
   );
   /** Why the Meta ad choices cannot be sent, or `null`: the create route's own rules. */
   protected readonly metaAdOptionsError = computed<string | null>(
@@ -5670,12 +5662,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** One Meta ad choice (#5934); the empty "Not set" option removes the key, so nothing is sent. */
   protected onMetaAdOptionChange(key: MetaAdOptionKey, value: string | null): void {
-    this.metaAdOptions.update((options) => {
-      const next = { ...options };
-      if (!value) delete next[key];
-      else next[key] = value;
-      return next;
-    });
+    this.metaAdOptions.update((options) => metaAdOptionsWithChoice(options, key, value));
     this.emitDraft();
   }
 
@@ -5687,9 +5674,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Drops every Meta ad choice this deployment answered no to: the way past an `unsupported` {@link metaAdOptionsBlock}. */
   protected clearUnsupportedMetaAdOptions(): void {
-    this.metaAdOptions.update((options) =>
-      Object.fromEntries(Object.entries(options).filter(([key]) => this.metaAdOptionsEnabled()[key as MetaAdOptionKey] !== false))
-    );
+    this.metaAdOptions.update((options) => metaAdOptionsWithoutUnsupported(options, this.metaAdOptionsEnabled()));
     this.emitDraft();
   }
 
@@ -11368,41 +11353,15 @@ export class ImplementationTabComponent implements OnInit {
    * offered but waiting or Retry: the targeting may well be sendable once it answers.
    */
   private initMetaAudienceTargetingBlock(): Signal<CampaignMetaAudienceTargetingBlock | null> {
-    return computed(() => {
-      const chosen = compactMetaAudienceTargeting(this.metaAudienceTargeting());
-      if (chosen === null) return null;
-      const deploymentUnanswered = !this.metaAudienceTargetingAvailable();
-      if (!deploymentUnanswered && (!metaTargetingNamesCustomAudiences(chosen) || this.metaCustomAudiencesAvailable())) return null;
-      if (deploymentUnanswered && this.metaAudienceTargetingEnabled() === false) {
-        return {
-          kind: 'unsupported',
-          message:
-            'Meta audience targeting is not available on this deployment, so the targeting on this brief cannot be sent. Clear it to create the campaign.',
-        };
-      }
-      if (!deploymentUnanswered && this.metaCustomAudiencesEnabled() === false) {
-        return {
-          kind: 'restricted',
-          message:
-            'Only the LF marketing team can use Meta custom audiences, because every foundation shares one Meta ad account. Remove them to create the campaign.',
-        };
-      }
-      const subject = deploymentUnanswered ? 'Meta audience targeting' : 'Meta custom audiences';
-      const orRemove = deploymentUnanswered ? '' : ', or remove them';
-      if (this.createCapabilityRead() === 'pending') {
-        return {
-          kind: 'pending',
-          message: `Checking whether you can send ${subject}. Create waits for the answer so the targeting on this brief is not dropped.`,
-        };
-      }
-      if (!this.briefPersistence().briefId) {
-        return { kind: 'unsaved', message: `${subject} can't be checked until this brief is saved. Save the brief${orRemove}.` };
-      }
-      return {
-        kind: 'failed',
-        message: `Could not confirm that you can send ${subject}, so Create waits rather than dropping the targeting on this brief. Retry the check${orRemove}.`,
-      };
-    });
+    return computed(() =>
+      metaAudienceTargetingBlock({
+        targeting: this.metaAudienceTargeting(),
+        targetingEnabled: this.metaAudienceTargetingEnabled(),
+        customAudiencesEnabled: this.metaCustomAudiencesEnabled(),
+        createCapabilityRead: this.createCapabilityRead(),
+        briefId: this.briefPersistence().briefId,
+      })
+    );
   }
 
   /**
@@ -11412,24 +11371,7 @@ export class ImplementationTabComponent implements OnInit {
    * Create waits or offers Retry, because the choice may well be sendable once it answers.
    */
   private initMetaAdOptionsBlock(): Signal<CampaignBiddingCapabilityBlock | null> {
-    return computed(() => {
-      const enabled = this.metaAdOptionsEnabled();
-      const held = Object.keys(compactMetaAdOptions(this.metaAdOptions())).filter((key) => enabled[key as MetaAdOptionKey] !== true);
-      if (held.length === 0) return null;
-      const labels = META_AD_OPTION_FIELDS.filter((field) => held.includes(field.key))
-        .map((field) => field.label.toLowerCase())
-        .join(', ');
-      if (held.every((key) => enabled[key as MetaAdOptionKey] === false)) {
-        return { kind: 'unsupported', message: `This deployment cannot send the Meta ${labels} on this brief. Clear it to create the campaign.` };
-      }
-      if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: `Checking whether the Meta ${labels} can be sent. Create waits so it is not dropped.` };
-      }
-      if (!this.briefPersistence().briefId) {
-        return { kind: 'unsaved', message: `The Meta ${labels} can't be checked until this brief is saved. Save the brief.` };
-      }
-      return { kind: 'failed', message: `Could not confirm that the Meta ${labels} can be sent, so Create waits rather than dropping it. Retry the check.` };
-    });
+    return computed(() => metaAdOptionsBlock(this.metaAdOptions(), this.metaAdOptionsEnabled(), this.createCapabilityRead(), this.briefPersistence().briefId));
   }
 
   /**
@@ -14240,17 +14182,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The Meta ad choices for the request: each only on an explicit yes, "Not set" never sent. */
   private metaAdOptionsField(): MetaAdOptions {
-    const enabled = this.metaAdOptionsEnabled();
-    return Object.fromEntries(Object.entries(compactMetaAdOptions(this.metaAdOptions())).filter(([key]) => enabled[key as MetaAdOptionKey] === true));
+    return metaAdOptionsForCreate(this.metaAdOptions(), this.metaAdOptionsEnabled());
   }
 
   /** Clears each Meta ad choice the current objective does not take (#5934). */
   private dropInapplicableMetaAdOptions(): void {
-    this.metaAdOptions.update((options) =>
-      Object.fromEntries(
-        Object.entries(options).filter(([key]) => META_AD_OPTION_FIELDS.some((f) => f.key === key && metaAdOptionApplies(f, this.metaObjective())))
-      )
-    );
+    this.metaAdOptions.update((options) => metaAdOptionsForObjective(options, this.metaObjective()));
   }
 
   private defaultMetaAudienceTargeting(): MetaAudienceTargetingDraft {
