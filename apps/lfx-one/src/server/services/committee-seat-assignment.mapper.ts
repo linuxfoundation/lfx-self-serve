@@ -7,6 +7,7 @@
 
 import { PROJECT_VISIBILITY_DIRECT_READ_CAP, PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES, PUBLIC_PROJECT_NAME_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import type { CommitteeMemberAssignment, CommitteeMemberPerson, CommitteeServiceOrgSeat, FoundationNameEnrichment } from '@lfx-one/shared/interfaces';
+import { cleanNamePart } from '@lfx-one/shared/utils/display-name.utils';
 import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';
@@ -217,8 +218,9 @@ export function toAssignment(s: CommitteeServiceOrgSeat, foundationNames: Map<st
 
 /** Build the seat holder's person envelope: lowercased email, fullName fallback to email, derived initials. */
 export function toPerson(s: CommitteeServiceOrgSeat): CommitteeMemberPerson {
-  const firstName = (s.first_name ?? '').trim();
-  const lastName = (s.last_name ?? '').trim();
+  // A placeholder name part ("[[unknown]]", GH-5643) counts as missing, so the email fallback below applies.
+  const firstName = cleanNamePart(s.first_name);
+  const lastName = cleanNamePart(s.last_name);
   const email = (s.email ?? '').trim().toLowerCase();
   const name = `${firstName} ${lastName}`.trim();
   // Members added by email before their profile resolves have no name upstream — fall back to the

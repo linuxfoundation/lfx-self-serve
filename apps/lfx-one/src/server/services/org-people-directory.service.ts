@@ -30,7 +30,7 @@ import type {
   OrgTeamMemberKeys,
   OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import { cleanNamePart, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHmac } from 'crypto';
 import { Request } from 'express';
 
@@ -418,8 +418,8 @@ export class OrgPeopleDirectoryService {
           this.addSource(existing, source);
           this.addEmail(existing, email);
           this.fill(existing, {
-            firstName: (seat.first_name ?? '').trim() || null,
-            lastName: (seat.last_name ?? '').trim() || null,
+            firstName: cleanNamePart(seat.first_name) || null,
+            lastName: cleanNamePart(seat.last_name) || null,
             title: seat.job_title?.trim() || null,
           });
           // Count live seats only for live-only rows; Snowflake rows already carry authoritative seat counts, so
@@ -696,8 +696,8 @@ export class OrgPeopleDirectoryService {
   }
 
   private rowFromSeat(seat: CommitteeServiceOrgSeat, email: string, source: OrgPersonSource, key: string): OrgAllEmployeeRowInternal {
-    const firstName = (seat.first_name ?? '').trim() || null;
-    const lastName = (seat.last_name ?? '').trim() || null;
+    const firstName = cleanNamePart(seat.first_name) || null;
+    const lastName = cleanNamePart(seat.last_name) || null;
     const row = this.liveRow(email, firstName, lastName, seat.job_title?.trim() || null, null, source, key, seat.username ?? null);
     // The seat that created this live-only row counts as one held seat; further seats fold in via addSeat on the existing branch.
     this.addSeat(row, source);

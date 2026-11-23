@@ -53,7 +53,16 @@ import type {
   OrgTeamMemberKeys,
   OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import {
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  isFilterSafeIdentifier,
+  isPlaceholderName,
+  splitDisplayName,
+  toColumnar,
+} from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
@@ -1670,7 +1679,7 @@ function contributorIdentity(row: ContributorPersonProjectRow): OrgPeopleIdentit
 /** Upstream occasionally carries bracketed placeholder names (e.g. "[[Unknown]] [[unknown]]") or a blank name; surface the email instead so the row stays identifiable, with a generic label only when no email exists. */
 function cleanDisplayName(rawName: string | null, email: string | null): string {
   const name = (rawName ?? '').trim();
-  const isPlaceholder = name === '' || /\[\[[^\]]*\]\]/.test(name);
+  const isPlaceholder = name === '' || isPlaceholderName(name);
   if (!isPlaceholder) {
     return name;
   }

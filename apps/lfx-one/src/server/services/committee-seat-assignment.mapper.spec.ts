@@ -22,7 +22,7 @@ vi.mock('@lfx-one/shared/constants', async (importOriginal) => ({
   PROJECT_VISIBILITY_DIRECT_READ_CAP: 2,
 }));
 
-import { enrichFoundationNames, resetPublicProjectNameCacheForTests } from './committee-seat-assignment.mapper';
+import { enrichFoundationNames, resetPublicProjectNameCacheForTests, toPerson } from './committee-seat-assignment.mapper';
 import type { ProjectService } from './project.service';
 
 const req = {} as Request;
@@ -323,5 +323,31 @@ describe('enrichFoundationNames — public project name cache', () => {
       expect(result.publicUids).toEqual(new Set(['solo']));
       expect(result.confirmedByDirectRead).toBe(1);
     });
+  });
+});
+
+describe('toPerson — placeholder names (GH-5643)', () => {
+  const personSeat = (overrides: Partial<CommitteeServiceOrgSeat>): CommitteeServiceOrgSeat =>
+    ({ uid: 'seat-1', first_name: 'Ada', last_name: 'Byron', email: 'Ada@Example.org', ...overrides }) as CommitteeServiceOrgSeat;
+
+  it('keeps a real name', () => {
+    const person = toPerson(personSeat({}));
+    expect(person).toMatchObject({ firstName: 'Ada', lastName: 'Byron', fullName: 'Ada Byron', initials: 'AB', email: 'ada@example.org' });
+  });
+
+  it('falls back to the email when both name parts are placeholders', () => {
+    const person = toPerson(personSeat({ first_name: '[[unknown]]', last_name: '[[unknown]]' }));
+    expect(person).toMatchObject({ firstName: '', lastName: '', fullName: 'ada@example.org', initials: 'AD' });
+    expect(person.fullName).not.toContain('[[');
+  });
+
+  it('drops only the placeholder part when the other part is a real name', () => {
+    const person = toPerson(personSeat({ last_name: '[[unknown]]' }));
+    expect(person).toMatchObject({ firstName: 'Ada', lastName: '', fullName: 'Ada', initials: 'A' });
+  });
+
+  it('leaves the name empty when there is no email either, so the drawer shows its "Unknown member" fallback', () => {
+    const person = toPerson(personSeat({ first_name: '[[unknown]]', last_name: '[[unknown]]', email: '' }));
+    expect(person).toMatchObject({ fullName: '', initials: '' });
   });
 });

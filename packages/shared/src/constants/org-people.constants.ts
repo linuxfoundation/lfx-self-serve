@@ -54,6 +54,12 @@ export const ORG_ALL_EMPLOYEES_INITIAL_LIMIT = 30;
 /** Display name of a roster row whose stored name is blank or a bracketed placeholder and that carries no address. */
 export const ORG_PEOPLE_UNKNOWN_MEMBER_NAME = 'Unknown member';
 
+/**
+ * A bracketed placeholder that upstream data carries in place of a missing name, e.g. "[[unknown]]"
+ * on committee seats (GH-5643). Never a real name: read it through `isPlaceholderName` / `cleanNamePart`.
+ */
+export const PLACEHOLDER_NAME_PATTERN = /\[\[[^\]]*\]\]/;
+
 /** Zero-valued OrgAllEmployeeStats — fallback when the stats query returns no rows. */
 export const EMPTY_ORG_ALL_EMPLOYEE_STATS: OrgAllEmployeeStats = {
   activeInOss: 0,

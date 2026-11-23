@@ -17,7 +17,7 @@ import type {
   ReassignCommitteeSeatRequest,
   SeatCommittee,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
+import { cleanNamePart, dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';
@@ -405,8 +405,9 @@ export class OrgLensBoardCommitteeService {
   }
 
   private toPerson(s: CommitteeServiceOrgSeat): OrgMembershipKeyContactPerson {
-    const firstName = s.first_name ?? '';
-    const lastName = s.last_name ?? '';
+    // A placeholder name part ("[[unknown]]", GH-5643) counts as missing, so the email fallback below applies.
+    const firstName = cleanNamePart(s.first_name);
+    const lastName = cleanNamePart(s.last_name);
     const email = s.email ?? '';
     const name = `${firstName} ${lastName}`.trim();
     // Members added by email before their profile resolves have no name upstream — fall back to the email
@@ -435,8 +436,8 @@ export class OrgLensBoardCommitteeService {
   // Maps a committee-service seat to the shared employee-picker shape. Email is lowercased so it
   // dedupes case-insensitively against the key-contact source (whose identity is also lowercased email).
   private seatToEmployee(s: CommitteeServiceOrgSeat): KeyContactEmployee {
-    const firstName = (s.first_name ?? '').trim();
-    const lastName = (s.last_name ?? '').trim();
+    const firstName = cleanNamePart(s.first_name);
+    const lastName = cleanNamePart(s.last_name);
     const email = (s.email ?? '').trim().toLowerCase();
     const name = `${firstName} ${lastName}`.trim();
     const nameInitials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
