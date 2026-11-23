@@ -203,6 +203,13 @@ describe('MktgDocumentViewComponent', () => {
     harness.detectChanges();
   }
 
+  /** A return to the tab: the document reader debounces its wake, so the re-read starts only after that window. */
+  async function wake(): Promise<void> {
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((resolve) => setTimeout(resolve, VISIBILITY_POLL_WAKE_DEBOUNCE_MS));
+    await settle();
+  }
+
   /** A Brand Kit revision's sidecar, as the store serves it: the kit's envelope without its Markdown. */
   function kitSidecar(kit = brandKitTestRevision()): Record<string, unknown> {
     return {
@@ -859,8 +866,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing');
     // The run landed: closed runs leave the list, the older failed row stays in it. That row is history, not another run.
     store.getDocument.mockReturnValue(of({ ...detail, runs: [olderFailed] }));
-    window.dispatchEvent(new Event('focus'));
-    await settle();
+    await wake();
     expect(query('mktg-document-view-answered-note')?.textContent).toContain('Someone on your team already answered these — the asset is ready.');
     expect(query('mktg-run-questions-locked')).not.toBeNull();
     expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT.uid, 'brand-kit', 'living')).not.toBeNull();
@@ -880,15 +886,13 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-answered-note')?.textContent).toContain('Synthetic writer already answered these — the agent is writing.');
     // Landed (the run completed): the same line, true when read.
     store.getDocument.mockReturnValue(of({ ...detail, runs: [{ ...run, state: 'completed' as const }] }));
-    window.dispatchEvent(new Event('focus'));
-    await settle();
+    await wake();
     expect(query('mktg-document-view-answered-note')?.textContent).toContain(
       'Synthetic writer already answered these — the asset is ready. Your draft is kept below.'
     );
     // Gone from the active runs altogether: landed as well.
     store.getDocument.mockReturnValue(of({ ...detail, runs: [] }));
-    window.dispatchEvent(new Event('focus'));
-    await settle();
+    await wake();
     expect(query('mktg-document-view-answered-note')?.textContent).toContain('the asset is ready');
   });
 
@@ -904,8 +908,7 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     // The unavailable reply carries no runs: that is not a landed run, and the line must not flap to "ready".
     store.getDocument.mockReturnValue(of({ ...detail, runs: [], progressUnavailable: true }));
-    window.dispatchEvent(new Event('focus'));
-    await settle();
+    await wake();
     expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing. Your draft is kept below.');
     expect(query('mktg-document-view-answered-note')?.textContent).not.toContain('the asset is ready');
   });
@@ -926,8 +929,7 @@ describe('MktgDocumentViewComponent', () => {
     const newerFailed = { ...started('failed'), runId: 'd'.repeat(64), startedAt: '2026-10-19T08:10:00Z' };
     const newerDiscarded = { ...started('writing'), runId: 'e'.repeat(64), startedAt: '2026-10-19T08:11:00Z', state: 'discarded' as const };
     store.getDocument.mockReturnValue(of({ ...detail, runs: [run, newerFailed, newerDiscarded] }));
-    window.dispatchEvent(new Event('focus'));
-    await settle();
+    await wake();
     expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing. Your draft is kept below.');
     expect(query('mktg-run-questions-locked')).not.toBeNull();
     expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT.uid, 'brand-kit', 'living')?.runId).toBe(run.runId);
@@ -962,8 +964,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-answered-note')).not.toBeNull();
     expect(query('mktg-run-questions-locked')).not.toBeNull();
     store.getDocument.mockReturnValue(of({ ...detail, runs: runsAfter(run) }));
-    window.dispatchEvent(new Event('focus'));
-    await settle();
+    await wake();
     expect(query('mktg-document-view-answered-note')).toBeNull();
     expect(query('mktg-run-questions-locked')).toBeNull();
     // A newer run observed here retires the remembered notice for good, as the run page does when it starts one.
