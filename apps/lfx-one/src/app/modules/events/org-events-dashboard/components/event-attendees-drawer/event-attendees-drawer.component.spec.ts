@@ -12,9 +12,20 @@ import { describe, expect, it, type Mock, vi } from 'vitest';
 
 import { EventAttendeesDrawerComponent } from './event-attendees-drawer.component';
 
+const FAMILY_ATTENDEES = [
+  { contactId: '0', name: 'Jane Doe', jobTitle: null },
+  { contactId: '1', name: 'Roster Employee', jobTitle: 'Analyst' },
+];
+
 async function open(
   participation: OrgEventsParticipation,
-  failing = false
+  failing = false,
+  {
+    rollUp = false,
+    company = '',
+    companyLabel = '',
+    inOnePass = false,
+  }: { rollUp?: boolean; company?: string; companyLabel?: string; inOnePass?: boolean } = {}
 ): Promise<{ fixture: ComponentFixture<EventAttendeesDrawerComponent>; getEventAttendees: Mock }> {
   const getEventAttendees = vi.fn(() =>
     failing
@@ -23,10 +34,12 @@ async function open(
           eventId: 'event-1',
           eventName: 'Event One',
           total: 2,
-          data: [
-            { contactId: '0', name: 'Jane Doe', jobTitle: null },
-            { contactId: '1', name: 'Roster Employee', jobTitle: 'Analyst' },
-          ],
+          data: rollUp
+            ? FAMILY_ATTENDEES
+            : [
+                { contactId: '0', name: 'Jane Doe', jobTitle: null },
+                { contactId: '1', name: 'Roster Employee', jobTitle: 'Analyst' },
+              ],
         })
   );
   await TestBed.configureTestingModule({
@@ -39,11 +52,15 @@ async function open(
   }).compileComponents();
 
   const fixture = TestBed.createComponent(EventAttendeesDrawerComponent);
+  // The dashboard opens a row by changing the event, its company and `visible` in one change-detection pass.
+  if (inOnePass) fixture.detectChanges();
   fixture.componentRef.setInput('eventId', 'event-1');
   fixture.componentRef.setInput('eventName', 'Event One');
   fixture.componentRef.setInput('participation', participation);
   fixture.componentRef.setInput('attendeeCount', 7);
-  fixture.detectChanges();
+  fixture.componentRef.setInput('company', company);
+  fixture.componentRef.setInput('companyLabel', companyLabel);
+  if (!inOnePass) fixture.detectChanges();
   fixture.componentRef.setInput('visible', true);
   fixture.detectChanges();
   await fixture.whenStable();
@@ -103,5 +120,36 @@ describe('EventAttendeesDrawerComponent', () => {
 
     expect(document.body.querySelector('[data-testid="event-attendees-error"]')).not.toBeNull();
     expect(document.body.querySelector('[data-testid="event-attendees-drawer-subtitle"]')?.textContent).toContain('7 counted');
+  });
+
+  it("titles the drawer with the row's company in a roll-up, and lists no per-person company line", async () => {
+    await open('all', false, { rollUp: true, company: 'acc-b', companyLabel: 'Acme Robotics' });
+
+    expect(document.body.querySelector('[data-testid="event-attendees-drawer-title"]')?.textContent?.trim()).toBe('Acme Robotics Attendees');
+    expect(document.body.querySelector('[data-testid^="event-attendee-companies-"]')).toBeNull();
+  });
+
+  it('titles the drawer with the selected organization on a single organization', async () => {
+    await open('all');
+
+    expect(document.body.querySelector('[data-testid="event-attendees-drawer-title"]')?.textContent?.trim()).toBe('Acme Motors Attendees');
+  });
+
+  it("asks for the row's company only, and refetches when it changes", async () => {
+    const { fixture, getEventAttendees } = await open('all', false, { rollUp: true, company: 'acc-b' });
+
+    expect(getEventAttendees).toHaveBeenCalledWith('acc-1', 'event-1', expect.objectContaining({ company: 'acc-b' }));
+    fixture.componentRef.setInput('company', '');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getEventAttendees).toHaveBeenLastCalledWith('acc-1', 'event-1', expect.objectContaining({ company: '' }));
+  });
+
+  it("reads once, with the row's company, when a row opens the drawer in one pass", async () => {
+    const { getEventAttendees } = await open('all', false, { rollUp: true, company: 'acc-b', inOnePass: true });
+
+    expect(getEventAttendees).toHaveBeenCalledTimes(1);
+    expect(getEventAttendees).toHaveBeenCalledWith('acc-1', 'event-1', expect.objectContaining({ company: 'acc-b' }));
   });
 });
