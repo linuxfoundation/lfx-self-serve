@@ -1,0 +1,31 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<article class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5" [attr.data-testid]="testId()">
+  @if (heading()) {
+    <h3 class="text-base font-semibold text-gray-900" [attr.data-testid]="testId() + '-heading'">{{ heading() }}</h3>
+  }
+  <p #textElement class="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700" [attr.data-testid]="testId() + '-text'">{{ text() }}</p>
+  <div class="flex flex-wrap items-center gap-3">
+    <lfx-ui-button
+      variant="secondary"
+      size="small"
+      icon="fa-light fa-copy"
+      [ariaLabel]="heading() ? copyLabel() + ': ' + heading() : copyLabel()"
+      (click)="copy(textElement)"
+      [attr.data-testid]="testId() + '-copy'"
+      >{{ copyLabel() }}</lfx-ui-button
+    >
+    <span class="text-sm text-gray-600" role="status" aria-live="polite" [attr.data-testid]="testId() + '-status'">{{ status() }}</span>
+    @if (length() !== null && limit() !== null) {
+      <span
+        class="ml-auto text-xs tabular-nums"
+        [class.text-gray-500]="!overLimit()"
+        [class.text-red-700]="overLimit()"
+        [class.font-semibold]="overLimit()"
+        [attr.data-testid]="testId() + '-count'">
+        {{ length() }} / {{ limit() }} characters
+      </span>
+    }
+  </div>
+</article>

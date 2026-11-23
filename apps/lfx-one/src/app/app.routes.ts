@@ -330,6 +330,14 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./modules/newsletters/newsletter-share-preview/newsletter-share-preview.component').then((m) => m.NewsletterSharePreviewComponent),
   },
+  // Public event share kit (#6059): a chrome-less page any visitor can open, signed in or not. Declared ahead of the
+  // shell because the shell owns `/events` (the events dashboard) and its trailing catch-all would otherwise claim it.
+  {
+    path: 'events/:eventSlug/share-kit',
+    pathMatch: 'full',
+    title: 'Share kit',
+    loadComponent: () => import('./modules/events/share-kit/share-kit-page/share-kit-page.component').then((m) => m.ShareKitPageComponent),
+  },
   {
     path: '',
     canActivate: [authGuard],
