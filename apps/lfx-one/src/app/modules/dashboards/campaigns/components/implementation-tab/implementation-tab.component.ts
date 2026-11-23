@@ -393,8 +393,8 @@ import {
   campaignBiddingPayload,
   campaignFlightDays,
   campaignLabelColumns,
-  compactMetaAdOptions,
   compactMetaAudienceTargeting,
+  copyMetaAudienceTargeting,
   defaultCampaignBiddingDraft,
   defaultCampaignEndDate,
   describeCampaignDispatchFailure,
@@ -476,6 +476,8 @@ import {
   metaBasicsRefusal,
   metaBriefSeed,
   metaCreateRefusal,
+  metaDraftFields,
+  metaDraftRestore,
   metaDsaCountries,
   metaDsaFieldError,
   metaEffectiveGeoTargets,
@@ -485,6 +487,8 @@ import {
   metaImageAssetForBrief,
   metaImageAssetWithheld,
   metaImageCapabilities,
+  metaImageDraftFields,
+  metaImageDraftRestore,
   metaImageField,
   metaImageFileRefusal,
   metaImageUploadStatusMessage,
@@ -493,7 +497,6 @@ import {
   metaInstagramUserIdError,
   metaLeadFormDraftRefusal,
   metaLeadFormForObjective,
-  metaLeadFormRestore,
   metaObjectiveAfterFoundationSwitch,
   metaObjectiveChoices,
   metaObjectiveIsUnavailable,
@@ -8826,46 +8829,22 @@ export class ImplementationTabComponent implements OnInit {
     // Writing `?? 'traffic'` instead would let an old draft silently downgrade a Conversions
     // campaign. A present-but-empty `metaPixelId` is a real cleared value and is restored as one,
     // which is exactly the distinction `undefined` preserves and `''` would destroy.
-    if (draft.metaObjective !== undefined) {
-      this.metaObjective.set(draft.metaObjective);
-    }
-    if (draft.metaPlacements !== undefined) {
-      this.metaPlacements.set({ ...draft.metaPlacements });
-    }
-    if (draft.metaPixelId !== undefined) {
-      this.metaPixelId.set(draft.metaPixelId);
-    }
-    this.restoreMetaInstagramDsa(draft);
-    // Only under the foundation it was edited under: a foundation switch keeps the brief and its draft
-    // (`CampaignsComponent` leaves both alone), and another foundation's audiences must not ride along.
-    if (draft.metaAudienceTargeting !== undefined && draft.metaAudienceTargetingProject === this.activeFoundationSlug()) {
-      this.metaAudienceTargeting.set(this.copyMetaAudienceTargeting({ ...DEFAULT_META_AUDIENCE_TARGETING, ...draft.metaAudienceTargeting }));
-    }
-    // The Meta ad choices (#5934) on the same foundation rule, minus any the restored objective does not take.
-    if (draft.metaAdOptions !== undefined && draft.metaAdOptionsProject === this.activeFoundationSlug()) {
-      this.metaAdOptions.set(compactMetaAdOptions(draft.metaAdOptions));
-      this.dropInapplicableMetaAdOptions();
-    }
-    // The lead form (#5940) on the same foundation rule, and only if the restored objective takes one. A draft
-    // saved under another foundation also drops `leads`, as the in-place switch does: this component may be new
-    // since the switch (left the tab and came back), so that handler never ran for it.
-    const leadFormRestore = metaLeadFormRestore(
-      { objective: this.metaObjective(), leadFormId: draft.metaLeadFormId, project: draft.metaLeadFormProject },
-      this.activeFoundationSlug()
-    );
-    this.metaObjective.set(leadFormRestore.objective);
-    if (leadFormRestore.leadFormId !== null) {
-      this.metaLeadFormId.set(leadFormRestore.leadFormId);
-    }
-    if (draft.metaGeoTargets !== undefined) {
-      this.metaGeoTargets.set(metaAcceptedGeos(draft.metaGeoTargets));
-    }
-    if (draft.metaBudgetUsd !== undefined) {
-      this.metaBudgetUsd.set(draft.metaBudgetUsd);
-    }
-    if (draft.metaLifetimeBudget !== undefined) {
-      this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
-    }
+    // Each field only when the draft carries it; targeting, ad options and the lead form only under their own
+    // foundation; the objective after the lead form rule. See `metaDraftRestore`.
+    const metaRestore = metaDraftRestore(draft, this.metaObjective(), this.activeFoundationSlug());
+    this.metaObjective.set(metaRestore.objective);
+    if (metaRestore.placements !== undefined) this.metaPlacements.set(metaRestore.placements);
+    if (metaRestore.pixelId !== undefined) this.metaPixelId.set(metaRestore.pixelId);
+    // ONE emitting patch: `metaInstagramDsaDraft` (what validation, `submit` and `emitDraft` read) follows this
+    // group's `valueChanges`, so a silent write would leave the inputs showing the restored text while every check
+    // still saw blanks (PR #4483 review). The emit cannot loop: `applyDraft` runs only while `seeding`.
+    if (Object.keys(metaRestore.instagramDsaPatch).length > 0) this.metaInstagramDsaForm.patchValue(metaRestore.instagramDsaPatch);
+    if (metaRestore.audienceTargeting !== undefined) this.metaAudienceTargeting.set(metaRestore.audienceTargeting);
+    if (metaRestore.adOptions !== undefined) this.metaAdOptions.set(metaRestore.adOptions);
+    if (metaRestore.leadFormId !== null) this.metaLeadFormId.set(metaRestore.leadFormId);
+    if (metaRestore.geoTargets !== undefined) this.metaGeoTargets.set(metaRestore.geoTargets);
+    if (metaRestore.budgetUsd !== undefined) this.metaBudgetUsd.set(metaRestore.budgetUsd);
+    if (metaRestore.lifetimeBudget !== undefined) this.metaLifetimeBudget.set(metaRestore.lifetimeBudget);
 
     // Same present-only rule, for the same reason: an older draft omits these, and absence there
     // means "keep what the brief seeded".
@@ -8927,20 +8906,15 @@ export class ImplementationTabComponent implements OnInit {
       this.redditVideoGoal.set(draft.redditVideoGoal);
     }
     // The Meta image, on the Reddit image's terms above.
-    if (draft.metaImageUrl !== undefined) {
-      this.metaImageUrl.set(draft.metaImageUrl);
+    const metaImageRestore = metaImageDraftRestore(draft);
+    if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
+    if (metaImageRestore.asset !== undefined) {
+      this.metaImageAssetId.set(metaImageRestore.asset.id);
+      this.metaImageAssetName.set(metaImageRestore.asset.name);
+      this.metaImageAssetBriefId.set(metaImageRestore.asset.briefId);
     }
-    if (draft.metaImageAssetId !== undefined) {
-      this.metaImageAssetId.set(draft.metaImageAssetId);
-      this.metaImageAssetName.set(draft.metaImageAssetName ?? '');
-      this.metaImageAssetBriefId.set(draft.metaImageAssetBriefId ?? '');
-    }
-    if (draft.metaImageUploadFailedMessage && draft.metaImageUploadFailedBriefId) {
-      this.failMetaImageUpload(draft.metaImageUploadFailedMessage, draft.metaImageUploadFailedBriefId);
-    }
-    if (draft.metaImageUploadPendingName) {
-      this.resumeMetaImageUpload(draft.metaImageUploadPendingName, draft.metaImageUploadPendingBriefId ?? '');
-    }
+    if (metaImageRestore.failedUpload) this.failMetaImageUpload(metaImageRestore.failedUpload.message, metaImageRestore.failedUpload.briefId);
+    if (metaImageRestore.pendingUpload) this.resumeMetaImageUpload(metaImageRestore.pendingUpload.name, metaImageRestore.pendingUpload.briefId);
     // The LinkedIn variants as edited, each with its own image, over the brief's seed (#5547). Each
     // entry copied, so the parent's draft is never reachable from the editor.
     if (Array.isArray(draft.linkedInVariants)) {
@@ -9395,22 +9369,21 @@ export class ImplementationTabComponent implements OnInit {
       // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
       // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
       // the parent holds a value, not a live view of a signal this component is about to destroy.
-      metaObjective: this.metaObjective(),
-      metaPlacements: { ...this.metaPlacements() },
-      metaPixelId: this.metaPixelId(),
-      metaGeoTargets: [...this.metaGeoTargets()],
-      // As typed, whether or not the capability is on, so a draft survives the answer arriving late.
-      metaInstagramUserId: this.metaInstagramDsaDraft().instagramUserId,
-      metaDsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
-      metaDsaPayor: this.metaInstagramDsaDraft().dsaPayor,
-      metaAudienceTargeting: this.copyMetaAudienceTargeting(this.metaAudienceTargeting()),
-      metaAudienceTargetingProject: this.activeFoundationSlug(),
-      metaAdOptions: { ...this.metaAdOptions() },
-      metaAdOptionsProject: this.activeFoundationSlug(),
-      metaLeadFormId: this.metaLeadFormId(),
-      metaLeadFormProject: this.activeFoundationSlug(),
-      metaBudgetUsd: this.metaBudgetUsd(),
-      metaLifetimeBudget: this.metaLifetimeBudget(),
+      ...metaDraftFields({
+        objective: this.metaObjective(),
+        placements: this.metaPlacements(),
+        pixelId: this.metaPixelId(),
+        geoTargets: this.metaGeoTargets(),
+        instagramUserId: this.metaInstagramDsaDraft().instagramUserId,
+        dsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
+        dsaPayor: this.metaInstagramDsaDraft().dsaPayor,
+        audienceTargeting: this.metaAudienceTargeting(),
+        adOptions: this.metaAdOptions(),
+        leadFormId: this.metaLeadFormId(),
+        foundation: this.activeFoundationSlug(),
+        budgetUsd: this.metaBudgetUsd(),
+        lifetimeBudget: this.metaLifetimeBudget(),
+      }),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
       // the Meta block: the parent must hold a value, not a live view of a signal this component
       // is about to destroy. The two ARRAYS are carried because they have a real editor here —
@@ -9477,14 +9450,16 @@ export class ImplementationTabComponent implements OnInit {
       redditImageUploadFailedMessage: this.redditImageUploadFailedBriefId() ? this.redditImageUploadError() : '',
       redditImageUploadFailedBriefId: this.redditImageUploadFailedBriefId(),
       redditVideoGoal: this.redditVideoGoal(),
-      metaImageUrl: this.metaImageUrl(),
-      metaImageAssetId: this.metaImageAssetId(),
-      metaImageAssetName: this.metaImageAssetName(),
-      metaImageAssetBriefId: this.metaImageAssetBriefId(),
-      metaImageUploadPendingName: this.metaImageUploadPendingName(),
-      metaImageUploadPendingBriefId: this.metaImageUploadPendingBriefId(),
-      metaImageUploadFailedMessage: this.metaImageUploadFailedBriefId() ? this.metaImageUploadError() : '',
-      metaImageUploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+      ...metaImageDraftFields({
+        imageUrl: this.metaImageUrl(),
+        assetId: this.metaImageAssetId(),
+        assetName: this.metaImageAssetName(),
+        assetBriefId: this.metaImageAssetBriefId(),
+        uploadPendingName: this.metaImageUploadPendingName(),
+        uploadPendingBriefId: this.metaImageUploadPendingBriefId(),
+        uploadError: this.metaImageUploadError(),
+        uploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+      }),
       // A real editor since #5547, so carried (see the note on the brief-derived arrays above).
       linkedInVariants: this.linkedInVariants().map((variant) => ({ ...variant })),
       linkedInImageUploadVariantKey: this.linkedInImageUploadVariantKey(),
@@ -14191,35 +14166,7 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private defaultMetaAudienceTargeting(): MetaAudienceTargetingDraft {
-    return this.copyMetaAudienceTargeting(DEFAULT_META_AUDIENCE_TARGETING);
-  }
-
-  /** A copy whose arrays are its own, so the parent's draft never holds a live view of this component's state. */
-  private copyMetaAudienceTargeting(t: MetaAudienceTargetingDraft): MetaAudienceTargetingDraft {
-    return { ...t, genders: [...t.genders], customAudiences: [...t.customAudiences], excludedCustomAudiences: [...t.excludedCustomAudiences] };
-  }
-
-  /**
-   * Restores the Meta Instagram id and DSA disclosures, each only when present and a string — the
-   * same present-only rule as `restoreGoogleBidding`.
-   */
-  private restoreMetaInstagramDsa(draft: CampaignImplementationDraft): void {
-    const fields = [
-      ['metaInstagramUserId', 'instagramUserId'],
-      ['metaDsaBeneficiary', 'dsaBeneficiary'],
-      ['metaDsaPayor', 'dsaPayor'],
-    ] as const;
-    const patch: Partial<Record<(typeof fields)[number][1], string>> = {};
-    for (const [draftKey, control] of fields) {
-      const value = draft[draftKey];
-      if (typeof value === 'string') patch[control] = value;
-    }
-    // ONE emitting patch, unlike `restoreGoogleBidding`: `metaInstagramDsaDraft` (what validation,
-    // `submit` and `emitDraft` read) follows this group's `valueChanges`, so a silent write would
-    // leave the inputs showing the restored text while every check still saw blanks (PR #4483
-    // review). The emit cannot loop: `applyDraft` runs only while `seeding`, which the group's
-    // draft subscription honours.
-    if (Object.keys(patch).length > 0) this.metaInstagramDsaForm.patchValue(patch);
+    return copyMetaAudienceTargeting(DEFAULT_META_AUDIENCE_TARGETING);
   }
 
   /**

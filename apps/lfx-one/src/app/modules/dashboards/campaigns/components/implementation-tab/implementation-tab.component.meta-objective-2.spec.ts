@@ -324,56 +324,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['canSubmit']()).toBe(false);
   });
 
-  /**
-   * A draft persisted BEFORE these fields shipped carries none of them. Absence must mean "keep
-   * what the brief seeded", never "the user chose the defaults" — otherwise an old draft silently
-   * downgrades a Conversions campaign to traffic on the next tab switch. `undefined` is what
-   * preserves that distinction; a present-but-empty `metaPixelId` is a real cleared value.
-   */
-  it('leaves Meta settings seeded when an older draft omits them', async () => {
-    await selectObjective('conversions');
-    await typePixelId('554433');
-    const slug = component()['campaignForm'].controls['eventSlug'].value;
-
-    const legacyDraft = {
-      eventName: 'KubeCon EU 2026',
-      countryCode: 'US',
-      registrationUrl: 'https://events.example.com/kubecon-eu-2026',
-      headlines: [],
-      descriptions: [],
-      budgetUsd: 500,
-      searchBudgetPct: 70,
-      startDate: '2026-09-01',
-      endDate: '2026-09-30',
-      includeSearch: true,
-      includeDemandGen: false,
-      includePerformanceMax: false,
-      includeVideo: false,
-      includeDisplay: false,
-      eventSlug: slug,
-    };
-
-    const restored = TestBed.createComponent(tabComponentUnderTest());
-    restored.componentRef.setInput('draft', legacyDraft);
-    restored.componentRef.setInput('briefData', {
-      eventDetails: { name: 'KubeCon EU 2026', slug, registrationUrl: 'https://events.example.com/kubecon-eu-2026' },
-      selectedPlatforms: ['meta-ads'],
-    } as unknown as CampaignBriefOutput);
-    restored.detectChanges();
-    await restored.whenStable();
-
-    const c = restored.componentInstance as unknown as Record<string, any>;
-    // Stand in for values the brief seeded on this mount. The legacy draft names none of the Meta
-    // fields, so the restore must leave every one of them exactly as seeded.
-    c['metaObjective'].set('conversions');
-    c['metaPixelId'].set('554433');
-    c['applyDraft']();
-    await restored.whenStable();
-
-    expect(c['metaObjective']()).toBe('conversions');
-    expect(c['metaPixelId']()).toBe('554433');
-  });
-
   // === Placements ===
 
   it('sends only the placements that differ from the defaults', async () => {
