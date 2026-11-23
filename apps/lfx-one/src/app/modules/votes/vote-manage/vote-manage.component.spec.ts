@@ -1158,7 +1158,7 @@ describe('VoteManageComponent', () => {
     afterEach(() => setQueryParams({}));
 
     it.each([
-      ['condorcet_irv', PollType.GENERIC],
+      ['condorcet_irv', PollType.CONDORCET_IRV],
       ['generic', PollType.GENERIC],
       ['meek_stv', PollType.GENERIC],
       ['bogus', PollType.GENERIC],
@@ -1190,8 +1190,34 @@ describe('VoteManageComponent', () => {
       expect(control.disabled).toBe(true);
     });
 
-    it.each(['onSubmit', 'onSaveAsDraft'] as const)('blocks new Condorcet votes at %s even if the form is set programmatically', async (action) => {
+    it('saves a new Condorcet draft with ranked questions', async () => {
       const fixture = await createFilled();
+      fixture.componentInstance.onSaveAsDraft();
+
+      expect(voteServiceMock.createVote).toHaveBeenCalledWith(
+        expect.objectContaining({ poll_type: PollType.CONDORCET_IRV, poll_questions: [expect.objectContaining({ type: 'multiple_choice' })] })
+      );
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Voting method unavailable' }));
+    });
+
+    it('opens a new Condorcet vote with ranked questions after confirmation', async () => {
+      const fixture = await createFilled();
+      fixture.componentInstance.onSubmit();
+
+      const request = expect.objectContaining({
+        poll_type: PollType.CONDORCET_IRV,
+        poll_questions: [expect.objectContaining({ type: 'multiple_choice' })],
+      });
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledWith(request);
+      expect(capturedConfirmation).not.toBeNull();
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      capturedConfirmation!.accept!();
+      expect(voteServiceMock.confirmSpeculativeVote).toHaveBeenCalledWith(request);
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Voting method unavailable' }));
+    });
+
+    it.each(['onSubmit', 'onSaveAsDraft'] as const)('blocks unsupported methods at %s even if the form is set programmatically', async (action) => {
+      const fixture = await createFilled(PollType.MEEK_STV);
 
       fixture.componentInstance[action]();
 
@@ -1208,7 +1234,7 @@ describe('VoteManageComponent', () => {
       expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
       expect(capturedConfirmation).not.toBeNull();
 
-      fixture.componentInstance.form().get('poll_type')?.setValue(PollType.CONDORCET_IRV);
+      fixture.componentInstance.form().get('poll_type')?.setValue(PollType.MEEK_STV);
       capturedConfirmation!.accept!();
 
       expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
@@ -1302,6 +1328,19 @@ describe('VoteManageComponent', () => {
       expect(getCommitteeMembers).not.toHaveBeenCalled();
       expect(fixture.componentInstance.eligibleVoterCountState().status).toBe('idle');
       expect(fixture.componentInstance.canGoNext()).toBe(true);
+    });
+
+    it('refuses to open a new Condorcet vote below the minimum but still saves a draft', async () => {
+      getCommitteeMembers.mockReturnValue(of(members(2)));
+      const fixture = await createFilled();
+
+      fixture.componentInstance.onSubmit();
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+      expect(capturedConfirmation).toBeNull();
+
+      fixture.componentInstance.onSaveAsDraft();
+      expect(voteServiceMock.createVote).toHaveBeenCalledWith(expect.objectContaining({ poll_type: PollType.CONDORCET_IRV }));
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
     });
 
     it('refuses to open an existing Condorcet draft below the minimum but still saves edits', async () => {

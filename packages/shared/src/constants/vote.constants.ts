@@ -219,8 +219,6 @@ export const VOTE_METHOD_OPTIONS: VoteMethodOption[] = [
     value: PollType.CONDORCET_IRV,
     icon: 'fa-light fa-list-ol',
     description: 'Voters rank the options. The winner beats every other option head-to-head; if none does, instant-runoff elimination decides.',
-    // Enable only after #5969 results support is deployed and verified.
-    disabled: true,
   },
 ];
 
