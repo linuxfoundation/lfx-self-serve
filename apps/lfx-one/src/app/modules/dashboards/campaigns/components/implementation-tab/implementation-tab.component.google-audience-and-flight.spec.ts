@@ -20,9 +20,13 @@ import {
   restoreGoogleDraft,
   seedChannel,
   stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
 } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Google audience segment chips.
@@ -38,7 +42,7 @@ describe('ImplementationTabComponent google audience segments', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -51,7 +55,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     return c;
   }
 
-  it('trims an added user list and declines a repeat or a blank', () => {
+  it('trims an added user list and declines a repeat or a blank', STATE_ONLY, () => {
     const c = seedAudience({ includeSearch: true });
 
     expect(c['addGoogleAudienceSegment'](`  ${LIST_A}\u00a0`)).toBe(true);
@@ -129,7 +133,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(c['googleAudienceSegments']()).toEqual([LIST_B]);
   });
 
-  it('sends the entered segments as campaignAudienceSegments on Search', () => {
+  it('sends the entered segments as campaignAudienceSegments on Search', STATE_ONLY, () => {
     const c = seedAudience({ includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
     c['addGoogleAudienceSegment'](LIST_B);
@@ -176,7 +180,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(c['canSubmit']()).toBe(true);
   });
 
-  it('does not hold Create for a refused restored list the request does not carry', () => {
+  it('does not hold Create for a refused restored list the request does not carry', STATE_ONLY, () => {
     const c = seedAudience({ includeDemandGen: true });
     restoreGoogleDraft(fixture, c, { includeDemandGen: true, googleAudienceSegments: ['customers/1234567890/userLists/0222'] });
     fixture.detectChanges();
@@ -185,7 +189,7 @@ describe('ImplementationTabComponent google audience segments', () => {
   });
 
   /** An absent key, not `[]`: the absent-key route every caller predating the field takes. */
-  it('sends nothing when no segment was entered', () => {
+  it('sends nothing when no segment was entered', STATE_ONLY, () => {
     const c = seedAudience({ includeSearch: true });
 
     expect(c['googleAudienceSegmentsPayload']()).toEqual({});
@@ -246,7 +250,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(c['googleAudienceSegments']()).toEqual([LIST_A]);
   });
 
-  it('round-trips the chips through a draft without sharing the array', () => {
+  it('round-trips the chips through a draft without sharing the array', STATE_ONLY, () => {
     const c = seedAudience({ includeSearch: true });
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -341,13 +345,13 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(retried).toHaveBeenCalledTimes(1);
   });
 
-  it('asks for the brief to be saved when there is no brief to check against', () => {
+  it('asks for the brief to be saved when there is no brief to check against', STATE_ONLY, () => {
     const c = holdSegment(null, 'unknown', null);
 
     expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('unsaved');
   });
 
-  it('names the deployment, not the caller, when the create path does not serve', () => {
+  it('names the deployment, not the caller, when the create path does not serve', STATE_ONLY, () => {
     const c = holdSegment(false, 'ready');
     fixture.componentRef.setInput('googleCreativeEnabled', false);
     fixture.detectChanges();
@@ -366,7 +370,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(find('implementation-google-audience-segments-block-live')?.textContent?.trim()).toBe('');
   });
 
-  it('leaves a non-search channel to the channel warning, whatever the capability answers', () => {
+  it('leaves a non-search channel to the channel warning, whatever the capability answers', STATE_ONLY, () => {
     const c = holdSegment(false, 'ready');
     c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
     fixture.detectChanges();
@@ -376,7 +380,7 @@ describe('ImplementationTabComponent google audience segments', () => {
   });
 
   /** A draft saved before this section shipped carries no key, and must not clear the chips. */
-  it('leaves the chips alone when the draft carries no segment key', () => {
+  it('leaves the chips alone when the draft carries no segment key', STATE_ONLY, () => {
     const c = seedAudience({ includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
 
@@ -397,7 +401,7 @@ describe('ImplementationTabComponent google request with no targeting touched', 
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -407,7 +411,7 @@ describe('ImplementationTabComponent google request with no targeting touched', 
     ['display', { includeDisplay: true }],
     ['performance-max', { includePerformanceMax: true }],
     ['demand-gen', { includeDemandGen: true }],
-  ])('sends the same %s request it sent before', async (channel, patch) => {
+  ])('sends the same %s request it sent before', STATE_ONLY, async (channel, patch) => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, patch);
     fixture.detectChanges();
@@ -440,7 +444,7 @@ describe('ImplementationTabComponent google flight and keywords', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -511,7 +515,7 @@ describe('ImplementationTabComponent google flight and keywords', () => {
   });
 
   /** Only Search carries keywords upstream, so another type is not held for having none. */
-  it('does not hold a non-Search create for having no keywords', () => {
+  it('does not hold a non-Search create for having no keywords', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['briefKeywords'].set([]);
     c['campaignForm'].controls.displayCreative.patchValue(DISPLAY_COMPLETE);
@@ -522,7 +526,7 @@ describe('ImplementationTabComponent google flight and keywords', () => {
   });
 
   /** A blank term is dropped from the request rather than refused upstream with the generic failure. */
-  it('sends only the keywords with a term', () => {
+  it('sends only the keywords with a term', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['briefKeywords'].set([{ ...SEED_KEYWORD, term: ' ' }, SEED_KEYWORD]);
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: '' }) as never);
@@ -571,7 +575,7 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -608,7 +612,7 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
   it.each([
     ['a Meta-only brief', ['meta-ads']],
     ['a Google and Meta brief', ['google-ads', 'meta-ads']],
-  ])('keeps the event end date for %s, seeding the Google floor instead of shortening', (_label, platforms) => {
+  ])('keeps the event end date for %s, seeding the Google floor instead of shortening', STATE_ONLY, (_label, platforms) => {
     seed('March 15-17, 2099', 1000, platforms);
 
     const form = component()['campaignForm'].getRawValue();
@@ -633,7 +637,7 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget-over-plan"]')).toBeNull();
   });
 
-  it('keeps the 30-day default, and its budget, when the brief names no date it can read', () => {
+  it('keeps the 30-day default, and its budget, when the brief names no date it can read', STATE_ONLY, () => {
     seed('Self-paced');
 
     const form = component()['campaignForm'].getRawValue();
@@ -641,13 +645,13 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
     expect(form.budgetUsd).toBe(Math.floor(100000 / days(component()['todayDate'], component()['defaultEndDate'])) / 100);
   });
 
-  it('keeps the default for an event already past', () => {
+  it('keeps the default for an event already past', STATE_ONLY, () => {
     seed('March 15, 2020');
 
     expect(component()['campaignForm'].getRawValue().endDate).toBe(component()['defaultEndDate']);
   });
 
-  it('links a Google result row, created or orphaned, into the Google Ads UI, and no other row', () => {
+  it('links a Google result row, created or orphaned, into the Google Ads UI, and no other row', STATE_ONLY, () => {
     component()['platformResults'].set([
       { platform: 'google-ads', ok: true, campaignId: '24447438160' },
       { platform: 'google-ads', ok: false, campaignId: '24447438161', error: 'recording failed' },
@@ -674,7 +678,7 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
     expect(link?.textContent).toContain('Open in Google Ads');
   });
 
-  it('tells the coverage grid the tab sends no Video images, and every creative channel it does, Search included (#5262)', () => {
+  it('tells the coverage grid the tab sends no Video images, and every creative channel it does, Search included (#5262)', STATE_ONLY, () => {
     expect(component()['googleSlotGroupsNotSent']).toEqual(['google-ads/VIDEO']);
   });
 });

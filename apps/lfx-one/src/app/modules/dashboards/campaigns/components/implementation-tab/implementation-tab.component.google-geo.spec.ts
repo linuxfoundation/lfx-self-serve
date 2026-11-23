@@ -8,9 +8,18 @@ import { CampaignService } from '@services/campaign.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Google geo chips.
@@ -23,12 +32,12 @@ describe('ImplementationTabComponent google geo targets', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('adds a code once and refuses a duplicate or a blank', () => {
+  it('adds a code once and refuses a duplicate or a blank', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const code = c['googleGeoOptions'][0];
 
@@ -43,7 +52,7 @@ describe('ImplementationTabComponent google geo targets', () => {
    * The cap is upstream's, on the ONE `geoTargets` list countries and postal-code ids share, so the
    * map's 30 countries alone cannot reach it — the rest of the list is postal-code ids.
    */
-  it('refuses a country add once countries and postal codes together reach the cap', () => {
+  it('refuses a country add once countries and postal codes together reach the cap', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const [last, ...rest] = c['googleGeoOptions'];
     for (const code of rest) c['addGoogleGeoTarget'](code);
@@ -55,7 +64,7 @@ describe('ImplementationTabComponent google geo targets', () => {
     expect(c['googleGeoTargetCount']()).toBe(GOOGLE_ADS_MAX_GEO_TARGETS);
   });
 
-  it('removes a chip by index', () => {
+  it('removes a chip by index', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const [first, second] = c['googleGeoOptions'];
     c['addGoogleGeoTarget'](first);
@@ -71,7 +80,7 @@ describe('ImplementationTabComponent google geo targets', () => {
    * tidier and be worse: a country Google cannot target on this path would submit an EMPTY geo
    * list, and an empty list is not a refusal — it is a campaign with no geographic restriction.
    */
-  it('falls back to the event country, trimmed and upper-cased, until a chip exists', () => {
+  it('falls back to the event country, trimmed and upper-cased, until a chip exists', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['campaignForm'].controls.countryCode.setValue('  de  ');
     fixture.detectChanges();
@@ -86,7 +95,7 @@ describe('ImplementationTabComponent google geo targets', () => {
   });
 
   /** An empty country stays a single empty entry, so the BFF's own guard names it in the error. */
-  it('does not turn an empty country into an empty geo list', () => {
+  it('does not turn an empty country into an empty geo list', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['campaignForm'].controls.countryCode.setValue('');
     fixture.detectChanges();
@@ -94,7 +103,7 @@ describe('ImplementationTabComponent google geo targets', () => {
     expect(c['googleEffectiveGeoTargets']()).toEqual(['']);
   });
 
-  it('round-trips the chips through a draft', () => {
+  it('round-trips the chips through a draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -112,7 +121,7 @@ describe('ImplementationTabComponent google geo targets', () => {
   });
 
   /** The chips are COPIED out of the draft, so the parent's array cannot be mutated through them. */
-  it('does not share the restored array with the draft', () => {
+  it('does not share the restored array with the draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const saved = [c['googleGeoOptions'][1]];
 
@@ -123,7 +132,7 @@ describe('ImplementationTabComponent google geo targets', () => {
   });
 
   /** A draft saved before this section shipped carries no key, and must not clear the chips. */
-  it('leaves the chips alone when the draft carries no geo key', () => {
+  it('leaves the chips alone when the draft carries no geo key', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const code = c['googleGeoOptions'][1];
     c['addGoogleGeoTarget'](code);
@@ -150,7 +159,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -172,7 +181,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
   };
 
   describe('postal codes', () => {
-    it('adds a canonical id, trimmed, and refuses a blank or a repeat', () => {
+    it('adds a canonical id, trimmed, and refuses a blank or a repeat', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
 
       expect(c['addGooglePostalGeoTarget'](' 9031945 ')).toBe(true);
@@ -256,7 +265,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(query('implementation-google-geo-full')).not.toBeNull();
     });
 
-    it('removes a chip by index', () => {
+    it('removes a chip by index', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['addGooglePostalGeoTarget']('9031945');
       c['addGooglePostalGeoTarget']('9031946');
@@ -266,7 +275,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(c['googlePostalGeoTargets']()).toEqual(['9031946']);
     });
 
-    it('sends the ids after the countries in the one geo list', () => {
+    it('sends the ids after the countries in the one geo list', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['addGoogleGeoTarget']('CA');
       c['addGooglePostalGeoTarget']('9031945');
@@ -317,7 +326,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(c['googlePostalGeoTargets']()).toEqual(['9031945']);
     });
 
-    it('submits the ids in geoTargets', async () => {
+    it('submits the ids in geoTargets', STATE_ONLY, async () => {
       const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
       const c = seedChannel(fixture, { includeSearch: true });
       c['addGoogleGeoTarget']('CA');
@@ -331,7 +340,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(createCampaign.mock.calls[0][0].geoTargets).toEqual(['CA', '9031945']);
     });
 
-    it('round-trips the chips through a draft, copied rather than shared', () => {
+    it('round-trips the chips through a draft, copied rather than shared', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       let emitted: CampaignImplementationDraft | undefined;
       fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -348,7 +357,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(saved).toEqual(['9031945']);
     });
 
-    it('leaves the chips alone when the draft carries no postal key', () => {
+    it('leaves the chips alone when the draft carries no postal key', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['addGooglePostalGeoTarget']('9031945');
 
@@ -359,7 +368,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
   });
 
   describe('radius targets', () => {
-    it('adds a target with its numbers parsed and its unit as picked', () => {
+    it('adds a target with its numbers parsed and its unit as picked', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
 
       expect(c['addGoogleProximityTarget'](SYDNEY_DRAFT)).toBe(true);
@@ -389,13 +398,13 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
     it.each([
       ['500', 'MILES'],
       ['800', 'KILOMETERS'],
-    ])('accepts exactly %s %s', (radius, radiusUnit) => {
+    ])('accepts exactly %s %s', STATE_ONLY, (radius, radiusUnit) => {
       const c = seedChannel(fixture, { includeSearch: true });
 
       expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, radius, radiusUnit })).toBe(true);
     });
 
-    it('refuses an exact repeat but not the same point at another radius', () => {
+    it('refuses an exact repeat but not the same point at another radius', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['addGoogleProximityTarget'](SYDNEY_DRAFT);
 
@@ -458,7 +467,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect((query('implementation-google-proximity-add') as HTMLButtonElement).disabled).toBe(false);
     });
 
-    it('clears the sub-form only on a successful add', () => {
+    it('clears the sub-form only on a successful add', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       typeProximity(c, { ...SYDNEY_DRAFT, latitude: '91' });
       c['onGoogleProximityAdd']();
@@ -471,7 +480,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(c['googleProximityTargets']()).toEqual([SYDNEY]);
     });
 
-    it('removes a target by index', () => {
+    it('removes a target by index', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['addGoogleProximityTarget'](SYDNEY_DRAFT);
       c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, radius: '30' });
@@ -532,7 +541,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(query('implementation-google-geo-none')).toBeNull();
     });
 
-    it('submits the radius targets as proximityTargets, beside the countries', async () => {
+    it('submits the radius targets as proximityTargets, beside the countries', STATE_ONLY, async () => {
       const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
       const c = seedChannel(fixture, { includeSearch: true });
       c['addGoogleGeoTarget']('AU');
@@ -548,7 +557,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(request['proximityTargets']).toEqual([SYDNEY]);
     });
 
-    it('omits proximityTargets from a submit with none', async () => {
+    it('omits proximityTargets from a submit with none', STATE_ONLY, async () => {
       const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
       const c = seedChannel(fixture, { includeSearch: true });
 
@@ -558,7 +567,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(createCampaign.mock.calls[0][0]).not.toHaveProperty('proximityTargets');
     });
 
-    it('round-trips the targets through a draft, entries copied rather than shared', () => {
+    it('round-trips the targets through a draft, entries copied rather than shared', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       let emitted: CampaignImplementationDraft | undefined;
       fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -574,7 +583,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(saved[0].radius).toBe(25);
     });
 
-    it('leaves the targets alone when the draft carries no radius key', () => {
+    it('leaves the targets alone when the draft carries no radius key', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['addGoogleProximityTarget'](SYDNEY_DRAFT);
 

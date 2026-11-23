@@ -8,9 +8,18 @@ import { ProjectContextService } from '@services/project-context.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Demand Gen demographics (linuxfoundation/lfx-v2-campaign-service#498, #518): the single ad group's and
@@ -53,7 +62,7 @@ describe('ImplementationTabComponent demand gen demographics', () => {
     ctx.setRouteLensKind('foundation');
     ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
     vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsAudiences').mockReturnValue(of(AUDIENCES) as never);
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -105,7 +114,7 @@ describe('ImplementationTabComponent demand gen demographics', () => {
     expect(request['demandGenDemographics']).not.toBe(c['campaignForm'].controls.demandGenDemographics.value);
   });
 
-  it('sends them beside a video ad as beside an image ad', async () => {
+  it('sends them beside a video ad as beside an image ad', STATE_ONLY, async () => {
     const c = seedDemandGen();
     c['campaignForm'].controls.demandGenAdFormat.setValue('video');
     c['campaignForm'].controls.demandGenVideoCreative.patchValue(VIDEO_COMPLETE);
@@ -191,7 +200,7 @@ describe('ImplementationTabComponent demand gen demographics', () => {
     ]);
   });
 
-  it("holds Create on a group's refusal, and names a group's demographics among what the split, turned off, keeps", () => {
+  it("holds Create on a group's refusal, and names a group's demographics among what the split, turned off, keeps", STATE_ONLY, () => {
     const c = seedDemandGen();
     split(c, ['Retargeting']);
     c['onDemandGenDemographicsChange'](0, { parentalStatuses: ['UNDETERMINED'] });
@@ -232,7 +241,7 @@ describe('ImplementationTabComponent demand gen demographics', () => {
     ['pending', null, 'pending', 'brief-1'],
     ['unsaved', null, 'ready', null],
     ['failed', null, 'failed', 'brief-1'],
-  ])('holds Create with the %s kind while the create path is unanswered', (kind, creative, read, briefId) => {
+  ])('holds Create with the %s kind while the create path is unanswered', STATE_ONLY, (kind, creative, read, briefId) => {
     const c = seedDemandGen();
     split(c, ['Retargeting']);
     c['onDemandGenDemographicsChange'](0, LIVE_AGES);
@@ -246,7 +255,7 @@ describe('ImplementationTabComponent demand gen demographics', () => {
     expect(c['canSubmit']()).toBe(false);
   });
 
-  it('holds nothing once Demand Gen is no longer selected', () => {
+  it('holds nothing once Demand Gen is no longer selected', STATE_ONLY, () => {
     const c = seedDemandGen();
     c['onDemandGenDemographicsChange'](null, LIVE_AGES);
     c['campaignForm'].patchValue({ includeDemandGen: false, includeDisplay: true });
@@ -256,7 +265,7 @@ describe('ImplementationTabComponent demand gen demographics', () => {
     expect(c['demandGenDemographicsBlock']()).toBeNull();
   });
 
-  it('round-trips the single and per-group demographics through a draft, and empties them for a new brief', () => {
+  it('round-trips the single and per-group demographics through a draft, and empties them for a new brief', STATE_ONLY, () => {
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
     const c = seedDemandGen();
@@ -364,7 +373,7 @@ describe('ImplementationTabComponent demand gen demographics', () => {
     expect(c['demandGenDemographicsError']()).toContain('NOPE');
   });
 
-  it("restores Display's targeting and the demographic exclusions in their boxes' spellings too", () => {
+  it("restores Display's targeting and the demographic exclusions in their boxes' spellings too", STATE_ONLY, () => {
     const c = seedDemandGen();
     restoreGoogleDraft(fixture, c, {
       googleDisplayDemographics: { ageRanges: ['AGE_RANGE_18_24'], parentalStatuses: ['not_a_parent'] },

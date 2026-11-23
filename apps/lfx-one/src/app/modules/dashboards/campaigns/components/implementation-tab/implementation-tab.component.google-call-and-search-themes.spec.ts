@@ -13,9 +13,18 @@ import { CampaignService } from '@services/campaign.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The call, promotion and price extensions. Each add is judged by `campaign-google-assets.utils`,
@@ -55,12 +64,12 @@ describe('ImplementationTabComponent google call, promotion and price extensions
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('stores a call extension trimmed and with its country upper-cased, as upstream normalises it', () => {
+  it('stores a call extension trimmed and with its country upper-cased, as upstream normalises it', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleCallExtension']({ countryCode: ' us ', phoneNumber: ' +1 (415) 555-0100 ' })).toBe(true);
@@ -72,7 +81,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     ['a vanity number', { countryCode: 'US', phoneNumber: '1-800-FLOWERS' }],
     ['a three-letter country', { countryCode: 'USA', phoneNumber: '4155550100' }],
     ['the same digits punctuated differently', { countryCode: 'us', phoneNumber: '14155550100' }],
-  ])('refuses %s and keeps the list as it was', (_label, draft) => {
+  ])('refuses %s and keeps the list as it was', STATE_ONLY, (_label, draft) => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' });
 
@@ -80,7 +89,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     expect(c['googleCallExtensions']()).toHaveLength(1);
   });
 
-  it('refuses a call extension past the cap', () => {
+  it('refuses a call extension past the cap', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     for (let i = 0; i < GOOGLE_ADS_MAX_CALL_EXTENSIONS; i++)
       c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: `415 555 01${String(i).padStart(2, '0')}` });
@@ -106,7 +115,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     expect(field('implementation-google-call-number')?.value).toBe('');
   });
 
-  it('stores only the discount and condition arms the promotion form selected, with no empty optional fields', () => {
+  it('stores only the discount and condition arms the promotion form selected, with no empty optional fields', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     // Text left in the minimum-order box is NOT sent once the condition is switched to a code, and
@@ -119,7 +128,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     ]);
   });
 
-  it('carries the currency, upper-cased, when a money field uses it', () => {
+  it('carries the currency, upper-cased, when a money field uses it', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(
@@ -188,7 +197,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     expect(find('implementation-google-promotion-redemption-end')?.closest('label')?.textContent).toContain('Redeemable until');
   });
 
-  it('says nothing about a promotion until what is on sale, the discount and the destination are filled', () => {
+  it('says nothing about a promotion until what is on sale, the discount and the destination are filled', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['googlePromotionForm'].setValue(promotionDraft(c, { finalUrl: '', discount: '150' }));
     fixture.detectChanges();
@@ -419,7 +428,7 @@ describe('ImplementationTabComponent google performance max search themes', () =
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -445,7 +454,7 @@ describe('ImplementationTabComponent google performance max search themes', () =
     expect(box.getAttribute('aria-invalid')).not.toBe('true');
   });
 
-  it("sends the themes one per line, trimmed with Go's rules and blanks dropped, on a submitted Performance Max create", async () => {
+  it("sends the themes one per line, trimmed with Go's rules and blanks dropped, on a submitted Performance Max create", STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedPmax(' kubernetes conference \n\n cloud native\u0085\n');
 
@@ -460,7 +469,7 @@ describe('ImplementationTabComponent google performance max search themes', () =
   });
 
   /** A Performance Max request with the box left alone is byte-identical to one built before it existed. */
-  it('builds a byte-identical Performance Max request when no theme is entered', async () => {
+  it('builds a byte-identical Performance Max request when no theme is entered', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedPmax('');
     c['submit']();
@@ -510,7 +519,7 @@ describe('ImplementationTabComponent google performance max search themes', () =
     expect(box.getAttribute('aria-invalid')).toBe('true');
   });
 
-  it('holds Create on themes with no Performance Max creative, which creates no asset group for them', () => {
+  it('holds Create on themes with no Performance Max creative, which creates no asset group for them', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includePerformanceMax: true });
     c['campaignForm'].controls.googlePerformanceMaxSearchThemes.setValue('kubernetes');
     fixture.detectChanges();
@@ -523,7 +532,7 @@ describe('ImplementationTabComponent google performance max search themes', () =
     expect(c['googleSearchThemesError']()).toBeNull();
   });
 
-  it('accepts exactly 50 themes of 80 characters', () => {
+  it('accepts exactly 50 themes of 80 characters', STATE_ONLY, () => {
     const c = seedPmax(Array.from({ length: 50 }, (_, i) => `${String(i).padStart(2, '0')}${'x'.repeat(78)}`).join('\n'));
 
     expect(c['googleSearchThemesError']()).toBeNull();
@@ -566,7 +575,7 @@ describe('ImplementationTabComponent google performance max search themes', () =
     expect(find('implementation-google-search-themes-error')?.textContent).toContain('more than once');
   });
 
-  it('sends a lone surrogate as U+FFFD, the string the BFF judges and forwards', () => {
+  it('sends a lone surrogate as U+FFFD, the string the BFF judges and forwards', STATE_ONLY, () => {
     const c = seedPmax(' cloud\uD800 \nkubernetes');
 
     expect(c['googleSearchThemesPayload']()).toEqual({ performanceMaxSearchThemes: ['cloud\ufffd', 'kubernetes'] });
@@ -600,7 +609,7 @@ describe('ImplementationTabComponent google performance max search themes', () =
     expect(find('implementation-google-extensions-capability-retry')).toBeNull();
   });
 
-  it('names retained themes, singular in the support noun, while the brief is unsaved', () => {
+  it('names retained themes, singular in the support noun, while the brief is unsaved', STATE_ONLY, () => {
     const c = seedPmaxCapability(null, 'ready', 'kubernetes');
     fixture.componentRef.setInput('briefPersistence', { status: 'unsaved', briefId: null, message: null, approved: false });
     fixture.detectChanges();
@@ -626,7 +635,7 @@ describe('ImplementationTabComponent google performance max search themes', () =
     expect(retried).toHaveBeenCalledTimes(1);
   });
 
-  it('names themes beside the extensions they are held with, and goes quiet once the capability answers yes', () => {
+  it('names themes beside the extensions they are held with, and goes quiet once the capability answers yes', STATE_ONLY, () => {
     const c = seedPmaxCapability(false, 'ready', 'kubernetes');
     c['addGoogleCallout']('Hands-On Labs');
     fixture.detectChanges();
