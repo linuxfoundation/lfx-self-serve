@@ -163,6 +163,10 @@ async function resolveOrgLensRead(
   }
 
   let hasGrant = false;
+  // What the roster says about the caller, for the employee-view entry rule (no grants, not staff).
+  let grantedOrgCount = 0;
+  let isStaff = false;
+  let staffCheckFailed = false;
   // Nothing in the answer is trustworthy — the grant roster itself never loaded.
   let lookupFailed = false;
   let rosterError: unknown;
@@ -170,7 +174,10 @@ async function resolveOrgLensRead(
   // be missing. Deliberately kept separate from `lookupFailed`: they justify different decisions.
   let rollUpIncomplete = false;
   try {
-    const { resolved, upstreamFailed, degraded } = await (roster ?? roleGrants.getAccessAwareOrgs(req, username));
+    const { resolved, upstreamFailed, degraded, isStaff: staff, staffCheck } = await (roster ?? roleGrants.getAccessAwareOrgs(req, username));
+    grantedOrgCount = resolved.size;
+    isStaff = staff;
+    staffCheckFailed = staffCheck === 'failed';
     // `getAccessAwareOrgs` degrades to an empty/partial grant map instead of throwing, so an
     // unverified lookup is indistinguishable from "no grants" unless these flags are checked.
     lookupFailed = upstreamFailed;
@@ -226,7 +233,8 @@ async function resolveOrgLensRead(
   // Last resort, and only for a caller PROVEN to hold nothing: the roster loaded in full and the authorizer said no,
   // so no existing path could have admitted them. A roll-up check passes `roster`; a roll-up never admits the employee
   // view, so it is not even asked. Off by default until every page story has redacted its endpoint.
-  if (!roster && isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+  // One rule for who enters, shared with the selector and the slug resolver: no grants and not staff.
+  if (!roster && isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView) && !isStaff && !staffCheckFailed && grantedOrgCount === 0) {
     let verdict: Awaited<ReturnType<OrgEmployeeViewService['resolve']>>;
     try {
       verdict = await employeeView.resolve(req, orgUid);

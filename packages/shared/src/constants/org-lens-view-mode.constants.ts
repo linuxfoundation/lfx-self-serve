@@ -92,3 +92,40 @@ export const NAVBAR_ORG_EMPLOYEE_VIEW_ROLE = {
   icon: 'fa-light fa-user',
   tooltip: 'You work for this company. You can see a read-only summary with no names or email addresses.',
 } as const;
+
+/**
+ * Consumer ISP and regional mailbox domains (registrable form) that never prove employment for the all employee view, beyond the
+ * webmail labels `isPersonalEmailDomain` already covers. A member company that really owns one of these is still reached by its
+ * grants; only the employee-view email proof ignores them.
+ */
+export const ORG_LENS_EMPLOYEE_VIEW_CONSUMER_MAIL_DOMAINS: ReadonlySet<string> = new Set([
+  'comcast.net',
+  'verizon.net',
+  'att.net',
+  'sbcglobal.net',
+  'bellsouth.net',
+  'cox.net',
+  'charter.net',
+  'earthlink.net',
+  'btinternet.com',
+  'virginmedia.com',
+  'sky.com',
+  'orange.fr',
+  'wanadoo.fr',
+  'free.fr',
+  'laposte.net',
+  't-online.de',
+  'web.de',
+  'libero.it',
+  'rediffmail.com',
+  'naver.com',
+  'daum.net',
+  'qq.com',
+  '163.com',
+  '126.com',
+  'sina.com',
+  'yeah.net',
+  'mail.ru',
+  'yandex.ru',
+  'rambler.ru',
+]);

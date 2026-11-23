@@ -5,6 +5,7 @@ import {
   ORG_AFFILIATION_LOOKUP_TIMEOUT_MS,
   ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES,
   ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS,
+  ORG_LENS_EMPLOYEE_VIEW_CONSUMER_MAIL_DOMAINS,
   ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -16,7 +17,7 @@ import type {
   RoleGrantsResponse,
 } from '@lfx-one/shared/interfaces';
 // Deep imports, never the `utils` barrel (see org-affiliation.service.ts).
-import { candidateMemberDomains, emailDomain, isPersonalEmailDomain, normalizeDomain } from '@lfx-one/shared/utils/email-domain.utils';
+import { candidateMemberDomains, emailDomain, isPersonalEmailDomain, normalizeDomain, registrableDomain } from '@lfx-one/shared/utils/email-domain.utils';
 import type { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -30,6 +31,7 @@ import { CdpService } from './cdp.service';
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { OrgRoleGrantsService } from './org-role-grants.service';
 import { claOnlyEntryApplies } from './org-cla-only-orgs.service';
 
 const OPERATION = 'resolve_org_lens_employee_view';
@@ -82,10 +84,12 @@ export function normalizeCompanyName(name: string | null | undefined): string {
 type EmployeeViewOutcome = { chosen: OrgLensEmployeeViewGrant } | { denial: OrgEmployeeViewDenial };
 
 /**
- * The Linux.com forwarding alias is an address LFX hands to any user (`add_alias`), not a company mailbox,
- * so it never proves employment. Covers the production domain and whatever this stage configures.
+ * The Linux.com forwarding alias is an address LFX hands to any user (`add_alias`), and consumer ISP mailboxes are personal,
+ * so neither proves employment. Covers the production alias domain, whatever this stage configures, and the consumer list.
  */
 function isForwardingAliasDomain(domain: string): boolean {
+  const registrable = registrableDomain(domain);
+  if (registrable && ORG_LENS_EMPLOYEE_VIEW_CONSUMER_MAIL_DOMAINS.has(registrable)) return true;
   const configured = (process.env['LINUX_FORWARD_DOMAIN'] || '').trim().toLowerCase();
   const normalized = domain.toLowerCase();
   return ['linux.com', configured].filter(Boolean).some((alias) => normalized === alias || normalized.endsWith(`.${alias}`));
@@ -128,6 +132,7 @@ export class OrgEmployeeViewService {
   private readonly emailVerification: EmailVerificationService;
   private readonly proxy: MicroserviceProxyService;
   private readonly accessCheck: AccessCheckService;
+  private readonly roleGrants: OrgRoleGrantsService;
 
   public constructor(
     deps: {
@@ -135,12 +140,14 @@ export class OrgEmployeeViewService {
       emailVerification?: EmailVerificationService;
       proxy?: MicroserviceProxyService;
       accessCheck?: AccessCheckService;
+      roleGrants?: OrgRoleGrantsService;
     } = {}
   ) {
     this.workHistory = deps.workHistory ?? new CdpService();
     this.emailVerification = deps.emailVerification ?? new EmailVerificationService();
     this.proxy = deps.proxy ?? new MicroserviceProxyService();
     this.accessCheck = deps.accessCheck ?? new AccessCheckService();
+    this.roleGrants = deps.roleGrants ?? new OrgRoleGrantsService();
   }
 
   /** Drops every held outcome (tests). */
@@ -191,6 +198,21 @@ export class OrgEmployeeViewService {
    * an existing full-view reader the reduced mode. The authorizer is asked strictly: a failure rejects, never reads as "no".
    */
   public async resolveReduced(req: Request): Promise<OrgEmployeeViewVerdict> {
+    // One rule for who enters the employee view: no Org Lens grant and not staff. Staff and grant holders skip the lookup entirely.
+    const username = getEffectiveUsername(req);
+    if (username) {
+      const roster = await this.roleGrants.getAccessAwareOrgs(req, username);
+      const answered = !roster.upstreamFailed && !roster.degraded && roster.staffCheck !== 'failed';
+      if (!answered) {
+        throw new MicroserviceError('Unable to verify your company access right now', 503, 'ROLE_GRANTS_UNAVAILABLE', {
+          operation: 'resolve_employee_view_reduced',
+          service: 'LFX_V2_SERVICE',
+        });
+      }
+      if (!claOnlyEntryApplies(roster.isStaff, roster.resolved.size, answered)) {
+        return { eligible: false, reason: 'has-grants' };
+      }
+    }
     const verdict = await this.resolve(req, null);
     if (!verdict.eligible) {
       return verdict;
@@ -348,6 +370,11 @@ export class OrgEmployeeViewService {
           { failOnPartial: true }
         ))
       );
+    }
+
+    if (docs.length === 0) {
+      // A clean empty answer is indistinguishable from a machine client that cannot read `b2b_org`: log it so a systemic failure is visible.
+      logger.warning(req, OPERATION, 'Member-company lookup returned no rows for the caller’s verified domains', { domain_count: domains.length });
     }
 
     const wanted = new Set(domains);

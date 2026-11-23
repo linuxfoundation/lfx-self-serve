@@ -5,9 +5,10 @@ import '@angular/compiler';
 
 import type { RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken } = vi.hoisted(() => ({
+const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken, loggerWarning } = vi.hoisted(() => ({
+  loggerWarning: vi.fn(),
   generateM2MToken: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'employee'),
   resolveVerifiedUserEmails: vi.fn(),
@@ -16,7 +17,7 @@ const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken } = vi
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername() }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 vi.mock('../helpers/user-emails.helper', () => ({ resolveVerifiedUserEmails }));
-vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
+vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: loggerWarning, error: vi.fn(), debug: vi.fn() } }));
 
 const { OrgEmployeeViewService, normalizeCompanyName } = await import('./org-employee-view.service');
 
@@ -49,6 +50,8 @@ interface Setup {
   orgs?: [string, Doc][] | Error;
   emails?: string[] | Error;
   auditor?: boolean | Error;
+  grants?: [string, unknown][];
+  staff?: boolean;
 }
 
 function build(opts: Setup = {}) {
@@ -68,13 +71,16 @@ function build(opts: Setup = {}) {
       .fn()
       .mockImplementation(() => (opts.auditor instanceof Error ? Promise.reject(opts.auditor) : Promise.resolve(opts.auditor ?? false))),
   };
+  const roster = { resolved: new Map(opts.grants ?? []), isStaff: opts.staff ?? false, upstreamFailed: false, degraded: false, staffCheck: 'ok' };
+  const roleGrants = { getAccessAwareOrgs: vi.fn().mockResolvedValue(roster) };
   const svc = new OrgEmployeeViewService({
+    roleGrants: roleGrants as never,
     workHistory: workHistory as never,
     emailVerification: {} as never,
     proxy: proxy as never,
     accessCheck: accessCheck as never,
   });
-  return { svc, workHistory, proxy, accessCheck };
+  return { svc, workHistory, proxy, accessCheck, roleGrants };
 }
 
 beforeEach(() => {
@@ -464,5 +470,119 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
 
     await expect(svc.getRoleGrantEmployeeView(req(), grants())).resolves.toEqual({});
     expect(workHistory.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgEmployeeViewService entry rule: no grants and not staff', () => {
+  it('denies a caller who holds a grant without looking at work history or emails', async () => {
+    const { svc, workHistory } = build({ grants: [[OTHER_UID, { roleSource: 'direct-writer' }]] });
+
+    await expect(svc.resolveReduced(req())).resolves.toEqual({ eligible: false, reason: 'has-grants' });
+    expect(workHistory.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+  });
+
+  it('denies LF staff without looking at work history', async () => {
+    const { svc, workHistory } = build({ staff: true });
+
+    await expect(svc.resolveReduced(req())).resolves.toEqual({ eligible: false, reason: 'has-grants' });
+    expect(workHistory.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+  });
+
+  it('answers a retriable 503 when the roster could not be read, never a denial', async () => {
+    const { svc, roleGrants } = build();
+    roleGrants.getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), isStaff: false, upstreamFailed: true, degraded: false, staffCheck: 'ok' });
+
+    await expect(svc.resolveReduced(req())).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+  });
+});
+
+describe('OrgEmployeeViewService consumer mail and logging', () => {
+  it('never treats a consumer ISP mailbox as an employer', async () => {
+    const { svc, proxy } = build({ emails: [`dev@${'comcast'}.net`] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('logs a warning when the member-company lookup returns no rows at all', async () => {
+    const { svc } = build({ orgs: [] });
+
+    await svc.resolve(req(), ORG_UID);
+
+    expect(loggerWarning).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('no rows'), expect.anything());
+  });
+});
+
+describe('OrgEmployeeViewService cache', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps one caller’s answer apart from another’s', async () => {
+    const first = build({ experiences: [job('Acme Motors')] });
+    getEffectiveUsername.mockReturnValue('alice');
+    await expect(first.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+
+    const second = build({ experiences: [] });
+    getEffectiveUsername.mockReturnValue('bob');
+    await expect(second.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: false });
+    getEffectiveUsername.mockReturnValue('alice');
+    await expect(second.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('recomputes after the TTL', async () => {
+    vi.useFakeTimers();
+    const { svc, workHistory } = build();
+
+    await svc.resolve(req(), ORG_UID);
+    vi.setSystemTime(Date.now() + 61_000);
+    await svc.resolve(req(), ORG_UID);
+
+    expect(workHistory.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('evicts the oldest entry once the cache is full', async () => {
+    const { svc, workHistory } = build();
+    for (let i = 0; i <= 1000; i++) {
+      getEffectiveUsername.mockReturnValue(`user-${i}`);
+      await svc.resolve(req(), ORG_UID);
+    }
+    workHistory.getWorkExperiencesForKnownUser.mockClear();
+
+    getEffectiveUsername.mockReturnValue('user-1000');
+    await svc.resolve(req(), ORG_UID);
+    expect(workHistory.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+    getEffectiveUsername.mockReturnValue('user-0');
+    await svc.resolve(req(), ORG_UID);
+    expect(workHistory.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OrgEmployeeViewService.getRoleGrantEmployeeView budget', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('answers a failed lookup, not a hang, when work history never answers', async () => {
+    process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'] = 'true';
+    vi.useFakeTimers();
+    const { svc, workHistory } = build();
+    workHistory.getWorkExperiencesForKnownUser.mockImplementation(() => new Promise(() => undefined));
+
+    const pending = svc.getRoleGrantEmployeeView(req(), {
+      writers: [],
+      auditors: [],
+      cascadingWriters: [],
+      cascadingAuditors: [],
+      username: 'employee',
+      loaded_at: '2026-11-17T00:00:00.000Z',
+      isStaff: false,
+      degraded: false,
+      lookupOutcome: 'ok',
+      staffCheck: 'ok',
+    } as RoleGrantsResponse);
+    await vi.advanceTimersByTimeAsync(5_100);
+
+    await expect(pending).resolves.toEqual({ employeeViewLookup: 'failed' });
   });
 });
