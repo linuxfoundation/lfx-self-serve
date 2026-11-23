@@ -3,11 +3,11 @@
 
 import { _IdGenerator, FocusMonitor } from '@angular/cdk/a11y';
 import { hasModifierKey } from '@angular/cdk/keycodes';
-import { ConnectedPosition, Overlay, OverlayRef } from '@angular/cdk/overlay';
+import { ConnectedPosition, FlexibleConnectedPositionStrategy, Overlay, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { afterNextRender, ComponentRef, DestroyRef, Directive, effect, ElementRef, inject, input, PLATFORM_ID, TemplateRef, untracked } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { afterNextRender, ComponentRef, computed, DestroyRef, Directive, ElementRef, inject, Injector, input, PLATFORM_ID, TemplateRef } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { UiHoverCardSide, UiPopoverPadding } from '@lfx-one/shared/interfaces';
 import { Subscription, take } from 'rxjs';
 
@@ -52,6 +52,7 @@ export class UiHoverCardDirective {
   private readonly overlay = inject(Overlay);
   private readonly focusMonitor = inject(FocusMonitor);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly panelId = inject(_IdGenerator).getId('lfx-ui-hover-card-');
   // Distance between the host and the card, in px.
@@ -59,7 +60,11 @@ export class UiHoverCardDirective {
   // Milliseconds the pointer may spend crossing the gap between the host and the card before it closes.
   private readonly graceMs = 120;
 
+  private readonly config = computed(() => ({ template: this.template(), width: this.width(), padding: this.padding(), side: this.side() }));
+
   private overlayRef: OverlayRef | null = null;
+  private panel: ComponentRef<UiHoverCardPanelComponent> | null = null;
+  private positionStrategy: FlexibleConnectedPositionStrategy | null = null;
   private showTimer: ReturnType<typeof setTimeout> | null = null;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private keyboardFocused = false;
@@ -71,11 +76,14 @@ export class UiHoverCardDirective {
       this.rendered = true;
       this.syncFocusMonitor();
     });
-    // A grid of hosts may pass no card to most of them, so the focus monitor runs only while there is a card to show.
-    effect(() => {
-      this.template();
-      untracked(() => this.syncFocusMonitor());
-    });
+    // A grid of hosts may pass no card to most of them, so the focus monitor runs only while there is a card to show. An
+    // open card follows its inputs, so its details never drift from the host.
+    toObservable(this.config)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((config) => {
+        this.syncFocusMonitor();
+        this.syncOpenCard(config.template, config.width, config.padding);
+      });
     this.destroyRef.onDestroy(() => {
       this.stopFocusMonitor();
       this.hide();
@@ -104,8 +112,10 @@ export class UiHoverCardDirective {
     this.focusSubscription = this.focusMonitor.monitor(this.host, true).subscribe((origin) => {
       this.keyboardFocused = origin === 'keyboard';
       if (this.keyboardFocused) {
+        // At once, even over a pending hover delay, so the description is in place while focus lands.
         this.cancelHide();
-        this.scheduleShow(0);
+        this.clearShowTimer();
+        this.open();
       } else if (origin === null) this.hide();
     });
   }
@@ -118,13 +128,29 @@ export class UiHoverCardDirective {
     this.keyboardFocused = false;
   }
 
-  private scheduleShow(delay = this.delay()): void {
+  private scheduleShow(): void {
     if (!this.isBrowser || this.overlayRef || this.showTimer !== null || !this.template()) return;
     this.document.addEventListener('keydown', this.onKeydown, true);
     this.showTimer = setTimeout(() => {
       this.showTimer = null;
       this.show();
-    }, delay);
+    }, this.delay());
+  }
+
+  private open(): void {
+    if (!this.isBrowser || this.overlayRef || !this.template()) return;
+    this.document.addEventListener('keydown', this.onKeydown, true);
+    this.show();
+  }
+
+  private syncOpenCard(template: TemplateRef<unknown> | null | undefined, width: number | null, padding: UiPopoverPadding): void {
+    if (!this.panel || !template) return;
+    this.panel.setInput('template', template);
+    this.panel.setInput('width', width);
+    this.panel.setInput('padding', padding);
+    this.positionStrategy?.withPositions(this.positions());
+    // The new content may be taller or wider, so place it again once it has rendered.
+    afterNextRender(() => this.overlayRef?.updatePosition(), { injector: this.injector });
   }
 
   private scheduleHide(): void {
@@ -156,13 +182,21 @@ export class UiHoverCardDirective {
   private show(): void {
     const template = this.template();
     if (!template) return;
+    const positionStrategy = this.overlay
+      .position()
+      .flexibleConnectedTo(this.host)
+      .withFlexibleDimensions(false)
+      .withPush(true)
+      .withPositions(this.positions());
     const overlayRef = this.overlay.create({
-      positionStrategy: this.overlay.position().flexibleConnectedTo(this.host).withFlexibleDimensions(false).withPush(true).withPositions(this.positions()),
+      positionStrategy,
       scrollStrategy: this.overlay.scrollStrategies.reposition(),
       disposeOnNavigation: true,
     });
     this.overlayRef = overlayRef;
+    this.positionStrategy = positionStrategy;
     const panel: ComponentRef<UiHoverCardPanelComponent> = overlayRef.attach(new ComponentPortal(UiHoverCardPanelComponent));
+    this.panel = panel;
     panel.setInput('template', template);
     panel.setInput('panelId', this.panelId);
     panel.setInput('width', this.width());
@@ -175,6 +209,8 @@ export class UiHoverCardDirective {
       .subscribe(() => {
         if (this.overlayRef !== overlayRef) return;
         this.overlayRef = null;
+        this.panel = null;
+        this.positionStrategy = null;
         this.cancelHide();
         this.setDescribedBy(false);
         this.document.removeEventListener('keydown', this.onKeydown, true);
@@ -196,6 +232,8 @@ export class UiHoverCardDirective {
     const overlayRef = this.overlayRef;
     if (!overlayRef) return;
     this.overlayRef = null;
+    this.panel = null;
+    this.positionStrategy = null;
     this.setDescribedBy(false);
     overlayRef.dispose();
   }

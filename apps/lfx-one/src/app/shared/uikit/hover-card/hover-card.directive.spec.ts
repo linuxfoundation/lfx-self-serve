@@ -3,7 +3,7 @@
 
 import { FocusMonitor } from '@angular/cdk/a11y';
 import { OverlayContainer } from '@angular/cdk/overlay';
-import { Component, PLATFORM_ID } from '@angular/core';
+import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,15 +11,19 @@ import { UiHoverCardDirective } from './hover-card.directive';
 
 // Set in the TestBed below: inline templates are capped at three lines.
 const HOST_TEMPLATE = `
-    <a id="trigger" href="#" aria-describedby="existing" [lfxUiHoverCard]="card" [lfxUiHoverCardWidth]="280" [lfxUiHoverCardDelay]="40">Kubernetes</a>
+    <a id="trigger" href="#" aria-describedby="existing" [lfxUiHoverCard]="other() ? second : card" [lfxUiHoverCardWidth]="width()" [lfxUiHoverCardDelay]="40">Kubernetes</a>
     <ng-template #card><p data-testid="card-body">Maintainer since 2019</p></ng-template>
+    <ng-template #second><p data-testid="card-body">Contributor since 2021</p></ng-template>
 `;
 
 @Component({
   selector: 'lfx-ui-test-host',
   template: '',
 })
-class TestHostComponent {}
+class TestHostComponent {
+  public readonly other = signal(false);
+  public readonly width = signal(280);
+}
 
 describe('UiHoverCardDirective', () => {
   let fixture: ComponentFixture<TestHostComponent>;
@@ -104,6 +108,31 @@ describe('UiHoverCardDirective', () => {
     trigger.blur();
     await advance(0);
     expect(card()).toBeNull();
+  });
+
+  it('opens at once on keyboard focus even while a hover delay is pending', async () => {
+    await setup();
+    pointer(trigger, 'pointerenter');
+    await advance(10);
+
+    TestBed.inject(FocusMonitor).focusVia(trigger, 'keyboard');
+    await advance(0);
+
+    expect(card()).not.toBeNull();
+  });
+
+  it('keeps an open card in step with a new template and width', async () => {
+    await setup();
+    pointer(trigger, 'pointerenter');
+    await advance(50);
+
+    fixture.componentInstance.other.set(true);
+    fixture.componentInstance.width.set(340);
+    fixture.detectChanges();
+    await advance(0);
+
+    expect(card()?.querySelector('[data-testid="card-body"]')?.textContent).toBe('Contributor since 2021');
+    expect(card()?.style.width).toBe('340px');
   });
 
   it('ignores touch', async () => {
