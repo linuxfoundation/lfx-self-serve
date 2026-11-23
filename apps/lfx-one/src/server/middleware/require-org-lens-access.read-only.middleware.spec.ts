@@ -15,9 +15,9 @@ const { requireOrgLensAccess } = await import('./require-org-lens-access.middlew
 
 const ORG_UID = '0016100000ACMEAAA1';
 
-const run = async (method: string, orgUid = ORG_UID) => {
+const run = async (method: string, orgUid = ORG_UID, path = '/read-check') => {
   const next = vi.fn();
-  await requireOrgLensAccess({ params: { orgUid }, method, path: '/x' } as unknown as Request, {} as Response, next);
+  await requireOrgLensAccess({ params: { orgUid }, method, path } as unknown as Request, {} as Response, next);
   return next;
 };
 
@@ -42,6 +42,19 @@ describe('requireOrgLensAccess: the all employee view is read-only', () => {
     mocks.getOrgLensViewMode.mockReturnValue('employee');
 
     expect(await run(method)).toHaveBeenCalledWith();
+  });
+
+  it.each(['/people/all', '/memberships/active', '/events/abc/attendees'])('refuses %s to the employee view unless the path is approved', async (path) => {
+    mocks.assertOrgLensRead.mockResolvedValue('employee-view');
+    mocks.getOrgLensViewMode.mockReturnValue('employee');
+
+    const next = await run('GET', ORG_UID, path);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+  });
+
+  it('does not restrict paths for a grant holder', async () => {
+    expect(await run('GET', ORG_UID, '/people/all')).toHaveBeenCalledWith();
   });
 
   it('lets a grant holder write', async () => {

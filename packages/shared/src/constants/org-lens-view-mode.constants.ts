@@ -13,6 +13,14 @@ export const ORG_LENS_EMPLOYEE_VIEW: OrgLensViewMode = 'employee';
 /** Error code a route behind a hidden page or panel answers with in the all employee view. */
 export const ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE = 'EMPLOYEE_VIEW_FORBIDDEN';
 
+/**
+ * The `/api/orgs/:orgUid/lens/*` paths (relative to the `/lens` mount) an all-employee caller may reach.
+ * Anything not listed is refused by default, so a newly added lens route can never return names or
+ * emails to an employee by accident. A page that is approved for the employee view adds its own entry
+ * (and applies `redactForEmployeeView` in its handler).
+ */
+export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS: readonly RegExp[] = [/^\/(read-check|edit-check)\/?$/];
+
 /** User-safe 403 message for the all employee view. Says "company": copy-terminology rule, epic #5060. */
 export const ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE = 'This part of the company view is not available to all employees.';
 
@@ -28,7 +36,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS = 60 * 1000;
 /** Upper bound on cached employee-view verdicts per server process. */
 export const ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES = 1000;
 
-/** Most candidate company domains one lookup sends to the query service (a person's verified addresses, each with its parent domains). */
+/** Most candidate company domains one query-service request carries; a person with more are asked in several requests, never truncated. */
 export const ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS = 20;
 
 /**
@@ -84,3 +92,40 @@ export const NAVBAR_ORG_EMPLOYEE_VIEW_ROLE = {
   icon: 'fa-light fa-user',
   tooltip: 'You work for this company. You can see a read-only summary with no names or email addresses.',
 } as const;
+
+/**
+ * Consumer ISP and regional mailbox domains (registrable form) that never prove employment for the all employee view, beyond the
+ * webmail labels `isPersonalEmailDomain` already covers. A member company that really owns one of these is still reached by its
+ * grants; only the employee-view email proof ignores them.
+ */
+export const ORG_LENS_EMPLOYEE_VIEW_CONSUMER_MAIL_DOMAINS: ReadonlySet<string> = new Set([
+  'comcast.net',
+  'verizon.net',
+  'att.net',
+  'sbcglobal.net',
+  'bellsouth.net',
+  'cox.net',
+  'charter.net',
+  'earthlink.net',
+  'btinternet.com',
+  'virginmedia.com',
+  'sky.com',
+  'orange.fr',
+  'wanadoo.fr',
+  'free.fr',
+  'laposte.net',
+  't-online.de',
+  'web.de',
+  'libero.it',
+  'rediffmail.com',
+  'naver.com',
+  'daum.net',
+  'qq.com',
+  '163.com',
+  '126.com',
+  'sina.com',
+  'yeah.net',
+  'mail.ru',
+  'yandex.ru',
+  'rambler.ru',
+]);
