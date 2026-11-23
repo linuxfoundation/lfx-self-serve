@@ -353,7 +353,7 @@ export class OrgEmployeeViewService {
     const wanted = new Set(domains);
     const companies = new Map<string, OrgLensEmployeeViewGrant>();
     for (const doc of docs) {
-      if (!doc.uid || doc.is_member !== true) continue;
+      if (!doc.uid || doc.is_member === false) continue;
       const own = [doc.primary_domain, ...(doc.domain_aliases ?? [])].map((value) => normalizeDomain(value));
       if (!own.some((domain) => domain && wanted.has(domain))) continue;
       companies.set(doc.uid, { orgUid: doc.uid, orgName: doc.name ?? '', orgSlug: doc.slug?.trim().toLowerCase() || null });
