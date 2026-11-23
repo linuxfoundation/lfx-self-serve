@@ -1,0 +1,193 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="min-h-screen bg-gray-50 text-gray-900" data-testid="share-kit-page">
+  <div class="mx-auto flex w-full max-w-[1040px] flex-col gap-8 px-4 pb-20 pt-6 sm:px-10">
+    <!-- Chrome-less public page: a small "Powered by LFX" mark instead of the app shell. -->
+    <div class="flex items-center justify-between gap-4">
+      <a
+        href="https://app.lfx.dev/"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+        data-testid="share-kit-powered-by">
+        <span>Powered by</span>
+        <img src="/images/logo_lfx.svg" alt="LFX" class="h-[13px] w-auto" />
+      </a>
+      @if (kit(); as kit) {
+        <span class="text-sm text-gray-500" data-testid="share-kit-foundation">{{ kit.foundationName }} member share kit</span>
+      }
+    </div>
+
+    @if (state().loading) {
+      <div class="flex flex-col gap-6" data-testid="share-kit-loading">
+        <lfx-ui-skeleton width="100%" height="280px" />
+        <lfx-ui-skeleton width="100%" height="180px" />
+      </div>
+    } @else if (state().notFound) {
+      <div class="rounded-xl border border-gray-200 bg-white px-6 py-16 text-center" data-testid="share-kit-not-found">
+        <h1 class="text-lg font-semibold">We couldn't find a share kit for this event.</h1>
+        <p class="mt-2 text-sm text-gray-600">Check the link, or ask the event team for the current one.</p>
+      </div>
+    } @else if (state().error) {
+      <div class="rounded-xl border border-gray-200 bg-white px-6 py-16 text-center" data-testid="share-kit-error">
+        <h1 class="text-lg font-semibold">This share kit isn't available right now.</h1>
+        <p class="mt-2 text-sm text-gray-600">Please try again later.</p>
+      </div>
+    } @else if (kit(); as kit) {
+      <!-- Hero -->
+      <section class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-6 sm:p-10" data-testid="share-kit-hero">
+        <p class="text-xs font-semibold uppercase tracking-wider text-blue-700" data-testid="share-kit-when-where">
+          {{ dates() }} · {{ kit.venue }}, {{ kit.city }}
+        </p>
+        <h1 class="max-w-[780px] text-3xl font-bold leading-tight tracking-tight sm:text-5xl">{{ kit.title }}</h1>
+        <p class="max-w-[560px] text-base text-gray-700">{{ kit.tagline }}</p>
+        <div class="flex flex-wrap items-center gap-4">
+          <lfx-ui-button
+            variant="primary"
+            size="large"
+            trailingIcon="fa-light fa-arrow-up-right"
+            [href]="registerUrl()"
+            target="_blank"
+            (click)="onRegisterClick('hero')"
+            data-testid="share-kit-register">
+            Register for {{ kit.registration.priceLabel }}
+          </lfx-ui-button>
+          @if (earlyBird()) {
+            <span class="text-sm text-gray-600" data-testid="share-kit-early-bird">Early-bird pricing through {{ earlyBird() }}.</span>
+          }
+        </div>
+      </section>
+
+      <lfx-ui-tabs [tabs]="tabs()" [(value)]="tab" idPrefix="share-kit" ariaLabel="Share kit sections" data-testid="share-kit-tabs" />
+
+      <!-- Share the event -->
+      @if (tab() === 'share') {
+        <section
+          id="share-kit-panel-share"
+          role="tabpanel"
+          aria-labelledby="share-kit-tab-share"
+          class="flex flex-col gap-4"
+          data-testid="share-kit-panel-share">
+          <div class="flex flex-wrap items-end justify-between gap-3">
+            <h2 class="text-lg font-semibold">Copy a post</h2>
+            <lfx-ui-tabs
+              [tabs]="platformTabs"
+              variant="secondary"
+              size="small"
+              [value]="platform()"
+              (valueChange)="selectPlatform($event)"
+              ariaLabel="Platform"
+              data-testid="share-kit-platforms" />
+          </div>
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            @for (post of posts(); track post.id) {
+              <lfx-share-kit-copy-card
+                [heading]="post.title"
+                [text]="post.text"
+                copyLabel="Copy post"
+                [length]="post.length"
+                [limit]="post.limit"
+                [testId]="'share-kit-post-' + post.id"
+                (copied)="onPostCopied(post.id)" />
+            }
+          </div>
+          <lfx-share-kit-copy-card
+            heading="Newsletter and community blurb"
+            [text]="blurb()"
+            copyLabel="Copy blurb"
+            testId="share-kit-blurb"
+            (copied)="onCopied('newsletter')" />
+        </section>
+      }
+
+      <!-- Graphics -->
+      @if (tab() === 'graphics') {
+        <section
+          id="share-kit-panel-graphics"
+          role="tabpanel"
+          aria-labelledby="share-kit-tab-graphics"
+          class="grid grid-cols-1 gap-4 md:grid-cols-2"
+          data-testid="share-kit-panel-graphics">
+          @for (graphic of kit.graphics; track graphic.url) {
+            <figure class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5" [attr.data-testid]="'share-kit-graphic-' + $index">
+              <img
+                [src]="graphic.url"
+                [alt]="graphic.alt"
+                [attr.width]="graphic.width"
+                [attr.height]="graphic.height"
+                loading="lazy"
+                class="h-auto w-full rounded-lg border border-gray-100" />
+              <figcaption class="flex flex-wrap items-center justify-between gap-3">
+                <span class="text-sm font-semibold">{{ graphic.label }}</span>
+                <a
+                  [href]="graphic.url"
+                  download
+                  class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                  (click)="onGraphicDownload(graphic)"
+                  [attr.data-testid]="'share-kit-graphic-download-' + $index">
+                  <i class="fa-light fa-arrow-down-to-line" aria-hidden="true"></i>
+                  Download
+                </a>
+              </figcaption>
+            </figure>
+          }
+        </section>
+      }
+
+      <!-- Call for proposals -->
+      @if (tab() === 'cfp' && kit.cfp; as cfp) {
+        <section id="share-kit-panel-cfp" role="tabpanel" aria-labelledby="share-kit-tab-cfp" class="flex flex-col gap-4" data-testid="share-kit-panel-cfp">
+          <article class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-6">
+            <h2 class="text-lg font-semibold">{{ cfp.heading }}</h2>
+            <p class="text-sm text-gray-700">The call for proposals closes {{ cfpCloses() }}. {{ cfp.body }}</p>
+            <div>
+              <lfx-ui-button
+                variant="primary"
+                trailingIcon="fa-light fa-arrow-up-right"
+                [href]="cfpUrl()"
+                target="_blank"
+                (click)="onCfpClick('cfp')"
+                data-testid="share-kit-cfp-details">
+                Official CFP details
+              </lfx-ui-button>
+            </div>
+          </article>
+          @if (cfp.guide; as guide) {
+            <article class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-6" data-testid="share-kit-cfp-guide">
+              <h3 class="text-base font-semibold">{{ guide.title }}</h3>
+              <p class="text-sm text-gray-700">{{ guide.description }}</p>
+              <div>
+                <lfx-ui-button
+                  variant="secondary"
+                  trailingIcon="fa-light fa-arrow-up-right"
+                  [href]="guideUrl()"
+                  target="_blank"
+                  (click)="onCfpClick('guide')"
+                  data-testid="share-kit-cfp-guide-link">
+                  Read the guide
+                </lfx-ui-button>
+              </div>
+            </article>
+          }
+          <lfx-share-kit-copy-card
+            heading="Copy an invitation"
+            [text]="cfpInvitation()"
+            copyLabel="Copy invitation"
+            testId="share-kit-cfp-invitation"
+            (copied)="onCopied('cfp_invite')" />
+        </section>
+      }
+
+      <footer class="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-6 text-sm text-gray-500" data-testid="share-kit-footer">
+        <span>{{ kit.foundationName }}</span>
+        <span aria-hidden="true">/</span>
+        @if (registerUrl(); as url) {
+          <a [href]="url" target="_blank" rel="noopener" class="text-blue-700 underline-offset-2 hover:underline" (click)="onRegisterClick('footer')"
+            >Official registration page</a
+          >
+        }
+      </footer>
+    }
+  </div>
+</div>

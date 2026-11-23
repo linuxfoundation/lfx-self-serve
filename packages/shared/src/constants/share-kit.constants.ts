@@ -4,6 +4,51 @@
 /** Platforms a share kit writes posts for, in tab order. */
 export const SHARE_KIT_PLATFORMS = ['linkedin', 'x', 'bluesky'] as const;
 
+/** Display names for each platform tab. */
+export const SHARE_KIT_PLATFORM_LABELS = {
+  linkedin: 'LinkedIn',
+  x: 'X',
+  bluesky: 'Bluesky',
+} as const;
+
+/**
+ * Character limit per platform, and how long the platform counts a pasted link.
+ * X counts every link as 23 characters; Bluesky's app shortens a pasted link to about 40 before counting.
+ * LinkedIn counts the full link.
+ */
+export const SHARE_KIT_PLATFORM_LIMITS = {
+  linkedin: { limit: 3000, linkLength: null },
+  x: { limit: 280, linkLength: 23 },
+  bluesky: { limit: 300, linkLength: 40 },
+} as const;
+
+/** Sections of the public share kit page, in tab order. */
+export const SHARE_KIT_TABS = ['share', 'graphics', 'cfp'] as const;
+
+/** Display names for each section tab. */
+export const SHARE_KIT_TAB_LABELS = {
+  share: 'Share the event',
+  graphics: 'Graphics',
+  cfp: 'Call for proposals',
+} as const;
+
+/** `utm_source` on every link the share kit hands out. */
+export const SHARE_KIT_UTM_SOURCE = 'lfx-share-kit';
+
+/** Plausible custom events fired by the public share kit page (#6060). Props never carry personal data or member codes. */
+export const SHARE_KIT_EVENTS = {
+  /** A copy button was used. Props: event_slug, foundation, kind, post (post id, when a post was copied). */
+  copy: 'share_kit_copy',
+  /** A registration link was clicked. Props: event_slug, foundation, signed_in, placement. */
+  registerClick: 'share_kit_register_click',
+  /** A graphic was downloaded. Props: event_slug, foundation, label. */
+  graphicDownload: 'share_kit_graphic_download',
+  /** A platform tab was chosen. Props: event_slug, kind. */
+  platformTab: 'share_kit_platform_tab',
+  /** A call-for-proposals link was clicked. Props: event_slug, foundation, link (`cfp` or `guide`). */
+  cfpClick: 'share_kit_cfp_click',
+} as const;
+
 /** Event slugs are lowercase letters, digits and single hyphens — also the content folder name. */
 export const SHARE_KIT_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
