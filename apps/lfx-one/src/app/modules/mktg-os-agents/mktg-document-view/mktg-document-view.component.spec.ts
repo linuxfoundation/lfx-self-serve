@@ -837,8 +837,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-error')).toBeNull();
     // The next complete cycle clears it.
     store.getRevision.mockReturnValue(of(revisionResponse(LATEST)));
-    window.dispatchEvent(new Event('focus'));
-    await settle();
+    await wake();
     expect(component?.['refreshWarning']()).toBe('');
     expect(query('mktg-document-view-refresh-warning')).toBeNull();
   });
@@ -3107,7 +3106,12 @@ describe('MktgDocumentViewComponent', () => {
       store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')] }));
       await render('/documents/brand-kit/living');
       if (failure === 'metadata') store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')], progressUnavailable: true }));
-      else store.getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      else {
+        const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+        component['localProgress'].set('writing'); // Creator's local pre-ACK body polling; a selected ACK intentionally redirects to its run.
+        await settle();
+        store.getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      }
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
       await settle();
       expect(progressReader()['warning']()).toBe(MKTG_POLL_RETRYING_TEXT);

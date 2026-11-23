@@ -1088,6 +1088,8 @@ export class MktgDocumentViewComponent {
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
     const viewed = this.view();
+    // False once the cycle's view is the body already on screen with fresh metadata merged in: its flags are an earlier read's.
+    let viewRead = true;
     if (
       viewed &&
       !this.readStoredBody() &&
@@ -1103,6 +1105,7 @@ export class MktgDocumentViewComponent {
         this.remoteRevisionId.set(viewed.revision.id);
       }
       cycle = { ...cycle, view: this.mergeDocumentMetadata(viewed, cycle.detail) };
+      viewRead = false;
     } else if (viewed && this.handoffRunId()) {
       this.remoteRevisionId.set('');
     }
@@ -1125,7 +1128,8 @@ export class MktgDocumentViewComponent {
     }
     // A good public cycle clears the line a partial one put up; a partial revision read (the detail complete, the view's
     // progress not) keeps it, since the reader reports transitions only and repeats of a partial view would show no line.
-    if (this.publicProgressPolling()) this.refreshWarning.set(cycle.view?.progressUnavailable ? MKTG_POLL_RETRYING_TEXT : '');
+    // A metadata-only cycle over the body on screen is judged by its own complete detail, never by that body's old flag.
+    if (this.publicProgressPolling()) this.refreshWarning.set(viewRead && cycle.view?.progressUnavailable ? MKTG_POLL_RETRYING_TEXT : '');
     if (
       !this.publicProgressPolling() ||
       cycle.detail.progressUnavailable ||
