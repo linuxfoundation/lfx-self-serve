@@ -2416,11 +2416,14 @@ export interface MetaCampaignCreateRequest {
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
   /**
-   * Ad set audience targeting (#5905; linuxfoundation/lfx-v2-campaign-service#550). Sent ONLY when
-   * `CampaignListResult.metaAudienceTargetingEnabled` is an explicit yes; the create route refuses it with a
-   * 400 otherwise, so a tab opened while the capability was on must reload.
+   * Ad set targeting: the audience fields (#5905; linuxfoundation/lfx-v2-campaign-service#550) and the detailed
+   * fields (#5904 row 4; campaign-service #612), each sent ONLY when its own capability is an explicit yes:
+   * `metaAudienceTargetingEnabled` for age, gender, custom audiences and Advantage+, `metaInterestTargetingEnabled`
+   * for `interests`, `metaBehaviorTargetingEnabled` for `behaviors` and `workPositions`, `metaLocaleTargetingEnabled`
+   * for `locales`. The create route refuses a field whose capability is off with a 400, so a tab opened while it
+   * was on must reload. A block with only detailed fields needs no audience capability.
    */
-  targeting?: MetaAudienceTargeting;
+  targeting?: MetaTargeting;
   /**
    * The button on every ad (#5934; campaign-service #550), one of `META_CALL_TO_ACTIONS`. Absent means
    * campaign-service's default, LEARN_MORE. Sent ONLY when `CampaignListResult.metaCallToActionEnabled` is

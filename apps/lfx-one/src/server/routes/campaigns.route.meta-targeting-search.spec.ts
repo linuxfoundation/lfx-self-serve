@@ -163,6 +163,16 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
     expect(svcSearch).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['interest', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING'],
+    ['work_position', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING'],
+  ])('answers 404 for %s while its own flag (%s) is off, though the other kind is on', async (type, off) => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
+
+    expect((await search(`project=tlf&type=${type}&query=kubernetes`)).status).toBe(404);
+    expect(svcSearch).not.toHaveBeenCalled();
+  });
+
   it('answers 404 unless interest or behavior targeting is on', async () => {
     isServerFeatureEnabled.mockImplementation(
       (flag) => flag !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING' && flag !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING'

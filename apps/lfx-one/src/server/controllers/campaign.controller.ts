@@ -4691,7 +4691,8 @@ export class CampaignController {
    * One page of Meta's targeting taxonomy for the Implement tab's detailed targeting (#5904 row 4), camel-cased:
    * interests, behaviors or job titles matching `?query=`, through campaign-service's `search-meta-targeting-options`
    * (linuxfoundation/lfx-v2-campaign-service#612). 404 unless interests or behaviors can be sent. Meta taxonomy, so
-   * `requireCampaignManager` is the gate, as upstream's. The kind and query are checked here first, so a bad one
+   * `requireCampaignManager` is the gate, as upstream's. Each kind answers only while its own flag is on (interests,
+   * or behaviors with job titles). The kind and query are checked here first, so a bad one
    * costs no upstream call. An upstream 503 (a Meta throttle or failure, which campaign-service does not retry)
    * answers a "try again" 503 that keeps the original error; a failure to reach campaign-service at all is left
    * as it is.
@@ -4725,8 +4726,14 @@ export class CampaignController {
       );
       return;
     }
+    // Each kind answers only while it can be sent: interests on their flag, behaviors and job titles on theirs,
+    // so the search never offers an option a create would refuse.
+    if (type === 'interest' ? !canSetMetaInterestTargeting() : !canSetMetaBehaviorTargeting()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
     const query = String(req.query['query']).trim();
-    // The query is never logged, as upstream never logs it.
+    // This handler does not log the query text (only its kind); the request logger records the URL as for every route.
     const startTime = logger.startOperation(req, operation, { viaCampaignService: true, type });
     try {
       const payload = await this.campaignServiceClient.searchMetaTargetingOptions(req, projectSlug, type, query);
