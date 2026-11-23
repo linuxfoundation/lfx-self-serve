@@ -4,7 +4,7 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { DOCUMENT } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -1944,7 +1944,8 @@ describe('VotesTableComponent — Close vote (#4740)', () => {
 describe('VotesTableComponent — Cancel vote (#5968)', () => {
   let fixture: ComponentFixture<VotesTableComponent>;
   let table: VotesTableComponent;
-  let deleteVote: ReturnType<typeof vi.fn>;
+  let deleteVote: ReturnType<typeof vi.fn<VoteService['deleteVote']>>;
+  let voteService: VoteService;
   let add: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
   let refreshed: ReturnType<typeof vi.fn<() => void>>;
@@ -1979,7 +1980,7 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
   }
 
   beforeEach(async () => {
-    deleteVote = vi.fn().mockReturnValue(of(undefined));
+    deleteVote = vi.fn<VoteService['deleteVote']>().mockReturnValue(of(undefined));
     add = vi.fn();
     refreshed = vi.fn<() => void>();
     await TestBed.configureTestingModule({
@@ -1987,12 +1988,15 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: VoteService, useValue: { deleteVote, isAwaitingInvitationCount: () => false } },
+        VoteService,
+        { provide: HttpClient, useValue: {} },
         { provide: MessageService, useValue: { add } },
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
         { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
+    voteService = TestBed.inject(VoteService);
+    vi.spyOn(voteService, 'deleteVote').mockImplementation(deleteVote);
     fixture = TestBed.createComponent(VotesTableComponent);
     table = fixture.componentInstance;
     table.refresh.subscribe(() => refreshed());
@@ -2066,6 +2070,15 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     accept();
     expect(deleteVote).toHaveBeenCalledTimes(1);
     expect((await cancelItem('active'))!.disabled).toBe(true);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, status: PollStatus.ENDED } : row))
+    );
+    fixture.detectChanges();
+    accept();
+    expect(deleteVote).toHaveBeenCalledTimes(1);
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshed).not.toHaveBeenCalled();
 
     pending.next();
     pending.complete();
@@ -2074,6 +2087,7 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
   });
 
   it('explains a vote that ended first and refreshes the list without reporting success', async () => {
+    const evict = vi.spyOn(voteService, 'evictRecentlyCreatedVote');
     deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: VOTE_DELETE_ENDED_MESSAGE, code: VOTE_DELETE_ENDED } })));
     (await acceptCancel())();
     await settle();
@@ -2081,18 +2095,33 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE }));
     expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
     expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(evict).not.toHaveBeenCalled();
   });
 
   it('tells the manager a vote that is already gone and refreshes the list', async () => {
+    voteService.markVoteCreated(vote('active', { writer: true }), true);
+    const evict = vi.spyOn(voteService, 'evictRecentlyCreatedVote');
+    expect(voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
+    let votesAtRefresh: Vote[] | undefined;
+    table.refresh.subscribe(() => {
+      votesAtRefresh = voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE });
+    });
     deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Not found' } })));
     (await acceptCancel())();
     await settle();
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Vote already removed' }));
     expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(evict).toHaveBeenCalledTimes(1);
+    expect(evict).toHaveBeenCalledWith('active');
+    expect(votesAtRefresh).toEqual([]);
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE })).toEqual([]);
   });
 
   it('shows an actionable error on any other failure and leaves the row in place', async () => {
+    voteService.markVoteCreated(vote('active', { writer: true }), true);
+    const evict = vi.spyOn(voteService, 'evictRecentlyCreatedVote');
     deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: {} })));
     (await acceptCancel())();
     await settle();
@@ -2102,9 +2131,11 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     );
     expect(refreshed).not.toHaveBeenCalled();
     expect(table['displayedVotes']().some((row) => row.uid === 'active')).toBe(true);
+    expect(evict).not.toHaveBeenCalled();
+    expect(voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
   });
 
-  it('ignores an accept for a row that has ended or left the list', async () => {
+  it('warns and refreshes without deleting when the row ends while confirmation is open', async () => {
     const accept = await acceptCancel();
     fixture.componentRef.setInput(
       'votes',
@@ -2112,6 +2143,15 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     );
     fixture.detectChanges();
     accept();
+
+    expect(deleteVote).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE }));
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an accept for a row that has left the list', async () => {
+    const accept = await acceptCancel();
     fixture.componentRef.setInput(
       'votes',
       ROWS.filter((row) => row.uid !== 'active')
@@ -2121,6 +2161,7 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
 
     expect(deleteVote).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
+    expect(refreshed).not.toHaveBeenCalled();
   });
 });
 

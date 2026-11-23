@@ -578,7 +578,7 @@ export class VotesTableComponent {
     });
   }
 
-  /** Cancel from the row menu (#5968): asks first, and an accept for a row that has left the list or ended is ignored. */
+  /** Cancel from the row menu (#5968): asks first, explains an ended row, and ignores an accept for a row that has left the list. */
   protected onCancelVote(vote: Vote): void {
     const uid = vote.uid;
     this.confirmationService.confirm({
@@ -586,9 +586,15 @@ export class VotesTableComponent {
       // The dialog renders message as HTML, so the name is escaped to show exactly as typed.
       message: `Cancel the vote "${escapeHtml(vote.name)}"? The vote and all responses will be permanently deleted, and invited voters will be notified that it was cancelled. This can't be undone.`,
       accept: () => {
-        // Still listed, still open, and not already being cancelled: a second accept must not queue another delete.
+        // Duplicate in-flight accepts stay silent, even if the row has since ended.
+        if (this.cancellingUids().has(uid)) return;
         const row = this.displayedVotes().find((r) => r.uid === uid);
-        if (row?.status !== PollStatus.ACTIVE || this.cancellingUids().has(uid)) return;
+        if (row?.status === PollStatus.ENDED) {
+          this.messageService.add({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE, life: 8000 });
+          this.refresh.emit();
+          return;
+        }
+        if (row?.status !== PollStatus.ACTIVE) return;
         this.cancelVote(uid);
       },
     });
@@ -768,6 +774,8 @@ export class VotesTableComponent {
           this.refresh.emit();
         },
         error: (error: unknown) => {
+          // A missing just-created vote must not be synthesized back into the refreshed management list.
+          if (error instanceof HttpErrorResponse && error.status === 404) this.voteService.evictRecentlyCreatedVote(uid);
           this.messageService.add(this.cancelErrorToast(error));
           if (this.isCancelStateError(error)) this.refresh.emit();
         },
