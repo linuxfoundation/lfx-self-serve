@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, mentors, invite, approve, decline, requests]
 last_generated: 2026-10-26
-last_updated: 2026-11-17
+last_updated: 2026-11-23
 intercom_collection: Mentorship
 ---
 
