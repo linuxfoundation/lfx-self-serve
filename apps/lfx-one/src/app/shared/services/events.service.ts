@@ -23,6 +23,7 @@ import {
   OrgEventsResponse,
   OrgEventsSummary,
   OrgSearchResponse,
+  RequestType,
   TravelFundApplication,
   TravelFundApplicationResponse,
   TravelFundRequestsResponse,
@@ -131,8 +132,9 @@ export class EventsService {
     return this.http.get<TravelFundRequestsResponse>('/api/events/travel-fund-requests', { params: httpParams });
   }
 
-  public getUpcomingCountries(): Observable<GetUpcomingCountriesResponse> {
-    return this.http.get<GetUpcomingCountriesResponse>('/api/events/countries');
+  public getUpcomingCountries(requestType?: RequestType): Observable<GetUpcomingCountriesResponse> {
+    const params = requestType === 'travel-fund' ? new HttpParams().set('requestType', requestType) : undefined;
+    return this.http.get<GetUpcomingCountriesResponse>('/api/events/countries', { params });
   }
 
   public submitVisaRequestApplication(payload: VisaRequestApplication): Observable<VisaRequestApplicationResponse> {
