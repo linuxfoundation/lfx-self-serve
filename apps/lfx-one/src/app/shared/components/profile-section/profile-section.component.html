@@ -2,12 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
-<section [attr.aria-labelledby]="headingId()" [attr.data-testid]="testId()">
+<section [attr.aria-labelledby]="headingId" [attr.data-testid]="testId()">
   <div class="mb-[28px] flex flex-row flex-wrap items-end justify-between gap-x-[16px] gap-y-[10px]">
     <div class="min-w-0 flex-1">
       <h2
         class="m-0 font-display text-[22px] font-light leading-[28px] tracking-[-0.01em] text-gray-900"
-        [id]="headingId()"
+        [id]="headingId"
         [attr.data-testid]="testId() + '-title'">
         {{ heading() }}
       </h2>

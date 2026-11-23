@@ -92,13 +92,14 @@ describe('UiHoverCardDirective', () => {
     document.removeEventListener('keydown', outer);
   });
 
-  it('opens on keyboard focus and closes on blur', async () => {
+  it('opens at once on keyboard focus, so a screen reader reads it with the host, and closes on blur', async () => {
     await setup();
     const focusMonitor = TestBed.inject(FocusMonitor);
 
     focusMonitor.focusVia(trigger, 'keyboard');
-    await advance(50);
+    await advance(0);
     expect(card()).not.toBeNull();
+    expect(trigger.getAttribute('aria-describedby')).toMatch(/^existing lfx-ui-hover-card-/);
 
     trigger.blur();
     await advance(0);

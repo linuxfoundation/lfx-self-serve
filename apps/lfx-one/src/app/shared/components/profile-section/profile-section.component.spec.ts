@@ -41,7 +41,7 @@ describe('profile section building blocks', () => {
     const section = query(root, 'profile-recognitions')!;
 
     expect(section.tagName).toBe('SECTION');
-    expect(section.getAttribute('aria-labelledby')).toBe('profile-recognitions-heading');
+    expect(section.getAttribute('aria-labelledby')).toBe(query(root, 'profile-recognitions-title')?.id);
     expect(query(root, 'profile-recognitions-title')?.textContent?.trim()).toBe('Recognitions');
     expect(query(root, 'profile-recognitions-description')?.textContent).toBe("Awards you've earned.");
   });

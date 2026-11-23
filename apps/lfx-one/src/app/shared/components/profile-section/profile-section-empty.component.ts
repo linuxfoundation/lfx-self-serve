@@ -8,7 +8,7 @@ import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.com
 @Component({
   selector: 'lfx-profile-section-empty',
   imports: [UiEmptyStateComponent],
-  template: `<lfx-ui-empty-state size="small" [headingLevel]="3" [icon]="icon()" [heading]="heading()" [description]="description()" />`,
+  templateUrl: './profile-section-empty.component.html',
   host: { class: 'block rounded-ui-md bg-white shadow-small', 'data-testid': 'profile-section-empty' },
 })
 export class ProfileSectionEmptyComponent {

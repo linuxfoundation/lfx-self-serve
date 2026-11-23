@@ -1,11 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model } from '@angular/core';
+import { _IdGenerator } from '@angular/cdk/a11y';
+import { Component, computed, inject, input, model } from '@angular/core';
 import { PROFILE_GRID_LIMIT } from '@lfx-one/shared/constants';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
-
-let nextId = 0;
 
 /**
  * The grid a profile section lays its pills or cards in (#6067): three columns, two below 720px of width and one below
@@ -27,7 +26,7 @@ export class ProfileGridComponent {
 
   public readonly expanded = model<boolean>(false);
 
-  protected readonly gridId = `profile-grid-${nextId++}`;
+  protected readonly gridId = inject(_IdGenerator).getId('lfx-profile-grid-');
   protected readonly hasMore = computed(() => this.total() > this.limit());
   protected readonly faded = computed(() => this.hasMore() && !this.expanded());
   protected readonly toggleLabel = computed(() => (this.expanded() ? 'Show less' : `View all (${this.total()})`));

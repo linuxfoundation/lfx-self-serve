@@ -1,19 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FocusMonitor } from '@angular/cdk/a11y';
+import { _IdGenerator, FocusMonitor } from '@angular/cdk/a11y';
 import { hasModifierKey } from '@angular/cdk/keycodes';
 import { ConnectedPosition, Overlay, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { afterNextRender, ComponentRef, DestroyRef, Directive, ElementRef, inject, input, PLATFORM_ID, TemplateRef } from '@angular/core';
+import { afterNextRender, ComponentRef, DestroyRef, Directive, effect, ElementRef, inject, input, PLATFORM_ID, TemplateRef, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { UiHoverCardSide, UiPopoverPadding } from '@lfx-one/shared/interfaces';
 import { Subscription, take } from 'rxjs';
 
 import { UiHoverCardPanelComponent } from './hover-card-panel.component';
-
-let nextId = 0;
 
 /**
  * Shows a card of your own content above its host on hover and keyboard focus, such as the details behind a badge or a
@@ -24,9 +22,10 @@ let nextId = 0;
  * <ng-template #details>...</ng-template>
  * ```
  *
- * It opens after a short delay and closes on Escape, on blur, or once the pointer has left both the host and the card; it stays open
- * while the pointer is over the card. It prefers the top and flips to the bottom when it does not fit, ignores touch, and does
- * nothing on the server. While open, the host is described by the card, so a screen reader reads it on focus. It is supplementary:
+ * On hover it opens after a short delay; on keyboard focus it opens at once and the host is described by the card, so a screen
+ * reader reads it with the host. It closes on Escape, on blur, or once the pointer has left both the host and the card, and stays
+ * open while the pointer is over the card. It prefers the top and flips to the bottom when it does not fit, ignores touch, and does
+ * nothing on the server. It is supplementary:
  * anything the user must act on belongs in the page, or in `lfxUiPopover`, not here.
  */
 @Directive({
@@ -54,7 +53,7 @@ export class UiHoverCardDirective {
   private readonly focusMonitor = inject(FocusMonitor);
   private readonly destroyRef = inject(DestroyRef);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
-  private readonly panelId = `ui-hover-card-${nextId++}`;
+  private readonly panelId = inject(_IdGenerator).getId('lfx-ui-hover-card-');
   // Distance between the host and the card, in px.
   private readonly gap = 8;
   // Milliseconds the pointer may spend crossing the gap between the host and the card before it closes.
@@ -65,21 +64,20 @@ export class UiHoverCardDirective {
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private keyboardFocused = false;
   private focusSubscription: Subscription | null = null;
+  private rendered = false;
 
   public constructor() {
     afterNextRender(() => {
-      // Hover covers the pointer; only keyboard focus opens it, so a click does not flash a card.
-      this.focusSubscription = this.focusMonitor.monitor(this.host, true).subscribe((origin) => {
-        this.keyboardFocused = origin === 'keyboard';
-        if (this.keyboardFocused) {
-          this.cancelHide();
-          this.scheduleShow();
-        } else if (origin === null) this.hide();
-      });
+      this.rendered = true;
+      this.syncFocusMonitor();
+    });
+    // A grid of hosts may pass no card to most of them, so the focus monitor runs only while there is a card to show.
+    effect(() => {
+      this.template();
+      untracked(() => this.syncFocusMonitor());
     });
     this.destroyRef.onDestroy(() => {
-      this.focusSubscription?.unsubscribe();
-      this.focusMonitor.stopMonitoring(this.host);
+      this.stopFocusMonitor();
       this.hide();
     });
   }
@@ -94,13 +92,39 @@ export class UiHoverCardDirective {
     if (event.pointerType !== 'touch') this.scheduleHide();
   }
 
-  private scheduleShow(): void {
+  private syncFocusMonitor(): void {
+    if (!this.rendered) return;
+    if (!this.template()) {
+      this.stopFocusMonitor();
+      this.hide();
+      return;
+    }
+    if (this.focusSubscription) return;
+    // Hover covers the pointer; only keyboard focus opens it, and at once, so a click does not flash a card.
+    this.focusSubscription = this.focusMonitor.monitor(this.host, true).subscribe((origin) => {
+      this.keyboardFocused = origin === 'keyboard';
+      if (this.keyboardFocused) {
+        this.cancelHide();
+        this.scheduleShow(0);
+      } else if (origin === null) this.hide();
+    });
+  }
+
+  private stopFocusMonitor(): void {
+    if (!this.focusSubscription) return;
+    this.focusSubscription.unsubscribe();
+    this.focusSubscription = null;
+    this.focusMonitor.stopMonitoring(this.host);
+    this.keyboardFocused = false;
+  }
+
+  private scheduleShow(delay = this.delay()): void {
     if (!this.isBrowser || this.overlayRef || this.showTimer !== null || !this.template()) return;
     this.document.addEventListener('keydown', this.onKeydown, true);
     this.showTimer = setTimeout(() => {
       this.showTimer = null;
       this.show();
-    }, this.delay());
+    }, delay);
   }
 
   private scheduleHide(): void {

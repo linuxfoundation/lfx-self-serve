@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input } from '@angular/core';
+import { _IdGenerator } from '@angular/cdk/a11y';
+import { Component, inject, input } from '@angular/core';
 
 /**
  * One section of the Profile page or the public profile (#6067): a display-font heading with its description, an optional
@@ -15,8 +16,8 @@ import { Component, computed, input } from '@angular/core';
 export class ProfileSectionComponent {
   public readonly heading = input.required<string>();
   public readonly description = input<string>('');
-  /** Prefix for the section's test ids and heading id, e.g. `profile-recognitions`. */
+  /** Prefix for the section's test ids, e.g. `profile-recognitions`. */
   public readonly testId = input<string>('profile-section');
 
-  protected readonly headingId = computed(() => `${this.testId()}-heading`);
+  protected readonly headingId = inject(_IdGenerator).getId('lfx-profile-section-heading-');
 }

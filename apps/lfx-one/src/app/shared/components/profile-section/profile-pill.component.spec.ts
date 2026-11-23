@@ -45,6 +45,8 @@ describe('ProfilePillComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="profile-pill-name"]')?.textContent).toBe('kubernetes Contributor');
     expect(pill().querySelector('[data-testid="detail"]')?.textContent).toBe('The Linux Foundation');
     expect(pill().querySelector('img')?.getAttribute('src')).toBe('https://images.example.test/badge.png');
+    expect(pill().querySelector('img')?.getAttribute('referrerpolicy')).toBe('no-referrer');
+    expect(fixture.nativeElement.querySelector('[data-testid="profile-pill-name"]')?.getAttribute('title')).toBe('kubernetes Contributor');
   });
 
   it('is a plain tile without a link, focusable only when it opens a card', () => {
@@ -52,10 +54,13 @@ describe('ProfilePillComponent', () => {
     fixture.detectChanges();
     expect(pill().tagName).toBe('DIV');
     expect(pill().hasAttribute('tabindex')).toBe(false);
+    expect(pill().hasAttribute('role')).toBe(false);
 
     fixture.componentInstance.withCard.set(true);
     fixture.detectChanges();
     expect(pill().getAttribute('tabindex')).toBe('0');
+    expect(pill().getAttribute('role')).toBe('group');
+    expect(pill().getAttribute('aria-label')).toBe('kubernetes Contributor');
   });
 
   it("shows the name's first letter when there is no picture", () => {
