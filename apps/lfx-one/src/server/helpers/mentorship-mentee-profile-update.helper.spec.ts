@@ -248,7 +248,6 @@ describe('buildMentorshipUpstreamMenteeProfileUpdate', () => {
       user_id: 'user-1',
       profile_type: 'mentee',
       terms_and_conditions: true,
-      number_of_projects: 0,
       skill_set: { skills: ['C'], improvementSkills: ['Zig'], comments: 'Old notes.', legacyLevel: 'beginner' },
       demographics: { age: 30, race: 'asian', legacyField: 'kept' },
       socioeconomics: { income: 'workingClass', legacyScore: 3 },

@@ -7684,6 +7684,27 @@ export interface CampaignMetaImageAssetBlock {
   message: string;
 }
 
+/** The image a Meta create puts on every variant: an uploaded asset, a pasted URL, or none. Never both. */
+export type MetaImageField = { imageAssetId: string } | { imageUrl: string } | Record<string, never>;
+
+/** The Meta image state `metaImageAssetBlock` (`campaign-meta-image.utils.ts`) reads, as plain values. */
+export interface MetaImageBlockInput {
+  /** Whether the Meta section is shown (Meta is a selected platform). */
+  showMetaSection: boolean;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+  assetId: string;
+  assetBriefId: string;
+  uploadStatus: CreativeAssetUploadStatus;
+  uploadFailedBriefId: string;
+  uploadError: string;
+  assetWithheld: boolean;
+  urlWithheld: boolean;
+  creativeEnabled: boolean | null;
+  assetUploadEnabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+}
+
 /**
  * Why Create is blocked for a stored image held in a Google image slot that the request cannot
  * carry, or that campaign-service would refuse. The first six kinds mean what they do on

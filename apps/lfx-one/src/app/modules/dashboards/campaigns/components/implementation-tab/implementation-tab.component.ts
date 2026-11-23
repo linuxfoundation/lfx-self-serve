@@ -387,6 +387,7 @@ import type {
   MetaAdOptionKey,
   MetaAdOptions,
   MetaAdOptionView,
+  MetaImageField,
 } from '@lfx-one/shared/interfaces';
 import {
   campaignBiddingError,
@@ -476,6 +477,14 @@ import {
   metaEffectiveGeoTargets,
   metaGeoIsIneligible,
   metaHasPlacement,
+  metaImageAssetBlock,
+  metaImageAssetForBrief,
+  metaImageAssetWithheld,
+  metaImageCapabilities,
+  metaImageField,
+  metaImageFileRefusal,
+  metaImageUploadStatusMessage,
+  metaImageUrlWithheld,
   metaInstagramDsaFields,
   metaInstagramUserIdError,
   metaLeadFormDraftRefusal,
@@ -488,9 +497,11 @@ import {
   metaPixelValid,
   metaPlacementIsSelectable,
   metaPlacementOverrides,
+  metaPreviewImageLabel,
   metaRequiresPixel,
   metaTargetingNamesCustomAudiences,
   metaUsesInstagram,
+  metaVariantsWithImage,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
   roundUsdToCentsLikeGo,
@@ -804,7 +815,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaCreativeEnabled = input<boolean | null>(null);
 
   /** @see metaCreativeEnabled — an explicit yes, never a `null`. */
-  protected readonly metaCreativeAvailable = computed<boolean>(() => this.metaCreativeEnabled() === true);
+  protected readonly metaCreativeAvailable = computed<boolean>(
+    () => metaImageCapabilities(this.metaCreativeEnabled(), this.metaAssetUploadEnabled()).creativeAvailable
+  );
 
   /**
    * Whether the Reddit section may offer a per-campaign conversion pixel override
@@ -825,7 +838,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaAssetUploadEnabled = input<boolean | null>(null);
 
   /** @see metaAssetUploadEnabled — both capabilities an explicit yes. */
-  protected readonly metaAssetUploadAvailable = computed<boolean>(() => this.metaCreativeAvailable() && this.metaAssetUploadEnabled() === true);
+  protected readonly metaAssetUploadAvailable = computed<boolean>(
+    () => metaImageCapabilities(this.metaCreativeEnabled(), this.metaAssetUploadEnabled()).uploadAvailable
+  );
 
   /**
    * Whether the LinkedIn section may offer an image UPLOAD (`CampaignListResult.linkedInAssetUploadEnabled`).
@@ -3552,31 +3567,25 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly metaImageAssetBlock: Signal<CampaignMetaImageAssetBlock | null> = this.initMetaImageAssetBlock();
   /** Whether the draft holds an uploaded Meta image made for the brief now open — the only one sent. */
-  protected readonly metaImageAssetForThisBrief = computed(
-    () => this.metaImageAssetId() !== '' && this.metaImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  protected readonly metaImageAssetForThisBrief = computed(() =>
+    metaImageAssetForBrief(this.metaImageAssetId(), this.metaImageAssetBriefId(), this.briefPersistence().briefId)
   );
   /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
-  private readonly metaAssetWithheld = computed(
-    () => (this.metaImageAssetForThisBrief() || this.metaImageUploadStatus() === 'uploading') && !this.metaAssetUploadAvailable()
+  private readonly metaAssetWithheld = computed(() =>
+    metaImageAssetWithheld(this.metaImageAssetForThisBrief(), this.metaImageUploadStatus(), this.metaAssetUploadAvailable())
   );
   /** A pasted image URL the request cannot carry: the image capability is not an explicit yes. */
-  private readonly metaImageUrlWithheld = computed(() => this.metaImageUrl() !== '' && !this.metaCreativeAvailable());
+  private readonly metaImageUrlWithheld = computed(() => metaImageUrlWithheld(this.metaImageUrl(), this.metaCreativeAvailable()));
   protected readonly metaImageAssetBlockMessage = computed(() => this.metaImageAssetBlock()?.message ?? '');
-  protected readonly metaImageUploadStatusMessage = computed(() => {
-    if (this.metaImageUploadStatus() === 'uploading') return 'Uploading image…';
-    return this.metaImageAssetForThisBrief() ? `Uploaded: ${this.metaImageAssetName() || 'image'}` : '';
-  });
+  protected readonly metaImageUploadStatusMessage = computed(() =>
+    metaImageUploadStatusMessage(this.metaImageUploadStatus(), this.metaImageAssetForThisBrief(), this.metaImageAssetName())
+  );
   protected readonly metaImageUploadLiveMessage = computed(() => (this.metaAssetUploadAvailable() ? this.metaImageUploadStatusMessage() : ''));
   /**
    * What the variant preview says about the image each ad will carry, read from the same field the
    * payload is (`metaImageField`), so the preview never promises an image the request leaves out.
    */
-  protected readonly metaPreviewImageLabel = computed(() => {
-    const image = this.metaImageField();
-    if ('imageAssetId' in image) return `Image: ${this.metaImageAssetName() || 'uploaded image'}`;
-    if ('imageUrl' in image) return `Image: ${image.imageUrl}`;
-    return '';
-  });
+  protected readonly metaPreviewImageLabel = computed(() => metaPreviewImageLabel(this.metaImageField(), this.metaImageAssetName()));
 
   /**
    * The brief's stored images, read while a Google image slot offers the library. Re-read on every
@@ -5249,18 +5258,11 @@ export class ImplementationTabComponent implements OnInit {
     this.clearMetaImageAsset();
     this.emitDraft();
 
-    if (!isCreativeAssetMimeType(file.type)) {
-      this.failMetaImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
-      return;
-    }
-    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
-      this.failMetaImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
-      return;
-    }
     const briefId = this.briefPersistence().briefId ?? '';
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
-    if (!briefId || !projectSlug) {
-      this.failMetaImageUpload('Save the brief before uploading an image for it.');
+    const refusal = metaImageFileRefusal(file, briefId, projectSlug);
+    if (refusal !== null) {
+      this.failMetaImageUpload(refusal);
       return;
     }
 
@@ -7447,14 +7449,17 @@ export class ImplementationTabComponent implements OnInit {
    * `metaCreativeAvailable()`. Never both on a variant, which campaign-service refuses.
    */
   private metaVariantsForCreate(): MetaAdVariant[] {
-    const image = this.metaImageField();
-    return Object.keys(image).length > 0 ? this.metaVariants().map((variant) => ({ ...variant, ...image })) : this.metaVariants();
+    return metaVariantsWithImage(this.metaVariants(), this.metaImageField());
   }
 
-  private metaImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
-    if (this.metaAssetUploadAvailable() && this.metaImageAssetForThisBrief()) return { imageAssetId: this.metaImageAssetId() };
-    if (this.metaCreativeAvailable() && this.metaImageUrl()) return { imageUrl: this.metaImageUrl() };
-    return {};
+  private metaImageField(): MetaImageField {
+    return metaImageField({
+      uploadAvailable: this.metaAssetUploadAvailable(),
+      assetForThisBrief: this.metaImageAssetForThisBrief(),
+      assetId: this.metaImageAssetId(),
+      creativeAvailable: this.metaCreativeAvailable(),
+      imageUrl: this.metaImageUrl(),
+    });
   }
 
   /**
@@ -7469,43 +7474,22 @@ export class ImplementationTabComponent implements OnInit {
    * upload does, since `metaImageField` would withhold it.
    */
   private initMetaImageAssetBlock(): Signal<CampaignMetaImageAssetBlock | null> {
-    return computed(() => {
-      if (!this.showMetaSection()) return null;
-      const briefId = this.briefPersistence().briefId;
-      if (this.metaImageAssetId() !== '' && briefId && this.metaImageAssetBriefId() !== briefId) {
-        return {
-          kind: 'otherBrief',
-          message:
-            'The uploaded Meta image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
-        };
-      }
-      if (this.metaImageUploadStatus() === 'error' && briefId && this.metaImageUploadFailedBriefId() === briefId) {
-        return {
-          kind: 'uploadFailed',
-          message: `The Meta image upload did not complete: ${this.metaImageUploadError()} Remove it, or choose the image again.`,
-        };
-      }
-      if (!this.metaAssetWithheld() && !this.metaImageUrlWithheld()) return null;
-      if (this.metaCreativeEnabled() === false || (this.metaAssetWithheld() && this.metaAssetUploadEnabled() === false)) {
-        return {
-          kind: 'unsupported',
-          message: 'Meta ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
-        };
-      }
-      if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: 'Checking Meta ad image support…' };
-      }
-      if (!this.briefPersistence().briefId) {
-        return {
-          kind: 'unsaved',
-          message: "Meta ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
-        };
-      }
-      return {
-        kind: 'failed',
-        message: 'Could not confirm that Meta ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
-      };
-    });
+    return computed(() =>
+      metaImageAssetBlock({
+        showMetaSection: this.showMetaSection(),
+        briefId: this.briefPersistence().briefId,
+        assetId: this.metaImageAssetId(),
+        assetBriefId: this.metaImageAssetBriefId(),
+        uploadStatus: this.metaImageUploadStatus(),
+        uploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+        uploadError: this.metaImageUploadError(),
+        assetWithheld: this.metaAssetWithheld(),
+        urlWithheld: this.metaImageUrlWithheld(),
+        creativeEnabled: this.metaCreativeEnabled(),
+        assetUploadEnabled: this.metaAssetUploadEnabled(),
+        createCapabilityRead: this.createCapabilityRead(),
+      })
+    );
   }
 
   /** `followRedditImageUpload`'s sibling. */

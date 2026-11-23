@@ -23,7 +23,7 @@ import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
 import { mentorshipDescriptionLength } from '@lfx-one/shared/utils';
 
 /**
- * Read-only display of the mentee's own profile fields — About Me, Skills, Areas
+ * Read-only display of the mentee's own profile fields — Introduction, Skills, Areas
  * to Improve, Additional Notes (`skill_set.comments`), Country (`address.country`) — as they appear on
  * `/mentorship/mentee/profile`. The parent owns load / error state and passes a
  * resolved `profile` in; this card just renders it. `editClick` is emitted rather

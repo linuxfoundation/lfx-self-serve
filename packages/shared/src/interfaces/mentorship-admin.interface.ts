@@ -191,8 +191,7 @@ export interface MentorshipAdminTermInput {
 
 /**
  * Body of `PATCH /mentorship/v1/tasks/{id}`. A field left out is unchanged; an empty `submit_file` or `due_date` clears it.
- * `submit_file` is `required` when the mentee must upload a file. Upstream refuses `application_status`, `program_term_status`
- * and `file` here, so none is sent.
+ * `submit_file` is `required` when the mentee must upload a file. Upstream refuses `file` here, so it is not sent.
  */
 export interface MentorshipUpstreamTaskUpdate {
   name?: string;

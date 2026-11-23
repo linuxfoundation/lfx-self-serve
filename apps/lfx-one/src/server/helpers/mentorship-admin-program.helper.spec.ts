@@ -333,7 +333,6 @@ const termRow = (overrides: Partial<MentorshipUpstreamTermManagementRow> = {}): 
   program_id: 'p-1',
   name: 'Spring 2026',
   status: 'open',
-  active_users: 4,
   start_date_time: '2026-03-01T00:00:00Z',
   end_date_time: '2026-05-31T00:00:00Z',
   application_start_date: '2026-01-05T00:00:00Z',

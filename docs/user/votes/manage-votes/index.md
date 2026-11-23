@@ -4,7 +4,7 @@ description: How to find, edit, delete, vote on, and send reminders for votes in
 audience: [all]
 product_area: Votes
 tags: [votes, manage, drafts, cast, results, reminders, mailing-list, copy-link]
-last_updated: 2026-11-19
+last_updated: 2026-11-20
 intercom_collection: Votes
 ---
 
@@ -65,11 +65,13 @@ You vote from the **Me** lens, where **Votes** lists the votes you are invited t
 2. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag the options or use the arrow buttons to put them in your preferred order, with your first choice at the top.
 3. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
 4. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
-5. Select **Submit Vote**. If the vote doesn't allow changes, a notice above the button says **Once you submit, your vote can't be changed.**
+5. Select **Submit Vote** at the bottom of the drawer. If the vote doesn't allow changes, a notice at the top of the ballot, before the vote's description, says **Once you submit, your vote can't be changed.** The **Submit Vote** button stays pinned to the bottom of the drawer.
+
+The same notice appears when you vote elsewhere. In Pending Actions on your dashboard it sits above the **Submit** button and, when the vote allows abstaining, the **Abstain** checkbox. On a personalized ballot link it sits above **Submit Vote** at the bottom of the page.
 
 If you are the last invited member who hasn't responded, submitting ends the vote. Before your first ballot is recorded, a **Submitting will end this vote** dialog asks you to confirm. Select **Submit and end vote** to submit your ballot and end the vote, or **Go back** to return to your ballot without submitting. You can't change your choices, comments or abstention afterward. The dialog appears whether or not the vote allows changes. It works the same in the ballot drawer, in Pending Actions on your dashboard, and on a personalized ballot link. Changing a ballot you already submitted never shows it. If the check can't be completed, your ballot is submitted without the dialog.
 
-After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. In the **Me** lens, **Review** opens the same drawer with your recorded choices, rankings, abstention and comments. When changes are allowed, edit your response and select **Update Vote** to resubmit it, or use your personalized ballot link. When changes are not allowed, the drawer stays read-only and says **Your vote is final and can't be changed.** The **Your ballot** section on the voter view of the vote's page shows what is recorded without offering ballot changes. Results stay hidden until the vote closes.
+After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. In the **Me** lens, **Review** opens the same drawer with your recorded choices, rankings, abstention and comments. When changes are allowed, edit your response and select **Update Vote** to resubmit it, or use your personalized ballot link. When changes are not allowed, the drawer stays read-only and says **Your vote is final and can't be changed.** The **Your ballot** section on the voter view of the vote's page shows what is recorded without offering ballot changes. Results stay hidden until the vote closes. If the vote has ended or you've been removed from it, LFX Self Serve tells you so and your ballot can't be changed. If too many ballots arrive from your network at once, you're asked to wait a moment and try again.
 
 The creator's management page has no ballot-changing controls. If you also manage the vote and are an invited voter, switch to **Me → Votes → Review** to change your own ballot when allowed. Managing a vote never lets you change anyone else's response.
 

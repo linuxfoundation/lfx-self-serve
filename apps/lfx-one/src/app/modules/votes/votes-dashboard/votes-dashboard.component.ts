@@ -292,6 +292,11 @@ export class VotesDashboardComponent {
     this.refresh$.next();
   }
 
+  // A rejected update (vote ended, voter removed, ballot not found — #5964) refreshes the Me-lens list without marking the vote submitted.
+  protected onCastBallotUnavailable(): void {
+    this.refresh$.next();
+  }
+
   protected refreshVotes(): void {
     this.loading.set(true);
     this.pageTokens = [];

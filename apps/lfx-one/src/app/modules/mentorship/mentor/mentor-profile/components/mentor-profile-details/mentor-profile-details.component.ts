@@ -15,7 +15,7 @@ import { MentorshipMentorProfileDetails } from '@lfx-one/shared/interfaces';
 import { mentorshipDescriptionLength } from '@lfx-one/shared/utils';
 
 /**
- * Read-only display of the mentor's own profile fields — About Me and Skills —
+ * Read-only display of the mentor's own profile fields — Introduction and Skills —
  * as they appear on the dedicated `/mentorship/mentor/profile` page. The parent owns
  * the load / error state and passes a resolved `profile` in; this card just renders
  * it. `editClick` is emitted rather than routed so the parent decides whether the

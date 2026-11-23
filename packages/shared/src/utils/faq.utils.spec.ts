@@ -28,6 +28,7 @@ import {
   validateFaqIntakeAnswers,
 } from './faq.utils';
 import { mktgJsonAttachmentUsable } from './mktg-intake.utils';
+import { faqReportV2Envelope } from './__fixtures__/mktg-report-v2.fixture';
 
 /**
  * Forms as the agent's OWN renderFormMessage (marketing-os-agents agents/faq
@@ -289,6 +290,23 @@ describe('validateFaqEnvelope', () => {
   it('accepts an envelope the agent built, and its content hashes to its sha input', () => {
     expect(validateFaqEnvelope(ENVELOPE)).toEqual({ valid: true, errors: [] });
     expect(faqContentJson(ENVELOPE.content)).toBe(JSON.stringify(ENVELOPE.content));
+  });
+
+  it('accepts the agent’s real v2 report (version and findings), names a malformed present v2 field as the kit does, and keeps the one v1 line otherwise', () => {
+    const v2 = faqReportV2Envelope();
+    expect(validateFaqEnvelope(v2)).toEqual({ valid: true, errors: [] });
+    const findings = v2.report.findings;
+    const broken = validateFaqEnvelope({
+      ...v2,
+      report: { ...v2.report, findings: { ...findings, sources_failed: [{ source: 'x', kind: 'website', reason: '' }] } },
+    });
+    expect(broken.valid).toBe(false);
+    expect(broken.errors).toEqual(['report.findings.sources_failed must be a list of { source, kind, reason, detail? }']);
+    expect(validateFaqEnvelope({ ...v2, report: { ...v2.report, version: 1 } }).errors).toEqual(['report.version must be 2 when present']);
+    expect(validateFaqEnvelope({ ...v2, report: { ...v2.report, notes: 7 } }).errors).toEqual(['report must be { sources_read, sources_failed, gaps, notes }']);
+    // The stored revision reads the findings through untouched.
+    const { content, ...sidecar } = v2;
+    expect(faqAssetOfRevision(JSON.stringify(content), sidecar)?.report.findings).toEqual(findings);
   });
 
   it('rejects another contract, another agent and a broken question entry', () => {
