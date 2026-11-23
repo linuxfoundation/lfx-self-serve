@@ -22,6 +22,18 @@ import type {
  * (HTTP, progress, cancel) stays in the component.
  */
 
+/**
+ * The Meta image capabilities as the tab acts on them. Each is offered only on an explicit yes: an
+ * unanswered (`null`) read withholds it like a no. Upload also needs the image capability itself.
+ */
+export function metaImageCapabilities(
+  creativeEnabled: boolean | null,
+  assetUploadEnabled: boolean | null
+): { creativeAvailable: boolean; uploadAvailable: boolean } {
+  const creativeAvailable = creativeEnabled === true;
+  return { creativeAvailable, uploadAvailable: creativeAvailable && assetUploadEnabled === true };
+}
+
 /** Whether the draft holds an uploaded Meta image made for the open brief: the only one ever sent. */
 export function metaImageAssetForBrief(assetId: string, assetBriefId: string, briefId: string | null): boolean {
   return assetId !== '' && assetBriefId === (briefId ?? '');

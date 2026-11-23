@@ -9,6 +9,7 @@ import {
   metaImageAssetBlock,
   metaImageAssetForBrief,
   metaImageAssetWithheld,
+  metaImageCapabilities,
   metaImageField,
   metaImageFileRefusal,
   metaImageUploadStatusMessage,
@@ -169,5 +170,19 @@ describe('labels', () => {
     [{}, 'kubecon.png', ''],
   ])('preview for %j named %j: %j', (image, name, expected) => {
     expect(metaPreviewImageLabel(image, name)).toBe(expected);
+  });
+});
+
+describe('metaImageCapabilities', () => {
+  it.each([
+    // Only an explicit yes offers the image; an unanswered read withholds it like a no.
+    [null, null, false, false],
+    [false, true, false, false],
+    [null, true, false, false],
+    [true, null, true, false],
+    [true, false, true, false],
+    [true, true, true, true],
+  ])('creative %s, upload %s: image %s, upload %s', (creative, upload, creativeAvailable, uploadAvailable) => {
+    expect(metaImageCapabilities(creative, upload)).toEqual({ creativeAvailable, uploadAvailable });
   });
 });

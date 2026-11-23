@@ -368,8 +368,8 @@ describe('ImplementationTabComponent meta ad image', () => {
     }).compileComponents();
   });
 
-  // The `null` and `false` cases read the same `=== true` gate; `metaImageField` covers both in the helper spec.
-  it.each([['off', false]])(
+  // Unanswered (`null`) is the stricter wiring case; the full null/false/true matrix is `metaImageCapabilities` in the helper spec.
+  it.each([['unanswered', null]])(
     'renders no image controls while the Meta creative capability is %s, and sends the variants unchanged',
     async (_label, creative) => {
       const f = (await mount(creative, true)).fixture;
@@ -383,7 +383,7 @@ describe('ImplementationTabComponent meta ad image', () => {
     }
   );
 
-  it.each([['off', false]])('offers the image URL but no upload while the upload capability is %s', async (_label, upload) => {
+  it.each([['unanswered', null]])('offers the image URL but no upload while the upload capability is %s', async (_label, upload) => {
     const f = (await mount(true, upload)).fixture;
 
     expect(q(f, 'implementation-meta-image-url')).not.toBeNull();
@@ -495,8 +495,8 @@ describe('ImplementationTabComponent meta ad image', () => {
     expect(submitVariants(f).map((v) => v['imageUrl'])).toEqual(['https://cdn.example.org/promo.png', 'https://cdn.example.org/promo.png']);
   });
 
-  // Wiring for the withheld URL; the `failed`, `pending` and `unsaved` kinds are rows in `metaImageAssetBlock`'s helper table.
-  it.each([['off', false, 'ready', 'unsupported']] as const)(
+  // Wiring for the withheld URL on an unanswered capability; the `unsupported`, `pending` and `unsaved` kinds are rows in `metaImageAssetBlock`'s helper table.
+  it.each([['unanswered, with the read failed', null, 'failed', 'failed']] as const)(
     'blocks Create for a restored image URL while the image capability is %s, rather than dropping it',
     async (_label, creative, read, kind) => {
       const first = await mount(true, false);

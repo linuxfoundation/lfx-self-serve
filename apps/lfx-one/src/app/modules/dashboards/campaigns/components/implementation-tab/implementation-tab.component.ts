@@ -477,6 +477,14 @@ import {
   metaEffectiveGeoTargets,
   metaGeoIsIneligible,
   metaHasPlacement,
+  metaImageAssetBlock,
+  metaImageAssetForBrief,
+  metaImageAssetWithheld,
+  metaImageCapabilities,
+  metaImageField,
+  metaImageFileRefusal,
+  metaImageUploadStatusMessage,
+  metaImageUrlWithheld,
   metaInstagramDsaFields,
   metaInstagramUserIdError,
   metaLeadFormDraftRefusal,
@@ -489,9 +497,11 @@ import {
   metaPixelValid,
   metaPlacementIsSelectable,
   metaPlacementOverrides,
+  metaPreviewImageLabel,
   metaRequiresPixel,
   metaTargetingNamesCustomAudiences,
   metaUsesInstagram,
+  metaVariantsWithImage,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
   roundUsdToCentsLikeGo,
@@ -499,15 +509,6 @@ import {
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
   twitterTweetTextError,
-  metaImageAssetBlock,
-  metaImageAssetForBrief,
-  metaImageAssetWithheld,
-  metaImageField,
-  metaImageFileRefusal,
-  metaImageUploadStatusMessage,
-  metaImageUrlWithheld,
-  metaPreviewImageLabel,
-  metaVariantsWithImage,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
@@ -814,7 +815,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaCreativeEnabled = input<boolean | null>(null);
 
   /** @see metaCreativeEnabled — an explicit yes, never a `null`. */
-  protected readonly metaCreativeAvailable = computed<boolean>(() => this.metaCreativeEnabled() === true);
+  protected readonly metaCreativeAvailable = computed<boolean>(
+    () => metaImageCapabilities(this.metaCreativeEnabled(), this.metaAssetUploadEnabled()).creativeAvailable
+  );
 
   /**
    * Whether the Reddit section may offer a per-campaign conversion pixel override
@@ -835,7 +838,9 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaAssetUploadEnabled = input<boolean | null>(null);
 
   /** @see metaAssetUploadEnabled — both capabilities an explicit yes. */
-  protected readonly metaAssetUploadAvailable = computed<boolean>(() => this.metaCreativeAvailable() && this.metaAssetUploadEnabled() === true);
+  protected readonly metaAssetUploadAvailable = computed<boolean>(
+    () => metaImageCapabilities(this.metaCreativeEnabled(), this.metaAssetUploadEnabled()).uploadAvailable
+  );
 
   /**
    * Whether the LinkedIn section may offer an image UPLOAD (`CampaignListResult.linkedInAssetUploadEnabled`).
