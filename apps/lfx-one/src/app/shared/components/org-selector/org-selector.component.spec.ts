@@ -383,6 +383,7 @@ describe('OrgSelectorComponent navbar card', () => {
             parentNameByUid: signal(new Map([[UID_A, 'Parent Holdings']])),
             claManagerOrgSet: signal(new Set(claManagerOrgs)),
             claManagerLookupFailed: signal(false),
+            employeeViewLookupFailed: signal(false),
             employeeViewOrgUid: signal<string | null>(employeeViewOrgs[0] ?? null),
             employeeViewOrgUids: signal<ReadonlySet<string>>(new Set(employeeViewOrgs)),
             fullAccessOrgUid: signal<string | null>(null),
