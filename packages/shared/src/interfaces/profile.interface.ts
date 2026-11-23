@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Signal } from '@angular/core';
+
 import type { ACCOUNT_SETTINGS_SECTIONS } from '../constants/profile.constants';
 
 /**
@@ -29,6 +31,20 @@ export type ProfilePillTile = 'logo' | 'image';
 
 /** One section of the settings page: Email settings, Password or Developer settings. */
 export type AccountSettingsSection = (typeof ACCOUNT_SETTINGS_SECTIONS)[keyof typeof ACCOUNT_SETTINGS_SECTIONS];
+
+/**
+ * An Account & Settings page with fields the header save bar saves and reverts (#6070). The page registers itself with
+ * `AccountUnsavedChangesService` while it is shown.
+ */
+export interface AccountPageForm {
+  /** True while the fields differ from what is saved. */
+  dirty: Signal<boolean>;
+  /** True while a save is in flight. */
+  saving: Signal<boolean>;
+  save(): void;
+  /** Puts the fields back to what is saved. */
+  revert(): void;
+}
 
 /** A path plus the optional `#fragment` it lands on. */
 export interface AccountSettingsTarget {

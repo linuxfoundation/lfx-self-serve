@@ -6,6 +6,7 @@ import { ActivatedRouteSnapshot, CanActivateFn, provideRouter, Router, RouterSta
 import { ACCOUNT_ROUTE_PROFILE_TARGETS, ACCOUNT_SETTINGS_NAV, ACCOUNT_SETTINGS_SECTIONS } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
+import { accountUnsavedChangesGuard } from '../../shared/guards/account-unsaved-changes.guard';
 import { ACCOUNT_ROUTES } from './account.routes';
 
 describe('ACCOUNT_ROUTES', () => {
@@ -46,5 +47,11 @@ describe('ACCOUNT_ROUTES', () => {
     );
 
     expect(TestBed.inject(Router).serializeUrl(tree)).toBe('/account/identities?success=profile_token_obtained');
+  });
+
+  it('asks before leaving any page with unsaved changes, and leaves redirects alone', () => {
+    for (const child of children) {
+      expect(child.canDeactivate ?? []).toEqual(child.loadComponent ? [accountUnsavedChangesGuard] : []);
+    }
   });
 });

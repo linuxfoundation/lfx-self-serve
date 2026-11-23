@@ -13,10 +13,12 @@ import {
   NAVBAR_MOBILE_TOP_BAR_MEDIA_QUERY,
 } from '@lfx-one/shared/constants';
 import { AccountSettingsNavGroup } from '@lfx-one/shared/interfaces';
+import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { LinkedEmailSupportToastComponent } from '@components/linked-email-support-toast/linked-email-support-toast.component';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
 import { UserService } from '@services/user.service';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 
 /**
@@ -25,7 +27,7 @@ import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
  */
 @Component({
   selector: 'lfx-account-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, LinkedEmailSupportToastComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, LinkedEmailSupportToastComponent, UiButtonComponent],
   providers: [ProfileAuthReturnService],
   templateUrl: './account-layout.component.html',
   // Negative margins cancel main-layout's page padding, so the white page and its sticky header run edge to edge.
@@ -43,6 +45,8 @@ export class AccountLayoutComponent {
   protected readonly description = ACCOUNT_SETTINGS_DESCRIPTION;
   protected readonly navGroups: AccountSettingsNavGroup[] = ACCOUNT_SETTINGS_NAV;
   protected readonly impersonating = this.userService.impersonating;
+  /** The shown page's unsaved changes, for the header save bar. */
+  protected readonly unsavedChanges = inject(AccountUnsavedChangesService);
 
   /** Shows the fade under the header once the page has scrolled. */
   protected readonly scrolled = signal(false);

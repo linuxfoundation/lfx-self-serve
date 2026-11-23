@@ -358,6 +358,9 @@ export const ACCOUNT_IDENTITIES_PATH = '/account/identities';
 export const ACCOUNT_LINUX_EMAIL_PATH = '/account/linux-email';
 
 export const ACCOUNT_SETTINGS_TITLE = 'Account & Settings';
+export const ACCOUNT_DISCARD_CHANGES_TITLE = 'Discard unsaved changes?';
+export const ACCOUNT_DISCARD_CHANGES_MESSAGE = "You've made changes that haven't been saved. If you leave now, they'll be lost.";
+export const ACCOUNT_CHANGES_REVERTED_MESSAGE = 'Changes reverted';
 export const ACCOUNT_SETTINGS_DESCRIPTION = 'Manage your work history, linked identities, agreements, billing and sign-in.';
 
 /** The Account & Settings pages in nav order; the landing page reads the same list. */

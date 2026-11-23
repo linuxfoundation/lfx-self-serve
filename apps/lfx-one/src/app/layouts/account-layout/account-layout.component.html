@@ -14,6 +14,22 @@
       data-testid="account-layout-header">
       <h1 class="m-0 font-display text-[24px] font-light leading-[1.2] text-gray-900" data-testid="account-layout-title">{{ title }}</h1>
       <p class="m-0 text-[12px] leading-[16px] text-gray-500" data-testid="account-layout-description">{{ description }}</p>
+      <!-- Only while the page has unsaved changes: pinned to the header's bottom right, in the flow on phones. -->
+      @if (unsavedChanges.dirty()) {
+        <div
+          class="absolute bottom-[18px] right-[40px] flex flex-row items-center gap-[8px] max-[640px]:static max-[640px]:mt-[12px] max-[640px]:justify-end"
+          data-testid="account-layout-save-bar">
+          <lfx-ui-button
+            variant="secondary"
+            icon="fa-light fa-arrow-rotate-left"
+            [disabled]="unsavedChanges.saving()"
+            (click)="unsavedChanges.revert()"
+            data-testid="account-layout-revert">
+            Revert changes
+          </lfx-ui-button>
+          <lfx-ui-button [loading]="unsavedChanges.saving()" (click)="unsavedChanges.save()" data-testid="account-layout-save">Save changes</lfx-ui-button>
+        </div>
+      }
       <!-- The rule under the header, inset to the content edges. -->
       <span
         class="pointer-events-none absolute bottom-0 left-[40px] right-[40px] h-px bg-gray-200 max-[640px]:left-[20px] max-[640px]:right-[20px]"
