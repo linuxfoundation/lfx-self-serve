@@ -8,7 +8,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
-import { catchError, combineLatest, finalize, of, skip, switchMap } from 'rxjs';
+import { catchError, finalize, of, skip, switchMap } from 'rxjs';
 
 import { DEFAULT_ORG_EVENTS_PARTICIPATION, ORG_EVENTS_PARTICIPATION_BADGE_LABEL } from '@lfx-one/shared/constants';
 import type { OrgEventAttendeeVm, OrgEventsParticipation } from '@lfx-one/shared/interfaces';
@@ -43,6 +43,14 @@ export class EventAttendeesDrawerComponent {
   // The status badge on every row says what the drawer counts: Registered, Attended, or Registered or attended.
   protected readonly participationLabel = computed(() => ORG_EVENTS_PARTICIPATION_BADGE_LABEL[this.participation()]);
 
+  // One signal, so a row that changes the event, its company and `visible` together starts one read, never one per input.
+  private readonly query = computed(() => ({
+    isVisible: this.visible(),
+    eventId: this.eventId(),
+    participation: this.participation(),
+    company: this.company(),
+  }));
+
   private readonly attendeesData = this.initAttendeesData();
 
   // The counted total for the current selection: everyone the response lists. Until the first response lands, the count the opener passed in.
@@ -57,9 +65,9 @@ export class EventAttendeesDrawerComponent {
 
   private initAttendeesData() {
     return toSignal(
-      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.participation), toObservable(this.company)]).pipe(
+      toObservable(this.query).pipe(
         skip(1),
-        switchMap(([isVisible, currentEventId, participation, company]) => {
+        switchMap(({ isVisible, eventId: currentEventId, participation, company }) => {
           if (!isVisible || !currentEventId) return of(null);
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);

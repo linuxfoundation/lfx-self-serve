@@ -20,7 +20,12 @@ const FAMILY_ATTENDEES = [
 async function open(
   participation: OrgEventsParticipation,
   failing = false,
-  { rollUp = false, company = '', companyLabel = '' }: { rollUp?: boolean; company?: string; companyLabel?: string } = {}
+  {
+    rollUp = false,
+    company = '',
+    companyLabel = '',
+    inOnePass = false,
+  }: { rollUp?: boolean; company?: string; companyLabel?: string; inOnePass?: boolean } = {}
 ): Promise<{ fixture: ComponentFixture<EventAttendeesDrawerComponent>; getEventAttendees: Mock }> {
   const getEventAttendees = vi.fn(() =>
     failing
@@ -47,13 +52,15 @@ async function open(
   }).compileComponents();
 
   const fixture = TestBed.createComponent(EventAttendeesDrawerComponent);
+  // The dashboard opens a row by changing the event, its company and `visible` in one change-detection pass.
+  if (inOnePass) fixture.detectChanges();
   fixture.componentRef.setInput('eventId', 'event-1');
   fixture.componentRef.setInput('eventName', 'Event One');
   fixture.componentRef.setInput('participation', participation);
   fixture.componentRef.setInput('attendeeCount', 7);
   fixture.componentRef.setInput('company', company);
   fixture.componentRef.setInput('companyLabel', companyLabel);
-  fixture.detectChanges();
+  if (!inOnePass) fixture.detectChanges();
   fixture.componentRef.setInput('visible', true);
   fixture.detectChanges();
   await fixture.whenStable();
@@ -137,5 +144,12 @@ describe('EventAttendeesDrawerComponent', () => {
     await fixture.whenStable();
 
     expect(getEventAttendees).toHaveBeenLastCalledWith('acc-1', 'event-1', expect.objectContaining({ company: '' }));
+  });
+
+  it("reads once, with the row's company, when a row opens the drawer in one pass", async () => {
+    const { getEventAttendees } = await open('all', false, { rollUp: true, company: 'acc-b', inOnePass: true });
+
+    expect(getEventAttendees).toHaveBeenCalledTimes(1);
+    expect(getEventAttendees).toHaveBeenCalledWith('acc-1', 'event-1', expect.objectContaining({ company: 'acc-b' }));
   });
 });

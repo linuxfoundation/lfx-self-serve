@@ -11,7 +11,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EventSpeakersDrawerComponent } from './event-speakers-drawer.component';
 
-async function open(failing = false, { company = '', companyLabel = '' }: { company?: string; companyLabel?: string } = {}) {
+async function open(
+  failing = false,
+  { company = '', companyLabel = '', inOnePass = false }: { company?: string; companyLabel?: string; inOnePass?: boolean } = {}
+) {
   const getEventSpeakers = vi.fn(() =>
     failing
       ? throwError(() => new Error('boom'))
@@ -46,13 +49,15 @@ async function open(failing = false, { company = '', companyLabel = '' }: { comp
   }).compileComponents();
 
   const fixture = TestBed.createComponent(EventSpeakersDrawerComponent);
+  // The dashboard opens a row by changing the event, its company and `visible` in one change-detection pass.
+  if (inOnePass) fixture.detectChanges();
   fixture.componentRef.setInput('eventId', 'event-1');
   fixture.componentRef.setInput('eventName', 'Event One');
   fixture.componentRef.setInput('acceptedCount', 3);
   fixture.componentRef.setInput('submittedCount', 5);
   fixture.componentRef.setInput('company', company);
   fixture.componentRef.setInput('companyLabel', companyLabel);
-  fixture.detectChanges();
+  if (!inOnePass) fixture.detectChanges();
   fixture.componentRef.setInput('visible', true);
   fixture.detectChanges();
   await fixture.whenStable();
@@ -95,6 +100,13 @@ describe('EventSpeakersDrawerComponent', () => {
   it("asks for the row's company only", async () => {
     const { getEventSpeakers } = await open(false, { company: 'acc-b' });
 
+    expect(getEventSpeakers).toHaveBeenCalledWith('acc-1', 'event-1', { company: 'acc-b' });
+  });
+
+  it("reads once, with the row's company, when a row opens the drawer in one pass", async () => {
+    const { getEventSpeakers } = await open(false, { company: 'acc-b', inOnePass: true });
+
+    expect(getEventSpeakers).toHaveBeenCalledTimes(1);
     expect(getEventSpeakers).toHaveBeenCalledWith('acc-1', 'event-1', { company: 'acc-b' });
   });
 });

@@ -362,20 +362,13 @@ describe('OrgEventsDashboardComponent', () => {
       expect(el.querySelector('[data-testid="org-events-load-error"]')).not.toBeNull();
     });
 
-    it('cancels a whole-family read and shows no rows while a newly picked Company is checked, then reads that Company', async () => {
+    it("reads nothing and shows no rows until the roll-up's companies are known, then reads every company", async () => {
       const pendingSummary = new Subject<OrgEventsSummary>();
       const { component, eventsService, fixture, summary, lists } = await render(null, { rollUp: true, listMode: 'manual', summaries: [pendingSummary] });
       const rows = () => (component.isPastTab() ? component.pastEvents() : component.upcomingEvents()).data;
       const loading = () => (component.isPastTab() ? component.pastEventsLoading() : component.upcomingEventsLoading());
-      expect(companiesSent(eventsService.getOrgEvents)).toEqual(['']);
 
-      component.filterForm.controls.company.setValue('acc-b');
-      fixture.detectChanges();
-      await new Promise((resolve) => setTimeout(resolve));
-      lists[0].next({ ...EMPTY_ORG_EVENTS_RESPONSE, data: [ROW], total: 1 });
-
-      expect(lists[0].observed).toBe(false);
-      expect(eventsService.getOrgEvents).toHaveBeenCalledTimes(1);
+      expect(eventsService.getOrgEvents).not.toHaveBeenCalled();
       expect(rows()).toEqual([]);
       expect(loading()).toBe(true);
 
@@ -386,9 +379,33 @@ describe('OrgEventsDashboardComponent', () => {
       lists.at(-1)?.next({ ...EMPTY_ORG_EVENTS_RESPONSE, data: [ROW], total: 1 });
       lists.at(-1)?.complete();
 
-      expect(companiesSent(eventsService.getOrgEvents)).toEqual(['', 'acc-b']);
+      expect(companiesSent(eventsService.getOrgEvents)).toEqual(['']);
       expect(rows()).toEqual([ROW]);
       expect(loading()).toBe(false);
+    });
+
+    it("shows the load error and reads nothing for the whole family when the roll-up's companies cannot be loaded", async () => {
+      const { el, eventsService } = await render(null, { rollUp: true, summaryFails: true });
+
+      expect(eventsService.getOrgEvents).not.toHaveBeenCalled();
+      expect(el.querySelector('[data-testid="org-events-load-error"]')).not.toBeNull();
+    });
+
+    it("reads only a Company picked before the roll-up's companies are known, never the whole family", async () => {
+      const pendingSummary = new Subject<OrgEventsSummary>();
+      const { component, eventsService, fixture, summary } = await render(null, { rollUp: true, summaries: [pendingSummary] });
+
+      component.filterForm.controls.company.setValue('acc-b');
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve));
+      expect(eventsService.getOrgEvents).not.toHaveBeenCalled();
+
+      pendingSummary.next(summary);
+      pendingSummary.complete();
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve));
+
+      expect(companiesSent(eventsService.getOrgEvents)).toEqual(['acc-b']);
     });
 
     it('shows no card figures for the whole family while a Company from the URL is checked', async () => {

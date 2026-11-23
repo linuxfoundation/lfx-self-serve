@@ -195,7 +195,8 @@ export class OrgEventsDashboardComponent {
     const served = this.currentServedOrganizations();
     return company && served?.some((organization) => organization.accountId === company) ? company : '';
   });
-  private readonly companyUnresolved = computed(() => this.isRollUp() && this.company() !== '' && this.currentServedOrganizations() === null);
+  // Until the roll-up's companies are known, neither a picked Company nor All Companies can be checked.
+  private readonly companyUnresolved = computed(() => this.isRollUp() && this.currentServedOrganizations() === null);
   public readonly companyOptions: Signal<OrgDropdownOption[]> = computed(() => [
     { label: ORG_EVENTS_ALL_COMPANIES_LABEL, value: '' },
     ...(this.currentServedOrganizations() ?? []).map((organization) => ({ label: organization.name, value: organization.accountId })),

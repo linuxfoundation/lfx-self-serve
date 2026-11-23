@@ -8,7 +8,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
-import { catchError, combineLatest, finalize, of, skip, switchMap } from 'rxjs';
+import { catchError, finalize, of, skip, switchMap } from 'rxjs';
 
 import type { OrgEventSpeakerVm } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
@@ -38,6 +38,9 @@ export class EventSpeakersDrawerComponent {
   protected readonly loadFailed = signal(false);
   protected readonly companyName = computed(() => this.companyLabel() || (this.accountContext.selectedAccount().accountName ?? ''));
 
+  // One signal, so a row that changes the event, its company and `visible` together starts one read, never one per input.
+  private readonly query = computed(() => ({ isVisible: this.visible(), eventId: this.eventId(), company: this.company() }));
+
   private readonly speakersData = this.initSpeakersData();
 
   protected readonly filteredSpeakers = computed<OrgEventSpeakerVm[]>(() => {
@@ -49,9 +52,9 @@ export class EventSpeakersDrawerComponent {
 
   private initSpeakersData() {
     return toSignal(
-      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.company)]).pipe(
+      toObservable(this.query).pipe(
         skip(1),
-        switchMap(([isVisible, currentEventId, company]) => {
+        switchMap(({ isVisible, eventId: currentEventId, company }) => {
           if (!isVisible || !currentEventId) return of(null);
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);
