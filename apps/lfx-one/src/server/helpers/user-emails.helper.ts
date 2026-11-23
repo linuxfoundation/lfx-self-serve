@@ -53,12 +53,16 @@ export async function resolveVerifiedUserEmails(
     return fallback;
   }
 
-  const verifiedEmails = collectAuthServiceVerifiedEmails(emailData, !!effectiveEmail);
+  // Strict callers (access decisions) also require auth-service's primary to be the very address the
+  // session verified; a mismatch means the primary was never proven in this session.
+  const primaryMatchesSession = !!effectiveEmail && emailData.primary_email?.trim().toLowerCase() === effectiveEmail;
+  const verifiedEmails = collectAuthServiceVerifiedEmails(emailData, options.strict ? primaryMatchesSession : !!effectiveEmail);
 
   logger.debug(req, 'resolve_user_emails', 'Resolved verified emails from auth-service', {
     alternate_count: emailData.alternate_emails.length,
     verified_count: verifiedEmails.length,
   });
 
-  return verifiedEmails.length > 0 ? verifiedEmails : fallback;
+  // Strict callers never fall back to the session email: it may no longer be on the LFX profile.
+  return verifiedEmails.length > 0 || options.strict ? verifiedEmails : fallback;
 }
