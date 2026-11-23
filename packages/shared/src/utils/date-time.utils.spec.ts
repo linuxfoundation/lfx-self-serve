@@ -391,6 +391,11 @@ describe('dateOnlyToUtcMidnightIso', () => {
     expect(dateOnlyToUtcMidnightIso('1990-05-09T23:00:00.000Z')).toBeNull();
   });
 
+  it('returns null for an impossible calendar date', () => {
+    expect(dateOnlyToUtcMidnightIso('1990-02-31')).toBeNull();
+    expect(dateOnlyToUtcMidnightIso('1990-13-01')).toBeNull();
+  });
+
   it.each(['Africa/Lagos', 'Asia/Kolkata', 'Pacific/Auckland', 'America/Los_Angeles'])('keeps a date picked in %s on the same UTC day', (timeZone) => {
     vi.stubEnv('TZ', timeZone);
     const picked = new Date(1990, 4, 10);

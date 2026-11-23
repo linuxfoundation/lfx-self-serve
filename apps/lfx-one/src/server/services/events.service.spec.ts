@@ -51,6 +51,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     normalizeToUrl: urlUtils.normalizeToUrl,
     dateOnlyToUtcMidnightIso: dateUtils.dateOnlyToUtcMidnightIso,
     formatDateToUTC: dateUtils.formatDateToUTC,
+    isLocalDateOnlyString: dateUtils.isLocalDateOnlyString,
   };
 });
 vi.mock('./snowflake.service', () => ({
@@ -793,6 +794,11 @@ describe('EventsService.submitVisaRequestApplication dates', () => {
     expect(body['birthDate']).toBe('1990-05-10T00:00:00.000Z');
     expect(body['passportExpiryDate']).toBe('2030-01-31T00:00:00.000Z');
     expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it('rejects an impossible birth date instead of rolling it into the next month', async () => {
+    await expect(submit({ birthDate: '1990-02-31', passportExpiryDate: null })).rejects.toMatchObject({ code: 'INVALID_REQUEST_FIELDS' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('still accepts a full timestamp from an older client and warns without logging the value', async () => {

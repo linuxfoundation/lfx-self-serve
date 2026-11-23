@@ -45,7 +45,7 @@ import {
   VisaRequestRow,
   VisaRequestsResponse,
 } from '@lfx-one/shared/interfaces';
-import { dateOnlyToUtcMidnightIso, formatDateToUTC, isBackfillEventSource, normalizeToUrl } from '@lfx-one/shared/utils';
+import { dateOnlyToUtcMidnightIso, formatDateToUTC, isBackfillEventSource, isLocalDateOnlyString, normalizeToUrl } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -752,10 +752,13 @@ export class EventsService {
 
     const targetUrl = `${apiGwAudience.replace(/\/+$/, '')}/user-service/v1/users/${serverUserId}/visaletterrequests`;
 
+    // Converted up front so an impossible date (e.g. 1990-02-31) fails here instead of reaching user-service as null.
+    const birthDate = this.toUpstreamCalendarDate(req, 'birthDate', applicantInfo.birthDate);
+
     const missingFields: string[] = [];
     if (!applicantInfo.attendeeType) missingFields.push('attendeeType');
     if (!applicantInfo.attendeeAccommodationPaidBy) missingFields.push('attendeeAccommodationPaidBy');
-    if (!applicantInfo.birthDate) missingFields.push('birthDate');
+    if (!birthDate) missingFields.push('birthDate');
     if (!applicantInfo.citizenshipCountry) missingFields.push('citizenshipCountry');
     if (!applicantInfo.passportNumber) missingFields.push('passportNumber');
     if (!applicantInfo.organizationID) missingFields.push('organizationID');
@@ -781,7 +784,7 @@ export class EventsService {
       attendeeAccommodationPaidBy: applicantInfo.attendeeAccommodationPaidBy,
       attendeeType: applicantInfo.attendeeType,
       birthCountry: applicantInfo.citizenshipCountry,
-      birthDate: this.toUpstreamCalendarDate(req, 'birthDate', applicantInfo.birthDate),
+      birthDate,
       email: applicantInfo.email,
       eventID: eventID,
       firstName: applicantInfo.firstName,
@@ -1234,8 +1237,8 @@ export class EventsService {
   // User-service keeps only the UTC day, so send the calendar day as UTC midnight. Tabs still running
   // the old client send a local-midnight instant; keep accepting it so the submission isn't blocked.
   private toUpstreamCalendarDate(req: Request, field: string, value: string | null): string | null {
-    const utcMidnight = dateOnlyToUtcMidnightIso(value);
-    if (utcMidnight || !value) return utcMidnight;
+    // A date-only value is never sent through `new Date`, which rolls Feb 31 over to March 3.
+    if (!value || isLocalDateOnlyString(value)) return dateOnlyToUtcMidnightIso(value);
 
     logger.warning(req, 'submit_visa_request_application', 'Visa date is not a YYYY-MM-DD calendar date; falling back to instant conversion', { field });
     return formatDateToUTC(value);
