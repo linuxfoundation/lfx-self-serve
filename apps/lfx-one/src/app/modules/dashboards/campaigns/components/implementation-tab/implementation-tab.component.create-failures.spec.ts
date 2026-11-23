@@ -12,9 +12,17 @@ import { MessageService } from 'primeng/api';
 import { throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { SEED_KEYWORD, configureGoogleTab, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  SEED_KEYWORD,
+  configureGoogleTab,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The create handler's error arm, which is the last step of the named-refusal path.
@@ -63,12 +71,12 @@ describe('ImplementationTabComponent create failure messaging', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('surfaces the field refusal the server wrote instead of connection advice', async () => {
+  it('surfaces the field refusal the server wrote instead of connection advice', STATE_ONLY, async () => {
     // The exact shape a server guard emits: 400 carrying VALIDATION_ERROR and the operator-facing
     // sentence. `isBffValidationError` keys on the CODE, not the status, because a relayed
     // upstream 400 carries a status-derived code and a message no person wrote.
@@ -130,7 +138,7 @@ describe('ImplementationTabComponent create failure messaging', () => {
     expect(shown?.getAttribute('role')).toBe('alert');
   });
 
-  it('keeps reading a non-validation 400 through the shared gate, which prefers its top-level message', async () => {
+  it('keeps reading a non-validation 400 through the shared gate, which prefers its top-level message', STATE_ONLY, async () => {
     // Only a BFF `VALIDATION_ERROR` takes the field-first reader: any other body keeps the shared
     // rule, so a relayed `errors[]` entry does not displace the message the response leads with.
     vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
@@ -173,7 +181,7 @@ describe('ImplementationTabComponent create failure messaging', () => {
     }
   });
 
-  it('keeps the connection fallback for a failure that carried no server message', async () => {
+  it('keeps the connection fallback for a failure that carried no server message', STATE_ONLY, async () => {
     vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
       throwError(() => new HttpErrorResponse({ status: 0, error: null, statusText: 'Unknown Error' }))
     );
@@ -231,7 +239,7 @@ describe('ImplementationTabComponent create blocked reason', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -262,7 +270,7 @@ describe('ImplementationTabComponent create blocked reason', () => {
     expect(reasonEl()?.textContent?.trim()).toBe('Create Campaign is unavailable: Google Ads: the daily budget is missing or not valid.');
   });
 
-  it('names an unlisted control from its key', () => {
+  it('names an unlisted control from its key', STATE_ONLY, () => {
     seed('https://example.com');
     c()['campaignForm'].controls.eventSlug.setValidators(() => ({ required: true }));
     c()['campaignForm'].controls.eventSlug.updateValueAndValidity();
@@ -291,7 +299,7 @@ describe('ImplementationTabComponent dispatch failure reasons', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });

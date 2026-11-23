@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * X create (`twitterCreateEnabled`, behind `LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE`).
@@ -58,7 +59,7 @@ describe('ImplementationTabComponent x create', () => {
     enabled: boolean | null,
     options: { platforms?: string[]; draft?: CampaignImplementationDraft | null; read?: 'pending' | 'unknown'; briefId?: string | null; bidding?: boolean } = {}
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (options.draft) f.componentRef.setInput('draft', options.draft);
@@ -136,7 +137,7 @@ describe('ImplementationTabComponent x create', () => {
     }).compileComponents();
   });
 
-  it('sends the twitterConfig wire shape on an explicit yes', async () => {
+  it('sends the twitterConfig wire shape on an explicit yes', STATE_ONLY, async () => {
     const { fixture } = await mount(true);
     fill(fixture, { twitterTweetText: '  Join us at KubeCon  ' });
 
@@ -257,7 +258,7 @@ describe('ImplementationTabComponent x create', () => {
     expect(q(fixture, 'implementation-twitter-preview-link')?.textContent).not.toContain('edited-here');
   });
 
-  it('re-checks the X start at submit, refusing a start the clock has since made too soon', async () => {
+  it('re-checks the X start at submit, refusing a start the clock has since made too soon', STATE_ONLY, async () => {
     const { fixture } = await mount(true);
     fill(fixture);
     expect(c(fixture)['canSubmit']()).toBe(true);
@@ -356,7 +357,7 @@ describe('ImplementationTabComponent x create', () => {
       expect(q(fixture, 'implementation-twitter-account-connected')?.textContent).toContain('Linux Foundation (18ce54d4x5t)');
     });
 
-    it('does not read the account while X creation is not an explicit yes', async () => {
+    it('does not read the account while X creation is not an explicit yes', STATE_ONLY, async () => {
       await mount(null, { read: 'pending' });
 
       expect(getTwitterAdsAccounts).not.toHaveBeenCalled();
@@ -438,7 +439,7 @@ describe('ImplementationTabComponent x create', () => {
     });
   });
 
-  it('sends no bidding key while the bidding capability is off', async () => {
+  it('sends no bidding key while the bidding capability is off', STATE_ONLY, async () => {
     const { fixture } = await mount(true, { bidding: false });
     fill(fixture);
 

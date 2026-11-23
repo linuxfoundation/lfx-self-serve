@@ -21,9 +21,10 @@ import { MessageService } from 'primeng/api';
 import { NEVER, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { SEED_KEYWORD, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { SEED_KEYWORD, stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The submit gate, which is the only place the brief-save race is observable.
@@ -87,12 +88,12 @@ describe('ImplementationTabComponent submit gate', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('blocks submit while a brief save is in flight', async () => {
+  it('blocks submit while a brief save is in flight', STATE_ONLY, async () => {
     makeOtherwiseValid();
     expect(canSubmit()).toBe(true);
 
@@ -101,7 +102,7 @@ describe('ImplementationTabComponent submit gate', () => {
     expect(canSubmit()).toBe(false);
   });
 
-  it('re-enables submit once the save lands', async () => {
+  it('re-enables submit once the save lands', STATE_ONLY, async () => {
     makeOtherwiseValid();
     setPersistence({ status: 'saving', briefId: null, message: null, approved: false });
     expect(canSubmit()).toBe(false);
@@ -117,7 +118,7 @@ describe('ImplementationTabComponent submit gate', () => {
    * launch paid campaigns off someone else's version while the user reads their own unsaved copy.
    * The id being present is what makes it dangerous, so a null-id guard would not catch it.
    */
-  it('blocks submit when a save conflicted, even though it carries a brief id', async () => {
+  it('blocks submit when a save conflicted, even though it carries a brief id', STATE_ONLY, async () => {
     makeOtherwiseValid();
 
     setPersistence({ status: 'error', briefId: 'brief-stored-1', message: 'This brief changed elsewhere.', approved: false });
@@ -131,7 +132,7 @@ describe('ImplementationTabComponent submit gate', () => {
    * continue setting up the campaign" — so disabling Create here would contradict the message
    * they are reading. With the cutover dark the legacy create needs no brief id at all.
    */
-  it('does not block submit when a save failed without leaving a brief id', async () => {
+  it('does not block submit when a save failed without leaving a brief id', STATE_ONLY, async () => {
     makeOtherwiseValid();
 
     setPersistence({
@@ -153,7 +154,7 @@ describe('ImplementationTabComponent submit gate', () => {
    * dark. The parent also switches to Implementation before the save starts, so a fast click was
    * reaching a create with `briefId: ''` and the terminal "brief has not been saved yet" refusal.
    */
-  it('blocks submit during the first save, when the status still reads off', async () => {
+  it('blocks submit during the first save, when the status still reads off', STATE_ONLY, async () => {
     makeOtherwiseValid();
     setPersistence({ status: 'off', briefId: null, message: null, approved: false });
     expect(canSubmit()).toBe(true);
@@ -169,7 +170,7 @@ describe('ImplementationTabComponent submit gate', () => {
    * refuses a create from it (`BriefService.CreateCampaigns`, 400 "brief must be approved before creating
    * campaigns"), so leaving Create enabled invited the user to discover that the hard way.
    */
-  it('blocks submit when the brief saved but was not approved', async () => {
+  it('blocks submit when the brief saved but was not approved', STATE_ONLY, async () => {
     makeOtherwiseValid();
 
     setPersistence({
@@ -187,7 +188,7 @@ describe('ImplementationTabComponent submit gate', () => {
    * an unapproved one. campaign-service still refuses to create from it, so the id — not the
    * status — is what separates a restored brief from the cutover-dark case below.
    */
-  it('blocks submit for a restored brief that was never approved', async () => {
+  it('blocks submit for a restored brief that was never approved', STATE_ONLY, async () => {
     makeOtherwiseValid();
 
     setPersistence({ status: 'off', briefId: 'brief-restored-1', message: null, approved: false });
@@ -195,7 +196,7 @@ describe('ImplementationTabComponent submit gate', () => {
     expect(canSubmit()).toBe(false);
   });
 
-  it('allows submit for a restored brief that IS approved', async () => {
+  it('allows submit for a restored brief that IS approved', STATE_ONLY, async () => {
     makeOtherwiseValid();
 
     setPersistence({ status: 'off', briefId: 'brief-restored-1', message: null, approved: true });
@@ -220,7 +221,7 @@ describe('ImplementationTabComponent submit gate', () => {
    * re-run — so without this guard a hidden `true` would still satisfy the "Google needs at
    * least one sub-type" check and let the user submit with `demand-gen` silently appended.
    */
-  it('blocks submit when Google is selected with only a hidden DemandGen checked', async () => {
+  it('blocks submit when Google is selected with only a hidden DemandGen checked', STATE_ONLY, async () => {
     const c = fixture.componentInstance as unknown as {
       selectedPlatforms: { set(v: string[]): void };
       briefKeywords: { set(v: unknown[]): void };
@@ -320,12 +321,12 @@ describe('ImplementationTabComponent hubspotConfig wiring', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('carries the chosen template id as hubspotConfig.sourceEmailId', () => {
+  it('carries the chosen template id as hubspotConfig.sourceEmailId', STATE_ONLY, () => {
     makeOtherwiseValid();
     fixture.componentRef.setInput('sourceEmailId', 'email-123');
     fixture.detectChanges();
@@ -335,7 +336,7 @@ describe('ImplementationTabComponent hubspotConfig wiring', () => {
     expect(posted?.['hubspotConfig']).toEqual({ sourceEmailId: 'email-123' });
   });
 
-  it('omits hubspotConfig entirely when no template is chosen', () => {
+  it('omits hubspotConfig entirely when no template is chosen', STATE_ONLY, () => {
     // The paid-only path, which is every create today. An empty-but-present config would be a
     // configured-looking email channel on a campaign that has none.
     makeOtherwiseValid();
@@ -345,7 +346,7 @@ describe('ImplementationTabComponent hubspotConfig wiring', () => {
     expect(posted).not.toHaveProperty('hubspotConfig');
   });
 
-  it('treats a whitespace-only template id as no selection, matching the server', () => {
+  it('treats a whitespace-only template id as no selection, matching the server', STATE_ONLY, () => {
     // `buildHubSpotConfig` trims and returns null (UNCONFIGURED) for a blank id. Sending
     // `{ sourceEmailId: '   ' }` would claim a template was picked and be refused upstream.
     makeOtherwiseValid();
@@ -357,7 +358,7 @@ describe('ImplementationTabComponent hubspotConfig wiring', () => {
     expect(posted).not.toHaveProperty('hubspotConfig');
   });
 
-  it('trims a padded template id rather than sending the padding', () => {
+  it('trims a padded template id rather than sending the padding', STATE_ONLY, () => {
     makeOtherwiseValid();
     fixture.componentRef.setInput('sourceEmailId', '  email-456  ');
     fixture.detectChanges();
@@ -408,12 +409,12 @@ describe('ImplementationTabComponent brief restore', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('drops a platform that is not selectable from a restored brief', () => {
+  it('drops a platform that is not selectable from a restored brief', STATE_ONLY, () => {
     restore(['google-ads', 'tiktok-ads']);
 
     expect(selectedPlatforms()).not.toContain('tiktok-ads');
@@ -422,13 +423,13 @@ describe('ImplementationTabComponent brief restore', () => {
     expect(selectedPlatforms()).toContain('google-ads');
   });
 
-  it('keeps X from a restored brief, to be held by the X section rather than dropped', () => {
+  it('keeps X from a restored brief, to be held by the X section rather than dropped', STATE_ONLY, () => {
     restore(['google-ads', 'twitter-ads']);
 
     expect(selectedPlatforms()).toEqual(['google-ads', 'twitter-ads']);
   });
 
-  it('selects nothing for an all-unselectable brief rather than substituting a default', () => {
+  it('selects nothing for an all-unselectable brief rather than substituting a default', STATE_ONLY, () => {
     restore(['tiktok-ads']);
 
     // NOT ['google-ads']. Retaining the default would open a brief for a disabled platform as a
@@ -476,7 +477,7 @@ describe('ImplementationTabComponent replace saved brief', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -549,7 +550,7 @@ describe('ImplementationTabComponent edit brief', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.componentRef.setInput('briefData', brief);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -585,7 +586,7 @@ describe('ImplementationTabComponent edit brief', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-error"]')?.textContent).toContain('could not be read');
   });
 
-  it('tells the parent a create job is starting', () => {
+  it('tells the parent a create job is starting', STATE_ONLY, () => {
     const started = vi.fn();
     fixture.componentInstance.createStarted.subscribe(started);
     vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(NEVER);
@@ -643,7 +644,7 @@ describe('ImplementationTabComponent meta audience targeting', () => {
     draft?: Record<string, unknown>,
     read: CampaignCapabilityReadState = 'ready'
   ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     f.componentRef.setInput('createCapabilityRead', read);
     f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
     let captured: CampaignImplementationDraft | null = null;
@@ -718,7 +719,7 @@ describe('ImplementationTabComponent meta audience targeting', () => {
     expect('targeting' in (await submittedMeta(off.f))).toBe(false);
   });
 
-  it("holds Create on the child's own refusal", async () => {
+  it("holds Create on the child's own refusal", STATE_ONLY, async () => {
     const { f } = await mount(true, false);
     await edit(f, { ageMin: 30, advantageAudience: true });
 
@@ -758,7 +759,7 @@ describe('ImplementationTabComponent meta audience targeting', () => {
     expect(query(f, 'implementation-meta-audience-targeting-clear')).toBeNull();
   });
 
-  it("drops the previous foundation's targeting on a foundation switch, live and from the saved draft", async () => {
+  it("drops the previous foundation's targeting on a foundation switch, live and from the saved draft", STATE_ONLY, async () => {
     const { f, latest } = await mount(true, true);
     await edit(f, { ageMin: 30, customAudiences: ['1001'] });
     const savedUnderA = latest();
@@ -773,7 +774,7 @@ describe('ImplementationTabComponent meta audience targeting', () => {
     expect(c(remounted.f)['metaAudienceTargeting']()).toEqual(DEFAULT_META_AUDIENCE_TARGETING);
   });
 
-  it('saves the targeting to the draft, restores it, and clears it on a brief switch', async () => {
+  it('saves the targeting to the draft, restores it, and clears it on a brief switch', STATE_ONLY, async () => {
     const { f, latest } = await mount(true, true);
     await edit(f, { genders: ['male'], customAudiences: ['1001'] });
     expect(latest()?.metaAudienceTargeting).toMatchObject({ genders: ['male'], customAudiences: ['1001'] });
@@ -819,7 +820,7 @@ describe('ImplementationTabComponent meta ad options', () => {
     draft?: Record<string, unknown>,
     read: CampaignCapabilityReadState = 'ready'
   ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     f.componentRef.setInput('createCapabilityRead', read);
     f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
     f.componentRef.setInput('biddingEnabled', true);
@@ -892,7 +893,7 @@ describe('ImplementationTabComponent meta ad options', () => {
     expect(query(f, 'implementation-meta-conversionEvent')).not.toBeNull();
   });
 
-  it('sends the chosen values, and nothing for "Not set"', async () => {
+  it('sends the chosen values, and nothing for "Not set"', STATE_ONLY, async () => {
     const { f } = await mount(allOn);
     choose(f, 'callToAction', 'SIGN_UP');
     choose(f, 'optimizationGoal', 'LANDING_PAGE_VIEWS');
@@ -904,7 +905,7 @@ describe('ImplementationTabComponent meta ad options', () => {
     expect('callToAction' in sent || 'optimizationGoal' in sent || 'conversionEvent' in sent).toBe(false);
   });
 
-  it('clears a choice the new objective does not take', async () => {
+  it('clears a choice the new objective does not take', STATE_ONLY, async () => {
     const { f, latest } = await mount(allOn);
     choose(f, 'callToAction', 'BOOK_NOW');
     choose(f, 'optimizationGoal', 'LANDING_PAGE_VIEWS');
@@ -966,7 +967,7 @@ describe('ImplementationTabComponent meta ad options', () => {
     expect(query(f, 'implementation-meta-conversionEvent')).not.toBeNull();
   });
 
-  it('resets the choices on a foundation switch, and restores a draft only under its own foundation', async () => {
+  it('resets the choices on a foundation switch, and restores a draft only under its own foundation', STATE_ONLY, async () => {
     const { f, latest } = await mount(allOn);
     choose(f, 'callToAction', 'CONTACT_US');
     const savedUnderTlf = latest();

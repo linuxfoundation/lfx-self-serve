@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Meta objective, placements and pixel id (LFXV2-3228).
@@ -110,7 +111,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
     await makeMetaValid();
@@ -125,7 +126,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
    * before anything is created. This asserts shape-only handling, not that AN is targetable.
    */
-  it('keeps a geo code Meta excludes but Microsoft supports', async () => {
+  it('keeps a geo code Meta excludes but Microsoft supports', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set([]);
 
@@ -135,7 +136,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftEffectiveGeoTargets']()).toEqual(['AN']);
   });
 
-  it('still refuses a malformed geo code', async () => {
+  it('still refuses a malformed geo code', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set([]);
 
@@ -144,7 +145,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftGeoTargets']()).toEqual([]);
   });
 
-  it('refuses to add a geo target past the cap', async () => {
+  it('refuses to add a geo target past the cap', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set(Array.from({ length: 30 }, (_, i) => `G${i}`));
     await fixture.whenStable();
@@ -158,7 +159,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * before these caps existed, replayed verbatim by `applyDraft` (which must replay verbatim, so
    * an emptied list stays emptied). Without the backstop the form looks valid and the BFF refuses.
    */
-  it('blocks submit when a restored draft carries an over-cap Microsoft list', async () => {
+  it('blocks submit when a restored draft carries an over-cap Microsoft list', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftBudgetUsd'].set(100);
@@ -182,7 +183,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    *
    * The list is within every cap, so nothing else can be what fails.
    */
-  it('blocks submit when a restored draft carries a match type Microsoft has no name for', async () => {
+  it('blocks submit when a restored draft carries a match type Microsoft has no name for', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftBudgetUsd'].set(100);
@@ -201,7 +202,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * The same draft with the match type CORRECTED submits, so the test above cannot pass for an
    * unrelated reason — without this, a form broken for any other cause would look like coverage.
    */
-  it('allows submit once that draft carries a match type Microsoft accepts', async () => {
+  it('allows submit once that draft carries a match type Microsoft accepts', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftBudgetUsd'].set(100);
@@ -233,7 +234,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     ['below the minimum', '0.001', false],
     ['above the maximum', '1001', false],
     ['not a number', 'abc', false],
-  ])('treats a Microsoft CPC bid %s as submittable=%s', async (_label, bid, expected) => {
+  ])('treats a Microsoft CPC bid %s as submittable=%s', STATE_ONLY, async (_label, bid, expected) => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftKeywords'].set([{ text: 'kubernetes', matchType: 'Exact' }]);
@@ -250,7 +251,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * account minimum while the box still displays 1001 would substitute a spend decision the
    * operator did make.
    */
-  it('does not silently downgrade an out-of-range Microsoft CPC bid to unset', async () => {
+  it('does not silently downgrade an out-of-range Microsoft CPC bid to unset', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftCpcBid'].set('1001');
     await fixture.whenStable();
@@ -270,7 +271,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     ['negative', -5],
     // Mirrors redditBudgetIsUsable — over the client's cap is a dead job, not a refused request.
     ['over the maximum', 1_000_000_001],
-  ])('blocks a Microsoft submit on a %s budget', async (_label, budget) => {
+  ])('blocks a Microsoft submit on a %s budget', STATE_ONLY, async (_label, budget) => {
     const c = component() as unknown as Record<string, any>;
     // The guards are scoped to a Microsoft selection, so the platform must be selected or the
     // assertion would pass for the wrong reason — the arms would simply never be evaluated.
@@ -296,7 +297,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * the brief on remount would hand back a campaign they had emptied, and `canSubmit` would then
    * pass on values they never re-chose.
    */
-  it('treats a cleared Microsoft keyword list as a real value rather than refilling it', async () => {
+  it('treats a cleared Microsoft keyword list as a real value rather than refilling it', STATE_ONLY, async () => {
     let draft: Record<string, any> | null = null;
     component()['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
 
@@ -304,7 +305,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     component()['emitDraft']();
     await fixture.whenStable();
 
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     restored.componentRef.setInput('draft', draft);
     restored.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: (draft as unknown as Record<string, any>)['eventSlug'] },
@@ -352,7 +353,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
       eventSlug: slug,
     };
 
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     restored.componentRef.setInput('draft', legacyDraft);
     restored.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug, registrationUrl: 'https://events.example.com/kubecon-eu-2026' },
@@ -450,7 +451,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * key independently, so even a direct call — a future template change binding a live control —
    * cannot put `messengerInbox: true` on the wire.
    */
-  it('refuses a messengerInbox toggle even when the handler is called directly', async () => {
+  it('refuses a messengerInbox toggle even when the handler is called directly', STATE_ONLY, async () => {
     component()['onMetaPlacementChange']('messengerInbox', { target: { checked: true } } as unknown as Event);
     await fixture.whenStable();
 

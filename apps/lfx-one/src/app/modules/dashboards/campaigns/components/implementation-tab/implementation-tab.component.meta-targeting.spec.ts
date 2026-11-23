@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Meta geo chips (LFXV2-3227).
@@ -72,7 +73,7 @@ describe('ImplementationTabComponent Meta geo targets', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
     await selectMeta();
@@ -282,7 +283,7 @@ describe('ImplementationTabComponent meta ad image', () => {
     upload: boolean | null,
     draft: CampaignImplementationDraft | null = null
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);
@@ -550,7 +551,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
   }
 
   async function mount(enabled: boolean | null | undefined, draft?: Record<string, unknown>): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     if (enabled !== undefined) f.componentRef.setInput('metaInstagramDsaEnabled', enabled);
     if (draft) f.componentRef.setInput('draft', { eventSlug: 'kubecon-eu-2026', headlines: [''], descriptions: [''], ...draft });
     f.componentRef.setInput('briefData', brief());
@@ -619,7 +620,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
   async function mountLive(
     briefData: CampaignBriefOutput
   ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     f.componentRef.setInput('metaInstagramDsaEnabled', true);
@@ -722,7 +723,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
   });
 
   /** The geos and variants are seeded only from Meta copy, so a brief without any opens on none. */
-  it('clears the meta geos and variants when the next brief carries no meta copy', async () => {
+  it('clears the meta geos and variants when the next brief carries no meta copy', STATE_ONLY, async () => {
     const { f, latest } = await mountLive(brief());
     component(f)['addMetaGeoTarget']('DE');
     expect(latest()?.metaGeoTargets).toEqual(['US', 'DE']);
@@ -781,7 +782,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(request['metaConfig']['instagramUserId']).toBe('17841400000000000');
     });
 
-    it('neither requires nor sends the Instagram id when every Instagram placement is off', async () => {
+    it('neither requires nor sends the Instagram id when every Instagram placement is off', STATE_ONLY, async () => {
       fixture = await mount(true);
       component()['metaPlacements'].update((p: Record<string, boolean>) => ({ ...p, instagramFeed: false, stories: false, reels: false }));
       await type({ instagramUserId: '17841400000000000' });
@@ -807,7 +808,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(request['metaConfig']['dsaPayor']).toBe('The Linux Foundation');
     });
 
-    it('refuses a one-sided pair even without an EU geo', async () => {
+    it('refuses a one-sided pair even without an EU geo', STATE_ONLY, async () => {
       fixture = await mount(true);
       await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF' });
 
@@ -830,7 +831,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(fixture.nativeElement.querySelector('#meta-dsa-beneficiary')?.getAttribute('maxlength')).toBeNull();
     });
 
-    it('persists the three values in the draft as typed, and restores them on remount', async () => {
+    it('persists the three values in the draft as typed, and restores them on remount', STATE_ONLY, async () => {
       fixture = await mount(true);
       let draft: Record<string, unknown> | undefined;
       component()['draftChange'].subscribe((d: Record<string, unknown>) => (draft = d));

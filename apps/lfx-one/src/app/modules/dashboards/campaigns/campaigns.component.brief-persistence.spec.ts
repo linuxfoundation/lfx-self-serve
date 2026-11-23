@@ -34,6 +34,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { CampaignsComponent } from './campaigns.component';
+import { STATE_ONLY, campaignsComponentUnderTest, trackStateOnlyTests } from './campaigns.spec-helper';
 
 /**
  * The controller spec covers what the server does with a brief. What is only observable here is
@@ -42,6 +43,8 @@ import { CampaignsComponent } from './campaigns.component';
  * and "this is not durable". A save that silently reports nothing is the failure mode this
  * feature exists to prevent.
  */
+
+trackStateOnlyTests();
 
 describe('CampaignsComponent brief persistence', () => {
   const brief = { eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
@@ -147,7 +150,7 @@ describe('CampaignsComponent brief persistence', () => {
     vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
     approveBrief = vi.fn().mockReturnValue(of({ enabled: true, briefId: '', etag: null, approved: true }));
     vi.spyOn(TestBed.inject(CampaignService), 'approveBrief').mockImplementation(approveBrief);
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     await fixture.whenStable();
   });
@@ -161,12 +164,12 @@ describe('CampaignsComponent brief persistence', () => {
   // The Optimize tab is destroyed whenever another tab is open, so the page (which stays mounted)
   // is what scopes the root negative-keyword results: it reports its (project, brief), and leaving
   // the page releases them.
-  it('scopes negative-keyword results to the page, and releases them when the page is destroyed', () => {
+  it('scopes negative-keyword results to the page, and releases them when the page is destroyed', STATE_ONLY, () => {
     const service = TestBed.inject(CampaignNegativeKeywordsService);
     const setScope = vi.spyOn(service, 'setScope');
     const releaseScope = vi.spyOn(service, 'releaseScope');
     // A page mounted after the spies, so its first report is observed.
-    const page = TestBed.createComponent(CampaignsComponent);
+    const page = TestBed.createComponent(campaignsComponentUnderTest());
     page.detectChanges();
     TestBed.tick();
 
@@ -183,10 +186,10 @@ describe('CampaignsComponent brief persistence', () => {
   // A Proceed save sets the brief id to `null` while it runs (and a failed save leaves it `null`).
   // The page reports it as the empty brief; the services read that as the same project's brief
   // (see their specs), and removed keywords are scoped by the project alone.
-  it("reports the save's empty brief id to the services, and removed keywords by project only", () => {
+  it("reports the save's empty brief id to the services, and removed keywords by project only", STATE_ONLY, () => {
     const negatives = vi.spyOn(TestBed.inject(CampaignNegativeKeywordsService), 'setScope');
     const removed = vi.spyOn(TestBed.inject(CampaignRemovedKeywordsService), 'setScope');
-    const page = TestBed.createComponent(CampaignsComponent);
+    const page = TestBed.createComponent(campaignsComponentUnderTest());
     const persistence = (page.componentInstance as unknown as { briefPersistence: WritableSignal<CampaignBriefPersistenceState> }).briefPersistence;
     page.detectChanges();
     TestBed.tick();
@@ -204,10 +207,10 @@ describe('CampaignsComponent brief persistence', () => {
 
   // A foundation switch from a saved brief: the old brief id can still be on the signal when the
   // project changes, and the clear that follows must not read as a same-project save.
-  it('scopes a foundation switch from a saved brief to the new project with no brief', async () => {
+  it('scopes a foundation switch from a saved brief to the new project with no brief', STATE_ONLY, async () => {
     const service = TestBed.inject(CampaignNegativeKeywordsService);
     const setScope = vi.spyOn(service, 'setScope');
-    const page = TestBed.createComponent(CampaignsComponent);
+    const page = TestBed.createComponent(campaignsComponentUnderTest());
     const persistence = (page.componentInstance as unknown as { briefPersistence: WritableSignal<CampaignBriefPersistenceState> }).briefPersistence;
     page.detectChanges();
     persistence.set({ status: 'saved', briefId: 'b-old', message: null, approved: false });
@@ -238,14 +241,14 @@ describe('CampaignsComponent brief persistence', () => {
       TestBed.inject(Location).replaceState(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}`);
     });
 
-    it('drops ?event= when the user switches program, keeping the other parameters', () => {
+    it('drops ?event= when the user switches program, keeping the other parameters', STATE_ONLY, () => {
       switchProgram('education');
 
       expect(eventParam()).toBeNull();
       expect(TestBed.inject(Location).path()).toContain('project=foundation-a');
     });
 
-    it('keeps the #fragment when it drops ?event=', () => {
+    it('keeps the #fragment when it drops ?event=', STATE_ONLY, () => {
       TestBed.inject(Location).replaceState(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}#plan`);
 
       switchProgram('education');
@@ -253,14 +256,14 @@ describe('CampaignsComponent brief persistence', () => {
       expect(TestBed.inject(Location).path(true)).toBe('/campaigns?project=foundation-a#plan');
     });
 
-    it("keeps ?event= when a restore adopts the brief's own program", () => {
+    it("keeps ?event= when a restore adopts the brief's own program", STATE_ONLY, () => {
       restore({ ...brief, programType: 'education' } as CampaignBriefOutput, 'b-1', true, 'W/"1"');
 
       expect(eventParam()).toBe(EVENT_URL);
     });
   });
 
-  it('switches to the Implementation tab before the save resolves', async () => {
+  it('switches to the Implementation tab before the save resolves', STATE_ONLY, async () => {
     // Never completes: the point is that the handoff does not wait on the network. If this ever
     // starts gating on the response, a campaign-service outage strands the user on Planning.
     persistBrief.mockReturnValue(NEVER);
@@ -277,7 +280,7 @@ describe('CampaignsComponent brief persistence', () => {
    * in an environment where the cutover is dark — no longer the chart default since #1881, but
    * still any override or un-rolled deployment.
    */
-  it('shows no in-flight banner while the cutover state is still unknown', async () => {
+  it('shows no in-flight banner while the cutover state is still unknown', STATE_ONLY, async () => {
     persistBrief.mockReturnValue(NEVER);
 
     proceed();
@@ -330,7 +333,7 @@ describe('CampaignsComponent brief persistence', () => {
     expect(state()).toEqual({ status: 'saved', briefId: 'brief-9', message: null, approved: true });
   });
 
-  it('renders nothing when the cutover is dark', async () => {
+  it('renders nothing when the cutover is dark', STATE_ONLY, async () => {
     persistBrief.mockReturnValue(
       new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: false, briefId: '', etag: null, created: false, approved: false }))
     );
@@ -364,7 +367,7 @@ describe('CampaignsComponent brief persistence', () => {
    * on. It must not be applied then: `saved` would claim durability for whatever brief is on
    * screen now, and `briefId` would be the id of a different one.
    */
-  it('drops a save that resolves after the brief was discarded', async () => {
+  it('drops a save that resolves after the brief was discarded', STATE_ONLY, async () => {
     const late = new Subject<CampaignBriefPersistResult>();
     persistBrief.mockReturnValue(late);
 
@@ -416,7 +419,7 @@ describe('CampaignsComponent brief persistence', () => {
    * superseded one is the stalest evidence there is. Let it clear the latch and the session goes
    * back to withholding the in-flight banner permanently, for a cutover that is on.
    */
-  it('does not let a stale disabled response clear the cutover latch', async () => {
+  it('does not let a stale disabled response clear the cutover latch', STATE_ONLY, async () => {
     const late = new Subject<CampaignBriefPersistResult>();
     persistBrief.mockReturnValue(late);
     proceed();
@@ -465,7 +468,7 @@ describe('CampaignsComponent brief persistence', () => {
       // change this component observes is a real switch. Re-create the fixture with a foundation
       // already selected rather than letting the initial seed masquerade as one.
       selectFoundation('tlf');
-      fixture = TestBed.createComponent(CampaignsComponent);
+      fixture = TestBed.createComponent(campaignsComponentUnderTest());
       await fixture.whenStable();
     });
 
@@ -484,7 +487,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     });
 
-    it('drops a save that resolves after the foundation changed', async () => {
+    it('drops a save that resolves after the foundation changed', STATE_ONLY, async () => {
       const late = new Subject<CampaignBriefPersistResult>();
       persistBrief.mockReturnValue(late);
 
@@ -532,7 +535,7 @@ describe('CampaignsComponent brief persistence', () => {
      * and the server — given a name it recognises — would accept an overwrite of a brief that was
      * never approved as B. A key too coarse to tell A from B disarms the guard it feeds.
      */
-    it('refuses an email-only tab id on the paid flow', async () => {
+    it('refuses an email-only tab id on the paid flow', STATE_ONLY, async () => {
       // `CampaignTab` typed both flows' selection, so `selectTab('audience', 'paid-marketing')`
       // compiled — and left the paid flow selected on a tab it renders no panel for. The unions
       // are now split so that call is a type error; this pins the runtime half, since the paid
@@ -573,7 +576,7 @@ describe('CampaignsComponent brief persistence', () => {
      * brief this session never loaded. That is exactly the case LFXV2-3200's guard exists to
      * refuse, so a key too coarse to tell A from B disarms it.
      */
-    it('adopts the program of a restored brief instead of leaving the selector wrong', async () => {
+    it('adopts the program of a restored brief instead of leaving the selector wrong', STATE_ONLY, async () => {
       // The lookup is keyed on `(event_slug, project)` with no program type, so an Events brief
       // can be offered while the page sits on Education. Leaving the selector wrong is not merely
       // cosmetic: correcting it runs `resetToPlanning`, which clears the brief AND the ownership
@@ -606,7 +609,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(eventsBrief, expect.anything(), 'restored-a', null, true);
     });
 
-    it('still resets when the USER switches program, unlike a restore adopt', async () => {
+    it('still resets when the USER switches program, unlike a restore adopt', STATE_ONLY, async () => {
       // The flag that stops a restore-adopt resetting must not disarm the ordinary case. A user
       // choosing a different program is discarding the brief on purpose, and `resetToPlanning`
       // clearing `briefOutput` is exactly right there.
@@ -634,7 +637,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
-    it('sends the LOAD-TIME validator as If-Match, so a concurrent edit is refused not overwritten', async () => {
+    it('sends the LOAD-TIME validator as If-Match, so a concurrent edit is refused not overwritten', STATE_ONLY, async () => {
       // LFXV2-3204. The hazard: two people load the same brief, the other one saves first, and
       // this page's save silently replaces their work. `replaceBrief` prefers a caller-supplied
       // validator over the one its own find reads, so the refusal can only happen if the restore
@@ -655,7 +658,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v1"', false);
     });
 
-    it('surfaces a concurrent edit as stale-brief, then lets the next Proceed overwrite', async () => {
+    it('surfaces a concurrent edit as stale-brief, then lets the next Proceed overwrite', STATE_ONLY, async () => {
       // The full chosen behavior end to end: one honest refusal, then the existing
       // proceed-again path. Both halves matter — a fix that produced the 412 but stranded the
       // user would break a shipped flow, and a fix that kept proceeding silently would not be a
@@ -684,7 +687,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
-    it('treats an ABSENT etag field like a null one, so a rolling deploy cannot block restores', async () => {
+    it('treats an ABSENT etag field like a null one, so a rolling deploy cannot block restores', STATE_ONLY, async () => {
       // `etag` crosses an HTTP boundary, so its declared `string | null` is a claim about the
       // CURRENT server. Mid-rolling-deploy an older pod omits the field and JSON yields
       // `undefined` — a value the type system says cannot occur and the wire produces anyway.
@@ -770,7 +773,7 @@ describe('CampaignsComponent brief persistence', () => {
      * could enable it.
      */
     describe('approving a restored brief', () => {
-      it('approves the stored row and leaves Create enabled, without re-saving it', async () => {
+      it('approves the stored row and leaves Create enabled, without re-saving it', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
 
         restore(brief, 'restored-a', false, 'W/"v1"');
@@ -788,7 +791,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).not.toHaveBeenCalled();
       });
 
-      it('re-records the validator the approval returned, so the next save is not refused', async () => {
+      it('re-records the validator the approval returned, so the next save is not refused', STATE_ONLY, async () => {
         // Approval bumps the row's `version` upstream, so the restore's own ETag is stale the
         // moment it succeeds. Replaying it would 412 the next Proceed for something the user did
         // not do.
@@ -803,7 +806,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v2"', false);
       });
 
-      it('does not license an overwrite the user was never warned about', async () => {
+      it('does not license an overwrite the user was never warned about', STATE_ONLY, async () => {
         // The restore's own read DID carry a validator, and the approval came back without one.
         // Licensing the ETag fallback here would let the next Proceed send `etag_fallback=1`, and
         // `replaceBrief` then PUTs with the validator it reads itself inside that save — so an
@@ -824,7 +827,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, false);
       });
 
-      it('carries through an overwrite permission the restore already held', async () => {
+      it('carries through an overwrite permission the restore already held', STATE_ONLY, async () => {
         // The other half of the same default. This restore's read carried NO validator, which
         // records `absence: 'overwrite'` — no validator BY CHOICE, against content the user was
         // shown. An approval that returns no validator must not downgrade that: nothing about
@@ -844,7 +847,7 @@ describe('CampaignsComponent brief persistence', () => {
       // Blank is what an unresolved foundation reads as, and the server refuses it — a brief is
       // approved inside one project. Returning silently would leave Create disabled under the
       // restore's own untroubled banner, which is the no-reason dead end this path replaces.
-      it('says why, rather than going quiet, when no foundation is resolved', async () => {
+      it('says why, rather than going quiet, when no foundation is resolved', STATE_ONLY, async () => {
         TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-x', slug: '', name: 'Unresolved' } as never, false);
         // Settled BEFORE the restore. The foundation-switch subscription resets the banner to
         // idle asynchronously, so restoring first would let that reset land on top of the error
@@ -860,7 +863,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(state().message).toContain('No foundation is selected');
       });
 
-      it('sends no approve for a brief that is already approved', async () => {
+      it('sends no approve for a brief that is already approved', STATE_ONLY, async () => {
         restore(brief, 'restored-a', true, 'W/"v1"');
         await fixture.whenStable();
 
@@ -868,7 +871,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(state().approved).toBe(true);
       });
 
-      it('leaves Create disabled with a real reason when the stored brief moved under it', async () => {
+      it('leaves Create disabled with a real reason when the stored brief moved under it', STATE_ONLY, async () => {
         // A 412 the BFF maps to `stale-brief`. Saying nothing here would leave Create disabled
         // with the banner still reporting the restore as fine -- the exact silence this fix
         // exists to end.
@@ -882,7 +885,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(state().message).toContain('changed while you were working');
       });
 
-      it('reports a failed approve request rather than claiming the brief is ready', async () => {
+      it('reports a failed approve request rather than claiming the brief is ready', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(throwError(() => new Error('network down')));
 
         restore(brief, 'restored-a', false, 'W/"v1"');
@@ -905,6 +908,7 @@ describe('CampaignsComponent brief persistence', () => {
        */
       it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])(
         'falls back to the unknown message for an inherited %s conflict',
+        STATE_ONLY,
         async (conflict) => {
           approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false, conflict } as CampaignBriefApproveResult));
 
@@ -918,7 +922,7 @@ describe('CampaignsComponent brief persistence', () => {
         }
       );
 
-      it('names the mixed rollout when the approve lands on a pod that has not cut over', async () => {
+      it('names the mixed rollout when the approve lands on a pod that has not cut over', STATE_ONLY, async () => {
         // `enabled: false` cannot mean a dark deployment on this path. `loadBrief` is gated on the
         // same flag and answers a dark one with no brief id at all, so no restore would have been
         // offered -- reaching the approve proves one pod has the flag and this answer proves
@@ -961,7 +965,7 @@ describe('CampaignsComponent brief persistence', () => {
        * save — and re-run an approval against an already-approved row. This session's own record
        * is the newer account of that id, so it wins.
        */
-      it('prefers its own record over a stale restore offer for the same brief id', async () => {
+      it('prefers its own record over a stale restore offer for the same brief id', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -992,7 +996,7 @@ describe('CampaignsComponent brief persistence', () => {
        * the draft. Preferring the record there would skip the approval and enable Create against
        * a row upstream refuses. The offer's `readAt` is above the record's, so it wins.
        */
-      it('takes a restore offer that was read after its own record was written', async () => {
+      it('takes a restore offer that was read after its own record was written', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -1019,7 +1023,7 @@ describe('CampaignsComponent brief persistence', () => {
        * own date on the way back into the map: that is strictly above its real one, and it would
        * disqualify the very lookup the bump went out to trigger.
        */
-      it('does not re-date its own record when a stale offer is replayed before the fresh read lands', async () => {
+      it('does not re-date its own record when a stale offer is replayed before the fresh read lands', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -1083,7 +1087,7 @@ describe('CampaignsComponent brief persistence', () => {
        * approval all describe what is stored. Create builds from the stored row, so carrying the
        * approval through would create a campaign from a brief the user never saw.
        */
-      it('refuses to pair a cached brief with metadata from a version saved over it', async () => {
+      it('refuses to pair a cached brief with metadata from a version saved over it', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -1117,7 +1121,7 @@ describe('CampaignsComponent brief persistence', () => {
        * session learned about the previous occupant — its validator or its approval state — may be
        * carried onto it. The offer is then the only account there is.
        */
-      it('does not carry a previous row approval onto a different brief id', async () => {
+      it('does not carry a previous row approval onto a different brief id', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -1145,7 +1149,7 @@ describe('CampaignsComponent brief persistence', () => {
        * path did not, so every retry re-sent the validator the server had just rejected and was
        * refused identically, while the banner said to try again. A reload was the only exit.
        */
-      it('licenses the next save after an approval was refused', async () => {
+      it('licenses the next save after an approval was refused', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false, conflict: 'stale-brief' }));
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -1167,7 +1171,7 @@ describe('CampaignsComponent brief persistence', () => {
        * overwrite licence there would let the next Proceed replace an editor nobody was warned
        * about — the silent overwrite the carried validator exists to prevent.
        */
-      it('does not license an overwrite when the approval outcome is indeterminate', async () => {
+      it('does not license an overwrite when the approval outcome is indeterminate', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false }));
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -1187,7 +1191,7 @@ describe('CampaignsComponent brief persistence', () => {
        * branch does: the refusal says the stored row MOVED, so the offer still on screen describes
        * the row this approval lost to, and the next Restore would replay it.
        */
-      it('re-reads the planning lookup when an approval is refused', async () => {
+      it('re-reads the planning lookup when an approval is refused', STATE_ONLY, async () => {
         const before = refreshToken();
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false, conflict: 'stale-brief' }));
 
@@ -1203,7 +1207,7 @@ describe('CampaignsComponent brief persistence', () => {
        * queue's own docblock argues against — so a concurrent save for the same row could read
        * `knownBriefIds` before the approval filed its new validator and send the stale one.
        */
-      it('waits for a pending approval of the same row before reading its validator', async () => {
+      it('waits for a pending approval of the same row before reading its validator', STATE_ONLY, async () => {
         const pending = new Subject<CampaignBriefApproveResult>();
         approveBrief.mockReturnValue(pending);
         restore(brief, 'restored-a', false, 'W/"v1"');
@@ -1224,7 +1228,7 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /** A save for a DIFFERENT event must not queue behind an approval it has nothing to do with. */
-      it('does not hold a save of another event behind a pending approval', async () => {
+      it('does not hold a save of another event behind a pending approval', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(NEVER);
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -1240,7 +1244,7 @@ describe('CampaignsComponent brief persistence', () => {
        * And the approval has to tell Planning its cache is stale, or the second Restore above is
        * served from the pre-approval answer in the first place.
        */
-      it('invalidates the planning lookup after approving a restored brief', async () => {
+      it('invalidates the planning lookup after approving a restored brief', STATE_ONLY, async () => {
         const before = refreshToken();
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
         restore(brief, 'restored-a', false, 'W/"v1"');
@@ -1257,7 +1261,7 @@ describe('CampaignsComponent brief persistence', () => {
        * `onProceedToImplementation` an approval it never verified, which skipped the approve
        * entirely and enabled Create Campaign against a draft.
        */
-      it('does not carry a stale approval through a conflict, so Create is not enabled against a draft', async () => {
+      it('does not carry a stale approval through a conflict, so Create is not enabled against a draft', STATE_ONLY, async () => {
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -1300,7 +1304,7 @@ describe('CampaignsComponent brief persistence', () => {
        * enabled against a brief the screen never showed. The stamp lands one above for exactly
        * this sequence.
        */
-      it('refuses a replay of the offer read before a save, when the restore before it approved nothing', async () => {
+      it('refuses a replay of the offer read before a save, when the restore before it approved nothing', STATE_ONLY, async () => {
         // Already approved, so no approve POST and no bump: the record is filed at the page's
         // first-lookup token, and the token is still that value when the save below reads it.
         restore(brief, 'restored-a', true, 'W/"v1"');
@@ -1333,7 +1337,7 @@ describe('CampaignsComponent brief persistence', () => {
        * second POST cannot succeed once the first has moved the version: the user was left with
        * "could not be approved" for a row that was, in fact, approved.
        */
-      it('shares one approve request when a brief is restored twice before it resolves', async () => {
+      it('shares one approve request when a brief is restored twice before it resolves', STATE_ONLY, async () => {
         const pending = new Subject<CampaignBriefApproveResult>();
         approveBrief.mockReturnValue(pending);
 
@@ -1497,7 +1501,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief.mock.calls[1][2]).not.toBe('restored-a');
     });
 
-    it('does not lend a RESTORED brief id to another event', async () => {
+    it('does not lend a RESTORED brief id to another event', STATE_ONLY, async () => {
       persistBrief.mockReturnValue(NEVER);
       restore(brief, 'restored-a');
       await fixture.whenStable();
@@ -1511,7 +1515,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null, null, false);
     });
 
-    it("still replays an event's own id when that event is proceeded again", async () => {
+    it("still replays an event's own id when that event is proceeded again", STATE_ONLY, async () => {
       // The other half of the same key: narrowing it must not break the case it exists to serve.
       persistBrief.mockReturnValue(NEVER);
       restore(brief, 'restored-a');
@@ -1561,7 +1565,7 @@ describe('CampaignsComponent brief persistence', () => {
      * Nothing is lost by forgetting it: the next save for that event finds the row and is
      * refused, which is the correct answer for a caller that can no longer name it.
      */
-    it('does not record the created id when the save is superseded', async () => {
+    it('does not record the created id when the save is superseded', STATE_ONLY, async () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
 
       proceed();
@@ -1616,12 +1620,12 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
       });
 
-      it('marks the unowned refusal so the Implementation tab can offer Replace', () => {
+      it('marks the unowned refusal so the Implementation tab can offer Replace', STATE_ONLY, () => {
         expect(state().status).toBe('error');
         expect(state().conflict).toBe('unowned-brief-exists');
       });
 
-      it('re-saves the brief on screen as the owner of the stored row, with its ETag as the precondition', async () => {
+      it('re-saves the brief on screen as the owner of the stored row, with its ETag as the precondition', STATE_ONLY, async () => {
         loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
         persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"6"', created: false, approved: true }));
 
@@ -1635,7 +1639,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(state().conflict).toBeUndefined();
       });
 
-      it('replaces with fallback permission when the read returned no ETag', async () => {
+      it('replaces with fallback permission when the read returned no ETag', STATE_ONLY, async () => {
         loadBrief.mockReturnValue(of(loaded('stored-1', null)));
         persistBrief.mockReturnValueOnce(NEVER);
 
@@ -1645,7 +1649,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
       });
 
-      it('replaces a stored brief this build cannot open', async () => {
+      it('replaces a stored brief this build cannot open', STATE_ONLY, async () => {
         loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"', 'unreadable')));
         persistBrief.mockReturnValueOnce(NEVER);
 
@@ -1655,7 +1659,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
       });
 
-      it('creates when the stored brief has gone since the refusal', async () => {
+      it('creates when the stored brief has gone since the refusal', STATE_ONLY, async () => {
         loadBrief.mockReturnValue(of(loaded(null, null, 'none')));
         persistBrief.mockReturnValueOnce(NEVER);
 
@@ -1665,7 +1669,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', null, null, false);
       });
 
-      it('warns rather than overwrites when the stored brief moved after the read', async () => {
+      it('warns rather than overwrites when the stored brief moved after the read', STATE_ONLY, async () => {
         loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
         persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
 
@@ -1677,7 +1681,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(state().message).toContain('Someone else changed this brief');
       });
 
-      it('keeps Replace on offer when the stored brief cannot be read', async () => {
+      it('keeps Replace on offer when the stored brief cannot be read', STATE_ONLY, async () => {
         loadBrief.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
         const savesBefore = persistBrief.mock.calls.length;
         const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -1695,7 +1699,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(state().message).toContain('was not replaced');
       });
 
-      it('marks an older Restore offer superseded when the replacing save fails', async () => {
+      it('marks an older Restore offer superseded when the replacing save fails', STATE_ONLY, async () => {
         // The read may see a version newer than the offer Planning cached. If the replace then
         // fails, restoring that offer must not pair its older content and approval with the newer
         // ETag this read recorded -- that would enable Create against content never shown.
@@ -1717,7 +1721,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(approveBrief.mock.calls.length).toBe(approvalsBefore);
       });
 
-      it('drops a read answered after a foundation switch but before the page reacts to it', async () => {
+      it('drops a read answered after a foundation switch but before the page reacts to it', STATE_ONLY, async () => {
         // The switch bumps the counters only once the `activeFoundationSlug` subscription runs, so
         // the read is answered here BEFORE `TestBed.tick()`: only the slug check stands in that gap.
         const read = new Subject<CampaignBriefLoadResult>();
@@ -1734,7 +1738,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief.mock.calls.length).toBe(savesBefore);
       });
 
-      it('drops the read when the foundation changes while it is out', async () => {
+      it('drops the read when the foundation changes while it is out', STATE_ONLY, async () => {
         const read = new Subject<CampaignBriefLoadResult>();
         loadBrief.mockReturnValue(read);
         const savesBefore = persistBrief.mock.calls.length;
@@ -1749,7 +1753,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief.mock.calls.length).toBe(savesBefore);
       });
 
-      it('does not hand the adopted id to a save queued before the replace', async () => {
+      it('does not hand the adopted id to a save queued before the replace', STATE_ONLY, async () => {
         // Saves are serialized and read ownership when they START. A save queued before the replace
         // adopted the stored row must not inherit that id: it was never sent with it. The epoch bump
         // is what refuses it, as a restore's does.
@@ -1771,7 +1775,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief.mock.calls[callsBefore]).toEqual([brief, 'foundation-a', null, null, false]);
       });
 
-      it('cancels the read when the page is destroyed', () => {
+      it('cancels the read when the page is destroyed', STATE_ONLY, () => {
         const read = new Subject<CampaignBriefLoadResult>();
         loadBrief.mockReturnValue(read);
         const savesBefore = persistBrief.mock.calls.length;
@@ -1784,7 +1788,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief.mock.calls.length).toBe(savesBefore);
       });
 
-      it('drops the read when the brief is discarded while it is out', async () => {
+      it('drops the read when the brief is discarded while it is out', STATE_ONLY, async () => {
         const read = new Subject<CampaignBriefLoadResult>();
         loadBrief.mockReturnValue(read);
         const savesBefore = persistBrief.mock.calls.length;
@@ -1798,7 +1802,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief.mock.calls.length).toBe(savesBefore);
       });
 
-      it('returns to idle when brief persistence turns out to be off', async () => {
+      it('returns to idle when brief persistence turns out to be off', STATE_ONLY, async () => {
         loadBrief.mockReturnValue(of(loaded(null, null, 'off')));
         const savesBefore = persistBrief.mock.calls.length;
 
@@ -1810,7 +1814,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(state()).toMatchObject({ status: 'off', briefId: null });
       });
 
-      it('treats an ETag omitted mid-rolling-deploy as absent, not as a validator', async () => {
+      it('treats an ETag omitted mid-rolling-deploy as absent, not as a validator', STATE_ONLY, async () => {
         // An older pod omits the field, so JSON yields `undefined` where the type says null. Left
         // un-normalised it reads as "a validator was sent", withholding the overwrite licence and
         // refusing the very save Replace exists for -- the case `onRestoreSavedBrief` normalises.
@@ -2005,7 +2009,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(padded, expect.anything(), null, null, false);
     });
 
-    it('keeps an id recorded by a save that lands after a foundation switch', async () => {
+    it('keeps an id recorded by a save that lands after a foundation switch', STATE_ONLY, async () => {
       // The switch clears the BANNER but deliberately keeps `knownBriefIds` — the map is keyed by
       // foundation, so each one's ids stay valid for it. An in-flight save that finishes after
       // the switch must therefore still record: it created a real row under TLF, and dropping its
@@ -2202,7 +2206,7 @@ describe('CampaignsComponent brief persistence', () => {
        * always worked; nothing populated it. A test that sets `demandGenEnabled` by hand passes
        * against exactly the bug this covers.
        */
-      it('loads the demand-gen capability on a first-create Planning to Implementation flow', async () => {
+      it('loads the demand-gen capability on a first-create Planning to Implementation flow', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2251,7 +2255,7 @@ describe('CampaignsComponent brief persistence', () => {
        * So the assertion is that NOTHING was sent, and the capability stays unknown. Fixing this
        * properly needs a capability read that does not require a brief id at all.
        */
-      it('sends no capability request when brief persistence is disabled', async () => {
+      it('sends no capability request when brief persistence is disabled', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2293,7 +2297,7 @@ describe('CampaignsComponent brief persistence', () => {
        * clears a saved Demand Gen selection on an explicit `false`, and a failed read has
        * established nothing.
        */
-      it('leaves the capability unknown when the capability read fails', async () => {
+      it('leaves the capability unknown when the capability read fails', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
 
         await withSavedBrief();
@@ -2311,7 +2315,7 @@ describe('CampaignsComponent brief persistence', () => {
        * false there — so a component that mirrored one signal onto the other, or read the wrong
        * key, would pass every demand-gen test above and fail here.
        */
-      it('loads the google-channels capability alongside the demand-gen one', async () => {
+      it('loads the google-channels capability alongside the demand-gen one', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2356,7 +2360,7 @@ describe('CampaignsComponent brief persistence', () => {
        * capability set the opposite way, so a component that read the wrong key would fail here.
        * A failed read leaves it `null`, which the tab treats as off.
        */
-      it('loads the bidding capability from its own key', async () => {
+      it('loads the bidding capability from its own key', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2397,7 +2401,7 @@ describe('CampaignsComponent brief persistence', () => {
        * The Microsoft flight-date capability rides on the same read, asserted the same way: every
        * other capability set the opposite way, so a component that read the wrong key would fail.
        */
-      it('loads the microsoft schedule capability from its own key', async () => {
+      it('loads the microsoft schedule capability from its own key', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2441,7 +2445,7 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /** The LinkedIn upload capability, read from its own key on the same terms as the one above. */
-      it('loads the linkedin upload capability from its own key, and leaves it unknown when the read fails', async () => {
+      it('loads the linkedin upload capability from its own key, and leaves it unknown when the read fails', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2488,7 +2492,7 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /** The LinkedIn targeting-edit capability (#5546), read from its own key on the same terms as the one above. */
-      it('loads the linkedin targeting-edit capability from its own key, and leaves it unknown when the read fails', async () => {
+      it('loads the linkedin targeting-edit capability from its own key, and leaves it unknown when the read fails', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2535,7 +2539,7 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /** The Microsoft upload capability, read from its own key on the same terms as the one above. */
-      it('loads the microsoft upload capability from its own key, and leaves it unknown when the read fails', async () => {
+      it('loads the microsoft upload capability from its own key, and leaves it unknown when the read fails', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2593,7 +2597,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(c.briefCampaignsCapabilityRead()).toBe('pending');
       });
 
-      it('leaves the bidding capability unknown when the capability read fails', async () => {
+      it('leaves the bidding capability unknown when the capability read fails', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
 
         await withSavedBrief();
@@ -2621,7 +2625,7 @@ describe('CampaignsComponent brief persistence', () => {
        * established nothing. Collapsing the two here would destroy a user's saved channel
        * selection because a query service was briefly down.
        */
-      it('leaves the google-channels capability unknown when the capability read fails', async () => {
+      it('leaves the google-channels capability unknown when the capability read fails', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
 
         await withSavedBrief();
@@ -2641,7 +2645,7 @@ describe('CampaignsComponent brief persistence', () => {
        * `tab === 'implementation'` branch from `selectTab` leaves the tests above green — the
        * persist-success path still fires its own read — but this case stays broken.
        */
-      it('retries the capability read when the user re-enters Implementation via the tab bar', async () => {
+      it('retries the capability read when the user re-enters Implementation via the tab bar', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
 
         // First create: persist succeeds, capability read fails.
@@ -2702,7 +2706,7 @@ describe('CampaignsComponent brief persistence', () => {
        * identical `/list` calls land on pods with different flag values, which is the pod-local
        * hazard recorded on #1885. This pins ordering, never agreement.
        */
-      it('keeps a capability answer when an Optimize load races it', async () => {
+      it('keeps a capability answer when an Optimize load races it', STATE_ONLY, async () => {
         const capability = new Subject<CampaignListResult>();
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(capability.asObservable());
 
@@ -2776,7 +2780,7 @@ describe('CampaignsComponent brief persistence', () => {
        * writes this signal too. An older list read failing AFTER a newer capability read
        * succeeded must not reset a live answer to `null` — a failure has established nothing.
        */
-      it('does not let an older failing list read wipe a newer capability answer', async () => {
+      it('does not let an older failing list read wipe a newer capability answer', STATE_ONLY, async () => {
         const staleList = new Subject<CampaignListResult>();
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(staleList.asObservable());
 
@@ -2831,7 +2835,7 @@ describe('CampaignsComponent brief persistence', () => {
        * the PREVIOUS id and guarded itself out. Unlike a first create there is no persist to
        * follow, so nothing retried and the capability stayed unknown for the whole session.
        */
-      it('loads the capability for a brief restored from campaign-service', async () => {
+      it('loads the capability for a brief restored from campaign-service', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2873,7 +2877,7 @@ describe('CampaignsComponent brief persistence', () => {
        * Once a successful read had set `true`, a later failure kept offering the control on the
        * strength of a read that no longer succeeds. Asserts the value, not merely that the arm ran.
        */
-      it('clears a previously known capability when a later read fails', async () => {
+      it('clears a previously known capability when a later read fails', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -2922,7 +2926,7 @@ describe('CampaignsComponent brief persistence', () => {
        * and an older request failing after a newer one succeeded would wipe a live `true` back
        * to `null`, hiding Demand Gen on a deployment that had just confirmed it.
        */
-      it('ignores an older capability read that fails after a newer one succeeded', async () => {
+      it('ignores an older capability read that fails after a newer one succeeded', STATE_ONLY, async () => {
         const older = new Subject<CampaignListResult>();
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(older.asObservable());
 
@@ -3025,7 +3029,7 @@ describe('CampaignsComponent brief persistence', () => {
        * valid answer fail its own write check — a failure suppressing a success, which is the one
        * thing the ordering exists to prevent.
        */
-      it('lets a success land after an earlier read has already failed', async () => {
+      it('lets a success land after an earlier read has already failed', STATE_ONLY, async () => {
         const first = new Subject<CampaignListResult>();
         const second = new Subject<CampaignListResult>();
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(first.asObservable());
@@ -3080,7 +3084,7 @@ describe('CampaignsComponent brief persistence', () => {
        * to learn the same boolean. Asserted as a CALL COUNT rather than a value, because the
        * value is identical either way — only the number of requests distinguishes them.
        */
-      it('does not refetch the capability once it is known', async () => {
+      it('does not refetch the capability once it is known', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -3145,7 +3149,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(loading(), 'the panel would say "Checking…" for good').toBe(false);
       });
 
-      it('marks the Implement list unavailable on a failed re-read without blanking the capability', async () => {
+      it('marks the Implement list unavailable on a failed re-read without blanking the capability', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             enabled: true,
@@ -3196,7 +3200,7 @@ describe('CampaignsComponent brief persistence', () => {
        * so the Implement tab never shows another brief's campaigns while (or instead of, on a refused
        * save) this brief's own read.
        */
-      it('drops the previous brief campaigns when a new brief is proceeded', async () => {
+      it('drops the previous brief campaigns when a new brief is proceeded', STATE_ONLY, async () => {
         const campaigns = (): unknown => (fixture.componentInstance as unknown as { briefCampaigns(): unknown }).briefCampaigns();
         (fixture.componentInstance as unknown as { briefCampaigns: { set(v: unknown): void } }).briefCampaigns.set([
           { id: 'old', platform: 'google-ads', status: 'active' },
@@ -3208,7 +3212,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(campaigns(), "the previous brief's campaigns stayed on Implement").toBeNull();
       });
 
-      it('clears the previous brief campaigns when the foundation changes', async () => {
+      it('clears the previous brief campaigns when the foundation changes', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [indexed()],
@@ -3281,7 +3285,7 @@ describe('CampaignsComponent brief persistence', () => {
        * read `unknown`, not `pending`: the tab answers `unknown` with a Retry and Switch to Automatic,
        * while `pending` would say "Checking…" for a read that never comes.
        */
-      it('leaves the bidding read unknown, not pending, after a foundation switch', async () => {
+      it('leaves the bidding read unknown, not pending, after a foundation switch', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [indexed()],
@@ -3325,7 +3329,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
       });
 
-      it('drops a campaign list that resolves after the foundation changed', async () => {
+      it('drops a campaign list that resolves after the foundation changed', STATE_ONLY, async () => {
         const late = new Subject<CampaignListResult>();
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(late);
         await withSavedBrief();
@@ -3371,7 +3375,7 @@ describe('CampaignsComponent brief persistence', () => {
        * `null` is indistinguishable from a page nobody has asked anything of — no indication and
        * no retry, on campaigns that may still be spending.
        */
-      it('marks a failed read as unavailable rather than leaving it as not-loaded', async () => {
+      it('marks a failed read as unavailable rather than leaving it as not-loaded', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
         await withSavedBrief();
         load();
@@ -3381,7 +3385,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(unavailable()).toBe(true);
       });
 
-      it('does not mark a genuinely empty list as unavailable', async () => {
+      it('does not mark a genuinely empty list as unavailable', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
             campaigns: [],
@@ -3510,7 +3514,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(toggleButtonIds()).toEqual(['c-2']);
       });
 
-      it('clears a previous failure when the foundation changes', async () => {
+      it('clears a previous failure when the foundation changes', STATE_ONLY, async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
         await withSavedBrief();
         load();
@@ -3553,7 +3557,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(torndown).toBe(true);
       });
 
-      it('clears a stale failure when a later read succeeds', async () => {
+      it('clears a stale failure when a later read succeeds', STATE_ONLY, async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
         await withSavedBrief();
         load();
@@ -3659,7 +3663,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
     });
 
-    it('keeps a newer validator this session holds for the same content (an approval moved only the ETag)', async () => {
+    it('keeps a newer validator this session holds for the same content (an approval moved only the ETag)', STATE_ONLY, async () => {
       // This session restored the row and approved it: same bytes, newer ETag.
       approveBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', approved: true }));
       restore(brief, 'stored-1', false, 'W/"3"');
@@ -3674,7 +3678,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
     });
 
-    it("re-reads the row instead of opening an offer older than this session's last save", async () => {
+    it("re-reads the row instead of opening an offer older than this session's last save", STATE_ONLY, async () => {
       persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"9"', created: false, approved: true }));
       restore(brief, 'stored-1', true, 'W/"3"');
       proceed();
@@ -3697,7 +3701,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(current, 'foundation-a', 'stored-1', 'W/"9"', false);
     });
 
-    it('waits for a save still running, then re-reads, rather than opening the offer under it', async () => {
+    it('waits for a save still running, then re-reads, rather than opening the offer under it', STATE_ONLY, async () => {
       const save = new Subject<CampaignBriefPersistResult>();
       persistBrief.mockReturnValueOnce(save);
       proceed();
@@ -3721,7 +3725,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(editRequest()?.brief).toBe(current);
     });
 
-    it('keeps an approval still in flight for the same row, so its new ETag is the precondition', async () => {
+    it('keeps an approval still in flight for the same row, so its new ETag is the precondition', STATE_ONLY, async () => {
       const approval = new Subject<CampaignBriefApproveResult>();
       approveBrief.mockReturnValueOnce(approval);
       restore(brief, 'stored-1', false, 'W/"3"');
@@ -3739,7 +3743,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief, "the approval's ETag was dropped").toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
     });
 
-    it('drops a pending re-read when Planning discards its brief meanwhile', async () => {
+    it('drops a pending re-read when Planning discards its brief meanwhile', STATE_ONLY, async () => {
       const save = new Subject<CampaignBriefPersistResult>();
       persistBrief.mockReturnValueOnce(save);
       proceed();
@@ -3795,7 +3799,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).toContain('could not be read');
     });
 
-    it('does not re-read on Edit brief after the brief on Implement was itself saved over the row', async () => {
+    it('does not re-read on Edit brief after the brief on Implement was itself saved over the row', STATE_ONLY, async () => {
       persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
       proceed();
       await fixture.whenStable();
@@ -3844,7 +3848,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(tab()).toBe('implementation');
     });
 
-    it('says why Edit brief opened nothing when there is no foundation to read under', async () => {
+    it('says why Edit brief opened nothing when there is no foundation to read under', STATE_ONLY, async () => {
       // No foundation resolved for the whole flow: the handover and the Open to edit file under the same
       // foundation-less key, so the epoch moves and Edit brief must re-read, which it cannot do.
       vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
@@ -3860,7 +3864,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).not.toBeNull();
     });
 
-    it('drops the X fields typed on Implement, which belong to the brief that was there', () => {
+    it('drops the X fields typed on Implement, which belong to the brief that was there', STATE_ONLY, () => {
       const flag = (): boolean => (fixture.componentInstance as unknown as { twitterCarryDiscarded: boolean }).twitterCarryDiscarded;
       persistBrief.mockReturnValueOnce(NEVER);
       // A proceed clears the flag, so the next one would carry the X fields over.
@@ -3871,7 +3875,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(flag(), 'the X draft of the brief on Implement would ride onto the stored brief').toBe(true);
     });
 
-    it('drops the edit request when Planning discards its brief, and on a restore', () => {
+    it('drops the edit request when Planning discards its brief, and on a restore', STATE_ONLY, () => {
       openFromOffer(offer());
       (fixture.componentInstance as unknown as { onPlanningBriefDiscarded(): void }).onPlanningBriefDiscarded();
       expect(editRequest()).toBeNull();
@@ -3881,7 +3885,7 @@ describe('CampaignsComponent brief persistence', () => {
       expect(editRequest()).toBeNull();
     });
 
-    it('reopens the Implement brief in the editor on Edit brief, with a fresh request each time', () => {
+    it('reopens the Implement brief in the editor on Edit brief, with a fresh request each time', STATE_ONLY, () => {
       proceed();
       (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
       const first = editRequest();
@@ -3908,13 +3912,13 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
       });
 
-      it('words the refusal around the two buttons under it', () => {
+      it('words the refusal around the two buttons under it', STATE_ONLY, () => {
         expect(state().conflict).toBe('unowned-brief-exists');
         expect(state().message).toBe(CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE);
         expect(state().message).toContain('Open the saved brief to edit it');
       });
 
-      it('reads the stored brief, takes ownership of it, and opens it in the editor', async () => {
+      it('reads the stored brief, takes ownership of it, and opens it in the editor', STATE_ONLY, async () => {
         loadBrief.mockReturnValue(of({ status: 'loaded', brief: stored, briefId: 'stored-1', etag: 'W/"5"', approved: true }));
 
         openFromImplement();
@@ -3930,7 +3934,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).toHaveBeenLastCalledWith(stored, 'foundation-a', 'stored-1', 'W/"5"', false);
       });
 
-      it('keeps the refusal, and Create blocked, when the open cannot even start', async () => {
+      it('keeps the refusal, and Create blocked, when the open cannot even start', STATE_ONLY, async () => {
         // No foundation to read under: a failed open, not persistence going dark.
         vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
 
@@ -3946,7 +3950,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect(state().message).toContain('could not be read');
       });
 
-      it('keeps Replace on offer when the stored brief cannot be opened', async () => {
+      it('keeps Replace on offer when the stored brief cannot be opened', STATE_ONLY, async () => {
         loadBrief.mockReturnValue(of({ status: 'unreadable', brief: null, briefId: 'stored-1', etag: 'W/"5"', approved: false }));
 
         openFromImplement();
@@ -3967,8 +3971,9 @@ describe('CampaignsComponent brief persistence — queue state', () => {
   let fixture: ComponentFixture<CampaignsComponent>;
 
   beforeEach(async () => {
-    // These cases assert only the page's save queue/signals. Keep the real component, forms,
-    // effects and HTTP-backed CampaignService, without mounting the unrelated child tabs.
+    // These cases assert only the page's save queue/signals, so each is STATE_ONLY: the real
+    // component, forms, effects and HTTP-backed CampaignService, on the empty-template subclass
+    // (no child tabs), which compiles once instead of an override recompiling every test.
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
       providers: [
@@ -3979,12 +3984,10 @@ describe('CampaignsComponent brief persistence — queue state', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false), providerReady: signal(true) } },
       ],
-    })
-      .overrideComponent(CampaignsComponent, { set: { template: '', imports: [] } })
-      .compileComponents();
+    }).compileComponents();
     persistBrief = vi.fn();
     vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
-    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture = TestBed.createComponent(campaignsComponentUnderTest());
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     await fixture.whenStable();
   });
@@ -4023,7 +4026,7 @@ describe('CampaignsComponent brief persistence — queue state', () => {
    * sometimes overwrite a newer brief that had already reported success. Ordering them here is
    * what makes the second save a plain replace of the first.
    */
-  it('keeps saving after a throw inside a save handler', async () => {
+  it('keeps saving after a throw inside a save handler', STATE_ONLY, async () => {
     // The chain IS the queue, so a rejected `persistChain` means every later Proceed in the
     // session silently never sends a request -- no banner, no error, nothing saved. The
     // two-argument `.then(onFulfilled, onRejected)` covers a rejected REQUEST but not a throw in
@@ -4052,7 +4055,7 @@ describe('CampaignsComponent brief persistence — queue state', () => {
     expect(state().status).toBe('saved');
   });
 
-  it("runs a session's saves one at a time", async () => {
+  it("runs a session's saves one at a time", STATE_ONLY, async () => {
     const first = new Subject<CampaignBriefPersistResult>();
     persistBrief.mockReturnValue(first);
     proceed();
@@ -4076,7 +4079,7 @@ describe('CampaignsComponent brief persistence — queue state', () => {
     expect(persistBrief).toHaveBeenCalledTimes(2);
   });
 
-  it('drops a save that FAILS after the brief was discarded', async () => {
+  it('drops a save that FAILS after the brief was discarded', STATE_ONLY, async () => {
     const late = new Subject<CampaignBriefPersistResult>();
     persistBrief.mockReturnValue(late);
 
@@ -4100,7 +4103,7 @@ describe('CampaignsComponent brief persistence — queue state', () => {
    * Implementation tab needs the difference: a create issued in that window carries an empty
    * brief id and is terminally refused with the cutover on.
    */
-  it('reports a save as in flight even while the banner still reads off', async () => {
+  it('reports a save as in flight even while the banner still reads off', STATE_ONLY, async () => {
     const pending = new Subject<CampaignBriefPersistResult>();
     persistBrief.mockReturnValue(pending);
 
@@ -4121,7 +4124,7 @@ describe('CampaignsComponent brief persistence — queue state', () => {
    * and B starting — so the flag went false with a save still pending, and Create re-enabled in
    * exactly the window the guard exists to close. Counting is what closes it.
    */
-  it('keeps the in-flight flag set while a second save is still queued', async () => {
+  it('keeps the in-flight flag set while a second save is still queued', STATE_ONLY, async () => {
     const first = new Subject<CampaignBriefPersistResult>();
     const second = new Subject<CampaignBriefPersistResult>();
     persistBrief.mockReturnValueOnce(first).mockReturnValueOnce(second);
@@ -4147,7 +4150,7 @@ describe('CampaignsComponent brief persistence — queue state', () => {
     expect(inFlight()).toBe(false);
   });
 
-  it('clears the in-flight flag when a save FAILS, not only when it succeeds', async () => {
+  it('clears the in-flight flag when a save FAILS, not only when it succeeds', STATE_ONLY, async () => {
     // The stuck-forever case. Clearing it in the success arm alone would leave Create disabled
     // for the rest of the session after one failed save.
     const failing = new Subject<CampaignBriefPersistResult>();

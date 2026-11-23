@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The per-platform Bidding control (#3299): Automatic or Manual max CPC bid on LinkedIn, Meta,
@@ -69,7 +70,7 @@ describe('ImplementationTabComponent bidding control', () => {
     bidding: boolean | null | undefined,
     draft: CampaignImplementationDraft | null = null
   ): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     if (draft) f.componentRef.setInput('draft', draft);
     if (bidding !== undefined) f.componentRef.setInput('biddingEnabled', bidding);
     f.componentRef.setInput('briefData', brief());
@@ -153,7 +154,7 @@ describe('ImplementationTabComponent bidding control', () => {
       expect(query('implementation-microsoft-cpc-bid')).not.toBeNull();
     });
 
-    it('sends no bidding key on any config, so the create is unchanged', async () => {
+    it('sends no bidding key on any config, so the create is unchanged', STATE_ONLY, async () => {
       fixture = await mount(false);
       component()['microsoftCpcBid'].set('2.5');
 
@@ -193,7 +194,7 @@ describe('ImplementationTabComponent bidding control', () => {
       briefId: string | null = 'brief-1'
     ): Promise<ComponentFixture<ImplementationTabComponent>> {
       const draft = edit(await manualDraft(platform));
-      const f = TestBed.createComponent(ImplementationTabComponent);
+      const f = TestBed.createComponent(tabComponentUnderTest());
       f.componentRef.setInput('draft', draft);
       f.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
       f.componentRef.setInput('biddingEnabled', bidding);
@@ -457,7 +458,7 @@ describe('ImplementationTabComponent bidding control', () => {
       expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
     });
 
-    it('sends an explicit automatic strategy, and nothing else, on every config by default', async () => {
+    it('sends an explicit automatic strategy, and nothing else, on every config by default', STATE_ONLY, async () => {
       const request = await submitted();
 
       for (const key of LANE_CONFIGS) {
@@ -691,12 +692,12 @@ describe('ImplementationTabComponent performance max prefill', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('fills headlines, long headlines, descriptions and the business name from the brief', () => {
+  it('fills headlines, long headlines, descriptions and the business name from the brief', STATE_ONLY, () => {
     seed(brief(generated));
 
     expect(lines(pmax()['headlines'])).toEqual(generated.google_search.headlines);
@@ -706,7 +707,7 @@ describe('ImplementationTabComponent performance max prefill', () => {
     expect(prefilled()).toBe(true);
   });
 
-  it('keeps every value within its field bounds: width, count and duplicates', () => {
+  it('keeps every value within its field bounds: width, count and duplicates', STATE_ONLY, () => {
     // The duplicate sits INSIDE the 15-entry cap, so it is the de-duplication that keeps it out,
     // not the cap.
     const headlines = [longText(31), 'Headline 0', 'Headline 0', ...Array.from({ length: 19 }, (_, i) => `Headline ${i + 1}`)];
@@ -719,7 +720,7 @@ describe('ImplementationTabComponent performance max prefill', () => {
     expect(pmax()['businessName']).toBe('');
   });
 
-  it('keeps one description short enough for the short slot when the brief has one', () => {
+  it('keeps one description short enough for the short slot when the brief has one', STATE_ONLY, () => {
     const wordy = Array.from({ length: 5 }, (_, i) => `${longText(70)} ${i}`);
     seed(brief({ google_search: { headlines: [], descriptions: wordy }, google_display: { descriptions: ['Register today.'] } }));
 
@@ -732,7 +733,7 @@ describe('ImplementationTabComponent performance max prefill', () => {
    * Short by Google's display width, as campaign-service's rule counts it (#5219): 31 ideographs are
    * 31 characters but 62 wide, so the prefill must not swap one in as the short description.
    */
-  it('does not take a CJK description as short when its display width is over 60', () => {
+  it('does not take a CJK description as short when its display width is over 60', STATE_ONLY, () => {
     const wordy = Array.from({ length: 5 }, (_, i) => `${longText(70)} ${i}`);
     const cjk = '会'.repeat(31);
     seed(brief({ google_search: { headlines: [], descriptions: wordy }, google_display: { descriptions: [cjk] } }));
@@ -741,21 +742,21 @@ describe('ImplementationTabComponent performance max prefill', () => {
   });
 
   /** The prefill holds each value to its field's display width, so a 46-ideograph description — 92 wide — is not seeded. */
-  it('does not seed a description wider than 90 by display width', () => {
+  it('does not seed a description wider than 90 by display width', STATE_ONLY, () => {
     const cjk = '会'.repeat(46);
     seed(brief({ google_search: { headlines: [], descriptions: [cjk, 'Register today.'] } }));
 
     expect(lines(pmax()['descriptions'])).toEqual(['Register today.']);
   });
 
-  it('seeds from the older demand_gen key too', () => {
+  it('seeds from the older demand_gen key too', STATE_ONLY, () => {
     seed(brief({ demand_gen: { headlines: ['Legacy long headline'], business_name: 'CNCF' } }));
 
     expect(lines(pmax()['longHeadlines'])).toEqual(['Legacy long headline']);
     expect(pmax()['businessName']).toBe('CNCF');
   });
 
-  it('leaves the creative empty, with no prefill notice, when the brief has no generated copy', () => {
+  it('leaves the creative empty, with no prefill notice, when the brief has no generated copy', STATE_ONLY, () => {
     seed(brief(undefined));
 
     expect(pmax()['headlines']).toBe('');
@@ -763,7 +764,7 @@ describe('ImplementationTabComponent performance max prefill', () => {
     expect(prefilled()).toBe(false);
   });
 
-  it('lets a restored draft win over the seed', () => {
+  it('lets a restored draft win over the seed', STATE_ONLY, () => {
     const draft = {
       eventSlug: 'kubecon-eu-2026',
       eventName: 'KubeCon EU 2026',
@@ -800,14 +801,14 @@ describe('ImplementationTabComponent performance max prefill', () => {
     } as unknown as CampaignImplementationDraft;
   }
 
-  it('drops the notice when a restored draft cleared the copy, as the notice invites', () => {
+  it('drops the notice when a restored draft cleared the copy, as the notice invites', STATE_ONLY, () => {
     seed(brief(generated), draftWith({ headlines: '', longHeadlines: '', descriptions: '', businessName: '' }));
 
     expect(pmax()['headlines']).toBe('');
     expect(prefilled()).toBe(false);
   });
 
-  it('keeps the notice across a round trip that restores the seeded copy unchanged', () => {
+  it('keeps the notice across a round trip that restores the seeded copy unchanged', STATE_ONLY, () => {
     seed(brief(generated));
     const seeded = { ...pmax() };
     fixture.componentRef.setInput('briefData', null);
@@ -818,7 +819,7 @@ describe('ImplementationTabComponent performance max prefill', () => {
     expect(prefilled()).toBe(true);
   });
 
-  it('drops the notice once the operator rewrites the seeded copy', () => {
+  it('drops the notice once the operator rewrites the seeded copy', STATE_ONLY, () => {
     seed(brief(generated));
     const group = (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['performanceMaxCreative'];
     group.patchValue({ headlines: 'Mine', longHeadlines: 'Mine too', descriptions: 'Mine as well', businessName: 'Mine Co' });
@@ -826,13 +827,13 @@ describe('ImplementationTabComponent performance max prefill', () => {
     expect(prefilled()).toBe(false);
   });
 
-  it('folds a line break inside one generated value into a space', () => {
+  it('folds a line break inside one generated value into a space', STATE_ONLY, () => {
     seed(brief({ google_search: { headlines: ['Join\nKubeCon EU'], descriptions: [] } }));
 
     expect(lines(pmax()['headlines'])).toEqual(['Join KubeCon EU']);
   });
 
-  it('reads copy nested under platforms, for Search and Performance Max alike', () => {
+  it('reads copy nested under platforms, for Search and Performance Max alike', STATE_ONLY, () => {
     seed(
       brief({
         platforms: { google_search: { headlines: ['Nested headline'], descriptions: ['Nested description'] }, google_display: { business_name: 'CNCF' } },
@@ -845,7 +846,7 @@ describe('ImplementationTabComponent performance max prefill', () => {
     expect(pmax()['businessName']).toBe('CNCF');
   });
 
-  it('clears the prefill when a brief without copy replaces one with it', () => {
+  it('clears the prefill when a brief without copy replaces one with it', STATE_ONLY, () => {
     seed(brief(generated));
     seed(brief(undefined));
 
