@@ -36,7 +36,7 @@
           <!-- Hidden at 1024px and below, per the design. -->
           @if (personaLoaded()) {
             <p class="hidden text-[13px] text-gray-500 min-[1025px]:block" data-testid="meetings-redesign-description">
-              Meetings you're invited to or organizing, across all your projects.
+              {{ description() }}
             </p>
           } @else {
             <div class="hidden min-[1025px]:block" data-testid="meetings-home-persona-loading">
@@ -50,18 +50,30 @@
           [class.hidden]="!store.pendingRsvpRows().length && !personaLoaded()"
           data-testid="meetings-redesign-header-actions">
           <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="createButton() ?? heading" />
-          @if (personaLoaded()) {
-            <lfx-ui-button #createButton variant="tertiary-accent" icon="fa-light fa-plus" (click)="createMeeting()" data-testid="meetings-home-create">
-              Create Meeting
+          @if (personaLoaded() && canCreate()) {
+            <lfx-ui-button
+              #createButton
+              variant="secondary-accent"
+              icon="fa-light fa-plus"
+              [iconOnly]="phone()"
+              [ariaLabel]="phone() ? 'Create Meeting' : ''"
+              [lfxUiTooltip]="phone() ? 'Create Meeting' : ''"
+              (click)="createMeeting()"
+              data-testid="meetings-home-create">
+              @if (!phone()) {
+                Create Meeting
+              }
             </lfx-ui-button>
           }
         </div>
       </div>
 
-      <!-- Right column content, folded into the centre at 1024px and below: two columns, one in a centre of 620px or less -->
-      <div class="mb-[20px] grid grid-cols-1 gap-[20px] @[621px]:grid-cols-2 min-[1025px]:hidden" data-testid="meetings-redesign-folded-rail">
-        <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'folded' }" />
-      </div>
+      <!-- Right column content, folded into the centre at 1024px and below: two columns, one in a centre of 620px or less; none on phones -->
+      @if (!projectScope) {
+        <div class="mb-[20px] grid grid-cols-1 gap-[20px] max-sm:hidden @[621px]:grid-cols-2 min-[1025px]:hidden" data-testid="meetings-redesign-folded-rail">
+          <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'folded' }" />
+        </div>
+      }
 
       <!-- Sticky tabs bar; the fade moves here from the header once it is stuck, then below a stuck day heading -->
       <div #tabsBar class="sticky z-[5] -mt-[4px] bg-white pt-[4px]" [style.top.px]="stickyTop() + headerHeight()" data-testid="meetings-redesign-tabs-bar">
@@ -74,7 +86,6 @@
         <!-- Search and Filters sit inside the tabs, on their rule. -->
         <lfx-ui-tabs
           class="min-[1025px]:@[440px]:flex-nowrap"
-          size="small"
           ariaLabel="Meetings"
           [idPrefix]="idPrefix"
           [tabs]="tabs()"
@@ -82,20 +93,39 @@
           (valueChange)="onTabChange($event)"
           data-testid="meetings-redesign-tabs">
           @if (!tabEmpty()) {
-            <!-- Above 1024px, in a centre of 440px or more, the bar stays on one line and search narrows from 280px. -->
-            <div class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
-              <!-- A fixed min width at 641-1024px: the library's min(300px, 100%) sizes the row too narrow and wraps Filters. -->
-              <lfx-ui-search-input
-                class="w-full min-[641px]:w-auto min-[641px]:min-w-[280px] min-[1025px]:w-[280px] min-[1025px]:min-w-0"
-                placeholder="Search meetings"
-                ariaLabel="Search meetings"
-                [value]="store.search()"
-                (valueChange)="store.setSearch($event)"
-                data-testid="meetings-redesign-search" />
+            <!-- Above 1024px, in a centre of 440px or more, the bar stays on one line and an open search narrows from 280px. -->
+            <div #searchTools class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
+              @if (searchExpanded()) {
+                <!-- A full-row basis at 640px and below, so only the opacity animates there; above it min-w-0 drops the library's min(300px, 100%). -->
+                <lfx-ui-search-input
+                  class="meetings-search max-w-full basis-full min-[641px]:w-[280px] min-[641px]:min-w-0 min-[641px]:basis-auto"
+                  [class.is-opening]="!searchClosing() && !searchKept()"
+                  [class.is-closing]="searchClosing()"
+                  placeholder="Search meetings"
+                  ariaLabel="Search meetings"
+                  [value]="store.search()"
+                  (valueChange)="store.setSearch($event)"
+                  (cleared)="closeSearch(true)"
+                  (focusout)="onSearchFocusOut($event)"
+                  (keydown.escape)="onSearchEscape()"
+                  (compositionstart)="cancelSearchClose()"
+                  data-testid="meetings-redesign-search" />
+              } @else {
+                <lfx-ui-button
+                  #searchButton
+                  variant="tertiary"
+                  icon="fa-light fa-magnifying-glass"
+                  ariaLabel="Search meetings"
+                  (click)="openSearch()"
+                  data-testid="meetings-redesign-search-button">
+                  Search
+                </lfx-ui-button>
+              }
               <lfx-meetings-filters
                 class="w-full min-[641px]:w-auto"
                 [tab]="store.tab()"
-                [rows]="store.tabRows()"
+                [rows]="store.filterOptionRows()"
+                [scopeOptions]="store.scopeOptions()"
                 [filters]="store.filters()"
                 (filtersChange)="store.setFilters($event)" />
             </div>
@@ -138,14 +168,38 @@
     <lfx-app-footer class="mt-auto block shrink-0 px-[32px]" data-testid="meetings-redesign-footer" />
   </div>
 
-  <!-- Right column: fixed 360px, 24px padding -->
-  <aside
-    class="hidden w-[360px] flex-none flex-col gap-[24px] border-l border-gray-200 p-[24px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:flex min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    tabindex="0"
-    aria-label="Meeting highlights"
-    data-testid="meetings-redesign-right-column">
-    <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'rail' }" />
-  </aside>
+  <!-- Right column: fixed 360px, 24px padding; a project's column holds its calendar, hidden at 1024px and below -->
+  @if (!projectScope) {
+    <aside
+      class="hidden w-[360px] flex-none flex-col gap-[24px] border-l border-gray-200 p-[24px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:flex min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      tabindex="0"
+      aria-label="Meeting highlights"
+      data-testid="meetings-redesign-right-column">
+      <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'rail' }" />
+    </aside>
+  } @else {
+    <aside
+      class="hidden w-[360px] flex-none flex-col gap-[20px] border-l border-gray-200 px-[24px] pb-[40px] pt-[24px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:flex min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      tabindex="0"
+      aria-label="Meetings calendar"
+      data-testid="meetings-redesign-project-column">
+      <!-- Only while the column shows, so a hidden calendar does not load past pages. -->
+      @if (columnHeight() !== null) {
+        <!-- shortcut: past dots come from the loaded past rows, which a paged feed searches on the server. revisit: when the calendar gets its own unsearched past feed. -->
+        <lfx-meetings-mini-calendar
+          [upcomingRows]="store.upcomingRows()"
+          [pastRows]="store.pastRows()"
+          [now]="store.now()"
+          [scope]="feedKey()"
+          [loading]="store.upcomingLoading() || store.pastLoading()"
+          (daySelected)="showDay($event)"
+          (olderMonthShown)="store.showPastFrom($event)"
+          (expand)="openCalendar($event)"
+          data-testid="meetings-redesign-mini-calendar" />
+      }
+      <lfx-meetings-calendar-actions data-testid="meetings-redesign-calendar-actions" />
+    </aside>
+  }
 </div>
 
 <ng-template #railTemplate let-scope>
@@ -250,7 +304,7 @@
     <lfx-ui-empty-state
       class="mt-[16px]"
       icon="fa-light fa-triangle-exclamation"
-      heading="Couldn't load your meetings"
+      [heading]="projectScope ? 'Couldn\'t load the meetings' : 'Couldn\'t load your meetings'"
       description="Something went wrong. Try again."
       data-testid="meetings-home-error">
       <lfx-ui-button
@@ -269,14 +323,14 @@
         class="mt-[16px]"
         icon="fa-light fa-clock-rotate-left"
         heading="No past meetings"
-        description="Your past meetings will appear here."
+        [description]="projectScope ? 'Past meetings will appear here once they have occurred.' : 'Your past meetings will appear here.'"
         data-testid="meetings-home-empty-past" />
     } @else {
       <lfx-ui-empty-state
         class="mt-[16px]"
         icon="fa-light fa-calendar"
-        heading="No upcoming meetings"
-        description="Meetings from your committees and projects will appear here."
+        [heading]="projectScope ? 'No meetings yet' : 'No upcoming meetings'"
+        [description]="projectScope ? 'Schedule a meeting to get started.' : 'Meetings from your committees and projects will appear here.'"
         data-testid="meetings-home-empty-upcoming" />
     }
   } @else if (noResults()) {
@@ -292,7 +346,7 @@
           variant="tertiary-accent"
           size="large"
           icon="fa-light fa-arrow-rotate-left"
-          (click)="store.resetFilters()"
+          (click)="resetFilters()"
           data-testid="meetings-home-no-results-reset">
           Reset filters
         </lfx-ui-button>
@@ -304,7 +358,13 @@
       @for (group of store.groups(); track group.label) {
         <lfx-meetings-day-group [group]="group" [view]="store.tab()" [stickyTop]="dayHeadingTop()" data-testid="meetings-home-day-group" />
       }
-      @if (store.hasMore()) {
+      @if (store.pastPageFailed()) {
+        <div class="flex justify-center py-[16px]">
+          <lfx-ui-button variant="secondary" icon="fa-light fa-arrow-rotate-right" (click)="store.retryPastPage()" data-testid="meetings-home-load-more-retry">
+            Load more meetings
+          </lfx-ui-button>
+        </div>
+      } @else if (store.hasMore()) {
         <!-- Re-created per page so a trigger still in view after a page loads fires again. -->
         @for (page of [store.visibleCount()]; track page) {
           <span

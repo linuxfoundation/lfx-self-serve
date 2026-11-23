@@ -20,11 +20,15 @@ import {
   formatMeetingWhenFull,
   getMeetingWhenParts,
   getMeetingDayBucket,
+  getMeetingGroupCategories,
   getMeetingGroupNames,
+  getMeetingGroupType,
+  getMeetingGroupTypes,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
+  getMeetingPageCancelledLink,
   getMeetingProjectUrl,
   getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
@@ -34,7 +38,9 @@ import {
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
   isMeetingPendingRsvp,
+  toCancelledSeriesHomeRow,
   toPastMeetingHomeRow,
+  toUpcomingMeetingHomeRow,
 } from './meeting-list.utils';
 
 // Thursday, Oct 1 2026, 09:00 in the runner's local zone; buckets are local-calendar based.
@@ -269,6 +275,28 @@ describe('expandMeetingOccurrences', () => {
   });
 });
 
+describe('toUpcomingMeetingHomeRow', () => {
+  it('builds one date of a series as the list does, keyed by the series and the date', () => {
+    const occurrence: MeetingOccurrence = { occurrence_id: seconds(local(10, 9)), start_time: local(10, 9).toISOString(), duration: 30, title: 'Date title' };
+    const meeting = buildMeeting({ recurrence: WEEKLY, occurrences: [occurrence], my_rsvp: null });
+
+    expect(toUpcomingMeetingHomeRow(meeting, occurrence)).toMatchObject({
+      key: `m-1:${occurrence.occurrence_id}`,
+      occurrence,
+      title: 'Date title',
+      occurrenceId: occurrence.occurrence_id,
+      startTime: occurrence.start_time,
+      durationMinutes: 30,
+      myRsvp: null,
+    });
+  });
+
+  it('keys a one-time meeting by its id and returns null without a valid start', () => {
+    expect(toUpcomingMeetingHomeRow(buildMeeting(), null)?.key).toBe('m-1');
+    expect(toUpcomingMeetingHomeRow(buildMeeting({ start_time: 'nope' }), null)).toBeNull();
+  });
+});
+
 describe('toPastMeetingHomeRow', () => {
   const pastMeeting = (overrides: Partial<PastMeeting> = {}): PastMeeting => ({
     ...buildMeeting({ id: '123-1759334400000', title: 'Sync', duration: 45 }),
@@ -393,6 +421,8 @@ describe('filterMeetingsHome', () => {
   it('filters by project and meeting type', () => {
     expect(keys(filterMeetingsHome(rows, filters({ project: 'p-2' }), '', null))).toEqual(['board-1', 'board-2', 'board-3']);
     expect(keys(filterMeetingsHome(rows, filters({ meetingType: 'Technical' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'quiet-1']);
+    const lower = row({ key: 'lower', meeting: buildMeeting({ id: 'lower', meeting_type: ' technical ' }) });
+    expect(keys(filterMeetingsHome([lower], filters({ meetingType: 'Technical' }), '', null))).toEqual(['lower']);
   });
 
   it('filters by foundation: its own meetings and its non-foundation children, with a project taking precedence', () => {
@@ -448,6 +478,30 @@ describe('filterMeetingsHome', () => {
     expect(keys(filterMeetingsHome(rows, filters({ hideDeclined: true, rsvp: 'declined' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'board-1']);
   });
 
+  it('filters by group, on any of the meeting groups', () => {
+    const shared = row({
+      key: 'shared',
+      meeting: buildMeeting({
+        id: 'shared',
+        committees: [
+          { uid: 'c-2', name: 'Security WG' },
+          { uid: 'c-1', name: 'TSC' },
+        ],
+      }),
+    });
+    expect(keys(filterMeetingsHome([...rows, shared], filters({ group: 'c-1' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'shared']);
+    expect(keys(filterMeetingsHome([...rows, shared], filters({ group: 'c-2' }), '', null))).toEqual(['shared']);
+  });
+
+  it('filters by group type: the category when known, else the type read from the group name', () => {
+    const wg = row({ key: 'wg', meeting: buildMeeting({ id: 'wg', committees: [{ uid: 'c-2', name: 'Security WG' }] }) });
+    expect(keys(filterMeetingsHome([...rows, wg], filters({ groupType: 'Technical Advisory Committee' }), '', null))).toEqual(['tsc-1', 'tsc-2']);
+    expect(keys(filterMeetingsHome([...rows, wg], filters({ groupType: 'Working Group' }), '', null))).toEqual(['wg']);
+    const categories = new Map([['c-1', 'Technical Steering Committee']]);
+    expect(keys(filterMeetingsHome([...rows, wg], filters({ groupType: 'Technical Steering Committee' }), '', null, categories))).toEqual(['tsc-1', 'tsc-2']);
+    expect(filterMeetingsHome(rows, filters({ groupType: 'Technical Advisory Committee' }), '', null, categories)).toEqual([]);
+  });
+
   it('combines search and filters', () => {
     expect(keys(filterMeetingsHome(rows, filters({ project: 'p-2', rsvp: 'declined' }), 'board', null))).toEqual(['board-1']);
     expect(filterMeetingsHome(rows, filters({ project: 'p-2' }), 'steering', null)).toEqual([]);
@@ -461,6 +515,7 @@ describe('countAppliedMeetingFilters', () => {
       countAppliedMeetingFilters(filters({ foundation: 'f-1', project: 'p-1', meetingType: 'Board', rsvp: 'pending', organizedByMe: true, hideDeclined: true }))
     ).toBe(6);
     expect(countAppliedMeetingFilters(filters({ rsvp: 'maybe' }))).toBe(1);
+    expect(countAppliedMeetingFilters(filters({ project: 'p-1', group: 'c-1', groupType: 'Board', meetingType: 'Board' }))).toBe(4);
   });
 });
 
@@ -492,6 +547,33 @@ describe('buildMeetingFilterChips', () => {
     expect(buildMeetingFilterChips(filters({ rsvp: 'pending' }), rows)[0].label).toBe('Needs response');
     expect(buildMeetingFilterChips(filters({ rsvp: 'accepted' }), rows)[0].label).toBe('Going');
   });
+
+  it('prefixes the Foundation/Project chip with Foundation when its pick is a foundation', () => {
+    expect(buildMeetingFilterChips(filters({ project: 'f-1' }), rows)).toEqual([{ key: 'project', prefix: 'Foundation:', label: 'Foundation One' }]);
+  });
+
+  it('labels the project lens filters in section order, with Project even for a foundation', () => {
+    const grouped = [...rows, row({ meeting: buildMeeting({ id: 'g', committees: [{ uid: 'c-1' }, { uid: 'c-2', name: ' Security WG ' }] }) })];
+    const chips = buildMeetingFilterChips(filters({ project: 'f-1', group: 'c-2', groupType: 'Working Group', meetingType: 'Technical' }), grouped, true);
+    expect(chips).toEqual([
+      { key: 'project', prefix: 'Project:', label: 'Foundation One' },
+      { key: 'group', prefix: 'Group:', label: 'Security WG' },
+      { key: 'groupType', prefix: 'Group type:', label: 'Working Group' },
+      { key: 'meetingType', prefix: 'Meeting type:', label: 'Technical' },
+    ]);
+    expect(buildMeetingFilterChips(filters({ group: 'c-1' }), grouped, true)).toEqual([{ key: 'group', prefix: 'Group:', label: 'c-1' }]);
+  });
+
+  it('names projects and groups from the scope options first, for picks not on the loaded rows', () => {
+    const scope = {
+      projects: [{ uid: 'p-9', name: 'Old Project', slug: 'old' }],
+      groups: [{ uid: 'c-9', name: 'Old WG', category: null, project_uid: 'p-9' }],
+    };
+    expect(buildMeetingFilterChips(filters({ project: 'p-9', group: 'c-9' }), rows, true, scope)).toEqual([
+      { key: 'project', prefix: 'Project:', label: 'Old Project' },
+      { key: 'group', prefix: 'Group:', label: 'Old WG' },
+    ]);
+  });
 });
 
 describe('getMeetingGroupNames', () => {
@@ -506,6 +588,67 @@ describe('getMeetingGroupNames', () => {
 
     expect(getMeetingGroupNames({ committees })).toEqual(['TOC', 'Security WG']);
     expect(getMeetingGroupNames({ committees: [] })).toEqual([]);
+  });
+});
+
+describe('getMeetingGroupType', () => {
+  it('uses the category when the group has one', () => {
+    expect(getMeetingGroupType('Security WG', ' Technical Oversight Committee ')).toBe('Technical Oversight Committee');
+  });
+
+  it.each([
+    ['Governing Board', 'Board'],
+    ['Board Technical Committee', 'Board'],
+    ['Security WG', 'Working Group'],
+    ['Docs Working Group', 'Working Group'],
+    ['Release Workstream', 'Working Group'],
+    ['Observability SIG', 'Special Interest Group'],
+    ['Special Interest: Storage', 'Special Interest Group'],
+    ['TAC', 'Technical Advisory Committee'],
+    ['TOC', 'Technical Advisory Committee'],
+    ['Technical Steering Committee', 'Technical Advisory Committee'],
+    ['Steering', 'Technical Advisory Committee'],
+    ['Outreach Committee', 'Committee'],
+    ['Governance Council', 'Committee'],
+    ['Cloud Native Ambassadors', 'Ambassador'],
+    ['Onboarding WG', 'Working Group'],
+    ['Dashboard Council', 'Committee'],
+    ['Protocol Team', 'Other'],
+    ['Tech Stack Maintainers', 'Other'],
+    ['Contact Desk', 'Other'],
+    ['Maintainers', 'Other'],
+    ['', 'Other'],
+  ])('reads "%s" as %s without a category', (name, type) => {
+    expect(getMeetingGroupType(name, null)).toBe(type);
+    expect(getMeetingGroupType(name, '  ')).toBe(type);
+  });
+});
+
+describe('getMeetingGroupCategories', () => {
+  it('maps groups with a category by UID, trimmed, and leaves the rest out', () => {
+    expect(
+      getMeetingGroupCategories([
+        { uid: 'c-1', category: ' Board ' },
+        { uid: 'c-2', category: null },
+        { uid: 'c-3', category: '  ' },
+      ])
+    ).toEqual(new Map([['c-1', 'Board']]));
+  });
+});
+
+describe('getMeetingGroupTypes', () => {
+  it('lists the meeting group types without repeats, taking categories by committee UID', () => {
+    const committees = [
+      { uid: 'c-1', name: 'TOC' },
+      { uid: 'c-2', name: 'Security WG' },
+      { uid: 'c-3', name: 'Docs Working Group' },
+    ];
+    expect(getMeetingGroupTypes({ committees }, new Map())).toEqual(['Technical Advisory Committee', 'Working Group']);
+    expect(getMeetingGroupTypes({ committees }, new Map([['c-1', 'Technical Oversight Committee']]))).toEqual([
+      'Technical Oversight Committee',
+      'Working Group',
+    ]);
+    expect(getMeetingGroupTypes({ committees: [] }, new Map())).toEqual([]);
   });
 });
 
@@ -782,5 +925,60 @@ describe('getMeetingRsvpToastMessage', () => {
 
   it('names no dates for a one-time meeting', () => {
     expect(getMeetingRsvpToastMessage({ response_type: 'accepted', scope: 'all' }, false)).toBe('Meeting RSVP set to “Going”');
+  });
+});
+
+describe('getMeetingPageCancelledLink', () => {
+  const DAY = 86_400_000;
+  const inDays = (days: number): Date => new Date(Date.now() + days * DAY);
+  const cancelledAt = (days: number): MeetingOccurrence => ({ ...occurrence(inDays(days)), status: 'cancel' });
+  const series = (occurrences: MeetingOccurrence[], overrides: Partial<Meeting> = {}): Meeting =>
+    buildMeeting({ id: 'mtg-1', title: 'Synthetic series', start_time: inDays(2).toISOString(), recurrence: WEEKLY, occurrences, ...overrides });
+
+  it('names a cancelled ?occurrence= date', () => {
+    const cancelled = cancelledAt(9);
+
+    expect(getMeetingPageCancelledLink(series([occurrence(inDays(2)), cancelled]), Date.parse(cancelled.start_time))).toEqual({
+      kind: 'occurrence',
+      cancelledStart: cancelled.start_time,
+    });
+  });
+
+  it('treats a date listed in cancelled_occurrences as cancelled', () => {
+    const listed = occurrence(inDays(9));
+    const meeting = series([occurrence(inDays(2)), listed], { cancelled_occurrences: [listed.occurrence_id] });
+
+    expect(getMeetingPageCancelledLink(meeting, Date.parse(listed.start_time))?.kind).toBe('occurrence');
+  });
+
+  it('names the series when every date is cancelled', () => {
+    expect(getMeetingPageCancelledLink(series([cancelledAt(2), cancelledAt(9)]), null)).toEqual({ kind: 'series', cancelledStart: null });
+  });
+
+  it('is null for a running date, no ?occurrence=, or a one-time meeting', () => {
+    const running = occurrence(inDays(2));
+    const meeting = series([running, occurrence(inDays(9))]);
+
+    expect(getMeetingPageCancelledLink(meeting, Date.parse(running.start_time))).toBeNull();
+    expect(getMeetingPageCancelledLink(meeting, null)).toBeNull();
+    expect(getMeetingPageCancelledLink(buildMeeting({ occurrences: [cancelledAt(2)] }), null)).toBeNull();
+  });
+});
+
+describe('toCancelledSeriesHomeRow', () => {
+  it('shows the series fields', () => {
+    const meeting = buildMeeting({ title: 'Synthetic series', recurrence: WEEKLY });
+
+    expect(toCancelledSeriesHomeRow(meeting)).toMatchObject({
+      key: meeting.id,
+      title: 'Synthetic series',
+      occurrence: null,
+      occurrenceId: null,
+      startTime: meeting.start_time,
+    });
+  });
+
+  it('is null without a valid start', () => {
+    expect(toCancelledSeriesHomeRow(buildMeeting({ start_time: '' }))).toBeNull();
   });
 });

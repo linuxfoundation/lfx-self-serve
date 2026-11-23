@@ -43,7 +43,7 @@ export interface OrgEventAttendeeDetailRow {
   isSpeaker: boolean;
 }
 
-/** Summary-row numbers for the picked (range, attribution, participation): the tiles until the rows are narrowed. */
+/** Summary-row numbers for the picked (range, participation): the tiles until the rows are narrowed. */
 export interface OrgEventAttendeesSummary {
   /** Distinct people counted. */
   attendeesCount: number;
@@ -72,7 +72,7 @@ export interface OrgEventAttendeeStatsBaseline {
   foundations: number;
 }
 
-/** Bundled GET response for `/api/orgs/:orgUid/lens/people/event-attendees?range=&attribution=&participation=`. */
+/** Bundled GET response for `/api/orgs/:orgUid/lens/people/event-attendees?range=&participation=`. */
 export interface OrgEventAttendeesResponse {
   accountId: string;
   /** Person × event rows, newest event first; the browser applies no range or ended-only filter of its own. */

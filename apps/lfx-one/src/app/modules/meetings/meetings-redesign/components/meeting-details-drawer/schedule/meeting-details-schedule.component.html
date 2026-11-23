@@ -1,13 +1,12 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-meeting-details-occurrence-nav />
-
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
-<div class="flex flex-col gap-[16px] rounded-ui-md bg-white p-[20px] shadow-small ring-1 ring-gray-200" data-testid="meeting-details-schedule-card">
+<!-- A passcode guest's copy of the meeting has no date, which stays private. -->
+@if (row().startTime) {
   <div class="flex min-w-0 items-start gap-[12px]" data-testid="meeting-details-schedule-when">
     <lfx-meeting-date-tile [date]="row().startTime" [past]="context.state() === 'ended'" testIdPrefix="meeting-details-schedule" />
-    <span class="flex min-w-0 flex-col gap-[2px]">
+    <span class="flex min-w-0 flex-col gap-[4px]">
       <span class="text-[14px] font-semibold leading-[20px] text-gray-900" data-testid="meeting-details-schedule-long-date">{{ longDate() }}</span>
       <span class="text-[12px] leading-[16px] text-gray-500" data-testid="meeting-details-schedule-time">{{ time() }}</span>
       @if (recurrence(); as recurrence) {
@@ -23,20 +22,29 @@
       }
     </span>
   </div>
+}
 
+<!-- One guest form for a signed-out visitor, kept as the join window opens, so what they typed stays. -->
+@if (!context.signedIn() && context.state() !== 'ended') {
+  <ng-container *ngTemplateOutlet="signIn" />
+  <lfx-meeting-details-guest-join [joinable]="context.state() !== 'far'" />
+  @if (context.state() === 'far') {
+    <ng-container *ngTemplateOutlet="joinWindow" />
+  } @else {
+    <ng-container *ngTemplateOutlet="inProgress" />
+  }
+} @else {
   @switch (context.state()) {
     @case ('ended') {
-      <lfx-ui-note variant="secondary" size="small" fill icon="fa-light fa-calendar-check" data-testid="meeting-details-schedule-ended"
+      <lfx-ui-note variant="secondary" size="small" icon="fa-light fa-calendar-check" data-testid="meeting-details-schedule-ended"
         >This meeting has ended.</lfx-ui-note
       >
     }
     @case ('far') {
-      <lfx-meeting-rsvp-controls [row]="rsvpRow()" size="default" />
+      <lfx-meeting-rsvp-controls [row]="rsvpRow()" size="default" fullWidth />
       <div class="flex flex-col gap-[12px]">
         <lfx-ui-button size="large" icon="fa-light fa-video" fullWidth disabled data-testid="meeting-details-schedule-join">Join Meeting</lfx-ui-button>
-        <p class="m-0 text-balance text-center text-[12px] leading-[16px] text-gray-500" data-testid="meeting-details-schedule-join-window">
-          You may only join the meeting up to {{ earlyJoinMinutes() }} minutes before the start time.
-        </p>
+        <ng-container *ngTemplateOutlet="joinWindow" />
       </div>
       @if (canRegister()) {
         <lfx-ui-button
@@ -51,7 +59,10 @@
       }
     }
     @default {
-      @if (canJoin()) {
+      @if (canJoin() && guestFormOpen()) {
+        <lfx-meeting-details-guest-join joinable [name]="viewerName()" />
+        <ng-container *ngTemplateOutlet="inProgress" />
+      } @else if (canJoin()) {
         <div class="flex flex-col gap-[12px]">
           @let link = joinLink();
           @if (link.url; as url) {
@@ -67,7 +78,16 @@
           @if (link.error; as error) {
             <lfx-ui-note variant="error" size="small" data-testid="meeting-details-schedule-join-error">
               {{ error }}.
-              @if (link.code === 'NOT_REGISTERED_FOR_MEETING' && meetingPageUrl(); as pageUrl) {
+              @if (link.code === 'NOT_REGISTERED_FOR_MEETING' && guestJoinInPlace) {
+                <button
+                  type="button"
+                  class="font-medium text-blue-600 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                  (click)="guestFormOpen.set(true)"
+                  data-testid="meeting-details-schedule-join-other-email">
+                  Click here
+                </button>
+                to join using a different email address.
+              } @else if (link.code === 'NOT_REGISTERED_FOR_MEETING' && meetingPageUrl(); as pageUrl) {
                 <a
                   class="font-medium text-blue-600 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
                   data-dd-privacy="mask"
@@ -81,16 +101,45 @@
               }
             </lfx-ui-note>
           }
-          @if (context.state() === 'live') {
-            <p
-              class="m-0 flex items-center justify-center gap-[6px] text-[12px] leading-[16px] text-blue-600"
-              role="status"
-              data-testid="meeting-details-schedule-in-progress">
-              <span class="meeting-live-dot bg-blue-500" aria-hidden="true"></span>The meeting is in progress.
-            </p>
-          }
+          <ng-container *ngTemplateOutlet="inProgress" />
         </div>
       }
     }
   }
-</div>
+}
+
+<!-- A passcode guest's copy has no start, so it may also be over. -->
+<ng-template #joinWindow>
+  @if (row().startTime) {
+    <p class="m-0 text-balance text-center text-[12px] leading-[16px] text-gray-500" data-testid="meeting-details-schedule-join-window">
+      You may only join the meeting up to {{ earlyJoinMinutes() }} minutes before the start time.
+    </p>
+  }
+</ng-template>
+
+<ng-template #inProgress>
+  @if (context.state() === 'live') {
+    <p
+      class="m-0 flex items-center justify-center gap-[6px] text-[12px] leading-[16px] text-blue-600"
+      role="status"
+      data-testid="meeting-details-schedule-in-progress">
+      <span class="meeting-live-dot bg-blue-500" aria-hidden="true"></span>The meeting is in progress.
+    </p>
+  }
+</ng-template>
+
+<ng-template #signIn>
+  <div class="flex flex-col gap-[12px] rounded-ui-sm bg-gray-50 p-[12px]" data-testid="meeting-details-schedule-sign-in">
+    <lfx-ui-button
+      variant="secondary"
+      icon="fa-light fa-arrow-right-to-bracket"
+      fullWidth
+      (click)="context.signIn()"
+      data-testid="meeting-details-schedule-sign-in-button"
+      >Sign In</lfx-ui-button
+    >
+    <span class="text-balance text-center text-[12px] leading-[16px] text-gray-600"
+      >Sign in with your LFX account to quickly join meetings with your saved information.</span
+    >
+  </div>
+</ng-template>

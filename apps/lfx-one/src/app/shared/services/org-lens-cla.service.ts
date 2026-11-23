@@ -102,7 +102,7 @@ export class OrgLensClaService {
     return this.http.post<OrgClaPermissionCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/permissions/checks`, body).pipe(
       map((response) => response?.allowed === true),
       catchError((error: unknown) => {
-        console.error('Organization Lens CLA permission check failed', error);
+        console.error('Org Lens CLA permission check failed', error);
         return of(false);
       })
     );

@@ -68,6 +68,8 @@ export class NewsletterGuestModalComponent {
   protected readonly canContinue: Signal<boolean> = computed(() => !this.blocked() && !this.loading() && this.emailValue().trim().length > 0);
   protected readonly labelledBy = this.headingId;
   protected readonly legalLinks = NEWSLETTER_GUEST_LEGAL_LINKS;
+  /** False inside an iframe, where Transcend's consent manager cannot open; both consent lines hide Cookie settings. */
+  protected readonly cookieSettingsAvailable = this.transcendService.preferencesAvailable;
 
   // === Protected Methods ===
   protected onCookieSettings(): void {

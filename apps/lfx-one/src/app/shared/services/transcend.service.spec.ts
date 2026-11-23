@@ -124,4 +124,48 @@ describe('TranscendService', () => {
     expect(document.documentElement.classList.contains(CONSENT_PROMPT_HIDDEN_CLASS)).toBe(false);
     expect(showConsentManager).toHaveBeenCalledTimes(1);
   });
+
+  // index.html sets data-ui-allow-in-embeds="off" (lfx-self-serve-ops#1438): Transcend skips its UI in a
+  // frame, so every "Cookie settings" entry point hides itself there.
+  describe('preferencesAvailable', () => {
+    const airgapTag = (uiAllowInEmbeds?: string): void => {
+      const script = document.createElement('script');
+      script.setAttribute('src', 'https://transcend-cdn.com/cm/test/airgap.js');
+      if (uiAllowInEmbeds) script.setAttribute('data-ui-allow-in-embeds', uiAllowInEmbeds);
+      script.dataset['testAirgap'] = '';
+      document.head.appendChild(script);
+    };
+    const framed = (): void => {
+      vi.spyOn(window, 'self', 'get').mockReturnValue({} as Window & typeof globalThis);
+    };
+
+    afterEach(() => document.querySelectorAll('script[data-test-airgap]').forEach((script) => script.remove()));
+
+    it('should be false in a frame when airgap.js suppresses its UI in embeds', () => {
+      airgapTag('off');
+      framed();
+
+      expect(setup().preferencesAvailable).toBe(false);
+    });
+
+    it('should be true on a top-level page', () => {
+      airgapTag('off');
+
+      expect(setup().preferencesAvailable).toBe(true);
+    });
+
+    it('should be true in a frame when airgap.js still allows its UI in embeds', () => {
+      airgapTag();
+      framed();
+
+      expect(setup().preferencesAvailable).toBe(true);
+    });
+
+    it('should be true during server-side rendering, so the server and hydrated DOM match', () => {
+      airgapTag('off');
+      framed();
+
+      expect(setup('server').preferencesAvailable).toBe(true);
+    });
+  });
 });

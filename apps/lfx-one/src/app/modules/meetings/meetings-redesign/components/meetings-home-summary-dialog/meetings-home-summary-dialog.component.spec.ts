@@ -115,7 +115,7 @@ describe('MeetingsHomeSummaryDialogComponent', () => {
     await click(fixture, 'meetings-home-dialog-summary-copy');
 
     expect(copy).toHaveBeenCalledWith(buildSummary().summary_data.content);
-    expect(showToast).toHaveBeenCalledWith({ variant: 'success', message: 'Meeting summary copied to clipboard' });
+    expect(showToast).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting summary copied to clipboard' });
   });
 
   it('reports a failed copy', async () => {

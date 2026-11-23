@@ -4,6 +4,7 @@
 import { Routes } from '@angular/router';
 import { LFX_DOCUMENT_TITLE_DOCS_BRAND, LFX_DOCUMENT_TITLE_SEPARATOR } from '@lfx-one/shared/constants';
 
+import { legacyDocsMatcher, legacyDocsRedirect } from '../../shared/utils/legacy-org-lens-redirect.utils';
 import { docsArticleResolver } from './resolvers/docs-article.resolver';
 
 /**
@@ -33,6 +34,11 @@ export const DOCS_ROUTES: Routes = [
     path: 'not-found',
     title: `Page Not Found${LFX_DOCUMENT_TITLE_SEPARATOR}${LFX_DOCUMENT_TITLE_DOCS_BRAND}`,
     loadComponent: () => import('./pages/docs-not-found/docs-not-found.component').then((m) => m.DocsNotFoundComponent),
+  },
+  // `docs/user/organization` became `docs/user/company` (#5066): old addresses redirect, before the `**` catch-all.
+  {
+    matcher: legacyDocsMatcher,
+    redirectTo: legacyDocsRedirect,
   },
   {
     path: '**',

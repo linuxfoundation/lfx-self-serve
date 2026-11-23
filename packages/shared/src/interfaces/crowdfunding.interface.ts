@@ -61,6 +61,14 @@ export interface InitiativesScope {
 /** Why a lens-scoped initiatives list could not load: CF's writer check refused (403), or CF/FGA is down. */
 export type InitiativesLoadError = 'forbidden' | 'unavailable';
 
+/**
+ * Why the initiative detail page could not load: no initiative has that slug (404), CF's writer check refused (403), or
+ * CF/FGA is down. CF answers 403 on the manage read for an unknown id too (lfx-crowdfunding#363). On a slug route the slug
+ * is resolved first, so a 403 means the initiative exists and the caller doesn't manage it; on a UUID route (hand-typed or
+ * old links only) a 403 can also mean the initiative doesn't exist.
+ */
+export type InitiativeDetailLoadError = 'not-found' | 'forbidden' | 'unavailable';
+
 // Initiative detail types — GET /api/crowdfunding/initiatives/:slug.
 
 export interface SponsorEntry {
@@ -82,6 +90,8 @@ export interface CrowdfundingTransaction {
   donorLogoUrl?: string;
   donorUsername?: string;
   initiativeId?: string;
+  /** True when an individual donor chose to hide their name; CF already sends `donorName` "Anonymous" (lfx-crowdfunding#466). */
+  anonymous?: boolean;
 }
 
 export interface CrowdfundingTransactionList {
@@ -104,6 +114,12 @@ export interface MyDonation {
   initiativeName?: string;
   /** True when this donation was charged by a recurring subscription rather than a one-time payment. */
   recurring: boolean;
+  /** True when the donor hid their name on public donor lists (lfx-crowdfunding#466). The donor still sees their own name here. */
+  anonymous: boolean;
+  /** CF donation id of a one-time row; set only when CF matched the row to its own record. */
+  donationId?: string;
+  /** CF subscription id of a recurring row; set only when CF matched the row to its own record. */
+  subscriptionId?: string;
 }
 
 export type MyDonationsResponse = OffsetPaginatedResponse<MyDonation>;
@@ -119,6 +135,8 @@ export interface OrgDonation {
   initiativeSlug?: string;
   donorName: string;
   donorEmail: string;
+  /** True when the donor hid their name (lfx-crowdfunding#466): CF sends `donorName` "Anonymous" and an empty `donorEmail`. */
+  anonymous: boolean;
   amountCents: number;
   /** Unix timestamp in milliseconds. */
   date: number;
@@ -336,9 +354,25 @@ export interface RecurringDonation {
   tags?: string[];
   /** Public URL for the initiative on the crowdfunding site. */
   initiativeUrl?: string;
+  /** True when the donor hid their name on every charge of this subscription (lfx-crowdfunding#466). */
+  anonymous: boolean;
 }
 
 export type RecurringDonationsResponse = OffsetPaginatedResponse<RecurringDonation>;
+
+/** Body of PATCH /api/crowdfunding/my-donations/:id and PATCH /api/crowdfunding/subscriptions/:id (lfx-crowdfunding#466). */
+export interface UpdateDonationAnonymityInput {
+  anonymous: boolean;
+}
+
+/** Which CF record an anonymity change targets: a one-time donation, or a subscription (covers all its charges). */
+export type DonationAnonymityTargetKind = 'donation' | 'subscription';
+
+/** Response of the donation and subscription anonymity PATCH calls: the CF record id and its saved setting. */
+export interface DonationAnonymityResult {
+  id: string;
+  anonymous: boolean;
+}
 
 /** Matches CardDetails from the upstream crowdfunding payment API. */
 export interface PaymentMethod {

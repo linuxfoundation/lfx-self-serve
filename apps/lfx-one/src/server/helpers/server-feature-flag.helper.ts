@@ -367,7 +367,7 @@ export enum ServerFeatureFlag {
 
   /**
    * Offers an image UPLOAD in the LinkedIn section of the create flow, sent as
-   * `linkedInConfig.variants[].imageAssetId` (the same image on every variant).
+   * `linkedInConfig.variants[].imageAssetId` (each variant its own upload).
    *
    * A CAPABILITY flag of the Meta kind: no URL signing is involved, because LinkedIn's dispatch path
    * reads the stored bytes and uploads them once through LinkedIn's Images API, then uses the image
@@ -384,6 +384,71 @@ export enum ServerFeatureFlag {
    * authority. ON in the chart; same accepted values as the flags above.
    */
   CampaignServiceLinkedInAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS',
+
+  /**
+   * Lets the LinkedIn section of the create flow choose the ad account a campaign is created in
+   * (#5809), sent as `linkedInConfig.adAccountId`. The account list comes from campaign-service's
+   * `GET /projects/{projectId}/linkedin-ads/create-account` (`selectable_accounts`, the default
+   * first), not from the mounted `linkedin.json`, so it lists exactly what the create accepts.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES lfx-v2-campaign-service#581 (v1.0.37) DEPLOYED,
+   * and only offers a choice where that deployment's own `LINKEDIN_ADS_ACCOUNT_SELECTION_ENABLED` is
+   * on and the create resolves to the LF system connection. Only a caller holding
+   * `global_marketing_ops` on the project is offered the picker; everyone else sees the default
+   * account read-only and sends no `adAccountId`. The default account itself is never sent either,
+   * because campaign-service requires `global_marketing_ops` for ANY `adAccountId` while its
+   * selection flag is on, so an executive director naming the default would get a 403.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default),
+   * `buildLinkedInConfig` drops `adAccountId` as before and the tab shows the read-only "set by the
+   * connection" line. Reads and one request field only, so flipping it back strands nothing. Same
+   * accepted values as the flags above.
+   */
+  CampaignServiceLinkedInAccountSelection = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION',
+
+  /**
+   * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
+   * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
+   * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding
+   * `global_marketing_ops` on the project, because the Meta ad account is shared by every foundation.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES linuxfoundation/lfx-v2-campaign-service#550 (v1.0.37)
+   * DEPLOYED with its own `META_AUDIENCE_TARGETING_ENABLED` on, since campaign-service refuses any
+   * `metaConfig.targeting` with a 400 otherwise. Only meaningful while the create cutover is on
+   * (`cutoverOwnsCreate`). Off (the default), the section is hidden, the read answers 404 and the create
+   * route refuses a `targeting` block with a 400, so a tab opened while the flag was on must reload. A
+   * request field and a read only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaAudienceTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING',
+
+  /**
+   * Offer the Meta call to action, conversion event and optimization goal on the Implement tab (#5934),
+   * sent as `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`, one flag each.
+   *
+   * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.38 DEPLOYED with its own
+   * `META_CALL_TO_ACTION_ENABLED`, `META_CONVERSION_EVENT_ENABLED` or `META_OPTIMIZATION_GOAL_ENABLED` on,
+   * since campaign-service refuses the field with a 400 otherwise, and is only meaningful while the create
+   * cutover is on (`cutoverOwnsCreate`). Off (the default), the dropdown is hidden and the create route
+   * refuses the field with a 400, never dropping it. A request field only, so flipping one back strands nothing.
+   */
+  CampaignServiceMetaCallToAction = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION',
+  CampaignServiceMetaConversionEvent = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_CONVERSION_EVENT',
+  CampaignServiceMetaOptimizationGoal = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL',
+
+  /**
+   * Open the Meta lead form read (`GET /api/campaigns/meta/lead-forms`) and accept `metaConfig.leadFormId` on
+   * create (#5940). The Implement tab offers `leads` with a form picker once the UI change lands; until then
+   * this flag opens the server half only. Only a caller holding
+   * `global_marketing_ops` on the project may read the forms or send one: a project without its own Meta
+   * connection uses the shared LF Page, which holds every foundation's forms.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 DEPLOYED with its own
+   * `META_LEAD_FORMS_ENABLED` on, since campaign-service refuses `leadFormId` and the read with a 400 otherwise.
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default), `leads` stays
+   * hidden, the read answers 404 and the create route refuses a `leadFormId` with a 400. A request field and a
+   * read only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaLeadForms = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS',
 
   /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
@@ -605,29 +670,32 @@ export enum ServerFeatureFlag {
    * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
    * `/api/campaigns/linkedin/monitor`, `/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
    * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
-   * they have no legacy path to fall back to). Google (`/monitor`) has no campaign-service arm, but
-   * `/google/accounts` — campaign-service account discovery for the project's Google Ads connection,
-   * listed on the Monitor tab's Google panel — is campaign-service-only too, and root-only.
+   * they have no legacy path to fall back to). Google (`/monitor`) switches backend too: on, it reads
+   * the project's own Google Ads connection's account through campaign-service (#4526).
+   * `/google/accounts` — campaign-service account discovery for that connection, listed on the
+   * Monitor tab's Google panel — is campaign-service-only, and root-only.
    *
-   * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Google Ads, Meta, Reddit and X run ONE ad account
-   * shared by every foundation, and campaign-service's `account-monitor` is account-scoped, so either
-   * arm returns every foundation's campaigns. Those monitors (`/monitor`, `/meta/monitor`,
-   * `/reddit/monitor`, `/twitter/monitor`) are therefore root-only whatever this flag says — a ROOT
-   * writer or ROOT `global_marketing_ops` holder; everyone else gets a 403
-   * `MONITOR_SHARED_ACCOUNT_RESTRICTED` before any upstream call (lfx-self-serve-ops#54). LinkedIn
-   * runs one account per foundation, so only its campaign-service arm is project-isolated: its legacy
-   * (flag OFF) arm reads LF's shared allowlist account and is root-only too. Microsoft and HubSpot
-   * are not gated.
+   * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Meta, Reddit and X run ONE ad account shared by every
+   * foundation. The legacy arm returns every foundation's campaigns; campaign-service now returns only
+   * the campaigns recorded for the project, but this app does not rely on that for these. Those monitors (`/meta/monitor`, `/reddit/monitor`,
+   * `/twitter/monitor`) are therefore root-only whatever this flag says — a ROOT writer or ROOT
+   * `global_marketing_ops` holder; everyone else gets a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED` before
+   * any upstream call (lfx-self-serve-ops#54). Google Ads' account is shared too, but campaign-service's
+   * Google monitor returns only the campaigns recorded for the project, so only its legacy (flag OFF)
+   * account-wide arm is root-only; on, it answers the project's `campaign_manager` holders (#4837).
+   * LinkedIn runs one account per foundation, so its campaign-service arm is project-isolated: its
+   * legacy (flag OFF) arm reads LF's shared allowlist account and is root-only too. Microsoft and
+   * HubSpot are not gated.
    *
    * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
-   * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
-   * OWN connection only — never the LF system fallback — and refuses an account that connection
-   * is not bound to. So on, the Monitor tab's account pickers are filled from those connections
-   * (`/api/campaigns/monitor/connections`) instead of the configured allowlists, and the monitor
-   * routes check the account id's SHAPE rather than allowlist membership. A project with no
-   * connection of its own for a platform, or whose connection has no account bound, sees that
-   * stated in the panel rather than an error. Verify the foundations that use these tabs have
-   * connections before turning this on.
+   * account with this app's own environment credentials. Campaign-service resolves the project's
+   * own connection, and refuses an account that connection is not bound to. So on, the Monitor tab's
+   * account pickers are filled from those connections (`/api/campaigns/monitor/connections`) instead
+   * of the configured allowlists, and the monitor routes check the account id's SHAPE rather than
+   * allowlist membership. A project with no connection of its own for a platform, or whose connection
+   * has no account bound, reads LinkedIn, Reddit and Meta through campaign-service's LF system-account
+   * fallback, scoped to its recorded campaigns (from campaign-service 1.0.37, #5889); on Microsoft
+   * and X, which have no such fallback, it sees that stated in the panel rather than an error.
    *
    * IT ALSO CHANGES THE NUMBERS, deliberately: campaign-service fixed the rule-engine bugs the
    * legacy LinkedIn and Reddit paths still have (#3018-#3022): MED items now sort between HIGH

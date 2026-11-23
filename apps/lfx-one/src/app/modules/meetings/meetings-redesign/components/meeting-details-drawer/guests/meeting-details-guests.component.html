@@ -56,13 +56,21 @@
         Add Guests
       </lfx-ui-button>
     }
+    @if (canAddSelf()) {
+      <lfx-ui-button
+        empty-state-action
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-plus"
+        [loading]="selfSubmitting()"
+        [disabled]="selfSubmitting()"
+        (click)="addSelf()"
+        data-testid="meeting-details-guests-add-self">
+        Add myself
+      </lfx-ui-button>
+    }
   </lfx-ui-empty-state>
 } @else {
-  <!-- The 12px bottom keeps the toolbar gap fill clear of the heading. -->
-  <div class="flex items-baseline gap-[8px] pb-[12px] pt-[4px]" data-testid="meeting-details-guests-summary">
-    <h3 class="m-0 text-[14px] font-semibold text-gray-900">{{ summary().title }}</h3>
-    <span class="text-[12px] text-gray-500">{{ summary().subtitle }}</span>
-  </div>
   <!-- Leaves the view once the toolbar sticks, which turns the fade on. -->
   <div #stickSentinel class="h-px" aria-hidden="true"></div>
   <!-- Sticks 8px under the drawer header and its 42px tabs bar; the shadow fills that gap and the fade shows while stuck. -->
@@ -83,6 +91,7 @@
       icon="fa-light fa-bars-filter"
       popoverLabel="Filters"
       popoverPadding="none"
+      popoverAlign="end"
       [popover]="filtersPanel"
       [popoverWidth]="300"
       [ariaLabel]="filtersLabel()"
@@ -97,6 +106,17 @@
       <lfx-ui-button variant="tertiary-accent" icon="fa-light fa-user-plus" (click)="addGuests()" data-testid="meeting-details-guests-add"
         >Add Guests</lfx-ui-button
       >
+    }
+    @if (canAddSelf()) {
+      <lfx-ui-button
+        variant="tertiary-accent"
+        icon="fa-light fa-plus"
+        [loading]="selfSubmitting()"
+        [disabled]="selfSubmitting()"
+        (click)="addSelf()"
+        data-testid="meeting-details-guests-add-self">
+        Add myself
+      </lfx-ui-button>
     }
     @if (stuck()) {
       <span
@@ -271,6 +291,32 @@
         (click)="ref.close(true)"
         data-testid="meeting-details-guests-confirm-accept">
         {{ data.confirmLabel }}
+      </lfx-ui-button>
+    </ng-container>
+  </lfx-ui-modal>
+</ng-template>
+
+<ng-template #selfScopeDialog let-ref="dialogRef">
+  <lfx-ui-modal heading="Add myself" subtitle="Choose which dates to invite yourself to." data-testid="meeting-details-guests-self-scope">
+    <lfx-ui-radio-group ariaLabel="Invite myself to" [(value)]="selfInviteScope" data-testid="meeting-details-guests-self-scope-options">
+      <lfx-ui-radio
+        value="occurrence"
+        label="A single occurrence"
+        [disabled]="!selfOccurrenceOptions().length"
+        data-testid="meeting-details-guests-self-scope-occurrence" />
+      @if (selfInviteScope() === 'occurrence') {
+        <lfx-ui-select label="Occurrence" [(value)]="selfOccurrenceId" data-testid="meeting-details-guests-self-occurrence">
+          @for (option of selfOccurrenceOptions(); track option.value) {
+            <lfx-ui-option [value]="option.value" [label]="option.label" />
+          }
+        </lfx-ui-select>
+      }
+      <lfx-ui-radio value="all" label="All occurrences" data-testid="meeting-details-guests-self-scope-all" />
+    </lfx-ui-radio-group>
+    <ng-container modalActions>
+      <lfx-ui-button variant="secondary" (click)="ref.close()" data-testid="meeting-details-guests-self-scope-cancel">Cancel</lfx-ui-button>
+      <lfx-ui-button [disabled]="!canConfirmSelfScope()" (click)="ref.close(selfInviteScope())" data-testid="meeting-details-guests-self-scope-confirm">
+        Add myself
       </lfx-ui-button>
     </ng-container>
   </lfx-ui-modal>

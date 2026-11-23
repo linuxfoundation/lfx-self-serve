@@ -262,9 +262,9 @@ export function claGroupSecondaryName(option: Pick<ClaGroupOption, 'projectName'
  * The step itself is never skipped, whatever this returns — the contributor is always shown
  * which identity they are about to sign under. Only the identity on offer varies.
  *
- * GitLab yields a block rather than a route because Self Serve holds no verifiable GitLab
- * identity, and only when nothing else is linked: a group reachable through GitHub or Gerrit
- * is signable, so its GitLab organizations are simply not offered.
+ * GitLab account linking is supported, but its CLA signing handoff is not implemented here.
+ * GitLab yields a block only when nothing else is linked: a group reachable through GitHub
+ * or Gerrit is signable, so its GitLab organizations are simply not offered.
  */
 export function claSignRoute(organizations: ClaGroupOrg[]): ClaSignRoute {
   if (organizations.length === 0) return 'github';

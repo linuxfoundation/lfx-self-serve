@@ -1,27 +1,38 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { Location } from '@angular/common';
+import { ActivatedRoute, convertToParamMap, DefaultUrlSerializer, ParamMap, Router, UrlTree } from '@angular/router';
+import {
+  IMPERSONATION_BANNER_HEIGHT_PX,
+  MEETINGS_HOME_DEFAULT_FILTERS,
+  MEETINGS_HOME_PAGE_SIZE,
+  MEETINGS_HOME_SEARCH_CLOSE_MS,
+} from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { getLocalDayKey } from '@lfx-one/shared/utils';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { AppService } from '@services/app.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
+import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { PlausibleService } from '@services/plausible.service';
 import { SegmentService } from '@services/segment.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, of, Subject } from 'rxjs';
+import { BehaviorSubject, map, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
@@ -63,17 +74,22 @@ describe('MeetingsRedesignComponent', () => {
   let impersonating: ReturnType<typeof signal<boolean>>;
   let personaLoaded: ReturnType<typeof signal<boolean>>;
   let desktop: boolean;
+  let phone: boolean;
+  let reducedMotion: boolean;
   let upcoming$: Subject<Meeting[]>;
   let past$: Subject<PastMeeting[]>;
   let latestPast$: Subject<PastMeeting[]>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let navigate: ReturnType<typeof vi.fn>;
+  let livePath: string;
+  let replaceState: ReturnType<typeof vi.fn>;
   let observerCallback: IntersectionObserverCallback | null;
   let openCreateDialog: ReturnType<typeof vi.fn>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
   let elementScrollBy: ReturnType<typeof vi.fn<(options?: ScrollToOptions) => void>>;
   let windowScrollBy: ReturnType<typeof vi.spyOn>;
+  let routeData: Record<string, string>;
 
   const render = (): ComponentFixture<MeetingsRedesignComponent> => {
     const fixture = TestBed.createComponent(MeetingsRedesignComponent);
@@ -90,6 +106,19 @@ describe('MeetingsRedesignComponent', () => {
   };
   const button = (fixture: ComponentFixture<MeetingsRedesignComponent>, testId: string): UiButtonComponent =>
     fixture.debugElement.query(By.css(`[data-testid="${testId}"]`)).componentInstance;
+  const searchInput = (fixture: ComponentFixture<MeetingsRedesignComponent>): HTMLInputElement | null =>
+    query(fixture, 'meetings-redesign-search')?.querySelector('input') ?? null;
+  /** Opens the collapsed search when needed and types into it. */
+  const typeSearch = async (fixture: ComponentFixture<MeetingsRedesignComponent>, text: string): Promise<void> => {
+    if (!searchInput(fixture)) {
+      (query(fixture, 'meetings-redesign-search-button')?.querySelector('button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+    }
+    const input = searchInput(fixture) as HTMLInputElement;
+    input.value = text;
+    input.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+  };
   const rowTitles = (fixture: ComponentFixture<MeetingsRedesignComponent>): string[] =>
     Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-day-group-row"]')).map(
       (row) => row.querySelector('[data-testid="meetings-home-row-title"]')?.textContent?.trim() ?? ''
@@ -97,6 +126,8 @@ describe('MeetingsRedesignComponent', () => {
 
   beforeEach(() => {
     desktop = true;
+    phone = false;
+    reducedMotion = false;
     impersonating = signal(false);
     personaLoaded = signal(true);
     upcoming$ = new Subject();
@@ -104,6 +135,8 @@ describe('MeetingsRedesignComponent', () => {
     latestPast$ = new Subject();
     queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
     navigate = vi.fn().mockResolvedValue(true);
+    livePath = '/project/meetings?project=live';
+    replaceState = vi.fn((path: string) => (livePath = path));
     observerCallback = null;
     openCreateDialog = vi.fn();
     refreshUserMeetings = vi.fn();
@@ -126,12 +159,13 @@ describe('MeetingsRedesignComponent', () => {
         public disconnect = vi.fn();
       }
     );
-    vi.stubGlobal('matchMedia', (q: string) => ({ matches: desktop, media: q }));
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('reduced-motion') ? reducedMotion : desktop, media: q }));
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(HEADER_HEIGHT);
     // jsdom has no element scrolling and only a logging window.scrollBy.
     elementScrollBy = vi.fn<(options?: ScrollToOptions) => void>();
     Object.defineProperty(HTMLElement.prototype, 'scrollBy', { value: elementScrollBy, configurable: true, writable: true });
     windowScrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
+    routeData = {};
     TestBed.configureTestingModule({
       providers: [
         {
@@ -153,6 +187,7 @@ describe('MeetingsRedesignComponent', () => {
             refreshUserPastMeetings,
           },
         },
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: phone, breakpoints: {} }) } },
         { provide: CreateArtifactDialogService, useValue: { open: openCreateDialog } },
         { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         {
@@ -165,8 +200,23 @@ describe('MeetingsRedesignComponent', () => {
         },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded, hasBoardRole: signal(false), hasProjectRole: signal(true) } },
-        { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
-        { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
+        { provide: LensService, useValue: { activeLens: signal('me') } },
+        { provide: ProjectContextService, useValue: { activeContext: signal(null), activeContextUid: signal(''), canWriteMeetings: signal(true) } },
+        {
+          provide: Router,
+          useFactory: () => {
+            const serializer = new DefaultUrlSerializer();
+            return {
+              navigate,
+              navigateByUrl: navigate,
+              getCurrentNavigation: () => null,
+              parseUrl: (url: string) => serializer.parse(url),
+              serializeUrl: (tree: UrlTree) => serializer.serialize(tree),
+            };
+          },
+        },
+        { provide: Location, useFactory: () => ({ path: () => livePath, replaceState, subscribe: () => ({ unsubscribe: () => undefined }) }) },
+        { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$, snapshot: { pathFromRoot: [{ data: routeData }] } }) },
         { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
         { provide: SegmentService, useValue: { trackEvent: vi.fn() } },
       ],
@@ -174,6 +224,7 @@ describe('MeetingsRedesignComponent', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     delete (HTMLElement.prototype as Partial<HTMLElement>).scrollBy;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -186,13 +237,14 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'meetings-redesign-title')?.textContent).toContain('Meetings');
     expect(query(fixture, 'ui-tab-upcoming')).toBeTruthy();
     expect(query(fixture, 'ui-tab-past')).toBeTruthy();
-    expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
+    expect(query(fixture, 'meetings-redesign-search-button')).toBeTruthy();
     expect(query(fixture, 'meetings-redesign-list-upcoming')?.getAttribute('role')).toBe('tabpanel');
     for (const block of ['next-meeting', 'last-meeting']) {
       expect(query(fixture, `meetings-redesign-rail-${block}`)).toBeTruthy();
       expect(query(fixture, `meetings-redesign-folded-${block}`)).toBeTruthy();
     }
     expect(query(fixture, 'meetings-redesign-rail-pending-rsvps')).toBeNull();
+    expect(query(fixture, 'meetings-redesign-mini-calendar')).toBeNull();
   });
 
   it('paints the Last meeting card from the latest-past feed without waiting for the past list', async () => {
@@ -252,6 +304,20 @@ describe('MeetingsRedesignComponent', () => {
       button?.click();
 
       expect(openCreateDialog).toHaveBeenCalledWith('meeting');
+    });
+
+    it('is an icon button with a name and tooltip on phones', async () => {
+      phone = true;
+      const fixture = render();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const create = fixture.debugElement.query(By.css('[data-testid="meetings-home-create"]')).componentInstance;
+      expect(create.iconOnly()).toBe(true);
+      expect(create.variant()).toBe('secondary-accent');
+      expect(create.tooltip()).toBe('Create Meeting');
+      expect(query(fixture, 'meetings-home-create')?.querySelector('button')?.getAttribute('aria-label')).toBe('Create Meeting');
+      expect(query(fixture, 'meetings-redesign-folded-rail')?.className).toContain('max-sm:hidden');
     });
 
     it('is waited for while the persona loads, and the header actions hide with nothing pending', async () => {
@@ -327,15 +393,21 @@ describe('MeetingsRedesignComponent', () => {
     });
   });
 
-  it('stops the tabs bar wrapping above 1024px in a centre of 440px or more, narrowing the search instead', async () => {
+  it('stops the tabs bar wrapping above 1024px in a centre of 440px or more, narrowing an open search instead', async () => {
     const fixture = render();
     await fixture.whenStable();
+    const tools = query(fixture, 'meetings-redesign-search-button')?.parentElement;
 
-    const search = query(fixture, 'meetings-redesign-search');
     expect(query(fixture, 'meetings-redesign-tabs')?.className).toContain('flex-wrap');
     expect(query(fixture, 'meetings-redesign-tabs')?.className).toContain('min-[1025px]:@[440px]:flex-nowrap');
-    expect(search?.parentElement?.className).toContain('min-[1025px]:min-w-0 min-[1025px]:flex-nowrap');
-    expect(search?.className).toContain('min-[1025px]:w-[280px] min-[1025px]:min-w-0');
+    expect(tools?.className).toContain('min-[1025px]:min-w-0 min-[1025px]:flex-nowrap');
+
+    await typeSearch(fixture, '');
+    const search = query(fixture, 'meetings-redesign-search');
+    expect(search?.parentElement).toBe(tools);
+    // 280px that may shrink above 640px; a full row at 640px and below, where Filters also takes a full row.
+    expect(search?.className).toContain('max-w-full basis-full min-[641px]:w-[280px] min-[641px]:min-w-0 min-[641px]:basis-auto');
+    expect(query(fixture, 'meetings-home-filters-button')?.closest('lfx-meetings-filters')?.className).toContain('w-full min-[641px]:w-auto');
   });
 
   it('puts search and Filters inside the tabs, on their rule', async () => {
@@ -343,9 +415,9 @@ describe('MeetingsRedesignComponent', () => {
     await fixture.whenStable();
 
     const tabs = query(fixture, 'meetings-redesign-tabs');
-    expect(tabs?.contains(query(fixture, 'meetings-redesign-search'))).toBe(true);
+    expect(tabs?.contains(query(fixture, 'meetings-redesign-search-button'))).toBe(true);
     expect(tabs?.contains(query(fixture, 'meetings-home-filters-button'))).toBe(true);
-    expect(query(fixture, 'ui-tab-upcoming')?.className).toContain('text-[13px]');
+    expect(query(fixture, 'ui-tab-upcoming')?.className).toContain('pb-[14px]');
   });
 
   it('folds the right column into a two-column grid and hides the description at 1024px and below', async () => {
@@ -628,10 +700,7 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
       await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1, { title: 'Board Review' }), buildMeeting(2, { title: 'Tech Sync' })]);
 
-      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
-      input.value = 'board';
-      input.dispatchEvent(new Event('input'));
-      await fixture.whenStable();
+      await typeSearch(fixture, 'board');
 
       expect(rowTitles(fixture)).toEqual(['Board Review']);
     });
@@ -672,10 +741,7 @@ describe('MeetingsRedesignComponent', () => {
       });
       elementScrollBy.mockClear();
 
-      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
-      input.value = 'meeting';
-      input.dispatchEvent(new Event('input'));
-      await fixture.whenStable();
+      await typeSearch(fixture, 'meeting');
       expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
       expect(elementScrollBy).toHaveBeenLastCalledWith({ top: -500 });
 
@@ -707,10 +773,7 @@ describe('MeetingsRedesignComponent', () => {
       });
       windowScrollBy.mockClear();
 
-      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
-      input.value = 'meeting';
-      input.dispatchEvent(new Event('input'));
-      await fixture.whenStable();
+      await typeSearch(fixture, 'meeting');
 
       expect(windowScrollBy).toHaveBeenLastCalledWith({ top: -300 - HEADER_HEIGHT * 2 });
     });
@@ -745,6 +808,7 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('No upcoming meetings');
       expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('Meetings from your committees and projects will appear here.');
       expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-search-button')).toBeNull();
       expect(query(fixture, 'meetings-home-filters-button')).toBeNull();
       expect(query(fixture, 'meetings-home-list')).toBeNull();
 
@@ -760,10 +824,7 @@ describe('MeetingsRedesignComponent', () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(fixture, [buildMeeting(0, { title: 'Board Review' }), buildMeeting(1)]);
-      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
-      input.value = 'board';
-      input.dispatchEvent(new Event('input'));
-      await fixture.whenStable();
+      await typeSearch(fixture, 'board');
 
       expect(rowTitles(fixture)).toEqual(['Board Review']);
       expect(query(fixture, 'meetings-home-no-results')).toBeNull();
@@ -774,10 +835,7 @@ describe('MeetingsRedesignComponent', () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1)]);
-      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
-      input.value = 'nothing matches';
-      input.dispatchEvent(new Event('input'));
-      await fixture.whenStable();
+      await typeSearch(fixture, 'nothing matches');
 
       expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No results found');
       expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No meetings match your search');
@@ -792,6 +850,255 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(query(fixture, 'meetings-home-no-results')).toBeNull();
       expect(rowTitles(fixture)).toEqual(['Meeting 0', 'Meeting 1']);
+      // The reset also collapses the search back into its button, without the closing animation.
+      expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-search-button')).toBeTruthy();
+    });
+  });
+
+  describe('collapsible search', () => {
+    const closeDelay = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, MEETINGS_HOME_SEARCH_CLOSE_MS + 20));
+    const openSearch = async (fixture: ComponentFixture<MeetingsRedesignComponent>): Promise<void> => {
+      (query(fixture, 'meetings-redesign-search-button')?.querySelector('button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+    };
+    const escape = async (fixture: ComponentFixture<MeetingsRedesignComponent>): Promise<void> => {
+      searchInput(fixture)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await fixture.whenStable();
+    };
+    const blur = async (fixture: ComponentFixture<MeetingsRedesignComponent>): Promise<void> => {
+      searchInput(fixture)?.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }));
+      await fixture.whenStable();
+    };
+    const searchButton = (fixture: ComponentFixture<MeetingsRedesignComponent>): HTMLButtonElement | null =>
+      query(fixture, 'meetings-redesign-search-button')?.querySelector('button') ?? null;
+    let attachedHost: HTMLElement | null = null;
+    const attached = async (): Promise<ComponentFixture<MeetingsRedesignComponent>> => {
+      const fixture = render();
+      attachedHost = fixture.nativeElement;
+      document.body.appendChild(fixture.nativeElement);
+      await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1, { title: 'Board Review' })]);
+      return fixture;
+    };
+
+    afterEach(() => {
+      attachedHost?.remove();
+      attachedHost = null;
+    });
+
+    it('stays open when text is typed while it is closing', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      await escape(fixture);
+
+      fixture.componentInstance['store'].setSearch('Board');
+      await closeDelay();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-search')?.classList.contains('is-closing')).toBe(false);
+      fixture.componentInstance['store'].setSearch('');
+      await blur(fixture);
+      await closeDelay();
+      await fixture.whenStable();
+      expect(searchButton(fixture)).toBeTruthy();
+    });
+
+    it('stays open when an input method starts composing while it is closing', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      await escape(fixture);
+
+      searchInput(fixture)?.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      await closeDelay();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+      // It stays as it is, without growing in again under the text being composed.
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-opening');
+    });
+
+    it('stays open, empty, when Filters beside it is pressed, so the Filters popover keeps its anchor', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      const filters = query(fixture, 'meetings-redesign-search')?.nextElementSibling as HTMLElement;
+
+      filters.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      searchInput(fixture)?.blur();
+      document.dispatchEvent(new PointerEvent('pointerup'));
+      await closeDelay();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+    });
+
+    it('closes an empty field left open beside Filters on the next press elsewhere', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      const filters = query(fixture, 'meetings-redesign-search')?.nextElementSibling as HTMLElement;
+      filters.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      searchInput(fixture)?.blur();
+      document.dispatchEvent(new PointerEvent('pointerup'));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      document.dispatchEvent(new PointerEvent('pointerup'));
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')?.classList).toContain('is-closing');
+    });
+
+    it('keeps an empty field left open beside Filters while the viewer presses inside the Filters panel', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+      const filters = query(fixture, 'meetings-redesign-search')?.nextElementSibling as HTMLElement;
+      filters.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      searchInput(fixture)?.blur();
+      document.dispatchEvent(new PointerEvent('pointerup'));
+      const overlay = document.createElement('div');
+      overlay.className = 'cdk-overlay-container';
+      const panel = overlay.appendChild(document.createElement('div'));
+      document.body.appendChild(overlay);
+
+      try {
+        panel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        document.dispatchEvent(new PointerEvent('pointerup'));
+        await closeDelay();
+        await fixture.whenStable();
+
+        expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+        expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
+      } finally {
+        overlay.remove();
+      }
+    });
+
+    it('waits for a pressed pointer to be released before closing, so the control under it is not moved', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+
+      document.dispatchEvent(new Event('pointerdown'));
+      searchInput(fixture)?.blur();
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+
+      document.dispatchEvent(new Event('pointerup'));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-redesign-search')?.classList).toContain('is-closing');
+    });
+
+    it('starts as a tertiary Search button with a magnifier, before Filters', async () => {
+      const fixture = render();
+      await loadFeeds(fixture, [buildMeeting(0)]);
+
+      const search = button(fixture, 'meetings-redesign-search-button');
+      expect([search.variant(), search.icon(), search.ariaLabel()]).toEqual(['tertiary', 'fa-light fa-magnifying-glass', 'Search meetings']);
+      expect(searchButton(fixture)?.textContent?.trim()).toBe('Search');
+      expect(searchButton(fixture)?.getAttribute('aria-label')).toBe('Search meetings');
+      expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-search-button')?.nextElementSibling?.tagName.toLowerCase()).toBe('lfx-meetings-filters');
+    });
+
+    it('opens into the focused 280px search field in the same slot, playing the opening animation', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+
+      const field = query(fixture, 'meetings-redesign-search');
+      expect(query(fixture, 'meetings-redesign-search-button')).toBeNull();
+      expect(field?.nextElementSibling?.tagName.toLowerCase()).toBe('lfx-meetings-filters');
+      expect(field?.classList).toContain('is-opening');
+      expect(field?.classList).toContain('min-[641px]:w-[280px]');
+      expect(searchInput(fixture)?.placeholder).toBe('Search meetings');
+      expect(searchInput(fixture)?.getAttribute('aria-label')).toBe('Search meetings');
+      expect(document.activeElement).toBe(searchInput(fixture));
+    });
+
+    it('sends the text to the store and stays open on blur while it has text', async () => {
+      const fixture = await attached();
+      await typeSearch(fixture, 'board');
+
+      await blur(fixture);
+      await closeDelay();
+      await fixture.whenStable();
+
+      expect(rowTitles(fixture)).toEqual(['Board Review']);
+      expect(searchInput(fixture)?.value).toBe('board');
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+    });
+
+    it('closes when it blurs while empty, animating out before the button returns', async () => {
+      const fixture = await attached();
+      await openSearch(fixture);
+
+      await blur(fixture);
+
+      expect(query(fixture, 'meetings-redesign-search')?.classList).toContain('is-closing');
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-opening');
+      expect(query(fixture, 'meetings-redesign-search-button')).toBeNull();
+
+      await closeDelay();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-search-button')).toBeTruthy();
+    });
+
+    it('stays open while focus moves within the field, as the clear button hands it back to the input', async () => {
+      const fixture = await attached();
+      await typeSearch(fixture, '');
+      const field = query(fixture, 'meetings-redesign-search') as HTMLElement;
+
+      searchInput(fixture)?.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: field.querySelector('input') }));
+      await fixture.whenStable();
+
+      expect(field.classList).not.toContain('is-closing');
+    });
+
+    it('clears the text on the first Escape and closes on an Escape with no text, handing focus to the button', async () => {
+      const fixture = await attached();
+      await typeSearch(fixture, 'board');
+
+      await escape(fixture);
+      expect(searchInput(fixture)?.value).toBe('');
+      expect(query(fixture, 'meetings-redesign-search')?.classList).not.toContain('is-closing');
+
+      await escape(fixture);
+      expect(query(fixture, 'meetings-redesign-search')?.classList).toContain('is-closing');
+
+      await closeDelay();
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(document.activeElement).toBe(searchButton(fixture));
+    });
+
+    it('clears the query and closes from the clear button', async () => {
+      const fixture = await attached();
+      await typeSearch(fixture, 'board');
+
+      (query(fixture, 'ui-search-input-clear') as HTMLButtonElement).click();
+      await fixture.whenStable();
+
+      expect(rowTitles(fixture)).toEqual(['Meeting 0', 'Board Review']);
+      expect(query(fixture, 'meetings-redesign-search')?.classList).toContain('is-closing');
+
+      await closeDelay();
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(document.activeElement).toBe(searchButton(fixture));
+    });
+
+    it('closes at once, without the animation, when motion is reduced', async () => {
+      reducedMotion = true;
+      const fixture = await attached();
+      await openSearch(fixture);
+
+      await escape(fixture);
+
+      expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-search-button')).toBeTruthy();
     });
   });
 
@@ -872,10 +1179,7 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
       await loadFeeds(fixture, meetings());
       await applyOrganizedByMe(fixture);
-      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
-      input.value = 'sync';
-      input.dispatchEvent(new Event('input'));
-      await fixture.whenStable();
+      await typeSearch(fixture, 'sync');
       // A filter with a search reads as a filter miss.
       expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No meetings match your filters');
 
@@ -883,7 +1187,8 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
 
       expect(chips(fixture)).toEqual([]);
-      expect((query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement).value).toBe('');
+      expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-search-button')).toBeTruthy();
       expect(rowTitles(fixture)).toEqual(['Meeting 0', 'Board Review', 'Tech Sync']);
     });
 
@@ -894,10 +1199,7 @@ describe('MeetingsRedesignComponent', () => {
         { ...buildMeeting(3, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting,
       ]);
       await applyOrganizedByMe(fixture);
-      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
-      input.value = 'sync';
-      input.dispatchEvent(new Event('input'));
-      await fixture.whenStable();
+      await typeSearch(fixture, 'sync');
 
       query(fixture, 'ui-tab-past')?.click();
       await fixture.whenStable();
@@ -930,11 +1232,267 @@ describe('MeetingsRedesignComponent', () => {
 
       query(fixture, 'ui-tab-past')?.click();
       await fixture.whenStable();
-      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { time: 'past' }, replaceUrl: true }));
+      // The live address keeps the project the selector put there, which the Router's own params may not hold yet.
+      expect(replaceState).toHaveBeenLastCalledWith('/project/meetings?project=live&time=past');
 
       query(fixture, 'ui-tab-upcoming')?.click();
       await fixture.whenStable();
-      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { time: null } }));
+      expect(replaceState).toHaveBeenLastCalledWith('/project/meetings?project=live');
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('project lens', () => {
+    let projectUpcoming$: Subject<Meeting[]>;
+    let canWriteMeetings: ReturnType<typeof signal<boolean>>;
+
+    beforeEach(() => {
+      projectUpcoming$ = new Subject<Meeting[]>();
+      canWriteMeetings = signal(true);
+      routeData = { lens: 'project' };
+      TestBed.overrideProvider(ProjectContextService, {
+        useValue: {
+          activeContext: signal({ uid: 'project-1', name: 'Synthetic Foundation', slug: 'synthetic' }),
+          activeContextUid: signal('project-1'),
+          isFoundationContext: signal(false),
+          canWriteMeetings,
+        },
+      });
+      TestBed.overrideProvider(MeetingService, {
+        useValue: {
+          removedRegistrationMeetingIds: signal(new Set<string>()),
+          getPastMeetingSummary: () => of(null),
+          getPastMeetingRecording: () => of(null),
+          getProjectMeetingsForHome: () => projectUpcoming$,
+          getProjectPastMeetingsForHome: () => of({ meetings: [] }),
+          getRollupFilterOptions: () => of({ projects: [], groups: [], complete: true }),
+        },
+      });
+    });
+
+    it('describes the project and leaves out the Next and Last meeting cards', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-description')?.textContent?.trim()).toBe(
+        'Coordinate decisions, align stakeholders, and maintain transparent governance in Synthetic Foundation.'
+      );
+      expect(query(fixture, 'meetings-redesign-right-column')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-folded-rail')).toBeNull();
+    });
+
+    it('opens the composer for the project without the picker, for those who can write its meetings', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      const open = vi.spyOn(TestBed.inject(MeetingComposerService), 'open').mockImplementation(() => undefined);
+
+      query(fixture, 'meetings-home-create')?.querySelector('button')?.click();
+
+      expect(open).toHaveBeenCalledWith({ mode: 'create', projectUid: 'project-1' });
+      expect(openCreateDialog).not.toHaveBeenCalled();
+      canWriteMeetings.set(false);
+      fixture.detectChanges();
+      expect(query(fixture, 'meetings-home-create')).toBeNull();
+    });
+
+    it('collapses the search into a button and sends its text to the server search for past meetings', async () => {
+      const pastSearch = vi.fn(() => of({ meetings: [] }));
+      TestBed.overrideProvider(MeetingService, {
+        useValue: {
+          removedRegistrationMeetingIds: signal(new Set<string>()),
+          getPastMeetingSummary: () => of(null),
+          getPastMeetingRecording: () => of(null),
+          getProjectMeetingsForHome: () => projectUpcoming$,
+          getProjectPastMeetingsForHome: pastSearch,
+          getRollupFilterOptions: () => of({ projects: [], groups: [], complete: true }),
+        },
+      });
+      const fixture = render();
+      projectUpcoming$.next([buildMeeting(0)]);
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      await typeSearch(fixture, 'kube');
+      // The store debounces the server search by 300ms.
+      await new Promise((resolve) => setTimeout(resolve, 350));
+
+      expect(pastSearch.mock.calls.at(-1)?.slice(0, 2)).toEqual(['project-1', 'kube']);
+    });
+
+    it('shows the mini calendar in its own right column', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-project-column')?.querySelector('[data-testid="meetings-redesign-mini-calendar"]')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-project-column')?.className).toContain('min-[1025px]:flex');
+      expect(query(fixture, 'meetings-redesign-project-column')?.querySelector('[data-testid="meetings-calendar-actions-subscribe"]')).toBeTruthy();
+    });
+
+    it('does not create the calendar, or load past pages for it, while its column is hidden', async () => {
+      desktop = false;
+      const fixture = render();
+      await fixture.whenStable();
+      const showPastFrom = vi.spyOn(fixture.componentInstance['store'], 'showPastFrom');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-mini-calendar')).toBeNull();
+      expect(showPastFrom).not.toHaveBeenCalled();
+    });
+
+    it('lists a past day picked on the calendar on the Past tab, scrolled below the tabs and flashed', async () => {
+      // Mid-month, so the day three days back is on the calendar's month whatever the real date.
+      vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+      vi.setSystemTime(new Date(2026, 9, 15, 12));
+      const start = new Date(Date.now() - 3 * DAY_MS);
+      const pastMeeting = { ...buildMeeting(7, { start_time: start.toISOString(), title: 'Board Review' }), occurrence_id: '' } as PastMeeting;
+      TestBed.overrideProvider(MeetingService, {
+        useValue: {
+          removedRegistrationMeetingIds: signal(new Set<string>()),
+          getPastMeetingSummary: () => of(null),
+          getPastMeetingRecording: () => of(null),
+          getProjectMeetingsForHome: () => projectUpcoming$,
+          getProjectPastMeetingsForHome: () => of({ meetings: [pastMeeting] }),
+          getRollupFilterOptions: () => of({ projects: [], groups: [], complete: true }),
+        },
+      });
+      const fixture = render();
+      projectUpcoming$.next([]);
+      await fixture.whenStable();
+      const day = getLocalDayKey(start);
+
+      fixture.nativeElement.querySelector(`[data-testid="meetings-redesign-mini-calendar"] [data-day="${day}"]`)?.click();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-list-past')?.hidden).toBe(false);
+      expect(replaceState).toHaveBeenLastCalledWith('/project/meetings?project=live&time=past');
+      const row = fixture.nativeElement.querySelector(`[data-testid="meetings-home-day-group-row"][data-day="${day}"]`);
+      expect(row).toBeTruthy();
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      // jsdom lays out at 0: the row goes to 36px below the header and the tabs bar, each measured 80px.
+      expect(elementScrollBy).toHaveBeenLastCalledWith({ top: -(HEADER_HEIGHT * 2 + 36), behavior: 'smooth' });
+      expect(row.classList).toContain('motion-safe:animate-meetings-row-flash');
+    });
+
+    it('opens the full calendar from Expand, named after the project', async () => {
+      const fixture = render();
+      projectUpcoming$.next([]);
+      await fixture.whenStable();
+
+      query(fixture, 'meetings-mini-calendar-expand')?.querySelector('button')?.click();
+      await fixture.whenStable();
+
+      const dialog = document.querySelector('[data-testid="meetings-calendar-dialog"]');
+      expect(dialog?.querySelector('[data-testid="meetings-calendar-dialog-context"]')?.textContent?.trim()).toBe('Synthetic Foundation');
+      dialog?.querySelector<HTMLElement>('[data-testid="meetings-calendar-dialog-close"] button')?.click();
+      await fixture.whenStable();
+    });
+
+    it('opens the full calendar on the month the mini calendar shows, and closes it when the page goes', async () => {
+      const fixture = render();
+      projectUpcoming$.next([]);
+      await fixture.whenStable();
+      const mini = query(fixture, 'meetings-redesign-mini-calendar') as HTMLElement;
+      const shown = mini.querySelector('[data-testid="meetings-mini-calendar-title"]')?.textContent?.trim();
+      mini.querySelector<HTMLElement>('[data-testid="meetings-mini-calendar-previous"] button')?.click();
+      await fixture.whenStable();
+      const previous = mini.querySelector('[data-testid="meetings-mini-calendar-title"]')?.textContent?.trim();
+      expect(previous).not.toBe(shown);
+
+      mini.querySelector<HTMLElement>('[data-testid="meetings-mini-calendar-expand"] button')?.click();
+      await fixture.whenStable();
+      expect(document.querySelector('[data-testid="meetings-calendar-dialog-period"]')?.textContent?.trim()).toBe(previous);
+
+      fixture.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(document.querySelector('[data-testid="meetings-calendar-dialog"]')).toBeNull();
+    });
+
+    it('uses the project copy for an empty Upcoming tab', async () => {
+      const fixture = render();
+      projectUpcoming$.next([]);
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('No meetings yet');
+    });
+  });
+
+  describe('paged past feed', () => {
+    let pastPage$: Subject<{ data: PastMeeting[]; page_token?: string }>;
+    const searchDebounce = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 320));
+
+    beforeEach(() => {
+      pastPage$ = new Subject();
+      routeData = { lens: 'project' };
+      TestBed.overrideProvider(ProjectContextService, {
+        useValue: { activeContext: signal(null), activeContextUid: signal('project-1'), isFoundationContext: signal(false), canWriteMeetings: signal(true) },
+      });
+      TestBed.overrideProvider(MeetingService, {
+        useValue: {
+          removedRegistrationMeetingIds: signal(new Set<string>()),
+          getPastMeetingSummary: () => of(null),
+          getPastMeetingRecording: () => of(null),
+          getProjectMeetingsForHome: () => of([]),
+          getProjectPastMeetingsForHome: () => pastPage$.pipe(map((page) => ({ meetings: page.data, pageToken: page.page_token }))),
+          getRollupFilterOptions: () => of({ projects: [], groups: [], complete: true }),
+        },
+      });
+    });
+
+    it('keeps the toolbar, without a no results message, while a cleared search reloads', async () => {
+      queryParamMap$.next(convertToParamMap({ time: 'past' }));
+      const fixture = render();
+      await fixture.whenStable();
+      pastPage$.next({ data: [{ ...buildMeeting(0, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting] });
+      fixture.componentInstance['store'].setSearch('nothing matches');
+      await searchDebounce();
+      pastPage$.next({ data: [] });
+      await fixture.whenStable();
+
+      fixture.componentInstance['store'].setSearch('');
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-search-button')).toBeTruthy();
+      expect(query(fixture, 'meetings-home-no-results')).toBeNull();
+      expect(query(fixture, 'meetings-home-empty-past')).toBeNull();
+    });
+
+    it('offers Retry when the reload after clearing a search fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      queryParamMap$.next(convertToParamMap({ time: 'past' }));
+      const fixture = render();
+      await fixture.whenStable();
+      pastPage$.next({ data: [{ ...buildMeeting(0, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting] });
+      fixture.componentInstance['store'].setSearch('nothing matches');
+      await searchDebounce();
+      pastPage$.next({ data: [] });
+      await fixture.whenStable();
+
+      fixture.componentInstance['store'].setSearch('');
+      await searchDebounce();
+      pastPage$.error(new Error('reload failed'));
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance['store'].failed()).toBe(true);
+      expect(query(fixture, 'meetings-home-no-results')).toBeNull();
+      // The list is replaced by Retry, so no toast says it was kept.
+      expect(TestBed.inject(UiToastService).toasts()).toEqual([]);
+    });
+
+    it('shows no results with a reset, not an empty tab, when a server search matches nothing', async () => {
+      queryParamMap$.next(convertToParamMap({ time: 'past' }));
+      const fixture = render();
+      await fixture.whenStable();
+      pastPage$.next({ data: [{ ...buildMeeting(0, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting] });
+      fixture.componentInstance['store'].setSearch('nothing matches');
+      await searchDebounce();
+      pastPage$.next({ data: [] });
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-home-no-results')).toBeTruthy();
+      expect(query(fixture, 'meetings-home-no-results-reset')).toBeTruthy();
+      expect(query(fixture, 'meetings-home-empty-past')).toBeNull();
     });
   });
 });

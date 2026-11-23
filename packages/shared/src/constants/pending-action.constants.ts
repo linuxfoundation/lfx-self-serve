@@ -95,6 +95,12 @@ export const PENDING_ACTION_SECTION_ORDER: PendingActionSection[] = (Object.keys
 );
 
 /**
+ * Sections whose rows carry a per-item Dismiss, so the drawer offers a section-level "Dismiss all". Invitations are
+ * resolved with Accept or Decline, applications owe a review decision, and formation items are resolved on the checklist.
+ */
+export const PENDING_ACTION_BULK_DISMISS_SECTIONS: readonly PendingActionSection[] = ['meetings', 'votes', 'surveys', 'other'];
+
+/**
  * Pending-action fade-out + collapse animation duration in milliseconds. MUST match the CSS
  * transition in pending-actions.component.scss and pending-actions-drawer.component.scss.
  */

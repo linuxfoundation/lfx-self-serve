@@ -3,8 +3,8 @@ title: Navigate Your Dashboard
 description: How to switch lenses and use the LFX Self Serve dashboard effectively.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, lens, navigation, organization, company, employer]
-last_updated: 2026-11-06
+tags: [dashboard, lens, navigation, company, employer]
+last_updated: 2026-11-19
 intercom_collection: Dashboards
 ---
 
@@ -14,10 +14,10 @@ The LFX Self Serve dashboard adapts based on your roles and the lens you have se
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Locate the lens switcher in the top navigation or sidebar.
-3. Select one of the available lenses: **Me**, **Foundation**, **Projects**, or **Organization**. If you can use both Foundation and Projects, they appear as a single **Projects** tab that lists foundations and projects.
+3. Select one of the available lenses: **Me**, **Foundation**, **Projects**, or **Company**. If you can use both Foundation and Projects, they appear as a single **Projects** tab that lists foundations and projects.
 4. The dashboard and left navigation update automatically to reflect the selected lens.
 
-On a phone or small screen, the lens switcher sits in the navigation menu. Selecting a lens there shows that lens's menu without leaving the page you are on: pick a page, project, foundation, or organization from it to switch, or close the menu to stay where you were.
+On a phone or small screen, the lens switcher sits in the navigation menu. Selecting a lens there shows that lens's menu without leaving the page you are on: pick a page, project, foundation, or company from it to switch, or close the menu to stay where you were.
 
 Your lens selection is saved for 30 days. The next time you sign in, the app restores your last-used lens.
 
@@ -31,19 +31,21 @@ If you manage groups, **My Pending Actions** also shows **Join request** rows ac
 
 Navigating to another page does not cancel a confirmed approval or rejection that is already being saved. If join-request discovery is too slow or unavailable, those rows are omitted for that refresh while the other pending-action sources remain available; a later refresh can load them again.
 
+In the Pending Actions drawer, each **Meetings**, **Votes**, **Surveys** or **Other** section has a **Dismiss all** button in its header. Select it and confirm to dismiss every item in that section at once; dismissed items do not come back in this browser. Items still loading their RSVP options are skipped. **Invitations**, **Applications** and **Formation** have no **Dismiss all**, because those items are resolved by accepting or declining, reviewing, or completing them.
+
 The drawer updates as the list refreshes, including loading RSVP controls for new meeting actions. If RSVP options fail to load, you can still open the meeting page; the card and drawer try loading those options again when a replacement feed arrives. Once the list is empty, the **My Pending Actions** section fades away after you close the drawer.
 
 ## Foundation lens
 
-The **Foundation** lens (`/foundation/overview`) is available to board members, executive directors, LF Staff, and users with a writer role on the foundation (including root writers). It shows foundation-level health metrics, project summaries, and governance activity. Under **Metrics** in the left navigation, executive directors and LF Staff additionally see **Health Metrics** (`/foundation/health-metrics`) and [Social Listening](../../social-listening/) (`/foundation/social-listening`).
+The **Foundation** lens (`/foundation/overview`) is available to board members, executive directors, LF Staff, and users with a writer role on the foundation (including root writers). It shows foundation-level health metrics, project summaries, and governance activity. Under **Metrics** in the left navigation, executive directors and LF Staff additionally see **Health Metrics** (`/foundation/health-metrics`), **Participating companies** (`/foundation/participating-orgs`, see [Foundation Participating Companies](../foundation-participating-companies/)) and [Social Listening](../../social-listening/) (`/foundation/social-listening`).
 
 ## Project lens
 
-The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
+The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics. **Participating companies** (`/project/participating-orgs`) lists the companies contributing to the project. LF Staff see it on every project; executive directors see it for a foundation they direct and for projects directly under it (projects nested deeper don't show the link, though the page itself still opens from its address). Other roles don't see the page.
 
-## Org lens
+## Company lens
 
-The **Organization** lens (also called the Org lens) shows your company's membership status and participation across Linux Foundation projects. "Organization" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your organization has granted you access. See [Who can access this](../#who-can-access-this).
+The **Company** lens shows your company's membership status and participation across Linux Foundation projects. "Company" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your company has granted you access. See [Who can access this](../#who-can-access-this).
 
 ## Switch project context
 

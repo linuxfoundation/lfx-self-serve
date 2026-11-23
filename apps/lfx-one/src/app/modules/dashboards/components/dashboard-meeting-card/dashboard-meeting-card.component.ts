@@ -26,18 +26,23 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, map, of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-dashboard-meeting-card',
-  imports: [ButtonComponent, TooltipModule, ClipboardModule, RecurrenceSummaryPipe, RouterLink],
+  imports: [ButtonComponent, TooltipModule, ClipboardModule, ConfirmDialogModule, RecurrenceSummaryPipe, RouterLink],
+  // Each card owns its confirm dialog, so a list of cards opens only the clicked card's.
+  providers: [ConfirmationService],
   templateUrl: './dashboard-meeting-card.component.html',
 })
 export class DashboardMeetingCardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly inviteResend = inject(MeetingInviteResendService);
   private readonly userService = inject(UserService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
 
   public readonly meeting = input.required<Meeting>();
@@ -150,10 +155,16 @@ export class DashboardMeetingCardComponent {
     }
   }
 
-  public resendInvite(): void {
+  /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
+  public confirmResendInvite(): void {
     // The date this card shows: the occurrence input when given, else the next occurrence it resolves from the meeting
     // itself (Groups Overview passes only the meeting), so the registration that fits what is on screen is chosen.
-    this.inviteResend.resendOwn(this.meeting().id, resolveShownOccurrenceId(this.meeting(), this.occurrence()));
+    this.inviteResend.confirmAndResendOwn(
+      this.confirmationService,
+      this.meeting().id,
+      resolveShownOccurrenceId(this.meeting(), this.occurrence()),
+      this.meetingTitle()
+    );
   }
 
   // Resending goes to the viewer's own registrant row, so it is offered only where one exists: signed in, upcoming,

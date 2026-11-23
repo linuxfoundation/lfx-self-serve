@@ -5,29 +5,16 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { FormControl } from '@angular/forms';
 import type { ActivatedRoute, Router } from '@angular/router';
 import {
-  DEFAULT_ORG_EVENTS_ATTRIBUTION,
   DEFAULT_ORG_EVENTS_PARTICIPATION,
   DEFAULT_ORG_EVENTS_SCOPE,
-  ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
+  ORG_EVENTS_COMPANY_QUERY_PARAM,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
   ORG_EVENTS_SCOPE_QUERY_PARAM,
 } from '@lfx-one/shared/constants';
-import type { OrgEventsAttribution, OrgEventsParticipation, OrgEventsScope } from '@lfx-one/shared/interfaces';
-import {
-  orgEventsAttributionUrlParam,
-  orgEventsParticipationUrlParam,
-  orgEventsScopeUrlParam,
-  parseOrgEventsAttribution,
-  parseOrgEventsParticipation,
-  parseOrgEventsScope,
-} from '@lfx-one/shared/utils';
+import type { OrgEventsParticipation, OrgEventsScope } from '@lfx-one/shared/interfaces';
+import { orgEventsParticipationUrlParam, orgEventsScopeUrlParam, parseOrgEventsParticipation, parseOrgEventsScope } from '@lfx-one/shared/utils';
 import { distinctUntilChanged, map } from 'rxjs';
-
-/** The "Counted by" a route's `?attribution=` selects (the default when absent or unknown). */
-export function readOrgEventsAttribution(route: ActivatedRoute): OrgEventsAttribution {
-  return parseOrgEventsAttribution(route.snapshot.queryParamMap.get(ORG_EVENTS_ATTRIBUTION_QUERY_PARAM)) ?? DEFAULT_ORG_EVENTS_ATTRIBUTION;
-}
 
 /** The "Count" a route's `?participation=` selects (the default when absent or unknown). */
 export function readOrgEventsParticipation(route: ActivatedRoute): OrgEventsParticipation {
@@ -44,13 +31,8 @@ export function readOrgEventsFoundation(route: ActivatedRoute): string {
   return route.snapshot.queryParamMap.get(ORG_EVENTS_FOUNDATION_QUERY_PARAM) ?? '';
 }
 
-/** Keeps a "Counted by" picker and `?attribution=` in step (see {@link syncOrgEventsParamWithUrl}). Call from an injection context. */
-export function syncOrgEventsAttributionWithUrl(control: FormControl<OrgEventsAttribution>, route: ActivatedRoute, router: Router): void {
-  syncOrgEventsParamWithUrl(control, route, router, {
-    param: ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
-    fromUrl: (value) => parseOrgEventsAttribution(value) ?? DEFAULT_ORG_EVENTS_ATTRIBUTION,
-    toUrl: orgEventsAttributionUrlParam,
-  });
+export function readOrgEventsCompany(route: ActivatedRoute): string {
+  return route.snapshot.queryParamMap.get(ORG_EVENTS_COMPANY_QUERY_PARAM) ?? '';
 }
 
 /** Keeps a "Count" picker and `?participation=` in step (see {@link syncOrgEventsParamWithUrl}). Call from an injection context. */
@@ -75,6 +57,14 @@ export function syncOrgEventsScopeWithUrl(control: FormControl<OrgEventsScope>, 
 export function syncOrgEventsFoundationWithUrl(control: FormControl<string>, route: ActivatedRoute, router: Router): void {
   syncOrgEventsParamWithUrl(control, route, router, {
     param: ORG_EVENTS_FOUNDATION_QUERY_PARAM,
+    fromUrl: (value) => value ?? '',
+    toUrl: (value) => value || null,
+  });
+}
+
+export function syncOrgEventsCompanyWithUrl(control: FormControl<string>, route: ActivatedRoute, router: Router): void {
+  syncOrgEventsParamWithUrl(control, route, router, {
+    param: ORG_EVENTS_COMPANY_QUERY_PARAM,
     fromUrl: (value) => value ?? '',
     toUrl: (value) => value || null,
   });

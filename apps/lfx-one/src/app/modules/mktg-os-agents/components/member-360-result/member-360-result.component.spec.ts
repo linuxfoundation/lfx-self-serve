@@ -249,6 +249,18 @@ describe('Member360ResultComponent', () => {
     envelope.run_date = envelope.period.window_start = envelope.period.window_end = '2026-10-01';
     expect(render(envelope).query('member-360-result-header').textContent).toContain('Run 1 Oct 2026 · window Oct 2026 to');
   });
+  it('shows the written calendar day for evidence dates, the method window and due days in every time zone', () => {
+    const envelope = member360Fixture();
+    envelope.tabs.evidence[0].date = '2026-10-01';
+    envelope.tabs.method.analysis_window = { start: '2025-10-01', end: '2026-10-01' };
+    envelope.tabs.actions_by_team[0].suggested_deadline = '2026-11-01';
+    const view = render(envelope);
+    // Pinned through the same UTC branch as the header: 1 Oct never becomes 30 Sep west of UTC.
+    expect(view.query('member-360-method-window').textContent?.replace(/\s+/g, ' ')).toContain('Window 1 Oct 2025 – 1 Oct 2026');
+    expect(view.query('member-360-evidence').textContent).toContain('1 Oct 2026');
+    expect(view.query('member-360-actions').textContent).toContain('1 Nov');
+    expect(view.query('member-360-actions').textContent).not.toContain('31 Oct');
+  });
   it('defaults to descending score and sorts by score, priority and tier', () => {
     const view = render();
     expect(view.names()).toEqual([SYNTHETIC_SECOND_ORG_LEGAL_NAME, SYNTHETIC_ORG_NAME]);
@@ -417,9 +429,14 @@ describe('Member360ResultComponent', () => {
     const original = JSON.stringify(envelope);
     const view = render(envelope);
     expect(view.query('member-360-result').textContent).toContain('CRM (not connected yet), Web research');
-    expect(view.query('member-360-method').textContent).toContain('LFX Platform: used');
-    expect(view.query('member-360-method').textContent).toContain('Trackers: unavailable');
-    expect(view.query('member-360-method').textContent).toContain('CRM: not connected yet');
+    const sourceText = (source: string) =>
+      Array.from(view.query(`member-360-source-${source}`).querySelectorAll('td'))
+        .map((cell) => cell.textContent?.trim())
+        .filter(Boolean)
+        .join(' ');
+    expect(sourceText('lfx_platform')).toBe('LFX Platform: used');
+    expect(sourceText('uploaded_trackers')).toBe('Trackers: unavailable');
+    expect(sourceText('hubspot')).toBe('CRM: not connected yet');
     expect(view.query('member-360-result').textContent).not.toMatch(/not wired|not_wired/);
     expect(JSON.stringify(envelope)).toBe(original);
   });
@@ -441,6 +458,77 @@ describe('Member360ResultComponent', () => {
       if (previous) Object.defineProperty(navigator, 'clipboard', previous);
       else Reflect.deleteProperty(navigator, 'clipboard');
     }
+  });
+  it('reads a negative renewal offset as overdue, zero as today and one as a single day', () => {
+    const envelope = member360Fixture();
+    const template = envelope.tabs.actions_by_team[0];
+    envelope.tabs.actions_by_team = [-7, 0, 1].map((days, index) => ({
+      ...template,
+      owner: 'Marketing',
+      priority: 'High' as typeof template.priority,
+      member_organization: `Org ${index}`,
+      days_to_renewal: days,
+    }));
+    const view = render(envelope);
+    const rows = Array.from(view.query('member-360-team-marketing').querySelectorAll('[data-testid="member-360-action-row"]')).map((row) =>
+      row.textContent?.replace(/\s+/g, ' ').trim()
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows.find((row) => row?.includes('Org 0'))).toContain('7 days overdue');
+    expect(rows.find((row) => row?.includes('Org 1'))).toContain('renews today');
+    expect(rows.find((row) => row?.includes('Org 2'))).toContain('renews in 1 day');
+    expect(rows.join(' ')).not.toContain('renews in -');
+  });
+  it('orders each team High first, folds it to three rows and drops the repeated team label', () => {
+    const envelope = member360Fixture();
+    const template = envelope.tabs.actions_by_team[0];
+    envelope.tabs.actions_by_team = ['Low', 'Medium', 'High', 'High', 'Medium'].map((priority, index) => ({
+      ...template,
+      owner: 'Marketing',
+      priority: priority as typeof template.priority,
+      member_organization: `Org ${index}`,
+      recommended_action: `Marketing: invite org ${index} to speak.`,
+      suggested_deadline: `2026-11-2${index}`,
+    }));
+    const view = render(envelope);
+    const team = view.query('member-360-team-marketing');
+    const rows = () => Array.from(team.querySelectorAll('[data-testid="member-360-action-row"]')).map((row) => row.textContent?.replace(/\s+/g, ' ').trim());
+    expect(team.textContent).toContain('Marketing · 5 actions');
+    expect(
+      Array.from(view.query('member-360-team-summary-marketing').querySelectorAll('span'))
+        .map((span) => span.textContent?.trim())
+        .join(' ')
+    ).toBe('2 High 2 Medium 1 Low Next due 20 Nov');
+    expect(rows()).toHaveLength(3);
+    expect(rows()[0]).toContain('Org 2');
+    expect(rows()[0]).toContain('Due 22 Nov');
+    expect(rows()[0]).toContain('Invite org 2 to speak.');
+    expect(team.textContent).not.toContain('Marketing: invite');
+    const toggle = view.query('member-360-show-all-marketing');
+    expect(toggle.textContent?.trim()).toBe('Show all 5 actions');
+    toggle.click();
+    view.fixture.detectChanges();
+    expect(rows()).toHaveLength(5);
+    expect(rows()[4]).toContain('Org 0');
+    expect(toggle.textContent?.trim()).toBe('Show fewer');
+    expect(view.query('member-360-team-sales').textContent).toContain('No actions for this team.');
+  });
+  it('groups evidence by category and shows method weights, peer medians and run times', () => {
+    const view = render();
+    const envelope = view.component.envelope();
+    expect(view.query('member-360-evidence').querySelectorAll('[data-testid^="member-360-evidence-group-"]')).toHaveLength(
+      new Set(envelope.tabs.evidence.map((row) => row.category)).size
+    );
+    expect(view.query('member-360-baselines').textContent).not.toContain('{');
+    expect(view.query('member-360-method').textContent).not.toMatch(/merged: (true|false)/);
+    view.fixture.componentRef.setInput('history', [
+      { documentId: 'run-0123456789abcdef01234567', createdAt: '2026-11-09T21:09:00Z', updatedAt: '2026-11-09T21:09:00Z' },
+      { documentId: 'run-older', createdAt: '2026-11-09T20:33:00Z', updatedAt: '2026-11-09T20:33:00Z' },
+    ]);
+    view.fixture.detectChanges();
+    expect(view.query('member-360-history-row-run-0123456789abcdef01234567').textContent).toContain('Q4 2026 ·');
+    expect(view.query('member-360-history-row-run-older').textContent).toMatch(/\d{1,2} Nov, \d{2}:\d{2}/);
+    expect(view.query('member-360-history-open-run-older')).not.toBeNull();
   });
   it('leaves workbook export to the document header', () => {
     expect(render().fixture.nativeElement.querySelector('[data-testid="member-360-download"]')).toBeNull();

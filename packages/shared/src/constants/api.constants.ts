@@ -29,6 +29,9 @@ export const MEETING_PASSWORD_HEADER = 'x-meeting-password';
  */
 export const MEETING_REMOVAL_SOURCE_HEADER = 'x-lfx-removal-source';
 
+/** Request header that, sent as `'false'`, makes LF v1 services skip their Redis read cache for that request. */
+export const LFX_CACHE_BYPASS_HEADER = 'X-LFX-CACHE';
+
 /**
  * Maximum number of `filters_or` clauses per query-service request.
  * @description URL-length guard for batched lookups on `/query/resources`. When the caller has
@@ -69,6 +72,19 @@ export const ACCESS_CHECK_BATCH_SIZE = 100;
  * CDP/Clearbit) leaves the spinner rotating indefinitely with no recovery.
  */
 export const ORG_SEARCH_TIMEOUT_MS = 10000;
+
+/**
+ * How long the propose-a-project form waits for the submitter's current employer before leaving the
+ * organization blank (#5251). Short on purpose: the prefill is a convenience and must never hold the form.
+ */
+export const CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS = 2000;
+
+/**
+ * How long the meeting guest editors wait for each of the signed-in user's profile and meeting-invite
+ * email lookups before giving up on it for "Add myself" (#5798). Short on purpose: the action is a
+ * convenience, and a lookup that never settles must not leave it pending.
+ */
+export const MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS = 2000;
 
 /**
  * Ceiling (ms) for a single CDP organization lookup (by name or by domain) inside

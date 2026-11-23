@@ -13,21 +13,26 @@ import type {
   FilterPillOption,
   FormationQueueTiles,
   FormationsQueueFilterState,
+  FormationsQueuePageTab,
   FormationsQueueResponse,
-  ProjectApplicationTab,
+  ProjectApplicationAccessState,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import {
   createEmptyFormationsQueueResponse,
+  FORMATION_PIPELINE_COPY,
+  FORMATION_PIPELINE_TAB_ID,
+  FORMATION_QUEUE_COPY,
   FORMATIONS_QUEUE_PAGE_TAB_OPTIONS,
   LF_FOUNDATION_ROOT_SLUG,
   PROJECT_APPLICATION_FROM_FOUNDATION_COPY,
   PROJECT_APPLICATION_PARENT_QUERY_PARAM,
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
-import { withProposalsPendingCount } from '@lfx-one/shared/utils';
+import { clearedPipelineUrlParams, withProposalsPendingCount } from '@lfx-one/shared/utils';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finalize, map, of, switchMap } from 'rxjs';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
+import { FormationsPipelineComponent } from '../components/formations-pipeline/formations-pipeline.component';
 
 import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
 import { FormationsTableComponent } from '../components/formations-table/formations-table.component';
@@ -43,6 +48,7 @@ import { ProjectApplicationsPanelComponent } from '../components/project-applica
   selector: 'lfx-formations-queue',
   imports: [
     ButtonComponent,
+    FormationsPipelineComponent,
     FormationPageTabsComponent,
     FormationsTableComponent,
     ProjectApplicationsPanelComponent,
@@ -60,6 +66,7 @@ export class FormationsQueueComponent {
   private readonly router = inject(Router);
 
   protected readonly tabs = PROJECT_APPLICATION_TABS;
+  protected readonly pipelineTab = FORMATION_PIPELINE_TAB_ID;
   protected readonly proposeLabel = PROJECT_APPLICATION_FROM_FOUNDATION_COPY.proposeButton;
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
@@ -69,33 +76,57 @@ export class FormationsQueueComponent {
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
 
-  /** `null` until the access check answers. */
-  private readonly isFormationTeam: Signal<boolean | null> = toSignal(this.projectApplicationService.getAccess(), { initialValue: null });
+  /** `null` until the access check answers. One read answers both the formation-team and the LF-staff question. */
+  private readonly access: Signal<ProjectApplicationAccessState | null> = toSignal(this.projectApplicationService.getAccessState(), { initialValue: null });
+  private readonly isFormationTeam = computed(() => this.access()?.isFormationTeam ?? null);
   private readonly requestedTab: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('tab'))), { initialValue: null });
   /** The proposals tab exists only on The Linux Foundation, and only for formation-team members. */
-  protected readonly showProposalsTab = computed(
-    () => this.projectContextService.selectedFoundation()?.slug === LF_FOUNDATION_ROOT_SLUG && this.isFormationTeam() === true
+  private readonly isLfRoot = computed(() => this.projectContextService.selectedFoundation()?.slug === LF_FOUNDATION_ROOT_SLUG);
+  protected readonly showProposalsTab = computed(() => this.isLfRoot() && this.isFormationTeam() === true);
+  /**
+   * The Pipeline tab is the formation team's, and LF staff's read-only view of it (#5544). Staff get no Project proposals tab:
+   * `showProposalsTab` is unchanged.
+   */
+  protected readonly showPipelineTab = computed(() => this.isLfRoot() && (this.isFormationTeam() === true || this.access()?.isLfStaff === true));
+  /** A `?tab=proposals` link opened by someone who sees Pipeline but not the proposals tab (LF staff). */
+  private readonly ignoredProposalsLink = computed(
+    () => this.requestedTab() === PROJECT_APPLICATION_TABS.proposals && this.showPipelineTab() && !this.showProposalsTab()
   );
   /**
    * The page tabs, with the pending-proposals count (#5229) on the Project proposals tab once the shared staff read
    * has landed. No count while it is unread, failed or zero — never a guessed "(0)".
    */
   protected readonly pageTabOptions: Signal<FilterPillOption[]> = computed(() =>
-    withProposalsPendingCount(FORMATIONS_QUEUE_PAGE_TAB_OPTIONS, this.projectApplicationService.pendingStaffCount())
+    withProposalsPendingCount(FORMATIONS_QUEUE_PAGE_TAB_OPTIONS, this.projectApplicationService.pendingStaffCount()).filter(
+      (option) => option.id !== PROJECT_APPLICATION_TABS.proposals || this.showProposalsTab()
+    )
   );
-  /** A `?tab=proposals` link the caller can't use falls back to the formations list. */
-  protected readonly pageTab: Signal<ProjectApplicationTab> = computed(() =>
-    this.showProposalsTab() && this.requestedTab() === PROJECT_APPLICATION_TABS.proposals
-      ? PROJECT_APPLICATION_TABS.proposals
-      : PROJECT_APPLICATION_TABS.formations
-  );
+  /**
+   * The Pipeline tab (#5475) shows to whoever `showPipelineTab` admits and is the default there: no `?tab=` means
+   * Pipeline. `?tab=formations` picks that tab and `?tab=proposals` the proposals tab for the formation team; a link the
+   * caller can't use falls back to Pipeline for staff and to the formations list for everyone outside LF root and the
+   * formation team, which is what they have always seen.
+   */
+  protected readonly pageTab: Signal<FormationsQueuePageTab> = computed(() => {
+    if (!this.showPipelineTab()) {
+      return PROJECT_APPLICATION_TABS.formations;
+    }
+    const requested = this.requestedTab();
+    if (requested === PROJECT_APPLICATION_TABS.formations || (requested === PROJECT_APPLICATION_TABS.proposals && this.showProposalsTab())) {
+      return requested;
+    }
+    return FORMATION_PIPELINE_TAB_ID;
+  });
 
   /**
    * Whether the formations read should run: only on the formations tab, and — for a `?tab=proposals` deep
    * link — only once the access check has answered, so a cold load doesn't fire a read it then discards.
    */
   private readonly formationsReadActive: Signal<boolean> = computed(() => {
-    if (this.requestedTab() === PROJECT_APPLICATION_TABS.proposals && this.isFormationTeam() === null) {
+    // A link that may land on the proposals or pipeline tab waits for the access answer rather than fire a read it discards.
+    const requested = this.requestedTab();
+    const mayLandElsewhere = requested === PROJECT_APPLICATION_TABS.proposals || (requested !== PROJECT_APPLICATION_TABS.formations && this.isLfRoot());
+    if (mayLandElsewhere && this.access() === null) {
       return false;
     }
     return this.pageTab() === PROJECT_APPLICATION_TABS.formations;
@@ -120,10 +151,11 @@ export class FormationsQueueComponent {
   // GH-2367: reflects the foundation the queue is actually scoped to, so the copy doesn't claim
   // "every foundation" once a `parent` filter has narrowed the rows to one.
   protected readonly subtitle = computed(() => {
+    if (this.pageTab() === FORMATION_PIPELINE_TAB_ID) {
+      return FORMATION_PIPELINE_COPY.description;
+    }
     const foundation = this.projectContextService.selectedFoundation();
-    return foundation
-      ? `${foundation.name}'s formations between Prospect and Active.`
-      : 'Every foundation, project, and child project between Prospect and Active.';
+    return foundation ? FORMATION_QUEUE_COPY.foundationSubtitle(foundation.name) : FORMATION_QUEUE_COPY.allSubtitle;
   });
 
   public constructor() {
@@ -132,6 +164,12 @@ export class FormationsQueueComponent {
     toObservable(this.showProposalsTab)
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => this.projectApplicationService.refreshStaff());
+
+    // `?tab=proposals` is the formation team's. For staff it is ignored and Pipeline shows, so the address bar says so too (#5544);
+    // Pipeline is the default and carries no param.
+    toObservable(this.ignoredProposalsLink)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => this.router.navigate([], { relativeTo: this.route, queryParams: { tab: null }, queryParamsHandling: 'merge', replaceUrl: true }));
   }
 
   protected onPageTabChange(tab: string): void {
@@ -142,7 +180,9 @@ export class FormationsQueueComponent {
     }
     this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { tab: tab === PROJECT_APPLICATION_TABS.proposals ? tab : null },
+      // Pipeline is the default for those who see the tab, so it carries no param; Formations must say so.
+      // Leaving the Pipeline drops its filter and sort params; they belong to that tab only (#5619).
+      queryParams: { tab: tab === FORMATION_PIPELINE_TAB_ID ? null : tab, ...(tab === FORMATION_PIPELINE_TAB_ID ? {} : clearedPipelineUrlParams()) },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });

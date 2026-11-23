@@ -3,7 +3,6 @@
 
 import {
   ApiRequestOptions,
-  NewsletterSharePreview,
   CommitteeNewsletter,
   CommitteeNewsletterFeedResult,
   CreateNewsletterRequest,
@@ -11,6 +10,7 @@ import {
   MyNewslettersResponse,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterAudience,
   NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
@@ -19,17 +19,24 @@ import {
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
+  NewsletterResolveAudiencePayload,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterSharePreview,
   NewsletterShareRequest,
   NewsletterStatusCounts,
+  NewsletterTemplateManifest,
+  NewsletterTemplatesResponse,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
+import { isNewsletterLiveSendLocked } from '@lfx-one/shared/utils/newsletter.utils';
 import { computeIsFoundation } from '@lfx-one/shared/utils/project.utils';
 import { Request } from 'express';
 
-import { isBaseApiError } from '../errors';
+import { AuthorizationError, isBaseApiError, PreconditionFailedError } from '../errors';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { NewsletterServiceClient } from './newsletter-service.client';
@@ -178,6 +185,39 @@ export class NewsletterService {
     return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid, options);
   }
 
+  /**
+   * The editor-only release sends tests only, so a real send or schedule of a draft with a block
+   * layout is refused here as well as in the UI, until NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED is on.
+   * The check must be on the version being sent, or an edit between this read and the send could
+   * add a layout unseen, so a stale If-Match is refused here. A failed read fails closed.
+   */
+  public async assertLiveSendAllowed(req: Request, projectUid: string, newsletterUid: string, version: number, operation: string): Promise<void> {
+    const draft = await this.getNewsletter(req, projectUid, newsletterUid);
+    if (draft.version !== version) {
+      throw new PreconditionFailedError(undefined, { operation, service: 'newsletter_service', path: req.path });
+    }
+    if (isNewsletterLiveSendLocked(draft.body_layout != null)) {
+      throw new AuthorizationError("Real sends from the block editor aren't switched on yet", {
+        operation,
+        service: 'newsletter_service',
+        path: req.path,
+        code: 'NEWSLETTER_LIVE_SEND_LOCKED',
+      });
+    }
+  }
+
+  public getTemplates(req: Request, projectUid: string): Promise<NewsletterTemplatesResponse> {
+    return this.newsletterClient.getTemplates(req, projectUid);
+  }
+
+  public renderPreview(req: Request, projectUid: string, payload: NewsletterRenderPreviewPayload): Promise<NewsletterRenderPreviewResponse> {
+    return this.newsletterClient.renderPreview(req, projectUid, payload);
+  }
+
+  public getTemplateManifest(req: Request, projectUid: string, templateKey: string): Promise<NewsletterTemplateManifest> {
+    return this.newsletterClient.getTemplateManifest(req, projectUid, templateKey);
+  }
+
   public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
     return this.newsletterClient.listNewsletters(req, projectUid, params);
   }
@@ -271,6 +311,14 @@ export class NewsletterService {
 
   public cancelScheduleNewsletter(req: Request, projectUid: string, newsletterUid: string, ifMatchVersion: number): Promise<NewsletterCancelScheduleResult> {
     return this.newsletterClient.cancelScheduleNewsletter(req, projectUid, newsletterUid, ifMatchVersion);
+  }
+
+  public resolveAudience(req: Request, projectUid: string, newsletterUid: string, payload: NewsletterResolveAudiencePayload): Promise<NewsletterAudience> {
+    return this.newsletterClient.resolveAudience(req, projectUid, newsletterUid, payload);
+  }
+
+  public getAudience(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAudience> {
+    return this.newsletterClient.getAudience(req, projectUid, newsletterUid);
   }
 
   public recipientCount(req: Request, projectUid: string, payload: NewsletterRecipientCountPayload): Promise<NewsletterRecipientCount> {

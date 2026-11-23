@@ -101,7 +101,7 @@ describe('AnalyticsController.getTrainingEnrollment', () => {
 });
 
 describe('AnalyticsController.getTrainingCourses', () => {
-  const courses = { rows: [], totalRecords: 3, scopeTotal: 7 };
+  const courses = { rows: [], totalRecords: 3, scopeTotal: 7, activeTotal: 5 };
 
   beforeEach(() => {
     vi.mocked(logger.success).mockClear();
@@ -114,7 +114,15 @@ describe('AnalyticsController.getTrainingCourses', () => {
     await promise;
 
     expect(next).not.toHaveBeenCalled();
-    expect(getCourses).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 });
+    expect(getCourses).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'YTD',
+      type: 'all',
+      search: '',
+      offset: 0,
+      pageSize: 10,
+      sort: null,
+    });
     expect(res.json).toHaveBeenCalledWith(courses);
     expect(vi.mocked(logger.success).mock.calls[0]?.[3]).toEqual({
       foundation_slug: 'acme',
@@ -123,13 +131,14 @@ describe('AnalyticsController.getTrainingCourses', () => {
       has_search: false,
       total_records: 3,
       scope_total: 7,
+      active_total: 5,
     });
   });
 
   it('passes the parsed query, with the search trimmed and capped', async () => {
     const search = `  ${'a'.repeat(HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH + 20)}  `;
     const { promise } = call(
-      { foundationSlug: 'acme', range: 'COMPLETED_YEAR_2', type: 'certifications', search, offset: '50', pageSize: '25' },
+      { foundationSlug: 'acme', range: 'COMPLETED_YEAR_2', type: 'certification', search, offset: '50', pageSize: '25', sortKey: 'revenue', sortDir: 'asc' },
       'getTrainingCourses'
     );
     await promise;
@@ -137,13 +146,32 @@ describe('AnalyticsController.getTrainingCourses', () => {
     expect(getCourses).toHaveBeenCalledWith(expect.anything(), {
       foundationSlug: 'acme',
       range: 'COMPLETED_YEAR_2',
-      type: 'certifications',
+      type: 'certification',
       search: 'a'.repeat(HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH),
       offset: 50,
       pageSize: 25,
+      sort: { key: 'revenue', direction: 'asc' },
     });
     expect(vi.mocked(logger.success).mock.calls[0]?.[3]).toMatchObject({ has_search: true });
     expect(JSON.stringify(vi.mocked(logger.success).mock.calls[0]?.[3])).not.toContain('aaa');
+  });
+
+  it("reads an older client's certifications type as the certification cut", async () => {
+    const { promise } = call({ foundationSlug: 'acme', type: 'certifications' }, 'getTrainingCourses');
+    await promise;
+
+    expect(getCourses).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ type: 'certification' }));
+  });
+
+  it.each([
+    ['course_name; DROP TABLE x', 'asc'],
+    ['revenue', 'sideways'],
+    ['__proto__', 'asc'],
+  ])('keeps the default order for an unknown sort %s %s', async (sortKey, sortDir) => {
+    const { promise } = call({ foundationSlug: 'acme', sortKey, sortDir }, 'getTrainingCourses');
+    await promise;
+
+    expect(getCourses).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
   });
 
   it.each([

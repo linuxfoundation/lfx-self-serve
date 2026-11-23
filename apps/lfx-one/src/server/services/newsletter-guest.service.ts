@@ -171,13 +171,19 @@ export class NewsletterGuestService {
       );
     }
 
-    const confirmation = await this.sendConfirmation(req, m2mToken, group, email, company, resolved.foundation);
-    logger.info(req, operation, 'Signed-out member-company reader opened a shared newsletter', {
-      newsletter_uid: newsletter.id,
-      committee_uid: group.uid,
-      b2b_org_uid: company.b2b_org_uid,
-      confirmation,
-    });
+    // Not awaited: the roster lookup and the mail transaction take different times per address, so waiting
+    // on them would let an anonymous caller read roster membership off the response time. sendConfirmation
+    // is fail-soft and never rejects; the catch is a backstop so a bug cannot become an unhandled rejection.
+    void this.sendConfirmation(req, m2mToken, group, email, company, resolved.foundation)
+      .then((confirmation) =>
+        logger.info(req, operation, 'Signed-out member-company reader opened a shared newsletter', {
+          newsletter_uid: newsletter.id,
+          committee_uid: group.uid,
+          b2b_org_uid: company.b2b_org_uid,
+          confirmation,
+        })
+      )
+      .catch((error: unknown) => logger.warning(req, operation, 'Subscription confirmation task failed', { committee_uid: group.uid, err: error }));
     // `confirmation_sent` is constant for every member-company address: answering with the real outcome
     // would tell an anonymous caller whether any typed address is already on the list.
     return {

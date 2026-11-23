@@ -112,7 +112,7 @@ export class EditAttributionDialogComponent {
   // CF answers 403 for a non-creator or an unaffiliated target, and 400 once the initiative has left `submitted`.
   private toSaveErrorMessage(err: unknown): string {
     if (err instanceof HttpErrorResponse && err.status === 403) {
-      return 'You can only attribute this initiative to an organization or project you are affiliated with.';
+      return 'You can only attribute this initiative to a company or project you are affiliated with.';
     }
     if (err instanceof HttpErrorResponse && err.status === 400) {
       return 'The attribution can only be changed while the initiative is submitted for review.';

@@ -43,7 +43,7 @@ function personDrawerStub() {
     error: signal(false),
     emailError: signal(false),
     emailsLoading: signal(false),
-    identityUnavailable: signal(false),
+    companyEmailsUnavailableReason: signal(null),
     companyEmailsResolved: signal(false),
     detail: signal(null),
     companyEmails: signal([]),
@@ -67,7 +67,7 @@ async function render() {
         useValue: { snapshot: { fragment: null }, fragment: of(null), paramMap: of(convertToParamMap({ foundationSlug: 'cncf' })) },
       },
       { provide: AccountContextService, useValue: { selectedAccount } },
-      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
+      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/company', ...segments] } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
       {

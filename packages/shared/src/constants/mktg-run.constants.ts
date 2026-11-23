@@ -55,6 +55,8 @@ export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
 export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
 /** A discarded or superseded session cannot accept another turn. */
 export const MKTG_RUN_CLOSED = 'MKTG_RUN_CLOSED';
+/** Only a failed started run can be dismissed from the Documents page. */
+export const MKTG_RUN_NOT_FAILED = 'MKTG_RUN_NOT_FAILED';
 /** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
 export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360' } as const;
 

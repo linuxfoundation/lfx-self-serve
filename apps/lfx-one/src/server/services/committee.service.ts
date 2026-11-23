@@ -4,6 +4,9 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
+  COMMITTEE_DOCUMENT_DELETE_TYPES,
+  DOCUMENT_UPSTREAM_PATH_SEGMENTS,
+  MEMBER_IMPORT_BULK_TIMEOUT_MS,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
   QUERY_SERVICE_MAX_PAGE_SIZE,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
@@ -19,6 +22,7 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeMemberBulkCreateResult,
   CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
@@ -39,6 +43,7 @@ import {
   PendingCommitteeInviteForOrg,
   PendingInvitation,
   Project,
+  ProjectDocumentType,
   ProjectSettings,
   QueryServiceCountResponse,
   QueryServiceResponse,
@@ -373,7 +378,7 @@ export class CommitteeService {
    *   controller), not on internal validation reads (member CRUD, meeting fan-out) where
    *   the caller-membership fields are unused.
    * @param options.includeProjectMetadata When true, enriches the response with `project_name`,
-   *   `project_slug`, `is_foundation`, and `parent_project_uid` via
+   *   `project_slug`, `is_foundation`, `parent_project_uid`, and `project_logo_url` via
    *   `ProjectService.enrichWithProjectData`. Costs one extra upstream project fetch
    *   (de-duplicated/batched), so default is `false`. Enable only on user-facing reads
    *   that need slug-based navigation (e.g. the GET /committees/:id controller for the
@@ -986,6 +991,42 @@ export class CommitteeService {
   }
 
   /**
+   * Adds up to 100 members in one upstream request and returns one result per row (GH-5111).
+   * Uses the caller's own token, so the gateway applies the same writer check as a single add.
+   */
+  public async bulkCreateCommitteeMembers(
+    req: Request,
+    committeeId: string,
+    members: CreateCommitteeMemberRequest[],
+    skipNotification: boolean = false
+  ): Promise<CommitteeMemberBulkCreateResult> {
+    // X-Skip-Notification applies to every row, matching the single-member create.
+    const customHeaders = skipNotification ? { 'X-Skip-Notification': 'true' } : undefined;
+    const result = await this.microserviceProxy.proxyRequest<CommitteeMemberBulkCreateResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/members/bulk`,
+      'POST',
+      {},
+      { members },
+      customHeaders,
+      { timeoutMs: MEMBER_IMPORT_BULK_TIMEOUT_MS }
+    );
+
+    // Counts only: the rows carry imported personal data.
+    logger.debug(req, 'bulk_create_committee_members', 'Committee members bulk create completed', {
+      committee_uid: committeeId,
+      row_count: members.length,
+      added: result.added,
+      skipped: result.skipped,
+      failed: result.failed,
+      skip_notification: skipNotification,
+    });
+
+    return result;
+  }
+
+  /**
    * Updates an existing committee member using ETag for concurrency control
    */
   public async updateCommitteeMember(
@@ -1176,6 +1217,7 @@ export class CommitteeService {
         committee_name: string;
         category?: string | null;
         project_name?: string | null;
+        project_logo_url?: string | null;
         project_slug?: string | null;
         is_foundation?: boolean | null;
         sso_group_name?: string | null;
@@ -1195,6 +1237,7 @@ export class CommitteeService {
             committee_name: committee.name || uid,
             category: committee.category ?? null,
             project_name: enrichedCommittee?.project_name || null,
+            project_logo_url: enrichedCommittee?.project_logo_url || null,
             // Enrichment writes '' (not null) when the project lookup fails — normalize to null so
             // consumers treat it as "no slug", never as an empty-string slug.
             project_slug: enrichedCommittee?.project_slug || null,
@@ -1220,6 +1263,7 @@ export class CommitteeService {
         committee_uid: invite.committee_uid,
         committee_name: committeeName,
         project_name: context?.project_name ?? null,
+        project_logo_url: context?.project_logo_url ?? null,
         project_slug: context?.project_slug ?? null,
         is_foundation: context?.is_foundation ?? null,
         sso_group_name: context?.sso_group_name ?? null,
@@ -1604,7 +1648,7 @@ export class CommitteeService {
 
   /**
    * Returns all of the caller's own pending join applications across all committees, enriched with
-   * committee display fields (name, is_foundation, project_slug) for the My Groups page.
+   * committee display fields (name, is_foundation, project slug/name/logo) for the My Groups page.
    *
    * No writer guard — callers can only see their own applications. Committee names are resolved via
    * parallel `getCommitteeById` calls (one per unique committee_uid) — `getCommitteeBase` lacks the
@@ -1636,10 +1680,11 @@ export class CommitteeService {
     }
 
     // Fetch committee names in parallel for each unique committee_uid.
-    // Use getCommitteeById with includeProjectMetadata so project_slug and is_foundation are
-    // populated — getCommitteeBase returns the raw upstream object which lacks these enriched fields.
+    // Use getCommitteeById with includeProjectMetadata so project_slug, is_foundation, project_name
+    // and project_logo_url are populated — getCommitteeBase returns the raw upstream object which
+    // lacks these enriched fields.
     const uniqueUids = [...new Set(pending.map((a) => a.committee_uid))];
-    const committeeMap = new Map<string, { name: string; is_foundation?: boolean; project_slug?: string }>();
+    const committeeMap = new Map<string, { name: string; is_foundation?: boolean; project_slug?: string; project_name?: string; project_logo_url?: string }>();
 
     await Promise.allSettled(
       uniqueUids.map(async (uid) => {
@@ -1649,6 +1694,9 @@ export class CommitteeService {
             name: committee?.name ?? uid,
             is_foundation: committee?.is_foundation ?? undefined,
             project_slug: committee?.project_slug ?? undefined,
+            // Enrichment writes '' when the project lookup fails — normalize to absent.
+            project_name: committee?.project_name || undefined,
+            project_logo_url: committee?.project_logo_url || undefined,
           });
         } catch (error) {
           // Committee not accessible or not found — fall back to the UID as display name,
@@ -1667,6 +1715,8 @@ export class CommitteeService {
       committee_name: committeeMap.get(app.committee_uid)?.name ?? app.committee_uid,
       is_foundation: committeeMap.get(app.committee_uid)?.is_foundation,
       project_slug: committeeMap.get(app.committee_uid)?.project_slug,
+      project_name: committeeMap.get(app.committee_uid)?.project_name,
+      project_logo_url: committeeMap.get(app.committee_uid)?.project_logo_url,
     }));
   }
 
@@ -1875,6 +1925,16 @@ export class CommitteeService {
       'POST',
       {},
       payload
+    );
+  }
+
+  /** Withdraws the caller's own pending application with their token; resubmitting reopens the same record. */
+  public async withdrawApplication(req: Request, committeeId: string, applicationId: string): Promise<CommitteeJoinApplication> {
+    return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/withdraw`,
+      'POST'
     );
   }
 
@@ -2176,11 +2236,24 @@ export class CommitteeService {
   }
 
   /**
-   * Deletes a committee folder or link using ETag for concurrency control.
-   * @param documentType 'folder' or 'link' — determines which upstream endpoint to call
+   * Deletes a committee folder, link or uploaded file using ETag for concurrency control.
+   * A folder is only deleted when it is empty.
+   * @param documentType 'link' or 'file' — determines which upstream endpoint to call
    */
-  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: string): Promise<void> {
-    const resourcePath = documentType === 'folder' ? `/committees/${committeeId}/folders/${documentId}` : `/committees/${committeeId}/links/${documentId}`;
+  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: ProjectDocumentType): Promise<void> {
+    // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path on a destructive route.
+    if (!COMMITTEE_DOCUMENT_DELETE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField(
+        'type',
+        `Unsupported document type: ${documentType}. Must be one of: ${COMMITTEE_DOCUMENT_DELETE_TYPES.join(', ')}.`,
+        {
+          operation: 'delete_committee_document',
+          service: 'committee_service',
+        }
+      );
+    }
+
+    const resourcePath = `/committees/${committeeId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
 
     // Step 1: Fetch resource with ETag
     const { etag } = await this.etagService.fetchWithETag<CommitteeDocument>(req, 'LFX_V2_SERVICE', resourcePath, 'delete_committee_document');

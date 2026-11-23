@@ -14,7 +14,7 @@
       <!-- Title + Subtitle -->
       <div class="flex flex-col gap-1 flex-1">
         <h2 class="text-lg font-semibold text-gray-900" data-testid="org-active-contributors-drawer-title">Active Contributors</h2>
-        <p class="text-sm text-gray-500">Board Member · Organization view</p>
+        <p class="text-sm text-gray-500">Board Member · Company view</p>
       </div>
 
       <!-- Close Button -->
@@ -39,10 +39,10 @@
         <button
           type="button"
           class="text-gray-400 hover:text-gray-600 cursor-help text-xs flex-shrink-0"
-          pTooltip="Monthly unique contributors from your organization across the foundation over the last 12 months"
+          pTooltip="Monthly unique contributors from your company across the foundation over the last 12 months"
           tooltipPosition="top"
           tooltipEvent="both"
-          aria-label="Monthly unique contributors from your organization across the foundation over the last 12 months">
+          aria-label="Monthly unique contributors from your company across the foundation over the last 12 months">
           <i class="fa-light fa-circle-info"></i>
         </button>
       </div>
@@ -66,7 +66,7 @@
 
     <!-- Top Projects Distribution Section -->
     <div class="flex flex-col gap-3" data-testid="org-active-contributors-drawer-distribution-section">
-      <h3 class="text-sm font-medium text-gray-900">Our Organization's Top 5 Projects by Contributor Representation</h3>
+      <h3 class="text-sm font-medium text-gray-900">Our Company's Top 5 Projects by Contributor Representation</h3>
 
       @if (drawerLoading()) {
         <div class="flex items-center justify-center py-8" data-testid="org-active-contributors-drawer-distribution-loading">

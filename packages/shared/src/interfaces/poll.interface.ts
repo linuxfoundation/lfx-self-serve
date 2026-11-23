@@ -274,6 +274,8 @@ export interface Vote {
   num_winners?: number;
   /** Whether to allow abstain option */
   allow_abstain?: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends; absent means allowed */
+  allow_vote_change?: boolean;
   /** Questions in this poll */
   poll_questions?: PollQuestion[];
   /** Optional comment prompts for voter feedback */
@@ -648,6 +650,10 @@ export interface VoteLinkBallotState {
   vote_status: string;
   already_voted: boolean;
   voter_removed: boolean;
+  /** ITX's answer to whether this submitted ballot can still be changed; omitted when ITX omits it */
+  can_change_vote?: boolean;
+  /** Point-in-time: whether submitting this ballot now would end the vote (#4726); missing is treated as false */
+  would_end_vote?: boolean;
   abstained?: boolean;
   poll_answers?: IndexedPollAnswer[];
   comment_responses?: CommentResponseInput[];
@@ -668,6 +674,8 @@ export interface VoteLinkBallot {
   end_time: string;
   poll_type: string;
   allow_abstain?: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends; absent means allowed */
+  allow_vote_change?: boolean;
   pseudo_anonymity?: boolean;
   poll_questions: PollQuestion[];
   poll_comment_prompts?: PollCommentPrompt[];
@@ -943,6 +951,8 @@ export interface VoteFormValue {
   committee: CommitteeReference | null;
   /** Eligible participants filter value */
   eligible_participants: string;
+  /** Voting method — chosen on create, locked once the vote exists */
+  poll_type: PollType;
   /** Vote close/end date */
   close_date: Date | null;
   /** Vote close time in 12-hour format (e.g. "11:59 PM") */
@@ -951,10 +961,57 @@ export interface VoteFormValue {
   timezone: string;
   /** Whether voters may abstain from voting */
   allow_abstain: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends */
+  allow_vote_change: boolean;
   /** Array of question form values */
   questions: QuestionFormValue[];
   /** Array of comment-prompt form values (optional, creator authoring only) */
   commentPrompts: CommentPromptFormValue[];
+}
+
+/**
+ * A voting method offered when creating a vote
+ * @description Shared by the Create Vote dropdown and the form's Voting Method select, so adding a
+ * method is one entry in `VOTE_METHOD_OPTIONS`.
+ */
+export interface VoteMethodOption {
+  /** Display label for the method (e.g. "Plurality") */
+  label: string;
+  /** Voting method sent as `poll_type` */
+  value: PollType;
+  /** Supporting copy explaining how the method picks a winner */
+  description: string;
+  /** Font Awesome icon classes for the method */
+  icon: string;
+  /** Unavailable for new votes; does not change existing votes or ballots. */
+  disabled?: boolean;
+}
+
+/**
+ * Extra per-row fields the Create Vote dropdown renders alongside the label and icon a PrimeNG
+ * `MenuItem` already carries.
+ * @description Mirrors `MeetingCreateMenuRow` — free of any PrimeNG import, intersected with
+ * `MenuItem` at the component boundary and read from the menu's `item` template.
+ */
+export interface VoteCreateMenuRow {
+  /** Supporting copy shown under the row's title */
+  description: string;
+  /** Tailwind classes for the row's icon tile — background plus icon colour */
+  tileClass: string;
+  /** `data-testid` for the row, since the template replaces PrimeNG's own item markup */
+  testId: string;
+}
+
+/**
+ * How many group members a Condorcet IRV vote would go to, as the create form knows it
+ * @description `idle` when the count doesn't apply (plurality, or no group chosen yet); `error` when
+ * the group's members couldn't be fetched, which never blocks the form since the backend accepts the vote.
+ */
+export interface VoteEligibleVoterCountState {
+  /** Where the count is in its fetch */
+  status: 'idle' | 'loading' | 'loaded' | 'error';
+  /** Eligible voter count once `loaded`, otherwise null */
+  count: number | null;
 }
 
 /**
@@ -1302,6 +1359,8 @@ export interface CreateVoteRequest {
   num_winners?: number;
   /** Whether to allow abstain option */
   allow_abstain?: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends; absent means allowed */
+  allow_vote_change?: boolean;
   /** Quorum percentage required for vote to be valid */
   quorum_percentage?: number;
   /** Winning threshold percentage required */
@@ -1364,6 +1423,19 @@ export interface CreateVoteResponseRequest {
 }
 
 /**
+ * Request body for changing the caller's own submitted ballot (PUT /api/votes/:uid/my-response, #4723)
+ * @description The BFF resolves the ballot from the caller's own row; the client never supplies a response uid.
+ */
+export interface UpdateMyVoteResponseRequest {
+  /** Whether the voter is abstaining */
+  abstain: boolean;
+  /** Voter's answers — required when not abstaining */
+  user_vote_content?: VoteAnswerInput[];
+  /** Voter's responses to optional comment prompts; replaces the stored comments */
+  comment_responses?: CommentResponseInput[];
+}
+
+/**
  * Upstream GET /vote_responses/{vote_response_uid} subset read by the BFF (#4331).
  * @description Read straight from the voting service, which (unlike the query-service index)
  * returns ballot content on pseudo-anonymous votes too. Never forwarded to the client as-is.
@@ -1383,6 +1455,10 @@ export interface VoteResponseDetail {
   comment_responses?: CommentResponseInput[];
   /** When the ballot was last submitted */
   vote_creation_time?: string;
+  /** ITX's answer to whether this ballot can still be changed; omitted when ITX omits it */
+  can_change_vote?: boolean;
+  /** Point-in-time: whether submitting this pending response now would end the vote (#4726); missing is treated as false */
+  would_end_vote?: boolean;
 }
 
 /**
@@ -1402,6 +1478,31 @@ export interface MyVoteBallot {
   comment_responses: CommentResponseInput[];
   /** When the ballot was last submitted */
   vote_creation_time?: string;
+  /** Whether this ballot can still be changed, passed through from ITX; omitted when ITX omits it */
+  can_change_vote?: boolean;
+}
+
+/**
+ * Returned by GET /api/votes/:uid/my-response/would-end-vote (#4726).
+ * @description Whether the caller's first submission would end the vote, read at submit time. Advisory and point-in-time.
+ */
+export interface MyVoteWouldEndVote {
+  /** True only when the caller's pending response is the last one outstanding */
+  would_end_vote: boolean;
+}
+
+/** Inputs to `canChangeSubmittedBallot` (#4723), shared by the vote-link page and the Me-lens Review drawer. */
+export interface VoteBallotChangeEligibility {
+  /** ITX's own answer when reported; it wins over the derived fallback */
+  canChangeVote?: boolean;
+  /** The vote's setting; absent means allowed */
+  allowVoteChange?: boolean;
+  /** The vote's raw status */
+  status?: string | null;
+  /** Whether the voter has a submitted ballot */
+  submitted: boolean;
+  /** Whether the voter has been removed from the vote */
+  voterRemoved: boolean;
 }
 
 /** Cast-drawer form values derived from a `MyVoteBallot` (#4331), keyed by question id / prompt id. */
@@ -1448,6 +1549,8 @@ export interface UpdateVoteRequest {
   num_winners?: number;
   /** Whether to allow abstain option */
   allow_abstain?: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends; omitted keeps the stored value */
+  allow_vote_change?: boolean;
   /** Quorum percentage required for vote to be valid */
   quorum_percentage?: number;
   /** Winning threshold percentage required */

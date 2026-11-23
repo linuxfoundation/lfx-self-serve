@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Overlay } from '@angular/cdk/overlay';
+import { isPlatformBrowser, Location, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
   afterRenderEffect,
@@ -11,6 +12,7 @@ import {
   DestroyRef,
   ElementRef,
   inject,
+  Injector,
   PLATFORM_ID,
   Signal,
   signal,
@@ -21,32 +23,46 @@ import {
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DAY_HEADING_GAP_PX } from '@lfx-one/shared/constants';
-import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
+import {
+  IMPERSONATION_BANNER_HEIGHT_PX,
+  MEETINGS_HOME_DAY_HEADING_GAP_PX,
+  MEETINGS_HOME_DAY_SCROLL_DELAY_MS,
+  MEETINGS_HOME_DAY_SCROLL_OFFSET_PX,
+  MEETINGS_HOME_SEARCH_CLOSE_MS,
+  PHONE_MEDIA_QUERY,
+} from '@lfx-one/shared/constants';
+import { MeetingCalendarDialogData, MeetingDashboardView, MeetingHomeRow, MeetingMiniCalendarDay, UiTabItem } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
 import { AppService } from '@services/app.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
 import { UiChipComponent } from '@shared/uikit/chip/chip.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
-import { EMPTY, Observable, skip, switchMap } from 'rxjs';
+import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
+import { debounceTime, EMPTY, filter, Observable, skip, switchMap, take } from 'rxjs';
 
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
 import { MeetingHomeActionsComponent } from './components/meeting-home-actions/meeting-home-actions.component';
+import { MeetingsCalendarActionsComponent } from './components/meetings-calendar-actions/meetings-calendar-actions.component';
+import { MeetingsCalendarDialogComponent } from './components/meetings-calendar-dialog/meetings-calendar-dialog.component';
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
+import { MeetingsMiniCalendarComponent } from './components/meetings-mini-calendar/meetings-mini-calendar.component';
 import { NextMeetingCardComponent } from './components/next-meeting-card/next-meeting-card.component';
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
 import { MeetingsHomeDeleteService } from './services/meetings-home-delete.service';
 import { MeetingsHomeDetailsService } from './services/meetings-home-details.service';
 import { MeetingsHomeEditService } from './services/meetings-home-edit.service';
+import { MeetingsHomeFeed, provideMeetingsHomeFeed } from './services/meetings-home-feed';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
@@ -76,32 +92,48 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     MeetingsDayGroupComponent,
     MeetingHomeActionsComponent,
     MeetingsFiltersComponent,
+    MeetingsMiniCalendarComponent,
+    MeetingsCalendarActionsComponent,
     LastMeetingCardComponent,
     NextMeetingCardComponent,
     PendingRsvpsComponent,
     AppFooterComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
-  providers: [MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService, MeetingsHomeDetailsService],
+  styleUrl: './meetings-redesign.component.scss',
+  providers: [...provideMeetingsHomeFeed(), MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService, MeetingsHomeDetailsService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block -mx-5 -my-6 md:-mx-8',
     '(window:resize)': 'measure()',
     '(window:scroll)': 'updateScroll()',
+    '(document:pointerdown)': 'onPointerDown($event)',
+    '(document:pointerup)': 'releasePointer()',
+    '(document:pointercancel)': 'releasePointer()',
   },
 })
 export class MeetingsRedesignComponent {
   private readonly userService = inject(UserService);
   private readonly personaService = inject(PersonaService);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly route = inject(ActivatedRoute);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly createArtifactDialog = inject(CreateArtifactDialogService);
   private readonly composer = inject(MeetingComposerService);
   private readonly appService = inject(AppService);
   protected readonly store = inject(MeetingsHomeStore);
+  private readonly projectContext = inject(ProjectContextService);
+  private readonly modal = inject(UiModalService);
+  private readonly overlay = inject(Overlay);
+  private readonly details = inject(MeetingsHomeDetailsService);
+  /** A project or foundation's list: no Next/Last cards or project labels, and its own copy. */
+  protected readonly projectScope: boolean = inject(MeetingsHomeFeed).scope === 'project';
+  /** The viewer and project the meetings come from. */
+  protected readonly feedKey: Signal<string> = inject(MeetingsHomeFeed).key;
 
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
@@ -109,16 +141,24 @@ export class MeetingsRedesignComponent {
   private readonly list = viewChild<ElementRef<HTMLElement>>('list');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
   private readonly chips = viewChild(UiChipGroupComponent, { read: ElementRef });
+  private readonly searchField = viewChild(UiSearchInputComponent);
+  private readonly searchFieldHost = viewChild(UiSearchInputComponent, { read: ElementRef });
+  private readonly searchButton = viewChild<UiButtonComponent>('searchButton');
+  private readonly searchTools = viewChild<ElementRef<HTMLElement>>('searchTools');
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
   /** Takes focus when the last filter chip is removed. */
   protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
+  // A literal here so Tailwind generates it; the rows get it from the DOM to restart the flash.
+  private readonly rowFlashClass = 'motion-safe:animate-meetings-row-flash';
 
   protected readonly idPrefix = 'meetings-redesign';
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
   /** Widths of the skeleton row's buttons: Yes / No / Maybe upcoming, Recording and AI Summary past. */
   protected readonly skeletonButtons: Record<MeetingDashboardView, string[]> = { upcoming: ['58px', '76px', '54px'], past: ['134px', '108px'] };
   protected readonly personaLoaded = this.personaService.personaLoaded;
+  /** Below 640px, Create Meeting is an icon button. */
+  protected readonly phone: Signal<boolean> = injectIsMobileViewport(PHONE_MEDIA_QUERY);
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
   /** Measured tabs bar height; the day headings stick right below it. */
@@ -135,9 +175,24 @@ export class MeetingsRedesignComponent {
   protected readonly tabsStuck: WritableSignal<boolean> = signal(false);
   /** True while the list runs under the tabs bar, so a day heading is stuck there; the fade then sits under the heading. */
   protected readonly dayHeadingStuck: WritableSignal<boolean> = signal(false);
+  /** The Search button was used; the field then stays until it is left empty. */
+  protected readonly searchOpen: WritableSignal<boolean> = signal(false);
+  /** True while the field plays its closing animation, before the button takes its place back. */
+  protected readonly searchClosing: WritableSignal<boolean> = signal(false);
+  /** A close was called off, so the field stays as it is rather than playing its opening animation again. */
+  protected readonly searchKept: WritableSignal<boolean> = signal(false);
+  /** The field shows while opened, while it has text, or while it closes. */
+  protected readonly searchExpanded: Signal<boolean> = computed(() => this.searchOpen() || !!this.store.search().trim() || this.searchClosing());
   /** Where the day headings stick: below the sticky header and tabs bar. */
   protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
+  /** Anyone can start from the Me lens picker; a project's list offers Create only to those who can write its meetings. */
+  protected readonly canCreate: Signal<boolean> = computed(() => !this.projectScope || this.projectContext.canWriteMeetings());
+  protected readonly description: Signal<string> = computed(() =>
+    this.projectScope
+      ? `Coordinate decisions, align stakeholders, and maintain transparent governance in ${this.projectContext.activeContext()?.name ?? 'this project'}.`
+      : "Meetings you're invited to or organizing, across all your projects."
+  );
   /** The Next meeting card's date as a one-item list, so its menu is keyed by row. */
   protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
     const row = this.store.nextCardRow();
@@ -149,17 +204,34 @@ export class MeetingsRedesignComponent {
     return row ? [row] : [];
   });
   /** The active tab has no meetings at all. */
-  protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
+  protected readonly tabEmpty: Signal<boolean> = computed(
+    // A paged past feed searches on the server, so its empty rows under a query are no results, not an empty tab.
+    () =>
+      !this.store.loading() &&
+      this.store.tabRows().length === 0 &&
+      !(this.store.pagedPast && this.store.tab() === 'past' && (this.store.hasActiveQuery() || this.store.pastQueryPending()))
+  );
   /** The active tab has meetings, but none match the search and filters. */
-  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
+  protected readonly noResults: Signal<boolean> = computed(
+    // Until a changed past search loads, its empty rows are not yet an answer.
+    () => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0 && !(this.store.tab() === 'past' && this.store.pastQueryPending())
+  );
   /** No-results copy: search only, filters only, or both. */
   protected readonly noResultsDescription: Signal<string> = computed(() => {
     if (countAppliedMeetingFilters(this.store.filters()) === 0) return 'No meetings match your search';
     return this.store.search().trim() ? 'No meetings match your filters' : 'Try adjusting your filter criteria';
   });
 
+  private searchCloseTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A pointer is down; a focus-out it causes closes the search on release, so the control under it keeps its place. */
+  private pointerHeld = false;
+  // The press is on another control beside the search, such as Filters, whose popover anchors to where it is now.
+  private pressedInTools = false;
+  private closeOnRelease = false;
+
   public constructor() {
     this.destroyRef.onDestroy(this.appService.claimFooter());
+    this.destroyRef.onDestroy(() => clearTimeout(this.searchCloseTimer));
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
     this.initLoadMore();
     // The list comes and goes with the tab's state without a scroll, so re-check the stuck day heading then.
@@ -174,6 +246,15 @@ export class MeetingsRedesignComponent {
       this.store.filters();
       untracked(() => this.scrollToListStart());
     });
+    // A day picked on the calendar scrolls into view once its rows render; a later pick within the delay replaces it.
+    toObservable(this.store.revealedDay)
+      .pipe(filter(Boolean), debounceTime(MEETINGS_HOME_DAY_SCROLL_DELAY_MS), takeUntilDestroyed())
+      .subscribe((day) => {
+        // A tab, search or filter change in the meantime cancelled it.
+        if (this.store.revealedDay() !== day) return;
+        this.store.completeReveal();
+        this.scrollToDay(day);
+      });
     // The composer saves in place, so refetch to show the new or edited meeting; skip(1) drops the replayed count.
     toObservable(this.composer.saveCount)
       .pipe(skip(1), takeUntilDestroyed())
@@ -197,16 +278,133 @@ export class MeetingsRedesignComponent {
     const tab: MeetingDashboardView = value === 'past' ? 'past' : 'upcoming';
     if (tab === this.store.tab()) return;
     this.store.setTab(tab);
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { time: tab === 'past' ? 'past' : null },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
+    this.syncTabParam(tab);
+  }
+
+  /** Lists every meeting of a day picked on the mini calendar, on its tab, with search and filters cleared. */
+  protected showDay(day: MeetingMiniCalendarDay): void {
+    this.store.showDay(day.key, day.tab);
+    this.syncTabParam(day.tab);
+  }
+
+  protected openSearch(): void {
+    this.searchKept.set(false);
+    this.searchOpen.set(true);
+    afterNextRender(() => this.searchField()?.focus(), { injector: this.injector });
+  }
+
+  /** Leaving an empty field closes it; focus moving to or from its clear button stays inside. */
+  protected onSearchFocusOut(event: FocusEvent): void {
+    if ((event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) return;
+    if (this.store.search().trim()) return;
+    // An empty field stays open beside a control the viewer moved to, so that control and its popover do not shift.
+    if (this.searchTools()?.nativeElement.contains(event.relatedTarget as Node | null) || (this.pointerHeld && this.pressedInTools)) return;
+    if (this.pointerHeld) this.closeOnRelease = true;
+    else this.closeSearch(false);
+  }
+
+  protected onPointerDown(event: PointerEvent): void {
+    this.pointerHeld = true;
+    // An open Filters panel and its menus render in overlays outside the row, so a press there counts as in it.
+    this.pressedInTools =
+      !!this.searchTools()?.nativeElement.contains(event.target as Node | null) || !!(event.target as Element | null)?.closest?.('.cdk-overlay-container');
+    // An empty field left open beside Filters closes on the next press elsewhere.
+    const field = this.searchFieldHost()?.nativeElement;
+    if (this.searchOpen() && !this.pressedInTools && !this.store.search().trim() && !field?.contains(document.activeElement)) this.closeOnRelease = true;
+  }
+
+  protected releasePointer(): void {
+    this.pointerHeld = false;
+    if (!this.closeOnRelease) return;
+    this.closeOnRelease = false;
+    if (!this.store.search().trim() && !this.searchFieldHost()?.nativeElement.contains(document.activeElement)) this.closeSearch(false);
+  }
+
+  /** Composing text with an input method keeps a closing field open; its text reaches the store only when composed. */
+  protected cancelSearchClose(): void {
+    if (!this.searchClosing()) return;
+    clearTimeout(this.searchCloseTimer);
+    this.searchKept.set(true);
+    this.searchClosing.set(false);
+    this.searchOpen.set(true);
+  }
+
+  /** The field clears its text on the first Esc; one with no text closes it. */
+  protected onSearchEscape(): void {
+    if (!this.store.search().trim()) this.closeSearch(true);
+  }
+
+  /** Plays the closing animation, then shows the button; `restoreFocus` moves focus to it, for a close from the keyboard or the clear button. */
+  protected closeSearch(restoreFocus: boolean): void {
+    // Also ignores the focusout some browsers fire as the closed field leaves the page.
+    if (this.searchClosing() || !this.searchExpanded()) return;
+    this.searchOpen.set(false);
+    const done = (): void => {
+      this.searchClosing.set(false);
+      // Text typed while it was closing keeps the field open.
+      if (this.store.search().trim()) {
+        this.searchKept.set(true);
+        this.searchOpen.set(true);
+        return;
+      }
+      // Only take focus back from the closing field, not from wherever the user moved on to.
+      const active = document.activeElement;
+      const field: HTMLElement | undefined = this.searchFieldHost()?.nativeElement;
+      const fromField = !active || active === document.body || !!field?.contains(active);
+      if (restoreFocus && fromField) afterNextRender(() => this.searchButton()?.focus(), { injector: this.injector });
+    };
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      done();
+      return;
+    }
+    this.searchClosing.set(true);
+    this.searchCloseTimer = setTimeout(done, MEETINGS_HOME_SEARCH_CLOSE_MS);
+  }
+
+  /** The No results reset also clears the search, so the field gives way to the button at once. */
+  protected resetFilters(): void {
+    this.store.resetFilters();
+    clearTimeout(this.searchCloseTimer);
+    this.searchOpen.set(false);
+    this.searchClosing.set(false);
+  }
+
+  /** Opens the full calendar on `month`; a meeting picked there opens its details drawer above it. */
+  protected openCalendar(month: Date): void {
+    const context = this.projectContext.activeContext();
+    const data: MeetingCalendarDialogData = {
+      upcomingRows: this.store.upcomingRows,
+      pastRows: this.store.pastRows,
+      now: this.store.now,
+      name: context?.name ?? '',
+      logoUrl: context?.logoUrl ?? '',
+      openMeeting: (row) => this.details.open(row, 'calendar'),
+      showPastFrom: (day) => this.store.showPastFrom(day),
+      pastFailed: this.store.calendarPastFailed,
+      retryPast: (day) => this.store.retryCalendarPast(day),
+      upcomingFailed: this.store.upcomingFailed,
+      retryUpcoming: () => this.store.retry(),
+      month,
+    };
+    // Below an impersonation banner, as the drawers sit, so Stop impersonating stays reachable.
+    const ref = this.modal.open(
+      MeetingsCalendarDialogComponent,
+      { data },
+      {
+        height: 'calc(100vh - 32px - var(--lfx-banner-height, 0px))',
+        positionStrategy: this.overlay.position().global().top('calc(16px + var(--lfx-banner-height, 0px))').centerHorizontally(),
+      }
+    );
+    ref.overlayRef.backdropElement?.style.setProperty('top', 'var(--lfx-banner-height, 0px)');
+    // The modal service outlives the page, so leaving the page, for example from the drawer's project link, closes it.
+    const unregister = this.destroyRef.onDestroy(() => ref.close());
+    ref.closed.pipe(take(1)).subscribe(() => unregister());
   }
 
   protected createMeeting(): void {
-    this.createArtifactDialog.open('meeting');
+    // The project lens already knows the project, so it skips the picker, as the legacy page's Advanced create did.
+    if (this.projectScope) this.composer.open({ mode: 'create', projectUid: this.projectContext.activeContextUid() || undefined });
+    else this.createArtifactDialog.open('meeting');
   }
 
   protected measure(): void {
@@ -251,7 +449,7 @@ export class MeetingsRedesignComponent {
   private initTabs(): Signal<UiTabItem[]> {
     return computed(() => [
       this.tabItem('upcoming', 'Upcoming', this.store.upcomingLoading() || this.store.upcomingFailed(), this.store.upcomingRows().length),
-      this.tabItem('past', 'Past', this.store.pastLoading() || this.store.pastFailed(), this.store.pastRows().length),
+      this.tabItem('past', 'Past', this.store.pastLoading() || this.store.pastShowsError() || this.store.pastCountUnknown(), this.store.pastRows().length),
     ]);
   }
 
@@ -278,6 +476,37 @@ export class MeetingsRedesignComponent {
 
   private tabItem(value: MeetingDashboardView, label: string, unknown: boolean, count: number): UiTabItem {
     return unknown ? { value, label } : { value, label, count, countLabel: `${count} ${count === 1 ? 'meeting' : 'meetings'}` };
+  }
+
+  /**
+   * Rewrites `time` on the live address: the project selector moves `?project=` with `Location.replaceState`, so merging the
+   * Router's own query params could put a previous project back.
+   */
+  private syncTabParam(tab: MeetingDashboardView): void {
+    if (this.router.getCurrentNavigation()) return;
+    const url = this.router.parseUrl(this.location.path(true));
+    if (tab === 'past') url.queryParams['time'] = 'past';
+    else delete url.queryParams['time'];
+    this.location.replaceState(this.router.serializeUrl(url));
+  }
+
+  /** Scrolls the first row of `day` to just below the sticky tabs bar and flashes every row of that day. */
+  private scrollToDay(day: string): void {
+    const centre = this.centre()?.nativeElement;
+    const rows = centre ? Array.from(centre.querySelectorAll<HTMLElement>(`[data-day="${day}"]`)) : [];
+    if (!centre || !rows.length) return;
+
+    const desktop = this.columnHeight() !== null;
+    const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
+    const top = rows[0].getBoundingClientRect().top - (stickyEdge + this.headerHeight() + this.tabsBarHeight() + MEETINGS_HOME_DAY_SCROLL_OFFSET_PX);
+    if (desktop) centre.scrollBy({ top, behavior: 'smooth' });
+    else window.scrollBy({ top, behavior: 'smooth' });
+    for (const row of rows) {
+      row.classList.remove(this.rowFlashClass);
+      // Reading layout restarts the animation when the class comes back.
+      void row.offsetWidth;
+      row.classList.add(this.rowFlashClass);
+    }
   }
 
   /** Scrolls the chips or list back up to just below the sticky tabs bar when they have scrolled under it. */

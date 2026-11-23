@@ -54,7 +54,7 @@
           <thead class="bg-gray-50">
             <tr class="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
               <th class="px-4 py-2 font-medium">Foundation</th>
-              <th class="px-4 py-2 font-medium">Org Role</th>
+              <th class="px-4 py-2 font-medium">Company Role</th>
               <th class="px-4 py-2 font-medium">Voting Status</th>
               <th class="px-4 py-2 font-medium">Governance Participation</th>
             </tr>
@@ -72,7 +72,7 @@
                 <tr class="bg-gray-50" [attr.data-testid]="'org-overview-foundations-and-projects-row-' + (row.foundationSlug || row.foundationId) + '-detail'">
                   <td colspan="4" class="px-12 py-4">
                     @if (row.projects.length === 0) {
-                      <p class="italic text-gray-500 text-sm">No projects from this foundation are currently active for your org.</p>
+                      <p class="italic text-gray-500 text-sm">No projects from this foundation are currently active for your company.</p>
                     } @else {
                       <div
                         class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500"

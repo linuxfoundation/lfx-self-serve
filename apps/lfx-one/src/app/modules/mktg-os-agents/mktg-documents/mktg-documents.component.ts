@@ -3,13 +3,13 @@
 
 import { DatePipe, DOCUMENT, I18nPluralPipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
-import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_POLL, MKTG_DOCUMENT_PROGRESS_POLL } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_POLL, MKTG_DOCUMENT_PROGRESS_POLL, MKTG_RUN_NOT_FAILED } from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
   MktgDocumentGroup,
@@ -97,6 +97,7 @@ export class MktgDocumentsComponent {
   private readonly documentContainer = viewChild<ElementRef<HTMLElement>>('documentContainer');
   private readonly listRefresh = new Subject<void>();
   private readonly userService = inject(UserService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -112,18 +113,24 @@ export class MktgDocumentsComponent {
   protected readonly detail = signal<MktgDocumentDetailResponse | null>(null);
   protected readonly detailLoading = signal(false);
   protected readonly listPending = signal(true);
+  /** The one Started runs row whose dismiss is in flight; every other Dismiss waits for it. */
+  protected readonly dismissingRunId = signal<string | null>(null);
+  protected readonly dismissError = signal<{ runId: string; text: string } | null>(null);
   private readonly detailCache = new Map<string, MktgDocumentDetailResponse>();
   private listedType: string | null = null;
   private pendingSelectionScroll = false;
   private readonly reloads = signal(0);
   private listedScope = '';
   private detailedScope = '';
+  private destroyed = false;
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
 
   // === Computed ===
   protected readonly projectName: Signal<string> = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
+  /** The BFF blocks the dismiss while impersonating, so the control is not offered then. */
+  protected readonly mayDismiss = computed(() => !this.userService.impersonating());
   protected readonly kitRoot = computed(() => mktgKitRootPath(this.router.url));
   protected readonly selectedType: Signal<MktgDocumentType> = this.initSelectedType();
   protected readonly showAll = computed(() => !MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === this.selectedParam()));
@@ -232,6 +239,7 @@ export class MktgDocumentsComponent {
   );
 
   public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
     if (isPlatformBrowser(this.platformId)) {
       this.initLists()
         .pipe(takeUntilDestroyed())
@@ -291,6 +299,31 @@ export class MktgDocumentsComponent {
     this.listRefresh.next();
   }
 
+  /** Close a failed run for everyone; the row leaves locally first so a kept-rows merge cannot bring it back. */
+  protected onDismissRun(run: MktgDocumentRunRow): void {
+    const project = this.projectContext.activeContextUid();
+    if (run.state !== 'failed' || !project || !this.userService.user()?.sub || !this.mayDismiss() || this.dismissingRunId() !== null) return;
+    const scope = this.listedScope;
+    this.dismissingRunId.set(run.runId);
+    this.dismissError.set(null);
+    // This one-shot write outlives the page, as Restore does on the document page: leaving Documents must not
+    // cancel it. Only its presentation is scoped to the listing that started it, and to a live component.
+    this.documentStore.dismissRun(project, run.agentKey, run.documentId, run.runId).subscribe({
+      next: () => this.dismissed(scope, run.runId),
+      error: (error: HttpErrorResponse) => {
+        if (!this.listing(scope)) return;
+        // A 404 means the run is already gone from this document: the same outcome as a dismiss.
+        if (error.status === 404) {
+          this.dismissed(scope, run.runId);
+          return;
+        }
+        this.dismissingRunId.set(null);
+        this.dismissError.set({ runId: run.runId, text: this.dismissErrorText(error) });
+        if (error.status === 409 && error.error?.code === MKTG_RUN_NOT_FAILED) this.onRefreshProgress();
+      },
+    });
+  }
+
   // === Private initializers ===
   private initEmptyAction() {
     return computed(() => {
@@ -339,6 +372,8 @@ export class MktgDocumentsComponent {
           this.loading.set(true);
           this.documents.set(null);
           this.startedRunsVisible.set(false);
+          this.dismissingRunId.set(null);
+          this.dismissError.set(null);
           this.errorText.set('');
           this.refreshWarning.set('');
           this.listFailed.set(false);
@@ -500,6 +535,25 @@ export class MktgDocumentsComponent {
       },
       { injector: this.injector }
     );
+  }
+
+  private dismissed(scope: string, runId: string): void {
+    if (!this.listing(scope)) return;
+    this.dismissingRunId.set(null);
+    this.documents.update((documents) => (documents ? { ...documents, runs: (documents.runs ?? []).filter((entry) => entry.runId !== runId) } : documents));
+    this.onRefreshProgress();
+  }
+
+  /** True while this live component still lists the scope a write started from. */
+  private listing(scope: string): boolean {
+    return !this.destroyed && scope === this.listedScope;
+  }
+
+  private dismissErrorText(error: HttpErrorResponse): string {
+    if (error.status === 409 && error.error?.code === MKTG_RUN_NOT_FAILED)
+      return 'This run changed before it could be dismissed. Started runs now shows where it stands.';
+    if (error.status === 403 || error.status === 401) return 'You need write access to this project to use its Marketing OS documents.';
+    return 'The run could not be dismissed. Try again in a moment.';
   }
 
   private actionErrorText(error: HttpErrorResponse): string {

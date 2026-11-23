@@ -56,7 +56,7 @@ independently, so a failure in one does not prevent the others from reporting:
   E2E collection (no browser execution).
 - `build`: the full `yarn build`.
 - `unit-tests`: a server/shared matrix with `fail-fast: false`.
-- `frontend-tests`: an app-spec matrix of shards 1–4, also with `fail-fast: false`. Each shard
+- `frontend-tests`: an app-spec matrix of shards 1–30, also with `fail-fast: false`. Each shard
   builds the shared package and runs `docs:build` before executing its app specs.
 
 The final `quality-checks` job retains the check name **Code Quality Checks**. It runs with
@@ -103,6 +103,13 @@ balancing: checked-in historical timing weights in `scripts/frontend-test-durati
 weights, with a one-second default for other or new specs. Every shard validates that the whole
 plan is exhaustive, disjoint, and nonempty. Invalid arguments fail, as does a change to the
 Angular test configuration's include/exclude discovery contract that the runner does not support.
+
+A spec file is the smallest unit a shard can hold, and one file runs serially on one worker, so a
+single long file sets the floor for its shard no matter how many shards exist. Keep each app spec
+under about 45 seconds of CI test time; split a longer one by top-level `describe` into
+`<name>.component.<group>.spec.ts` files, with shared setup in a `<name>.spec-helper.ts` beside
+them. When a spec is added, split, or grows past a few seconds, refresh its entry in
+`scripts/frontend-test-durations.json` from a recent CI run so the plan stays balanced.
 
 Execution still uses the Angular unit-test builder, with an explicit `--include` per assigned
 file and `--watch=false`, not vanilla Vitest. The Angular builder does not support native

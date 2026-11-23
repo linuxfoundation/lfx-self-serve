@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
-import { isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { VoteDescriptionPipe } from '../../pipes/vote-description.pipe';
@@ -16,18 +16,33 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import {
   INVITATION_NOT_FOUND,
+  VOTE_BALLOT_FINAL_NOTICE,
+  VOTE_BALLOT_FINAL_STATE,
+  VOTE_CHANGE_NOT_ALLOWED,
   VOTE_COMMENT_RESPONSE_MAX_LENGTH,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+  VOTE_LAST_VOTER_CONFIRMATION,
 } from '@lfx-one/shared/constants';
-import { CommentResponseFormData, MyVoteBallot, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import {
+  CommentResponseFormData,
+  CommentResponseInput,
+  MyVoteBallot,
+  PollCommentPrompt,
+  PollQuestion,
+  UserChoice,
+  Vote,
+  VoteAnswerInput,
+} from '@lfx-one/shared/interfaces';
 import {
   buildBallotCommentPrompts,
   buildCommentResponses,
   buildVoteBallotQuestions,
+  canChangeSubmittedBallot,
   getCommentPromptsData,
   getUserTimezone,
   isRankedPollType,
+  isVoteChangeAllowed,
   mapMyBallotToCastForm,
   reconcileCommentFormControls,
 } from '@lfx-one/shared/utils';
@@ -39,12 +54,29 @@ import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, map, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
+import {
+  catchError,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  finalize,
+  fromEvent,
+  map,
+  merge,
+  of,
+  startWith,
+  Subject,
+  switchMap,
+  take,
+  takeUntil,
+  tap,
+} from 'rxjs';
 
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 
@@ -57,6 +89,7 @@ import { ExternalLinksDirective } from '@shared/directives/external-links.direct
     VoteDescriptionPipe,
     SkeletonModule,
     CheckboxModule,
+    ConfirmDialogModule,
     DragDropModule,
     TooltipModule,
     ReactiveFormsModule,
@@ -71,6 +104,8 @@ import { ExternalLinksDirective } from '@shared/directives/external-links.direct
     LongTimezonePipe,
     VoteDeadlinePipe,
   ],
+  // Scoped so the last-voter dialog (#4726) never renders through a host's own <p-confirmDialog>.
+  providers: [ConfirmationService],
   templateUrl: './vote-cast-drawer.component.html',
   styleUrl: './vote-cast-drawer.component.scss',
 })
@@ -79,14 +114,18 @@ export class VoteCastDrawerComponent {
   private readonly voteService = inject(VoteService);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
   public readonly listVote = input<Vote | null>(null);
   /** Review mode (#4331): shows the voter's submitted ballot without allowing changes. */
   public readonly readOnly = input<boolean>(false);
+  /** Change mode (#4723): reviews the voter's own submitted ballot, allowing edits and PUT only when eligible. */
+  public readonly changeMode = input<boolean>(false);
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -105,23 +144,45 @@ export class VoteCastDrawerComponent {
   protected readonly submitting = signal<boolean>(false);
   protected readonly loadingBallot = signal<boolean>(false);
   protected readonly ballotError = signal<boolean>(false);
+  private readonly changeBlockedFor = signal<ReadonlySet<string>>(new Set());
   // Reactive dependency for submitDisabled — rebuildForm uses { emitEvent: false }, so statusChanges is silent.
   private readonly formVersion = signal<number>(0);
   // Tracks the poll_type the form was last built for; if it changes (e.g., list vote omitted poll_type and detail fetch supplied a ranked one), rebuildForm wipes controls so they get the right shape.
   private lastBuiltPollType: PollType | null = null;
   // Key of the recorded ballot last displayed; cleared on close so a reopen reloads it.
   private appliedPrefillKey: string | null = null;
+  // Invalidates captured first-ballot callbacks when the drawer session changes or the dialog settles.
+  private submissionGeneration = 0;
 
   // === Shared Observables ===
   // Emits on drawer dismissal (close button OR ESC OR overlay click — all flip visible to false).
   private readonly cancelSubmit$ = new Subject<void>();
 
   // === Derived Signals (from API) ===
+  /** Both review and change mode show the voter's recorded ballot; only review locks it. */
+  protected readonly showsRecordedBallot: Signal<boolean> = computed(() => this.readOnly() || this.changeMode());
   protected readonly vote: Signal<Vote | null> = this.initVote();
   protected readonly myBallot: Signal<MyVoteBallot | null> = this.initMyBallot();
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
 
   // === Computed Signals ===
+  /** A change request never unlocks a ballot until the caller's own saved ballot confirms eligibility. */
+  protected readonly ballotReadOnly: Signal<boolean> = computed(() => {
+    if (this.readOnly() || this.impersonating()) return true;
+    if (!this.changeMode()) return false;
+    const vote = this.vote();
+    const ballot = this.myBallot();
+    if (!vote || !ballot || ballot.vote_uid !== vote.uid || this.changeBlockedFor().has(vote.uid)) return true;
+    return !canChangeSubmittedBallot({
+      canChangeVote: ballot.can_change_vote,
+      allowVoteChange: vote.allow_vote_change,
+      status: vote.status,
+      submitted: true,
+      // getMyVoteBallot returns no ballot for a removed voter.
+      voterRemoved: false,
+    });
+  });
+  protected readonly ballotFinalText = VOTE_BALLOT_FINAL_STATE;
   protected readonly isRankedPoll: Signal<boolean> = this.initIsRankedPoll();
   protected readonly questions: Signal<PollQuestion[]> = this.initQuestions();
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain);
@@ -129,9 +190,13 @@ export class VoteCastDrawerComponent {
   protected readonly impersonating = this.userService.impersonating;
   protected readonly ballotPrivacyRestricted = computed(() => this.impersonating() && this.vote()?.pseudo_anonymity !== false);
   protected readonly impersonationNotice = computed(() =>
-    this.readOnly() && this.ballotPrivacyRestricted() ? VOTE_IMPERSONATION_PRIVATE_NOTICE : VOTE_IMPERSONATION_READ_ONLY_NOTICE
+    this.showsRecordedBallot() && this.ballotPrivacyRestricted() ? VOTE_IMPERSONATION_PRIVATE_NOTICE : VOTE_IMPERSONATION_READ_ONLY_NOTICE
   );
   protected readonly reviewNotice = 'Your vote has been recorded.';
+  /** Pre-submit notice on a first ballot when the vote makes submitted ballots final (#4723); a missing setting means allowed. */
+  protected readonly finalNotice: Signal<string | null> = computed(() =>
+    !this.readOnly() && !this.changeMode() && !this.impersonating() && !isVoteChangeAllowed(this.vote()) ? VOTE_BALLOT_FINAL_NOTICE : null
+  );
   protected readonly ballotLoadError = "Couldn't load your submitted ballot. Close this panel and try again.";
   // Footer is hidden (not removed) until a ballot exists — see drawer-pattern.md § Sticky footer.
   protected readonly drawerPt: Signal<Record<string, unknown>> = this.initDrawerPt();
@@ -170,13 +235,21 @@ export class VoteCastDrawerComponent {
       .subscribe(() => this.applyBallotPrefill());
 
     // A reused drawer must not carry recorded choices or disabled controls into a first ballot.
-    toObservable(this.readOnly)
+    toObservable(computed(() => `${this.readOnly()}|${this.changeMode()}`))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.appliedPrefillKey = null;
         for (const id of Object.keys(this.form.controls)) this.form.removeControl(id, { emitEvent: false });
         this.rebuildForm(this.questions());
         this.applyBallotPrefill();
+      });
+
+    // Lock/unlock controls when the saved ballot or authoritative eligibility changes, without reapplying a draft.
+    toObservable(this.ballotReadOnly)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.syncControls();
+        this.bumpFormVersion();
       });
 
     // User input (checkbox/radio toggle, etc.) emits statusChanges; bump formVersion so the submitDisabled computed re-evaluates form.valid.
@@ -191,15 +264,15 @@ export class VoteCastDrawerComponent {
       this.bumpFormVersion();
     });
 
-    // Drawer dismissal (close button / ESC / overlay click) — cancel any in-flight submit and reset transient state.
-    toObservable(this.visible)
-      .pipe(
-        filter((v) => !v),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(() => {
-        if (this.submitting()) this.cancelSubmit$.next();
+    // A persistent drawer's selection/mode changes end the previous submit session, including its body-appended dialog.
+    toObservable(computed(() => [this.visible(), this.voteId(), this.readOnly(), this.changeMode()] as const))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(([visible]) => {
+        this.submissionGeneration++;
+        this.confirmationService.close();
+        this.cancelSubmit$.next();
         this.submitting.set(false);
+        if (visible) return;
         this.appliedPrefillKey = null;
         // Reset abstain so reopening starts fresh — letting valueChanges fire keeps form.enable + abstain signal in sync.
         if (this.abstainControl.value) this.abstainControl.setValue(false);
@@ -208,6 +281,10 @@ export class VoteCastDrawerComponent {
           control.reset('');
         }
       });
+    this.destroyRef.onDestroy(() => {
+      this.submissionGeneration++;
+      this.confirmationService.close();
+    });
   }
 
   // === Protected Methods ===
@@ -217,7 +294,7 @@ export class VoteCastDrawerComponent {
 
   /** Reorder via CDK drag-and-drop — bumpFormVersion() drives submitDisabled re-evaluation since rebuildForm/setValue here suppress statusChanges. */
   protected onRankedDrop(questionId: string, event: CdkDragDrop<string[]>): void {
-    if (this.readOnly() || this.impersonating()) return;
+    if (this.ballotReadOnly() || this.impersonating()) return;
     const control = this.form.get(questionId);
     if (!control) return;
     const current = [...((control.value as string[] | null) ?? [])];
@@ -228,7 +305,7 @@ export class VoteCastDrawerComponent {
 
   /** Keyboard / arrow-button reorder fallback for the drag list. */
   protected moveRank(questionId: string, fromIndex: number, toIndex: number): void {
-    if (this.readOnly() || this.impersonating()) return;
+    if (this.ballotReadOnly() || this.impersonating()) return;
     const control = this.form.get(questionId);
     if (!control) return;
     const current = [...((control.value as string[] | null) ?? [])];
@@ -238,9 +315,31 @@ export class VoteCastDrawerComponent {
     this.bumpFormVersion();
   }
 
+  /** Only an explicit change-mode action can add or remove a preference from a recorded partial ranking. */
+  protected toggleRankedChoice(questionId: string, choiceId: string): void {
+    if (!this.changeMode() || this.ballotReadOnly() || this.impersonating() || this.abstain()) return;
+    const question = this.questions().find((item) => item.question_id === questionId);
+    const control = this.form.get(questionId);
+    if (question?.type !== 'multiple_choice' || !question.choices.some((choice) => choice.choice_id === choiceId) || !control) return;
+    const current = Array.isArray(control.value) ? (control.value as string[]) : [];
+    control.setValue(current.includes(choiceId) ? current.filter((id) => id !== choiceId) : [...current, choiceId]);
+    this.bumpFormVersion();
+  }
+
+  /** A recorded ranked single-choice abstention starts empty; ranking all options is an explicit voter action. */
+  protected rankAllChoices(questionId: string): void {
+    if (!this.changeMode() || this.ballotReadOnly() || this.impersonating() || this.abstain()) return;
+    const question = this.questions().find((item) => item.question_id === questionId);
+    const control = this.form.get(questionId);
+    if (question?.type !== 'single_choice' || !control) return;
+    const current = Array.isArray(control.value) ? (control.value as string[]) : [];
+    control.setValue([...current, ...question.choices.map((choice) => choice.choice_id).filter((id) => !current.includes(id))]);
+    this.bumpFormVersion();
+  }
+
   protected onSubmit(): void {
     const vote = this.vote();
-    if (!vote || this.submitting() || this.readOnly() || this.impersonating()) return;
+    if (!vote || this.submitting() || this.ballotReadOnly() || this.impersonating()) return;
 
     const isAbstain = this.abstain();
     if (!isAbstain && this.form.invalid) {
@@ -251,45 +350,71 @@ export class VoteCastDrawerComponent {
       this.commentForm.markAllAsTouched();
       return;
     }
-    const userVoteContent = isAbstain ? undefined : this.buildAnswers(vote.poll_questions ?? []);
+    const userVoteContent = isAbstain ? undefined : this.buildAnswers(this.questions());
     // Comments are independent of abstain — a voter can abstain and still leave a comment.
     const commentResponses = buildCommentResponses(this.commentPromptsData());
 
     this.submitting.set(true);
 
+    if (this.changeMode()) {
+      this.submitChange(vote.uid, isAbstain, userVoteContent, commentResponses);
+      return;
+    }
+
+    const generation = ++this.submissionGeneration;
+    const isCurrentSubmission = () =>
+      !this.destroyRef.destroyed &&
+      generation === this.submissionGeneration &&
+      this.visible() &&
+      this.voteId() === vote.uid &&
+      !this.changeMode() &&
+      !this.ballotReadOnly() &&
+      !this.impersonating();
+
+    // A first ballot re-checks at submit time whether it would end the vote (#4726); the read fails open to false.
     this.voteService
-      .submitMyResponse(vote.uid, {
-        abstain: isAbstain,
-        userVoteContent,
-        commentResponses,
-      })
-      .pipe(
-        takeUntil(this.cancelSubmit$),
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.submitting.set(false))
-      )
-      .subscribe({
-        next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Vote submitted',
-            detail: `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
-            life: 3000,
+      .getMyWouldEndVote(vote.uid)
+      .pipe(takeUntil(this.cancelSubmit$), takeUntilDestroyed(this.destroyRef))
+      .subscribe((wouldEndVote) => {
+        if (!isCurrentSubmission()) return;
+        if (!wouldEndVote) {
+          this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses);
+          return;
+        }
+        // The drawer's own document Escape listener would close the drawer too, clearing the ballot: while the dialog is
+        // open, take Escape in the capture phase, before both listeners, and treat it as Go back.
+        const settled$ = new Subject<void>();
+        const settle = () => {
+          this.submissionGeneration++;
+          settled$.next();
+        };
+        fromEvent<KeyboardEvent>(this.document, 'keydown', { capture: true })
+          .pipe(
+            filter((event) => event.key === 'Escape'),
+            take(1),
+            takeUntil(merge(settled$, this.cancelSubmit$)),
+            takeUntilDestroyed(this.destroyRef)
+          )
+          .subscribe((event) => {
+            if (!isCurrentSubmission()) return;
+            settle();
+            event.stopPropagation();
+            this.confirmationService.close();
+            this.submitting.set(false);
           });
-          this.voteSubmitted.emit(vote.uid);
-          this.visible.set(false);
-        },
-        error: (err: unknown) => {
-          const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
-          this.messageService.add({
-            severity: 'error',
-            summary: isInvitationMissing ? 'Unable to find your invitation' : 'Unable to submit vote',
-            detail: isInvitationMissing
-              ? 'We could not find your vote invitation for this ballot. Please refresh and try again.'
-              : 'Something went wrong submitting your ballot. Please try again.',
-            life: 5000,
-          });
-        },
+        this.confirmationService.confirm({
+          ...VOTE_LAST_VOTER_CONFIRMATION,
+          accept: () => {
+            if (!isCurrentSubmission()) return;
+            settle();
+            this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses);
+          },
+          reject: () => {
+            if (!isCurrentSubmission()) return;
+            settle();
+            this.submitting.set(false);
+          },
+        });
       });
   }
 
@@ -305,7 +430,8 @@ export class VoteCastDrawerComponent {
    *  would seed it with whatever the caller's list row currently holds — if that row is a stale/partial
    *  summary object (or the list hasn't produced one yet), poll_questions drops out and rebuildForm() wipes
    *  the ballot the voter was filling in. Falling back to the last fetched detail for the same vote (instead
-   *  of the raw listVote) and only flipping loadingVote when no fallback exists keeps the ballot intact. */
+   *  of the raw listVote) and only flipping loadingVote when no fallback exists keeps the ballot intact.
+   *  Initial change mode waits for the first detail request to settle; a usable error fallback is retained for later refreshes. */
   private initVote(): Signal<Vote | null> {
     let prevId: string | null = null;
     let prevDeadlineKey: string | null = null;
@@ -348,12 +474,13 @@ export class VoteCastDrawerComponent {
           // change re-runs this stream with the caller's list row already carrying the new end_time, but
           // that row can be a partial summary missing poll_questions. Falling back to listVote only when no
           // full detail has been fetched yet for this vote keeps rebuildForm() from wiping the ballot.
+          // Retain a settled list-row fallback after a failed first fetch for the same form-preservation guarantee.
           // When both exist, overlay listVote's deadline fields onto the cached detail (per @greptile-apps
           // and @copilot-pull-request-reviewer, GH-3823 review): listVote is the caller's source of truth for
           // an in-flight deadline extension, so keeping lastVote wholesale would show the voter the
           // pre-extension end_time if the detail refetch below then fails and catchError falls back to this
           // same value.
-          const lastDetail = lastVoteId === id ? lastVote : null;
+          const lastResolved = lastVoteId === id ? lastVote : null;
           // #4075: never trust an unconfirmed list-row poll_type for the ranked/single-choice decision
           // while the first detail fetch for this vote is in flight — wait for a confirmed fetch. A
           // missing poll_type already defaults to non-ranked everywhere it's read, so this transient
@@ -362,11 +489,11 @@ export class VoteCastDrawerComponent {
           // poll_type (per @dealako, #4076 review) rather than a doubly-unconfirmed guess — matching
           // how every other field (poll_questions, etc.) already behaves in that terminal-failure state.
           const listFallback = listVote ?? null;
-          let fallback = lastDetail ?? (listVote ? { ...listVote, poll_type: undefined } : null);
-          if (lastDetail && listVote) {
-            fallback = { ...lastDetail, end_time: listVote.end_time, end_time_timezone: listVote.end_time_timezone };
+          let fallback = lastResolved ?? (listVote ? { ...listVote, poll_type: undefined } : null);
+          if (lastResolved && listVote) {
+            fallback = { ...lastResolved, end_time: listVote.end_time, end_time_timezone: listVote.end_time_timezone };
           }
-          if (!fallback) {
+          if (!fallback || (this.changeMode() && !lastResolved)) {
             this.loadingVote.set(true);
           }
 
@@ -375,7 +502,14 @@ export class VoteCastDrawerComponent {
               lastVoteId = id;
               lastVote = v;
             }),
-            catchError(() => of(lastDetail ? fallback : listFallback)),
+            catchError(() => {
+              const resolvedFallback = lastResolved ? fallback : listFallback;
+              if (resolvedFallback) {
+                lastVoteId = id;
+                lastVote = resolvedFallback;
+              }
+              return of(resolvedFallback);
+            }),
             finalize(() => this.loadingVote.set(false)),
             startWith(fallback)
           );
@@ -385,9 +519,13 @@ export class VoteCastDrawerComponent {
     );
   }
 
-  /** Loads the recorded ballot only while reviewing; missing content is an error, never an editable form. */
+  /** Loads the recorded ballot only while reviewing or changing it; missing content is an error, never a blank editable form. */
   private initMyBallot(): Signal<MyVoteBallot | null> {
-    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), reviewing: this.readOnly() && !this.ballotPrivacyRestricted() }));
+    const selection = computed(() => ({
+      id: this.voteId(),
+      visible: this.visible(),
+      reviewing: this.showsRecordedBallot() && !this.ballotPrivacyRestricted(),
+    }));
 
     return toSignal(
       toObservable(selection).pipe(
@@ -427,7 +565,7 @@ export class VoteCastDrawerComponent {
       const vote = this.vote();
       const ballot = this.myBallot();
       if (!vote) return [];
-      if (!this.readOnly() || !ballot || ballot.vote_uid !== vote.uid) return vote.poll_questions ?? [];
+      if (!this.showsRecordedBallot() || !ballot || ballot.vote_uid !== vote.uid) return vote.poll_questions ?? [];
       return buildVoteBallotQuestions(vote, ballot).map((question) => ({
         question_id: question.questionId,
         prompt: question.prompt,
@@ -443,7 +581,7 @@ export class VoteCastDrawerComponent {
   private initDrawerPt(): Signal<Record<string, unknown>> {
     return computed(() => {
       const hasBallot = !this.loadingVote() && this.questions().length > 0;
-      const restricted = this.impersonating() && (!this.readOnly() || this.ballotPrivacyRestricted());
+      const restricted = this.impersonating() && (!this.showsRecordedBallot() || this.ballotPrivacyRestricted());
       return { footer: { class: hasBallot && !restricted ? 'border-t border-slate-200' : 'hidden' } };
     });
   }
@@ -456,7 +594,9 @@ export class VoteCastDrawerComponent {
     return computed(() => {
       this.formVersion(); // re-evaluate when controls are added/removed/disabled via { emitEvent: false }
       if (this.submitting()) return true;
-      if (this.readOnly() || this.impersonating()) return true;
+      if (this.ballotReadOnly() || this.impersonating()) return true;
+      // Change mode needs the recorded ballot applied before anything can be saved.
+      if (this.changeMode() && !this.myBallot()) return true;
       if (!this.commentForm.valid) return true;
       if (this.abstain()) return false;
       return !this.form.valid;
@@ -467,7 +607,7 @@ export class VoteCastDrawerComponent {
     return computed(() => {
       const vote = this.vote();
       const ballot = this.myBallot();
-      if (!this.readOnly() || !vote || ballot?.vote_uid !== vote.uid) return vote?.poll_comment_prompts ?? [];
+      if (!this.showsRecordedBallot() || !vote || ballot?.vote_uid !== vote.uid) return vote?.poll_comment_prompts ?? [];
       return buildBallotCommentPrompts(vote.poll_comment_prompts, ballot.comment_responses);
     });
   }
@@ -505,7 +645,7 @@ export class VoteCastDrawerComponent {
   private initUnrankedChoicesByQuestion(): Signal<Map<string, UserChoice[]>> {
     return computed(() => {
       const result = new Map<string, UserChoice[]>();
-      if (!this.readOnly() || !this.isRankedPoll()) return result;
+      if (!this.showsRecordedBallot() || !this.isRankedPoll()) return result;
       const ranked = this.rankedOrderByQuestion();
       for (const question of this.questions()) {
         const selected = new Set((ranked.get(question.question_id) ?? []).map((choice) => choice.choice_id));
@@ -537,7 +677,7 @@ export class VoteCastDrawerComponent {
     for (const question of questions) {
       if (this.form.get(question.question_id)) continue;
       if (pollIsRanked) {
-        const seeded = this.readOnly() ? [] : question.choices.map((c) => c.choice_id);
+        const seeded = this.showsRecordedBallot() ? [] : question.choices.map((c) => c.choice_id);
         this.form.addControl(question.question_id, new FormControl<string[]>(seeded, { nonNullable: true, validators: [Validators.required] }), {
           emitEvent: false,
         });
@@ -560,7 +700,7 @@ export class VoteCastDrawerComponent {
     const vote = this.vote();
     const ballot = this.myBallot();
     this.syncControls();
-    if (!this.readOnly() || !vote || !ballot || ballot.vote_uid !== vote.uid) return;
+    if (!this.showsRecordedBallot() || !vote || !ballot || ballot.vote_uid !== vote.uid) return;
 
     const key = [
       vote.uid,
@@ -589,10 +729,97 @@ export class VoteCastDrawerComponent {
     this.bumpFormVersion();
   }
 
+  /** Submits a first ballot (POST); called directly or once the voter confirms the last-voter dialog (#4726). */
+  private submitFirstBallot(
+    vote: Vote,
+    isAbstain: boolean,
+    userVoteContent: VoteAnswerInput[] | undefined,
+    commentResponses: CommentResponseInput[] | undefined
+  ): void {
+    this.voteService
+      .submitMyResponse(vote.uid, {
+        abstain: isAbstain,
+        userVoteContent,
+        commentResponses,
+      })
+      .pipe(
+        takeUntil(this.cancelSubmit$),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.submitting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Vote submitted',
+            detail: `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
+            life: 3000,
+          });
+          this.voteSubmitted.emit(vote.uid);
+          this.visible.set(false);
+        },
+        error: (err: unknown) => {
+          const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
+          this.messageService.add({
+            severity: 'error',
+            summary: isInvitationMissing ? 'Unable to find your invitation' : 'Unable to submit vote',
+            detail: isInvitationMissing
+              ? 'We could not find your vote invitation for this ballot. Please refresh and try again.'
+              : 'Something went wrong submitting your ballot. Please try again.',
+            life: 5000,
+          });
+        },
+      });
+  }
+
+  /** Saves a changed ballot (#4723). Comments are always sent so a cleared comment replaces the stored one. */
+  private submitChange(
+    voteUid: string,
+    abstain: boolean,
+    userVoteContent: VoteAnswerInput[] | undefined,
+    commentResponses: CommentResponseInput[] | undefined
+  ): void {
+    this.voteService
+      .updateMyResponse(voteUid, { abstain, user_vote_content: userVoteContent, comment_responses: commentResponses ?? [] })
+      .pipe(
+        takeUntil(this.cancelSubmit$),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.submitting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Vote updated',
+            detail: `Your ${abstain ? 'abstention' : 'ballot'} has been updated.`,
+            life: 3000,
+          });
+          this.voteSubmitted.emit(voteUid);
+          this.visible.set(false);
+        },
+        error: (err: unknown) => {
+          const body = err instanceof HttpErrorResponse ? (err.error as { error?: unknown } | null) : null;
+          const message = typeof body?.error === 'string' ? body.error.toLowerCase() : '';
+          if (err instanceof HttpErrorResponse && err.status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
+            this.messageService.add({ severity: 'warn', summary: "This vote doesn't allow changes", detail: VOTE_BALLOT_FINAL_STATE, life: 5000 });
+            this.changeBlockedFor.update((ids) => new Set(ids).add(voteUid));
+            this.visible.set(false);
+            return;
+          }
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to update vote',
+            detail: 'Something went wrong updating your ballot. Please try again.',
+            life: 5000,
+          });
+        },
+      });
+  }
+
   private syncControls(): void {
-    if (this.readOnly() || this.impersonating() || this.abstainControl.value) this.form.disable({ emitEvent: false });
+    if (this.ballotReadOnly() || this.impersonating() || this.abstainControl.value) this.form.disable({ emitEvent: false });
     else this.form.enable({ emitEvent: false });
-    if (this.readOnly() || this.impersonating()) {
+    if (this.ballotReadOnly() || this.impersonating()) {
       this.commentForm.disable({ emitEvent: false });
       this.abstainControl.disable({ emitEvent: false });
     } else {

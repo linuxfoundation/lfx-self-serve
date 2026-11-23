@@ -39,6 +39,7 @@ import {
   extractRegistrantEmails,
   filterUnlistedEmails,
   hasLfAccount,
+  isInviteExpired,
   normalizeToUrl,
   parseEmailList,
   rankUserSearchResults,
@@ -137,8 +138,12 @@ export class AddMemberDialogComponent {
   private readonly existingMemberEmails = new Set<string>(
     ((this.config.data?.existingMembers as CommitteeMember[]) ?? []).map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean)
   );
+  // An expired invite no longer blocks a new one: inviting the same email reinstates it with a fresh expiry.
   private readonly existingInviteEmails = new Set<string>(
-    ((this.config.data?.existingInvites as CommitteeInvite[]) ?? []).map((i) => (i.invitee_email ?? '').trim().toLowerCase()).filter(Boolean)
+    ((this.config.data?.existingInvites as CommitteeInvite[]) ?? [])
+      .filter((i) => !isInviteExpired(i.expires_at))
+      .map((i) => (i.invitee_email ?? '').trim().toLowerCase())
+      .filter(Boolean)
   );
   /** Pending invite UID by email — used to revoke stale invites after admin direct-add. */
   private readonly pendingInviteUidByEmail = new Map<string, string>(
@@ -354,7 +359,7 @@ export class AddMemberDialogComponent {
       this.messageService.add({
         severity: 'warn',
         summary: 'Add one member at a time',
-        detail: 'This group requires an organization for each member. Add people individually so each organization is recorded correctly.',
+        detail: 'This group requires a company for each member. Add people individually so each company is recorded correctly.',
         life: 6000,
       });
       return;
@@ -674,12 +679,12 @@ export class AddMemberDialogComponent {
       }
       const formValue = this.organizationFormValue();
       if (this.organizationRequiredForDirectAdd() && !formValue.organization.trim()) {
-        return 'Organization is required. Search for an organization or enter the name and website.';
+        return 'Company is required. Search for a company or enter the name and website.';
       }
       if (this.organizationSearch()?.manualMode()) {
-        return 'Enter the organization name and a valid https:// website.';
+        return 'Enter the company name and a valid https:// website.';
       }
-      return 'Select an organization from the search results, or enter the name and website.';
+      return 'Select a company from the search results, or enter the name and website.';
     });
   }
 

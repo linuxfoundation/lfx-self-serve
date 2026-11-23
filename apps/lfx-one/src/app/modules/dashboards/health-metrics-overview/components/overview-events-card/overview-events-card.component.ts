@@ -11,11 +11,12 @@ import {
   HEALTH_METRICS_OVERVIEW_EVENTS_ACTIONS_MIN_WIDTH_PX,
   HEALTH_METRICS_OVERVIEW_EVENTS_INFO,
   HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE,
+  HEALTH_METRICS_OVERVIEW_EVENTS_SORT_COLUMNS,
   HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_OVERVIEW_UPCOMING_HATCH,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsOverviewEventsView } from '@lfx-one/shared/utils';
+import { buildHealthMetricsOverviewEventsView, healthMetricsOverviewEventsSortValue, sortHealthMetricsRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { UiGaugeComponent } from '@shared/uikit/gauge/gauge.component';
 import { UiSplitButtonComponent } from '@shared/uikit/split-button/split-button.component';
@@ -23,6 +24,8 @@ import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { EMPTY, forkJoin, Observable, switchMap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectOverviewCardRead } from '../../overview-card-read';
 import { OverviewCardComponent } from '../overview-card/overview-card.component';
@@ -40,7 +43,15 @@ import type {
 /** The period's events and sponsorship, and its event list: upcoming for YTD, the year's past events otherwise. */
 @Component({
   selector: 'lfx-overview-events-card',
-  imports: [NgTemplateOutlet, OverviewCardComponent, OverviewExploreLinkComponent, OverviewInfoTipComponent, UiGaugeComponent, UiSplitButtonComponent],
+  imports: [
+    HealthMetricsThComponent,
+    NgTemplateOutlet,
+    OverviewCardComponent,
+    OverviewExploreLinkComponent,
+    OverviewInfoTipComponent,
+    UiGaugeComponent,
+    UiSplitButtonComponent,
+  ],
   providers: [DialogService],
   templateUrl: './overview-events-card.component.html',
   host: { class: 'flex min-w-0 flex-col' },
@@ -59,9 +70,14 @@ export class OverviewEventsCardComponent {
   protected readonly legend = HEALTH_METRICS_OVERVIEW_EVENT_LEGEND;
   protected readonly pastClass = HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue;
   protected readonly upcomingHatch = HEALTH_METRICS_OVERVIEW_UPCOMING_HATCH;
-  /** The design's columns at each table width: three below 912px, the actions from 912px, wider data columns from 1000px. */
+  /** No column by default: upcoming events soonest first, past ones newest first. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_OVERVIEW_EVENTS_SORT_COLUMNS, null);
+  /**
+   * The design's columns at each table width: two stacked halves up to 560px, three columns from 561px, the actions from
+   * 912px, wider data columns from 1000px. The plugin has no max-width variant, so the narrowest layout is the default.
+   */
   protected readonly gridClasses =
-    'grid grid-cols-[minmax(0,1fr)_minmax(150px,170px)_minmax(170px,200px)] gap-x-[24px] @[912px]/evtbl:grid-cols-[minmax(260px,1fr)_minmax(150px,170px)_minmax(170px,200px)_260px] @[1000px]/evtbl:grid-cols-[minmax(240px,1fr)_minmax(170px,210px)_minmax(170px,210px)_260px] @[1000px]/evtbl:gap-x-[40px]';
+    'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-[12px] gap-y-[10px] @[561px]/evtbl:grid-cols-[minmax(0,1fr)_minmax(150px,170px)_minmax(170px,200px)] @[561px]/evtbl:gap-x-[24px] @[561px]/evtbl:gap-y-0 @[912px]/evtbl:grid-cols-[minmax(260px,1fr)_minmax(150px,170px)_minmax(170px,200px)_260px] @[1000px]/evtbl:grid-cols-[minmax(240px,1fr)_minmax(170px,210px)_minmax(170px,210px)_260px] @[1000px]/evtbl:gap-x-[40px]';
   /** "Trend" below 961px of table, "Registration trend" from it; only one of the pair shows. */
   protected readonly actionPairs = [
     { key: 'trend-short', label: 'Trend', class: 'inline-flex @[961px]/evtbl:hidden' },
@@ -81,10 +97,11 @@ export class OverviewEventsCardComponent {
     if (!data) return null;
     return buildHealthMetricsOverviewEventsView(data.glance, data.sponsorship, data.events, this.chrome.selectedRange());
   });
-  /** One page again whenever the list itself changes: a new period or a new foundation's read. */
-  protected readonly showAll = linkedSignal({ source: this.view, computation: () => false });
+  /** One page again whenever the list changes (a new period or foundation's read) or its sort does. */
+  protected readonly showAll = linkedSignal({ source: () => ({ view: this.view(), sort: this.sorting.sort() }), computation: () => false });
+  /** A sort covers the whole list, so the first page shows the first rows of the sorted list. */
   protected readonly visibleRows = computed<HealthMetricsOverviewEventRowView[]>(() => {
-    const rows = this.view()?.rows ?? [];
+    const rows = sortHealthMetricsRows(this.view()?.rows ?? [], this.sorting.sort(), healthMetricsOverviewEventsSortValue);
     return this.showAll() ? rows : rows.slice(0, HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE);
   });
   protected readonly hiddenCount = computed(() => (this.view()?.rows.length ?? 0) - this.visibleRows().length);
@@ -117,7 +134,9 @@ export class OverviewEventsCardComponent {
       position: 'top',
       // The design's inset from the top, and a height that leaves the same below.
       style: { marginTop: 'min(48px, 6vh)', maxHeight: 'calc(100vh - 2 * min(48px, 6vh))' },
-      contentStyle: { padding: '22px' },
+      // The phone inset lives on this class in the global styles; the content is a column the dialog body scrolls inside.
+      styleClass: 'hm-event-dialog',
+      contentStyle: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: '0', padding: '0', overflow: 'hidden' },
       modal: true,
       draggable: false,
       resizable: false,

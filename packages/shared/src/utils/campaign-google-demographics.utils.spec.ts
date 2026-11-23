@@ -7,7 +7,9 @@ import {
   googleAdGroupDemographicExclusionsRefusal,
   googleDisplayDemographicsCarried,
   googleDemandGenDemographicsLeftOut,
+  googleDemandGenDemographicsMalformed,
   googleDemandGenDemographicsRefusal,
+  googleDemographicValuesAsOffered,
   googleDisplayDemographicsRefusal,
   googleObservedDemographicsRefusal,
 } from './campaign-google-demographics.utils';
@@ -410,5 +412,48 @@ describe('googleDemandGenDemographicsRefusal', () => {
       )
     ).toBeNull();
     expect(googleDemandGenDemographicsRefusal(undefined, [{ demographics: {} }], undefined, 'search')).toBeNull();
+  });
+});
+
+describe('googleDemographicValuesAsOffered', () => {
+  it.each([
+    ['ageRanges', ['AGE_RANGE_25_34', ' age_range_65_up ', 'AGE_RANGE_UNDETERMINED'], ['25-34', '65+', 'UNDETERMINED']],
+    ['genders', ['female', 'UNDETERMINED'], ['FEMALE', 'UNDETERMINED']],
+    ['incomeRanges', ['INCOME_RANGE_UNDETERMINED', 'income_range_90_up'], ['UNDETERMINED', 'INCOME_RANGE_90_UP']],
+    ['parentalStatuses', ['not_a_parent'], ['NOT_A_PARENT']],
+  ] as const)('rewrites each accepted %s spelling to the one its checkbox offers', (key, values, offered) => {
+    expect(googleDemographicValuesAsOffered(key, values)).toEqual(offered);
+  });
+
+  it('keeps a value upstream refuses as it is, a non-ASCII spelling included, and drops a repeat the rewrite makes', () => {
+    expect(googleDemographicValuesAsOffered('genders', ['NOPE', 'MALE', 'male', 'ımale'])).toEqual(['NOPE', 'MALE', 'ımale']);
+    expect(googleDemographicValuesAsOffered('ageRanges', ['25-34', 'AGE_RANGE_25_34'])).toEqual(['25-34']);
+  });
+
+  it('keeps a non-string a hand-built draft holds, for the shape refusal, rather than throwing on it', () => {
+    expect(googleDemographicValuesAsOffered('genders', [7, 'female'] as unknown as string[])).toEqual([7, 'FEMALE']);
+  });
+});
+
+describe('googleDemandGenDemographicsMalformed', () => {
+  it.each([
+    ['a string', 'FEMALE'],
+    ['a list', ['FEMALE']],
+    ['an object whose list is not a list', { genders: 'FEMALE' }],
+    ['a non-string entry', { genders: [7] }],
+    ['audience segments', { audienceSegments: ['customers/1/userLists/5'] }],
+    ['custom audiences beside a value', { genders: ['FEMALE'], customAudiences: ['customers/1/customAudiences/7'] }],
+  ])('is true for %s', (_label, raw) => {
+    expect(googleDemandGenDemographicsMalformed(raw)).toBe(true);
+  });
+
+  it.each([
+    ['absent', undefined],
+    ['null', null],
+    ['an empty object', {}],
+    ['well-formed lists', { genders: ['FEMALE'], ageRanges: [] }],
+    ['empty segment lists', { audienceSegments: [], customAudiences: null }],
+  ])('is false for %s', (_label, raw) => {
+    expect(googleDemandGenDemographicsMalformed(raw)).toBe(false);
   });
 });

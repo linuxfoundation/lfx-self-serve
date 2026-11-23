@@ -14,7 +14,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { EventsPastEventsComponent } from './events-past-events.component';
 
-import type { HealthMetricsEventsPast, HealthMetricsEventsPastEvent, HealthMetricsEventsSectionKey } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsPast, HealthMetricsEventsPastEvent } from '@lfx-one/shared/interfaces';
 
 function pastEvent(overrides: Partial<HealthMetricsEventsPastEvent> = {}): HealthMetricsEventsPastEvent {
   return {
@@ -27,6 +27,8 @@ function pastEvent(overrides: Partial<HealthMetricsEventsPastEvent> = {}): Healt
     revenueUsd: 125000,
     paceStatus: 'healthy',
     ranges: ['YTD'],
+    city: 'Toronto',
+    isVirtual: false,
     ...overrides,
   };
 }
@@ -59,10 +61,8 @@ describe('EventsPastEventsComponent', () => {
   let fixture: ComponentFixture<EventsPastEventsComponent>;
   let getEventsPast: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let counts: (number | null)[];
   let lifecycle: string[];
   let verdicts: boolean[];
-  let picked: HealthMetricsEventsSectionKey[];
 
   async function render(payload: HealthMetricsEventsPast | Error = past()): Promise<void> {
     getEventsPast = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -80,13 +80,11 @@ describe('EventsPastEventsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventsPastEventsComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
       verdicts.push(empty);
     });
-    fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
     await settle();
   }
 
@@ -107,53 +105,69 @@ describe('EventsPastEventsComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
-    counts = [];
     lifecycle = [];
     verdicts = [];
-    picked = [];
   });
 
   it("reads the foundation once and renders the period's header from the view", async () => {
     await render();
 
     expect(getEventsPast).toHaveBeenCalledWith({ foundationSlug: 'acme' });
-    expect(text('events-past-events-closed')).toBe('2 events closed this period');
-    expect(text('events-past-events-registrations')).toBe('1,500');
-    expect(text('events-past-events-goal-met-value')).toBe('1 of 1');
+    expect(text('events-past-events-metrics-registrations-value')).toBe('1,500');
+    expect(text('events-past-events-metrics-goal-reached-value')).toBe('1 of 1');
+    expect(query('events-past-events-closed')).toBeNull();
   });
 
-  it('lists each event with its outcome, keeping $0 revenue as measured', async () => {
+  it('lists each event with its place and date and its status pill, keeping $0 revenue as measured', async () => {
     await render();
 
-    expect(query('events-past-events-row-past-1')).not.toBeNull();
-    expect(text('events-past-events-status-past-1')).toBe('Hit goal');
+    expect(text('events-past-events-row-past-1')).toContain('Toronto · Mar 10, 2026');
+    expect(text('events-past-events-status-past-1')).toBe('Goal reached');
     expect(text('events-past-events-status-past-2')).toBe('No goal set');
     expect(text('events-past-events-revenue-past-2')).toBe('$0');
   });
 
-  it('shows each goal cell as the bold count with a grey "/ goal", or "no goal set", and no bar', async () => {
+  it('writes each goal as an inline neutral suffix, "/ {goal} (goal)" or "/ no goal set"', async () => {
     await render();
 
-    expect(text('events-past-events-goal-past-1')).toBe('1,200 / 1,000');
-    expect(query('events-past-events-goal-past-1')?.querySelector('b')?.textContent).toBe('1,200');
-    expect(query('events-past-events-goal-past-2')?.querySelector('b')?.textContent).toBe('300');
-    expect(text('events-past-events-goal-past-2')).toContain('no goal set');
-    expect(text('events-past-events-goal-past-2')).not.toContain('/');
-    expect(query('events-past-events-row-past-1')?.querySelector('[style*="width"]')).toBeNull();
+    expect(text('events-past-events-goal-past-1')).toBe('1,200 / 1,000 (goal)');
+    expect(text('events-past-events-goal-past-2')).toBe('300 / no goal set');
+    expect(query('events-past-events-goal-past-1')?.querySelector('span.text-gray-400')?.textContent?.trim()).toBe('/ 1,000 (goal)');
   });
 
-  it('shows the total unboxed, captioned below, with Hit goal as a side stat', async () => {
-    await render();
+  it('pages the table at 10 events, most recent first as read', async () => {
+    const events = Array.from({ length: 12 }, (_, index) => pastEvent({ eventId: `evt-${index}` }));
+    await render(past({ events }));
 
-    expect(query('events-past-events-card')?.classList).not.toContain('border');
-    expect(query('events-past-events-headline')?.lastElementChild?.textContent?.trim()).toBe('Total registrations, past events');
-    expect(query('events-past-events-goal-met')?.querySelector('dt')?.textContent?.trim()).toBe('Hit goal');
+    const rows = () => fixture.nativeElement.querySelectorAll('[data-testid^="events-past-events-row-"]').length;
+    expect(rows()).toBe(10);
+    fixture.componentInstance['page'].set(1);
+    await settle();
+    expect(rows()).toBe(2);
   });
 
-  it('reports the period count for the badge and settles once the list lands', async () => {
+  it('opens on the latest event with the Event arrow, and sorts the whole list from page 1 on a picked column', async () => {
+    const events = Array.from({ length: 12 }, (_, index) =>
+      pastEvent({ eventId: `evt-${index}`, eventStartDate: `2026-0${(index % 9) + 1}-01`, revenueUsd: index === 11 ? 999999 : 1000 })
+    );
+    await render(past({ events }));
+    const header = (key: string): HTMLElement => query(`events-past-events-sort-${key}`) as HTMLElement;
+    const firstRow = (): string | null | undefined =>
+      fixture.nativeElement.querySelector('tr[data-testid^="events-past-events-row-"]')?.getAttribute('data-testid');
+
+    expect(header('event').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    fixture.componentInstance['page'].set(1);
+    await settle();
+
+    (header('revenue').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(fixture.componentInstance['page']()).toBe(0);
+    expect(firstRow()).toBe('events-past-events-row-evt-11');
+  });
+
+  it('settles once the list lands', async () => {
     await render();
 
-    expect(counts).toEqual([null, 2]);
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
   });
@@ -165,10 +179,9 @@ describe('EventsPastEventsComponent', () => {
     await settle();
 
     expect(getEventsPast).toHaveBeenCalledTimes(1);
-    expect(counts).toEqual([null, 2, 1]);
     expect(query('events-past-events-row-past-1')).toBeNull();
     expect(query('events-past-events-row-past-2')).not.toBeNull();
-    expect(text('events-past-events-goal-met-value')).toBe('no goals set');
+    expect(text('events-past-events-metrics-goal-reached-value')).toBe('—');
   });
 
   it('re-settles on a period change between two completed years, so the shell re-measures', async () => {
@@ -187,7 +200,7 @@ describe('EventsPastEventsComponent', () => {
   it('reads goals with no measured outcome as not tracked, never as unset', async () => {
     await render(past({ events: [pastEvent({ registrations: null, goalMet: null })] }));
 
-    expect(text('events-past-events-goal-met-value')).toBe('not tracked');
+    expect(text('events-past-events-metrics-goal-reached-value')).toBe('—');
     expect(text('events-past-events-status-past-1')).toBe('Not tracked');
   });
 
@@ -195,44 +208,41 @@ describe('EventsPastEventsComponent', () => {
     await render(past({ events: [pastEvent({ registrations: 900, goalMet: false, paceStatus: 'needs_attention' })] }));
 
     expect(text('events-past-events-status-past-1')).toBe('Just missed');
-    expect(text('events-past-events-goal-met-value')).toBe('0 of 1');
+    expect(text('events-past-events-metrics-goal-reached-value')).toBe('0 of 1');
   });
 
-  it('settles empty, with no body, and a zero badge for a period with no closed events', async () => {
+  it('settles empty, with no body, for a period with no closed events', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_2');
     await settle();
 
     expect(verdicts).toEqual([false, true]);
-    expect(query('events-past-events-card')).toBeNull();
+    expect(query('events-past-events-metrics')).toBeNull();
     expect(query('events-past-events-table')).toBeNull();
-    expect(counts.at(-1)).toBe(0);
   });
 
-  it('settles empty, with no body, and no badge rather than a measured zero for a period never measured', async () => {
+  it('settles empty, with no body, for a period never measured', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_3');
     await settle();
 
     expect(verdicts).toEqual([false, true]);
-    expect(query('events-past-events-card')).toBeNull();
+    expect(query('events-past-events-metrics')).toBeNull();
     expect(query('events-past-events-table')).toBeNull();
-    expect(counts.at(-1)).toBeNull();
   });
 
-  it('shows the error state and keeps the badge unmeasured when the read fails', async () => {
+  it('shows the error state and does not re-settle a failed read on a period change', async () => {
     await render(new Error('warehouse down'));
 
     expect(query('events-past-events-error')).not.toBeNull();
     expect(verdicts).toEqual([false]);
-    expect(counts).toEqual([null]);
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
 
-    expect(counts).toEqual([null]);
+    expect(verdicts).toEqual([false]);
   });
 
   it('holds the skeleton until a foundation resolves', async () => {
@@ -242,22 +252,5 @@ describe('EventsPastEventsComponent', () => {
     expect(getEventsPast).not.toHaveBeenCalled();
     expect(query('events-past-events-loading')).not.toBeNull();
     expect(lifecycle).toEqual(['reading']);
-  });
-
-  it('captions the table order as most recent first', async () => {
-    await render();
-
-    expect(query('events-past-events-order')?.textContent?.trim()).toBe('most recent first');
-  });
-
-  it('cross-links back to the forecast mid-sentence in the footnote', async () => {
-    await render();
-
-    expect(query('events-past-events-footnote')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'a past event is a result. See the registration forecast → for what is still open.'
-    );
-    query('events-past-events-forecast-link')?.click();
-
-    expect(picked).toEqual(['forecast']);
   });
 });

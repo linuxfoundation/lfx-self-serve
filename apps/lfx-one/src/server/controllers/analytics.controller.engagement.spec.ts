@@ -108,13 +108,23 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
       groupType: 'all',
       range: 'YTD',
       page: 1,
-      size: 25,
+      size: 10,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
   });
 
   it('forwards every supplied param, coercing page and size to numbers', async () => {
-    const { promise } = call({ foundationSlug: 'acme', projectSlug: 'acme-core', groupType: 'wg', range: 'COMPLETED_YEAR', page: '3', size: '50' });
+    const { promise } = call({
+      foundationSlug: 'acme',
+      projectSlug: 'acme-core',
+      groupType: 'wg',
+      range: 'COMPLETED_YEAR',
+      page: '3',
+      size: '50',
+      sortKey: 'last',
+      sortDir: 'desc',
+    });
     await promise;
 
     expect(getGroupAttendance).toHaveBeenCalledWith(expect.anything(), {
@@ -124,7 +134,21 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
       range: 'COMPLETED_YEAR',
       page: 3,
       size: 50,
+      sort: { key: 'last', direction: 'desc' },
     });
+  });
+
+  it("keeps the view's rank for a sort column or direction the table does not allow", async () => {
+    for (const [sortKey, sortDir] of [
+      ['committee_name; DROP TABLE x', 'asc'],
+      ['last', 'sideways'],
+      ['toString', 'asc'],
+    ]) {
+      getGroupAttendance.mockClear();
+      const { promise } = call({ foundationSlug: 'acme', sortKey, sortDir });
+      await promise;
+      expect(getGroupAttendance).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
+    }
   });
 
   it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
@@ -266,7 +290,7 @@ describe('AnalyticsController.getEngagementAttendanceTrend', () => {
     getAttendanceTrend.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
   });
 
-  // The trend always covers the last twelve months, so a range on the wire would be a param the service ignores.
+  // The client cuts the selected year from every month the view holds, so a range on the wire is a param the service ignores.
   it('takes the foundation and project only, and answers with the service response', async () => {
     const { res, next, promise } = callTrend({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
     await promise;

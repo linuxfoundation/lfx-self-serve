@@ -9,6 +9,7 @@ import {
   PendingActionItem,
   Project,
   ProjectDocument,
+  ProjectDocumentType,
   UpdateFormationRecordRequest,
   WriterSummary,
 } from '@lfx-one/shared/interfaces';
@@ -327,10 +328,10 @@ export class ProjectService {
   }
 
   /**
-   * Deletes a project folder or link. Files are not deletable via this endpoint
-   * — the BFF only accepts `'folder'` and `'link'` for the `type` parameter.
+   * Deletes a project folder, link or uploaded file. A folder must be empty: the BFF answers 409
+   * (`FOLDER_NOT_EMPTY`) when it still holds documents.
    */
-  public deleteProjectDocument(projectUid: string, documentId: string, documentType: 'folder' | 'link'): Observable<void> {
+  public deleteProjectDocument(projectUid: string, documentId: string, documentType: ProjectDocumentType): Observable<void> {
     const params = new HttpParams().set('type', documentType);
     return this.http.delete<void>(`/api/projects/${projectUid}/documents/${documentId}`, { params }).pipe(take(1));
   }

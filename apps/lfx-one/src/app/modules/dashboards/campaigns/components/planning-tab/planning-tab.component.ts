@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  OnInit,
+  output,
+  PLATFORM_ID,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -16,8 +30,10 @@ import {
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS,
+  isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import {
+  briefSlugYearCandidates,
   campaignSurveySourceTextLength,
   campaignSurveySourceTextTooLong,
   canonicalHttpUrl,
@@ -36,6 +52,7 @@ import {
   finalize,
   map,
   merge,
+  Observable,
   of,
   skip,
   Subject,
@@ -47,6 +64,7 @@ import {
 import type {
   CampaignBriefEditRequest,
   CampaignBriefLoadResult,
+  CampaignBriefLookupHit,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignDeliveryType,
@@ -89,6 +107,24 @@ import type {
  */
 const isDefiniteRefusal = (status: number): boolean => status === 400 || status === 401 || status === 403 || status === 404;
 
+/**
+ * Whether an operator-typed Registration URL (#5490) is one every ad platform accepts.
+ *
+ * https only, because Meta refuses an http destination and a brief's URL serves every platform it
+ * is created on. Written out as `https://` and then a host character, because WHATWG `URL` reads
+ * `https:example.com` and `https:///example.com` as having a host while Go's `url.Parse`, which the
+ * platforms validate with, finds none in either. A public host on
+ * a default port, via `canonicalHttpUrl`; and no user name or password, which every platform's
+ * validator refuses (the BFF's `describeDestinationUrl` mirrors them). Last, the Google destination
+ * rule campaign-service applies (`isGoogleAdsServableUrl`): it refuses what Go's parser rejects, such
+ * as a `;` in the query, a malformed percent escape, or an empty `@` userinfo.
+ */
+function isHttpsRegistrationUrl(value: string): boolean {
+  if (!/^https:\/\/[^/\\]/i.test(value) || canonicalHttpUrl(value) === '' || !isGoogleAdsServableUrl(value)) return false;
+  const parsed = new URL(value);
+  return parsed.username === '' && parsed.password === '';
+}
+
 type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
@@ -103,6 +139,7 @@ export class PlanningTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
@@ -168,6 +205,16 @@ export class PlanningTabComponent implements OnInit {
    * read anywhere.
    */
   public readonly savedBriefRefreshToken = input(0);
+
+  /**
+   * The ids of the stored briefs this session owns: the parent's `knownBriefIds` (#5492).
+   *
+   * The parent's save refuses only a brief it does NOT own, so the review step uses this to say the
+   * generated brief can't be saved over an offer exactly when that is true: a brief just saved, or
+   * restored, here is the parent's to update and does not block anything. Empty by default, which
+   * treats every stored brief as someone else's.
+   */
+  public readonly ownedBriefIds = input<ReadonlySet<string>>(new Set<string>());
 
   /**
    * Whether this deployment can create X campaigns — `CampaignListResult.twitterCreateEnabled`, read
@@ -343,6 +390,24 @@ export class PlanningTabComponent implements OnInit {
     audience: [''],
     registrationUrl: [''],
   });
+
+  /**
+   * The paid brief editor's Registration URL (#5490), as a FormGroup for the `lfx-input-text`
+   * wrapper, the same reason `emailEditForm` is one.
+   *
+   * The scrape leaves `registrationUrl` empty when the event page has no registration link yet, and
+   * every ad platform refuses a create whose saved brief has no destination. This field is the one
+   * place an operator can set or correct it: Save & Proceed saves it with the brief, and the create
+   * reads it from there.
+   */
+  protected readonly paidEditForm = this.fb.group({
+    registrationUrl: [''],
+  });
+
+  /** Why the paid brief edit could not be saved: the Registration URL was changed to something that is not a full https:// address. */
+  protected readonly paidEditError = signal<string>('');
+  /** The Registration URL refusal, scrolled into view by `revealPaidEditError` since Save & Proceed sits below the copy editor. */
+  private readonly paidEditErrorMessage = viewChild<ElementRef<HTMLElement>>('paidEditErrorMessage');
   protected readonly copyBuffer = signal('');
   protected readonly structuredCopy = signal<Record<string, unknown> | null>(null);
   protected readonly hsUtm = signal<string | null>(null);
@@ -638,6 +703,68 @@ export class PlanningTabComponent implements OnInit {
     return warning ?? '';
   });
 
+  /**
+   * Set when the current answer came from `lookUpGeneratedSlug`, the lookup keyed on the slug the
+   * planner's brief will be saved under (#5492); `readAt` is the refresh token it was read under.
+   * Cleared by every other answer `applySavedBrief` records.
+   *
+   * Only the URL lookup reads it: an answer of its own still in flight when Generate was pressed (a
+   * year guess, a `none`) and read under the same token is older than this one, and must not replace
+   * or clear it.
+   */
+  private readonly generatedSlugOffer = signal<{ readAt: number } | null>(null);
+
+  /**
+   * The slug the current found or unreadable answer is stored under, whichever lookup found it; null
+   * for a miss or a failed lookup. An unreadable answer carries no brief to read the slug from, so it
+   * is recorded with the answer (see `applySavedBrief`).
+   */
+  private readonly savedBriefSlug = signal<string | null>(null);
+
+  /** `savedBriefId` as a signal, so the ownership check below re-runs when it changes. */
+  private readonly savedBriefIdSignal = signal<string | null>(null);
+
+  /**
+   * Whether the stored brief is on the slug the planner's brief will be saved under and is not this
+   * session's (#5492): the brief the parent's save would refuse to overwrite. Whichever lookup found
+   * it, the URL lookup's year guess included.
+   *
+   * Ownership matters as much as the slug. After a Proceed the parent bumps the refresh token, the
+   * URL lookup runs again and can find the very brief just saved, which the parent owns and updates
+   * freely; that one blocks nothing.
+   */
+  private readonly storedBriefBlocksSave = computed(() => {
+    const slug = this.eventDetails()?.slug ?? '';
+    const storedSlug = this.savedBriefSlug();
+    if (slug === '' || storedSlug !== slug) {
+      return false;
+    }
+    const briefId = this.savedBriefIdSignal();
+    return briefId === null || !this.ownedBriefIds().has(briefId);
+  });
+
+  /** The review step's "can't be saved over it" offer: a found brief that blocks the save. */
+  protected readonly savedBriefBlocksSave = computed(() => this.savedBrief() !== null && this.storedBriefBlocksSave());
+
+  /** The review step's unreadable-brief warning: an unreadable brief that blocks the save. */
+  protected readonly savedBriefWarningBlocksSave = computed(
+    () => this.savedBrief() === null && this.savedBriefWarning() !== null && this.storedBriefBlocksSave()
+  );
+  /**
+   * The review step's announcement: what its banner says, no more and no less, and nothing before
+   * the review step (#5551). With a brief to offer, the banner shows the offer, says the generated
+   * brief can't be saved over it when that blocks the save (`savedBriefBlocksSave`), and shows any
+   * warning. With none, it shows the warning only when the unreadable brief blocks the save
+   * (`savedBriefWarningBlocksSave`), so one stored under another edition is not announced either.
+   */
+  protected readonly reviewSavedBriefAnnouncement = computed(() => {
+    // Silent off the review step, where its region stays mounted (see the template), and while editing a saved brief.
+    if (this.step() !== 'review' || this.editingExistingBrief()) return '';
+    if (this.savedBrief() === null) return this.savedBriefWarningBlocksSave() ? (this.savedBriefWarning() ?? '') : '';
+    const announcement = this.savedBriefAnnouncement();
+    return this.savedBriefBlocksSave() ? `${announcement} The generated brief can't be saved over it as it is.` : announcement;
+  });
+
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
   private savedBriefId: string | null = null;
 
@@ -918,14 +1045,11 @@ export class PlanningTabComponent implements OnInit {
         // Taken from the REQUEST rather than read at response time, so an answer dispatched
         // before a parent-side write cannot claim to post-date it.
         switchMap(([slug, project, delivery, stage, token]) =>
-          this.campaignService.loadBrief(slug, project, delivery, stage).pipe(
-            map((result) => ({ slug, project, delivery, stage, token, result })),
-            catchError(() => of({ slug, project, delivery, stage, token, result: null }))
-          )
+          this.findSavedBrief(slug, project, delivery, stage).pipe(map((hit) => ({ slug, project, delivery, stage, token, hit })))
         ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ slug, project, delivery, stage, token, result }) => {
+      .subscribe(({ slug, project, delivery, stage, token, hit }) => {
         // `delivery` joins the staleness check for the same reason `slug` and `project` are in it:
         // `switchMap` cancels the previous REQUEST, but a response already in flight when the user
         // flips Paid <-> Email still arrives, and it answers a question about the other surface.
@@ -934,7 +1058,15 @@ export class PlanningTabComponent implements OnInit {
         if (slug !== this.currentSlug || project !== this.activeFoundationSlug() || delivery !== this.deliveryType() || stage !== this.emailStage()) {
           return;
         }
-        this.applySavedBrief(result, token);
+        // A lookup on the save key has answered under this same refresh token, so this answer (still
+        // in flight when Generate was pressed) is the older guess about the same event and must not
+        // replace or clear it (#5492). A later parent write bumps the token, and the re-lookup then
+        // applies as usual.
+        const generatedOffer = this.generatedSlugOffer();
+        if (generatedOffer !== null && generatedOffer.readAt === token) {
+          return;
+        }
+        this.applySavedBrief(hit.result, token, hit.matchedSlug);
       });
 
     // Clear the offer the MOMENT the foundation changes, not when the re-lookup answers. Between
@@ -955,6 +1087,9 @@ export class PlanningTabComponent implements OnInit {
       // still valid but the portal answering it is not.
       this.reset();
       this.savedBrief.set(null);
+      this.generatedSlugOffer.set(null);
+      this.savedBriefSlug.set(null);
+      this.savedBriefIdSignal.set(null);
       this.savedBriefId = null;
       this.savedBriefEtag = null;
       this.savedBriefApproved = false;
@@ -1054,6 +1189,9 @@ export class PlanningTabComponent implements OnInit {
         // key that row belongs to the stage that was selected when it was looked up. So it is
         // cleared here, after the reset that preserves it.
         this.savedBrief.set(null);
+        this.generatedSlugOffer.set(null);
+        this.savedBriefSlug.set(null);
+        this.savedBriefIdSignal.set(null);
         this.savedBriefId = null;
         this.savedBriefEtag = null;
         this.savedBriefApproved = false;
@@ -1167,20 +1305,20 @@ export class PlanningTabComponent implements OnInit {
     //
     // This derivation is NOT identical to the write path's. `deriveEventSlug` reads
     // `brief.eventDetails.slug`, which the generator produced from the scraped event page,
-    // while this reads the pasted URL's last path segment. They agree whenever the scraper
-    // echoes the segment, which is the ordinary case — but a normalized slug (different case,
-    // stripped punctuation, a redirect to a canonical path) makes the lookup MISS a brief that
-    // exists, and the user is offered nothing rather than a restore.
+    // while this reads the pasted URL's last path segment. They agree whenever the generator
+    // echoes the segment, which is the ordinary case, but it often adds the event's year
+    // (the KubeCon Europe page is stored as `kubecon-cloudnativecon-europe-2027`), and then the
+    // bare lookup misses a brief that exists (#5492).
     //
-    // A miss is NOT merely a wasted regeneration, and an earlier version of this comment was
-    // wrong to say so. `saveBrief` runs its own `findBrief` keyed on the GENERATED slug, so
-    // after the user regenerates, the save finds the row this lookup missed and PUTs over it —
-    // the saved edits are gone and Restore was never offered. The two paths agreeing matters
-    // for durability, not just for convenience.
+    // Two things close most of that gap without changing the key. `findSavedBrief` retries a
+    // miss with the year-suffixed slugs, and `lookUpGeneratedSlug` looks the generated slug up
+    // once generation finishes, so the offer appears on the review step at the latest. The key
+    // stays the generated slug on purpose: a URL reused every year would otherwise put each
+    // edition on last year's row, campaigns included.
     //
-    // Not closed here because the fix is not local: the read would have to key off the
-    // generated brief, which does not exist until after generation and so cannot serve the
-    // pre-generation offer this feature is for. Tracked as LFXV2-3200.
+    // A miss no longer loses work either way. The save runs its own `findBrief` on the generated
+    // slug and REFUSES a brief this page does not own (LFXV2-3200); it does not save over it. On
+    // the paid planner the refusal offers Open to edit and Replace saved brief (#4983).
     //
     // Cleared only when the slug changes AND a lookup will follow to replace what was cleared.
     //
@@ -1571,6 +1709,9 @@ export class PlanningTabComponent implements OnInit {
           if (!this.generateIsCurrent(generation)) return;
           if (this.step() === 'generating') {
             this.step.set('review');
+            // A stream that ended without `done` reaches the review step here instead, and needs the
+            // same check `done` makes; `lookUpGeneratedSlug` skips a slug already offered.
+            this.lookUpGeneratedSlug();
           }
         },
       });
@@ -1579,6 +1720,11 @@ export class PlanningTabComponent implements OnInit {
   protected onProceedToImplementation(): void {
     if (this.isEditing()) {
       this.saveEdits();
+      // Refused (a changed Registration URL that is not a full https:// address): the editor stays
+      // open with its error, and the handoff stops, as the email editor's refusal stops it below.
+      if (this.isEditing()) {
+        return;
+      }
     }
     // Same reason as the paid flush above: the emitted `eventDetails` is what generation is told
     // to use verbatim, so an editor still open here would send the UNCORRECTED scrape while the
@@ -1791,10 +1937,27 @@ export class PlanningTabComponent implements OnInit {
     this.editDisplayBusinessName.set((display?.['business_name'] as string) ?? '');
     this.editDisplayCta.set((display?.['call_to_action'] as string) ?? '');
     this.editKeywords.set(this.keywords().map((kw) => ({ ...kw })));
+    this.paidEditForm.setValue({ registrationUrl: this.eventDetails()?.registrationUrl ?? '' });
+    this.paidEditError.set('');
     this.isEditing.set(true);
   }
 
   protected saveEdits(): void {
+    // Judged first, so a refusal leaves every edit unapplied and the editor open with its message.
+    const details = this.eventDetails();
+    const editedUrl = (this.paidEditForm.controls.registrationUrl.value ?? '').trim();
+    // `?? ''`: an older or partial brief carries no `registrationUrl`, as `enterEditMode` allows.
+    const urlChanged = details !== null && editedUrl !== (details.registrationUrl ?? '').trim();
+    if (urlChanged && !isHttpsRegistrationUrl(editedUrl)) {
+      this.paidEditError.set('Enter the full registration link, starting with https://.');
+      this.revealPaidEditError();
+      return;
+    }
+    this.paidEditError.set('');
+    if (urlChanged) {
+      this.eventDetails.set({ ...details, registrationUrl: editedUrl });
+    }
+
     const copy = { ...(this.structuredCopy() ?? {}) };
     const search = { ...((this.getSearchCopy() as Record<string, unknown>) ?? {}) };
     const display = { ...((this.getDisplayCopy() as Record<string, unknown>) ?? {}) };
@@ -1829,6 +1992,7 @@ export class PlanningTabComponent implements OnInit {
   }
 
   protected cancelEdit(): void {
+    this.paidEditError.set('');
     this.isEditing.set(false);
   }
 
@@ -2121,7 +2285,7 @@ export class PlanningTabComponent implements OnInit {
    * fields applied over it.
    *
    * The event comes from the STORED brief, whatever the planner holds, because the row is keyed on its
-   * slug (see `editingExistingBrief`). The extension lists fall back to the stored ones, because
+   * slug (see `editingExistingBrief`); only its Registration URL is taken from the planner (#5490). The extension lists fall back to the stored ones, because
    * Proceed reports an empty list as absent and this planner has no editor that could have emptied
    * them. LinkedIn copy falls back the same way when no variant could be rebuilt from the copy.
    */
@@ -2133,7 +2297,10 @@ export class PlanningTabComponent implements OnInit {
     return {
       ...base,
       ...built,
-      eventDetails: base.eventDetails,
+      // The stored event, with the one field the editor may change: the Registration URL (#5490). It
+      // is not part of the row's key — `deriveEventSlug` reads `eventDetails.slug` — so changing it
+      // leaves the brief on its event.
+      eventDetails: { ...base.eventDetails, registrationUrl: built.eventDetails.registrationUrl },
       googleCallouts: built.googleCallouts ?? base.googleCallouts,
       googleSitelinks: built.googleSitelinks ?? base.googleSitelinks,
       negativeKeywords: built.negativeKeywords ?? base.negativeKeywords,
@@ -2167,9 +2334,15 @@ export class PlanningTabComponent implements OnInit {
    * Record what the brief lookup found.
    *
    * `null` is the transport failure `catchError` mapped — distinct from every `status` the
-   * server can report, and the only one that means "we do not know".
+   * server can report, and the only one that means "we do not know". `matchedSlug` is the slug the
+   * answer was looked up under, recorded for a found or unreadable brief (#5492).
    */
-  private applySavedBrief(result: CampaignBriefLoadResult | null, readAt: number): void {
+  private applySavedBrief(result: CampaignBriefLoadResult | null, readAt: number, matchedSlug: string): void {
+    // Every answer is from the URL lookup unless `lookUpGeneratedSlug` marks it again after this call.
+    this.generatedSlugOffer.set(null);
+    const stored = result !== null && (result.status === 'loaded' || result.status === 'unreadable');
+    this.savedBriefSlug.set(stored ? matchedSlug : null);
+    this.savedBriefIdSignal.set(stored ? (result?.briefId ?? null) : null);
     if (result === null) {
       this.savedBrief.set(null);
       this.savedBriefId = null;
@@ -2255,6 +2428,9 @@ export class PlanningTabComponent implements OnInit {
       if (slug !== this.currentSlug) {
         this.currentSlug = slug;
         this.savedBrief.set(null);
+        this.generatedSlugOffer.set(null);
+        this.savedBriefSlug.set(null);
+        this.savedBriefIdSignal.set(null);
         this.savedBriefId = null;
         this.savedBriefEtag = null;
         this.savedBriefApproved = false;
@@ -2263,6 +2439,85 @@ export class PlanningTabComponent implements OnInit {
       }
       this.slugInput$.next(slug);
     }
+  }
+
+  /**
+   * The stored brief for `slug`, or for the first year-suffixed variant of it that has one (#5492).
+   *
+   * A brief is saved under the generator's `eventDetails.slug`, which often adds the event's year
+   * to the URL's last segment, while this lookup runs before generation and knows only the URL. So
+   * a miss on the bare segment tries `briefSlugYearCandidates` in order. Only a `none` moves on: a
+   * found, unreadable or failed answer is the answer. A survey is skipped, since its slug is not a
+   * URL segment and the generator does not write it.
+   *
+   * `null` is a transport failure, as the subscription that applies this expects.
+   */
+  private findSavedBrief(slug: string, project: string, delivery: CampaignDeliveryType, stage: CampaignSendStage | ''): Observable<CampaignBriefLookupHit> {
+    const lookup = (candidate: string): Observable<CampaignBriefLookupHit> =>
+      this.campaignService.loadBrief(candidate, project, delivery, stage).pipe(
+        map((result): CampaignBriefLookupHit => ({ result, matchedSlug: candidate })),
+        catchError(() => of({ result: null, matchedSlug: candidate }))
+      );
+    const candidates = this.isSurvey() ? [] : briefSlugYearCandidates(slug, new Date().getFullYear());
+    return candidates.reduce(
+      (found$, candidate) => found$.pipe(switchMap((found) => (found.result !== null && found.result.status === 'none' ? lookup(candidate) : of(found)))),
+      lookup(slug)
+    );
+  }
+
+  /**
+   * After a generation finishes, look for a brief stored under the slug the generator wrote, when
+   * that differs from the one the URL lookup used (#5492).
+   *
+   * The save is keyed on the generated slug, so a brief the URL lookup could not find is still
+   * found here, and offered on the review step before the user proceeds rather than only surfacing
+   * as the save's refusal. It runs even when the URL lookup already offered a brief under a
+   * DIFFERENT slug, since that one is not the brief the save collides with; a brief found here
+   * takes its place, being the one Proceed would be refused over. Skipped when the offer is
+   * already for the generated slug, in existing-brief mode, and for a survey (see `findSavedBrief`).
+   *
+   * Only a found or unreadable brief is applied. A miss or a failed request leaves the page as it
+   * is: the save runs its own lookup on this slug and refuses an unowned brief either way, so a
+   * warning here would add nothing.
+   */
+  private lookUpGeneratedSlug(): void {
+    const generatedSlug = this.eventDetails()?.slug ?? '';
+    const urlSlug = this.currentSlug;
+    if (this.isSurvey() || generatedSlug.trim() === '' || generatedSlug === urlSlug || this.offerIsFor(generatedSlug) || this.editingExistingBrief()) {
+      return;
+    }
+    const project = this.activeFoundationSlug();
+    const delivery = this.deliveryType();
+    const stage = this.emailStage();
+    const token = this.savedBriefRefreshToken();
+    const generation = this.generateGeneration;
+    this.campaignService
+      .loadBrief(generatedSlug, project, delivery, stage)
+      .pipe(
+        catchError(() => of(null)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((result) => {
+        // Dropped once the page has moved on (a new generation, another event, foundation or send),
+        // or once an offer for this same slug has gone up in the meantime.
+        const moved =
+          this.offerIsFor(generatedSlug) ||
+          generation !== this.generateGeneration ||
+          urlSlug !== this.currentSlug ||
+          project !== this.activeFoundationSlug() ||
+          delivery !== this.deliveryType() ||
+          stage !== this.emailStage();
+        if (moved || result === null || result.status === 'none') {
+          return;
+        }
+        this.applySavedBrief(result, token, generatedSlug);
+        this.generatedSlugOffer.set({ readAt: token });
+      });
+  }
+
+  /** Whether the brief on offer is the one stored under `slug` (the stored slug is the row's key). */
+  private offerIsFor(slug: string): boolean {
+    return this.savedBrief()?.eventDetails.slug === slug;
   }
 
   private extractEventName(url: string): string {
@@ -2883,8 +3138,14 @@ export class PlanningTabComponent implements OnInit {
         break;
       case 'done':
         this.step.set('review');
+        this.lookUpGeneratedSlug();
         break;
     }
+  }
+
+  /** Bring the Registration URL refusal into view once it renders: Save & Proceed sits below the long copy editor. */
+  private revealPaidEditError(): void {
+    afterNextRender(() => this.paidEditErrorMessage()?.nativeElement.scrollIntoView({ block: 'center' }), { injector: this.injector });
   }
 
   private safeNumber(value: unknown): number {

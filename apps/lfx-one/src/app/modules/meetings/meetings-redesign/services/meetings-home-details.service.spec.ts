@@ -80,6 +80,18 @@ describe('MeetingsHomeDetailsService', () => {
     expect(segmentEvent).toHaveBeenCalledWith(...expected);
   });
 
+  it('reopens on another row from inside the drawer without counting another open', () => {
+    const host = TestBed.createComponent(HostComponent).componentInstance;
+    host.details.open(ROW, 'row');
+    const next = { ...ROW, key: 'synthetic-meeting:1' } as MeetingHomeRow;
+    (open.mock.calls[0][1] as { data: MeetingDetailsDrawerData }).data.open(next);
+
+    expect(refs[0].close).toHaveBeenCalled();
+    expect((open.mock.calls[1][1] as { data: MeetingDetailsDrawerData }).data.row).toBe(next);
+    expect(plausibleEvent).toHaveBeenCalledTimes(1);
+    expect(segmentEvent).toHaveBeenCalledTimes(1);
+  });
+
   it('reports the series id for a past date', () => {
     const host = TestBed.createComponent(HostComponent).componentInstance;
     const past = {

@@ -6,36 +6,45 @@ import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Si
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE, HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED } from '@lfx-one/shared/constants';
 import {
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_CAUTION,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_DEFAULT_SORT,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_SORT_COLUMNS,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
+} from '@lfx-one/shared/constants';
+import {
+  buildHealthMetricsEngagementNonMemberRowView,
   filterHealthMetricsEngagementNonMemberRows,
-  selectHealthMetricsEngagementNonMemberCounts,
-  selectHealthMetricsEngagementNonMemberPeriod,
+  healthMetricsRowSortValue,
+  sortHealthMetricsRows,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiNoteComponent } from '@shared/uikit/note/note.component';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
-
-import type { TablePageEvent } from 'primeng/table';
 
 import type {
   HealthMetricsEngagementNonMemberParticipation,
-  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementNonMemberRowView,
   HealthMetricsRange,
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#nonmem` — organizations turning up without paying for membership, ranked by the view's
+ * `#nonmem` — companies turning up without paying for membership, ranked by the view's
  * `SORT_RANK_<period>`. The section is foundation-scoped, and the period pill re-filters the loaded
  * rows rather than re-reading.
  */
 @Component({
   selector: 'lfx-engagement-non-member-participation',
-  imports: [EmptyStateComponent, TableComponent],
+  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsThComponent, TableComponent, UiNoteComponent, UiPaginationComponent],
   templateUrl: './engagement-non-member-participation.component.html',
 })
 export class EngagementNonMemberParticipationComponent {
@@ -44,17 +53,13 @@ export class EngagementNonMemberParticipationComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /**
-   * Feeds the container's sub-nav badge. The view counts its scope per period, so the badge follows the
-   * pill; `null` is "no measured counts" and renders no badge rather than a believable zero.
-   */
-  public readonly countsChange = output<HealthMetricsEngagementNonMemberPeriodCounts | null>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
-  protected readonly size = signal<number>(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE);
+  protected readonly caution = HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_CAUTION;
+  protected readonly size = HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE;
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
@@ -62,44 +67,42 @@ export class EngagementNonMemberParticipationComponent {
   protected readonly query: Signal<HealthMetricsEngagementNonMemberQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementNonMemberParticipation> = this.initResponse();
 
+  protected readonly sorting = injectHealthMetricsTableSort(
+    HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_SORT_COLUMNS,
+    HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_DEFAULT_SORT
+  );
   /** Re-sorting the table must land the reader on rows, so any change to the order restarts paging. */
-  protected readonly first = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}`),
+  protected readonly page = linkedSignal<string, number>({
+    source: computed(
+      () => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}|${JSON.stringify(this.sorting.sort())}`
+    ),
     computation: () => 0,
   });
 
   protected readonly rowViews = computed<HealthMetricsEngagementNonMemberRowView[]>(() => {
     const range = this.chrome.selectedRange();
-    return filterHealthMetricsEngagementNonMemberRows(this.response().rows, range).map((row) => ({
-      row,
-      period: selectHealthMetricsEngagementNonMemberPeriod(row, range),
-    }));
+    const views = filterHealthMetricsEngagementNonMemberRows(this.response().rows, range).map((row) =>
+      buildHealthMetricsEngagementNonMemberRowView(row, range)
+    );
+    return sortHealthMetricsRows(views, this.sorting.order(), healthMetricsRowSortValue);
+  });
+  // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
+  protected readonly pageRows = computed(() => {
+    const rows = this.rowViews();
+    const page = Math.min(this.page(), Math.max(0, Math.ceil(rows.length / this.size) - 1));
+    return rows.slice(page * this.size, (page + 1) * this.size);
   });
   protected readonly totalRecords = computed(() => this.rowViews().length);
-  /** The selected period's scope count, which the view denormalizes onto every row; `null` is unmeasured. */
-  protected readonly periodCounts = computed(() => selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange()));
   /** No non-member for the foundation, or none measured in the period; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyScope(this.response(), this.chrome.selectedRange()));
-  protected readonly countLabel = computed(() => {
-    const counts = this.periodCounts();
-    if (!counts) return '—';
-
-    // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
-    return `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'organization' : 'organizations'}`;
-  });
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      // The badge count is per period, so a pill change re-reports it off the loaded response.
+      // Emptiness is per period, so a pill change re-settles off the loaded response.
       toObservable(this.chrome.selectedRange)
         .pipe(skip(1), takeUntilDestroyed())
-        .subscribe(() => this.emitCounts());
+        .subscribe(() => this.resettle());
     }
-  }
-
-  protected onTablePage(event: TablePageEvent): void {
-    this.size.set(event.rows ?? this.size());
-    this.first.set(event.first ?? 0);
   }
 
   private initQuery(): HealthMetricsEngagementNonMemberQuery {
@@ -123,7 +126,6 @@ export class EngagementNonMemberParticipationComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.countsChange.emit(null);
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
@@ -138,12 +140,8 @@ export class EngagementNonMemberParticipationComponent {
             }),
             tap((response) => {
               // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
-              // the table cannot caption an unread scope as "no rows".
+              // the table cannot read an unread scope as "no rows".
               this.loading.set(!foundationSeen);
-              // No foundation means no read happened, so there is no measured count to report.
-              this.countsChange.emit(
-                query.foundationSlug && !this.loadFailed() ? selectHealthMetricsEngagementNonMemberCounts(response.counts, this.chrome.selectedRange()) : null
-              );
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
               if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyScope(response, this.chrome.selectedRange()));
@@ -155,13 +153,10 @@ export class EngagementNonMemberParticipationComponent {
     );
   }
 
-  /** Re-reports the badge off the already-loaded response; a failed or unread scope stays `null`. */
-  private emitCounts(): void {
-    // A read in flight still holds the previous foundation's payload, so a pill change mid-load
-    // would republish counts the badge has already been told to drop.
+  /** Re-settles off the already-loaded response; a failed read or one still in flight has nothing to re-settle. */
+  private resettle(): void {
     if (this.loadFailed() || this.loading()) return;
 
-    this.countsChange.emit(selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange()));
     // Whether the period has any non-member moves with it, and so may the section's height.
     this.settled.emit(isEmptyScope(this.response(), this.chrome.selectedRange()));
   }

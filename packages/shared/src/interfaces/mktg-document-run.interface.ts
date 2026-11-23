@@ -277,3 +277,8 @@ export interface MktgDocumentRunCoverage {
 export interface MktgRetryDocumentRunRequest {
   project: string;
 }
+
+/** The Documents transport's dismiss body: closes a failed run as discarded, never touching a document or revision. */
+export interface MktgDismissDocumentRunRequest {
+  project: string;
+}

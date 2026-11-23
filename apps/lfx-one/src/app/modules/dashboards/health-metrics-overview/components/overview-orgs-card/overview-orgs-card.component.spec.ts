@@ -92,7 +92,7 @@ describe('OverviewOrgsCardComponent', () => {
     expect(text('overview-orgs-members-explore')).toBe('Explore Members');
     expect(text('overview-orgs-non-members-explore')).toBe('Explore Non-Member Participation');
 
-    expect(fixture.nativeElement.querySelector('[data-testid="overview-orgs-members-explore"]').getAttribute('href')).toContain('/members#list');
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-orgs-members-explore"]').getAttribute('href')).toMatch(/\/members(\?[^#]*)?$/);
     expect(fixture.nativeElement.querySelector('[data-testid="overview-orgs-non-members-explore"]').getAttribute('href')).toContain('/non-members#orgs');
   });
 
@@ -108,7 +108,7 @@ describe('OverviewOrgsCardComponent', () => {
 
   it('shows its empty state for a foundation with no row, and its error state when the read fails', async () => {
     await render({ ...ORGS, measured: false });
-    expect(text('overview-orgs-empty-title')).toBe('No organizations yet');
+    expect(text('overview-orgs-empty-title')).toBe('No companies yet');
 
     TestBed.resetTestingModule();
     await render(new Error('down'));

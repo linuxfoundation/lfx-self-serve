@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="training-courses">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[12px]" data-testid="training-courses">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -13,102 +13,103 @@
   } @else if (empty()) {
     <!-- The shell shows the section's empty state. -->
   } @else {
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="training-courses-controls">
-      <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-        <div class="w-full sm:w-64">
-          <label class="sr-only" for="training-courses-search">Search course</label>
-          <lfx-input-text
-            [form]="searchForm"
-            control="search"
-            inputId="training-courses-search"
-            placeholder="Search course…"
-            icon="fa-light fa-search"
-            size="small"
-            styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
-            dataTest="training-courses-search" />
-        </div>
-        <lfx-filter-pills
-          variant="track"
-          [options]="typeOptions"
-          [selectedFilter]="type()"
-          (filterChange)="onTypeChange($event)"
-          data-testid="training-courses-types" />
-      </div>
-      <span class="text-[13px] text-gray-500" data-testid="training-courses-count">
-        @if (loading()) {
-          &mdash;
-        } @else {
-          {{ countLabel() }}
-        }
-      </span>
-    </div>
+    <!-- Search only, filling the row; the Course type select sits in the card header. -->
+    <lfx-ui-search-input
+      class="w-full"
+      placeholder="Search course…"
+      ariaLabel="Search course"
+      [maxlength]="maxSearchLength"
+      [(value)]="searchText"
+      data-testid="training-courses-search" />
 
-    <lfx-table
-      styleClass="hm-table"
-      [rowHover]="false"
-      [value]="rowViews()"
-      [loading]="loading()"
-      [lazy]="true"
-      [lazyLoadOnInit]="false"
-      [paginator]="totalRecords() > size()"
-      [rows]="size()"
-      [first]="first()"
-      [totalRecords]="totalRecords()"
-      [showCurrentPageReport]="true"
-      [showFirstLastIcon]="false"
-      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-      (onPage)="onTablePage($event)"
-      data-testid="training-courses-table">
-      <ng-template #header>
-        <tr>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Course</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Type</span></th>
-          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Enrollments</span></th>
-          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Revenue</span></th>
-        </tr>
-      </ng-template>
+    @if (!loading() && totalRecords() === 0) {
+      <lfx-empty-state
+        variant="compact"
+        icon="fa-light fa-magnifying-glass"
+        title="No matching courses"
+        subtitle="No course matches this search or filter."
+        [resettable]="true"
+        (resetFilters)="onResetFilters()"
+        data-testid="training-courses-no-match" />
+    } @else {
+      <!-- The design's 620px minimum; a narrower card scrolls the table sideways. -->
+      <lfx-table
+        styleClass="hm-table"
+        [rowHover]="false"
+        [value]="rowViews()"
+        [loading]="loading()"
+        [paginator]="false"
+        [tableStyle]="{ 'min-width': '620px' }"
+        data-testid="training-courses-table">
+        <ng-template #header>
+          <tr>
+            <!-- Exact px: the design's Course minimum. -->
+            <th scope="col" class="min-w-[260px]" [attr.aria-sort]="sorting.headers().course.ariaSort">
+              <lfx-health-metrics-th
+                label="Course"
+                [sort]="sorting.headers().course.state"
+                (sorted)="sorting.toggle('course')"
+                data-testid="training-courses-sort-course" />
+            </th>
+            <!-- Exact %: the design's 0.7 / 0.6 / 0.6 shares of its 4.1fr row, Course taking the rest; exact px: its column minimums. -->
+            <th scope="col" class="w-[17%] min-w-[120px]" [attr.aria-sort]="sorting.headers().type.ariaSort">
+              <lfx-health-metrics-th
+                label="Type"
+                [sort]="sorting.headers().type.state"
+                (sorted)="sorting.toggle('type')"
+                data-testid="training-courses-sort-type" />
+            </th>
+            <th scope="col" class="w-[15%] min-w-[100px]" [attr.aria-sort]="sorting.headers().enrollments.ariaSort">
+              <lfx-health-metrics-th
+                label="Enrollments"
+                [sort]="sorting.headers().enrollments.state"
+                (sorted)="sorting.toggle('enrollments')"
+                data-testid="training-courses-sort-enrollments" />
+            </th>
+            <th scope="col" class="w-[15%] min-w-[100px]" [attr.aria-sort]="sorting.headers().revenue.ariaSort">
+              <lfx-health-metrics-th
+                label="Revenue"
+                [sort]="sorting.headers().revenue.state"
+                (sorted)="sorting.toggle('revenue')"
+                data-testid="training-courses-sort-revenue" />
+            </th>
+          </tr>
+        </ng-template>
 
-      <ng-template #body let-view>
-        <tr [attr.data-testid]="'training-courses-row-' + view.courseKey">
-          <td>
-            <span class="text-[13px] font-medium text-gray-900" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-name'">{{
-              view.courseName
-            }}</span>
-          </td>
-          <td>
-            <span
-              class="inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium"
-              [class]="view.typeClass"
-              [attr.data-testid]="'training-courses-row-' + view.courseKey + '-type'"
-              >{{ view.typeLabel }}</span
-            >
-          </td>
-          <td class="text-right">
-            <span class="text-[13px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-enrollments'">{{
-              view.enrollmentsLabel
-            }}</span>
-          </td>
-          <td class="text-right">
-            <span
-              class="text-[13px] tabular-nums"
-              [class.text-gray-900]="view.revenueMeasured"
-              [class.text-gray-500]="!view.revenueMeasured"
-              [attr.data-testid]="'training-courses-row-' + view.courseKey + '-revenue'"
-              >{{ view.revenueLabel }}</span
-            >
-          </td>
-        </tr>
-      </ng-template>
+        <ng-template #body let-view>
+          <tr [attr.data-testid]="'training-courses-row-' + view.courseKey">
+            <td>
+              <lfx-health-metrics-cell [text]="view.courseName" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-name'" />
+            </td>
+            <td>
+              <!-- Exact px: the design's 24px badge, 12px/16px type, 10px padding, 12px icon and 6px gap. -->
+              <span
+                class="inline-flex h-[24px] items-center gap-[6px] whitespace-nowrap rounded-full px-[10px] text-[12px] font-medium leading-[16px]"
+                [class]="view.typeClass"
+                [attr.data-testid]="'training-courses-row-' + view.courseKey + '-type'">
+                <i class="text-[12px]" [class]="view.typeIcon" aria-hidden="true"></i>
+                {{ view.typeLabel }}
+              </span>
+            </td>
+            <td>
+              <lfx-health-metrics-cell [text]="view.enrollmentsLabel" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-enrollments'" />
+            </td>
+            <td>
+              <!-- "Free" reads muted; a figure and "—" take the cell's own ink, so the shared cell can still mute a dash. -->
+              @if (view.revenueFree) {
+                <lfx-health-metrics-cell
+                  [text]="view.revenueLabel"
+                  textClass="text-gray-500"
+                  [attr.data-testid]="'training-courses-row-' + view.courseKey + '-revenue'" />
+              } @else {
+                <lfx-health-metrics-cell [text]="view.revenueLabel" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-revenue'" />
+              }
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
 
-      <ng-template #emptymessage>
-        <tr>
-          <td colspan="4" class="py-6 text-center text-[13px] text-gray-500" data-testid="training-courses-no-match">
-            @if (!loading()) {
-              {{ noMatchLabel() }}
-            }
-          </td>
-        </tr>
-      </ng-template>
-    </lfx-table>
+      <lfx-ui-pagination [total]="totalRecords()" [pageSize]="size" [(page)]="page" />
+    }
   }
 </div>

@@ -132,7 +132,7 @@ export interface MeetingMaterialLink {
   name: string;
   /** Validated http(s) URL, or null when the stored link is unusable */
   url: string | null;
-  /** Host shown under the title, without `www.` */
+  /** Host shown under the title, without `www.`; empty when the URL is the title */
   host: string;
 }
 

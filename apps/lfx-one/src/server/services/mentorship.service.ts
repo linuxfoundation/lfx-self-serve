@@ -42,6 +42,7 @@ import {
   resolveMentorshipGithubProfileLink,
   resolveMentorshipPrimaryEmail,
 } from '../helpers/mentorship-lfx-profile.helper';
+import { readMentorshipProgramSubmitter } from '../helpers/mentorship-program-submitter.helper';
 
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
@@ -202,20 +203,25 @@ export class MentorshipService {
    * The catalog serves only pending and published programs and answers 404 for the rest, so on a 404
    * the plain program read (same `viewer` guard) tells a decided program from a missing one. A
    * rejected or hidden program comes back with its status and no details, which is all the page
-   * shows once a program is no longer pending; a missing one still ends in 404.
+   * shows once a program is no longer pending; a missing one still ends in 404. The submitter is read alongside, and
+   * shown in both cases; when that read fails the page shows no submitter.
    */
   public async getProgramReview(req: Request, programId: string): Promise<MentorshipProgramReview> {
     const path = `/mentorship/v1/programs/${encodeURIComponent(programId)}`;
     logger.debug(req, 'mentorship_get_program_review', 'Fetching program for review', { programId });
+    // Never rejects: a failed read leaves the page without its submitter.
+    const submitterRead = readMentorshipProgramSubmitter(this.microserviceProxy, req, programId, 'mentorship_get_program_review');
+    let review: MentorshipProgramReview;
     try {
       const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgramCatalog>(req, 'LFX_V2_SERVICE', `${path}/catalog`, 'GET');
-      return toProgramReview(program);
+      review = toProgramReview(program);
     } catch (error) {
       if (!(error instanceof MicroserviceError && error.statusCode === 404)) throw error;
       logger.debug(req, 'mentorship_get_program_review', 'Program not in the catalog, reading its status', { programId });
       const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(req, 'LFX_V2_SERVICE', path, 'GET');
-      return toDecidedProgramReview(program);
+      review = toDecidedProgramReview(program);
     }
+    return { ...review, submitter: await submitterRead };
   }
 
   /**
@@ -287,7 +293,7 @@ export function isMentorshipProgramReviewDecision(value: unknown): value is Ment
 
 /**
  * Only what the review page shows; terms, mentors and the rest of the catalog item are not
- * forwarded. Links that are not http(s) URLs and a non-numeric CII id become `null`, so the page
+ * forwarded. The submitter is read separately and set by the caller. Links that are not http(s) URLs and a non-numeric CII id become `null`, so the page
  * never binds an unsafe or broken value.
  */
 function toProgramReview(program: MentorshipUpstreamProgramCatalog): MentorshipProgramReview {
@@ -303,11 +309,13 @@ function toProgramReview(program: MentorshipUpstreamProgramCatalog): MentorshipP
     codeOfConductUrl: toHttpUrl(program.code_of_conduct),
     ciiProjectId: isMentorshipCiiProjectId(ciiProjectId) ? ciiProjectId : null,
     skills: (program.skills ?? []).map((skill) => skill.trim()).filter((skill) => skill.length > 0),
+    createdOn: program.created_on ?? null,
+    submitter: null,
     hasDetails: true,
   };
 }
 
-/** A program the catalog does not serve (rejected or hidden): its status, without details. */
+/** A program the catalog does not serve (rejected or hidden): its status and submission date, without details. */
 function toDecidedProgramReview(program: MentorshipUpstreamProgram): MentorshipProgramReview {
   return {
     id: program.id,
@@ -320,6 +328,8 @@ function toDecidedProgramReview(program: MentorshipUpstreamProgram): MentorshipP
     codeOfConductUrl: null,
     ciiProjectId: null,
     skills: [],
+    createdOn: program.created_on ?? null,
+    submitter: null,
     hasDetails: false,
   };
 }

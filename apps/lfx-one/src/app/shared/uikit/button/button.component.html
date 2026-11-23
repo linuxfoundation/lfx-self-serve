@@ -16,8 +16,8 @@
 @if (href() !== null) {
   <a
     [attr.href]="disabled() || loading() ? null : href()"
-    target="_blank"
-    rel="noopener noreferrer"
+    [attr.target]="target()"
+    [attr.rel]="target() === '_blank' ? 'noopener noreferrer' : null"
     [class]="classes()"
     [attr.aria-label]="ariaLabel() || null"
     [attr.role]="disabled() || loading() ? 'link' : null"
@@ -115,6 +115,7 @@
     [attr.aria-controls]="ariaControls() || null"
     [attr.aria-pressed]="ariaPressed()"
     [attr.aria-describedby]="ariaDescribedBy() || null"
+    [attr.aria-current]="ariaCurrent()"
     [attr.aria-busy]="loading() || null"
     [lfxUiTooltip]="tooltip()"
     [lfxUiTooltipTitle]="tooltipTitle()"

@@ -112,6 +112,11 @@ const END_BUTTON_TEMPLATE = `
   <ng-template #panel><button id="inside" type="button">Inside</button></ng-template>
 `;
 
+const CENTER_BUTTON_TEMPLATE = `
+  <lfx-ui-button [popover]="panel" popoverAlign="center">Filters</lfx-ui-button>
+  <ng-template #panel><button id="inside" type="button">Inside</button></ng-template>
+`;
+
 const MODAL_TEMPLATE = `
   <button id="opener" type="button" (click)="openModal(tpl)">Open</button>
   <ng-template #tpl>
@@ -1028,6 +1033,10 @@ describe('UiPopoverDirective', () => {
 
     it('tries the end edge first with popoverAlign="end"', async () => {
       expect(await firstPosition(END_BUTTON_TEMPLATE)).toMatchObject({ originX: 'end', overlayX: 'end', originY: 'bottom' });
+    });
+
+    it('centers the panel first with popoverAlign="center"', async () => {
+      expect(await firstPosition(CENTER_BUTTON_TEMPLATE)).toMatchObject({ originX: 'center', overlayX: 'center', originY: 'bottom' });
     });
   });
 });

@@ -31,6 +31,7 @@ import {
   SendVoteBallotsResponse,
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
+  UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
   Vote,
   VoteLinkBallot,
@@ -666,6 +667,37 @@ export class VoteService {
     }
   }
 
+  /**
+   * Changes the caller's own submitted ballot via PUT /vote_responses/{uid} using the user's bearer token (#4723).
+   * @description The response uid comes only from the caller's identity-matched row (`getMyVoteResponse`), never from
+   * the client, so a caller cannot target another voter's ballot. Upstream 409 (the vote makes ballots final) and 400
+   * (the vote ended) propagate unchanged.
+   */
+  public async updateMyVoteResponse(req: Request, voteUid: string, payload: UpdateMyVoteResponseRequest): Promise<void> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) {
+      throw new ResourceNotFoundError('Vote ballot', voteUid, {
+        operation: 'update_my_vote_response',
+        service: 'vote_service',
+      });
+    }
+
+    const path = `/vote_responses/${encodeURIComponent(row.uid)}`;
+    logger.debug(req, 'update_my_vote_response', 'Updating own vote response', {
+      vote_uid: voteUid,
+      vote_response_uid: row.uid,
+      abstain: payload.abstain,
+      answer_count: payload.user_vote_content?.length ?? 0,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', path, 'PUT', undefined, payload);
+
+    logger.debug(req, 'update_my_vote_response', 'Ballot update accepted by upstream voting service', {
+      vote_uid: voteUid,
+      vote_response_uid: row.uid,
+    });
+  }
+
   // ============================================
   // Reminders (#3769)
   // ============================================
@@ -1272,7 +1304,37 @@ export class VoteService {
       })),
       comment_responses: (detail?.comment_responses ?? []).map((response) => ({ prompt_id: response.prompt_id, comment_text: response.comment_text })),
       vote_creation_time: detail?.vote_creation_time || undefined,
+      // ITX's own answer (#4723); omitted when ITX omits it so the client can fall back to the vote's setting.
+      ...(typeof detail?.can_change_vote === 'boolean' ? { can_change_vote: detail.can_change_vote } : {}),
     };
+  }
+
+  /**
+   * Whether the caller's first submission would end the vote (#4726), read at submit time.
+   * @description Only a current, pending row is checked upstream; anything else answers false without a read. The
+   * response uid comes from the identity-matched row, never the client. `would_end_vote` is point-in-time and advisory,
+   * and a voting service that predates it omits the field, which reads as false.
+   */
+  public async getMyWouldEndVote(req: Request, voteUid: string): Promise<boolean> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.AWAITING_RESPONSE) return false;
+
+    const detail = await this.microserviceProxy.proxyRequest<VoteResponseDetail>(
+      req,
+      'LFX_V2_SERVICE',
+      `/vote_responses/${encodeURIComponent(row.uid)}`,
+      'GET'
+    );
+
+    if (detail?.vote_uid && detail.vote_uid !== voteUid) {
+      logger.warning(req, 'get_my_would_end_vote', 'Vote response belongs to a different vote, answering false', {
+        vote_uid: voteUid,
+        vote_response_uid: row.uid,
+      });
+      return false;
+    }
+
+    return detail?.would_end_vote === true;
   }
 
   // ============================================

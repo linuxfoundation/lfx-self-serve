@@ -104,7 +104,7 @@ export class MeetingsHomeSummaryDialogComponent {
   /** Call it straight from the click: Safari only allows the copy during the user's gesture. */
   protected copy(): void {
     if (this.clipboard.copy(this.content())) {
-      this.toast.show({ variant: 'success', message: 'Meeting summary copied to clipboard' });
+      this.toast.show({ variant: 'dark', message: 'Meeting summary copied to clipboard' });
     } else {
       this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Failed to copy summary' });
     }

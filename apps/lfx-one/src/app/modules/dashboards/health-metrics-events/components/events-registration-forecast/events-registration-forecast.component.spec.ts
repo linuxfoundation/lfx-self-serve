@@ -1,11 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { ChartComponent } from '@components/chart/chart.component';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -16,22 +14,13 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { EventsRegistrationForecastComponent } from './events-registration-forecast.component';
 
-import type { ChartData } from 'chart.js';
 import type {
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurvePoint,
   HealthMetricsEventsForecastEvent,
+  HealthMetricsEventsForecastPicker,
 } from '@lfx-one/shared/interfaces';
-
-/** Chart.js needs a canvas jsdom does not have; the stub only records the datasets it is handed. */
-@Component({ selector: 'lfx-chart', template: '<div data-testid="chart-stub"></div>' })
-class ChartStubComponent {
-  public readonly type = input<string>('');
-  public readonly data = input<ChartData<'line'> | null>(null);
-  public readonly options = input<unknown>({});
-  public readonly height = input<string>('');
-}
 
 function event(overrides: Partial<HealthMetricsEventsForecastEvent> = {}): HealthMetricsEventsForecastEvent {
   return {
@@ -46,6 +35,8 @@ function event(overrides: Partial<HealthMetricsEventsForecastEvent> = {}): Healt
     goal: 450,
     daysLeft: 40,
     isNewEvent: false,
+    city: 'Springfield',
+    isVirtual: false,
     ...overrides,
   };
 }
@@ -72,6 +63,7 @@ describe('EventsRegistrationForecastComponent', () => {
   let getEventsRegistrationForecastCurve: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let notes: string[];
+  let pickers: HealthMetricsEventsForecastPicker[];
   let lifecycle: string[];
   let verdicts: (boolean | null)[];
 
@@ -93,12 +85,11 @@ describe('EventsRegistrationForecastComponent', () => {
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
       ],
-    })
-      .overrideComponent(EventsRegistrationForecastComponent, { remove: { imports: [ChartComponent] }, add: { imports: [ChartStubComponent] } })
-      .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(EventsRegistrationForecastComponent);
     fixture.componentInstance.countsChange.subscribe((note) => notes.push(note));
+    fixture.componentInstance.pickerChange.subscribe((picker) => pickers.push(picker));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -117,160 +108,84 @@ describe('EventsRegistrationForecastComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
-  function datasetLabels(): string[] {
-    const chart = fixture.debugElement.query(By.directive(ChartStubComponent)).componentInstance as ChartStubComponent;
-    return (chart.data()?.datasets ?? []).map((dataset) => dataset.label ?? '');
+  function text(testId: string): string {
+    return query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
   }
 
-  function datasetData(label: string): unknown[] {
-    const chart = fixture.debugElement.query(By.directive(ChartStubComponent)).componentInstance as ChartStubComponent;
-    return chart.data()?.datasets.find((dataset) => dataset.label === label)?.data ?? [];
+  function rowIds(): string[] {
+    return [...fixture.nativeElement.querySelectorAll('[data-testid^="events-registration-forecast-row-"]')].map(
+      (row) => (row as HTMLElement).getAttribute('data-testid') ?? ''
+    );
   }
 
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     notes = [];
+    pickers = [];
     lifecycle = [];
     verdicts = [];
   });
 
-  it('reads the foundation, then the soonest event curve, and renders its headline and stats', async () => {
+  it('reads the foundation, then the soonest event curve, and lays out its metrics row', async () => {
     await render();
 
     expect(getEventsRegistrationForecast).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(getEventsRegistrationForecastCurve).toHaveBeenCalledWith({ foundationSlug: 'acme', eventId: 'evt-1' });
-    expect(query('events-registration-forecast-value')?.textContent?.trim()).toBe('500');
-    expect(query('events-registration-forecast-range')?.textContent).toContain('400–600');
-    expect(query('events-registration-forecast-now')?.textContent?.trim()).toBe('250');
-    expect(query('events-registration-forecast-last-year')?.textContent?.trim()).toBe('200');
-    expect(query('events-registration-forecast-goal')?.textContent?.trim()).toBe('450');
-    expect(query('events-registration-forecast-days-left')?.textContent?.trim()).toBe('40');
+    const metrics = text('events-registration-forecast-metrics');
+    expect(metrics).toContain('Current');
+    expect(metrics).toContain('Same point last year: 200');
+    expect(metrics).toContain('High 600 · Low 400');
+    expect(metrics).toContain('Days left');
   });
 
-  it('lays the forecast out flat, with its range inline and the stats as columns', async () => {
+  it('writes the verdict as a tagged note', async () => {
+    await render({ events: [event({ goal: 700 })] });
+
+    expect(text('events-registration-forecast-verdict')).toContain('Needs action:');
+    expect(text('events-registration-forecast-verdict')).toContain('Projected to finish about 200 short of the 700 goal. There are 40 days left');
+  });
+
+  it("draws the Overview dialog's registration trend without its headline figures", async () => {
     await render();
 
-    expect(query('events-registration-forecast-card')?.classList).not.toContain('border');
-    // Range sits on the value's line; the caption comes after it.
-    expect(query('events-registration-forecast-range')?.parentElement).toBe(query('events-registration-forecast-value')?.parentElement);
-    expect(query('events-registration-forecast-headline')?.lastElementChild?.textContent?.trim()).toBe('Forecast final registrations');
-    expect(query('events-registration-forecast-stats')?.classList).toContain('flex-wrap');
+    expect(query('events-registration-forecast-trend')).not.toBeNull();
+    expect(query('overview-trend-kpis')).toBeNull();
+    expect(query('overview-trend-chart')).not.toBeNull();
+    expect(query('overview-trend-grid')?.className).toContain('grid-rows-[280px_auto_auto]');
   });
 
-  it('reports the miss count for the sub-nav note and settles once the list lands', async () => {
-    await render({ events: [event(), event({ eventId: 'evt-2', goal: 700 })] });
-
-    expect(notes).toEqual(['', '1 will miss goal']);
-    expect(lifecycle).toEqual(['reading', 'settled']);
-    expect(verdicts).toEqual([false]);
-  });
-
-  it('shows an error rather than an empty list when the read fails, and still settles', async () => {
+  it('keeps the metrics when only the curve read fails, and says so in the chart with a step the card offers', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    await render(new Error('boom'));
+    await render({ events: [event()] }, new Error('boom'));
 
-    expect(query('events-registration-forecast-error')).not.toBeNull();
-    expect(notes).toEqual(['', '']);
-    expect(lifecycle).toEqual(['reading', 'settled']);
-    expect(verdicts).toEqual([false]);
+    expect(text('events-registration-forecast-metrics')).toContain('500');
+    expect(text('overview-trend-error')).toBe('The registration trend could not be loaded. Refresh the page to try again.');
   });
 
-  it('settles empty, with no body, when the foundation has no upcoming events', async () => {
-    await render({ events: [] });
+  it('reports the header select its events, soonest first, and the one shown', async () => {
+    await render({ events: [event(), event({ eventId: 'evt-2', eventName: 'Member Summit' })] });
 
-    expect(verdicts).toEqual([true]);
-    expect(query('events-registration-forecast-card')).toBeNull();
-    expect(query('events-registration-forecast-pace')).toBeNull();
-  });
-
-  it('keeps the pace table when upcoming events exist but none has a forecast', async () => {
-    await render({ events: [event({ forecastAvg: null })] });
-
-    expect(verdicts).toEqual([false]);
-    expect(query('events-registration-forecast-card')).toBeNull();
-    expect(query('events-registration-forecast-no-forecast')).not.toBeNull();
-    expect(query('events-registration-forecast-row-evt-1')).not.toBeNull();
-    expect(getEventsRegistrationForecastCurve).not.toHaveBeenCalled();
-  });
-
-  it('marks a completed year as a closed period, reading nothing and noting no misses', async () => {
-    await render({ events: [event({ goal: 700 })] });
-    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
-    await settle();
-
-    expect(query('events-registration-forecast-closed')?.textContent).toContain('is a closed period');
-    expect(query('events-registration-forecast-card')).toBeNull();
-    expect(getEventsRegistrationForecast).toHaveBeenCalledTimes(1);
-    expect(notes.at(-1)).toBe('');
-    expect(lifecycle.at(-1)).toBe('settled');
-    // A closed period keeps its own note, so it gives the shell no verdict.
-    expect(verdicts.at(-1)).toBeNull();
-  });
-
-  it('points a closed period at Past events with a hint, not a button, and shows no footnote', async () => {
-    await render({ events: [event()] });
-    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
-    await settle();
-
-    const closed = query('events-registration-forecast-closed');
-    expect(query('events-registration-forecast-closed-hint')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'See how events actually finished in the Past events section below.'
-    );
-    expect(closed?.querySelector('button')).toBeNull();
-    expect(query('events-registration-forecast-footnote')).toBeNull();
-  });
-
-  it('shows the event name on each pill and the selected event date at the row end, keeping the date in the full label', async () => {
-    await render({ events: [event(), event({ eventId: 'evt-2', eventName: 'An Event Name Well Past The Pill Limit', eventStartDate: '2026-12-01' })] });
-
-    const [first, second] = fixture.componentInstance['eventOptions']();
-    expect(first.label).toBe('Open Source Summit');
-    expect(first.fullLabel).toMatch(/^Open Source Summit · \S/);
-    expect(second.label).toBe('An Event Name Well Past The Pill…');
-    expect(second.fullLabel).toMatch(/^An Event Name Well Past The Pill Limit · \S/);
-    expect(query('events-registration-forecast-event-date')?.textContent?.trim()).toBe(first.fullLabel?.split(' · ')[1]);
-  });
-
-  it('marks only the events with a forecast as forecast available', async () => {
-    await render({ events: [event(), event({ eventId: 'evt-2', forecastAvg: null })] });
-
-    expect(query('events-registration-forecast-available-evt-1')?.textContent?.trim()).toBe('forecast available');
-    expect(query('events-registration-forecast-available-evt-2')).toBeNull();
-  });
-
-  it('closes the populated section with the forecast footnote', async () => {
-    await render({ events: [event()] });
-
-    expect(query('events-registration-forecast-footnote')?.textContent).toContain('The forecast is a projection from historical pacing curves');
-  });
-
-  it.each([
-    [{ goal: 450 }, 'ok', 'Healthy', 'fa-circle-check', 'border-l-emerald-500'],
-    [{ goal: 150 }, 'watch', 'Needs attention', 'fa-triangle-exclamation', 'border-l-amber-500'],
-    [{ goal: 620 }, 'act', 'Needs action', 'fa-circle-exclamation', 'border-l-red-500'],
-    [{ goal: null }, 'none', 'Summary', 'fa-circle-info', 'border-l-gray-400'],
-  ])('tags the %o verdict banner with the %s tone', async (overrides, tone, label, icon, accent) => {
-    await render({ events: [event(overrides)] });
-    const banner = query('events-registration-forecast-verdict');
-    const tag = query('events-registration-forecast-verdict-tag');
-
-    expect(banner?.getAttribute('data-tone')).toBe(tone);
-    expect(banner?.classList).toContain('border-l-2');
-    expect(banner?.classList).toContain(accent);
-    expect(tag?.textContent?.trim()).toBe(label);
-    expect(tag?.querySelector('i')?.classList).toContain(icon);
+    expect(pickers.at(-1)).toEqual({
+      options: [
+        { eventId: 'evt-1', label: 'Open Source Summit' },
+        { eventId: 'evt-2', label: 'Member Summit' },
+      ],
+      eventId: 'evt-1',
+    });
   });
 
   it('opens the event a deep link names, and writes a picked event back to the URL', async () => {
     await render({ events: [event(), event({ eventId: 'evt-2', eventName: 'Member Summit' })] }, curve(), { event: 'evt-2' });
     expect(getEventsRegistrationForecastCurve).toHaveBeenLastCalledWith({ foundationSlug: 'acme', eventId: 'evt-2' });
+    expect(pickers.at(-1)?.eventId).toBe('evt-2');
 
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-    fixture.componentInstance['onEventChange']('evt-1');
+    fixture.componentRef.setInput('pickedEventId', 'evt-1');
     await settle();
 
     expect(getEventsRegistrationForecastCurve).toHaveBeenLastCalledWith({ foundationSlug: 'acme', eventId: 'evt-1' });
+    expect(pickers.at(-1)?.eventId).toBe('evt-1');
     expect(navigate).toHaveBeenCalledWith(
       [],
       expect.objectContaining({ queryParams: { event: 'evt-1' }, queryParamsHandling: 'merge', preserveFragment: true })
@@ -283,120 +198,116 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(getEventsRegistrationForecastCurve).toHaveBeenCalledWith({ foundationSlug: 'acme', eventId: 'evt-1' });
   });
 
-  it.each([
-    [{ goal: 450 }, 'on-track', 'clear the goal by about 50'],
-    [{ forecastAvg: 450.4, goal: 450 }, 'on-track', 'On track to meet the goal.'],
-    [{ goal: 620 }, 'short', 'about 120 short of the 620 goal. There are 40 days left'],
-    [{ forecastAvg: 449.6, goal: 450 }, 'short', 'just short of the 450 goal. There are 40 days left'],
-    [{ goal: 150 }, 'stale', '3.3× the goal of 150'],
-    [{ goal: 620, daysLeft: 1 }, 'short', 'There is 1 day left to close the gap'],
-    [{ goal: 620, daysLeft: 0 }, 'short', 'Today is the last day to close the gap'],
-    [{ goal: 6000 }, 'goal-suspect', 'a tenth or less of the goal of 6,000'],
-    [{ goal: 5000 }, 'goal-suspect', 'a tenth or less of the goal of 5,000'],
-    [{ goal: 50 }, 'goal-suspect', 'ten or more times the goal of 50'],
-    [{ goal: 40 }, 'goal-suspect', 'ten or more times the goal of 40'],
-    [{ goal: null }, 'no-goal', 'No registration goal is set'],
-    [{ goal: 0 }, 'no-goal', 'No registration goal is set'],
-    [{ goal: -5 }, 'no-goal', 'No registration goal is set'],
-  ])('writes the %o verdict as %s', async (overrides, kind, copy) => {
-    await render({ events: [event(overrides)] });
-    const verdict = query('events-registration-forecast-verdict');
+  it('keeps an event with no forecast in the select, with a dashed Predicted and a Summary note', async () => {
+    await render({ events: [event({ forecastAvg: null, forecastHigh: null, forecastLow: null })] });
 
-    expect(verdict?.getAttribute('data-kind')).toBe(kind);
-    expect(verdict?.textContent?.replace(/\s+/g, ' ')).toContain(copy);
+    expect(pickers.at(-1)?.options).toHaveLength(1);
+    expect(text('events-registration-forecast-metrics')).not.toContain('High');
+    expect(text('events-registration-forecast-verdict')).toContain('Summary:');
+    expect(text('events-registration-forecast-verdict')).toContain('There is no forecast for this event yet.');
+    // The chart shows its empty message in place of a curve with nothing projected, and reads none.
+    expect(query('events-registration-forecast-trend')).toBeNull();
+    expect(text('events-registration-forecast-trend-empty')).toBe('There is no registration curve for this event yet.');
+    expect(getEventsRegistrationForecastCurve).not.toHaveBeenCalled();
   });
 
-  it.each([
-    [40, '40 days left'],
-    [1, '1 day left'],
-    [0, 'last day'],
-  ])('captions %i days left as "%s" and keeps the Days left tile numeric', async (daysLeft, caption) => {
-    await render({ events: [event({ daysLeft })] });
+  it('reports the miss count for the sub-nav note and settles once the list lands', async () => {
+    await render({ events: [event(), event({ eventId: 'evt-2', goal: 700 })] });
 
-    expect(query('events-registration-forecast-today')?.textContent?.replace(/\s+/g, ' ')).toContain(`today · ${caption}`);
-    expect(query('events-registration-forecast-days-left')?.textContent?.trim()).toBe(String(daysLeft));
+    expect(notes).toEqual(['', '1 will miss goal']);
+    expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
-  it('leaves the days-left sentence out of a short verdict when days left is unmeasured', async () => {
-    await render({ events: [event({ goal: 620, daysLeft: null })] });
-
-    expect(query('events-registration-forecast-verdict')?.textContent).not.toContain('days left');
-    expect(query('events-registration-forecast-today')?.textContent).not.toContain('days left');
-  });
-
-  it('offers a format toggle only when both formats exist, opening on the one with more registrations', async () => {
-    const twoFormats = curve({
-      formats: [
-        { format: 'Virtual', points: [point(-40, 30)] },
-        { format: 'In Person', points: [point(-40, 220)] },
-      ],
-    });
-    await render({ events: [event()] }, twoFormats);
-
-    expect(query('events-registration-forecast-format-toggle')).not.toBeNull();
-    expect(fixture.componentInstance['format']()).toBe('In Person');
-
-    fixture.componentInstance['onFormatChange']('Virtual');
-    await settle();
-    expect(fixture.componentInstance['series']()?.format).toBe('Virtual');
-  });
-
-  it('hides the format toggle for a single-format event', async () => {
-    await render();
-
-    expect(query('events-registration-forecast-format-toggle')).toBeNull();
-  });
-
-  it('draws the goal and last year, and leaves out a suspect goal and a first edition prior curve', async () => {
-    await render();
-    expect(datasetLabels()).toEqual(['Confidence range', 'Forecast low', 'This year', 'Last year', 'Forecast', 'Goal', 'Today']);
-    // Today marks the last measured day, whatever the days-left count says.
-    expect(datasetData('Today')).toEqual([null, 250, null]);
-
-    TestBed.resetTestingModule();
-    await render({ events: [event({ goal: 5000, isNewEvent: true })] });
-    expect(datasetLabels()).toEqual(['Confidence range', 'Forecast low', 'This year', 'Forecast', 'Today']);
-    expect(query('events-registration-forecast-today')?.textContent).toContain('first edition');
-    expect(query('events-registration-forecast-last-year')?.textContent?.trim()).toBe('first edition');
-  });
-
-  it('keeps the card when only the curve read fails', async () => {
+  it('shows an error rather than an empty list when the read fails, offering no events, and still settles', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    await render({ events: [event()] }, new Error('boom'));
+    await render(new Error('boom'));
 
-    expect(query('events-registration-forecast-value')?.textContent?.trim()).toBe('500');
-    expect(query('events-registration-forecast-chart-empty')?.textContent).toContain('could not load the registration curve');
+    expect(query('events-registration-forecast-error')).not.toBeNull();
+    expect(pickers.at(-1)).toEqual({ options: [], eventId: null });
+    expect(notes).toEqual(['', '']);
+    expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
-  it('lists every upcoming event worst pacing first, with its status chip', async () => {
+  it('settles empty, with no body, when the foundation has no upcoming events', async () => {
+    await render({ events: [] });
+
+    expect(verdicts).toEqual([true]);
+    expect(query('events-registration-forecast-metrics')).toBeNull();
+    expect(query('events-registration-forecast-table')).toBeNull();
+  });
+
+  it('shows only the closed-period empty state for a completed year, reading nothing and offering no events', async () => {
+    await render({ events: [event({ goal: 700 })] });
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    await settle();
+
+    expect(text('events-registration-forecast-closed')).toContain('is a closed period');
+    expect(text('events-registration-forecast-closed')).not.toContain('Past events');
+    expect(query('events-registration-forecast-metrics')).toBeNull();
+    expect(pickers.at(-1)).toEqual({ options: [], eventId: null });
+    expect(getEventsRegistrationForecast).toHaveBeenCalledTimes(1);
+    expect(notes.at(-1)).toBe('');
+    expect(lifecycle.at(-1)).toBe('settled');
+    // A closed period keeps its own note, so it gives the shell no verdict.
+    expect(verdicts.at(-1)).toBeNull();
+  });
+
+  it('lists every upcoming event worst pace first under its heading, each with its place and date', async () => {
     await render({
       events: [
         event({ eventId: 'ahead', registrationsNow: 400 }),
         event({ eventId: 'behind', registrationsNow: 50, goal: 700 }),
-        event({ eventId: 'none', goal: null }),
+        event({ eventId: 'none', goal: null, city: null, isVirtual: true }),
       ],
     });
-    const rows = [...fixture.nativeElement.querySelectorAll('[data-testid^="events-registration-forecast-row-"]')] as HTMLElement[];
 
-    expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
-      'events-registration-forecast-row-behind',
-      'events-registration-forecast-row-ahead',
-      'events-registration-forecast-row-none',
-    ]);
-    expect(query('events-registration-forecast-status-behind')?.textContent?.trim()).toBe('Action required');
-    expect(query('events-registration-forecast-status-none')?.textContent?.trim()).toBe('No goal');
-    expect(rows[1].textContent).toContain('400 / 450');
+    expect(text('events-registration-forecast-upcoming-heading')).toBe('All upcoming events');
+    expect(rowIds()).toEqual(['events-registration-forecast-row-behind', 'events-registration-forecast-row-ahead', 'events-registration-forecast-row-none']);
+    expect(text('events-registration-forecast-row-ahead')).toContain('Springfield · Nov 4, 2026');
+    expect(text('events-registration-forecast-row-none')).toContain('Virtual · Nov 4, 2026');
   });
 
-  it('shows each goal cell as the bold count with a grey "/ goal", or "no goal set", and no bar', async () => {
-    await render({ events: [event({ eventId: 'set', registrationsNow: 400 }), event({ eventId: 'none', registrationsNow: 120, goal: null })] });
-    const text = (testId: string): string => query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+  it('draws the goal bar coloured by the forecast, and "No goal set" with no bar for an event without a goal', async () => {
+    await render({ events: [event({ eventId: 'behind', registrationsNow: 50, goal: 700 }), event({ eventId: 'none', registrationsNow: 120, goal: null })] });
 
-    expect(text('events-registration-forecast-goal-set')).toBe('400 / 450');
-    expect(query('events-registration-forecast-goal-set')?.querySelector('b')?.textContent).toBe('400');
-    expect(query('events-registration-forecast-goal-none')?.querySelector('b')?.textContent).toBe('120');
-    expect(text('events-registration-forecast-goal-none')).toContain('no goal set');
-    expect(text('events-registration-forecast-goal-none')).not.toContain('/');
-    expect(query('events-registration-forecast-row-set')?.querySelector('[style*="width"]')).toBeNull();
+    expect(text('events-registration-forecast-goal-behind')).toContain('Goal: 700');
+    expect(query('events-registration-forecast-goal-behind')?.querySelector('[data-testid="health-metrics-progress-fill"]')?.className).toContain('bg-red-400');
+    expect(text('events-registration-forecast-pace-behind')).toBe('Needs action');
+    expect(query('events-registration-forecast-pace-behind')?.className).toContain('sr-only');
+    expect(text('events-registration-forecast-goal-none')).toContain('No goal set');
+    expect(query('events-registration-forecast-pace-none')).toBeNull();
+    expect(query('events-registration-forecast-goal-none')?.querySelector('[data-testid="health-metrics-progress-fill"]')).toBeNull();
+  });
+
+  it('opens on the worst pace with the Registrations arrow, and sorts the whole list from page 1 on a picked column', async () => {
+    const events = Array.from({ length: 12 }, (_, index) =>
+      event({ eventId: `evt-${index}`, eventName: `Event ${String(index).padStart(2, '0')}`, registrationsNow: index * 10 })
+    );
+    await render({ events });
+    const header = (key: string): HTMLElement => query(`events-registration-forecast-sort-${key}`) as HTMLElement;
+
+    expect(header('registrations').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+    fixture.componentInstance['page'].set(1);
+    await settle();
+
+    (header('event').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    (header('event').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(fixture.componentInstance['page']()).toBe(0);
+    expect(header('event').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    expect(rowIds()[0]).toContain('evt-11');
+  });
+
+  it('pages the table at 10 events', async () => {
+    const events = Array.from({ length: 12 }, (_, index) => event({ eventId: `evt-${index}`, registrationsNow: index * 10 }));
+    await render({ events });
+
+    expect(rowIds()).toHaveLength(10);
+    fixture.componentInstance['page'].set(1);
+    await settle();
+    expect(rowIds()).toHaveLength(2);
   });
 });

@@ -6,6 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import type { Account, OrgLensOrgScope } from '@lfx-one/shared/interfaces';
+import { orgRollUpAccount } from '@lfx-one/shared/utils';
 import { firstValueFrom } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -93,6 +94,17 @@ describe('OrgLensOrgScopeService', () => {
     await flush();
     http.expectNone('/api/orgs/org-1/lens/org-scope');
     expect(service.current()).toEqual(scope('org-1'));
+  });
+
+  it('requests nothing for a family roll-up, and clears the previous account', async () => {
+    selectedAccount.set(account('org-1'));
+    await flush();
+    http.expectOne('/api/orgs/org-1/lens/org-scope').flush(scope('org-1'));
+
+    selectedAccount.set(orgRollUpAccount('0014100000MgaAAAAA'));
+    await flush();
+    http.expectNone(() => true);
+    expect(service.current()).toBeNull();
   });
 
   it('clears current while a newly selected account loads, so the previous account never shows', async () => {

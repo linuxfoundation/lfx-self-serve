@@ -4,12 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { HEALTH_METRICS_TABS } from './health-metrics-engagement.constants';
-import {
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE,
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS,
-  HEALTH_METRICS_MEMBERS_DATA_SECTIONS,
-  HEALTH_METRICS_MEMBERS_SECTIONS,
-} from './health-metrics-members.constants';
+import { HEALTH_METRICS_MEMBERS_DATA_SECTIONS, HEALTH_METRICS_MEMBERS_SECTIONS } from './health-metrics-members.constants';
 
 describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
   it('keys the eight sections uniquely, in the design order', () => {
@@ -19,15 +14,17 @@ describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
   it('holds a deep link for every section that reads data', () => {
     expect(HEALTH_METRICS_MEMBERS_DATA_SECTIONS).toEqual(['growth', 'breakdown', 'list', 'risk', 'renewals', 'board', 'nps', 'churn']);
   });
-});
 
-describe('HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE', () => {
-  it("never repeats a colour, and holds the reserved tiers' own colours out", () => {
-    const colors = HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE.map((entry) => entry.color);
+  // The design draws no caution or footnote under any Members section.
+  it('carries no section note', () => {
+    expect(HEALTH_METRICS_MEMBERS_SECTIONS.filter((section) => 'note' in section)).toEqual([]);
+  });
 
-    expect(new Set(colors).size).toBe(colors.length);
-    expect(colors).not.toContain(HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum);
-    expect(colors).not.toContain(HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold);
+  it("describes at-risk and renewals in the design's words", () => {
+    const description = (key: string) => HEALTH_METRICS_MEMBERS_SECTIONS.find((section) => section.key === key)?.description;
+
+    expect(description('risk')).toBe('Members with unpaid invoices who may not renew.');
+    expect(description('renewals')).toBe('Memberships coming up for renewal, and their value.');
   });
 });
 

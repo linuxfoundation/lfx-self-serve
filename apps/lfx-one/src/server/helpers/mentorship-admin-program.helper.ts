@@ -166,6 +166,8 @@ export const mapMentorshipAdminMentorRow = (row: MentorshipUpstreamMemberManagem
       status: status ?? 'pending',
       ...(invitedOn ? { invitedOn } : {}),
       profileCreated: row.profile_created,
+      // An invitation sent by email to someone with no LF account yet: no user, so the name is the email.
+      ...(row.pending_account ? { accountPending: true } : {}),
     },
     unknownStatus: status === undefined,
   };

@@ -8,6 +8,8 @@ import type { Server } from 'node:http';
 import pinoHttp from 'pino-http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiClientService } from '../services/api-client.service';
+
 // Unlike controller/route fixtures, this harness uses the real LoggerService and Pino output.
 // Parser failures skip pino-http in production, so mocking either logger hides the failure.
 describe('API parser errors before request logging', { timeout: 20_000 }, () => {
@@ -81,5 +83,52 @@ describe('API parser errors before request logging', { timeout: 20_000 }, () => 
       expect(lines.join('')).not.toContain('synthetic-private-body');
     }
     expect(downstreamRequests).toBe(0);
+  });
+});
+
+describe('Bulk proxy Retry-After HTTP boundary', () => {
+  let server: Server;
+  let baseUrl: string;
+
+  beforeAll(async () => {
+    const { apiErrorHandler } = await import('./error-handler.middleware');
+    const app = express();
+    app.post('/upstream', (req, res) => {
+      if (typeof req.query['cooldown'] === 'string') res.setHeader('Retry-After', req.query['cooldown']);
+      res.setHeader('Set-Cookie', 'synthetic-private-cookie=must-not-be-forwarded');
+      res.status(Number(req.query['status'])).json({ message: 'Synthetic upstream refusal' });
+    });
+    app.post('/api/committees/group/members/bulk', async (req, res, next) => {
+      try {
+        await new ApiClientService().request('POST', `${baseUrl}/upstream`, undefined, req.query);
+        res.sendStatus(204);
+      } catch (error) {
+        next(error);
+      }
+    });
+    app.use(apiErrorHandler);
+    await new Promise<void>((resolve) => {
+      server = app.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Expected an ephemeral HTTP port');
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  });
+
+  it.each([
+    [429, '999', '999'],
+    [429, 'Tue, 10 Nov 2026 12:05:00 GMT', 'Tue, 10 Nov 2026 12:05:00 GMT'],
+    [403, '999', null],
+    [429, 'unreadable', null],
+  ])('for upstream %i and %s forwards only the permitted cooldown', async (status, cooldown, expected) => {
+    const response = await fetch(`${baseUrl}/api/committees/group/members/bulk?status=${status}&cooldown=${encodeURIComponent(cooldown)}`, { method: 'POST' });
+    expect(response.status).toBe(status);
+    expect(response.headers.get('Retry-After')).toBe(expected);
+    expect(response.headers.get('Set-Cookie')).toBeNull();
+    expect(await response.json()).toMatchObject({ path: '/api/committees/group/members/bulk' });
   });
 });

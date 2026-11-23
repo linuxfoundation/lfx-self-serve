@@ -97,6 +97,7 @@ import {
 } from '../helpers/mentorship-enroll.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask, toMentorshipAdminMenteesExportRow } from '../helpers/mentorship-program-application.helper';
+import { readMentorshipProgramSubmitter } from '../helpers/mentorship-program-submitter.helper';
 
 import { logger } from './logger.service';
 import { MentorshipService } from './mentorship.service';
@@ -157,12 +158,15 @@ export class MentorshipAdminService {
    * LFID. Any other failure of those reads leaves its count `null`, and a failed terms read leaves the terms `[]`.
    * A published program's status comes from its terms (`mentorshipPublishedProgramStatus`); when the terms read fails,
    * the summary settles `completed` and `upcoming`, and anything else reads `in-progress`.
+   * The submitter is read alongside; when that read fails the header shows no submitter.
    */
   public async getProgramPage(req: Request, programId: string): Promise<MentorshipAdminProgramPage> {
     logger.debug(req, 'mentorship_admin_get_program', 'Loading mentorship program page', { programId });
 
     const base = `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}`;
     const read = <T>(path: string, query?: Record<string, unknown>) => proxyMentorshipRequest<T>(this.microserviceProxy, req, `${base}${path}`, 'GET', query);
+    // Never rejects: a failed read leaves the header without its submitter.
+    const submitterRead = readMentorshipProgramSubmitter(this.microserviceProxy, req, programId, 'mentorship_admin_get_program');
     const [header, summary, applications, members, terms] = await Promise.allSettled([
       read<MentorshipUpstreamProgramHeader>('/header'),
       read<MentorshipUpstreamProgramManagementSummary>('/management-summary'),
@@ -209,8 +213,15 @@ export class MentorshipAdminService {
             .map((term) => ({ id: term.id, name: term.name, status: term.status }))
         : [];
 
-    logger.debug(req, 'mentorship_admin_get_program', 'Mentorship program page built', { programId, tabCounts, terms: termOptions.length });
-    return { program, tabCounts, terms: termOptions };
+    const submitter = await submitterRead;
+
+    logger.debug(req, 'mentorship_admin_get_program', 'Mentorship program page built', {
+      programId,
+      tabCounts,
+      terms: termOptions.length,
+      has_submitter: submitter !== null,
+    });
+    return { program, tabCounts, terms: termOptions, submitter };
   }
 
   /**
@@ -489,21 +500,23 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Invites the LF account behind `lfid` as a mentor of the program and returns the new member's id. Upstream creates
-   * the Mentorship user when there is none and emails the invite to the account's primary email. Its 400, 403, 409
-   * (already invited or a mentor), 422 (no LF account, or its primary email already on another Mentorship user) and
-   * 503 (account lookup down) pass through.
+   * Invites a mentor to the program and returns the new member's id. By `lfid`, upstream creates the Mentorship user
+   * when there is none and emails the invite to the account's primary email. By `email`, an address with an LF account
+   * is invited as that account; one with none gets an email invitation that only an LF account using the address can
+   * accept. Its 400, 403, 409 (already invited or a mentor), 422 (no LF account for the LFID, or its primary email
+   * already on another Mentorship user) and 503 (account lookup down) pass through.
    */
   public async inviteProgramMentor(req: Request, programId: string, body: MentorshipAdminMentorInviteRequest): Promise<string | undefined> {
-    logger.debug(req, 'mentorship_admin_invite_program_mentor', 'Inviting program mentor', { programId });
+    logger.debug(req, 'mentorship_admin_invite_program_mentor', 'Inviting program mentor', { programId, byEmail: !!body.email });
 
+    const invitee = body.email ? { email: body.email } : { lfid: body.lfid };
     const member = await proxyMentorshipRequest<{ id?: string }>(
       this.microserviceProxy,
       req,
       `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/members`,
       'POST',
       undefined,
-      { lfid: body.lfid, member_type: 'mentor' }
+      { ...invitee, member_type: 'mentor' }
     );
     return member?.id;
   }

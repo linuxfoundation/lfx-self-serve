@@ -4,6 +4,7 @@
 import { PollType, VoteVoterStatus } from '../enums/poll.enum';
 import type {
   VoteCommentAnonymityReason,
+  VoteMethodOption,
   VoteDetailTab,
   VoteDetailTabOption,
   VoteParticipationStatusFilter,
@@ -205,6 +206,27 @@ export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.MEEK_STV]: 'Meek STV',
 };
 
+/** Voting methods offered when creating a vote (#2921) — read by the Create Vote dropdown and the form's Voting Method select. */
+export const VOTE_METHOD_OPTIONS: VoteMethodOption[] = [
+  {
+    label: 'Plurality',
+    value: PollType.GENERIC,
+    icon: 'fa-light fa-check-to-slot',
+    description: 'Voters pick from the options; the option with the most votes wins.',
+  },
+  {
+    label: 'Condorcet IRV',
+    value: PollType.CONDORCET_IRV,
+    icon: 'fa-light fa-list-ol',
+    description: 'Voters rank the options. The winner beats every other option head-to-head; if none does, instant-runoff elimination decides.',
+    // Enable only after #5969 results support is deployed and verified.
+    disabled: true,
+  },
+];
+
+/** Fewest eligible voters a Condorcet IRV vote can be opened with — matches PCC's `minMembersValidator`. */
+export const VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS = 3;
+
 /** Admin Mode ballot policy (#4331): only active impersonation is restricted, never an admin acting as themselves. */
 export const VOTE_IMPERSONATION_READ_ONLY_NOTICE = 'Ballots are read-only while impersonating another user. You cannot cast or change their vote.';
 export const VOTE_IMPERSONATION_PRIVATE_NOTICE =
@@ -262,6 +284,15 @@ export const VOTE_LINK_NOT_AWAITING_RESPONSE = 'not awaiting response';
 /** Upstream 400 message (lowercased substring) when an update hits a ballot with no response yet: switch to first submission. */
 export const VOTE_LINK_NOT_RESPONDED = 'not responded';
 
+/** Upstream 409 message (lowercased substring) when a ballot update hits a vote that makes submitted ballots final (#4723). */
+export const VOTE_CHANGE_NOT_ALLOWED = 'does not allow changing a submitted vote';
+
+/** Pre-submit notice on every first-submit surface when the vote makes submitted ballots final (#4723). */
+export const VOTE_BALLOT_FINAL_NOTICE = "Once you submit, your vote can't be changed.";
+
+/** Shown in place of a change action once a ballot on a vote that disallows changes is submitted (#4723). */
+export const VOTE_BALLOT_FINAL_STATE = "Your vote is final and can't be changed.";
+
 /** Close-vote confirmation (presenter and votes-table row menu): one copy so the two entry points never drift. */
 export const VOTE_CLOSE_CONFIRMATION = {
   header: 'Close vote',
@@ -269,5 +300,16 @@ export const VOTE_CLOSE_CONFIRMATION = {
   acceptLabel: 'Close vote',
   rejectLabel: 'Cancel',
   acceptButtonStyleClass: 'p-button-danger p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;
+
+/** Last-voter confirmation (#4726) on every first-submit surface: one copy so the cast drawer, inline ballot and vote link never drift. */
+export const VOTE_LAST_VOTER_CONFIRMATION = {
+  header: 'Submitting will end this vote',
+  message: "You're the last member to respond, so submitting now ends the vote. You won't be able to change your choices, comments, or abstention afterward.",
+  acceptLabel: 'Submit and end vote',
+  rejectLabel: 'Go back',
+  defaultFocus: 'reject',
+  acceptButtonStyleClass: 'p-button-sm',
   rejectButtonStyleClass: 'p-button-outlined p-button-sm',
 } as const;

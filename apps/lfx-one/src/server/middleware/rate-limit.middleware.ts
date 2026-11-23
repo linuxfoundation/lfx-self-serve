@@ -12,6 +12,8 @@ import {
   NEWSLETTER_INVITE_COUNTED_LOCALS_KEY,
   NEWSLETTER_INVITE_RATE_LIMIT_MAX,
   NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS,
+  NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX,
+  NEWSLETTER_TEST_SEND_RATE_LIMIT_WINDOW_MS,
   SELF_RESEND_INVITE_RATE_LIMIT_MAX,
   SELF_RESEND_INVITE_RATE_LIMIT_WINDOW_MS,
 } from '@lfx-one/shared/constants';
@@ -142,6 +144,26 @@ export const newsletterInviteRateLimiter = rateLimit({
   // unmetered oracle. The controller marks those refusals on `res.locals`.
   skipFailedRequests: true,
   requestWasSuccessful: (_req, res) => res.statusCode < 400 || res.locals[NEWSLETTER_INVITE_COUNTED_LOCALS_KEY] === true,
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
+ * Rate limiter for newsletter test sends (#4358 F1).
+ *
+ * Applied per-route to `POST /api/projects/:projectUid/newsletters/test-send`, which emails a full
+ * newsletter from the LF sending domain. The controller only allows the caller's own address; this
+ * caps how often. Keyed on the authenticated user, with the /56-masked IP key as the anonymous
+ * fallback. Per-pod MemoryStore like the limiters above. Every attempt counts, including failed
+ * ones: a refund on failure would also refund a client that drops the connection while the email
+ * is still sent, and a bad payload is already caught by the form.
+ */
+export const newsletterTestSendRateLimiter = rateLimit({
+  windowMs: NEWSLETTER_TEST_SEND_RATE_LIMIT_WINDOW_MS,
+  max: NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: "You've sent the maximum number of test emails for now. Try again later.", code: 'RATE_LIMITED' },
   keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
 });
 

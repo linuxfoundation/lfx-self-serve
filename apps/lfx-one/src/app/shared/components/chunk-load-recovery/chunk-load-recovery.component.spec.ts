@@ -90,7 +90,7 @@ describe('ChunkLoadRecoveryComponent', () => {
       ],
     });
     // jsdom has no layout. Only replace CDK's visibility predicate, not its trap.
-    vi.spyOn(TestBed.inject(InteractivityChecker), 'isVisible').mockReturnValue(true);
+    vi.spyOn(InteractivityChecker.prototype, 'isVisible').mockReturnValue(true);
     const fixture = TestBed.createComponent(RecoveryTestHostComponent);
     fixture.detectChanges();
     const ref = TestBed.inject(UiDrawerService).open(fixture.componentInstance.cdkDrawer()!);

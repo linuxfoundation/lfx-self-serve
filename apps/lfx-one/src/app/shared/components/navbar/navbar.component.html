@@ -24,7 +24,7 @@
             <span class="lfxn__brand-menu"><i class="fa-light fa-ellipsis-vertical" aria-hidden="true"></i></span>
           </button>
           <div class="lfxn__head-actions">
-            @if (!mobile()) {
+            @if (showSidebarToggle()) {
               <button
                 type="button"
                 class="lfxn__icon-btn lfxn__icon-btn--toggle"
@@ -139,7 +139,8 @@
             variant="navbar"
             [(isPanelOpen)]="selectorPanelOpen"
             [enabled]="effectiveShowOrgSelector()"
-            (itemSelected)="onOrgSelected()"></lfx-org-selector>
+            (itemSelected)="onOrgSelected()"
+            (rollUpSelected)="onOrgSelected()"></lfx-org-selector>
         </div>
 
         <!-- Context card: me. [class.hidden] avoids SSR hydration mismatch. -->
@@ -166,6 +167,8 @@
                   class="lfxn__me-role"
                   [attr.aria-label]="role.ariaLabel"
                   [style.--lfxn-role-ink]="role.ink"
+                  [style.--lfxn-role-ink-light]="role.inkLight"
+                  [style.--lfxn-role-fill-light]="role.fillLight"
                   [style.z-index]="roleMarks().length - i"
                   [lfxNavTooltip]="role.title"
                   [lfxNavTooltipIcon]="role.icon"
@@ -336,8 +339,6 @@
             <span class="lfxn__avatar-initials">{{ userInitials() }}</span>
           }
         </span>
-        <span class="lfxn__user-name" [lfxNavTooltip]="user()?.name ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.name }}</span>
-        <i class="fa-light fa-chevron-down" aria-hidden="true"></i>
       </button>
 
       <div class="lfxn__foot-actions">
@@ -583,8 +584,33 @@
         <span>Support</span>
       </button>
 
-      <!-- Docked to the rail, the footer's actions are out of reach: the account menu carries them instead. -->
-      @if (railDocked()) {
+      <!-- Desktop only: the mobile drawer's sidebar is always dark. -->
+      @if (!mobile()) {
+        <div class="lfxn-account-menu__row lfxn-account-menu__row--static" data-testid="sidebar-theme-row">
+          <i class="fa-light fa-palette" aria-hidden="true"></i>
+          <span class="lfxn-account-menu__row-label">Sidebar theme</span>
+          <lfx-ui-switch
+            class="lfxn-account-menu__row-trail"
+            ariaLabel="Sidebar theme"
+            size="tiny"
+            [value]="sidebarTheme.theme()"
+            (valueChange)="onSidebarThemeChange($event)"
+            data-testid="sidebar-theme-switch">
+            @for (option of sidebarThemeOptions; track option.value) {
+              <lfx-ui-switch-option
+                [value]="option.value"
+                [label]="option.label"
+                [icon]="option.icon"
+                [iconOnly]="true"
+                [attr.data-testid]="'sidebar-theme-' + option.value" />
+            }
+          </lfx-ui-switch>
+        </div>
+      }
+
+      <!-- The footer's Documentation, What's New and Impersonate, repeated only on the rail, where the footer actions are out of
+           reach. A peek or the docked-open panel shows the footer, so the menu leaves them out. -->
+      @if (railVisible()) {
         <div class="lfxn-account-menu__rule" role="separator"></div>
         <button type="button" class="lfxn-account-menu__row" (click)="navigateToDocs()" data-testid="lens-docs-menu-item">
           <i class="fa-light fa-book-open" aria-hidden="true"></i>

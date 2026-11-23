@@ -86,5 +86,11 @@ export const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
  */
 export const MAILTO_SAFE_EMAIL_REGEX = /^[A-Za-z0-9._+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/;
 
+/**
+ * An RFC 5322 dot-atom: atext runs joined by single dots. An email local part that matches needs no
+ * quoting. The atext class excludes `.`, so there is one way to match and it runs linearly.
+ */
+export const EMAIL_DOT_ATOM_REGEX = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/;
+
 /** Org People `person_key` — LFID or opaque `cdp:`-prefixed id; 4–128 URL-safe chars (request-boundary bound, not a schema). */
 export const PERSON_KEY_PATTERN = /^(cdp:)?[A-Za-z0-9_-]{4,128}$/;

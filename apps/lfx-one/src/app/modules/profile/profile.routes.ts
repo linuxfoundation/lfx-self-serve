@@ -74,6 +74,13 @@ export const PROFILE_ROUTES: Routes = [
         redirectTo: ({ queryParams }) =>
           inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS }),
       },
+      // Section alias for old openprofile.dev links (ID-1147), which also land on password/email above: a path
+      // survives the server-side login returnTo, where a #fragment would not.
+      {
+        path: 'developer-settings',
+        redirectTo: ({ queryParams }) =>
+          inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS }),
+      },
       // Unlike password/email above, this isn't a legacy redirect — profile.controller.ts's
       // Flow C flows emit returnTo=/profile/emails as their live landing path, so this route
       // must keep resolving even if the other two are ever retired.

@@ -3,6 +3,12 @@
 
 <!-- Exact px sizes per design review: 12px/18px text, 16px top / 20px bottom padding (the 14px root makes text-xs / pt-4 / pb-5 undershoot). -->
 <footer class="pt-[16px] pb-[20px] text-center text-gray-500" data-testid="app-footer">
+  <!--
+    Formatting is pinned. Prettier moves </button> below "Cookie settings", and Angular keeps that whitespace
+    inside the inline button, which renders "Cookie settings ." Keep the text glued to </button> and the period.
+    The clause hides inside an iframe, where Transcend's consent manager cannot open (TranscendService.preferencesAvailable).
+  -->
+  <!-- prettier-ignore -->
   <p class="text-[12px] leading-[18px]">
     Copyright © {{ year }} The Linux Foundation®. All rights reserved. The Linux Foundation has registered trademarks and uses trademarks. For more information,
     including terms of use,
@@ -23,13 +29,15 @@
     <a [href]="links.policies" target="_blank" rel="noopener noreferrer" class="underline hover:text-gray-700" data-testid="app-footer-policies-link"
       >Policies</a
     >
-    page, or manage your
-    <button
-      type="button"
-      (click)="openCookieSettings()"
-      class="inline cursor-pointer border-0 bg-transparent p-0 underline hover:text-gray-700"
-      data-testid="app-footer-cookie-settings">
-      Cookie settings</button
+    page<span [class.hidden]="!cookieSettingsAvailable" data-testid="app-footer-cookie-clause"
+      >, or manage your
+      <button
+        type="button"
+        (click)="openCookieSettings()"
+        class="inline cursor-pointer border-0 bg-transparent p-0 underline hover:text-gray-700"
+        data-testid="app-footer-cookie-settings">
+        Cookie settings</button
+      ></span
     >.
   </p>
 </footer>

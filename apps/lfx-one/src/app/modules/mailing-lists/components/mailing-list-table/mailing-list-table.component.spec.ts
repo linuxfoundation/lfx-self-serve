@@ -14,7 +14,7 @@ import type { Confirmation } from 'primeng/api';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
 import type { MockInstance } from 'vitest';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MailingListTableComponent } from './mailing-list-table.component';
 
@@ -78,6 +78,34 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
     await fixture.whenStable();
     fixture.detectChanges();
   };
+
+  describe('status pills', () => {
+    const pill = (id: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="filter-pill-${id}"]`);
+
+    beforeEach(async () => {
+      await render([baseList]);
+      fixture.componentRef.setInput('statusFilterOptions', [
+        { id: 'public', label: 'Public (3)', color: 'green' },
+        { id: 'private', label: 'Private (1)', color: 'purple' },
+      ]);
+      fixture.detectChanges();
+    });
+
+    it('shows a Public and a Private pill with their counts', () => {
+      expect(pill('public')?.textContent?.trim()).toBe('Public (3)');
+      expect(pill('private')?.textContent?.trim()).toBe('Private (1)');
+    });
+
+    it('filters by the selected pill and clears it when selected again', () => {
+      const form = fixture.componentInstance.searchForm();
+
+      pill('private')?.click();
+      expect(form.value.status).toBe('private');
+
+      pill('private')?.click();
+      expect(form.value.status).toBeNull();
+    });
+  });
 
   describe('canJoin / mySubscriptionLabel', () => {
     it('marks a public list the user has not joined as joinable', async () => {

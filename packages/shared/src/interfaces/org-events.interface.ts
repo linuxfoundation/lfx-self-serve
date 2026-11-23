@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import type { OffsetPaginatedResponse } from './api.interface';
-import type { OrgEventsAttribution, OrgEventsParticipation, OrgEventsScope } from './org-events-filters.interface';
+import type { OrgEventsParticipation, OrgEventsScope } from './org-events-filters.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgLensRowOrganization } from './org-memberships.interface';
+import type { OrgLensRollUpCoverage, OrgRollUpSetOrg } from './org-selector.interface';
 
 /** Tab identifier for the Org Events page tab strip. */
 export type OrgEventsTabId = 'upcoming' | 'past';
@@ -30,7 +32,7 @@ export interface OrgEvent {
   readonly eventCountry: string | null;
   readonly eventUrl: string | null;
   readonly eventRegistrationUrl: string | null;
-  /** Distinct people for the served `attribution` and `participation` (Upcoming events always count registrations). */
+  /** Distinct Employee match people for the served `participation` (Upcoming events always count registrations). */
   readonly orgAttendeeCount: number;
   /**
    * Event-wide registration goal; `null` when the event has none, or when its goal is 0.
@@ -45,6 +47,7 @@ export interface OrgEvent {
   readonly orgSpeakerAcceptedCount: number;
   readonly orgSpeakerSubmittedCount: number;
   readonly isOrgSponsor: boolean;
+  readonly organization?: OrgLensRowOrganization;
 }
 
 /** Paginated response for org events. */
@@ -53,6 +56,7 @@ export type OrgEventsResponse = OffsetPaginatedResponse<OrgEvent>;
 /** Org event row with presentation fields pre-baked for template rendering (avoids method calls in template). */
 export interface OrgEventRowVm extends OrgEvent {
   readonly dateRange: string;
+  readonly rowKey: string;
 }
 
 /** Frontend query params for GET /api/orgs/:accountId/lens/events. */
@@ -64,8 +68,6 @@ export interface GetOrgEventsParams {
   readonly offset?: number;
   readonly sortField?: string;
   readonly sortOrder?: 'ASC' | 'DESC';
-  /** "Counted by"; omitted means the default. */
-  readonly attribution?: OrgEventsAttribution;
   /** "Count"; omitted means the default. Ignored on the Upcoming tab. */
   readonly participation?: OrgEventsParticipation;
   /** "Show"; omitted means the default. */
@@ -74,6 +76,15 @@ export interface GetOrgEventsParams {
   readonly foundation?: string;
   /** Applies to the Past tab only; omitted means the default. */
   readonly range?: OrgLensTimeRange;
+  readonly company?: string;
+}
+
+export interface OrgEventsPageCopy {
+  readonly description: string;
+  readonly upcomingEmpty: string;
+  readonly pastEmpty: string;
+  readonly attendeesOwner: string;
+  readonly loadError: string;
 }
 
 /** Summary counts for the Org Events stat strip. */
@@ -81,6 +92,8 @@ export interface OrgEventsSummary {
   readonly totalEvents: number;
   readonly pastEvents: number;
   readonly upcomingEvents: number;
+  readonly organizations?: readonly OrgLensRowOrganization[];
+  readonly rollUp?: OrgLensRollUpCoverage;
 }
 
 /** Backend options for OrgLensEventsService.getOrgEvents. */
@@ -92,11 +105,17 @@ export interface GetOrgEventsOptions {
   readonly offset: number;
   readonly sortField: string;
   readonly sortOrder: 'ASC' | 'DESC';
-  readonly attribution: OrgEventsAttribution;
   readonly participation: OrgEventsParticipation;
   readonly eventScope: OrgEventsScope;
   readonly foundation: string;
   readonly range: OrgLensTimeRange;
+}
+
+export interface OrgEventsFamilyScope {
+  readonly rollUpKey: string;
+  readonly members: readonly OrgRollUpSetOrg[];
+  readonly organizations: readonly OrgRollUpSetOrg[];
+  readonly coverage: OrgLensRollUpCoverage;
 }
 
 /** A single person in the per-event attendees drawer: everyone the picked option credits to the organization, by name (title only for roster employees). */
@@ -127,7 +146,7 @@ export interface OrgEventFoundationOption {
   readonly name: string;
 }
 
-/** Response for GET /api/orgs/:accountId/lens/events/foundations — foundations that have events under the picked `eventScope` and `attribution`. */
+/** Response for GET /api/orgs/:accountId/lens/events/foundations — foundations that have events under the picked `eventScope`. */
 export interface OrgEventFoundationsResponse {
   readonly data: readonly OrgEventFoundationOption[];
 }

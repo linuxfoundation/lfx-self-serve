@@ -117,3 +117,10 @@ export const MAILING_LIST_DETAIL_CACHE_TTL_MS = 10 * 1000;
  * time to catch up with the write (PR #3211 review).
  */
 export const MAILING_LIST_JOIN_REFRESH_DELAY_MS = 1000;
+
+/**
+ * Upper bound on how long a sync-diff/sync-apply job is polled before giving up — the sync preview
+ * dialog gives the user no escape hatch while a poll is active, so a stuck upstream job must not
+ * trap them in an unclosable dialog forever (PR #5489 review).
+ */
+export const MAILING_LIST_SYNC_POLL_DEADLINE_MS = 10 * 60 * 1000;

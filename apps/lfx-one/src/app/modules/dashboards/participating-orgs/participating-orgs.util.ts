@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  LENS_DEFAULT_ROUTES,
   ORG_ACCOUNT_ID_PATTERN,
   PROJECT_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES,
   PROJECT_PARTICIPATING_ORGS_TIER_BADGE_CLASSES,
@@ -41,7 +42,7 @@ export function decorateParticipatingOrgRow(
 ): ProjectParticipatingOrgRowVm {
   const readable = row.isMember && row.accountId !== null && !!readableAccountIds?.has(row.accountId);
   const segment = readable && foundationSlug ? orgUrlSegment({ uid: row.accountId }) : null;
-  const orgLensLink = segment && foundationSlug ? ['/org', segment, 'memberships', foundationSlug] : null;
+  const orgLensLink = segment && foundationSlug ? [LENS_DEFAULT_ROUTES.org, segment, 'memberships', foundationSlug] : null;
   const tier = row.isMember ? row.membershipTierClass : null;
   return {
     participantKey: row.participantKey,

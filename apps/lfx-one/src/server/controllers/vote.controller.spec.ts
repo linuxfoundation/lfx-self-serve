@@ -16,7 +16,9 @@ const {
   getVoteResults,
   sendVoteReminders,
   getMyVoteBallot,
+  getMyWouldEndVote,
   createVoteResponse,
+  updateMyVoteResponse,
   endVoteSvc,
   assertVoteWrite,
   hasVoteWrite,
@@ -33,7 +35,9 @@ const {
   getVoteResults: vi.fn(),
   sendVoteReminders: vi.fn(),
   getMyVoteBallot: vi.fn(),
+  getMyWouldEndVote: vi.fn(),
   createVoteResponse: vi.fn(),
+  updateMyVoteResponse: vi.fn(),
   endVoteSvc: vi.fn(),
   assertVoteWrite: vi.fn(),
   hasVoteWrite: vi.fn(),
@@ -52,7 +56,9 @@ vi.mock('../services/vote.service', () => ({
     public getVoteResults = getVoteResults;
     public sendVoteReminders = sendVoteReminders;
     public getMyVoteBallot = getMyVoteBallot;
+    public getMyWouldEndVote = getMyWouldEndVote;
     public createVoteResponse = createVoteResponse;
+    public updateMyVoteResponse = updateMyVoteResponse;
     public endVote = endVoteSvc;
   },
 }));
@@ -507,6 +513,36 @@ describe('VoteController own ballot (#4331)', () => {
     });
   });
 
+  describe('getMyWouldEndVote', () => {
+    it.each([true, false])('returns { would_end_vote: %s }', async (wouldEndVote) => {
+      getMyWouldEndVote.mockResolvedValue(wouldEndVote);
+      const req = { params: { uid: VOTE_UID } } as unknown as Request;
+
+      await controller.getMyWouldEndVote(req, res, next);
+
+      expect(getMyWouldEndVote).toHaveBeenCalledWith(req, VOTE_UID);
+      expect(json).toHaveBeenCalledWith({ would_end_vote: wouldEndVote });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('rejects a blank vote uid without reading upstream', async () => {
+      await controller.getMyWouldEndVote({ params: { uid: ' ' }, path: '/votes/%20/my-response/would-end-vote' } as unknown as Request, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(getMyWouldEndVote).not.toHaveBeenCalled();
+    });
+
+    it('forwards service errors to next', async () => {
+      const error = new MicroserviceError('synthetic upstream failure', 502, 'UPSTREAM_ERROR', {});
+      getMyWouldEndVote.mockRejectedValue(error);
+
+      await controller.getMyWouldEndVote({ params: { uid: VOTE_UID } } as unknown as Request, res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(json).not.toHaveBeenCalled();
+    });
+  });
+
   describe('createVoteResponse (shared validation unchanged)', () => {
     const request = (body: unknown) => ({ params: {}, body }) as unknown as Request;
 
@@ -534,6 +570,54 @@ describe('VoteController own ballot (#4331)', () => {
 
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
       expect(createVoteResponse).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateMyVoteResponse (#4723)', () => {
+    const request = (body: unknown, uid = VOTE_UID) => ({ params: { uid }, body }) as unknown as Request;
+    const comments = [{ prompt_id: 'p-1', comment_text: 'Changed my mind' }];
+
+    it('forwards the validated ballot for the route vote and responds 204', async () => {
+      const req = request({ abstain: false, user_vote_content: answers, comment_responses: comments, vote_response_uid: 'someone-else' });
+
+      await controller.updateMyVoteResponse(req, res, next);
+
+      // Only allowlisted fields cross the boundary: a client-sent response uid is dropped.
+      expect(updateMyVoteResponse).toHaveBeenCalledWith(req, VOTE_UID, { abstain: false, user_vote_content: answers, comment_responses: comments });
+      expect(status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('drops answers when abstaining and keeps an empty comment list so stored comments are cleared', async () => {
+      const req = request({ abstain: true, user_vote_content: answers, comment_responses: [] });
+
+      await controller.updateMyVoteResponse(req, res, next);
+
+      expect(updateMyVoteResponse).toHaveBeenCalledWith(req, VOTE_UID, { abstain: true, comment_responses: [] });
+    });
+
+    it.each([undefined, 'true', 1])('rejects a non-boolean abstain (%s) without calling the service', async (abstain) => {
+      await controller.updateMyVoteResponse(request({ abstain, user_vote_content: answers }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(updateMyVoteResponse).not.toHaveBeenCalled();
+    });
+
+    it('rejects a blank vote uid without calling the service', async () => {
+      await controller.updateMyVoteResponse({ params: { uid: ' ' }, body: { abstain: true }, path: '/votes/%20/my-response' } as unknown as Request, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(updateMyVoteResponse).not.toHaveBeenCalled();
+    });
+
+    it('forwards an upstream 409 to the error handler unchanged', async () => {
+      const conflict = new MicroserviceError('this poll does not allow changing a submitted vote', 409, 'CONFLICT', {});
+      updateMyVoteResponse.mockRejectedValue(conflict);
+
+      await controller.updateMyVoteResponse(request({ abstain: false, user_vote_content: answers }), res, next);
+
+      expect(next).toHaveBeenCalledWith(conflict);
+      expect(status).not.toHaveBeenCalled();
     });
   });
 });

@@ -52,7 +52,7 @@ export class UiTextareaComponent implements ControlValueAccessor {
   public readonly placeholder = input<string>('');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Marks the field as required for assistive technology. */
+  /** Marks the field as required for assistive technology and adds a red asterisk to the visible label. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native `maxlength`: the browser stops typing at this many characters. Leave unset for no limit, and say the limit in `hint`. */
   public readonly maxlength = input<number | null, unknown>(null, { transform: (v: unknown) => numberAttribute(v, -1) });

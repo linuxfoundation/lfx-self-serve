@@ -1,22 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP, ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP, ORG_CATALOGUE_SEARCH_MIN_CHARS, ORG_LENS_ROLLUP_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import {
   B2bOrgIndexedDoc,
   GetOrgItemsParams,
+  OrgFamilyRoot,
   OrgItem,
   OrgItemsQuery,
   OrgItemsResponse,
   QueryServiceResponse,
   ResolvedOrgRole,
 } from '@lfx-one/shared/interfaces';
+import { filterOrgItemsByName, sortOrgItemsByName } from '@lfx-one/shared/utils/org-selector.utils';
 import { Request } from 'express';
 
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-import { claOnlyEntryApplies, OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
+import { claOnlyEntryApplies, claOnlyListApplies, ClaOnlyOrg, OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 /** Spec 022 — server-side org-selector data source. Renders the access-aware list per `01-my-orgs-by-access.ipynb` (data-model.md D-001…D-005). Typeahead filters the resolved set in-process: the set is direct grants (≤ ORG_ROLE_GRANTS_HARD_CAP) plus their cascading children (≤ ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP per direct parent), so it is finite but not strictly ≤500 — in practice it stays small enough for in-memory filter/sort. */
@@ -54,8 +57,20 @@ export class OrgNavigationService {
     }
 
     const access = await this.orgRoleGrants.getAccessAwareOrgs(req, username);
+    const rosterAnswered = !access.upstreamFailed && !access.degraded && access.staffCheck !== 'failed';
 
-    if (claOnlyEntryApplies(access.isStaff, access.resolved.size, !access.upstreamFailed && !access.degraded && access.staffCheck !== 'failed')) {
+    const claOnlyEntry = claOnlyEntryApplies(access.isStaff, access.resolved.size, rosterAnswered);
+
+    if (params.claOnly) {
+      // Inline on the main list for a caller who holds nothing, so nothing is deferred to answer here.
+      // A roster this request could not confirm is an unchecked list, not an empty one.
+      if (pageToken || claOnlyEntry || !claOnlyListApplies(access.isStaff, rosterAnswered)) {
+        return { items: [], next_page_token: null, upstream_failed: !rosterAnswered, total: 0 };
+      }
+      return this.getDeferredClaOnlyItems(req, new Set(access.resolved.keys()));
+    }
+
+    if (claOnlyEntry) {
       return this.getClaOnlyItems(req, access.upstreamFailed, params, selectedUid);
     }
 
@@ -79,27 +94,35 @@ export class OrgNavigationService {
       return { items: [], next_page_token: null, upstream_failed: access.upstreamFailed, total: 0 };
     }
 
+    // A grant holder's CLA-only rows are not looked up here: the CLA Manager lookup must not hold up
+    // the organizations they hold. The client fetches them with `cla_only=1` and lists them after.
+    const claOnlyDeferred = !pageToken && claOnlyListApplies(access.isStaff, rosterAnswered);
+
     // The assigned population is complete on page one and never repeats on a continuation page,
     // which only exists for catalogue paging.
-    const assignedItems = pageToken ? [] : this.applySelectedUidPin(this.applySort(this.applySearch(items, name), name), items, selectedUid, pageToken);
+    const assignedItems = pageToken ? [] : this.applySelectedUidPin(sortOrgItemsByName(filterOrgItemsByName(items, name), name), items, selectedUid, pageToken);
 
     const catalogueResult = catalogueTerm
       ? await this.fetchCatalogueMatches(req, catalogueTerm, pageToken, items)
-      : { items: [] as OrgItem[], nextPageToken: null, failed: false };
+      : { items: [] as OrgItem[], docByUid: new Map<string, B2bOrgIndexedDoc>(), nextPageToken: null, failed: false };
     const nextPageToken = catalogueResult.nextPageToken;
     const discoveredItems = pinnedDiscovered
       ? [pinnedDiscovered, ...catalogueResult.items.filter((item) => item.uid !== pinnedDiscovered.uid)]
       : catalogueResult.items;
+    const shownItems = catalogueTerm
+      ? await this.labelFamilyRoots(req, [...assignedItems, ...discoveredItems], new Map([...access.orgDocByUid, ...catalogueResult.docByUid]))
+      : [...assignedItems, ...discoveredItems];
 
     logger.debug(req, 'build_org_items', 'Built access-aware org items', {
       item_count: assignedItems.length + discoveredItems.length,
       discovered_count: discoveredItems.length,
       direct_count: this.countByPrefix(access.resolved, 'direct-'),
       cascading_count: this.countByPrefix(access.resolved, 'inherited-'),
+      cla_only_deferred: claOnlyDeferred,
     });
 
     return {
-      items: [...assignedItems, ...discoveredItems],
+      items: shownItems,
       next_page_token: nextPageToken,
       // A failed catalogue search is reported rather than folded into an empty result: for a staff
       // caller with nothing assigned the two are indistinguishable in the list, and "no organizations
@@ -107,7 +130,23 @@ export class OrgNavigationService {
       upstream_failed: catalogueResult.failed,
       // No count is claimed for the catalogue — the caller sees what it has loaded so far.
       total: catalogueTerm ? null : assignedItems.length,
+      ...(claOnlyDeferred ? { cla_only_deferred: true } : {}),
     };
+  }
+
+  /**
+   * The `cla_only=1` half of a grant holder's list: their CLA-only organizations, minus any they
+   * hold, alphabetical and unfiltered — the client filters them by the search term itself, so one
+   * lookup serves every search until the next reload. A failed lookup is reported as
+   * `upstream_failed` alongside whatever rows did resolve.
+   */
+  private async getDeferredClaOnlyItems(req: Request, held: ReadonlySet<string>): Promise<OrgItemsResponse> {
+    const { orgs, failed } = await this.claOnlyOrgs.listOrgs(req, held);
+    const items = sortOrgItemsByName(this.toClaOnlyItems(orgs), undefined);
+
+    logger.debug(req, 'build_org_items', 'Built deferred CLA-only org items', { cla_only_count: items.length, cla_only_failed: failed });
+
+    return { items, next_page_token: null, upstream_failed: failed, total: items.length };
   }
 
   /**
@@ -123,7 +162,16 @@ export class OrgNavigationService {
     }
 
     const { orgs, failed } = await this.claOnlyOrgs.listOrgs(req);
-    const items = orgs.map(
+    const items = this.toClaOnlyItems(orgs);
+    const shown = this.applySelectedUidPin(sortOrgItemsByName(filterOrgItemsByName(items, name), name), items, selectedUid, pageToken);
+
+    logger.debug(req, 'build_org_items', 'Built CLA-only org items', { item_count: shown.length, cla_only_count: items.length, cla_only_failed: failed });
+
+    return { items: shown, next_page_token: null, upstream_failed: accessFailed || failed, total: shown.length };
+  }
+
+  private toClaOnlyItems(orgs: ClaOnlyOrg[]): OrgItem[] {
+    return orgs.map(
       (org): OrgItem => ({
         uid: org.uid,
         accountId: org.uid,
@@ -137,11 +185,6 @@ export class OrgNavigationService {
         claOnly: true,
       })
     );
-    const shown = this.applySelectedUidPin(this.applySort(this.applySearch(items, name), name), items, selectedUid, pageToken);
-
-    logger.debug(req, 'build_org_items', 'Built CLA-only org items', { item_count: shown.length, cla_only_count: items.length, cla_only_failed: failed });
-
-    return { items: shown, next_page_token: null, upstream_failed: accessFailed || failed, total: shown.length };
   }
 
   /**
@@ -183,7 +226,7 @@ export class OrgNavigationService {
     term: string,
     pageToken: string | undefined,
     assignedItems: OrgItem[]
-  ): Promise<{ items: OrgItem[]; nextPageToken: string | null; failed: boolean }> {
+  ): Promise<{ items: OrgItem[]; docByUid: Map<string, B2bOrgIndexedDoc>; nextPageToken: string | null; failed: boolean }> {
     // Deduped against the caller's whole assigned universe, not just the rows on this page, so a
     // catalogue hit can never mask the role they hold — including on continuation pages, where the
     // assigned rows are absent from the response but still theirs.
@@ -199,19 +242,21 @@ export class OrgNavigationService {
         response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
       } catch (error) {
         logger.warning(req, 'get_org_items', 'Catalogue search failed; returning assigned rows only', { err: error });
-        return { items: [], nextPageToken: null, failed: true };
+        return { items: [], docByUid: new Map(), nextPageToken: null, failed: true };
       }
 
       const discovered: OrgItem[] = [];
+      const docByUid = new Map<string, B2bOrgIndexedDoc>();
       for (const resource of response?.resources ?? []) {
         const uid = this.extractUid(resource.id);
         if (!uid || !resource.data || assignedUids.has(uid)) continue;
         discovered.push(this.toDiscoveredItem(uid, resource.data));
+        docByUid.set(uid, resource.data);
       }
 
       const next = response?.page_token ?? null;
       if (discovered.length > 0 || next === null) {
-        return { items: this.applyPrefixRank(discovered, term), nextPageToken: next, failed: false };
+        return { items: this.applyPrefixRank(discovered, term), docByUid, nextPageToken: next, failed: false };
       }
 
       token = next;
@@ -223,7 +268,31 @@ export class OrgNavigationService {
     logger.warning(req, 'get_org_items', 'Catalogue skip-ahead cap reached; all pages held only assigned rows', {
       skipped_pages: ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP,
     });
-    return { items: [], nextPageToken: token ?? null, failed: false };
+    return { items: [], docByUid: new Map(), nextPageToken: token ?? null, failed: false };
+  }
+
+  private async labelFamilyRoots(req: Request, items: OrgItem[], docByUid: ReadonlyMap<string, B2bOrgIndexedDoc>): Promise<OrgItem[]> {
+    if (items.length === 0 || !(await LaunchDarklyServerService.getInstance().isFlagEnabled(req, ORG_LENS_ROLLUP_ENABLED_FLAG, false))) {
+      return items;
+    }
+
+    const shownDocs = new Map<string, B2bOrgIndexedDoc>();
+    for (const item of items) {
+      const doc = docByUid.get(item.uid);
+      if (doc) shownDocs.set(item.uid, doc);
+    }
+
+    let roots: Map<string, OrgFamilyRoot>;
+    try {
+      roots = await this.orgRoleGrants.resolveFamilyRoots(req, shownDocs);
+    } catch (error) {
+      logger.warning(req, 'get_org_items', 'Family top-account lookup failed; returning search rows without roll-up options', { err: error });
+      return items;
+    }
+    return items.map((item) => {
+      const root = roots.get(item.uid);
+      return root ? { ...item, familyRootUid: root.rootUid, familyRootName: root.rootName } : item;
+    });
   }
 
   /**
@@ -335,25 +404,6 @@ export class OrgNavigationService {
     }
 
     return items;
-  }
-
-  private applySearch(items: OrgItem[], name: string | undefined): OrgItem[] {
-    const trimmed = name?.trim().toLowerCase();
-    if (!trimmed) return items;
-    return items.filter((item) => item.name.toLowerCase().includes(trimmed));
-  }
-
-  /** `best_match` when searching (prefix-rank first), alphabetical otherwise. */
-  private applySort(items: OrgItem[], name: string | undefined): OrgItem[] {
-    const trimmed = name?.trim().toLowerCase();
-    if (trimmed) {
-      return [...items].sort((a, b) => {
-        const aStarts = a.name.toLowerCase().startsWith(trimmed) ? 0 : 1;
-        const bStarts = b.name.toLowerCase().startsWith(trimmed) ? 0 : 1;
-        return aStarts - bStarts || a.name.localeCompare(b.name);
-      });
-    }
-    return [...items].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** FR-013 — pin a previously-selected row at the top when it falls outside the natural list. Skipped on continuation pages. */

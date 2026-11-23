@@ -33,8 +33,8 @@ import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
-const DETAIL_URL_FOUNDATION = '/org/memberships/sample-foundation';
-const DOCS_URL_FOUNDATION = '/org/memberships/sample-foundation#docs';
+const DETAIL_URL_FOUNDATION = '/company/memberships/sample-foundation';
+const DOCS_URL_FOUNDATION = '/company/memberships/sample-foundation#docs';
 // SC-014 needs a foundation with zero agreements to exercise the disabled
 // download-all branch. Until a guaranteed-empty foundation is seeded in dev,
 // this aliases the sample foundation — the test will `skip()` when the list is non-empty.
@@ -271,7 +271,7 @@ test.describe('Documentation Tab — CSV download (SC-013, SC-014, FR-032)', () 
     const lines = body.split('\r\n').filter((l) => l.length > 0);
 
     // Header is exactly the 9 FR-032a columns in this exact order.
-    expect(lines[0]).toBe('Organization,Foundation,Agreement Name,Signed Date,Format,Status,Tier,Current,Download URL');
+    expect(lines[0]).toBe('Company,Foundation,Agreement Name,Signed Date,Format,Status,Tier,Current,Download URL');
 
     // Each data row has exactly 9 comma-separated columns (allowing for RFC 4180 quoted fields).
     expect(lines.length).toBeGreaterThanOrEqual(2); // header + at least one data row

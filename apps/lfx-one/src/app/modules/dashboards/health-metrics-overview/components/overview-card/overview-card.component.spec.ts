@@ -3,7 +3,7 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { HEALTH_METRICS_OVERVIEW_EMPTY_COPY } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_OVERVIEW_BALANCE_UNMEASURED_COPY, HEALTH_METRICS_OVERVIEW_EMPTY_COPY } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -118,9 +118,9 @@ describe('OverviewCardComponent empty state by period', () => {
 
     expect(title()).toBe(`No churn in ${new Date().getFullYear() - 1}`);
 
-    fixture.componentInstance.copy.set(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.balance);
+    fixture.componentInstance.copy.set(HEALTH_METRICS_OVERVIEW_BALANCE_UNMEASURED_COPY);
     fixture.detectChanges();
 
-    expect(title()).toBe('All invoices paid');
+    expect(title()).toBe('No balance data yet');
   });
 });

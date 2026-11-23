@@ -6,7 +6,7 @@ import type { CommitteeOrganizationReference } from './committee.interface';
 /**
  * Status of a committee join application
  */
-export type CommitteeJoinApplicationStatus = 'pending' | 'approved' | 'rejected';
+export type CommitteeJoinApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
 
 /**
  * Represents a join application for a committee
@@ -74,6 +74,10 @@ export interface MyPendingApplication extends CommitteeJoinApplication {
   is_foundation?: boolean;
   /** Committee project slug — used by getEntityCommands / ?project= query param. */
   project_slug?: string;
+  /** Committee project display name. */
+  project_name?: string;
+  /** Committee project logo URL. */
+  project_logo_url?: string;
 }
 
 /**

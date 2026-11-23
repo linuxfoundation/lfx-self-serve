@@ -12,6 +12,8 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the org access / role-grants cache. `v2`: `resolved` now carries connected-component (upward + cascading) roles alongside the required `degraded` completeness flag, so no entry written by the direct/downward-only resolver can be read back under the new semantics. */
   ORG_ACCESS_NAMESPACE: 'org-access:v2',
 
+  ORG_FAMILY_NAMESPACE: 'org-family:v1',
+
   /** Domain + schema-version segment for the per-org Snowflake-backed Org Lens cache (shared across callers). */
   ORG_LENS_SNOWFLAKE_NAMESPACE: 'org-lens-sf:v1',
 
@@ -50,14 +52,17 @@ export const VALKEY_CACHE = {
    * Domain + schema-version segment for the per-user org People directory cache. Each entry is keyed by
    * one scope — `roster` (the unranged ORG_PEOPLE_ALL roster the reassign pickers read) or
    * `{range}:{projectScope}` — placed before the principal, so the redacted key and the cache family stay
-   * `org-people-dir:v6`. `v2`: merge-only fields are stripped before the write and the validator asserts
+   * `org-people-dir:v7`. `v2`: merge-only fields are stripped before the write and the validator asserts
    * their absence. `v3` (GH-1906): `rows` are stored columnar. `v4` (lfx-self-serve#4163): keyed by time
    * range. `v5` (lfx-self-serve#4164): keyed by project scope too, rows carry every code count and no tiles
    * are stored — the commit scope and metric pick the count after the read. A write that invalidates the
    * directory clears every scope. `v6` (lfx-self-serve#4378): a ranged row carries `isFormer` for an
    * access-only principal who is a former employee in that range, so the current view never lists them.
+   * `v7` (#4401): rows carry `keyContactRoles`. The shape guard already rejects a `v6` entry, but sharing
+   * one key space across a rolling deploy would have old and new pods each reject and overwrite the
+   * other's entry, so the directory mostly misses until the rollout ends.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v6',
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v7',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
@@ -68,8 +73,17 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for Flow C's (profile Auth0 Management API) CSRF state nonce, keyed by the nonce itself rather than by user or session — see #1938. Kept out of `req.appSession` because express-openid-connect blind-overwrites the whole session on every response; a concurrent request finishing after `/auth/start` silently drops the nonce it wrote. */
   AUTH_STATE_NAMESPACE: 'auth-state:v1',
 
+  /** Private callback support drafts, keyed by a digest of subject and random attempt handle. */
+  EMAIL_LINKED_SUPPORT_NAMESPACE: 'email-linked-support:v1',
+  EMAIL_LINKED_SUPPORT_TTL_SECONDS: 300,
+  /** Upper expiry sanity-check allowance between pods; never extends the Valkey TTL. */
+  EMAIL_LINKED_SUPPORT_CLOCK_SKEW_MS: 30000,
+
   /** Domain + schema-version segment for the per-user meeting-invite-email lock (LFXV2 #2241) — serializes `rejectIdentity`'s guard-then-unlink sequence against a concurrent `setMeetingInviteEmail` for the same user. */
   MEETING_INVITE_LOCK_NAMESPACE: 'meeting-invite-lock:v1',
+
+  /** Domain + schema-version segment for the per-login mentorship user refresh marker, shared across replicas so each login refreshes the user's mentorship record once. */
+  MENTORSHIP_USER_SYNC_NAMESPACE: 'mentorship-user-sync:v1',
 
   /**
    * TTL (ms) for `rejectIdentity`'s side of the per-user meeting-invite-email lock (LFXV2 #2241).
@@ -130,6 +144,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-foundation Snowflake-backed Social Listening cache (filter options + analytics; shared across callers, since the data is foundation-scoped rather than per-user). `v2`: tag options folded to lowercase, author options guarded + newly cached, mentions-count resource added — stale `v1` entries must never be served as the new shapes. */
   SOCIAL_LISTENING_NAMESPACE: 'social-listening-sf:v2',
 
+  /** Domain + schema-version segment for the Foundation Lens → Participating Companies reads (the roster per foundation and range, and the project lines per project or company; keyed by the foundation slug, shared across callers). Its own namespace so its larger size cap does not apply to the per-project entries. */
+  FOUNDATION_PARTICIPATING_ORGS_NAMESPACE: 'foundation-participating-orgs-sf:v1',
+
   /** Domain + schema-version segment for the per-project Project Lens → Participating Organizations cache (summary + list pages; shared across callers, since the rows carry no per-caller data — Org Lens links are resolved per caller, uncached). `v2`: a foundation's own project lists every current member, contributing or not, and the Members count is the full roster — no `v1` entry may be served under the new semantics. */
   PROJECT_PARTICIPATING_ORGS_NAMESPACE: 'project-participating-orgs-sf:v2',
 
@@ -160,6 +177,15 @@ export const VALKEY_CACHE = {
 
   /** Freshness window for the per-user Org Lens caches (seats, key-contacts, access-list, people directory). */
   ORG_LENS_PERUSER_TTL_SECONDS: 30,
+
+  /** Domain + schema-version segment for the per-user meetings roll-up scope (GH-5566): the project UIDs under a foundation or parent project that the caller can see. */
+  MEETING_ROLLUP_SCOPE_NAMESPACE: 'meeting-rollup-scope:v1',
+
+  /** Domain + schema-version segment for the per-user meetings roll-up groups (GH-5566): the groups in that project tree the caller can see, which back the Group and Group type filters. Shares the scope's TTL. */
+  MEETING_ROLLUP_GROUPS_NAMESPACE: 'meeting-rollup-groups:v1',
+
+  /** Freshness window for the meetings roll-up scope. Long enough that one dashboard load (list, counts, paged calendar feeds, Load More) reuses one tree walk and pages against the same scope; short enough that a new sub-project shows up within minutes. */
+  MEETING_ROLLUP_SCOPE_TTL_SECONDS: 300,
 
   /**
    * Freshness window for the Org Lens Groups aggregate (15 minutes). Deliberately shorter than the
@@ -294,7 +320,8 @@ export const VALKEY_CACHE = {
     // cache and reads directly. `v5` drops the per-row HAS_COMPANY_EMAIL flag and adds the `verified` attribution (a
     // subset of `all`), so no value is larger than `v4`; the cap carries over. `v6` (lfx-self-serve#5315) reads Self-reported
     // only through dbt's person-level ORG_EVENT_PARTICIPATION_RANGED (still a subset of `all`); same rows otherwise, the cap carries over.
-    'org-lens-sf:v1:people-event-attendees:v6': 2 * 1_048_576,
+    // `v7` (lfx-self-serve-ops#1441) reads Employee match only, the `verified` rows of `v6`, so no value is larger; the cap carries over.
+    'org-lens-sf:v1:people-event-attendees:v7': 2 * 1_048_576,
     // `v4` (lfx-self-serve#4159) is read per range over enrollments of any age (lf-dbt#3118 lifted the 12-month cap).
     // Measured 2026-10-27 on the dev build with the same SQL size estimate and × 1.06 calibration as `people-all:v4`:
     // largest value 6,782,106 bytes (largest org measured, All time; the next two 5.39 MB and 3.20 MB). Only All time on those three
@@ -345,6 +372,12 @@ export const VALKEY_CACHE = {
    * whole MiB, and `Readonly` because it is a release decision, not a runtime knob.
    */
   MAX_VALUE_BYTES_BY_NAMESPACE: {
+    // ESTIMATED, not yet measured against the warehouse: one named-key JSON company object is about 330 bytes (key, account id,
+    // name, logo URL, tier, six figures), so the 9,000-company scale in the epic is about 3.0 MB plus a few hundred project rows;
+    // x 1.25 rounds up to 4 MiB. The namespace also holds a project's or company's lines (about 140 bytes a line, so a flagship
+    // project at that scale is about 1.3 MB). Re-measure the largest roster AND the largest lines entry on the dev build before the flag is enabled and replace this
+    // comment with the measured size and date. Without it every write above 1 MiB is skipped and every page re-reads both queries.
+    'foundation-participating-orgs-sf:v1': 4 * 1_048_576,
     // Measured 2026-09-28 from prod `valkey_set` oversize logs: largest compact per-user seat
     // roster 1,103,412 bytes (The Linux Foundation, 2,725 seats). Refused at the 1 MiB default,
     // so every People Board/Committee/All Employees load re-drained committee-service (~27 s).
@@ -362,7 +395,9 @@ export const VALKEY_CACHE = {
     // value ≈ 4.1 MiB estimated (≈ 4.3 MiB compact), ≈ 1.9 MiB on the 12-month all-projects view, and
     // 2.51 MiB plus the live-only rows on the Past 2 years all-projects default (lfx-self-serve#4694, prod, 2026-10-29).
     // 4.3 MiB × 1.25 rounds up to 6 MiB. `v6` adds one mostly-absent `isFormer` cell per row (~7 bytes), well
-    // inside the headroom.
-    'org-people-dir:v6': 6 * 1_048_576,
+    // inside the headroom. `v7` (#4401) adds a short, usually-empty `keyContactRoles` array per row —
+    // only the minority of people holding a key-contact role carry any — likewise inside it. The cap is
+    // keyed by namespace, so it has to move with each bump or large orgs drop to the 1 MiB default.
+    'org-people-dir:v7': 6 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

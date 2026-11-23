@@ -79,6 +79,17 @@ export const MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING = 'No tasks awaiting review.
 export const MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED = 'No approved tasks.';
 export const MENTORSHIP_MENTOR_TASKS_EMPTY_ALL = 'No tasks to review.';
 
+/**
+ * Request Changes dialog on the mentor Tasks tab. The reason is required, and capped at upstream's limit; upstream
+ * emails it to the mentee and does not store it.
+ */
+export const MENTORSHIP_MENTOR_TASK_CHANGES_DIALOG_HEADER = 'Request Changes';
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX = 2000;
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_LABEL = 'Reason';
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_PLACEHOLDER = 'Tell the mentee what to change before they submit the task again.';
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_HINT = 'The task goes back to their To Do list, and they are emailed this reason.';
+export const MENTORSHIP_MENTOR_TASK_CHANGES_REASON_REQUIRED = 'Enter a reason for the changes.';
+
 export const MENTORSHIP_MENTOR_TASK_FILTER_PILLS: { value: MentorshipMentorTaskReviewStatus | undefined; label: string }[] = [
   { value: 'submitted', label: MENTORSHIP_MENTOR_TASK_AWAITING_REVIEW_LABEL },
   { value: 'completed', label: MENTORSHIP_MENTOR_TASK_APPROVED_LABEL },

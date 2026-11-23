@@ -111,3 +111,45 @@ describe('NewsletterService.recordPageView', () => {
     expect(error).not.toHaveBeenCalled();
   });
 });
+
+describe('NewsletterService publications (#4349)', () => {
+  let http: HttpTestingController;
+  let service: NewsletterService;
+  const URL = '/api/projects/p-1/newsletter-publications';
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting(), { provide: PlausibleService, useValue: { trackEvent: vi.fn() } }],
+    });
+    http = TestBed.inject(HttpTestingController);
+    service = TestBed.inject(NewsletterService);
+  });
+  afterEach(() => http.verify());
+
+  it('follows every page when listing all publications', () => {
+    const result = vi.fn();
+    service.listAllPublications('p-1').subscribe(result);
+    http.expectOne(URL).flush({ publications: [{ id: 'a' }], next_page_token: 'next' });
+    http.expectOne(`${URL}?page_token=next`).flush({ publications: [{ id: 'b' }] });
+    expect(result).toHaveBeenCalledWith([{ id: 'a' }, { id: 'b' }]);
+  });
+
+  it('sends a quoted If-Match on update', () => {
+    service.updatePublication('p-1', 'pub-1', 4, { name: 'Weekly update' }).subscribe();
+    const request = http.expectOne(`${URL}/pub-1`);
+    expect(request.request.method).toBe('PUT');
+    expect(request.request.headers.get('If-Match')).toBe('"4"');
+    request.flush({});
+  });
+
+  it('posts an edition under the publication', () => {
+    service.createEdition('p-1', 'pub-1', { subject: 'Hello' }).subscribe();
+    const request = http.expectOne(`${URL}/pub-1/editions`);
+    expect(request.request.method).toBe('POST');
+    request.flush({});
+  });
+
+  it('filters listed editions', () => {
+    service.listEditions('p-1', 'pub-1', { status: 'draft' }).subscribe();
+    http.expectOne(`${URL}/pub-1/editions?status=draft`).flush({ newsletters: [] });
+  });
+});

@@ -30,6 +30,10 @@ router.delete('/:id', (req, res, next) => mailingListController.deleteMailingLis
 // Committee ↔ Mailing List Sync routes
 router.get('/:id/sync-diff', (req, res, next) => mailingListController.getSyncDiff(req, res, next));
 router.post('/:id/sync-apply', blockDuringImpersonation, (req, res, next) => mailingListController.applySyncDiff(req, res, next));
+router.post('/:id/sync-diff/start', (req, res, next) => mailingListController.startSyncDiff(req, res, next));
+router.get('/:id/sync-diff/:jobId/status', (req, res, next) => mailingListController.getSyncDiffStatus(req, res, next));
+router.post('/:id/sync-apply/start', blockDuringImpersonation, (req, res, next) => mailingListController.startSyncApply(req, res, next));
+router.get('/:id/sync-apply/:jobId/status', (req, res, next) => mailingListController.getSyncApplyStatus(req, res, next));
 
 // Mailing List Member routes
 router.get('/:id/members', (req, res, next) => mailingListController.getMembers(req, res, next));

@@ -7,7 +7,6 @@ import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,11 +30,6 @@ describe('DashboardQuicklinksComponent', () => {
   // `string | null` would let this file assert against a shape the real service never produces —
   // the same drift the `FakeValidationError` double in the server specs was fixed for.
   const activeContextUid = signal('');
-  // `MEETING_V2_ENABLED_FLAG`, on by default here: the meeting quick link is a dropdown trigger
-  // only while meetings v2 is enabled, and a plain navigating anchor otherwise. Most cases below are
-  // about the dropdown; the last two set it off. Either way the flag is stated rather than inherited
-  // from the real service (which answers `false` with no LaunchDarkly client in a TestBed).
-  const meetingsV2Enabled = signal(true);
   const open = vi.fn();
 
   /** The `data-testid` slug of every link rendered, in order. */
@@ -53,14 +47,12 @@ describe('DashboardQuicklinksComponent', () => {
     canWrite.set(false);
     canWriteMeetings.set(false);
     activeContextUid.set('');
-    meetingsV2Enabled.set(true);
     open.mockClear();
 
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         { provide: ProjectContextService, useValue: { canWrite, canWriteMeetings, activeContextUid } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         { provide: MeetingComposerService, useValue: { open } },
         { provide: PersonaService, useValue: { currentPersona: () => 'maintainer' } },
       ],
@@ -161,32 +153,6 @@ describe('DashboardQuicklinksComponent', () => {
     // The link is a narrow row inside the sidebar column, so a right-aligned panel would reach far
     // out over the page beside it instead of reading as belonging to the link.
     expect(createMeetingMenu().align()).toBe('center');
-  });
-
-  it('renders the meeting link as a navigating anchor while the flag is off', async () => {
-    meetingsV2Enabled.set(false);
-    canWriteMeetings.set(true);
-    await fixture.whenStable();
-
-    const trigger = link('create-meeting');
-
-    // The pre-v2 link goes to a page, so it has to be an anchor with a real href: middle-click,
-    // copy-link and the status bar all worked on this link before v2 and still have to.
-    expect(renderedSlugs()).toEqual(['create-meeting']);
-    expect(trigger?.tagName).toBe('A');
-    expect(trigger?.getAttribute('href')).toBe('/meetings/create');
-    expect(trigger?.getAttribute('aria-haspopup')).toBeNull();
-  });
-
-  it('does not instantiate the create dropdown at all while the flag is off', async () => {
-    meetingsV2Enabled.set(false);
-    canWriteMeetings.set(true);
-    await fixture.whenStable();
-
-    // Absent from the tree, not merely hidden: an untargeted user should not pull in the composer's
-    // create menu, and a hidden-but-mounted one would still be reachable by keyboard.
-    expect(fixture.debugElement.query(By.directive(MeetingCreateMenuComponent))).toBeNull();
-    expect(open).not.toHaveBeenCalled();
   });
 
   it('leaves the dropdown project unset when there is no active context', async () => {

@@ -1,8 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type { OrgTrainingGroupSortField } from '../interfaces/org-training-view.interface';
 import type { OrgTrainingTabId } from '../interfaces/training.interface';
+
+// ─── Me Training & Certifications dashboard (/me/training) ─────────────────
+
+/** Tabs of the Me lens training dashboard; `?tab=<id>` opens one directly. */
+export const TRAINING_DASHBOARD_TABS: FilterPillOption[] = [
+  { id: 'certifications', label: 'Certifications' },
+  { id: 'enrolled-trainings', label: 'Enrolled Trainings' },
+  { id: 'rewards', label: 'Rewards' },
+];
+
+export const DEFAULT_TRAINING_DASHBOARD_TAB_ID = 'certifications';
+
+export const VALID_TRAINING_DASHBOARD_TAB_IDS: ReadonlySet<string> = new Set(TRAINING_DASHBOARD_TABS.map((tab) => tab.id));
 
 // ─── Org Training page constants ───────────────────────────────────────────
 

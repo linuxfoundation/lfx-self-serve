@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { QUERY_SERVICE_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
+import {
+  MailingListAudienceAccess,
+  MailingListMemberDeliveryMode,
+  MailingListMemberModStatus,
+  MailingListMemberType,
+  MailingListSyncDirection,
+} from '@lfx-one/shared/enums';
 import {
   CreateGroupsIOServiceRequest,
   CreateMailingListMemberRequest,
@@ -14,9 +20,12 @@ import {
   MyMailingList,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  SyncApplyJobStatus,
   SyncApplyRequest,
   SyncApplyResult,
   SyncDiff,
+  SyncDiffJobStatus,
+  SyncJobStart,
   UpdateGroupsIOServiceRequest,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
@@ -371,13 +380,13 @@ export class MailingListService {
    * The upstream call blocks until ITX's internal sync job completes (polled server-side,
    * up to 5 minutes) — there is no separate job-status endpoint to poll from here.
    */
-  public async getSyncDiff(req: Request, mailingListId: string): Promise<SyncDiff> {
+  public async getSyncDiff(req: Request, mailingListId: string, direction?: MailingListSyncDirection): Promise<SyncDiff> {
     const diff = await this.microserviceProxy.proxyRequest<SyncDiff>(
       req,
       'LFX_V2_SERVICE',
       `/groupsio/mailing-lists/${mailingListId}/sync-diff`,
       'GET',
-      undefined,
+      direction ? { direction } : undefined,
       undefined,
       undefined,
       { timeoutMs: MailingListService.syncJobTimeoutMs }
@@ -416,6 +425,83 @@ export class MailingListService {
     });
 
     return result;
+  }
+
+  /** Starts an async sync-diff job and returns its ID immediately — no long-poll timeout needed. */
+  public async startSyncDiff(req: Request, mailingListId: string, direction?: MailingListSyncDirection): Promise<SyncJobStart> {
+    const start = await this.microserviceProxy.proxyRequest<SyncJobStart>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-diff/start`,
+      'POST',
+      direction ? { direction } : undefined
+    );
+
+    logger.debug(req, 'start_sync_diff', 'Started sync-diff job', {
+      mailing_list_uid: mailingListId,
+      job_id: start.job_id,
+    });
+
+    return start;
+  }
+
+  /**
+   * Fetches the current progress/result of a sync-diff job started via {@link startSyncDiff}.
+   * `direction` must match whatever was passed to `startSyncDiff` for this job.
+   */
+  public async getSyncDiffStatus(req: Request, mailingListId: string, jobId: string, direction?: MailingListSyncDirection): Promise<SyncDiffJobStatus> {
+    const status = await this.microserviceProxy.proxyRequest<SyncDiffJobStatus>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-diff/${jobId}/status`,
+      'GET',
+      direction ? { direction } : undefined
+    );
+
+    logger.debug(req, 'get_sync_diff_status', 'Fetched sync-diff job status', {
+      mailing_list_uid: mailingListId,
+      job_id: jobId,
+      status: status.status,
+    });
+
+    return status;
+  }
+
+  /** Starts an async sync-apply job for an admin-approved subset of a sync-diff and returns its ID immediately. */
+  public async startSyncApply(req: Request, mailingListId: string, data: SyncApplyRequest): Promise<SyncJobStart> {
+    const start = await this.microserviceProxy.proxyRequest<SyncJobStart>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-apply/start`,
+      'POST',
+      undefined,
+      data
+    );
+
+    logger.debug(req, 'start_sync_apply', 'Started sync-apply job', {
+      mailing_list_uid: mailingListId,
+      job_id: start.job_id,
+    });
+
+    return start;
+  }
+
+  /** Fetches the current progress/result of a sync-apply job started via {@link startSyncApply}. */
+  public async getSyncApplyStatus(req: Request, mailingListId: string, jobId: string): Promise<SyncApplyJobStatus> {
+    const status = await this.microserviceProxy.proxyRequest<SyncApplyJobStatus>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-apply/${jobId}/status`,
+      'GET'
+    );
+
+    logger.debug(req, 'get_sync_apply_status', 'Fetched sync-apply job status', {
+      mailing_list_uid: mailingListId,
+      job_id: jobId,
+      status: status.status,
+    });
+
+    return status;
   }
 
   // ============================================

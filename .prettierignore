@@ -45,3 +45,7 @@ packages/shared/src/utils/__fixtures__/brand-kit-report-v2.envelope.json
 packages/shared/src/utils/__fixtures__/framework-report-v2.envelope.json
 packages/shared/src/utils/__fixtures__/boilerplates-report-v2.envelope.json
 packages/shared/src/utils/__fixtures__/faq-report-v2.envelope.json
+
+# Worktree-root review/resolution audit artifacts must retain their original bytes.
+/*-findings.md
+/*-findings-[0-9][0-9].md

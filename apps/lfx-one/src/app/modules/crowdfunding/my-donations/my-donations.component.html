@@ -36,7 +36,8 @@
         <lfx-recurring-donations-list
           [donations]="recurringDonations()"
           (viewDetail)="onViewRecurringDetail($event)"
-          (cancelDonation)="onCancelDonation($event)" />
+          (cancelDonation)="onCancelDonation($event)"
+          (toggleAnonymity)="onToggleRecurringAnonymity($event)" />
       }
 
       <!-- Donation history -->
@@ -47,7 +48,8 @@
           [hasMore]="donationHistoryHasMore()"
           [loadingMore]="loadingMore()"
           [exploreUrl]="crowdfundingUrl"
-          (loadMore)="onLoadMoreDonations()" />
+          (loadMore)="onLoadMoreDonations()"
+          (toggleAnonymity)="onToggleDonationAnonymity($event)" />
       </div>
 
       <!-- Payment methods -->

@@ -345,7 +345,7 @@
       data-testid="implementation-edit-brief-btn" />
     <span class="text-xs text-gray-500" data-testid="implementation-edit-brief-hint">
       @if (canEditBrief()) {
-        Opens this brief in the Plan tab to change its copy and keywords. Changes made on this tab are not carried over.
+        Opens this brief in the Plan tab to change its copy, keywords and Registration URL. Changes made on this tab are not carried over.
       } @else {
         Available once campaign creation finishes.
       }
@@ -1341,14 +1341,17 @@
           }
           <div class="flex flex-wrap items-center gap-2">
             @for (segment of googleAudienceSegments(); track segment; let i = $index) {
-              <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                {{ segment }}
+              @let segmentName = googleAudienceSegmentNames().get(segment) ?? segment;
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                [attr.data-testid]="'implementation-google-audience-segment-' + i">
+                {{ segmentName }}
                 <button
                   #googleAudienceSegmentRemove
                   type="button"
                   (click)="removeGoogleAudienceSegment(i)"
                   class="ml-0.5 text-blue-600 hover:text-blue-800"
-                  [attr.aria-label]="'Remove ' + segment"
+                  [attr.aria-label]="'Remove ' + segmentName"
                   [attr.data-testid]="'implementation-google-audience-segment-remove-' + i">
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
                 </button>
@@ -3411,9 +3414,10 @@
         can be removed. A picked Audience is shown by name with Remove; with none, the picker lists the
         account's Audiences. A pick sets the resource name and replaces the picker, so it is never cleared.
       -->
-      <ng-template #demandGenAudienceTemplate lfxDemandGenAudienceContext let-group let-audienceControl="audience">
+      <ng-template #demandGenAudienceTemplate lfxDemandGenAudienceContext let-group>
         @let key = group === null ? 'single' : '' + group;
-        @let audience = audienceControl.value;
+        <!-- Trimmed as the payload trims it, so a blank Audience reads as none, here and below. -->
+        @let audience = demandGenAudienceTrimmed()[key];
         @if (demandGenAudienceAvailable() || audience !== '') {
           <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-audience-' + key">
             <span class="text-xs font-medium text-gray-700">Audience</span>
@@ -3486,15 +3490,10 @@
         restored draft holds beside one stay on show so they can be cleared, and the shared refusal holds
         Create until one of the two goes.
       -->
-      <ng-template
-        #demandGenDemographicsTemplate
-        lfxDemandGenDemographicsContext
-        let-group
-        let-demographicsControl="demographics"
-        let-audienceControl="audience">
+      <ng-template #demandGenDemographicsTemplate lfxDemandGenDemographicsContext let-group let-demographicsControl="demographics">
         @let key = group === null ? 'single' : '' + group;
         <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-demographics-' + key">
-          @if (audienceControl.value !== '' && !demandGenDemographicsNamed()[key]) {
+          @if (demandGenAudienceTrimmed()[key] !== '' && !demandGenDemographicsNamed()[key]) {
             <span class="text-xs font-medium text-gray-700">Demographics</span>
             <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-demographics-held-by-audience-' + key">
               This ad group targets the Audience above, and Google Ads takes one Audience per Demand Gen ad group. Remove the Audience to set demographics
@@ -3514,6 +3513,16 @@
             </p>
             @if (demandGenDemographicsLeftOut()[key]; as note) {
               <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-demographics-left-out-' + key">{{ note }}</p>
+            }
+            <!-- A restored value no box offers cannot be unticked, so Clear is the way out of its refusal. -->
+            @if (demandGenDemographicsNamed()[key]) {
+              <lfx-button
+                label="Clear demographics"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                (onClick)="onDemandGenDemographicsClear(group)"
+                [attr.data-testid]="'implementation-demand-gen-demographics-clear-' + key" />
             }
           }
         </div>
@@ -3823,22 +3832,76 @@
             <h3 class="text-sm font-semibold text-gray-900">LinkedIn Sponsored Content</h3>
           </div>
 
-          <!-- Ad Account Selector -->
-          <div class="mb-4">
-            <label class="mb-2 block text-xs font-medium text-gray-700">Ad Account</label>
-            <select
-              [value]="linkedInAccountId()"
-              (change)="onLinkedInAccountChange($event)"
-              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              data-testid="implementation-linkedin-account">
-              @for (account of linkedInAccounts(); track account.accountId) {
-                <option [value]="account.accountId">{{ account.label }} ({{ account.accountId }})</option>
+          <!-- Ad Account: set by the connection when campaign-service owns the create (#5809), else the legacy selector -->
+          @if (linkedInAccountSetByConnection() && linkedInAccountSelectionAvailable() && linkedInCreateAccount().status !== 'idle') {
+            <!-- Read from campaign-service (#5809): a picker for global_marketing_ops, else the default account read-only -->
+            @let createAccount = linkedInCreateAccount();
+            @let effectiveAccount = linkedInEffectiveAccount();
+            <div class="mb-4 flex flex-col gap-1" data-testid="implementation-linkedin-create-account">
+              @if (createAccount.status === 'loading') {
+                <p class="text-xs font-medium text-gray-700">Ad Account</p>
+                <p class="text-xs text-gray-500" data-testid="implementation-linkedin-create-account-loading">Loading the ad account…</p>
+              } @else if (linkedInCanChooseAccount() && effectiveAccount) {
+                <label for="implementation-linkedin-create-account-select" class="text-xs font-medium text-gray-700">Ad Account</label>
+                <lfx-select
+                  [form]="linkedInCreateAccountForm"
+                  control="accountId"
+                  [options]="linkedInCreateAccountOptions()"
+                  optionLabel="label"
+                  optionValue="value"
+                  inputId="implementation-linkedin-create-account-select"
+                  styleClass="w-fit"
+                  dataTest="implementation-linkedin-create-account-select"
+                  data-testid="implementation-linkedin-create-account-select" />
+                @if (effectiveAccount.orgId) {
+                  <p class="text-xs text-gray-500" data-testid="implementation-linkedin-create-account-page">
+                    Posts as LinkedIn page {{ effectiveAccount.orgId }}.
+                  </p>
+                }
+                <p class="text-xs text-gray-500">
+                  The campaign is created in the account chosen here. Only the LF marketing team can choose an account other than the default.
+                </p>
+              } @else if (effectiveAccount) {
+                <p class="text-xs font-medium text-gray-700">Ad Account</p>
+                <p class="text-sm text-gray-900" data-testid="implementation-linkedin-create-account-default">
+                  {{ effectiveAccount.label }} ({{ effectiveAccount.accountId }})
+                </p>
+                <p class="text-xs text-gray-500">
+                  Set by this project's LinkedIn connection. Only the LF marketing team can create a campaign in another account.
+                </p>
+              } @else {
+                <p class="text-xs font-medium text-gray-700">Ad Account</p>
+                <p class="text-xs text-gray-600" data-testid="implementation-linkedin-create-account-failed">
+                  The ad account couldn't be loaded. The campaign is created in the account this project's LinkedIn connection is set up for, or in LF's shared
+                  LinkedIn account if the project has no connection of its own.
+                </p>
               }
-            </select>
-            @if (selectedLinkedInAccount()) {
-              <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().orgId }} · Status: {{ selectedLinkedInAccount().status }}</p>
-            }
-          </div>
+            </div>
+          } @else if (linkedInAccountSetByConnection()) {
+            <div class="mb-4" data-testid="implementation-linkedin-account-from-connection">
+              <p class="mb-1 text-xs font-medium text-gray-700">Ad Account</p>
+              <p class="text-xs text-gray-600">
+                Set by this project's LinkedIn connection: the campaign is created in that connection's ad account, or in LF's shared LinkedIn account if the
+                project has no connection of its own. It can't be chosen here yet.
+              </p>
+            </div>
+          } @else {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Account</label>
+              <select
+                [value]="linkedInAccountId()"
+                (change)="onLinkedInAccountChange($event)"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-linkedin-account">
+                @for (account of linkedInAccounts(); track account.accountId) {
+                  <option [value]="account.accountId">{{ account.label }} ({{ account.accountId }})</option>
+                }
+              </select>
+              @if (selectedLinkedInAccount()) {
+                <p class="mt-1 text-xs text-gray-400">Org: {{ selectedLinkedInAccount().orgId }} · Status: {{ selectedLinkedInAccount().status }}</p>
+              }
+            </div>
+          }
 
           <!-- Geo Targets -->
           <div class="mb-4">
@@ -3898,6 +3961,93 @@
                 AI / MCP
               </button>
             </div>
+
+            <!-- What the selected profile targets (#5546): its member groups and skills, each removable. -->
+            <div class="mt-3 flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="implementation-linkedin-targeting">
+              <!-- Reset is offered whenever removals are held, loaded or not: the create gate can ask for it before the profile loads. Hidden with `invisible`, not removed, so the chips don't shift when the first removal is made. -->
+              <button
+                type="button"
+                (click)="resetLinkedInTargeting()"
+                [class.invisible]="!linkedInTargetingRemovalsHeld()"
+                [attr.aria-hidden]="!linkedInTargetingRemovalsHeld()"
+                [attr.tabindex]="linkedInTargetingRemovalsHeld() ? null : -1"
+                class="self-end text-xs font-medium text-blue-600 hover:text-blue-800"
+                data-testid="implementation-linkedin-targeting-reset">
+                Reset to profile
+              </button>
+              @if (linkedInEffectiveTargeting(); as effective) {
+                <p class="text-xs text-gray-600" data-testid="implementation-linkedin-targeting-summary">
+                  In the chosen locations, LinkedIn shows these ads to members in any of these groups, with any of these skills, or in one of the job functions
+                  the campaign service adds.
+                </p>
+                <div class="flex flex-col gap-1" data-testid="implementation-linkedin-targeting-groups">
+                  <span class="text-xs font-medium text-gray-700" data-testid="implementation-linkedin-targeting-groups-count">
+                    Member groups ({{ effective.groups.length }} of {{ linkedInSelectedTargetingProfile()?.groups?.length ?? 0 }})
+                  </span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    @for (urn of effective.groups; track urn) {
+                      <span class="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-mono text-xs text-gray-700 ring-1 ring-gray-200">
+                        {{ urn }}
+                        @if (linkedInTargetingEditAvailable()) {
+                          <button
+                            type="button"
+                            (click)="removeLinkedInTargetingFacet('groups', urn)"
+                            class="ml-0.5 text-gray-500 hover:text-gray-800"
+                            [attr.aria-label]="'Remove ' + urn"
+                            data-testid="implementation-linkedin-targeting-remove-group">
+                            <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                          </button>
+                        }
+                      </span>
+                    } @empty {
+                      <span class="text-xs text-gray-400" data-testid="implementation-linkedin-targeting-groups-empty">No member groups</span>
+                    }
+                  </div>
+                </div>
+                <div class="flex flex-col gap-1" data-testid="implementation-linkedin-targeting-skills">
+                  <span class="text-xs font-medium text-gray-700" data-testid="implementation-linkedin-targeting-skills-count">
+                    Skills ({{ effective.skills.length }} of {{ linkedInSelectedTargetingProfile()?.skills?.length ?? 0 }})
+                  </span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    @for (urn of effective.skills; track urn) {
+                      <span class="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-mono text-xs text-gray-700 ring-1 ring-gray-200">
+                        {{ urn }}
+                        @if (linkedInTargetingEditAvailable()) {
+                          <button
+                            type="button"
+                            (click)="removeLinkedInTargetingFacet('skills', urn)"
+                            class="ml-0.5 text-gray-500 hover:text-gray-800"
+                            [attr.aria-label]="'Remove ' + urn"
+                            data-testid="implementation-linkedin-targeting-remove-skill">
+                            <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                          </button>
+                        }
+                      </span>
+                    } @empty {
+                      <span class="text-xs text-gray-400" data-testid="implementation-linkedin-targeting-skills-empty">No skills</span>
+                    }
+                  </div>
+                </div>
+                <p class="text-xs text-gray-500" data-testid="implementation-linkedin-targeting-fixed">
+                  The campaign service adds the same job functions to every LinkedIn campaign; they can't be changed here.
+                </p>
+                @if (linkedInTargetingEmptyWarning()) {
+                  <p class="text-xs text-amber-700" data-testid="implementation-linkedin-targeting-empty-warning">
+                    With no member groups or skills, this campaign reaches everyone in those job functions in the chosen locations.
+                  </p>
+                }
+              } @else if (linkedInTargetingProfilesLoading()) {
+                <span class="text-xs text-gray-400" data-testid="implementation-linkedin-targeting-loading">Loading what this profile targets…</span>
+              } @else if (linkedInTargetingProfilesFailed()) {
+                <span class="text-xs text-red-600" data-testid="implementation-linkedin-targeting-error">
+                  Couldn't load what this profile targets. Reload the page to see it.
+                </span>
+              } @else {
+                <span class="text-xs text-gray-400" data-testid="implementation-linkedin-targeting-unconfigured"
+                  >This profile isn't configured on this deployment.</span
+                >
+              }
+            </div>
           </div>
 
           <!-- LinkedIn Budget -->
@@ -3924,6 +4074,38 @@
             </div>
           </div>
 
+          <!-- Daily cap beside a lifetime budget (#5774): offered only while the lifetime budget is on. -->
+          @if (linkedInLifetimeBudget() && linkedInDailyCapAvailable()) {
+            <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div class="flex flex-col gap-1">
+                <label for="implementation-linkedin-daily-cap" class="text-xs font-medium text-gray-700">Daily cap (USD, optional)</label>
+                <input
+                  id="implementation-linkedin-daily-cap"
+                  type="number"
+                  [value]="linkedInDailyCapInputValue() ?? ''"
+                  (input)="onLinkedInDailyCapInput($event)"
+                  min="10"
+                  step="0.01"
+                  [attr.aria-describedby]="linkedInDailyCapDescribedBy()"
+                  [attr.aria-invalid]="linkedInDailyCapError() !== null"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-linkedin-daily-cap" />
+                <span id="implementation-linkedin-daily-cap-hint" class="text-xs text-gray-500"
+                  >Most LinkedIn spends in one day. At least $10 and no more than the lifetime budget. Leave it empty for no cap.</span
+                >
+                @if (linkedInDailyCapError(); as error) {
+                  <span
+                    id="implementation-linkedin-daily-cap-error"
+                    class="text-xs text-red-600"
+                    role="alert"
+                    data-testid="implementation-linkedin-daily-cap-error"
+                    >{{ error }}</span
+                  >
+                }
+              </div>
+            </div>
+          }
+
           <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
           @if (biddingAvailable()) {
             <div class="mb-4">
@@ -3931,119 +4113,156 @@
             </div>
           }
 
-          <!-- Ad image (one upload on every variant, as each dark post's thumbnail). LinkedIn takes no
-               image URL, so the upload is the whole control, offered only on an explicit yes from
-               `linkedInAssetUploadAvailable()`. -->
+          <!-- The upload's status and any image notice, announced. Always mounted; only their text changes. -->
           <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-status-live">
             {{ linkedInImageUploadLiveMessage() }}
           </div>
-          @if (linkedInAssetUploadAvailable()) {
-            <div class="mb-4 flex flex-col gap-1" data-testid="implementation-linkedin-image-upload">
-              <label class="text-xs font-medium text-gray-700" for="linkedin-image-file">Ad image</label>
-              <input
-                id="linkedin-image-file"
-                type="file"
-                [attr.accept]="creativeAssetAccept"
-                (change)="onLinkedInImageFileChange($event)"
-                [disabled]="linkedInImagePickerDisabled()"
-                [attr.aria-describedby]="linkedInImageFileDescribedBy()"
-                [attr.aria-invalid]="linkedInImageUploadStatus() === 'error' ? 'true' : null"
-                class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
-                data-testid="implementation-linkedin-image-file" />
-              <p id="linkedin-image-file-hint" class="text-xs text-gray-500">
-                PNG or JPEG, up to 5 MB, at least 640x360 (horizontal), 360x360 (square) or 360x640 (vertical). Used as the thumbnail on every LinkedIn ad.
-              </p>
-              <p id="linkedin-image-file-status" class="text-xs text-gray-700" data-testid="implementation-linkedin-image-status">
-                {{ linkedInImageUploadStatusMessage() }}
-              </p>
-              @if (linkedInImageUploadStatus() === 'uploading') {
-                <div>
-                  <lfx-button
-                    label="Cancel upload"
-                    size="small"
-                    severity="secondary"
-                    [text]="true"
-                    (onClick)="onLinkedInImageAssetRemove()"
-                    data-testid="implementation-linkedin-image-cancel" />
-                </div>
-              } @else if (linkedInImageAssetId()) {
-                <div>
-                  <lfx-button
-                    label="Remove uploaded image"
-                    size="small"
-                    severity="secondary"
-                    [text]="true"
-                    (onClick)="onLinkedInImageAssetRemove()"
-                    data-testid="implementation-linkedin-image-remove" />
-                </div>
-              }
-              @if (linkedInImageUploadStatus() === 'error') {
-                <p id="linkedin-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-linkedin-image-error">
-                  {{ linkedInImageUploadError() }}
-                </p>
-              }
-            </div>
-          }
-
-          <!-- A LinkedIn upload the request cannot carry, or a failed upload; see `initLinkedInImageAssetBlock`. -->
           <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-asset-block-live">
             {{ linkedInImageAssetBlockMessage() }}
           </div>
-          @if (linkedInImageAssetBlock(); as block) {
-            <div
-              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
-              [class.bg-gray-50]="block.kind === 'pending'"
-              [class.text-gray-700]="block.kind === 'pending'"
-              [class.bg-amber-50]="block.kind !== 'pending'"
-              [class.text-amber-800]="block.kind !== 'pending'"
-              [attr.data-testid]="'implementation-linkedin-image-asset-block-' + block.kind">
-              <p class="flex items-center gap-2">
-                @if (block.kind === 'pending') {
-                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-                }
-                {{ block.message }}
-              </p>
-              <div class="flex items-center gap-2">
-                @if (block.kind === 'failed') {
-                  <lfx-button
-                    label="Retry"
-                    size="small"
-                    severity="secondary"
-                    [outlined]="true"
-                    (onClick)="retryCreateCapabilities.emit()"
-                    data-testid="implementation-linkedin-image-asset-block-retry" />
-                }
-                <lfx-button
-                  label="Remove image"
-                  size="small"
-                  severity="secondary"
-                  [text]="true"
-                  (onClick)="onLinkedInImageAssetRemove()"
-                  data-testid="implementation-linkedin-image-asset-block-remove" />
-              </div>
-            </div>
-          }
 
-          <!-- Variant Preview -->
-          @if (linkedInVariants().length > 0) {
-            <div>
-              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ linkedInVariants().length }})</label>
-              <div class="flex flex-col gap-2">
-                @for (variant of linkedInVariants(); track $index; let i = $index) {
-                  <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-linkedin-variant-' + i">
-                    <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
-                    @if (linkedInPreviewImageLabel(); as imageLabel) {
-                      <p class="mb-1 text-xs text-gray-500" [attr.data-testid]="'implementation-linkedin-variant-image-' + i">
-                        <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ imageLabel }}
+          <!-- Ad variants: each one is its own LinkedIn ad, with its own copy and, when uploads are on, its own image (#5547). -->
+          <fieldset class="flex flex-col gap-3" aria-describedby="linkedin-variants-hint" data-testid="implementation-linkedin-variants">
+            <legend class="float-left text-xs font-medium text-gray-700">Ad variants ({{ linkedInVariants().length }}/{{ linkedInMaxVariants }})</legend>
+            <p id="linkedin-variants-hint" class="text-xs text-gray-500">
+              Each variant is a separate ad in the campaign, with its own intro text (up to {{ linkedInCharLimits.introText }} characters) and headline (up to
+              {{ linkedInCharLimits.headline }}). Keep between {{ linkedInMinVariants }} and {{ linkedInMaxVariants }}.
+            </p>
+            @for (view of linkedInVariantViews(); track view.key; let i = $index) {
+              <fieldset
+                class="flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3"
+                [attr.data-testid]="'implementation-linkedin-variant-' + i">
+                <legend class="float-left text-xs font-medium text-gray-700">Variant {{ i + 1 }}</legend>
+                <lfx-ui-textarea
+                  label="Intro text"
+                  [value]="view.introText"
+                  (valueChange)="onLinkedInVariantTextChange(view.key, 'introText', $event)"
+                  [error]="view.introTextError"
+                  [hint]="view.introTextLength + '/' + linkedInCharLimits.introText + ' characters'"
+                  [attr.data-testid]="'implementation-linkedin-variant-intro-' + i" />
+                <lfx-ui-input
+                  label="Headline"
+                  size="small"
+                  [value]="view.headline"
+                  (valueChange)="onLinkedInVariantTextChange(view.key, 'headline', $event)"
+                  [error]="view.headlineError"
+                  [hint]="view.headlineLength + '/' + linkedInCharLimits.headline + ' characters'"
+                  [attr.data-testid]="'implementation-linkedin-variant-headline-' + i" />
+
+                <!-- The variant's own image. LinkedIn takes no image URL, so the upload is the whole control,
+                     offered only on an explicit yes from `linkedInAssetUploadAvailable()`. -->
+                @if (linkedInAssetUploadAvailable()) {
+                  <div class="flex flex-col gap-1" [attr.data-testid]="'implementation-linkedin-variant-image-upload-' + i">
+                    <label class="text-xs font-medium text-gray-700" [attr.for]="'linkedin-variant-image-file-' + i">Image</label>
+                    <input
+                      [id]="'linkedin-variant-image-file-' + i"
+                      type="file"
+                      [attr.accept]="creativeAssetAccept"
+                      (change)="onLinkedInVariantImageFileChange(view.key, $event)"
+                      [disabled]="view.imagePickerDisabled"
+                      [attr.aria-describedby]="'linkedin-variant-image-hint-' + i + ' linkedin-variant-image-status-' + i"
+                      [attr.aria-invalid]="view.imageError ? 'true' : null"
+                      class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                      [attr.data-testid]="'implementation-linkedin-variant-image-file-' + i" />
+                    <p [id]="'linkedin-variant-image-hint-' + i" class="text-xs text-gray-500">
+                      PNG or JPEG, up to 5 MB, at least 640x360 (horizontal), 360x360 (square) or 360x640 (vertical). Used as this ad's thumbnail only.
+                      {{ view.imagePickerNote }}
+                    </p>
+                    <p
+                      [id]="'linkedin-variant-image-status-' + i"
+                      class="text-xs text-gray-700"
+                      [attr.data-testid]="'implementation-linkedin-variant-image-status-' + i">
+                      {{ view.imageStatusMessage }}
+                    </p>
+                    @if (view.imageUploading) {
+                      <div>
+                        <lfx-button
+                          label="Cancel upload"
+                          size="small"
+                          severity="secondary"
+                          [text]="true"
+                          (onClick)="onLinkedInVariantImageRemove(view.key)"
+                          [attr.data-testid]="'implementation-linkedin-variant-image-cancel-' + i" />
+                      </div>
+                    } @else if (view.imageHeld) {
+                      <div>
+                        <lfx-button
+                          label="Remove uploaded image"
+                          size="small"
+                          severity="secondary"
+                          [text]="true"
+                          (onClick)="onLinkedInVariantImageRemove(view.key)"
+                          [attr.data-testid]="'implementation-linkedin-variant-image-remove-' + i" />
+                      </div>
+                    }
+                    @if (view.imageError) {
+                      <p role="alert" class="text-xs text-red-600" [attr.data-testid]="'implementation-linkedin-variant-image-error-' + i">
+                        {{ view.imageError }}
                       </p>
                     }
-                    <p class="text-sm text-gray-800">{{ variant.introText | slice: 0 : 120 }}{{ variant.introText.length > 120 ? '...' : '' }}</p>
-                    <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline }}</p>
                   </div>
                 }
-              </div>
-            </div>
-          }
+
+                <!-- This variant's upload the request cannot carry, or its failed upload; see `linkedInVariantImageBlock`. -->
+                @if (view.imageBlock; as block) {
+                  <div
+                    class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+                    [class.bg-white]="block.kind === 'pending'"
+                    [class.text-gray-700]="block.kind === 'pending'"
+                    [class.bg-amber-50]="block.kind !== 'pending'"
+                    [class.text-amber-800]="block.kind !== 'pending'"
+                    [attr.data-testid]="'implementation-linkedin-variant-image-asset-block-' + block.kind + '-' + i">
+                    <p class="flex items-center gap-2">
+                      @if (block.kind === 'pending') {
+                        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                      }
+                      {{ block.message }}
+                    </p>
+                    <div class="flex items-center gap-2">
+                      @if (block.kind === 'failed') {
+                        <lfx-button
+                          label="Retry"
+                          size="small"
+                          severity="secondary"
+                          [outlined]="true"
+                          (onClick)="retryCreateCapabilities.emit()"
+                          [attr.data-testid]="'implementation-linkedin-variant-image-asset-block-retry-' + i" />
+                      }
+                      <lfx-button
+                        label="Remove image"
+                        size="small"
+                        severity="secondary"
+                        [text]="true"
+                        (onClick)="onLinkedInVariantImageRemove(view.key)"
+                        [attr.data-testid]="'implementation-linkedin-variant-image-asset-block-remove-' + i" />
+                    </div>
+                  </div>
+                }
+
+                <lfx-button
+                  class="self-start"
+                  label="Remove variant"
+                  icon="fa-light fa-trash"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  [disabled]="linkedInVariants().length <= linkedInMinVariants"
+                  [ariaLabel]="'Remove variant ' + (i + 1)"
+                  (onClick)="removeLinkedInVariant(view.key)"
+                  [attr.data-testid]="'implementation-linkedin-variant-remove-' + i" />
+              </fieldset>
+            }
+            <lfx-button
+              class="self-start"
+              label="Add variant"
+              icon="fa-light fa-plus"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              [disabled]="linkedInVariants().length >= linkedInMaxVariants"
+              (onClick)="addLinkedInVariant()"
+              data-testid="implementation-linkedin-variant-add" />
+          </fieldset>
         </div>
       }
 
@@ -4088,7 +4307,7 @@
                 (change)="onMetaObjectiveChange($event)"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-meta-objective">
-                @for (objective of metaObjectiveOptions; track objective) {
+                @for (objective of metaObjectiveOptions(); track objective) {
                   <option [value]="objective" [selected]="objective === metaObjective()">{{ metaObjectiveLabels[objective] }}</option>
                 }
                 <!--
@@ -4310,6 +4529,114 @@
                   <p id="meta-dsa-payor-error" class="text-xs text-red-600" data-testid="implementation-meta-dsa-payor-error">{{ error }}</p>
                 }
               </div>
+            </div>
+          }
+
+          <!-- Ad set audience targeting (#5905), offered only on an explicit yes (`metaAudienceTargetingAvailable`,
+               LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING); custom audiences only for global_marketing_ops. -->
+          @if (metaAudienceTargetingAvailable()) {
+            <div class="mb-4" data-testid="implementation-meta-audience-targeting">
+              <lfx-meta-audience-targeting
+                [projectSlug]="activeFoundationSlug()"
+                [customAudiencesEnabled]="metaCustomAudiencesAvailable()"
+                [targeting]="metaAudienceTargeting()"
+                (targetingChange)="onMetaAudienceTargetingChange($event)" />
+            </div>
+          }
+          <!-- Targeting the request cannot carry holds Create, on the Google audience segments block's kinds. -->
+          @if (metaAudienceTargetingBlock(); as block) {
+            <div
+              role="alert"
+              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-meta-audience-targeting-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryCreateCapabilities.emit()"
+                  data-testid="implementation-meta-audience-targeting-block-retry" />
+              } @else if (block.kind === 'unsupported') {
+                <lfx-button
+                  label="Clear audience targeting"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="clearMetaAudienceTargeting()"
+                  data-testid="implementation-meta-audience-targeting-clear" />
+              }
+            </div>
+          }
+
+          <!-- The lead form of a Leads create (#5940): only under `leads`, which is offered only to a caller who may send one. -->
+          @if (metaLeadFormRequested()) {
+            <lfx-meta-lead-form-picker
+              class="mb-4 block"
+              [projectSlug]="activeFoundationSlug()"
+              [leadFormId]="metaLeadFormId()"
+              (leadFormIdChange)="onMetaLeadFormChange($event)"
+              data-testid="implementation-meta-lead-form" />
+          }
+          @if (metaLeadFormError(); as error) {
+            <p role="alert" class="mb-4 text-xs text-red-600" data-testid="implementation-meta-lead-form-error">{{ error }}</p>
+          }
+
+          <!-- Call to action, conversion event and optimization goal (#5934), each offered only on an explicit yes
+               (LFX_CUTOVER_CAMPAIGN_SERVICE_META_*) and where the objective fits. "Not set" sends nothing. -->
+          @if (metaAdOptionViews().length > 0) {
+            <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="implementation-meta-ad-options">
+              @for (view of metaAdOptionViews(); track view.key) {
+                <lfx-ui-select
+                  [label]="view.label"
+                  size="small"
+                  [value]="metaAdOptions()[view.key] ?? ''"
+                  (valueChange)="onMetaAdOptionChange(view.key, $event)"
+                  [attr.data-testid]="'implementation-meta-' + view.key">
+                  <lfx-ui-option value="" [label]="view.notSetLabel" />
+                  @for (option of view.options; track option.value) {
+                    <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="option.disabled" />
+                  }
+                </lfx-ui-select>
+              }
+            </div>
+          }
+          @if (metaAdOptionsError(); as error) {
+            <p role="alert" class="mb-4 text-xs text-red-600" data-testid="implementation-meta-ad-options-error">{{ error }}</p>
+          }
+          @if (metaAdOptionsBlock(); as block) {
+            <div
+              role="alert"
+              class="mb-4 flex flex-col items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              [attr.data-testid]="'implementation-meta-ad-options-block-' + block.kind">
+              <p>{{ block.message }}</p>
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryCreateCapabilities.emit()"
+                  data-testid="implementation-meta-ad-options-block-retry" />
+              } @else if (block.kind === 'unsupported') {
+                <lfx-button
+                  label="Clear"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="clearUnsupportedMetaAdOptions()"
+                  data-testid="implementation-meta-ad-options-clear" />
+              }
             </div>
           }
 
@@ -5598,18 +5925,26 @@
         </div>
       }
 
-      <!-- Submit -->
-      <div class="flex items-center gap-3">
-        <lfx-button
-          label="Create Campaign"
-          icon="fa-light fa-rocket"
-          severity="primary"
-          [disabled]="!canSubmit()"
-          (onClick)="submit()"
-          ariaLabel="Create campaign"
-          data-testid="implementation-submit-btn" />
-        @if (errors().length > 0) {
-          <p class="text-sm text-red-600">{{ errors()[0] }}</p>
+      <!-- Submit. Beside the button: the last create's refusal, and while the button is disabled, what
+           blocks it (#5491) — a disabled button alone says nothing. -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-3">
+          <lfx-button
+            label="Create Campaign"
+            icon="fa-light fa-rocket"
+            severity="primary"
+            [disabled]="!canSubmit()"
+            (onClick)="submit()"
+            ariaLabel="Create campaign"
+            data-testid="implementation-submit-btn" />
+          @if (errors().length > 0) {
+            <p #createMessage role="alert" class="text-sm text-red-600" data-testid="implementation-submit-error">{{ errors()[0] }}</p>
+          }
+        </div>
+        @if (createBlockedReason(); as reason) {
+          <p class="text-xs text-gray-600" data-testid="implementation-submit-blocked-reason">
+            <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>Create Campaign is unavailable: {{ reason }}
+          </p>
         }
       </div>
     </form>

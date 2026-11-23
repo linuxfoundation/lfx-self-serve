@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, signal } from '@angular/core';
+import { Component, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_MEMBERS_SECTIONS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject } from 'rxjs';
@@ -21,6 +21,13 @@ import { MembersNpsComponent } from './components/members-nps/members-nps.compon
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
 
+import type {
+  HealthMetricsMembersAtRiskFilter,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersNpsAudienceSwitch,
+  HealthMetricsMembersRenewalsWindow,
+} from '@lfx-one/shared/interfaces';
+
 /** Stands in for Member growth by year, whose read its own spec covers; the test drives its settle. */
 @Component({ selector: 'lfx-members-growth', template: '<div data-testid="members-growth-stub"></div>' })
 class GrowthStubComponent {
@@ -31,15 +38,13 @@ class GrowthStubComponent {
 /** Stands in for Membership breakdown by tier, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-members-breakdown', template: '<div data-testid="members-breakdown-stub"></div>' })
 class BreakdownStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
-/** Stands in for the members directory; the test drives its count and settle. */
+/** Stands in for the members directory; the test drives its settle. */
 @Component({ selector: 'lfx-members-directory', template: '<div data-testid="members-directory-stub"></div>' })
 class DirectoryStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -47,6 +52,7 @@ class DirectoryStubComponent {
 /** Stands in for the at-risk section; the test drives its note and settle. */
 @Component({ selector: 'lfx-members-at-risk', template: '<div data-testid="members-at-risk-stub"></div>' })
 class AtRiskStubComponent {
+  public readonly bucket = model<HealthMetricsMembersAtRiskFilter>('all');
   public readonly noteChange = output<string>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
@@ -55,6 +61,8 @@ class AtRiskStubComponent {
 /** Stands in for the member satisfaction section; the test drives its settle. */
 @Component({ selector: 'lfx-members-nps', template: '<div data-testid="members-nps-stub"></div>' })
 class NpsStubComponent {
+  public readonly audience = model<string | null>(null);
+  public readonly audienceSwitch = output<HealthMetricsMembersNpsAudienceSwitch>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -66,10 +74,10 @@ class ChurnStubComponent {
   public readonly reading = output<void>();
 }
 
-/** Stands in for the renewals section; the test drives its count and settle. */
+/** Stands in for the renewals section; the test drives its settle. */
 @Component({ selector: 'lfx-members-renewals', template: '<div data-testid="members-renewals-stub"></div>' })
 class RenewalsStubComponent {
-  public readonly countChange = output<number | null>();
+  public readonly window = model<HealthMetricsMembersRenewalsWindow>('90_days');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -77,6 +85,7 @@ class RenewalsStubComponent {
 /** Stands in for the board attendance section; the test drives its note and settle. */
 @Component({ selector: 'lfx-members-board-attendance', template: '<div data-testid="members-board-stub"></div>' })
 class BoardStubComponent {
+  public readonly cohort = model<HealthMetricsMembersBoardCohort>('board');
   public readonly noteChange = output<string>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
@@ -88,13 +97,19 @@ describe('HealthMetricsMembersComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   let fixture: ComponentFixture<HealthMetricsMembersComponent>;
 
-  async function setup(initialFragment: string | null = null): Promise<void> {
+  async function setup(initialFragment: string | null = null, queryParams: Record<string, string> = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsMembersComponent],
       providers: [
         HealthMetricsChromeService,
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            fragment: new BehaviorSubject<string | null>(initialFragment).asObservable(),
+            snapshot: { queryParamMap: convertToParamMap(queryParams) },
+          },
+        },
       ],
     })
       .overrideComponent(HealthMetricsMembersComponent, {
@@ -177,14 +192,14 @@ describe('HealthMetricsMembersComponent', () => {
     });
   });
 
-  it('lists every section in the sub-nav, with no badge and the Engagement note', async () => {
+  it('lists every section in the sub-nav, with no note before a read', async () => {
     await setup();
     const nav = fixture.nativeElement.querySelector('[data-testid="members-sub-nav"]');
 
     for (const section of HEALTH_METRICS_MEMBERS_SECTIONS) {
       expect(fixture.nativeElement.querySelector(`[data-testid="members-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
-    expect(nav.textContent).not.toMatch(/\d/);
+    expect(nav.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   function stub<T>(type: new (...args: never[]) => T): T {
@@ -260,45 +275,6 @@ describe('HealthMetricsMembersComponent', () => {
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-churn');
   });
 
-  it("badges the breakdown with the selected year's members once it reports them", async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-breakdown"]').textContent;
-
-    stub(BreakdownStubComponent).countChange.emit(2630);
-    await flush();
-    expect(item()).toContain('2,630');
-
-    stub(BreakdownStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
-  });
-
-  it('badges All members with the directory count once it reports one', async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-list"]').textContent;
-
-    stub(DirectoryStubComponent).countChange.emit(725);
-    await flush();
-    expect(item()).toContain('725');
-
-    stub(DirectoryStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
-  });
-
-  it('badges Renewals with the renewals due once it reports them', async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-renewals"]').textContent;
-
-    stub(RenewalsStubComponent).countChange.emit(61);
-    await flush();
-    expect(item()).toContain('61');
-
-    stub(RenewalsStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
-  });
-
   it('notes At-risk & balance with the at-risk summary once it reports one', async () => {
     await setup();
     const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-risk"]').textContent;
@@ -310,6 +286,86 @@ describe('HealthMetricsMembersComponent', () => {
     stub(AtRiskStubComponent).noteChange.emit('');
     await flush();
     expect(item()).not.toContain('overdue');
+  });
+
+  it("puts the at-risk bucket switch in that card's header, seeded from the URL and handed to the section", async () => {
+    await setup(null, { riskBucket: '90_plus_days' });
+    const section = fixture.nativeElement.querySelector('#sec-mem-risk') as HTMLElement;
+
+    const labels = [...section.querySelectorAll('[data-testid="members-at-risk-bucket"] [data-testid="ui-switch-option-text"]')].map((label) =>
+      label.textContent?.trim()
+    );
+    expect(labels).toEqual(['All at risk', '60–89 days', '90+ days']);
+    expect(stub(AtRiskStubComponent).bucket()).toBe('90_plus_days');
+
+    (section.querySelector('[data-testid="members-at-risk-bucket-60_89_days"] input') as HTMLInputElement).click();
+    await flush();
+    expect(stub(AtRiskStubComponent).bucket()).toBe('60_89_days');
+  });
+
+  it("puts the renewals window switch in that card's header, seeded from the URL and handed to the section", async () => {
+    await setup(null, { renewalsWindow: 'this_year' });
+    const section = fixture.nativeElement.querySelector('#sec-mem-renewals') as HTMLElement;
+
+    const labels = [...section.querySelectorAll('[data-testid="members-renewals-window"] [data-testid="ui-switch-option-text"]')].map((label) =>
+      label.textContent?.trim()
+    );
+    expect(labels).toEqual(['Next 90 days', 'Next 180 days', 'This year']);
+    expect(stub(RenewalsStubComponent).window()).toBe('this_year');
+
+    (section.querySelector('[data-testid="members-renewals-window-180_days"] input') as HTMLInputElement).click();
+    await flush();
+    expect(stub(RenewalsStubComponent).window()).toBe('180_days');
+  });
+
+  it("puts the board cohort switch in that card's header, seeded from the URL and handed to the section", async () => {
+    await setup(null, { boardCohort: 'voting_members' });
+    const section = fixture.nativeElement.querySelector('#sec-mem-board') as HTMLElement;
+
+    const labels = [...section.querySelectorAll('[data-testid="members-board-cohort"] [data-testid="ui-switch-option-text"]')].map((label) =>
+      label.textContent?.trim()
+    );
+    expect(labels).toEqual(['Board', 'Voting members']);
+    expect(stub(BoardStubComponent).cohort()).toBe('voting_members');
+
+    (section.querySelector('[data-testid="members-board-cohort-board"] input') as HTMLInputElement).click();
+    await flush();
+    expect(stub(BoardStubComponent).cohort()).toBe('board');
+  });
+
+  it("puts the NPS audience switch in that card's header once the section reports its audiences, handing a pick back", async () => {
+    await setup(null, { npsAudience: ' Board ' });
+    const section = fixture.nativeElement.querySelector('#sec-mem-nps') as HTMLElement;
+
+    expect(stub(NpsStubComponent).audience()).toBe('Board');
+    expect(section.querySelector('[data-testid="members-nps-audience"]')).toBeNull();
+
+    stub(NpsStubComponent).audienceSwitch.emit({
+      options: [
+        { id: 'All', label: 'All' },
+        { id: 'Board', label: 'Board' },
+      ],
+      selected: 'Board',
+    });
+    await flush();
+    const labels = [...section.querySelectorAll('[data-testid="members-nps-audience"] [data-testid="ui-switch-option-text"]')].map((label) =>
+      label.textContent?.trim()
+    );
+    expect(labels).toEqual(['All', 'Board']);
+
+    (section.querySelector('[data-testid="members-nps-audience-All"] input') as HTMLInputElement).click();
+    await flush();
+    expect(stub(NpsStubComponent).audience()).toBe('All');
+    // The switch shows the pick at once rather than snapping back to the last read's audience.
+    expect((section.querySelector('[data-testid="members-nps-audience-All"] input') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('falls back to the default bucket, window and cohort for URL values it does not know', async () => {
+    await setup(null, { riskBucket: 'under_60_days', renewalsWindow: '30_days', boardCohort: 'committee' });
+
+    expect(stub(AtRiskStubComponent).bucket()).toBe('all');
+    expect(stub(RenewalsStubComponent).window()).toBe('90_days');
+    expect(stub(BoardStubComponent).cohort()).toBe('board');
   });
 
   it('notes Board & voting attendance with the board note once it reports one', async () => {

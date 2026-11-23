@@ -23,6 +23,10 @@ import type {
   CampaignEmailTypeOption,
   CampaignFunnelStage,
   CampaignGoalOption,
+  MetaAdOptionField,
+  MetaAudienceGender,
+  MetaAudienceTargetingDraft,
+  MetaCustomAudienceListView,
   CampaignKeyword,
   CampaignLabelOption,
   CampaignNegativeKeywordMatchType,
@@ -262,6 +266,22 @@ export const GOOGLE_MIN_DAILY_BUDGET_USD = 1;
 
 /** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
 export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
+
+/** The create request field an edited LinkedIn targeting profile rides in (#5546), as a refusal names it. */
+export const LINKEDIN_TARGETING_PROFILE_EDIT_FIELD = 'linkedInConfig.targetingProfileEdit';
+
+/** The request field a refused LinkedIn daily cap (#5774) is reported against. */
+export const LINKEDIN_DAILY_CAP_FIELD = 'linkedInConfig.dailyCapUsd';
+
+/**
+ * Selections campaign-service resolves to another configured profile before reading its facets:
+ * `custom` reads `cloud-native` (`internal/platform/linkedin/targeting.go` `buildTargetingCriteria`,
+ * and `validatePrerequisites` in `client.go`). The Implement tab shows, and the BFF checks an edit
+ * against, the profile the selection resolves to.
+ */
+export const LINKEDIN_TARGETING_PROFILE_ALIASES: Readonly<Partial<Record<LinkedInTargetingProfile, LinkedInTargetingProfile>>> = {
+  custom: 'cloud-native',
+};
 
 export const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
@@ -749,10 +769,29 @@ export function parseCampaignName(raw: string): ParsedCampaignName {
 
 export const LINKEDIN_API_VERSION = '202602';
 
+/**
+ * LinkedIn single image ad text limits, in characters (code points). campaign-service's
+ * `createDarkPost` (`internal/platform/linkedin/client.go`) cuts the normalized intro text at 600
+ * runes and the headline at 200 without saying so, so the Implement tab refuses longer copy rather
+ * than let campaign-service shorten it (`linkedInVariantTextError`).
+ */
 export const LINKEDIN_CHAR_LIMITS = {
   introText: 600,
   headline: 200,
 } as const;
+
+/**
+ * The fewest ad variants a LinkedIn create takes: campaign-service refuses an empty set before
+ * anything is created (`len(cfg.Variants) == 0`, `internal/dispatch/linkedin.go`).
+ */
+export const LINKEDIN_MIN_VARIANTS = 1;
+
+/**
+ * The most ad variants the Implement tab offers. campaign-service sets no cap of its own, and every
+ * variant becomes one creative, so this is LinkedIn's: at most 15 ACTIVE creatives per campaign
+ * (LinkedIn Marketing API, "Account Structure and Hierarchy").
+ */
+export const LINKEDIN_MAX_VARIANTS = 15;
 
 export const META_CHAR_LIMITS = {
   primaryText: 125,
@@ -777,8 +816,11 @@ export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjective
   //
   // OUTCOME_TRAFFIC + LINK_CLICKS with no promoted object is the pairing that always succeeds
   // end-to-end. OUTCOME_LEADS + LINK_CLICKS is deliberately NOT used: Meta requires a pixel and
-  // `custom_event_type` for it, which this flow does not supply. Full instant-form parity is
-  // tracked as LFXV2-2665.
+  // `custom_event_type` for it, which this flow does not supply.
+  //
+  // This mapping is for `leads` WITHOUT a form only (a brief or draft saved before lead forms). With
+  // `metaConfig.leadFormId` (#5940) campaign-service builds the real lead ad itself: OUTCOME_LEADS,
+  // LEAD_GENERATION and the form on the ad's call to action.
   leads: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
   conversions: { campaignObjective: 'OUTCOME_SALES', optimizationGoal: 'OFFSITE_CONVERSIONS', promotedObjectType: 'pixel_id' },
 } as const;
@@ -844,17 +886,15 @@ export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
 } as const;
 
 /**
- * The objectives a user may actually choose, in the order the objective selector renders them.
+ * The objectives every user may choose, in the order the objective selector renders them.
  *
- * `leads` is DELIBERATELY ABSENT. It dispatches as a website-traffic campaign — see the long
- * comment on `META_OBJECTIVE_PARAMS.leads` for why that mapping is the safe one and must not
- * change — so offering it would label a traffic campaign "Leads" and let a user act on a wrong
- * assumption. Hiding it makes that a question someone asks rather than a mistake they ship.
- * LFXV2-2665 builds instant-form support and restores the option.
+ * `leads` is absent here. Without a lead form it dispatches as a website-traffic campaign — see
+ * the comment on `META_OBJECTIVE_PARAMS.leads` — so offering it to everyone would label a traffic
+ * campaign "Leads". `metaObjectiveChoices` adds it back only for a caller who may send a lead form
+ * (`CampaignListResult.metaLeadFormsEnabled`, #5940), and the Implement tab then requires one.
  *
- * This is the selector's ONLY source. `leads` stays in `MetaObjective`, in
- * `META_OBJECTIVE_PARAMS` and in `META_OBJECTIVE_LABELS`, so a persisted `leads` brief still
- * dispatches — as traffic — and still renders a name.
+ * `leads` stays in `MetaObjective`, in `META_OBJECTIVE_PARAMS` and in `META_OBJECTIVE_LABELS`, so a
+ * persisted `leads` brief without a form still dispatches — as traffic — and still renders a name.
  */
 export const META_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'engagement', 'conversions'] as const satisfies readonly SelectableMetaObjective[];
 
@@ -908,6 +948,77 @@ export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 
 
 /** Meta object ids (Pixel, Page) are numeric strings; mirrors campaign-service's `numericIDRE`. */
 export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
+
+/**
+ * Meta ad set audience targeting (#5905), mirroring campaign-service's `NormalizeAudienceTargeting`
+ * (`internal/platform/meta/targeting.go`, linuxfoundation/lfx-v2-campaign-service#550).
+ */
+export const META_AUDIENCE_MIN_AGE = 18;
+export const META_AUDIENCE_MAX_AGE = 65;
+/** With Advantage+ audience on, Meta accepts an `ageMin` of at most this and fixes `ageMax` at {@link META_AUDIENCE_MAX_AGE}. */
+export const META_ADVANTAGE_AUDIENCE_MAX_AGE_MIN = 25;
+/** At most this many distinct ids in each of `customAudiences` and `excludedCustomAudiences`. */
+export const META_MAX_CUSTOM_AUDIENCES = 25;
+/** A canonical Meta custom-audience id: digits with no leading zero (campaign-service's `canonicalCampaignIDRe`). */
+export const META_CUSTOM_AUDIENCE_ID_PATTERN = /^[1-9][0-9]*$/;
+export const META_AUDIENCE_GENDERS: readonly MetaAudienceGender[] = ['male', 'female'];
+/** The custom-audience lists the Implement tab offers, in order. */
+export const META_CUSTOM_AUDIENCE_LISTS: readonly MetaCustomAudienceListView[] = [
+  { key: 'customAudiences', label: 'Include custom audiences' },
+  { key: 'excludedCustomAudiences', label: 'Exclude custom audiences' },
+];
+/** The Meta audience targeting a fresh form starts from, which sends nothing: Advantage+ audience is left unsaid. */
+export const DEFAULT_META_AUDIENCE_TARGETING: Readonly<MetaAudienceTargetingDraft> = {
+  ageMin: META_AUDIENCE_MIN_AGE,
+  ageMax: META_AUDIENCE_MAX_AGE,
+  genders: [],
+  customAudiences: [],
+  excludedCustomAudiences: [],
+};
+
+/**
+ * The Meta call to action, conversion event and optimization goal (#5934), as campaign-service v1.0.38
+ * accepts them in `metaConfig` (`docs/api-catalog.md`, MetaConfig; linuxfoundation/lfx-v2-campaign-service#550).
+ * Each list starts with campaign-service's default. With a lead form (`leadFormId`, #5940) only
+ * `META_LEAD_FORM_CALL_TO_ACTIONS` may be sent.
+ */
+export const META_CALL_TO_ACTIONS = [
+  'LEARN_MORE',
+  'SIGN_UP',
+  'BUY_TICKETS',
+  'APPLY_NOW',
+  'BOOK_NOW',
+  'SUBSCRIBE',
+  'DOWNLOAD',
+  'WATCH_MORE',
+  'CONTACT_US',
+] as const;
+export const META_CONVERSION_EVENTS = ['PURCHASE', 'COMPLETE_REGISTRATION', 'LEAD', 'SUBMIT_APPLICATION', 'SUBSCRIBE'] as const;
+/** LANDING_PAGE_VIEWS is refused with manual bidding, which campaign-service creates as a link-click bid cap. */
+export const META_OPTIMIZATION_GOALS = ['LINK_CLICKS', 'LANDING_PAGE_VIEWS'] as const;
+export const META_AD_OPTION_FIELDS: readonly MetaAdOptionField[] = [
+  { key: 'callToAction', label: 'Call to action', values: META_CALL_TO_ACTIONS, objectives: null },
+  { key: 'conversionEvent', label: 'Conversion event', values: META_CONVERSION_EVENTS, objectives: ['conversions'] },
+  { key: 'optimizationGoal', label: 'Optimization goal', values: META_OPTIMIZATION_GOALS, objectives: ['traffic'] },
+];
+
+/**
+ * Meta Instant Forms (lead forms) on the `leads` objective (#5940), as campaign-service v1.0.38 accepts
+ * `metaConfig.leadFormId` (`docs/api-catalog.md`, MetaConfig; linuxfoundation/lfx-v2-campaign-service#550):
+ * a numeric string of at most 20 digits, the id of an existing form on the connection's Page.
+ */
+export const META_LEAD_FORM_ID_PATTERN = /^[0-9]{1,20}$/;
+/** The only buttons campaign-service accepts on a lead form create, a subset of `META_CALL_TO_ACTIONS`. */
+export const META_LEAD_FORM_CALL_TO_ACTIONS = ['LEARN_MORE', 'SIGN_UP', 'APPLY_NOW', 'SUBSCRIBE', 'DOWNLOAD'] as const;
+/** What the Implement tab's lead form picker says while it has no list, one sentence each; the typed box still takes a form id. */
+export const META_LEAD_FORM_PICKER_REASONS = {
+  unavailable: "The lead form picker isn't available here. Enter the form id from Meta Ads Manager instead.",
+  failed: "The lead forms couldn't be read from this project's Facebook Page. Enter the form id from Meta Ads Manager instead.",
+} as const;
+/** Why a `leads` draft holding a form is held when lead forms are off for this caller or foundation (#5940). */
+export const META_LEAD_FORM_UNAVAILABLE_REFUSAL = "Lead forms aren't available for this foundation. Choose another objective.";
+export const META_LEAD_FORM_PICKER_LOADING = "Loading the Page's lead forms…";
+export const META_LEAD_FORM_PICKER_EMPTY = 'This Facebook Page has no lead forms. Create one in Meta Ads Manager, then reload.';
 
 /**
  * The countries for which Meta requires the EU Digital Services Act disclosures
@@ -1365,7 +1476,7 @@ export const ACCOUNT_MONITOR_DEFAULT_DAYS = 30;
  * upstream (`AccountMonitorConflictError`). The BFF forwards a reason only when it is one of these,
  * so no other upstream text reaches the client.
  */
-export const ACCOUNT_MONITOR_CONFLICT_REASONS = ['account_too_many_active_campaigns', 'account_timezone_unsupported'] as const;
+export const ACCOUNT_MONITOR_CONFLICT_REASONS = ['account_too_many_active_campaigns', 'account_timezone_unsupported', 'campaign_account_mismatch'] as const;
 
 /**
  * The message campaign-service's account monitors answer their 400 with when the platform's
@@ -1389,6 +1500,15 @@ export const ACCOUNT_MONITOR_METRICS_DISABLED_CODE = 'metrics_not_enabled';
 export const ACCOUNT_MONITOR_NO_CONNECTION_CODE = 'connection_not_found';
 
 /**
+ * The `upstreamCode` the BFF puts on a LinkedIn, Reddit or Meta monitor read through the LF system
+ * account (#5889) that campaign-service could not serve that way: its typed "no connection" 404 (no
+ * system account configured for the platform or account), or a 400 `missing_field` from a release
+ * that still requires LinkedIn's account. The Monitor tab then shows the notice for the state behind
+ * the fallback (`MonitorConnectionAccount.fallbackFrom`), as it did before the fallback existed.
+ */
+export const ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE = 'system_account_refused';
+
+/**
  * The Monitor tab's connection-backed platforms, each with the campaign-service provider whose
  * connection binds its account. Ordered as the tab's buttons are.
  */
@@ -1407,6 +1527,19 @@ export const MONITOR_CONNECTION_PROVIDERS: Readonly<Record<MonitorConnectionPlat
  * shape instead — the same patterns, and the same 64-character cap the connections store.
  */
 export const LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[0-9]{1,64}$/;
+
+/**
+ * A LinkedIn ad account as `linkedInConfig.adAccountId` and the `account_id` of campaign-service's
+ * LinkedIn reads take it: the bare account number, no `urn:li:sponsoredAccount:` prefix (#5809,
+ * linuxfoundation/lfx-v2-campaign-service#581).
+ */
+export const LINKEDIN_AD_ACCOUNT_ID_PATTERN = LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN;
+
+/** A LinkedIn create naming a granted ad account from a caller without `global_marketing_ops` on the project (#5809). */
+export const LINKEDIN_AD_ACCOUNT_RESTRICTED_MESSAGE = 'Only the LF marketing team can create a LinkedIn campaign in another ad account.';
+
+/** A LinkedIn create naming a granted ad account, refused because the caller's `global_marketing_ops` could not be checked (#5809). */
+export const LINKEDIN_AD_ACCOUNT_ACCESS_UNAVAILABLE_MESSAGE = "The LinkedIn ad account choice couldn't be checked right now. Try again in a moment.";
 export const META_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^act_[0-9]{1,60}$/;
 export const REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 
@@ -1459,6 +1592,13 @@ export const MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE = 'MONITOR_SHARED_ACCOUNT_RE
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE =
   'This ad account is shared by every foundation, so its campaigns and spend can only be monitored by LF administrators.';
 
+/**
+ * The Monitor tab's detail line when the Google Ads monitor is refused for the caller's project role
+ * (#4837) and the 403 carries no reason of its own. The campaign-service arm answers only the project's
+ * `campaign_manager` holders.
+ */
+export const MONITOR_GOOGLE_ROLE_REFUSAL_FALLBACK_MESSAGE = 'Your account needs the campaign manager role on this project to see its Google Ads campaigns.';
+
 /** The BFF's own Google Ads account read is missing a credential or account setting (#4526). */
 export const GOOGLE_ADS_NOT_CONFIGURED_MESSAGE = 'Google Ads is not configured on this server. Ask an LF administrator to check its credentials.';
 
@@ -1507,6 +1647,34 @@ export const GOOGLE_USER_LISTS_RESTRICTED_CODE = 'GOOGLE_USER_LISTS_RESTRICTED';
 /** The user-facing message of that refusal. */
 export const GOOGLE_USER_LISTS_RESTRICTED_MESSAGE =
   "This Google Ads account's user lists can only be listed by the LF marketing team, because every foundation shares one Google Ads account.";
+/** The 400 a create gets for `metaConfig.targeting` while Meta audience targeting is off on this deployment (#5905). */
+export const META_AUDIENCE_TARGETING_OFF_MESSAGE =
+  'Meta audience targeting is not available on this deployment. Reload the page, then create again without it.';
+
+/**
+ * The error `code` (HTTP 403) of a Meta custom-audience read, or a create naming custom audiences, refused
+ * because the caller does not hold `global_marketing_ops` on the project: the Meta ad account is shared
+ * by every foundation, so campaign-service answers both on that relation (linuxfoundation/lfx-v2-campaign-service#550).
+ */
+export const META_CUSTOM_AUDIENCES_RESTRICTED_CODE = 'META_CUSTOM_AUDIENCES_RESTRICTED';
+export const META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE =
+  'Meta custom audiences can only be used by the LF marketing team, because every foundation shares one Meta ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE';
+export const META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Meta custom audiences could not be verified. Try again in a few minutes.';
+/** The 400 a create gets for `metaConfig.leadFormId` while Meta lead forms are off on this deployment (#5940). */
+export const META_LEAD_FORMS_OFF_MESSAGE = 'Meta lead forms are not available on this deployment. Reload the page, then create again without one.';
+/**
+ * The error `code` (HTTP 403) of a Meta lead form read, or a create naming a form, refused because the caller
+ * does not hold `global_marketing_ops` on the project: a project without its own Meta connection uses the
+ * shared LF Page, which holds every foundation's forms, so campaign-service answers both on that relation.
+ */
+export const META_LEAD_FORMS_RESTRICTED_CODE = 'META_LEAD_FORMS_RESTRICTED';
+export const META_LEAD_FORMS_RESTRICTED_MESSAGE =
+  'Meta lead forms can only be used by the LF marketing team, because every foundation shares one Facebook Page.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE = 'META_LEAD_FORMS_ACCESS_UNAVAILABLE';
+export const META_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Meta lead forms could not be verified. Try again in a few minutes.';
 /** The error `code` (HTTP 503) of a user list read refused because the caller's access could not be verified. */
 export const GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE';
 /** The user-facing message of that refusal. Nothing was read. */
@@ -3700,6 +3868,14 @@ export const CREATIVE_ASSET_QUEUE_RETRIES = 3;
 export const CREATIVE_ASSET_QUEUE_RETRY_BASE_MS = 1000;
 
 /**
+ * How many more times the creative-asset library and plan reads are sent after a transient failure
+ * (a 503, a dropped connection) before the read is reported as failed (#5385). Both are re-read after
+ * every stored file, so an upload run is exactly when one meets a busy service. Safe to re-send: both
+ * are reads. Each wait is {@link CREATIVE_ASSET_QUEUE_RETRY_BASE_MS} doubled per retry (1 s, then 2 s).
+ */
+export const CREATIVE_ASSET_READ_RETRIES = 2;
+
+/**
  * Each library upload outcome as it reads, and its badge classes. One table, so the label and the
  * colour cannot disagree.
  */
@@ -4235,6 +4411,18 @@ export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Se
   's',
   'r',
 ]);
+
+/**
+ * How many years AFTER the current one the saved-brief lookup also tries as a slug suffix (#5492).
+ *
+ * A brief is stored under the slug the generator writes (`eventDetails.slug`), which often adds the
+ * event's year to the URL's last segment: the KubeCon Europe page `/kubecon-cloudnativecon-europe/`
+ * is stored as `kubecon-cloudnativecon-europe-2027`. Before generating, the page knows only the
+ * URL, so the lookup tries the bare segment, then the segment with each of the next
+ * `CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD` years and this one, latest first (`briefSlugYearCandidates`).
+ * Events are planned up to about two years out.
+ */
+export const CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD = 2;
 
 /**
  * The longest survey source document campaign-service accepts, in characters, counted as
@@ -4897,7 +5085,9 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
   // every field trims to nothing. A value campaign-service would never receive is not a request
-  // the legacy creator fails, so refusing it would be over-refusal.
+  // the legacy creator fails, so refusing it would be over-refusal. The exception is a raw value the
+  // cutover's own refusals name though the normalizers drop it (a malformed `demandGenDemographics`, or
+  // an ad group or ad list that is not a list): that one counts (`unservedGoogleCriteriaField`).
   { field: 'biddingStrategy', label: 'bidding strategy', normalized: true },
   { field: 'cpcBid', label: 'max CPC bid', normalized: true },
   { field: 'targetCpa', label: 'target CPA', normalized: true },
@@ -5168,43 +5358,73 @@ export const GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN = /^customers\/[0-9]+\/userLi
 export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/customAudiences\/[0-9]+$/;
 
 /**
- * The call-to-action texts a responsive display ad accepts (#1614, F13): the English list Google
- * documents for `ResponsiveDisplayAdInfo.callToActionText` on "Call-to-action translations"
- * (https://developers.google.com/google-ads/api/data/call-to-action-translations), spelled as that page
- * spells them. The API reference types the field as a free string of display width 30
+ * The call-to-action texts a responsive display ad accepts (#1614, F13), each one accepted by a
+ * validateOnly `adGroupAds:mutate` against the live API on 13 November 2026 (v23), copying a live ad and
+ * varying only this field. The API types `ResponsiveDisplayAdInfo.callToActionText` as free text
  * (https://developers.google.com/google-ads/api/reference/rpc/latest/ResponsiveDisplayAdInfo), but Google
- * refuses text outside its list at `adGroupAds:mutate` — after the campaign, ad group and image assets
- * already exist. A live create with "Register" failed exactly there on 7 and 9 November 2026, and the same
- * creates with no call to action succeeded. campaign-service checks only the 30-rune cap
- * (`maxDisplayCallToActionRunes`, `display_creative.go`, v1.0.35), so this list is the only guard.
+ * refuses text outside a fixed set with `INVALID_CALL_TO_ACTION_TEXT` at `adGroupAds:mutate`, after the
+ * campaign, ad group and image assets exist. "Register" failed exactly there on 7 and 9 November 2026.
+ *
+ * Spelled as probed. Google's matching is not plain case-insensitive: "Try Now" was REFUSED where
+ * "Try now" was accepted, so that one value keeps Google's lower-case spelling. From v1.0.36,
+ * campaign-service (#595, `displayCallToActions`) checks the same set before any write and sends its own
+ * probed spelling; until then the BFF's check is the only one. Refused on this ad: Register, Get Started, Watch Now, Buy Tickets, Join Now, Donate Now.
  * Leaving it empty sends none, and Google chooses the button (the UI's "Automated").
  */
 export const GOOGLE_DISPLAY_CALLS_TO_ACTION = [
   { value: 'Apply Now', label: 'Apply Now' },
   { value: 'Book Now', label: 'Book Now' },
+  { value: 'Call Now', label: 'Call Now' },
   { value: 'Contact Us', label: 'Contact Us' },
   { value: 'Download', label: 'Download' },
-  { value: 'Learn More', label: 'Learn More' },
+  { value: 'Explore', label: 'Explore' },
+  { value: 'Get Offer', label: 'Get Offer' },
+  { value: 'Get Quote', label: 'Get Quote' },
   { value: 'Install', label: 'Install' },
-  { value: 'Visit Site', label: 'Visit Site' },
+  { value: 'Learn More', label: 'Learn More' },
+  { value: 'Order Now', label: 'Order Now' },
+  { value: 'Read More', label: 'Read More' },
+  { value: 'See More', label: 'See More' },
   { value: 'Shop Now', label: 'Shop Now' },
   { value: 'Sign Up', label: 'Sign Up' },
-  { value: 'Get Quote', label: 'Get Quote' },
   { value: 'Subscribe', label: 'Subscribe' },
-  { value: 'See More', label: 'See More' },
+  { value: 'Try now', label: 'Try now' },
+  { value: 'Visit Site', label: 'Visit Site' },
 ] as const;
 
 /**
- * The call-to-action texts the Demand Gen IMAGE ad is offered (#1614, F13): none. Google documents
- * `DemandGenMultiAssetAdInfo.callToActionText` only as "Call to action text."
- * (https://developers.google.com/google-ads/api/reference/rpc/latest/DemandGenMultiAssetAdInfo), with no
- * list, and the translations page above names responsive display ads only. campaign-service checks only
- * the 30-rune cap (`maxDemandGenCallToActionRunes`, `demandgen_creative.go`, v1.0.35) and has probed no
- * value for this ad. "Register" failed live at `adGroupAds:mutate` on 7 and 9 November 2026, and a blank
- * call to action succeeded, so blank is the one value known to work. Widen this value by value, each
- * with a validateOnly probe, as campaign-service did for the video ad (`demandGenVideoCallToActions`).
+ * The call-to-action texts the Demand Gen IMAGE (multi-asset) ad accepts (#1614, F13), each one
+ * accepted by the same validateOnly probe on 13 November 2026 against `DemandGenMultiAssetAdInfo`.
+ * It is NOT the Display set: Demand Gen refused Install, Order Now, Try Now, Read More and Explore, and
+ * accepted Donate Now, which Display refused. From v1.0.36, campaign-service (#595,
+ * `demandGenCallToActions`) checks the same set before any write. Refused on this ad as well: Register, Get Started, Watch Now, Buy
+ * Tickets, Join Now. Leaving it empty sends none, and Google chooses the button.
  */
-export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFieldOption[] = [];
+export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFieldOption[] = [
+  { value: 'Apply Now', label: 'Apply Now' },
+  { value: 'Book Now', label: 'Book Now' },
+  { value: 'Call Now', label: 'Call Now' },
+  { value: 'Contact Us', label: 'Contact Us' },
+  { value: 'Donate Now', label: 'Donate Now' },
+  { value: 'Download', label: 'Download' },
+  { value: 'Get Offer', label: 'Get Offer' },
+  { value: 'Get Quote', label: 'Get Quote' },
+  { value: 'Learn More', label: 'Learn More' },
+  { value: 'See More', label: 'See More' },
+  { value: 'Shop Now', label: 'Shop Now' },
+  { value: 'Sign Up', label: 'Sign Up' },
+  { value: 'Subscribe', label: 'Subscribe' },
+  { value: 'Visit Site', label: 'Visit Site' },
+];
+
+/**
+ * The calls to action BOTH the responsive display ad and the Demand Gen image ad accept, in the Display
+ * list's order. The brief generator writes one `google_display.call_to_action` that seeds both ads, so
+ * it is asked for one of these, and whichever it picks seeds both.
+ */
+export const GOOGLE_SHARED_CALLS_TO_ACTION: readonly GoogleCreativeFieldOption[] = GOOGLE_DISPLAY_CALLS_TO_ACTION.filter((display) =>
+  GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION.some((demandGen) => demandGen.value === display.value)
+);
 
 /**
  * What each Google channel's creative is made of — one ordered catalogue, read by the form that
@@ -5253,7 +5473,7 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       kind: 'text',
       width: 30,
       options: GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION,
-      hint: 'None is sent, and Google chooses the button: Google documents no call-to-action values for this ad.',
+      hint: 'Optional. Leave it on none and Google chooses the button.',
     },
     {
       control: 'marketingImages',
@@ -5462,9 +5682,11 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
 
 /**
  * The calls to action a Demand Gen video ad accepts: campaign-service's `demandGenVideoCallToActions`
- * (`internal/platform/googleads/demandgen_video_creative.go`), each a Google `CallToActionType` a
- * validateOnly probe accepted. Deliberately short rather than Google's whole enum — the same probe
- * refused `REGISTER` and `GET_STARTED` — so anything else is refused before the budget.
+ * (`internal/platform/googleads/demandgen_video_creative.go`), in the same order, each a Google
+ * `CallToActionType` a validateOnly probe accepted (the last six by the 14 Nov 2026 probe,
+ * campaign-service #604 / #606). Deliberately short rather than Google's whole enum — an earlier
+ * probe refused `REGISTER` and `GET_STARTED` — so anything else is refused before the budget. The
+ * upper-case value is what is sent; campaign-service refuses the label spelling.
  */
 export const GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION = [
   { value: 'SIGN_UP', label: 'Sign up' },
@@ -5472,6 +5694,12 @@ export const GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION = [
   { value: 'BOOK_NOW', label: 'Book now' },
   { value: 'VISIT_SITE', label: 'Visit site' },
   { value: 'WATCH_NOW', label: 'Watch now' },
+  { value: 'APPLY_NOW', label: 'Apply now' },
+  { value: 'CONTACT_US', label: 'Contact us' },
+  { value: 'DOWNLOAD', label: 'Download' },
+  { value: 'GET_QUOTE', label: 'Get quote' },
+  { value: 'SUBSCRIBE', label: 'Subscribe' },
+  { value: 'SHOP_NOW', label: 'Shop now' },
 ] as const;
 
 /**
@@ -5842,6 +6070,42 @@ export const GOOGLE_CREATIVE_GROUPS: readonly GoogleCreativeGroup[] = [
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
 
 /**
+ * The widths the brief generator writes Google copy to (the BFF's copy prompt and `truncateAdCopy`),
+ * read from the catalogues the Implement tab validates against so the generator cannot ask for copy
+ * the seed then drops. Demand Gen headlines are the IMAGE ad's 30 (#5384, campaign-service
+ * `maxHeadlineWeight`): it is the only Demand Gen ad the brief seeds, and the video ad's 40 would hand
+ * it headlines it cannot use. `shortDescription` is the one description every brief writes for
+ * Performance Max's short slot (#5494).
+ */
+export const GENERATED_GOOGLE_COPY_WIDTHS = {
+  searchHeadline: CAMPAIGN_CHAR_LIMITS.searchHeadline,
+  searchDescription: CAMPAIGN_CHAR_LIMITS.searchDescription,
+  demandGenHeadline: demandGenFieldWidth('headlines'),
+  demandGenDescription: demandGenFieldWidth('descriptions'),
+  businessName: demandGenFieldWidth('businessName'),
+  shortDescription: GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+} as const;
+
+/** The Demand Gen image ad's catalogue width for one field, failing loudly if the catalogue loses it. */
+function demandGenFieldWidth(control: string): number {
+  const width = (GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] as readonly GoogleCreativeFieldSpec[]).find((field) => field.control === control)?.width;
+  if (width === undefined) throw new Error(`GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] has no width for ${control}`);
+  return width;
+}
+
+/**
+ * The comparison shapes that mark a generated EVENT keyword as competitor intent (#5383): "KubeCon
+ * alternative", "alternatives to KubeCon", "ArgoCon vs KubeCon", "competitor", "instead of". Someone
+ * searching them is shopping away from an event, and for a Linux Foundation event the event named is
+ * usually the foundation's own. Shapes rather than bare words, so a topic keyword that merely holds
+ * one is kept: "alternative energy summit" (an adjective before its noun) and "vs code conference".
+ * "X alternative" also skips an alternative-topic noun after it ("energy", "fuels", "medicine"), so
+ * "open source alternative energy summit" stays a topic keyword wherever the phrase falls in the term.
+ */
+export const COMPETITOR_KEYWORD_PATTERN =
+  /\S\s+alternatives?\b(?!\s+(?:energy|fuels?|medicine|investments?|assets?|proteins?|data|music|rock|credit|dispute)\b)|\balternatives?\s+(?:to|for)\b|\S\s+(?:vs\.?|versus)\s+(?!code\b)\S|\bcompetitors?\b|\binstead of\b/iu;
+
+/**
  * The Google creative text fields campaign-service bounds by RUNE count rather than by display width:
  * the call to action (`maxDemandGenCallToActionRunes`, `maxDisplayCallToActionRunes`), the Performance
  * Max asset group name (`maxAssetGroupNameRunes`) and its display paths (`maxDisplayPathRunes`). Every
@@ -6209,6 +6473,15 @@ export const GOOGLE_CONVERSION_ACTION_PICKER_LOADING = "Loading this account's c
  */
 export const GOOGLE_CONVERSION_ACTION_PICKER_EMPTY =
   "This Google Ads account has no enabled conversion actions. Enter ids below or leave the box blank to use the account's own goals.";
+
+/** Why the Meta custom-audience picker has no list, one sentence each; the typed id boxes still add an id. */
+export const META_CUSTOM_AUDIENCE_PICKER_REASONS = {
+  unavailable: "The custom audience picker isn't available here. Enter audience ids instead.",
+  failed: "The custom audiences couldn't be read for this project's Meta ad account. Enter audience ids instead.",
+} as const;
+export const META_CUSTOM_AUDIENCE_PICKER_LOADING = "Loading this ad account's custom audiences…";
+export const META_CUSTOM_AUDIENCE_PICKER_EMPTY = 'This Meta ad account has no custom audiences to pick from. Enter audience ids instead.';
+export const META_CUSTOM_AUDIENCE_PICKER_TRUNCATED = "This ad account has more custom audiences than the picker shows. If one isn't listed, enter its id.";
 
 /**
  * Why the Implement tab's audience segment picker has no list, one sentence each; the typed box below

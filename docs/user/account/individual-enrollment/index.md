@@ -30,6 +30,10 @@ The **Individual Enrollment** tab is where you enroll in a Linux Foundation Indi
 
 If no memberships are available, the tab shows **No enrollment products available** — _There are no individual enrollment products at this time._ If the tab can't load them, it shows **Could not load enrollment products**; reload the tab to try again.
 
+### Receipts and invoices
+
+Individual Supporter purchases are paid by credit card at checkout, so we don’t issue separate invoices for them. A receipt is emailed to you automatically when the payment goes through, and it serves as your proof of payment.
+
 ## Your membership details
 
 Once you are enrolled, the membership card shows a status — **Active**, **Expiring Soon**, or **Expired** — and:

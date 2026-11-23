@@ -24,6 +24,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  */
 
 const getAccessAwareOrgs = vi.fn();
+const getRollUpSet = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
@@ -41,6 +42,7 @@ vi.mock('../services/access-check.service', () => ({
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+    public getRollUpSet = getRollUpSet;
   },
 }));
 vi.mock('../services/microservice-proxy.service', () => ({
@@ -56,7 +58,7 @@ vi.mock('../helpers/org-lens-edit-access.helper', () => ({ resolveOrgLensEdit })
 // omitted it would make the middleware call `undefined(req)` and 500 every test in this file.
 // Toggled via `impersonatingStub` so the impersonation-blocked scenario can flip it per test.
 let impersonatingStub = false;
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra', isImpersonating: () => impersonatingStub }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'jdoe', isImpersonating: () => impersonatingStub }));
 // The ROI LF-staff gate (in every environment) asks `lf-staff#member`; each case sets the answer it needs.
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkLFStaff: () => checkLFStaff() } }));
 vi.mock('../services/logger.service', () => ({
@@ -187,6 +189,20 @@ describe('orgs router — Org Lens read gate', () => {
     const res = await fetch(`${baseUrl}/api/orgs/me/role-grants`);
 
     expect(res.status).not.toBe(403);
+  });
+});
+
+describe('orgs router — GET /me/roll-up-set (#4126)', () => {
+  it('serves the roll-up set from its own handler, not the canonical-record catch-all', async () => {
+    const rollUpSet = { families: [], degraded: false, lookupOutcome: 'ok' };
+    getRollUpSet.mockResolvedValue(rollUpSet);
+
+    const res = await fetch(`${baseUrl}/api/orgs/me/roll-up-set?refresh=1`);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(rollUpSet);
+    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'jdoe', true, null);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 });
 

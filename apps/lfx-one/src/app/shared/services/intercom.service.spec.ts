@@ -145,6 +145,37 @@ describe('IntercomService', () => {
     expect(onLoadError).not.toHaveBeenCalled();
   });
 
+  it('should open a new conversation with the pre-fill instead of show, before and after the script loads', () => {
+    service.openMessenger('test-app-id', undefined, 'Pre-filled text');
+
+    // Pre-load: the stub queues showNewMessage behind boot for replay.
+    expect(queuedCommands()).toEqual([
+      ['boot', { app_id: 'test-app-id' }],
+      ['showNewMessage', 'Pre-filled text'],
+    ]);
+
+    widgetScript()?.onload?.call(widgetScript() as GlobalEventHandlers, new Event('load'));
+    const loaded = vi.fn();
+    window.Intercom = loaded as unknown as typeof window.Intercom;
+
+    service.openMessenger('test-app-id', undefined, 'Pre-filled text');
+
+    expect(loaded).toHaveBeenCalledWith('showNewMessage', 'Pre-filled text');
+    expect(loaded).not.toHaveBeenCalledWith('show');
+  });
+
+  it('should still show the messenger when no pre-fill is given', () => {
+    service.openMessenger('test-app-id');
+
+    expect(queuedCommands()).toEqual([['boot', { app_id: 'test-app-id' }], ['show']]);
+  });
+
+  it('should treat an empty pre-fill as no pre-fill', () => {
+    service.openMessenger('test-app-id', undefined, '');
+
+    expect(queuedCommands()).toEqual([['boot', { app_id: 'test-app-id' }], ['show']]);
+  });
+
   it('should no-op update when Intercom has not been booted', () => {
     service.update();
 

@@ -57,6 +57,9 @@ function makeDeps() {
   };
 }
 
+/** Lets the detached confirmation task finish; the response no longer waits for it. */
+const settleDetachedWork = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 describe('NewsletterGuestService', () => {
   let deps: ReturnType<typeof makeDeps>;
   let service: NewsletterGuestService;
@@ -166,6 +169,7 @@ describe('NewsletterGuestService', () => {
       expect(grant.session).toEqual({ e: 'jane@acme-motors.example', c: 'c-news', f: 'f-1', v: false });
       expect(deps.memberBenefitService.addToNewsletterGroup).not.toHaveBeenCalled();
 
+      await settleDetachedWork();
       const sent = deps.emailService.sendEmail.mock.calls[0][1];
       expect(sent.to).toBe('jane@acme-motors.example');
       const token = decodeURIComponent(/newsletters\/invite#token=(\S+)/.exec(sent.text)?.[1] ?? '');
@@ -175,6 +179,7 @@ describe('NewsletterGuestService', () => {
     it('rejects an email that is not at a member company', async () => {
       deps.memberBenefitService.findMemberCompanyForEmail.mockResolvedValueOnce(null);
       await expect(service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@elsewhere.example')).rejects.toBeInstanceOf(ServiceValidationError);
+      await settleDetachedWork();
       expect(deps.emailService.sendEmail).not.toHaveBeenCalled();
     });
 
@@ -191,21 +196,35 @@ describe('NewsletterGuestService', () => {
     it('answers the same whether or not the reader is already on the list, and survives a failed email', async () => {
       deps.memberBenefitService.isEmailInGroup.mockResolvedValueOnce(true);
       expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example')).issue.confirmation_sent).toBe(true);
+      await settleDetachedWork();
       expect(deps.emailService.sendEmail).not.toHaveBeenCalled();
 
       deps.emailService.sendEmail.mockRejectedValueOnce(new MicroserviceError('rejected', 502, 'EMAIL_SEND_FAILED'));
       expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example')).issue.confirmation_sent).toBe(true);
+      await settleDetachedWork();
       expect(deps.inviteService.releaseRecipientCooldown).toHaveBeenCalledWith(`c-news|jane@acme-motors.example`);
     });
 
     it('keeps the confirmation cooldown when the send outcome is unknown', async () => {
       deps.emailService.sendEmail.mockRejectedValueOnce(new MicroserviceError('unconfirmed', 502, 'EMAIL_SEND_UNCONFIRMED'));
       await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example');
+      await settleDetachedWork();
 
       deps.emailService.sendEmail.mockRejectedValueOnce(new MicroserviceError('lost', 502, 'EMAIL_SEND_FAILED', { transportFailure: true }));
       await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example');
+      await settleDetachedWork();
 
       expect(deps.inviteService.releaseRecipientCooldown).not.toHaveBeenCalled();
+    });
+
+    it('answers without waiting for the roster lookup or the email, so the response time does not depend on either', async () => {
+      deps.memberBenefitService.isEmailInGroup.mockReturnValueOnce(new Promise<boolean>(() => undefined));
+      expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example')).issue.confirmation_sent).toBe(true);
+
+      deps.emailService.sendEmail.mockReturnValueOnce(new Promise<void>(() => undefined));
+      expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'bob@acme-motors.example')).issue.confirmation_sent).toBe(true);
+      await settleDetachedWork();
+      expect(deps.emailService.sendEmail).toHaveBeenCalledTimes(1);
     });
   });
 

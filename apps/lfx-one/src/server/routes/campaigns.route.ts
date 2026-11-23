@@ -15,6 +15,8 @@ import {
   requireGoogleConversionActionsAccess,
   requireGoogleMonitorAccess,
   requireGoogleUserListsAccess,
+  requireMetaCustomAudiencesAccess,
+  requireMetaLeadFormsAccess,
 } from '../middleware/require-marketing-access.middleware';
 
 /**
@@ -54,8 +56,11 @@ const campaignController = new CampaignController();
 const audienceBuilderController = new AudienceBuilderController();
 const optimizeController = new CampaignOptimizeController();
 
-// Google Ads account monitor: requires `?project=`, but reads the shared account, not that project's
-// data. Its route-specific guard admits ROOT callers without granting access to project writes.
+// Google Ads account monitor: requires `?project=`. With LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR on it reads
+// only the project's own campaigns, and campaign-service answers whoever holds `campaign_manager` on the
+// project; a caller it refuses gets a 403 naming that role (#4837). Off, it reads the shared account
+// across foundations and the controller keeps it root-only. Its route-specific guard admits ROOT callers
+// (for that legacy arm) without granting access to project writes.
 router.get('/monitor', requireGoogleMonitorAccess, (req, res, next) => campaignController.getMonitorData(req, res, next));
 
 // The approved paid briefs a campaign can be adopted into (Query Service). 404 unless campaign-service briefs are on.
@@ -90,6 +95,19 @@ router.get('/google/user-lists', requireGoogleUserListsAccess, (req, res, next) 
 // 503, not that guard's uncoded 403.
 router.get('/google/audiences', requireGoogleAudiencesAccess, (req, res, next) => campaignController.getGoogleAdsAudiences(req, res, next));
 
+// The custom audiences on the Meta ad account a create uses, for the Implement tab's Meta audience
+// targeting (#5905). The ad account is shared, so the list names every foundation's audiences: answered
+// only to `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#550).
+// 404 while Meta audience targeting is off. Ahead of `router.use(requireCampaignManager)` for the same
+// reason as the Google lists above.
+router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res, next) => campaignController.getMetaCustomAudiences(req, res, next));
+
+// The Instant Forms of the Facebook Page a Meta create uses, for the Implement tab's lead form picker (#5940).
+// A project without its own connection uses the shared LF Page, which holds every foundation's forms: answered
+// only to `global_marketing_ops` on the project, as campaign-service answers. 404 while Meta lead forms are off.
+// Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/meta/lead-forms', requireMetaLeadFormsAccess, (req, res, next) => campaignController.getMetaLeadForms(req, res, next));
+
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
 // server flag is off — this is an intentional tightening of the prior (fully open) behavior, not
@@ -113,7 +131,8 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // four separate rule engines in this BFF. Brief-scoped where those are account-scoped, so it is
 // not a drop-in replacement for them; nothing is cut over to it yet. Because the Google, Meta,
 // Reddit and X accounts are shared by every foundation, those account monitors (and LinkedIn's
-// legacy arm) are root-only in the controller (lfx-self-serve-ops#54).
+// legacy arm) are root-only in the controller (lfx-self-serve-ops#54), except Google's
+// campaign-service arm, which reads only the project's own campaigns (#4837).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 // An image for the brief, stored by campaign-service and named by asset id in a platform's
@@ -149,13 +168,19 @@ router.post('/send-workflow', (req, res, next) => campaignController.createSendW
 // connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
 router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));
 router.get('/linkedin/accounts', (req, res) => campaignController.getLinkedInAccounts(req, res));
+// The LinkedIn ad account a create uses and, for global_marketing_ops, the accounts it may choose (#5809).
+// 404 unless the create cutover and LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ACCOUNT_SELECTION are on.
+router.get('/linkedin/create-account', (req, res, next) => campaignController.getLinkedInCreateAccount(req, res, next));
+// The configured targeting profiles, so the Implement tab can show what each one targets (#5546).
+router.get('/linkedin/targeting-profiles', (req, res, next) => campaignController.getLinkedInTargetingProfiles(req, res, next));
 router.get('/linkedin/monitor', (req, res, next) => campaignController.getLinkedInMonitor(req, res, next));
 router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccounts(req, res));
 router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMonitor(req, res, next));
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
 // campaign-service account discovery for the project's Google Ads connection, behind
-// LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
+// LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only: a project with no connection
+// of its own is answered from the LF system credential, so the list can name every account the LF reaches.
 router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
 // Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319),
 // behind LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE — 404 while it is off. Root-only, as the Google

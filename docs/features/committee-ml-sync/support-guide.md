@@ -2,7 +2,7 @@
 
 **Feature:** Automatic and manual membership sync between a Group and its linked Groups.io mailing list(s).
 **Audience:** Support engineers, customer success, internal escalation handlers.
-**Status:** Draft against in-review branches. Every button label, dialog header, and flag name below was verified against the open PRs linked from epic #4022 (see [Implementation Status](#implementation-status)). Re-verify against `main` once those PRs merge, before relying on this doc to resolve a live ticket.
+**Status:** Verified against `main` after epic #4022's full PR set merged, including the later #4026/#4904 criterion-3 work (PRs #5375, #5420) and the Sync Now progress bar (#5489). Every button label, dialog header, and flag name below reflects current `main`.
 
 ## What Is This Feature?
 
@@ -29,10 +29,10 @@ Open a mailing list (`apps/lfx-one/.../mailing-list-view`). If the list is linke
 On a Group's **Settings** tab, next to the mailing list list, an **Auto Sync** button (`settings-auto-sync-btn`) opens a drawer titled "Auto Sync" (subtitled with the Group's name). The drawer hosts one Sync Settings card (same component as above) per mailing list associated with the Group, so a manager can review/change every linked list's sync mode from one place.
 
 **3. Group detail page → Settings tab → Associated Mailing Lists dialog**
-The **+ Add List** button next to the mailing lists section opens a dialog titled **"Associated Mailing Lists"** (not "Configure Mailing Lists" — the button and the dialog header differ from PCC's naming). This dialog only links/unlinks mailing lists to the Group; it does **not** set sync direction or committee filters — those aren't available here yet (see [Limitations](#limitations-and-known-constraints)). To remove a linked list, use the per-row "Remove mailing list" action on the Settings tab itself, outside this dialog.
+The **+ Add List** button next to the mailing lists section opens a dialog titled **"Associated Mailing Lists"** (not "Configure Mailing Lists" — the button and the dialog header differ from PCC's naming). Besides linking/unlinking lists, each selected row now has a sync-direction picker (`settings-ml-picker-direction-<uid>`) — the same one-auto-direction-per-Group rule from item 1 applies here too. When a row's direction is set to **Group → Mailing List**, an extra filters row appears (`settings-ml-picker-filters-row-<uid>`) with two optional multi-selects: **Voting statuses** (`settings-ml-picker-committee-filter-<uid>`) and **{Group} roles** (`settings-ml-picker-role-filter-<uid>`) — leaving either blank syncs every Group member; picking values restricts the Group→Mailing List sync to only members matching at least one selected voting status and/or role. These filter controls only apply to the Group→Mailing List direction — they're hidden for Mailing List→Group and Manual. To remove a linked list, use the per-row "Remove mailing list" action on the Settings tab itself, outside this dialog.
 
 **4. Sync Now preview/apply dialog**
-The working entry point is the per-list **Sync Now** button (`settings-sync-now-ml-<uid>`) on the Group's **Settings** tab (added in PR #4911), not the Sync Settings card's own button in item 1 (currently a stub). Shows three tabs: **Adds**, **Removes**, **Conflicts** (mismatched-email rows that are informational only — nothing in Conflicts is auto-applied). Each row in Adds/Removes has a checkbox so the manager can skip specific entries. Applying can take minutes; the dialog shows an elapsed-seconds counter, not a progress bar, while ITX computes and applies the diff.
+The working entry point is the per-list **Sync Now** button (`settings-sync-now-ml-<uid>`) on the Group's **Settings** tab (added in PR #4911), not the Sync Settings card's own button in item 1 (currently a stub). Shows three tabs: **Adds**, **Removes**, **Conflicts** (mismatched-email rows that are informational only — nothing in Conflicts is auto-applied). Each row in Adds/Removes has a checkbox so the manager can skip specific entries. Applying can take minutes; the dialog polls a job-status endpoint every 2s and shows a real progress bar (`lfx-ui-progress`, driven by the job's `processed_count`/`total_count`) once the backend job has reported a total — for both the preview (diff) phase and the apply phase. Before the first poll response reports a total, it falls back to a spinner with an elapsed-seconds counter.
 
 ## Common User Scenarios
 
@@ -55,7 +55,7 @@ The working entry point is the per-list **Sync Now** button (`settings-sync-now-
    This is expected — the Conflicts tab lists mismatched-email rows for the manager's awareness; it is never auto-applied. There's no action needed unless the user wants to manually reconcile those accounts.
 
 6. **"Can I sync only people with a specific role in the Group?"**
-   Not yet. Committee filters (role-scoped Group→Mailing List sync) are tracked as a future enhancement (#4026 acceptance criterion, blocked on backend design #4904) and are **not implemented** in Self Serve today, unlike PCC's equivalent feature. Don't tell users this is available.
+   Yes, for the Group→Mailing List direction. In the Associated Mailing Lists dialog (item 3 above), once a row's direction is set to Group → Mailing List, the manager can pick one or more **Voting statuses** and/or **{Group} roles** to restrict which members get synced — leaving both blank syncs everyone. This shipped as the #4026/#4904 criterion-3 work (PRs #5375, #5420). It only applies to the Group→Mailing List direction; there's no equivalent filter for Mailing List→Group.
 
 7. **"I unlinked a mailing list but sync settings are still showing."**
    Unlinking (via the Settings tab's per-row remove action) clears the mailing list's association with the Group. If a stale Sync Settings card still appears, that's a caching/refresh issue in the Settings tab or drawer, not a data problem — have the user refresh.
@@ -75,18 +75,14 @@ The working entry point is the per-list **Sync Now** button (`settings-sync-now-
 
 - **One auto direction per Group.** Only one linked mailing list can have an active `auto_*` direction per Group at a time (enforced via `MailingListService.getMailingListsByCommittee`). Other linked lists must stay `manual`.
 - **No idle reconciliation.** Auto sync only runs its full roster diff when a join/leave event fires — it does not reconcile on a schedule or on toggle. If no event has happened since enabling, nothing has synced yet; **Sync Now** reconciles immediately instead of waiting for the next event, but only on a list that already has an auto direction set (it rejects `manual`/unset `sync_mode`; see scenario 1).
-- **No committee filters (role-scoped sync).** Unlike PCC, Self Serve cannot yet restrict Group→Mailing List sync to members with a specific committee role. Tracked under #4026/#4904, not implemented as of this writing.
+- **Committee filters only apply to Group→Mailing List.** The Associated Mailing Lists dialog's Voting-statuses/roles filters (#4026/#4904, PRs #5375, #5420) only restrict the `auto_c_to_ml` direction; there is no equivalent role-scoped filter for Mailing List→Group sync.
 - **Automatic removal is Group→Mailing List and private-list-only.** The realtime `auto_c_to_ml` auto-sync path (issue #4023) only auto-removes someone when the mailing list is private — a public list only ever auto-adds, never auto-removes. This restriction is specific to that automatic path: a manual **Sync Now** apply lets the manager approve removes regardless of visibility, for either sync direction, since a human is reviewing the diff. The reverse automatic direction (`auto_ml_to_c`) isn't implemented in this service at all — ITX propagates Groups.io unsubscribe events straight to the Group in real time, independent of this restriction.
 - **Automatic removal also checks sibling lists on the same Group.** Before an automatic removal is applied, the service checks whether the person is still subscribed to any other mailing list linked to the same Group — including one in `manual` mode — and skips the removal if so, so they aren't dropped from one list while still belonging to a sibling tied to the same committee.
 - **Conflicts are informational only.** The Sync Now dialog's Conflicts tab surfaces mismatched-email rows but never applies changes for them automatically.
 
 ## Implementation Status
 
-For current status, check epic [#4022](https://github.com/linuxfoundation/lfx-self-serve/issues/4022) and its linked PRs rather than relying on a snapshot here — in-review UI, flag names, and dialog copy can still change before merge.
-
-The link/unlink part of the Associated Mailing Lists dialog (item 3 above) is already on `main` — it predates this epic. The committee-filter acceptance criterion of #4026 (role-scoped Group→Mailing List sync) is still open.
-
-Re-verify button labels, flag names, and dialog copy against `main` once the epic's PRs merge.
+Epic [#4022](https://github.com/linuxfoundation/lfx-self-serve/issues/4022) and its linked PRs are merged. The link/unlink part of the Associated Mailing Lists dialog (item 3 above) predates this epic. The #4026/#4904 committee-filter acceptance criterion (role-scoped Group→Mailing List sync) shipped via PRs #5375 and #5420. The Sync Now progress bar (item 4 above) shipped via PR #5489.
 
 ## Escalation Path
 

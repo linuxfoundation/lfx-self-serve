@@ -3,19 +3,34 @@
 
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormGroup } from '@angular/forms';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { Account, OrgActiveMembership, OrgActiveMembershipsResponse, OrgLensEmptyStateName, OrgMembershipProject } from '@lfx-one/shared/interfaces';
+import type {
+  Account,
+  OrgActiveMembership,
+  OrgActiveMembershipsResponse,
+  OrgExpiredMembership,
+  OrgExpiredMembershipsResponse,
+  OrgLensEmptyStateName,
+  OrgMembershipProject,
+} from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { OrgMembershipsComponent } from './org-memberships.component';
+
+const ROLL_UP = 'family-001000000000000AAA';
+const PARENT_ORG = { accountId: '001000000000000AAA', name: 'Parent Co' };
+const SUBSIDIARY_ORG = { accountId: '001000000000001AAA', name: 'Subsidiary Co' };
 
 function membershipRow(orgProjects: number): OrgActiveMembership {
   return {
@@ -63,22 +78,34 @@ const DEFAULT_PROJECTS: OrgMembershipProject[] = [
   project('p-2', 'envoy', { projectName: 'Envoy', influence: 'Silent', maintainers: 0, contributors: 1, collaborators: 0, commits: 3 }),
 ];
 
-async function render(memberships: OrgActiveMembership[] = [], projects: OrgMembershipProject[] = DEFAULT_PROJECTS) {
+interface RenderOptions {
+  rollUp?: { response: OrgActiveMembershipsResponse; expired?: OrgExpiredMembershipsResponse };
+}
+
+async function render(memberships: OrgActiveMembership[] = [], projects: OrgMembershipProject[] = DEFAULT_PROJECTS, options: RenderOptions = {}) {
   const pageState = signal<OrgLensEmptyStateName | null>(null);
   const settled = signal(true);
-  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
+  const selectedAccount = signal<Account>(
+    options.rollUp
+      ? { accountId: ROLL_UP, accountName: 'All Parent Co Organizations', membershipTier: '', uid: ROLL_UP, slug: null }
+      : { accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' }
+  );
+  const isRollUp = signal(!!options.rollUp);
+  const getActiveMemberships = vi.fn(() => of(options.rollUp?.response ?? activeResponse(memberships)));
+  const getFoundationProjects = vi.fn(() => of({ accountId: 'acc-1', foundationId: 'cncf', projects }));
+  const getExpiredMemberships = vi.fn(() => of(options.rollUp?.expired ?? { accountId: 'acc-1', memberships: [] }));
 
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
     imports: [OrgMembershipsComponent],
     providers: [
       provideRouter([]),
-      // The Org Projects side panel is a p-drawer, which binds synthetic animation listeners.
+      // The Company Projects side panel is a p-drawer, which binds synthetic animation listeners.
       provideNoopAnimations(),
       // The empty state no longer carries a support link (#5447); MessageService stays provided for the page's other controls.
       MessageService,
-      { provide: AccountContextService, useValue: { selectedAccount } },
-      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
+      { provide: AccountContextService, useValue: { selectedAccount, isRollUp } },
+      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/company', ...segments] } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       {
         provide: OrgLensEmptyStateService,
@@ -94,10 +121,10 @@ async function render(memberships: OrgActiveMembership[] = [], projects: OrgMemb
       {
         provide: OrgLensMembershipsService,
         useValue: {
-          getActiveMemberships: () => of(activeResponse(memberships)),
-          getExpiredMemberships: vi.fn(),
+          getActiveMemberships,
+          getExpiredMemberships,
           getDiscoverOpportunities: vi.fn(),
-          getFoundationProjects: () => of({ accountId: 'acc-1', foundationId: 'cncf', projects }),
+          getFoundationProjects,
         },
       },
     ],
@@ -106,7 +133,7 @@ async function render(memberships: OrgActiveMembership[] = [], projects: OrgMemb
   const fixture = TestBed.createComponent(OrgMembershipsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, pageState, settled, selectedAccount };
+  return { fixture, pageState, settled, selectedAccount, getActiveMemberships, getFoundationProjects, getExpiredMemberships };
 }
 
 function has(fixture: ComponentFixture<OrgMembershipsComponent>, testid: string): boolean {
@@ -163,7 +190,7 @@ describe('OrgMembershipsComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Acme Motors');
   });
 
-  it('renders a non-zero Org Projects count as a control that opens the projects side panel', async () => {
+  it('renders a non-zero Company Projects count as a control that opens the projects side panel', async () => {
     const { fixture } = await render([membershipRow(3)]);
     await settleActiveFetch(fixture);
 
@@ -216,7 +243,7 @@ describe('OrgMembershipsComponent', () => {
     expect(hasInDocument('membership-projects-drawer-title')).toBe(false);
   });
 
-  it('leaves a zero Org Projects count non-interactive', async () => {
+  it('leaves a zero Company Projects count non-interactive', async () => {
     const { fixture } = await render([membershipRow(0)]);
     await settleActiveFetch(fixture);
 
@@ -240,5 +267,330 @@ describe('OrgMembershipsComponent', () => {
     expect(maintainerRolesText('envoy')).toBe('0');
     expect(maintainerRolesText('unavailable')).toBe('—');
     expect(maintainerRolesText('non-lf')).toBe('—');
+  });
+  describe('in a family roll-up', () => {
+    function rollUpResponse(): OrgActiveMembershipsResponse {
+      const row = membershipRow(3);
+      return {
+        accountId: ROLL_UP,
+        summary: { activeMemberships: 2, renewingWithin90Days: 1, governanceRoles: 5 },
+        memberships: [
+          { ...row, organization: PARENT_ORG },
+          { ...row, membershipTier: 'Gold Membership', organization: SUBSIDIARY_ORG },
+        ],
+        organizations: [PARENT_ORG, SUBSIDIARY_ORG],
+      };
+    }
+
+    it('adds a Company column naming each row’s organization, and a Company filter', async () => {
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+      await settleActiveFetch(fixture);
+
+      expect(has(fixture, 'memberships-active-company-header')).toBe(true);
+      expect(has(fixture, 'memberships-company-filter')).toBe(true);
+      const cell = (org: { accountId: string }) =>
+        fixture.nativeElement.querySelector(`[data-testid="memberships-active-company-cncf-${org.accountId}"]`)?.textContent?.trim();
+      expect(cell(PARENT_ORG)).toBe('Parent Co');
+      expect(cell(SUBSIDIARY_ORG)).toBe('Subsidiary Co');
+    });
+
+    it('lists one row per organization and foundation, naming the foundation on every row, with no foundation heading rows', async () => {
+      const row = membershipRow(3);
+      const lfn = { ...row, foundationId: 'lfn', foundationName: 'LF Networking', foundationSlug: 'lfn' };
+      const response: OrgActiveMembershipsResponse = {
+        ...rollUpResponse(),
+        memberships: [
+          { ...lfn, organization: PARENT_ORG },
+          { ...row, organization: PARENT_ORG },
+          { ...row, organization: SUBSIDIARY_ORG },
+        ],
+      };
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response } });
+      await settleActiveFetch(fixture);
+
+      const rows = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="memberships-active-table"] tbody tr') as NodeListOf<HTMLElement>);
+      const shape = rows.map((tr) => [
+        tr.querySelector('[data-testid^="memberships-active-foundation-"] .font-medium')?.textContent?.trim(),
+        tr.querySelector('[data-testid^="memberships-active-company-"]')?.textContent?.trim(),
+      ]);
+      expect(shape).toEqual([
+        ['Cloud Native Computing Foundation (CNCF)', 'Parent Co'],
+        ['Cloud Native Computing Foundation (CNCF)', 'Subsidiary Co'],
+        ['LF Networking', 'Parent Co'],
+      ]);
+    });
+
+    it('lists each organization’s expired membership as its own row, a foundation another organization still holds included', async () => {
+      const lapsed = (organization: { accountId: string; name: string }, foundationId: string, foundationName: string): OrgExpiredMembership => ({
+        foundationId,
+        foundationName,
+        foundationSlug: foundationId,
+        foundationLogo: null,
+        membershipTier: 'Silver Membership',
+        tierStartDate: '2024-01-01',
+        tierEndDate: '2025-01-01',
+        expirationDate: '2025-01-01',
+        actionType: 'renew',
+        organization,
+      });
+      const expired: OrgExpiredMembershipsResponse = {
+        accountId: ROLL_UP,
+        memberships: [
+          lapsed(PARENT_ORG, 'lfn', 'LF Networking'),
+          lapsed(SUBSIDIARY_ORG, 'lfn', 'LF Networking'),
+          lapsed(SUBSIDIARY_ORG, 'cncf', 'Cloud Native Computing Foundation (CNCF)'),
+        ],
+        organizations: [PARENT_ORG, SUBSIDIARY_ORG],
+      };
+      const { fixture, getExpiredMemberships } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse(), expired } });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getExpiredMemberships).toHaveBeenCalledWith(ROLL_UP, undefined, undefined);
+      const companies = Array.from(fixture.nativeElement.querySelectorAll('td[data-testid^="memberships-expired-company-"]') as NodeListOf<HTMLElement>).map(
+        (cell) => cell.getAttribute('data-testid')
+      );
+      expect(companies).toEqual([
+        `memberships-expired-company-cncf-${SUBSIDIARY_ORG.accountId}`,
+        `memberships-expired-company-lfn-${PARENT_ORG.accountId}`,
+        `memberships-expired-company-lfn-${SUBSIDIARY_ORG.accountId}`,
+      ]);
+    });
+
+    it('marks an expired row with an info icon naming the organizations still active at that foundation', async () => {
+      const lapsed = (organization: { accountId: string; name: string }, activeSiblings: { accountId: string; name: string }[]): OrgExpiredMembership => ({
+        foundationId: 'lfn',
+        foundationName: 'LF Networking',
+        foundationSlug: 'lfn',
+        foundationLogo: null,
+        membershipTier: 'Silver Membership',
+        tierStartDate: '2024-01-01',
+        tierEndDate: '2025-01-01',
+        expirationDate: '2025-01-01',
+        actionType: 'renew',
+        organization,
+        activeSiblings,
+      });
+      const expired: OrgExpiredMembershipsResponse = {
+        accountId: ROLL_UP,
+        memberships: [lapsed(PARENT_ORG, [SUBSIDIARY_ORG]), lapsed(SUBSIDIARY_ORG, [])],
+        organizations: [PARENT_ORG, SUBSIDIARY_ORG],
+      };
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse(), expired } });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const icons = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="memberships-expired-active-sibling-info-"]') as NodeListOf<HTMLElement>);
+      expect(icons.map((icon) => icon.getAttribute('data-testid'))).toEqual([`memberships-expired-active-sibling-info-lfn-${PARENT_ORG.accountId}`]);
+      expect(icons[0].getAttribute('aria-label')).toBe("Parent Co's membership in LF Networking has expired. Still active through Subsidiary Co.");
+    });
+
+    it("pre-fills Contact Us with the row's company and foundation", async () => {
+      const expired: OrgExpiredMembershipsResponse = {
+        accountId: ROLL_UP,
+        memberships: [
+          {
+            foundationId: 'lfn',
+            foundationName: 'LF Networking',
+            foundationSlug: 'lfn',
+            foundationLogo: null,
+            membershipTier: 'Silver Membership',
+            tierStartDate: '2024-01-01',
+            tierEndDate: '2025-01-01',
+            expirationDate: '2025-01-01',
+            actionType: 'contact',
+            organization: SUBSIDIARY_ORG,
+          },
+        ],
+        organizations: [PARENT_ORG, SUBSIDIARY_ORG],
+      };
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse(), expired } });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const contactUs = fixture.debugElement.query(By.css('[data-testid="org-memberships-expired-contact-us-button"]'));
+      expect(contactUs.injector.get(OpenIntercomDirective).intercomMessage()).toBe("Hi, I need help with Subsidiary Co's expired LF Networking membership.");
+    });
+
+    it('offers no Discover tab', async () => {
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+
+      expect(has(fixture, 'memberships-tab-active')).toBe(true);
+      expect(has(fixture, 'memberships-tab-expired')).toBe(true);
+      expect(has(fixture, 'memberships-tab-discover')).toBe(false);
+    });
+
+    it('titles the page with the roll-up’s name', async () => {
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+
+      expect(fixture.nativeElement.querySelector('[data-testid="memberships-page-title"]')?.textContent).toContain('Membership — All Parent Co Organizations');
+    });
+
+    it('shows the server’s cards for the filtered rows, labelled as memberships', async () => {
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+      await settleActiveFetch(fixture);
+
+      const stat = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"] p`)?.textContent?.trim();
+      const text = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.textContent?.trim();
+      expect(stat('memberships-stat-active')).toBe('2');
+      expect(text('memberships-stat-active-label')).toBe('Active Memberships');
+      expect(stat('memberships-stat-renewing')).toBe('1');
+      expect(text('memberships-stat-renewing-label')).toBe('Memberships Renewing Within 90 Days');
+      expect(stat('memberships-stat-governance')).toBe('5');
+    });
+
+    it('sends the chosen company with the Active read, and clears it on a switch to another selection', async () => {
+      const { fixture, getActiveMemberships, selectedAccount } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+      await settleActiveFetch(fixture);
+
+      (fixture.componentInstance as unknown as { companyFilterForm: FormGroup }).companyFilterForm.controls['company'].setValue(SUBSIDIARY_ORG.accountId);
+      await settleActiveFetch(fixture);
+      expect(getActiveMemberships).toHaveBeenLastCalledWith(ROLL_UP, expect.objectContaining({ company: SUBSIDIARY_ORG.accountId }));
+
+      selectedAccount.set({
+        accountId: 'family-001000000000009AAA',
+        accountName: 'All Other Organizations',
+        membershipTier: '',
+        uid: 'family-001000000000009AAA',
+        slug: null,
+      });
+      await settleActiveFetch(fixture);
+      expect(getActiveMemberships).toHaveBeenLastCalledWith('family-001000000000009AAA', expect.objectContaining({ company: undefined }));
+    });
+
+    it('links each row to its own organization’s membership page, leaving the roll-up', async () => {
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+      await settleActiveFetch(fixture);
+
+      const hrefs = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="memberships-active-row-link-cncf"]') as NodeListOf<HTMLAnchorElement>).map(
+        (a) => (a as HTMLAnchorElement).getAttribute('href')
+      );
+      expect(hrefs).toEqual([`/company/${PARENT_ORG.accountId}/memberships/cncf`, `/company/${SUBSIDIARY_ORG.accountId}/memberships/cncf`]);
+    });
+
+    it('opens the Org Projects panel for the row’s own organization', async () => {
+      const { fixture, getFoundationProjects } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+      await settleActiveFetch(fixture);
+
+      const triggers = fixture.nativeElement.querySelectorAll('[data-testid="memberships-org-projects-cncf"]');
+      (triggers[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getFoundationProjects).toHaveBeenCalledWith(SUBSIDIARY_ORG.accountId, 'cncf');
+    });
+
+    it('links each project in the Org Projects panel to the row’s own organization, not the roll-up', async () => {
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+      await settleActiveFetch(fixture);
+
+      const triggers = fixture.nativeElement.querySelectorAll('[data-testid="memberships-org-projects-cncf"]');
+      (triggers[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(document.querySelector('[data-testid="membership-project-k8s"] a')?.getAttribute('href')).toBe(
+        `/company/${SUBSIDIARY_ORG.accountId}/projects/k8s`
+      );
+    });
+
+    it('keeps the loaded expired table when an older request for the same company fails after company A → B → A', async () => {
+      const expired: OrgExpiredMembershipsResponse = {
+        accountId: ROLL_UP,
+        memberships: [
+          {
+            foundationId: 'lfn',
+            foundationName: 'LF Networking',
+            foundationSlug: 'lfn',
+            foundationLogo: null,
+            membershipTier: 'Silver Membership',
+            tierStartDate: '2024-01-01',
+            tierEndDate: '2025-01-01',
+            expirationDate: '2025-01-01',
+            actionType: 'renew',
+            organization: PARENT_ORG,
+          },
+        ],
+        organizations: [PARENT_ORG, SUBSIDIARY_ORG],
+      };
+      const { fixture, getExpiredMemberships } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse(), expired } });
+      const requests: Subject<OrgExpiredMembershipsResponse>[] = [];
+      getExpiredMemberships.mockImplementation(() => {
+        const request = new Subject<OrgExpiredMembershipsResponse>();
+        requests.push(request);
+        return request;
+      });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      requests[0].next(expired);
+      const companyControl = (fixture.componentInstance as unknown as { companyFilterForm: FormGroup }).companyFilterForm.controls['expiredCompany'];
+      companyControl.setValue(PARENT_ORG.accountId);
+      companyControl.setValue(SUBSIDIARY_ORG.accountId);
+      companyControl.setValue(PARENT_ORG.accountId);
+      requests[3].next(expired);
+      requests[1].error(new Error('stale request failed'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(requests).toHaveLength(4);
+      expect(has(fixture, 'memberships-expired-error-state')).toBe(false);
+      expect(has(fixture, 'memberships-expired-table')).toBe(true);
+    });
+
+    it('drops a pending company-filtered Expired response after switching to another organization and back', async () => {
+      const expired: OrgExpiredMembershipsResponse = { accountId: ROLL_UP, memberships: [], organizations: [PARENT_ORG, SUBSIDIARY_ORG] };
+      const { fixture, getExpiredMemberships, selectedAccount } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse(), expired } });
+      const rollUpAccount = selectedAccount();
+      const requests: Subject<OrgExpiredMembershipsResponse>[] = [];
+      getExpiredMemberships.mockImplementation(() => {
+        const request = new Subject<OrgExpiredMembershipsResponse>();
+        requests.push(request);
+        return request;
+      });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      requests[0].next(expired);
+      (fixture.componentInstance as unknown as { companyFilterForm: FormGroup }).companyFilterForm.controls['expiredCompany'].setValue(PARENT_ORG.accountId);
+      expect(requests).toHaveLength(2);
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-active"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      selectedAccount.set({ accountId: 'acc-2', accountName: 'Other Co', membershipTier: '', uid: 'org-uid-2', slug: 'other' });
+      await settleActiveFetch(fixture);
+      selectedAccount.set(rollUpAccount);
+      await settleActiveFetch(fixture);
+      requests[1].next({ ...expired, memberships: [] });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(requests).toHaveLength(3);
+      expect(getExpiredMemberships).toHaveBeenLastCalledWith(ROLL_UP, undefined, undefined);
+    });
+
+    it('shows no Company column or filter, and the single-organization card labels, for a single organization', async () => {
+      const { fixture } = await render([membershipRow(3)]);
+      await settleActiveFetch(fixture);
+
+      expect(has(fixture, 'memberships-active-company-header')).toBe(false);
+      expect(has(fixture, 'memberships-company-filter')).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid^="memberships-active-foundation-"]')).toBeNull();
+      expect(has(fixture, 'memberships-tab-discover')).toBe(true);
+      const text = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.textContent?.trim();
+      expect(text('memberships-stat-active-label')).toBe('Active Memberships');
+      expect(text('memberships-stat-renewing-label')).toBe('Renewing Within 90 Days');
+    });
   });
 });

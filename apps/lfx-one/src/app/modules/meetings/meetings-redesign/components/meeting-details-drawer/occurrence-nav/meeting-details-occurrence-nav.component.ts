@@ -32,7 +32,8 @@ import { MeetingDetailsContext } from '../meeting-details.context';
 /**
  * Occurrence navigator of the meeting details drawer: previous and next dates, and a menu of upcoming and past dates.
  * @description The timeline merges the meeting's live dates with the series' past and future ones, as the meeting page does.
- * Shown for a recurring meeting, or when the series has more than one date. Picking a date writes `MeetingDetailsContext.occurrence`.
+ * Shown for a recurring meeting, or when the series has more than one date. Picking a date writes `MeetingDetailsContext.occurrence`,
+ * except an upcoming date of a past row, which `MeetingDetailsContext.showUpcoming` reopens the drawer on.
  */
 @Component({
   selector: 'lfx-meeting-details-occurrence-nav',
@@ -59,12 +60,12 @@ export class MeetingDetailsOccurrenceNavComponent {
 
   protected step(delta: -1 | 1): void {
     const target = this.timeline()[this.index() + delta];
-    if (target) this.context.occurrence.set(target);
+    if (target) this.show(target);
   }
 
   protected pick(option: MeetingDetailsOccurrenceOption, close: () => void): void {
     if (option.cancelled) return;
-    this.context.occurrence.set(option.occurrence);
+    this.show(option.occurrence);
     close();
   }
 
@@ -94,9 +95,9 @@ export class MeetingDetailsOccurrenceNavComponent {
     );
     return computed(() => {
       const meeting = this.context.meeting();
-      // A past row moves among past dates only: an upcoming date needs the live meeting, which the meeting page loads.
-      if (isPastMeetingCalendarRow(this.context.row().meeting)) return buildOccurrenceNavTimeline([], { ...series(), future: [] }, meeting.duration);
-      return buildOccurrenceNavTimeline(getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences), series(), meeting.duration);
+      // A past record's occurrences are not the live series', so its upcoming dates come from the series alone.
+      const live = isPastMeetingCalendarRow(this.context.row().meeting) ? [] : getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences);
+      return buildOccurrenceNavTimeline(live, series(), meeting.duration);
     });
   }
 
@@ -106,5 +107,15 @@ export class MeetingDetailsOccurrenceNavComponent {
       const cancelled = (meeting.occurrences ?? []).filter((occurrence) => isMeetingOccurrenceCancelled(occurrence, meeting.cancelled_occurrences));
       return getMeetingDetailsOccurrenceOptions(this.timeline(), cancelled, this.context.now(), meeting.duration);
     });
+  }
+
+  /** Shows the date here, or on a past row reopens the drawer on an upcoming one, which needs the live meeting. */
+  private show(target: OccurrenceNavItem): void {
+    const upcoming = this.options().upcoming.some((option) => option.occurrence === target);
+    if (upcoming && isPastMeetingCalendarRow(this.context.row().meeting)) {
+      this.context.showUpcoming(target);
+      return;
+    }
+    this.context.occurrence.set(target);
   }
 }

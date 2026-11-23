@@ -12,7 +12,6 @@ import type {
   MeetingGuestRow,
   MeetingGuestRowActions,
   MeetingGuestStatusKey,
-  MeetingGuestSummary,
   MeetingGuestViewer,
   MeetingHostCandidate,
   MeetingRegistrant,
@@ -58,6 +57,13 @@ export function buildRegistrantGuestRows(
       registrant,
     };
   });
+}
+
+/** Whether a guest is the viewer, by email or username in any case. */
+export function isMeetingGuestViewer(person: Pick<MeetingHostCandidate, 'email' | 'username'>, viewer: MeetingGuestViewer): boolean {
+  const email = person.email?.trim().toLowerCase();
+  const username = person.username?.trim().toLowerCase();
+  return (!!email && email === viewer.email?.trim().toLowerCase()) || (!!username && username === viewer.username?.trim().toLowerCase());
 }
 
 /** Organizer actions on an upcoming registrant row; null for participants, invitees and once the meeting has ended. */
@@ -173,17 +179,6 @@ export function filterMeetingGuestRows(rows: MeetingGuestRow[], query: string, f
   );
 }
 
-/** Heading and total: participants with attended and invited counts once ended, members for a committee meeting, else guests. */
-export function getMeetingGuestSummary(rows: MeetingGuestRow[], ended: boolean, committeeMeeting: boolean): MeetingGuestSummary {
-  if (ended) {
-    const attended = rows.filter((row) => row.status === 'attended').length;
-    const invited = rows.filter((row) => row.invited).length;
-    return { title: 'Meeting Participants', subtitle: `${attended} attended / ${invited} invited` };
-  }
-  const count = (noun: string) => `${rows.length} ${noun}${rows.length === 1 ? '' : 's'}`;
-  return committeeMeeting ? { title: 'Meeting Members', subtitle: count('member') } : { title: 'Meeting Guests', subtitle: count('guest') };
-}
-
 /** Re-orders registrant rows after a local change, such as a host toggle, with the order the list was built in. */
 export function resortMeetingGuestRows(rows: MeetingGuestRow[]): MeetingGuestRow[] {
   return orderMeetingGuestRows(rows.map((row) => ({ row, unnamed: isUnresolvableParticipantName(row.registrant?.first_name, row.registrant?.last_name) })));
@@ -234,9 +229,8 @@ function toRow(
     .filter(Boolean)
     .join(' · ');
   const email = person.email?.trim().toLowerCase() || null;
-  const username = person.username?.trim().toLowerCase() || null;
   const role = resolveMeetingGuestRole(person, organizerKeys) ?? 'guest';
-  const you = (!!email && email === viewer.email?.trim().toLowerCase()) || (!!username && username === viewer.username?.trim().toLowerCase());
+  const you = isMeetingGuestViewer(person, viewer);
   return {
     uid: person.uid,
     name: you ? `${name} (You)` : name,

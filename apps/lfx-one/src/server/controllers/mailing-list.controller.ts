@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SyncMemberType } from '@lfx-one/shared/enums';
+import { MailingListSyncDirection, SyncMemberType } from '@lfx-one/shared/enums';
 import {
   CreateGroupsIOServiceRequest,
   CreateMailingListMemberRequest,
@@ -410,7 +410,10 @@ export class MailingListController {
         return;
       }
 
-      const diff = await this.mailingListService.getSyncDiff(req, id);
+      const direction = this.parseDirectionQuery(req, next, 'get_sync_diff');
+      if (direction === null) return;
+
+      const diff = await this.mailingListService.getSyncDiff(req, id, direction);
 
       logger.success(req, 'get_sync_diff', startTime, {
         mailing_list_id: id,
@@ -453,6 +456,155 @@ export class MailingListController {
       });
 
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /mailing-lists/:id/sync-diff/start
+   */
+  public async startSyncDiff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'start_sync_diff', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Mailing List ID is required', {
+            operation: 'start_sync_diff',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const direction = this.parseDirectionQuery(req, next, 'start_sync_diff');
+      if (direction === null) return;
+
+      const start = await this.mailingListService.startSyncDiff(req, id, direction);
+
+      logger.success(req, 'start_sync_diff', startTime, {
+        mailing_list_id: id,
+        job_id: start.job_id,
+      });
+
+      res.json(start);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /mailing-lists/:id/sync-diff/:jobId/status
+   */
+  public async getSyncDiffStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, jobId } = req.params;
+    const startTime = logger.startOperation(req, 'get_sync_diff_status', {
+      mailing_list_id: id,
+      job_id: jobId,
+    });
+
+    try {
+      if (!id || !jobId) {
+        next(
+          ServiceValidationError.forField(!id ? 'id' : 'jobId', 'Mailing List ID and job ID are required', {
+            operation: 'get_sync_diff_status',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const direction = this.parseDirectionQuery(req, next, 'get_sync_diff_status');
+      if (direction === null) return;
+
+      const status = await this.mailingListService.getSyncDiffStatus(req, id, jobId, direction);
+
+      logger.success(req, 'get_sync_diff_status', startTime, {
+        mailing_list_id: id,
+        job_id: jobId,
+        status: status.status,
+      });
+
+      res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /mailing-lists/:id/sync-apply/start
+   */
+  public async startSyncApply(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'start_sync_apply', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Mailing List ID is required', {
+            operation: 'start_sync_apply',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const applyRequest = this.parseSyncApplyRequest(req, next);
+      if (!applyRequest) return;
+
+      const start = await this.mailingListService.startSyncApply(req, id, applyRequest);
+
+      logger.success(req, 'start_sync_apply', startTime, {
+        mailing_list_id: id,
+        job_id: start.job_id,
+      });
+
+      res.json(start);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /mailing-lists/:id/sync-apply/:jobId/status
+   */
+  public async getSyncApplyStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, jobId } = req.params;
+    const startTime = logger.startOperation(req, 'get_sync_apply_status', {
+      mailing_list_id: id,
+      job_id: jobId,
+    });
+
+    try {
+      if (!id || !jobId) {
+        next(
+          ServiceValidationError.forField(!id ? 'id' : 'jobId', 'Mailing List ID and job ID are required', {
+            operation: 'get_sync_apply_status',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const status = await this.mailingListService.getSyncApplyStatus(req, id, jobId);
+
+      logger.success(req, 'get_sync_apply_status', startTime, {
+        mailing_list_id: id,
+        job_id: jobId,
+        status: status.status,
+      });
+
+      res.json(status);
     } catch (error) {
       next(error);
     }
@@ -730,7 +882,7 @@ export class MailingListController {
       return fail('body', 'Request body must be a JSON object');
     }
 
-    const { committee_uid, adds, removes } = body as Record<string, unknown>;
+    const { committee_uid, adds, removes, direction } = body as Record<string, unknown>;
 
     if (typeof committee_uid !== 'string' || !committee_uid.trim()) {
       return fail('committee_uid', 'committee_uid is required and must be a non-empty string');
@@ -740,6 +892,10 @@ export class MailingListController {
     }
     if (!Array.isArray(removes)) {
       return fail('removes', 'removes must be an array');
+    }
+    const validDirections: string[] = Object.values(MailingListSyncDirection);
+    if (direction !== undefined && (typeof direction !== 'string' || !validDirections.includes(direction))) {
+      return fail('direction', 'direction must be one of c_to_ml, ml_to_c');
     }
 
     const parsedAdds: SyncDiffAdd[] = [];
@@ -761,6 +917,7 @@ export class MailingListController {
       committee_uid: committee_uid.trim(),
       adds: parsedAdds,
       removes: parsedRemoves,
+      ...(direction !== undefined ? { direction: direction as MailingListSyncDirection } : {}),
     };
   }
 
@@ -776,5 +933,30 @@ export class MailingListController {
     if (typeof member_type !== 'string' || !validMemberTypes.includes(member_type)) return null;
 
     return { email, member_id, member_type: member_type as SyncMemberType };
+  }
+
+  /**
+   * Validates an optional `?direction=` query param against {@link MailingListSyncDirection}.
+   * Returns `undefined` when absent (upstream falls back to the list's own `sync_mode`), the
+   * parsed value when valid, or `null` after calling `next(validationError)` on an invalid value —
+   * callers must bail out when `null` is returned.
+   */
+  private parseDirectionQuery(req: Request, next: NextFunction, operation: string): MailingListSyncDirection | undefined | null {
+    const raw = req.query['direction'];
+    if (raw === undefined) return undefined;
+
+    const validDirections: string[] = Object.values(MailingListSyncDirection);
+    if (typeof raw !== 'string' || !validDirections.includes(raw)) {
+      next(
+        ServiceValidationError.forField('direction', 'direction must be one of c_to_ml, ml_to_c', {
+          operation,
+          service: 'mailing_list_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+
+    return raw as MailingListSyncDirection;
   }
 }

@@ -3,11 +3,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants, getClaManagerOrgs, getRoleGrantAffiliation } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants, getRollUpSet, getClaManagerOrgs, getRoleGrantAffiliation } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   resolveSegment: vi.fn(),
   getRoleGrants: vi.fn(),
+  getRollUpSet: vi.fn(),
   getClaManagerOrgs: vi.fn(),
   getRoleGrantAffiliation: vi.fn(),
 }));
@@ -21,8 +22,10 @@ vi.mock('../services/microservice-proxy.service', () => ({
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getRoleGrants = getRoleGrants;
+    public getRollUpSet = getRollUpSet;
   },
 }));
+vi.mock('@lfx-one/shared/utils', () => ({}));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'jdoe' }));
 vi.mock('../services/org-lens-addresses.service', () => ({ OrgLensAddressesService: class {} }));
 vi.mock('../services/org-slug-resolver.service', () => ({
@@ -145,7 +148,7 @@ describe('OrgIdentityController.uploadLogo', () => {
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'You no longer have permission to edit this organization.' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'You no longer have permission to edit this company.' });
   });
 
   it('maps a 404 upstream rejection to a 404', async () => {
@@ -156,7 +159,7 @@ describe('OrgIdentityController.uploadLogo', () => {
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Organization not found' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Company not found' });
   });
 
   it('maps a 500 upstream failure to a 502', async () => {
@@ -178,7 +181,7 @@ describe('OrgIdentityController.uploadLogo', () => {
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith({ error: 'This organization was updated elsewhere. Refresh the page and try again.' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'This company was updated elsewhere. Refresh the page and try again.' });
   });
 
   it('maps a 404 from the pre-upload ETag fetch to a 404, without attempting the upload', async () => {
@@ -190,7 +193,7 @@ describe('OrgIdentityController.uploadLogo', () => {
 
     expect(proxyRequest).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Organization not found' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Company not found' });
   });
 
   it('maps a 408 upstream timeout to a 502', async () => {
@@ -240,7 +243,7 @@ describe('OrgIdentityController.resolveSegment', () => {
     await new OrgIdentityController().resolveSegment(request('acme'), res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Organization not found' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Company not found' });
   });
 
   it('answers an unbroken tie with the fixed 409 envelope', async () => {
@@ -250,7 +253,7 @@ describe('OrgIdentityController.resolveSegment', () => {
     await new OrgIdentityController().resolveSegment(request('acme'), res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Organization address is ambiguous' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Company address is ambiguous' });
   });
 
   // Query-service answers "no rows" with an empty 200, so any upstream status is a transport failure:
@@ -269,13 +272,111 @@ describe('OrgIdentityController.resolveSegment', () => {
   });
 
   it('hands validation errors to the error handler (400 stays a local answer)', async () => {
-    const validation = ServiceValidationError.forField('segment', 'Invalid organization segment', { operation: 'op', service: 'svc', path: '/x' });
+    const validation = ServiceValidationError.forField('segment', 'Invalid company segment', { operation: 'op', service: 'svc', path: '/x' });
     resolveSegment.mockRejectedValueOnce(validation);
     const next = vi.fn();
     const res = buildRes();
     await new OrgIdentityController().resolveSegment(request('bad!'), res, next);
     expect(next).toHaveBeenCalledWith(validation);
     expect(res.status).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgIdentityController.getRollUpSet', () => {
+  const request = (query: Record<string, string> = {}) => ({ query, path: '/api/orgs/me/roll-up-set' }) as any;
+  const rollUpSet = {
+    families: [
+      {
+        rootUid: '0014100000MgaAAAAA',
+        rootName: 'Example Holdings',
+        rootLogoUrl: null,
+        orgs: [{ uid: '0014100000MgbAAAAA', accountId: '0014100000MgbAAAAA', name: 'Example Labs', logoUrl: 'https://logo.example.org/labs.png' }],
+      },
+    ],
+    degraded: false,
+    lookupOutcome: 'ok',
+  };
+
+  it('answers 200 with the service roll-up set for the caller, uncached by the browser', async () => {
+    getRollUpSet.mockResolvedValueOnce(rollUpSet);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgIdentityController().getRollUpSet(request(), res, next);
+
+    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'jdoe', false, null);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.json).toHaveBeenCalledWith(rollUpSet);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards ?refresh=1 as a cache bypass and nothing else', async () => {
+    getRollUpSet.mockResolvedValue(rollUpSet);
+    const controller = new OrgIdentityController();
+
+    await controller.getRollUpSet(request({ refresh: '1' }), buildRes(), vi.fn());
+    await controller.getRollUpSet(request({ refresh: 'yes' }), buildRes(), vi.fn());
+    await controller.getRollUpSet(request(), buildRes(), vi.fn());
+
+    expect(getRollUpSet.mock.calls.map((call) => call[2])).toEqual([true, false, false]);
+  });
+
+  it('passes a well-formed ?anchor= company id to the service (#5901)', async () => {
+    getRollUpSet.mockResolvedValueOnce(rollUpSet);
+
+    await new OrgIdentityController().getRollUpSet(request({ anchor: '0014100000MgbAAAAA' }), buildRes(), vi.fn());
+
+    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'jdoe', false, '0014100000MgbAAAAA');
+  });
+
+  it.each(['not-an-id', '0014100000Mgb', 'family-0014100000MgaAAAAA', ''])(
+    'rejects a malformed ?anchor=%s with a 400 before reaching the service',
+    async (anchor) => {
+      const res = buildRes();
+      const next = vi.fn();
+
+      await new OrgIdentityController().getRollUpSet(request({ anchor }), res, next);
+
+      expect(getRollUpSet).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(res.json).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects a repeated ?anchor= with a 400 before reaching the service', async () => {
+    const next = vi.fn();
+
+    await new OrgIdentityController().getRollUpSet(request({ anchor: ['0014100000MgbAAAAA', '0014100000MgcAAAAA'] } as any), buildRes(), next);
+
+    expect(getRollUpSet).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+  });
+
+  it('passes partial and failed outcomes through unchanged, so an outage never reads as no organizations', async () => {
+    const partial = { ...rollUpSet, degraded: true, lookupOutcome: 'partial' };
+    const failed = { families: [], degraded: true, lookupOutcome: 'failed' };
+    getRollUpSet.mockResolvedValueOnce(partial).mockResolvedValueOnce(failed);
+    const partialRes = buildRes();
+    const failedRes = buildRes();
+
+    await new OrgIdentityController().getRollUpSet(request(), partialRes, vi.fn());
+    await new OrgIdentityController().getRollUpSet(request(), failedRes, vi.fn());
+
+    expect(partialRes.json).toHaveBeenCalledWith(partial);
+    expect(failedRes.json).toHaveBeenCalledWith(failed);
+  });
+
+  it('hands a service error to the error middleware instead of answering', async () => {
+    const error = new Error('boom');
+    getRollUpSet.mockRejectedValueOnce(error);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgIdentityController().getRollUpSet(request(), res, next);
+
+    expect(next).toHaveBeenCalledWith(error);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
 

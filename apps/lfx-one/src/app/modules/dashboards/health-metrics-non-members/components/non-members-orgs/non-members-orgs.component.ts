@@ -2,41 +2,37 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_L2_RANGES,
-  HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE,
-  HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS,
+  HEALTH_METRICS_NON_MEMBERS_CONTRIBUTIONS_TIP,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_DEFAULT_SORT,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
-  HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE_OPTIONS,
-  HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_UNMEASURED,
   HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
-import {
-  buildHealthMetricsNonMembersOrgRows,
-  buildHealthMetricsNonMembersOrgsLowConfidence,
-  buildHealthMetricsNonMembersOrgsSummary,
-} from '@lfx-one/shared/utils';
+import { buildHealthMetricsNonMembersOrgRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, debounceTime, distinctUntilChanged, map, merge, of, skip, Subject, switchMap, tap } from 'rxjs';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
+import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
+import { catchError, debounce, distinctUntilChanged, map, of, skip, switchMap, tap, timer } from 'rxjs';
 
-import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
-  FilterPillOption,
-  HealthMetricsFootnotePart,
   HealthMetricsL2Range,
   HealthMetricsNonMembersOrgRowView,
   HealthMetricsNonMembersOrgs,
@@ -45,12 +41,21 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#orgs` — the non-member organizations active at the foundation in the period, busiest first.
- * Paged, filtered and searched server-side so the ranking holds across every organization, not one page.
+ * `#orgs` — the non-member companies active at the foundation in the period, busiest first. Paged, filtered, searched
+ * and sorted server-side so the order holds across every company, not one page.
  */
 @Component({
   selector: 'lfx-non-members-orgs',
-  imports: [EmptyStateComponent, FilterPillsComponent, HealthMetricsFootnoteComponent, InputTextComponent, TableComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsThComponent,
+    TableComponent,
+    UiBadgeComponent,
+    UiPaginationComponent,
+    UiSearchInputComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './non-members-orgs.component.html',
 })
 export class NonMembersOrgsComponent {
@@ -61,50 +66,42 @@ export class NonMembersOrgsComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Every active organization in the period, for the sub-nav badge; `null` while a new foundation or period is read, or after a failed read. */
-  public readonly countChange = output<number | null>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  /** The header switch's cut; the page owns the switch in the card header, and this section keeps it in the URL. */
+  public readonly filter = model<HealthMetricsNonMembersOrgsFilter>('all');
+
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
-  protected readonly searchForm = new FormGroup({
-    search: new FormControl<string>(this.parseInitialSearch(), { nonNullable: true }),
-  });
-
-  protected readonly filterOptions: FilterPillOption[] = [...HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS];
-  protected readonly pageSizeOptions: number[] = [...HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE_OPTIONS];
-  protected readonly footnote: readonly HealthMetricsFootnotePart[] = [{ text: HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE }];
-  protected readonly allTimeNote = HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE;
+  protected readonly size = HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE;
+  protected readonly contributionsTip = HEALTH_METRICS_NON_MEMBERS_CONTRIBUTIONS_TIP;
+  /** The field stops at the length the read applies, so it never shows text the search ignores. */
   protected readonly maxSearchLength = HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH;
-  protected readonly size = signal<number>(HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE);
-  protected readonly filter = signal<HealthMetricsNonMembersOrgsFilter>(
-    this.toFilter(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsFilter))
-  );
+  protected readonly searchText = signal<string>(this.normalizeSearch(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsSearch) ?? ''));
   protected readonly loading = signal<boolean>(true);
-  /** A failed read is not a foundation with no active organizations, and the empty state below asserts the difference. */
+  /** A failed read is not a foundation with no active companies, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
 
-  /** Clears the search past the debounce, so "clear" lands in the same read as the filter reset. */
-  private readonly searchReset = new Subject<string>();
-
-  // Debounced so a keystroke does not fire a warehouse read; trimmed so padding cannot re-read the same cut.
+  // Typing is debounced so a keystroke does not fire a warehouse read; a cleared search applies at once, so a reset never lags.
   protected readonly search: Signal<string> = toSignal(
-    merge(
-      this.searchForm.controls.search.valueChanges.pipe(
-        debounceTime(HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS),
-        map((value) => this.normalizeSearch(value))
-      ),
-      this.searchReset
+    toObservable(this.searchText).pipe(
+      map((value) => this.normalizeSearch(value)),
+      debounce((term) => (term ? timer(HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS) : of(0)))
     ),
-    { initialValue: this.parseInitialSearch() }
+    { initialValue: this.searchText() }
   );
-  /** Any change to the cut restarts paging, since a page from a wider cut can sit past the end of a narrower one. */
+  /** Sorted on the server across every page; the default keeps the view's rank. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS, HEALTH_METRICS_NON_MEMBERS_ORGS_DEFAULT_SORT);
+  /** Zero-based, as the pager counts. Any change to the cut or the order restarts paging, since a wider cut's page can sit past a narrower one's end. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.range()}|${this.filter()}|${this.search()}`),
-    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
+    source: computed(
+      () =>
+        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.range()}|${this.filter()}|${this.search()}|${JSON.stringify(this.sorting.sort())}`
+    ),
+    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 0),
   });
 
   protected readonly query: Signal<HealthMetricsNonMembersOrgsQuery> = this.initQuery();
@@ -112,16 +109,8 @@ export class NonMembersOrgsComponent {
 
   protected readonly rowViews: Signal<HealthMetricsNonMembersOrgRowView[]> = computed(() => buildHealthMetricsNonMembersOrgRows(this.response().rows));
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly scopeTotal = computed(() => this.response().scopeTotal);
   /** No company took part in the period; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.scopeTotal());
-  protected readonly first = computed(() => (this.page() - 1) * this.size());
-  protected readonly filtered = computed(() => this.filter() !== 'all' || this.search() !== '');
-  protected readonly summary = computed(() => buildHealthMetricsNonMembersOrgsSummary(this.scopeTotal(), this.response().newCount));
-  protected readonly lowConfidence = computed(() => (this.loading() ? null : buildHealthMetricsNonMembersOrgsLowConfidence(this.scopeTotal())));
-  protected readonly totalRecordsLabel = computed(() => this.totalRecords().toLocaleString('en-US'));
-  protected readonly scopeTotalLabel = computed(() => this.scopeTotal().toLocaleString('en-US'));
-  protected readonly noMatchLabel = computed(() => (this.search() ? `No organization matches “${this.search()}”.` : 'No organization matches this filter.'));
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.response().scopeTotal);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -136,19 +125,9 @@ export class NonMembersOrgsComponent {
     }
   }
 
-  protected onFilterChange(id: string): void {
-    this.filter.set(this.toFilter(id));
-  }
-
-  protected onTablePage(event: { first?: number; rows?: number }): void {
-    const rows = event.rows ?? this.size();
-    this.size.set(rows);
-    this.page.set(Math.floor((event.first ?? 0) / rows) + 1);
-  }
-
-  protected clearFilters(): void {
-    this.searchForm.setValue({ search: '' });
-    this.searchReset.next('');
+  /** Clears the search, the header switch and the page, as the empty state offers; the sort stays. */
+  protected onResetFilters(): void {
+    this.searchText.set('');
     this.filter.set('all');
   }
 
@@ -158,8 +137,9 @@ export class NonMembersOrgsComponent {
       range: this.range(),
       filter: this.filter(),
       search: this.search(),
-      offset: (this.page() - 1) * this.size(),
-      pageSize: this.size(),
+      offset: this.page() * this.size,
+      pageSize: this.size,
+      sort: this.sorting.order(),
     }));
   }
 
@@ -171,9 +151,6 @@ export class NonMembersOrgsComponent {
 
     // Latches on the first non-empty slug so an unresolved foundation holds the skeleton.
     let foundationSeen = false;
-    // The badge counts the whole period, so only a new foundation or period blanks it; paging and filters keep it.
-    let countScope: string | null = null;
-
     return toSignal(
       toObservable(this.query).pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
@@ -181,11 +158,6 @@ export class NonMembersOrgsComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          const scope = `${query.foundationSlug}|${query.range}`;
-          if (scope !== countScope) {
-            countScope = scope;
-            this.countChange.emit(null);
-          }
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight read.
@@ -197,11 +169,10 @@ export class NonMembersOrgsComponent {
               return of(HEALTH_METRICS_NON_MEMBERS_ORGS_UNMEASURED);
             }),
             tap((response) => {
-              // A clamped page fires a follow-up read, so this one neither settles nor reports a count.
+              // A clamped page fires a follow-up read, so this one does not settle.
               if (this.clampPage(response.totalRecords)) return;
 
               this.loading.set(!foundationSeen);
-              this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (foundationSeen) this.settled.emit(!this.loadFailed() && !response.scopeTotal);
             })
@@ -227,7 +198,8 @@ export class NonMembersOrgsComponent {
       queryParams: {
         [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsFilter]: query.filter === 'all' ? null : query.filter,
         [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsSearch]: query.search || null,
-        [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsPage]: page > 1 ? page : null,
+        // The URL counts pages from 1.
+        [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsPage]: page > 0 ? page + 1 : null,
       },
       queryParamsHandling: 'merge',
       preserveFragment: true,
@@ -240,7 +212,7 @@ export class NonMembersOrgsComponent {
    * the last page with rows, writing it back since the clamp can precede the sync's first emission.
    */
   private clampPage(totalRecords: number): boolean {
-    const lastPage = Math.max(1, Math.ceil(totalRecords / this.size()));
+    const lastPage = Math.max(0, Math.ceil(totalRecords / this.size) - 1);
     if (totalRecords === 0 || this.page() <= lastPage) return false;
 
     this.page.set(lastPage);
@@ -248,20 +220,13 @@ export class NonMembersOrgsComponent {
     return true;
   }
 
-  private parseInitialSearch(): string {
-    return this.normalizeSearch(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsSearch) ?? '');
-  }
-
+  /** The URL's 1-based page as the pager's 0-based one. */
   private parseInitialPage(): number {
     const page = Number(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsPage));
-    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+    return Number.isFinite(page) && page > 1 ? Math.floor(page) - 1 : 0;
   }
 
   private normalizeSearch(value: string): string {
     return value.trim().slice(0, HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH);
-  }
-
-  private toFilter(value: string | null): HealthMetricsNonMembersOrgsFilter {
-    return HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS.find((option) => option.id === value)?.id ?? 'all';
   }
 }

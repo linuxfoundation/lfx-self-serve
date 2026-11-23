@@ -3,6 +3,9 @@
 
 import {
   CLASSIFICATION_TO_EMAIL_TYPES,
+  DOCUMENT_DELETE_TYPES,
+  DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+  DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   EMAIL_CAMPAIGN_LIMIT,
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
@@ -19,6 +22,7 @@ import {
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
   PROJECT_SETTINGS_NOT_FOUND_CODE,
+  PROJECT_USER_ALREADY_ON_PROJECT_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
   getYearForRange,
@@ -119,6 +123,7 @@ import {
   ProjectCodeCommitsDailyRow,
   ProjectDocument,
   ProjectDocumentQueryResult,
+  ProjectDocumentType,
   ProjectDocumentUpstreamResponse,
   ProjectHealthEventsMonthlyRow,
   ProjectHealthMetricsDailyRow,
@@ -820,7 +825,7 @@ export class ProjectService {
 
     // See the method doc: an add of someone already listed is a conflict, never a silent re-file.
     if (operation === 'add' && existingUserInfo) {
-      throw new ConflictError('This person is already on the project', 'ALREADY_ON_PROJECT', {
+      throw new ConflictError('This person is already on the project', PROJECT_USER_ALREADY_ON_PROJECT_CODE, {
         operation: 'add_user_project_permissions',
         service: 'project_service',
       });
@@ -7323,8 +7328,11 @@ export class ProjectService {
    * @param foundationUid - The foundation UID to resolve descendant project UIDs for
    * @returns Array of UIDs including the foundation itself and every project discovered while
    *   walking its full descendant tree, up to the depth/node caps above
+   * @param options.onIncomplete - Called when a container's child lookup fails and its children are
+   *   left out. The cap-bounded result above is stable, but this one is transient, so a caller that
+   *   caches the UIDs uses it to avoid storing a scope that a retry would complete.
    */
-  public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
+  public async getFoundationProjectUids(req: Request, foundationUid: string, options: { onIncomplete?: () => void } = {}): Promise<string[]> {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving descendant projects for foundation', { foundation_uid: foundationUid });
 
     const uids = new Set<string>([foundationUid]);
@@ -7373,6 +7381,7 @@ export class ProjectService {
         } catch (error) {
           // If one container's child lookup fails, keep the rest — a partial result across
           // a wide descendant tree is better than dropping all of them.
+          options.onIncomplete?.();
           logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve children for a container, omitting its direct children', {
             foundation_uid: foundationUid,
             container_uid: containerUid,
@@ -7780,7 +7789,7 @@ export class ProjectService {
     // Resolve mailing list titles for groupsio artifacts. Query by project_uid, then
     // match on the numeric group_id field (groupsio_mailing_list_uid tags hold the
     // mailing list's UUID uid, not the numeric group_id).
-    const mailingListTitleByGroupId = new Map<number, string>();
+    const mailingListByGroupId = new Map<number, { title: string; uid: string }>();
     if (groupsioArtifacts && groupsioArtifacts.length > 0) {
       const mlResults = await fetchAllQueryResources<GroupsIOMailingList>(
         req,
@@ -7800,13 +7809,14 @@ export class ProjectService {
       });
       for (const ml of mlResults) {
         if (ml.group_id != null && ml.title) {
-          mailingListTitleByGroupId.set(ml.group_id, ml.title);
+          mailingListByGroupId.set(ml.group_id, { title: ml.title, uid: ml.uid });
         }
       }
     }
 
     const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => {
-      const mailingListTitle = a.group_id ? mailingListTitleByGroupId.get(a.group_id) : undefined;
+      const mailingList = a.group_id ? mailingListByGroupId.get(a.group_id) : undefined;
+      const mailingListTitle = mailingList?.title;
       return {
         uid: `groupsio_artifact:${a.artifact_id}`,
         type: 'link' as const,
@@ -7817,6 +7827,7 @@ export class ProjectService {
         project_uid: a.project_uid,
         document_source: 'mailing_list' as const,
         document_source_name: mailingListTitle ?? '',
+        mailing_list_uid: mailingList?.uid,
         document_kind: a.type === 'link' ? ('link' as const) : ('file' as const),
       };
     });
@@ -7831,6 +7842,7 @@ export class ProjectService {
         created_at: l.created_at,
         document_source: 'committee' as const,
         document_source_name: l.committee_uid ? (committeeNameByUid.get(l.committee_uid) ?? '') : '',
+        committee_uid: l.committee_uid,
       }));
 
     const committeeFileDocs: ProjectDocument[] = (committeeDocs || []).map((f) => ({
@@ -7880,6 +7892,7 @@ export class ProjectService {
       created_at: r.start_time || r.created_at,
       document_source: 'recording' as const,
       document_source_name: r.title || '',
+      past_meeting_id: r.meeting_and_occurrence_id,
     }));
 
     const pastTranscriptDocs: ProjectDocument[] = (pastTranscripts || []).map((t) => ({
@@ -7890,6 +7903,7 @@ export class ProjectService {
       created_at: t.start_time || t.created_at,
       document_source: 'transcript' as const,
       document_source_name: t.title || '',
+      past_meeting_id: t.meeting_and_occurrence_id,
     }));
 
     const pastSummaryDocs: ProjectDocument[] = (pastSummaries || []).map((s) => ({
@@ -7899,6 +7913,7 @@ export class ProjectService {
       created_at: s.summary_start_time || s.created_at,
       document_source: 'summary' as const,
       document_source_name: s.zoom_meeting_topic || '',
+      past_meeting_id: s.meeting_and_occurrence_id,
       summary_uid: s.id,
       // edited_content is an empty string (not absent) for a summary nobody edited, so `??` would never fall back to content.
       summary_content: s.edited_content || s.content,
@@ -8184,20 +8199,25 @@ export class ProjectService {
   }
 
   /**
-   * Deletes a project folder or link using ETag for concurrency control.
-   * @param documentType 'folder' or 'link' — determines which upstream endpoint to call
+   * Deletes a project folder, link or uploaded file using ETag for concurrency control.
+   * A folder is only deleted when it is empty.
+   * @param documentType 'folder', 'link' or 'file' — determines which upstream endpoint to call
    */
-  public async deleteProjectDocument(req: Request, projectId: string, documentId: string, documentType: string): Promise<void> {
-    // Defense-in-depth: controller validates this too, but a typo like `type=file` should
-    // never silently fall through to the link path on a destructive route.
-    if (documentType !== 'folder' && documentType !== 'link') {
-      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Only 'folder' and 'link' are supported.`, {
+  public async deleteProjectDocument(req: Request, projectId: string, documentId: string, documentType: ProjectDocumentType): Promise<void> {
+    // Defense-in-depth: controller validates this too, but an unknown type must never
+    // silently fall through to another resource's path on a destructive route.
+    if (!DOCUMENT_DELETE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Must be one of: ${DOCUMENT_DELETE_TYPES.join(', ')}.`, {
         operation: 'delete_project_document',
         service: 'project_service',
       });
     }
 
-    const resourcePath = documentType === 'folder' ? `/projects/${projectId}/folders/${documentId}` : `/projects/${projectId}/links/${documentId}`;
+    if (documentType === 'folder') {
+      await this.assertProjectFolderEmpty(req, projectId, documentId);
+    }
+
+    const resourcePath = `/projects/${projectId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
 
     // Step 1: Fetch resource with ETag
     const { etag } = await this.etagService.fetchWithETag<ProjectDocument>(req, 'LFX_V2_SERVICE', resourcePath, 'delete_project_document');
@@ -9370,6 +9390,50 @@ export class ProjectService {
         error: message,
       });
       return unavailable;
+    }
+  }
+
+  /**
+   * Rejects (409) when a project folder still holds a link or an uploaded file. The upstream folder delete
+   * enforces this too, but its 409 is shared with revision mismatches, so the BFF checks first to give a clear
+   * message. Unlike the list view, a lookup failure is not swallowed into "empty": a destructive call must fail closed.
+   *
+   * Links and files are looked up by the folder's own `folder_uid` tag (with the project's, so another project can never
+   * match), not by listing every link and file of the project, so a large unrelated collection cannot hit the pagination
+   * cap and make an empty folder undeletable. The query service checks access after it paginates, so a page can come back
+   * with no visible rows while more remain: the pages are followed, stopping at the first match, rather than trusting one.
+   */
+  private async assertProjectFolderEmpty(req: Request, projectId: string, folderId: string): Promise<void> {
+    const [links, files] = await Promise.all([
+      fetchAllQueryResources<ProjectLinkQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_link',
+            tags_all: [`project_uid:${projectId}`, `folder_uid:${folderId}`],
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true, maxResults: 0 }
+      ),
+      fetchAllQueryResources<ProjectDocumentQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_document',
+            tags_all: [`project_uid:${projectId}`, `folder_uid:${folderId}`],
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true, maxResults: 0 }
+      ),
+    ]);
+
+    if (links.some((link) => link.folder_uid === folderId) || files.some((file) => file.folder_uid === folderId)) {
+      throw new ConflictError(DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE, 'FOLDER_NOT_EMPTY', {
+        operation: 'delete_project_document',
+        service: 'project_service',
+        details: { project_uid: projectId, folder_uid: folderId },
+        clientMessage: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+      });
     }
   }
 }

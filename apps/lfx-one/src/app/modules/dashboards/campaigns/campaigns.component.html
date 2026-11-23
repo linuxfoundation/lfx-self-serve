@@ -283,6 +283,7 @@
             [programTypeConfig]="activeProgramTypeConfig()"
             [deliveryType]="sendSurface()"
             [emailStage]="selectedEmailStage() ?? ''"
+            [ownedBriefIds]="ownedBriefIds()"
             (proceedToImplementation)="onEmailProceedFromPlanning($event)"
             (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
             data-testid="campaigns-email-planning-tab" />
@@ -1910,6 +1911,7 @@
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
             [savedBriefRefreshToken]="savedBriefRefreshToken()"
+            [ownedBriefIds]="ownedBriefIds()"
             [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
             (proceedToImplementation)="onProceedToImplementation($event)"
             (briefDiscarded)="onPlanningBriefDiscarded()"
@@ -1949,12 +1951,23 @@
               [metaAssetUploadEnabled]="briefCampaignsMetaAssetUploadEnabled()"
               [googleAssetUploadEnabled]="briefCampaignsGoogleAssetUploadEnabled()"
               [linkedInAssetUploadEnabled]="briefCampaignsLinkedInAssetUploadEnabled()"
+              [linkedInTargetingEditEnabled]="briefCampaignsLinkedInTargetingEditEnabled()"
+              [linkedInAccountSelectionEnabled]="briefCampaignsLinkedInAccountSelectionEnabled()"
+              [linkedInDailyCapEnabled]="briefCampaignsLinkedInDailyCapEnabled()"
               [microsoftAssetUploadEnabled]="briefCampaignsMicrosoftAssetUploadEnabled()"
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
               [microsoftScheduleEnabled]="briefCampaignsMicrosoftScheduleEnabled()"
               [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
               [twitterDraft]="carriedTwitterDraft()"
               [metaInstagramDsaEnabled]="briefCampaignsMetaInstagramDsaEnabled()"
+              [metaAudienceTargetingEnabled]="briefCampaignsMetaAudienceTargetingEnabled()"
+              [metaCustomAudiencesEnabled]="briefCampaignsMetaCustomAudiencesEnabled()"
+              [metaLeadFormsEnabled]="briefCampaignsMetaLeadFormsEnabled()"
+              [metaAdOptionsEnabled]="{
+                callToAction: briefCampaignsMetaCallToActionEnabled(),
+                conversionEvent: briefCampaignsMetaConversionEventEnabled(),
+                optimizationGoal: briefCampaignsMetaOptimizationGoalEnabled(),
+              }"
               [googleAudienceSegmentsEnabled]="briefCampaignsGoogleAudienceSegmentsEnabled()"
               [googleConversionActionsEnabled]="briefCampaignsGoogleConversionActionsEnabled()"
               [googleDemandGenAudienceEnabled]="briefCampaignsGoogleDemandGenAudienceEnabled()"

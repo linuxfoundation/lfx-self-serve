@@ -20,7 +20,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { UiButtonSize, UiButtonVariant, UiMenuAlign, UiPopoverContext, UiPopoverPadding, UiTooltipSide } from '@lfx-one/shared/interfaces';
+import { UiButtonSize, UiButtonVariant, UiMenuAlign, UiPopoverAlign, UiPopoverContext, UiPopoverPadding, UiTooltipSide } from '@lfx-one/shared/interfaces';
 
 import { UiPopoverDirective } from '../popover/popover.directive';
 import { UiSpinnerComponent } from '../spinner/spinner.component';
@@ -39,7 +39,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * to the button on close). `menuAlign="end"` lines the menu up with the button's end edge, for a trigger at a row's end. A button rendered as a link (`link`) does not open a menu.
  *
  * Popover: pass an `<ng-template>` to `popover` and the inner `<button>` opens it as a non-modal dialog (`aria-haspopup="dialog"`, `aria-expanded`,
- * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px, `popoverPadding="none"` drops its 16px padding and `popoverAlign="end"` opens it from the end edge; see `lfxUiPopover`.
+ * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px, `popoverPadding="none"` drops its 16px padding and `popoverAlign="end"` opens it from the end edge (`center` centers it); see `lfxUiPopover`.
  * A link does not open one, and `menu` wins when both are set.
  */
 @Component({
@@ -77,6 +77,8 @@ export class UiButtonComponent {
   public readonly ariaPressed = input<boolean | null>(null);
   /** Writes `aria-describedby` on a plain button: the id of text that describes it. Not used with `link`, `menu` or `popover`. */
   public readonly ariaDescribedBy = input<string>('');
+  /** Writes `aria-current` on a plain button, such as `page` for a pager's current page. Not used with `link`, `menu` or `popover`. */
+  public readonly ariaCurrent = input<'page' | 'step' | 'true' | null>(null);
   /** Disables the button (or the link, when `link` is set). It keeps the variant's colours at 45% opacity. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Swaps the leading icon for a spinner, keeps the label and sets `aria-busy`. The button ignores clicks until it is cleared. */
@@ -97,12 +99,14 @@ export class UiButtonComponent {
   public readonly popoverWidth = input<number | null>(null);
   /** `none` removes the popover panel's 16px padding for content that runs edge to edge. */
   public readonly popoverPadding = input<UiPopoverPadding>('default');
-  /** `end` opens the popover lined up with the button's end edge, toward the start side. */
-  public readonly popoverAlign = input<UiMenuAlign>('start');
+  /** `end` opens the popover lined up with the button's end edge, toward the start side; `center` centers it under the button. */
+  public readonly popoverAlign = input<UiPopoverAlign>('start');
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
   /** External URL, such as a Zoom link: renders an `<a>` that opens it in a new tab. Wins over `link`. */
   public readonly href = input<string | null>(null);
+  /** Where an `href` opens: a new tab by default, or `_self` for a `mailto:` or app URL. */
+  public readonly target = input<'_blank' | '_self'>('_blank');
   /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
   /** Tooltip text, forwarded to the inner button. An empty value shows nothing. See `lfxUiTooltip` for the full contract. */
   public readonly tooltip = input<string>('', { alias: 'lfxUiTooltip' });

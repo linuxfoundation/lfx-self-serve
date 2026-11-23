@@ -5,8 +5,8 @@ import { ORG_LENS_TIME_RANGE_OPTIONS, ORG_PROJECT_SCOPE_OPTIONS, ORG_SCOPE_OPTIO
 import type { OrgLensTimeRange, OrgProjectScope, OrgScopeFilter } from '@lfx-one/shared/interfaces';
 
 /**
- * Per-user People directory cache namespace: `org-people-dir:v6:roster` for the unranged roster (neither the project
- * scope nor the organization scope applies to it), else `org-people-dir:v6:{range}:{projectScope}:{orgScope}`. Only
+ * Per-user People directory cache namespace: `org-people-dir:v7:roster` for the unranged roster (neither the project
+ * scope nor the organization scope applies to it), else `org-people-dir:v7:{range}:{projectScope}:{orgScope}`. Only
  * these change who is listed and which code counts the stored rows carry; the commit scope and metric pick a count after
  * the read, so they share the entry. Every segment is an allow-listed token.
  */

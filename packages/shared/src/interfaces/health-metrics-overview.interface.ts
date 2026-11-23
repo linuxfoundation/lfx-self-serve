@@ -4,7 +4,8 @@
 import type { Signal } from '@angular/core';
 
 import type { HealthMetricsEventsForecast, HealthMetricsEventsForecastCurve } from './health-metrics-events.interface';
-import type { HealthMetricsL2Range } from './health-metrics-l2.interface';
+import type { HealthMetricsChartTipView, HealthMetricsL2Range } from './health-metrics-l2.interface';
+import type { HealthMetricsMembersReservedTier } from './health-metrics-members.interface';
 import type { UiBadgeTone, UiBadgeVariant } from './uikit.interface';
 
 /** Every Overview card read is foundation-wide and carries all four periods, so a period change never re-reads. */
@@ -22,7 +23,7 @@ export interface HealthMetricsOverviewEngagementSplit {
   lowPct: number | null;
 }
 
-/** One period of the participating organizations card. */
+/** One period of the participating companies card. */
 export interface HealthMetricsOverviewParticipatingOrgsPeriod {
   activeMembers: number | null;
   newMembers: number | null;
@@ -95,9 +96,11 @@ export interface HealthMetricsOverviewChurn {
   periods: Record<HealthMetricsL2Range, HealthMetricsOverviewChurnPeriod>;
 }
 
-/** `GET /api/analytics/overview-outstanding-balance` — overdue invoices today; the view has no periods. Shares are 0–1. */
-export interface HealthMetricsOverviewOutstandingBalance {
-  measured: boolean;
+/**
+ * One period's overdue membership invoices: those due in the period that are still unpaid and 60 or more days
+ * overdue today, not the balance at the period's end. Shares are 0–1.
+ */
+export interface HealthMetricsOverviewBalancePeriod {
   outstandingUsd: number | null;
   overdueMembers: number | null;
   highRiskUsd: number | null;
@@ -106,6 +109,12 @@ export interface HealthMetricsOverviewOutstandingBalance {
   mediumRiskUsd: number | null;
   mediumRiskMembers: number | null;
   mediumRiskSharePct: number | null;
+}
+
+/** `GET /api/analytics/overview-outstanding-balance` — every period, from the foundation's one row. */
+export interface HealthMetricsOverviewOutstandingBalance {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewBalancePeriod>;
 }
 
 /** One event on the Overview list. Every `null` is unmeasured, never zero. */
@@ -121,6 +130,11 @@ export interface HealthMetricsOverviewEvent {
   registrationsGoal: number | null;
   /** Upcoming only: the view's pace against last year (`high`, `medium` or `low`). */
   compScore: string | null;
+  /**
+   * Upcoming only: the proposals' pace against last year's edition, on the same scale. `null` with no previous
+   * edition, no proposals yet, or once the event has started.
+   */
+  proposalsCompScore: string | null;
   acceptedTalks: number | null;
   totalProposals: number | null;
   /** The call for proposals' stage, e.g. `In Review`. */
@@ -159,6 +173,8 @@ export interface HealthMetricsOverviewBoardMember {
   jobTitle: string | null;
   organization: string | null;
   logoUrl: string | null;
+  /** `null` keeps the initials avatar. */
+  photoUrl: string | null;
   /** `YYYY-MM-DD`. */
   lastAttendedDate: string | null;
   attendance: Partial<Record<HealthMetricsL2Range, HealthMetricsOverviewBoardAttendance>>;
@@ -267,6 +283,8 @@ export interface HealthMetricsOverviewDelta {
   label: string;
   direction: 'up' | 'down';
   good: boolean;
+  /** Muted context after the change, such as " since Jan". */
+  suffix?: string;
 }
 
 /** A labelled KPI figure, with an optional change and a note under it. */
@@ -297,7 +315,7 @@ export interface HealthMetricsOverviewEngagementRowView {
   pctLabel: string;
 }
 
-/** One half of the participating organizations card: members or non-members. */
+/** One half of the participating companies card: members or non-members. */
 export interface HealthMetricsOverviewOrgsHalfView {
   key: 'members' | 'non-members';
   kpis: HealthMetricsOverviewKpiView[];
@@ -364,11 +382,21 @@ export interface HealthMetricsOverviewNpsView {
 export interface HealthMetricsOverviewChurnTierView {
   key: string;
   label: string;
+  /** The tier icon for Diamond, Platinum, Gold and Silver. */
+  tier: HealthMetricsMembersReservedTier | null;
   rateLabel: string;
   rateWidthPct: number;
   lostLabel: string;
   valueLabel: string;
+  /** The tier's place in the view's rank, highest first, so a Tier sort follows the view rather than a client list. */
+  tierRank: number;
+  churnRatePct: number | null;
+  membershipsLost: number | null;
+  valueLostUsd: number | null;
 }
+
+/** The churn table's sortable columns. */
+export type HealthMetricsOverviewChurnSortKey = 'tier' | 'rate' | 'lost' | 'value';
 
 export interface HealthMetricsOverviewChurnView {
   isEmpty: boolean;
@@ -387,7 +415,12 @@ export interface HealthMetricsOverviewBalanceRowView {
   widthPct: number;
   membersLabel: string;
   amountLabel: string;
+  members: number | null;
+  amountUsd: number | null;
 }
+
+/** The balance table's sortable columns. */
+export type HealthMetricsOverviewBalanceSortKey = 'risk' | 'members' | 'amount';
 
 export interface HealthMetricsOverviewBalanceView {
   isEmpty: boolean;
@@ -396,6 +429,8 @@ export interface HealthMetricsOverviewBalanceView {
   totalLabel: string;
   overdueMembersLabel: string;
   atRiskLabel: string;
+  /** The "{N} at risk of churn" tag shows only when the period has high-risk members. */
+  showAtRisk: boolean;
   rows: HealthMetricsOverviewBalanceRowView[];
 }
 
@@ -429,6 +464,10 @@ export interface HealthMetricsOverviewEventBarView {
   barClass: string;
   neutral: boolean;
   gauge: HealthMetricsOverviewEventGaugeView;
+  /** The stacked list's value, e.g. "620 (Goal: 1,000)", "620 (No goal set)" or "40 (Received: 185)". */
+  compactValue: string;
+  /** The stacked list's 3px left line, coloured by status only: gray-200 with none. */
+  lineClass: string;
 }
 
 /** The bar's fill carries the status, with no badge; `statusLabel` names it for screen readers, `null` without one. */
@@ -440,6 +479,8 @@ export interface HealthMetricsOverviewEventRegistrationsView extends HealthMetri
 export interface HealthMetricsOverviewEventTalksView extends HealthMetricsOverviewEventBarView {
   hasProposals: boolean;
   note: string;
+  /** An upcoming event's proposals pace, named for screen readers; `null` without one. */
+  statusLabel: string | null;
 }
 
 export interface HealthMetricsOverviewEventRowView {
@@ -450,7 +491,13 @@ export interface HealthMetricsOverviewEventRowView {
   isPast: boolean;
   registrations: HealthMetricsOverviewEventRegistrationsView;
   talks: HealthMetricsOverviewEventTalksView;
+  /** Raw counts for sorting; `null` is unmeasured, and `acceptedTalks` is `null` when the cell shows a note, not a count. */
+  registrationsCount: number | null;
+  acceptedTalks: number | null;
 }
+
+/** The events table's sortable columns; the actions column does not sort. */
+export type HealthMetricsOverviewEventsSortKey = 'event' | 'registrations' | 'talks';
 
 /** The period's events, split into held and upcoming for the stacked bar. */
 export interface HealthMetricsOverviewEventsTotalView {
@@ -496,8 +543,10 @@ export interface HealthMetricsOverviewTrainingView {
   isEmpty: boolean;
   totalLabel: string;
   metricLabel: string;
-  /** `null` when the period models no goal, so the arc shows its track only. */
+  /** "No goal set" in YTD without a goal; `null` for a past year, which models no goal. */
   goalLabel: string | null;
+  /** YTD with no goal: the arc is an outlined track with no progress. */
+  noGoal: boolean;
   trackPath: string;
   progressPath: string;
   ariaLabel: string;
@@ -519,22 +568,39 @@ export interface HealthMetricsOverviewCodeView {
   roles: HealthMetricsOverviewCodeRoleView[];
 }
 
-/** One newsletter's point on the rate chart; `x` and the `y`s are percentages of the plot, `y` from the top. */
+/** One newsletter's points and hover column on the rate chart; positions are percentages of the plot, `y` from the top. */
 export interface HealthMetricsOverviewNewsletterPointView {
   key: string;
   xPct: string;
+  /** The hover column: an equal share of the plot centred on the points, cut off at the plot's edges. */
+  columnLeftPct: string;
+  columnWidthPct: string;
+  /** Where the points, hairline and popover sit across the column; 50 except in a column cut off at an edge. */
+  pointOffsetPct: string;
   openYPct: string;
+  /** Empty when the newsletter has no click rate, which draws no click point. */
   clickYPct: string;
-  /** "Name · Mon D, YYYY · open N%, click N%", the point's tooltip and its screen-reader text. */
-  label: string;
-  /** Which way the tooltip extends from the point, so one at either end stays inside the card. */
-  tipAlign: 'start' | 'center' | 'end';
+  /** The latest newsletter's points are larger. */
+  latest: boolean;
+  /** "Name, Mon D, YYYY: open rate N%, click rate N%", the column's screen-reader text. */
+  ariaLabel: string;
+  tip: HealthMetricsChartTipView;
 }
 
-/** A month label under the first newsletter sent in that month. */
+/** A sent-month label centred under a newsletter's points. */
 export interface HealthMetricsOverviewNewsletterTickView {
   label: string;
   xPct: string;
+}
+
+/**
+ * Where an open chart popover sits, as CSS offsets inside its column: beside the point on either side, or shifted to stay
+ * on a screen too narrow for both. One of `left` and `right` is set.
+ */
+export interface HealthMetricsOverviewChartTipPlacement {
+  index: number;
+  left: string | null;
+  right: string | null;
 }
 
 /** The open and click rate lines, in a 600 × 200 viewBox drawn without keeping its aspect ratio. */
@@ -543,7 +609,10 @@ export interface HealthMetricsOverviewNewsletterChartView {
   openAreaPath: string;
   clickPath: string;
   points: HealthMetricsOverviewNewsletterPointView[];
+  /** One label per newsletter. */
   ticks: HealthMetricsOverviewNewsletterTickView[];
+  /** The first newsletter of each month only, for a plot too narrow for every label. */
+  monthTicks: HealthMetricsOverviewNewsletterTickView[];
 }
 
 /** One High / Medium / Low row of the subscriber engagement split. */
@@ -569,13 +638,15 @@ export interface HealthMetricsOverviewNewsletterView {
   mostEngaging: { name: string; rateLabel: string } | null;
 }
 
-/** How the board table is sorted; the design opens on the lowest attendance first. */
-export type HealthMetricsOverviewBoardSort = 'att-asc' | 'att-desc' | 'name-asc' | 'name-desc';
+/** The board table's sortable columns: name, company, attendance and the last meeting attended. */
+export type HealthMetricsOverviewBoardSortKey = 'name' | 'org' | 'att' | 'last';
 
 export interface HealthMetricsOverviewBoardRowView {
   key: string;
   name: string;
   initials: string;
+  /** Empty keeps the initials. */
+  photoUrl: string;
   title: string;
   organization: string;
   organizationInitial: string;
@@ -587,6 +658,8 @@ export interface HealthMetricsOverviewBoardRowView {
   widthPct: number;
   barClass: string;
   lastAttendedLabel: string;
+  /** `YYYY-MM-DD`, for sorting; `null` when never attended. */
+  lastAttendedDate: string | null;
 }
 
 export interface HealthMetricsOverviewBoardView {
@@ -694,6 +767,9 @@ export interface HealthMetricsOverviewEventDialogData {
   tab: HealthMetricsOverviewEventDialogTab;
 }
 
+/** What the registration trend needs of its event: the Overview's event, or the Events forecast's, mapped onto it. */
+export type HealthMetricsEventTrendEvent = Pick<HealthMetricsOverviewEvent, 'eventId' | 'registrations' | 'registrationsGoal'>;
+
 /** The event dialog's trend read: an upcoming event's forecast headline and curve, or a past event's history alone. */
 export interface HealthMetricsOverviewEventTrendReads {
   forecast: HealthMetricsEventsForecast | null;
@@ -720,6 +796,8 @@ export interface HealthMetricsOverviewSnapshotChangeView {
   tone: UiBadgeTone;
   /** A solid circle arrow; `null` for no change. */
   icon: string | null;
+  /** The change's colour as phone text under today's value: `text-emerald-600`, `text-red-600` or `text-gray-500`. */
+  inkClass: string;
 }
 
 /** One Snapshot row: the level at the window's start and at its end, and the change between. */
@@ -740,15 +818,16 @@ export interface HealthMetricsOverviewSnapshotSectionView {
   title: string;
   /** e.g. `Oct 25, 2026`. */
   startHeader: string;
+  /** The phone header, e.g. `Oct 25, 26`. */
+  startHeaderShort: string;
   /** e.g. `Nov 4, 2026 (today)`. */
   endHeader: string;
+  /** e.g. `Nov 4, 26 (today)`. */
+  endHeaderShort: string;
   rows: HealthMetricsOverviewSnapshotRowView[];
   /** Shown below the rows when no package has sold. */
   emptyCopy: string | null;
 }
 
-/** How a KPI strip lays out at its measured width: one row, one stacked column, or a 2 × 2 grid for four items. */
+/** How a KPI strip lays out at its measured width: one row, two per row (`grid`), or one stacked column. */
 export type HealthMetricsOverviewKpiStripLayout = 'row' | 'stack' | 'grid';
-
-/** The Overview cards' strip, or a Level 2 section's metrics row: wider columns and a change without an arrow. */
-export type HealthMetricsOverviewKpiStripVariant = 'card' | 'section';

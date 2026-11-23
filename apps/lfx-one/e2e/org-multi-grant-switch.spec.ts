@@ -38,9 +38,9 @@
 import { APIRequestContext, expect, Page, Request, test } from '@playwright/test';
 
 // The org-selector trigger only renders (data-visible=true) while the active lens is 'org'; on the
-// default 'me' lens the sidebar keeps it in the DOM but CSS-hidden. Navigating to `/org` sets the
+// default 'me' lens the sidebar keeps it in the DOM but CSS-hidden. Navigating to `/company` sets the
 // active lens deterministically so these tests never depend on a per-user cookie preference.
-const APP_HOME = '/org';
+const APP_HOME = '/company';
 const SIDEBAR_TIMEOUT = 30_000;
 
 test.setTimeout(120_000);
@@ -139,9 +139,9 @@ test.describe('Multi-Organization Switching — non-LF-team, two unrelated direc
     await expect(rowA).toBeVisible();
     await expect(rowB).toBeVisible();
 
-    // Role labels: both are direct writer, so the badge reads 'Org Admin Editor' (non-inherited).
-    await expect(page.getByTestId(`org-item-${ORG_A_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Org Admin Editor');
-    await expect(page.getByTestId(`org-item-${ORG_B_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Org Admin Editor');
+    // Role labels: both are direct writer, so the badge reads 'Company Admin Editor' (non-inherited).
+    await expect(page.getByTestId(`org-item-${ORG_A_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Company Admin Editor');
+    await expect(page.getByTestId(`org-item-${ORG_B_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Company Admin Editor');
 
     // Capture every lens-scoped request fired AFTER the click. Filtering by B's uid alone (as
     // waitForRequest would) can't fail if A is fetched first and B later — the assertion must
@@ -333,7 +333,7 @@ test.describe('Multi-Organization Switching — non-LF-team, two unrelated direc
 
     const rowB = page.getByTestId(`org-item-${ORG_B_UID}`);
     await expect(rowB).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByTestId(`org-item-${ORG_B_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Org Admin Editor');
+    await expect(page.getByTestId(`org-item-${ORG_B_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Company Admin Editor');
   });
 
   test('M8: selected-org revoked while others remain auto-selects the first remaining org', async ({ page, context }) => {

@@ -62,6 +62,7 @@ import {
   buildOrgCacheKey,
   buildPerUserOrgKey,
   ValkeyService,
+  withFoundationParticipatingOrgsCache,
 } from './valkey.service';
 
 import { logger } from './logger.service';
@@ -371,6 +372,43 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     expect(JSON.stringify(payload)).not.toContain(ORG_UID);
   });
 
+  it('stores the foundation participating-companies roster past the 1 MiB default, under its own namespace cap', async () => {
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValue(null);
+    const roster = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES + 1024) };
+
+    await withFoundationParticipatingOrgsCache(
+      'synthetic-foundation',
+      'roster',
+      ['12mo'],
+      async () => roster,
+      () => true
+    );
+
+    expect(setMock).toHaveBeenCalledTimes(1);
+    expect(setMock.mock.calls[0][0]).toContain(`${VALKEY_CACHE.FOUNDATION_PARTICIPATING_ORGS_NAMESPACE}:synthetic-foundation:roster:`);
+  });
+
+  it('reads a stored foundation roster between 1 and 4 MiB back as a hit, so the warehouse is not re-queried', async () => {
+    const roster = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES + 1024) };
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValueOnce(null);
+    await withFoundationParticipatingOrgsCache(
+      'synthetic-foundation',
+      'roster',
+      ['12mo'],
+      async () => roster,
+      () => true
+    );
+
+    getMock.mockResolvedValueOnce(setMock.mock.calls[0][1]);
+    const fetcher = vi.fn(async () => ({ padding: 'fresh' }));
+    const hit = await withFoundationParticipatingOrgsCache('synthetic-foundation', 'roster', ['12mo'], fetcher, () => true);
+
+    expect(hit).toEqual(roster);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   const cappedNamespaces = Object.keys(VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE);
 
   it.each(cappedNamespaces)('writes AND reads back a value over the global cap but under the %s namespace cap', async (namespace) => {
@@ -471,7 +509,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
       'people-all:v8:roster',
       'people-contributors:v5:all:all',
       'people-former:v4:all:all',
-      'people-event-attendees:v6:730d:verified:all',
+      'people-event-attendees:v7:730d:all',
       'people-trainees:v10:all',
     ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(true);
@@ -487,6 +525,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
       'people-event-attendees:v3:730d:all:all',
       'people-event-attendees:v4:730d:all:all',
       'people-event-attendees:v5:730d:verified:all',
+      'people-event-attendees:v6:730d:verified:all',
       'people-unclassified:v2:all:all',
       'people-contributors:v3:all:all',
       'people-contributors:v4:all:all',

@@ -207,7 +207,7 @@ test('evidence and method disclosures are keyboard accessible', async ({ page },
   await page.keyboard.press('Enter');
   await expect(method).toHaveAttribute('open', '');
   await expect(method.locator('summary')).toHaveText('Method');
-  await expect(method).toContainText('Routing rule version');
+  await expect(method).toContainText('Routing rules:');
   await page.screenshot({ path: info.outputPath('evidence-and-method.png'), fullPage: true });
 });
 

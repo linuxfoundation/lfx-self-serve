@@ -11,7 +11,7 @@ import { Committee, CommitteeEngagementResponse, CommitteeInvite, CommitteeMembe
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
@@ -27,13 +27,21 @@ describe('CommitteeMembersComponent add-people actions', () => {
   let component: CommitteeMembersComponent;
   let dialogClose: Subject<unknown>;
   let dialogService: { open: ReturnType<typeof vi.fn> };
-  let committeeService: { getCommitteeMembers: ReturnType<typeof vi.fn>; getCommitteeInvites: ReturnType<typeof vi.fn> };
+  let committeeService: {
+    getCommitteeMembers: ReturnType<typeof vi.fn>;
+    getCommitteeInvites: ReturnType<typeof vi.fn>;
+    createCommitteeInvite: ReturnType<typeof vi.fn>;
+  };
   let refreshes: number;
 
   async function setup(committee: Committee | null, inputs: Record<string, unknown> = {}): Promise<void> {
     dialogClose = new Subject<unknown>();
     dialogService = { open: vi.fn(() => ({ onClose: dialogClose })) };
-    committeeService = { getCommitteeMembers: vi.fn().mockReturnValue(of(MEMBERS)), getCommitteeInvites: vi.fn().mockReturnValue(of(INVITES)) };
+    committeeService = {
+      getCommitteeMembers: vi.fn().mockReturnValue(of(MEMBERS)),
+      getCommitteeInvites: vi.fn().mockReturnValue(of(INVITES)),
+      createCommitteeInvite: vi.fn().mockReturnValue(of({})),
+    };
 
     await TestBed.configureTestingModule({
       imports: [CommitteeMembersComponent],
@@ -199,10 +207,34 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(refreshes).toBe(2);
     });
 
+    it("polls from a reopened run's own baseline when the fresh roster already includes its additions", () => {
+      vi.useFakeTimers();
+      const roster = [...MEMBERS, { uid: 'member-2' }, { uid: 'member-3' }] as CommitteeMember[];
+      committeeService.getCommitteeMembers.mockReturnValue(of(roster));
+      component.openImportMembersDialog();
+      dialogClose.next({ added: 2, conflicts: 0, baselineMemberCount: 1 } satisfies MemberImportDialogResult);
+
+      vi.advanceTimersByTime(400);
+      // 1 member before the run + 2 added = 3, already present: one poll confirms it instead of six.
+      expect(refreshes).toBe(2);
+      vi.advanceTimersByTime(3000);
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(2);
+    });
+
     it('refreshes without polling after a conflict-only result', () => {
       vi.useFakeTimers();
       component.openImportMembersDialog();
       dialogClose.next({ added: 0, conflicts: 2 } satisfies MemberImportDialogResult);
+      vi.advanceTimersByTime(3000);
+
+      expect(refreshes).toBe(1);
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it('refreshes without inventing an addition count when an import outcome is unknown', () => {
+      vi.useFakeTimers();
+      component.openImportMembersDialog();
+      dialogClose.next({ added: 0, conflicts: 0, uncertain: true } satisfies MemberImportDialogResult);
       vi.advanceTimersByTime(3000);
 
       expect(refreshes).toBe(1);
@@ -223,6 +255,61 @@ describe('CommitteeMembersComponent add-people actions', () => {
 
       expect(refreshes).toBe(0);
       expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+    });
+
+    describe('import confirmation', () => {
+      let toast: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        vi.useFakeTimers();
+        toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+      });
+
+      // Let the post-import roster poll finish while the host is still alive.
+      afterEach(() => vi.advanceTimersByTime(3000));
+
+      it('confirms how many members were added and that they may take a moment to appear', () => {
+        component.openImportMembersDialog();
+        dialogClose.next({ added: 2, conflicts: 1 } satisfies MemberImportDialogResult);
+
+        expect(toast).toHaveBeenCalledExactlyOnceWith({
+          severity: 'success',
+          summary: 'Members Added',
+          detail: '2 members added to Docs Working Group. New members may take a moment to appear.',
+          life: 6000,
+        });
+      });
+
+      it('uses the singular for one added member', () => {
+        component.openImportMembersDialog();
+        dialogClose.next({ added: 1, conflicts: 0 } satisfies MemberImportDialogResult);
+
+        expect(toast).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ detail: '1 member added to Docs Working Group. New members may take a moment to appear.' })
+        );
+      });
+
+      it('still confirms the imported group after the page moved to another group', async () => {
+        component.openImportMembersDialog();
+        fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2', name: 'Other Group' });
+        await fixture.whenStable();
+        dialogClose.next({ added: 3, conflicts: 0 } satisfies MemberImportDialogResult);
+
+        expect(toast).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ detail: expect.stringContaining('3 members added to Docs Working Group.') }));
+        expect(refreshes).toBe(0);
+      });
+
+      it.each([
+        ['conflicts only', { added: 0, conflicts: 2 }],
+        ['an unknown outcome', { added: 0, conflicts: 0, uncertain: true }],
+        ['a cancelled preview', { added: 0, conflicts: 0 }],
+        ['no result', undefined],
+      ] satisfies [string, MemberImportDialogResult | undefined][])('shows no confirmation after %s', (_label, result) => {
+        component.openImportMembersDialog();
+        dialogClose.next(result);
+
+        expect(toast).not.toHaveBeenCalled();
+      });
     });
 
     it.each([{ membersReady: false }, { membersError: true }, { membersLoading: true }])(
@@ -408,5 +495,144 @@ describe('CommitteeMembersComponent add-people actions', () => {
     expect(query('members-engagement-mock-tag')?.textContent).toContain('Sample data');
     expect(query('members-engagement-freshness')?.textContent).toBe(component.engagementFreshnessLabel());
     expectManagerToolbar();
+  });
+  describe('invitation expiry and resend', () => {
+    const EXPIRED = {
+      uid: 'invite-expired',
+      invitee_email: 'expired.invitee@example.com',
+      status: 'pending',
+      expires_at: '2020-01-01T00:00:00Z',
+    } as CommitteeInvite;
+    const LIVE = { uid: 'invite-live', invitee_email: 'live.invitee@example.com', status: 'pending', expires_at: '2999-01-01T00:00:00Z' } as CommitteeInvite;
+    const LEGACY = { uid: 'invite-legacy', invitee_email: 'legacy.invitee@example.com', status: 'pending' } as CommitteeInvite;
+    let messageService: MessageService;
+
+    async function openPending(invites: CommitteeInvite[]): Promise<void> {
+      await setup(WRITER_GROUP, { invites });
+      messageService = TestBed.inject(MessageService);
+      component.onTabChange('pending');
+      await fixture.whenStable();
+    }
+
+    function menuLabels(invite: CommitteeInvite): string[] {
+      component.toggleInviteActionMenu(new Event('click'), invite, { toggle: vi.fn() } as never);
+      return component.inviteActionMenuItems.map((item) => item.label as string);
+    }
+
+    it('shows an expired tag and the expired date only for an invite past its expiry', async () => {
+      await openPending([EXPIRED]);
+
+      expect(query('invite-expired-tag')).not.toBeNull();
+      expect(query('invite-expiry')?.textContent).toContain('Expired');
+    });
+
+    it('shows when a live invite expires and no expired tag', async () => {
+      await openPending([LIVE]);
+
+      expect(query('invite-expired-tag')).toBeNull();
+      expect(query('invite-expiry')?.textContent).toContain('Expires');
+    });
+
+    it('flips a live invite to expired when its expiry passes while the tab stays open', async () => {
+      // Only the clock and intervals are faked, so the async setup still resolves.
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      vi.setSystemTime(new Date('2030-01-01T00:00:00Z'));
+      await openPending([{ ...LIVE, expires_at: '2030-01-01T00:00:30Z' }]);
+      expect(query('invite-expired-tag')).toBeNull();
+      expect(query('invite-expiry')?.textContent).toContain('Expires');
+
+      vi.advanceTimersByTime(60_000);
+      await fixture.whenStable();
+
+      expect(query('invite-expired-tag')).not.toBeNull();
+      expect(query('invite-expiry')?.textContent).toContain('Expired');
+    });
+
+    it('says there is no expiration for a legacy invite without expires_at', async () => {
+      await openPending([LEGACY]);
+
+      expect(query('invite-expired-tag')).toBeNull();
+      expect(query('invite-expiry')?.textContent?.trim()).toBe('No expiration');
+    });
+
+    it('offers Resend invitation only for an expired invite', async () => {
+      await openPending([EXPIRED, LIVE, LEGACY]);
+
+      expect(menuLabels(EXPIRED)).toEqual(['Resend invitation', 'Revoke invitation']);
+      expect(menuLabels(LIVE)).toEqual(['Revoke invitation']);
+      expect(menuLabels(LEGACY)).toEqual(['Revoke invitation']);
+    });
+
+    it('resends with only the email so the stored role and organization are kept, then refreshes', async () => {
+      await openPending([EXPIRED]);
+      vi.useFakeTimers();
+      committeeService.getCommitteeInvites.mockReturnValue(of([{ ...EXPIRED, expires_at: '2999-01-01T00:00:00Z' }]));
+      const toast = vi.spyOn(messageService, 'add');
+
+      component.resendInvite(EXPIRED);
+
+      expect(committeeService.createCommitteeInvite).toHaveBeenCalledExactlyOnceWith('committee-1', { invitee_email: 'expired.invitee@example.com' });
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      expect(component.resendingInviteUid()).toBeNull();
+      vi.advanceTimersByTime(400);
+      expect(refreshes).toBeGreaterThan(0);
+    });
+
+    it('reports a failed resend and does not poll or refresh', async () => {
+      await openPending([EXPIRED]);
+      vi.useFakeTimers();
+      committeeService.createCommitteeInvite.mockReturnValue(throwError(() => ({ status: 409 })));
+      const toast = vi.spyOn(messageService, 'add');
+      const invitesCalls = committeeService.getCommitteeInvites.mock.calls.length;
+      const refreshesBefore = refreshes;
+
+      component.resendInvite(EXPIRED);
+      vi.advanceTimersByTime(3000);
+
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Unable to Resend' }));
+      expect(component.resendingInviteUid()).toBeNull();
+      expect(committeeService.getCommitteeInvites.mock.calls.length).toBe(invitesCalls);
+      expect(refreshes).toBe(refreshesBefore);
+    });
+
+    it('disables Revoke while a resend is in flight', async () => {
+      await openPending([EXPIRED]);
+      committeeService.createCommitteeInvite.mockReturnValue(new Subject());
+
+      component.resendInvite(EXPIRED);
+      menuLabels(EXPIRED);
+
+      expect(component.inviteActionMenuItems.find((item) => item.label === 'Revoke invitation')?.disabled).toBe(true);
+    });
+
+    it('does not poll or refresh another group when the page switches groups before the response', async () => {
+      await openPending([EXPIRED]);
+      vi.useFakeTimers();
+      const created = new Subject<unknown>();
+      committeeService.createCommitteeInvite.mockReturnValue(created);
+
+      component.resendInvite(EXPIRED);
+      fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2' });
+      fixture.detectChanges();
+      const invitesCalls = committeeService.getCommitteeInvites.mock.calls.length;
+      const refreshesBefore = refreshes;
+      created.next({});
+      created.complete();
+      vi.advanceTimersByTime(3000);
+
+      expect(committeeService.getCommitteeInvites.mock.calls.length).toBe(invitesCalls);
+      expect(refreshes).toBe(refreshesBefore);
+    });
+
+    it('ignores a second resend while one is in flight', async () => {
+      await openPending([EXPIRED]);
+      committeeService.createCommitteeInvite.mockReturnValue(new Subject());
+
+      component.resendInvite(EXPIRED);
+      component.resendInvite(EXPIRED);
+
+      expect(committeeService.createCommitteeInvite).toHaveBeenCalledTimes(1);
+      expect(component.resendingInviteUid()).toBe('invite-expired');
+    });
   });
 });

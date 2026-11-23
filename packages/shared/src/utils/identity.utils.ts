@@ -49,6 +49,18 @@ export function isIdentityAlreadyLinkedError(...texts: (string | undefined | nul
 }
 
 /**
+ * Editable support-chat pre-fill for a verified address that is already linked to an LFX account.
+ * The only input is the address the user themselves entered and verified — never upstream error
+ * text or anything about the owning account — so the message cannot disclose the other account.
+ * Without an address (for example when the Flow C support context is expired or unavailable)
+ * it says "an email address" instead.
+ */
+export function buildLinkedEmailSupportMessage(email?: string): string {
+  const address = email?.trim() || 'an email address';
+  return `Hi, I verified ${address} with the code Self Serve sent me, but it says the address is already linked to an LFX account. Please help me add it to the account I'm signed in to.`;
+}
+
+/**
  * The single LF username shared by every row of an email-grouped set, or `null`. A group may span
  * more than one human, so a row without a username is a disagreement, not an abstention: the group
  * fails closed rather than risk showing one person's addresses under another's name.

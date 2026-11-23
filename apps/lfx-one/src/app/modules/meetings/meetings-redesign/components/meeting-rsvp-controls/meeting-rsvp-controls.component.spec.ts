@@ -14,6 +14,8 @@ import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { defer, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingDetailsSource } from '../meeting-details-drawer/meeting-details.source';
 import { MeetingRsvpScopeModalComponent } from '../meeting-rsvp-scope-modal/meeting-rsvp-scope-modal.component';
 import { MeetingRsvpControlsComponent } from './meeting-rsvp-controls.component';
 
@@ -62,6 +64,8 @@ describe('MeetingRsvpControlsComponent', () => {
   let closed: Subject<RsvpScope | undefined>;
   let removed: ReturnType<typeof signal<ReadonlySet<string>>>;
   let submitting: ReturnType<typeof signal<ReadonlySet<string>>>;
+  let selfInvite: ReturnType<typeof signal<readonly string[] | undefined>>;
+  let retrySelfInvites: ReturnType<typeof vi.fn>;
 
   const render = async (row: MeetingHomeRow): Promise<ComponentFixture<MeetingRsvpControlsComponent>> => {
     const fixture = TestBed.createComponent(MeetingRsvpControlsComponent);
@@ -87,14 +91,48 @@ describe('MeetingRsvpControlsComponent', () => {
     showToast = vi.fn();
     removed = signal<ReadonlySet<string>>(new Set());
     submitting = signal<ReadonlySet<string>>(new Set());
+    selfInvite = signal(undefined);
+    retrySelfInvites = vi.fn();
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingRsvpService, useValue: { submit$: submit, submittingMeetingIds: submitting } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: removed } },
+        { provide: MeetingsHomeStore, useValue: { selfInviteOf: () => selfInvite(), retrySelfInvites } },
         { provide: UiModalService, useValue: { open: openModal } },
         { provide: UiToastService, useValue: { show: showToast } },
       ],
     });
+  });
+
+  it.each(['list', 'drawer'])('disables RSVP while a confirmed self-invite is syncing in the %s', async (host) => {
+    if (host === 'drawer') {
+      TestBed.configureTestingModule({ providers: [{ provide: MeetingDetailsSource, useValue: { selfInviteOf: () => selfInvite(), retrySelfInvites } }] });
+      TestBed.overrideProvider(MeetingsHomeStore, { useValue: null });
+    }
+    selfInvite.set([]);
+    const fixture = await render(buildRow(buildMeeting({ my_registrant_ids: ['saved-self'] })));
+    expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(true);
+    (fixture.componentInstance as unknown as { choose: (response: string) => void }).choose('accepted');
+    expect(submit).not.toHaveBeenCalled();
+    await press(fixture, 'meetings-home-invitation-refresh');
+    expect(retrySelfInvites).toHaveBeenCalledTimes(1);
+    expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(true);
+
+    selfInvite.set(undefined);
+    await fixture.whenStable();
+    expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(false);
+    expect(query(fixture, 'meetings-home-invitation-refresh')).toBeNull();
+    await press(fixture, 'meetings-home-rsvp-accepted');
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not submit a scope picked after a self-invite starts syncing', async () => {
+    const fixture = await render(buildRow(buildMeeting(RECURRING)));
+    await press(fixture, 'meetings-home-rsvp-accepted');
+    selfInvite.set(['saved-self']);
+    closed.next('all');
+    await fixture.whenStable();
+    expect(submit).not.toHaveBeenCalled();
   });
 
   describe('visibility', () => {
@@ -256,6 +294,16 @@ describe('MeetingRsvpControlsComponent', () => {
     });
   });
 
+  it('lays the answer buttons out in three full-width columns with fullWidth', async () => {
+    const fixture = TestBed.createComponent(MeetingRsvpControlsComponent);
+    fixture.componentRef.setInput('row', buildRow(buildMeeting(), { myRsvp: null }));
+    fixture.componentRef.setInput('fullWidth', true);
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-home-rsvp')?.classList).toContain('grid-cols-3');
+    expect(query(fixture, 'meetings-home-rsvp-accepted')?.classList).toContain('block');
+  });
+
   describe('answered', () => {
     it('shows the answer as a badge without the dates it covers', async () => {
       const rsvp = buildRsvp({ response_type: 'maybe', scope: 'single', occurrence_id: OCCURRENCE_ID });
@@ -278,6 +326,18 @@ describe('MeetingRsvpControlsComponent', () => {
       const trigger = fixture.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
 
       expect(trigger.menuPosition[0]).toEqual({ originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' });
+    });
+
+    it('spans a full-width badge across the container and opens its menu from the start edge', async () => {
+      const fixture = TestBed.createComponent(MeetingRsvpControlsComponent);
+      fixture.componentRef.setInput('row', buildRow(buildMeeting(), { myRsvp: buildRsvp() }));
+      fixture.componentRef.setInput('fullWidth', true);
+      await fixture.whenStable();
+      const trigger = fixture.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+
+      expect(query(fixture, 'meetings-home-rsvp')?.classList).toContain('w-full');
+      expect(query(fixture, 'meetings-home-rsvp-status')?.querySelector('lfx-ui-badge')?.classList).toContain('w-full');
+      expect(trigger.menuPosition[0]).toEqual({ originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' });
     });
 
     it('lets a recurring answer be picked again to change the dates it covers', async () => {

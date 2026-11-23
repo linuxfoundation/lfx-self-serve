@@ -26,6 +26,9 @@ export const ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY = 8;
 /** LFXV2-3029 — global ceiling on connected-component candidates per role-grants computation, across every direct grant's walk. `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` bounds a single walk; without a bound spanning all of them, a caller with many direct grants in disjoint hierarchies multiplies the two caps into a six-figure authorizer fan-out. */
 export const ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP = 2000;
 
+/** #5901 — max companies in the parent chain a staff family lookup climbs to find the top account; a deeper chain fails the lookup instead of holding the request through more upstream calls. */
+export const ORG_STAFF_FAMILY_CLIMB_HARD_CAP = 25;
+
 /** LFXV2-3029 — max concurrent authorizer batches when classifying connected-component candidates. `checkAccessStrict` chunks internally but dispatches every chunk at once, so the pool has to be imposed by the caller. */
 export const ORG_CANDIDATE_CLASSIFY_CONCURRENCY = 8;
 
@@ -66,6 +69,11 @@ export const ORG_ACCESS_AWARE_CACHE_TTL_MS = 30 * 1000;
 
 /** Spec 053 — TTL for a failed staff check (the transient result Retry targets): bounds Retry-driven recomputation during an authorizer outage without pinning recovery for the full `ORG_ACCESS_AWARE_CACHE_TTL_MS`. Degraded roll-ups keep the full TTL; Retry bypasses the cache read instead. */
 export const ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS = 5 * 1000;
+
+/** #4126 — the caller's organizations grouped by Salesforce family, which every family roll-up is built from. */
+export const ORG_ROLL_UP_SET_PATH = '/api/orgs/me/roll-up-set';
+
+export const ORG_ROLL_UP_SET_ANCHOR_PARAM = 'anchor';
 
 /** Spec 053 — query flag the viewer's Retry sends on `GET /api/orgs/me/role-grants` so the BFF skips its cache read (still coalesced, still written). */
 export const ORG_ROLE_GRANTS_REFRESH_PARAM = 'refresh';

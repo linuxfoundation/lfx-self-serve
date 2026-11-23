@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApplicationRef } from '@angular/core';
+import { ApplicationRef, PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
-import { EnrichedIdentity, Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
+import { MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { CombinedProfile, EnrichedIdentity, Meeting, MeetingRsvp, MeetingSelfGuest, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { defer, of, Subject, throwError } from 'rxjs';
+import { defer, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserService } from './user.service';
@@ -33,6 +34,36 @@ describe('UserService', () => {
       ],
     });
     service = TestBed.inject(UserService);
+  });
+
+  describe('consumeLinkedEmailSupportContext', () => {
+    it('posts the opaque handle and returns only the authenticated response', () => {
+      const post = vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(of({ email: 'linked@example.test' }));
+      const next = vi.fn();
+      service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
+      expect(post).toHaveBeenCalledExactlyOnceWith('/api/profile/auth/email-support-context', { handle: 'a'.repeat(64) });
+      expect(next).toHaveBeenCalledExactlyOnceWith({ email: 'linked@example.test' });
+    });
+
+    it.each([undefined, null, '', 'not-a-handle', ['a'.repeat(64)]])('does not request missing or malformed context %j', (handle) => {
+      const next = vi.fn();
+      service.consumeLinkedEmailSupportContext(handle).subscribe(next);
+      expect(TestBed.inject(HttpClient).post).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledExactlyOnceWith({});
+    });
+
+    it('logs a failed context request without sensitive error data and keeps the generic draft', () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(throwError(() => new Error('linked@example.test; handle=' + 'a'.repeat(64))));
+        const next = vi.fn();
+        service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
+        expect(next).toHaveBeenCalledExactlyOnceWith({});
+        expect(log).toHaveBeenCalledExactlyOnceWith('Linked-email support context unavailable; using the generic support draft.');
+      } finally {
+        log.mockRestore();
+      }
+    });
   });
 
   it('refreshes identities only after a successful primary-email change, without rewriting session claims', () => {
@@ -1027,6 +1058,197 @@ describe('UserService', () => {
       service.impersonator.set(null);
 
       expect(service.meetingJoinIdentity()).toBeNull();
+    });
+  });
+
+  describe('getCurrentEmployerName (#5251)', () => {
+    const lookup = (): { name: string | null; messages: ReturnType<typeof vi.fn> } => {
+      const result = { name: 'unset' as string | null, messages: vi.mocked(TestBed.inject(MessageService).add) };
+      service.getCurrentEmployerName().subscribe((value) => (result.name = value));
+      return result;
+    };
+
+    it('reads the work experiences from the profile endpoint', () => {
+      httpGet.mockReturnValue(of([]));
+
+      lookup();
+
+      expect(httpGet).toHaveBeenCalledWith('/api/profile/work-experiences');
+    });
+
+    it('returns the name of the current employer', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Old Co', organizationId: null, startDate: 'Jan 2015', endDate: 'Dec 2019' },
+          { organization: 'Acme Motors', organizationId: 'org-1', startDate: 'Jan 2020', endDate: null },
+        ])
+      );
+
+      expect(lookup().name).toBe('Acme Motors');
+    });
+
+    it('returns null for an empty history', () => {
+      httpGet.mockReturnValue(of([]));
+
+      expect(lookup().name).toBeNull();
+    });
+
+    it('returns null when every job has ended, rather than a company the user has left', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Old Co', organizationId: null, startDate: 'Jan 2015', endDate: 'Dec 2019' },
+          { organization: 'Older Co', organizationId: null, startDate: 'Jan 2010', endDate: 'Dec 2014' },
+        ])
+      );
+
+      expect(lookup().name).toBeNull();
+    });
+
+    it('returns null without raising a toast, and logs, when the request fails', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      httpGet.mockReturnValue(throwError(() => new Error('boom')));
+
+      const { name, messages } = lookup();
+
+      expect(name).toBeNull();
+      expect(messages).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
+    it('returns null without raising a toast when the request does not answer within two seconds', () => {
+      vi.useFakeTimers();
+      try {
+        httpGet.mockReturnValue(NEVER);
+
+        const result = lookup();
+        expect(result.name).toBe('unset');
+
+        vi.advanceTimersByTime(2000);
+
+        expect(result.name).toBeNull();
+        expect(result.messages).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('getMeetingSelfGuest (#5798)', () => {
+    const PROFILE: CombinedProfile = {
+      user: { id: 'auth0|1', email: 'primary@example.com', first_name: 'Pat', last_name: 'Doe', username: 'pdoe', created_at: '', updated_at: '' },
+      profile: { job_title: 'Engineer', organization: 'Profile Org', picture: 'https://avatars.example.com/pdoe.png' },
+    };
+
+    /** Answers each lookup by URL; `failing` URLs error instead. */
+    const respond = (failing: string[] = []): void => {
+      const responses: Record<string, unknown> = {
+        '/api/profile': PROFILE,
+        '/api/profile/emails/meeting-invite': { email_id: 'email-2', email: 'invites@example.com' },
+        '/api/profile/work-experiences': [{ organization: 'Employer Org', organizationId: 'org-1', startDate: 'Jan 2020', endDate: null }],
+      };
+      httpGet.mockImplementation((url: string) => (failing.includes(url) ? throwError(() => new Error('boom')) : of(responses[url])));
+    };
+
+    const lookup = (): MeetingSelfGuest | null | 'unset' => {
+      let result: MeetingSelfGuest | null | 'unset' = 'unset';
+      service.getMeetingSelfGuest().subscribe((value) => (result = value));
+      return result;
+    };
+
+    beforeEach(() => {
+      service.user.set({
+        email: 'session@example.com',
+        given_name: 'Session',
+        family_name: 'Name',
+        picture: 'https://avatars.example.com/session.png',
+        'https://sso.linuxfoundation.org/claims/username': 'pdoe',
+      } as User);
+    });
+
+    it('combines the profile, meeting-invite email and current employer', () => {
+      respond();
+
+      expect(lookup()).toEqual({
+        email: 'invites@example.com',
+        first_name: 'Pat',
+        last_name: 'Doe',
+        job_title: 'Engineer',
+        org_name: 'Employer Org',
+        username: 'pdoe',
+        avatar_url: 'https://avatars.example.com/pdoe.png',
+        matchEmails: ['invites@example.com', 'primary@example.com', 'session@example.com'],
+      });
+    });
+
+    it('falls back to the session names, without a toast, when the profile lookup fails', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      respond(['/api/profile']);
+
+      const guest = lookup() as MeetingSelfGuest;
+
+      expect(guest.first_name).toBe('Session');
+      expect(guest.last_name).toBe('Name');
+      expect(guest.email).toBe('invites@example.com');
+      expect(TestBed.inject(MessageService).add).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('invites the primary email when the user set no meeting-invite email', () => {
+      respond();
+      const answered = httpGet.getMockImplementation() as (url: string) => unknown;
+      httpGet.mockImplementation((url: string) => (url === '/api/profile/emails/meeting-invite' ? of({ email_id: null, email: null }) : answered(url)));
+
+      const guest = lookup() as MeetingSelfGuest;
+
+      expect(guest.email).toBe('primary@example.com');
+      expect(guest.matchEmails).toEqual(['primary@example.com', 'session@example.com']);
+    });
+
+    it('returns null, without a toast, when the meeting-invite lookup fails, since the invite address is unknown', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      respond(['/api/profile/emails/meeting-invite']);
+
+      expect(lookup()).toBeNull();
+      expect(TestBed.inject(MessageService).add).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('returns null when the meeting-invite lookup does not settle in time', () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        respond();
+        const answered = httpGet.getMockImplementation() as (url: string) => unknown;
+        httpGet.mockImplementation((url: string) => (url === '/api/profile/emails/meeting-invite' ? NEVER : answered(url)));
+
+        let result: MeetingSelfGuest | null | 'unset' = 'unset';
+        service.getMeetingSelfGuest().subscribe((value) => (result = value));
+        expect(result).toBe('unset');
+
+        vi.advanceTimersByTime(MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS);
+
+        expect(result).toBeNull();
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it('returns null on the server without making any request', () => {
+      TestBed.resetTestingModule();
+      httpGet = vi.fn();
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: PLATFORM_ID, useValue: 'server' },
+          { provide: HttpClient, useValue: { get: httpGet, post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
+          { provide: MessageService, useValue: { add: vi.fn() } },
+        ],
+      });
+      service = TestBed.inject(UserService);
+
+      expect(lookup()).toBeNull();
+      expect(httpGet).not.toHaveBeenCalled();
     });
   });
 });

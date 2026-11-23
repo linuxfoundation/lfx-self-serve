@@ -5,12 +5,12 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { provideRouter, Router } from '@angular/router';
-import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE, ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE } from '@lfx-one/shared/constants';
 import type { OrgDropdownOption, OrgEventAttendeeDetailRow, OrgEventAttendeesResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { of, throwError } from 'rxjs';
-import { describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../../../../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { EventAttendeesService } from '../../services/event-attendees.service';
@@ -67,7 +67,7 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     fixture.detectChanges();
   }
 
-  async function mount(initialUrl: string, response: OrgEventAttendeesResponse = RESPONSE): Promise<void> {
+  async function mount(initialUrl: string, response: OrgEventAttendeesResponse = RESPONSE, settleFixture: () => Promise<void> = settle): Promise<void> {
     getEventAttendees = vi.fn(() => of(response));
     await TestBed.configureTestingModule({
       imports: [EventAttendeesComponent],
@@ -81,50 +81,29 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
 
     await TestBed.inject(Router).navigateByUrl(initialUrl);
     fixture = TestBed.createComponent(EventAttendeesComponent);
-    await settle();
+    await settleFixture();
   }
 
   it('reads with the defaults and drops them from the URL', async () => {
     await mount('/?tab=events');
 
-    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'all' });
+    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '730d', participation: 'all' });
     expect(TestBed.inject(Router).url).not.toContain('participation');
-    expect(TestBed.inject(Router).url).not.toContain('attribution');
   });
 
-  it('offers All as the first Count option and Employee match, Self-reported only, All as the Counted by options', async () => {
+  it('offers All as the first Count option', async () => {
     await mount('/?tab=events');
-    const component = fixture.componentInstance as unknown as {
-      participationOptions: { label: string; value: string }[];
-      attributionOptions: { label: string; value: string }[];
-    };
+    const component = fixture.componentInstance as unknown as { participationOptions: { label: string; value: string }[] };
 
     expect(component.participationOptions.map((option) => option.label)).toEqual(['All', 'Registered', 'Attended']);
-    expect(component.attributionOptions).toEqual([
-      { label: 'Employee match', value: 'verified' },
-      { label: 'Self-reported only', value: 'self_reported' },
-      { label: 'All', value: 'all' },
-    ]);
     expect(form().controls['participation'].value).toBe('all');
-    expect(form().controls['attribution'].value).toBe('verified');
   });
 
-  it('restores Count and Counted by from the URL and reads with them', async () => {
-    await mount('/?tab=events&range=90d&participation=attended&attribution=self_reported');
+  it('restores Count from the URL and reads with it', async () => {
+    await mount('/?tab=events&range=90d&participation=attended');
 
     expect(form().controls['participation'].value).toBe('attended');
-    expect(form().controls['attribution'].value).toBe('self_reported');
-    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '90d', attribution: 'self_reported', participation: 'attended' });
-    expect(testId('org-people-event-attendees-attendees-caption')?.textContent).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.self_reported);
-  });
-
-  // lfx-self-serve#5315 retired Company email and Account on registration: an old link reads with the default instead.
-  it.each(['company_email', 'account'])('falls back to Employee match for the retired ?attribution=%s', async (retired) => {
-    await mount(`/?tab=events&attribution=${retired}`);
-
-    expect(form().controls['attribution'].value).toBe('verified');
-    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'all' });
-    expect(getEventAttendees).not.toHaveBeenCalledWith(ORG, expect.objectContaining({ attribution: retired }));
+    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '90d', participation: 'attended' });
   });
 
   it('writes a non-default pick to the URL and refetches, then drops it again at the default', async () => {
@@ -133,38 +112,17 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     form().controls['participation'].setValue('attended');
     await settle();
     expect(TestBed.inject(Router).url).toContain('participation=attended');
-    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'attended' });
+    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', participation: 'attended' });
 
     form().controls['participation'].setValue('registered');
     await settle();
     expect(TestBed.inject(Router).url).toContain('participation=registered');
-    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'registered' });
+    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', participation: 'registered' });
 
     form().controls['participation'].setValue('all');
     await settle();
     expect(TestBed.inject(Router).url).not.toContain('participation');
-    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'all' });
-
-    form().controls['attribution'].setValue('all');
-    await settle();
-    expect(TestBed.inject(Router).url).toContain('attribution=all');
-    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'all', participation: 'all' });
-
-    form().controls['attribution'].setValue('verified');
-    await settle();
-    expect(TestBed.inject(Router).url).not.toContain('attribution');
-  });
-
-  it('keeps Counted by behind "More filters", counting a non-default pick on the link', async () => {
-    await mount('/?tab=events&attribution=all');
-
-    const row = testId('org-people-event-attendees-more-filters');
-    expect(row?.classList.contains('hidden')).toBe(true);
-    expect(testId('org-people-event-attendees-more-filters-toggle')?.textContent).toContain('More filters (1)');
-
-    (testId('org-people-event-attendees-more-filters-toggle') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    expect(row?.classList.contains('hidden')).toBe(false);
+    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', participation: 'all' });
   });
 
   it('offers every event the server returned, applying no range filter of its own', async () => {
@@ -295,5 +253,107 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     await settle();
     expect(form().controls['foundation'].value).toBe('');
     expect(testId('org-people-event-attendees-row-1')).not.toBeNull();
+  });
+
+  describe('search (lfx-self-serve#5662)', () => {
+    const PARTICIPANT_REFS = [1, 2, 3, 4];
+    const rowCount = (ref: number): number => el().querySelectorAll(`[data-testid="org-people-event-attendees-row-${ref}"]`).length;
+    const rowRefs = (): number[] => PARTICIPANT_REFS.filter((ref) => rowCount(ref) > 0);
+    const stat = (name: string): string | undefined => testId(`org-people-event-attendees-stat-${name}`)?.firstElementChild?.textContent?.trim();
+
+    async function settleSearch(): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await vi.advanceTimersByTimeAsync(150);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    async function search(term: string): Promise<number[]> {
+      form().controls['search'].setValue(term);
+      await settleSearch();
+      return rowRefs();
+    }
+
+    beforeEach(async () => {
+      // Leave Angular's timeout/animation-frame scheduling real while advancing RxJS's debounce.
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      await mount(
+        '/?tab=events',
+        {
+          ...RESPONSE,
+          // The summary includes an accepted speaker who has no attendee detail row.
+          summary: { attendeesCount: 4, speakersCount: 1, eventsCount: 2, foundationsCount: 1 },
+          details: [
+            // A CJK compatibility ideograph (U+F92E) that renders like 冷 (U+51B7), at two events.
+            detail(1, 'event-a', { displayName: '王小冷' }),
+            detail(1, 'event-b', { displayName: '王小冷' }),
+            detail(2, 'event-a', { displayName: 'José Ramírez' }),
+            detail(3, 'event-a', { displayName: 'Ada Lovelace', jobTitle: 'Staff Engineer' }),
+            detail(4, 'event-a', { displayName: 'Alan Turing' }),
+          ],
+        },
+        settleSearch
+      );
+    });
+
+    afterEach(() => {
+      TestBed.resetTestingModule();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    });
+
+    it('finds a name stored with lookalike characters, with or without a space or an ideographic space, listing the person once', async () => {
+      for (const term of ['王小冷', '王小 冷', '王小　冷']) {
+        expect(await search(term)).toEqual([1]);
+        expect(rowCount(1)).toBe(1);
+      }
+    });
+
+    it('ignores accents and case', async () => {
+      expect(await search('JOSE')).toEqual([2]);
+    });
+
+    it('matches the job title', async () => {
+      expect(await search('staff engineer')).toEqual([3]);
+    });
+
+    it('retains the warehouse summary and every row for effective-empty queries', async () => {
+      expect(await search('JOSE')).toEqual([2]);
+      expect(stat('speakers')).toBe('0');
+      expect(stat('attendees')).toBe('1');
+      expect(stat('events')).toBe('1');
+      expect(stat('foundations')).toBe('1');
+
+      for (const term of ['', '   ', '\u3000', '\u200B', ' \u200B ', '\u0085']) {
+        expect(await search(term)).toEqual(PARTICIPANT_REFS);
+        expect(stat('speakers')).toBe('1');
+        expect(stat('attendees')).toBe('4');
+        expect(stat('events')).toBe('2');
+        expect(stat('foundations')).toBe('1');
+      }
+    });
+
+    it('keeps the organization-empty wording for effective-empty queries', async () => {
+      getEventAttendees.mockReturnValue(of({ ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE, accountId: ORG }));
+      (fixture.componentInstance as unknown as { retry: () => void }).retry();
+      await settleSearch();
+
+      expect(await search('no matching person')).toEqual([]);
+      expect(testId('org-people-event-attendees-empty')?.textContent).toContain('No event attendees match the current filters.');
+
+      for (const term of ['', '\u200B', ' \u200B ', '\u0085']) {
+        expect(await search(term)).toEqual([]);
+        expect(testId('org-people-event-attendees-empty')?.textContent).toContain('No event attendees found for this company');
+      }
+    });
+
+    it('narrows together with the event filter', async () => {
+      form().patchValue({ event: 'event-b' });
+      expect(await search('JOSE')).toEqual([]);
+
+      form().patchValue({ event: 'event-a' });
+      expect(await search('JOSE')).toEqual([2]);
+    });
   });
 });

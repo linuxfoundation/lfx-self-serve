@@ -41,7 +41,7 @@
           [withCard]="false"
           icon="fa-light fa-list-check"
           title="No formations yet"
-          subtitle="Formations between Prospect and Active will appear here."
+          [subtitle]="queueCopy.emptySubtitle"
           data-testid="formations-table-empty">
         </lfx-empty-state>
       }

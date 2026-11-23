@@ -1,0 +1,59 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<lfx-ui-modal heading="Transcript" [width]="700" [height]="760" sticky closable scrollFade data-testid="meeting-transcript-dialog">
+  <!-- The context bleeds itself by 24px, so give back the gutter the header extra already removed. -->
+  <div modalHeaderExtra class="px-[24px]">
+    <lfx-meeting-dialog-context [row]="row" [origin]="origin" data-testid="meeting-transcript-dialog-context" />
+  </div>
+
+  @let state = cues();
+  @if (state === 'error') {
+    <lfx-ui-empty-state
+      class="flex flex-1 items-center justify-center"
+      size="small"
+      icon="fa-light fa-triangle-exclamation"
+      heading="Couldn't load the transcript"
+      description="Something went wrong. Try again."
+      data-testid="meeting-transcript-dialog-error">
+      <lfx-ui-button
+        empty-state-action
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-arrow-rotate-right"
+        (click)="retry()"
+        data-testid="meeting-transcript-dialog-retry">
+        Retry
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  } @else if (state) {
+    @if (state.length > 0) {
+      <ul class="flex flex-col gap-[20px]" aria-label="Transcript" data-testid="meeting-transcript-dialog-content">
+        @for (cue of state; track $index) {
+          <li class="flex items-start gap-[12px]" data-testid="meeting-transcript-dialog-cue">
+            <lfx-ui-avatar class="shrink-0" [size]="32" [name]="cue.speaker" decorative />
+            <div class="flex min-w-0 flex-col gap-[2px]">
+              <div class="flex items-baseline gap-[8px]">
+                @if (cue.speaker) {
+                  <span class="text-[14px] font-medium leading-[20px] text-gray-900" data-testid="meeting-transcript-dialog-speaker">{{ cue.speaker }}</span>
+                }
+                <span class="text-[12px] leading-[16px] text-gray-500" data-testid="meeting-transcript-dialog-time">{{ cue.timestamp }}</span>
+              </div>
+              <p class="text-[14px] leading-[20px] text-gray-700" data-testid="meeting-transcript-dialog-text">{{ cue.text }}</p>
+            </div>
+          </li>
+        }
+      </ul>
+    } @else {
+      <p class="flex flex-1 items-center justify-center text-center text-[14px] leading-[20px] text-gray-500" data-testid="meeting-transcript-dialog-empty">
+        No transcript content available.
+      </p>
+    }
+  } @else {
+    <div class="flex flex-1 items-center justify-center gap-[8px] text-[14px] leading-[20px] text-gray-500" data-testid="meeting-transcript-dialog-loading">
+      <lfx-ui-spinner [size]="14" label="Loading transcript…" />
+      <span aria-hidden="true">Loading transcript…</span>
+    </div>
+  }
+</lfx-ui-modal>

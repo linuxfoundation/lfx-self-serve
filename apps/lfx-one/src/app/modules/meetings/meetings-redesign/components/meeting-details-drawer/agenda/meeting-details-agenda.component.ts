@@ -7,7 +7,6 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import {
   AttachmentScope,
   MeetingAttachment,
-  MeetingComposerSectionId,
   MaterialsChangedEvent,
   MeetingMaterialLink,
   MeetingMaterialsDrawerData,
@@ -17,7 +16,6 @@ import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
   applyPastMeetingAttachmentChanges,
-  canScopeAttachmentToOccurrence,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
   isPastMeetingCalendarRow,
@@ -41,12 +39,13 @@ import { catchError, distinctUntilChanged, Observable, of, startWith, switchMap,
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingMaterialsDrawerComponent } from './materials-drawer/meeting-materials-drawer.component';
 
 /**
  * Agenda & Materials tab of the meeting details drawer.
  * @description The agenda is the shown date's description, else the meeting's. Files are the primary materials and
- * links the supporting ones. Organizers edit the agenda in the composer and materials in Manage Materials.
+ * links the supporting ones. Organizers edit them in the composer, and a past record's materials in Manage Materials.
  */
 @Component({
   selector: 'lfx-meeting-details-agenda',
@@ -70,7 +69,7 @@ export class MeetingDetailsAgendaComponent {
   private readonly context = inject(MeetingDetailsContext);
   private readonly meetingService = inject(MeetingService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly drawer = inject(UiDrawerContext, { optional: true });
+  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
   private readonly drawerService = inject(UiDrawerService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -93,6 +92,16 @@ export class MeetingDetailsAgendaComponent {
     return isPastMeetingCalendarRow(meeting) ? meeting.meeting_id : meeting.id;
   });
   protected readonly fullAccess: Signal<boolean> = this.context.fullAccess;
+  protected readonly signedIn: Signal<boolean> = this.context.signedIn;
+  /** On a page, a viewer without full access gets the private notice here; the drawer keeps it in its side column. */
+  protected readonly page = !inject(UiDrawerContext, { optional: true });
+  protected readonly privateNotice: Signal<string> = computed(() => {
+    const lead = 'Meeting details, recordings, and summaries are only available to meeting participants and committee members.';
+    if (this.signedIn()) return `${lead} If you believe you should have access, please contact the meeting organizer.`;
+    return this.context.state() === 'ended'
+      ? `${lead} Sign in if you believe you should have access.`
+      : `${lead} Sign in or join as a guest below if you have the meeting password.`;
+  });
   protected readonly agenda: Signal<string> = computed(() => (this.context.occurrence()?.description || this.context.meeting().description || '').trim());
   // Upcoming dates of the series are editable; past materials and rows that hold a past record are not.
   protected readonly canEdit: Signal<boolean> = computed(
@@ -132,11 +141,15 @@ export class MeetingDetailsAgendaComponent {
     });
   }
 
-  protected edit(): void {
-    this.openComposer('agenda-resources');
+  protected signIn(): void {
+    this.context.signIn();
   }
 
-  /** Opens Manage Materials over this drawer, on the past record of an ended date or else on the series. */
+  protected edit(): void {
+    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.hostRef);
+  }
+
+  /** Opens the series in the composer, or Manage Materials over this drawer for an ended date's past record. */
   protected editMaterials(): void {
     const pastMeetingId = this.context.pastMeetingId();
     if (pastMeetingId) {
@@ -147,13 +160,7 @@ export class MeetingDetailsAgendaComponent {
       this.openMaterialsDrawer({ pastMeetingId, pastChanges: this.pastChanges(), occurrence: null, canScopeToOccurrence: false, onChanged });
       return;
     }
-    // A series lists and scopes materials for the shown date, as the meeting page does.
-    const occurrence = this.showScopes() ? this.context.occurrence() : null;
-    this.openMaterialsDrawer({
-      meetingId: this.seriesId(),
-      occurrence,
-      canScopeToOccurrence: canScopeAttachmentToOccurrence(this.context.meeting(), occurrence),
-    });
+    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.hostRef, true);
   }
 
   protected download(attachment: MeetingAttachment | PastMeetingAttachment): void {
@@ -179,8 +186,8 @@ export class MeetingDetailsAgendaComponent {
 
   private initAttachments(): Signal<(MeetingAttachment | PastMeetingAttachment)[] | null> {
     // Keyed on the resource only, so the fresh detail replacing the row data does not refetch.
-    // Without full access nothing shows, so nothing is fetched.
-    const source = computed(() => (this.context.fullAccess() ? (this.context.pastMeetingId() ?? `meeting:${this.seriesId()}`) : null));
+    // Without full access, or signed out, no materials show, so nothing is fetched.
+    const source = computed(() => (this.context.signedInAccess() ? (this.context.pastMeetingId() ?? `meeting:${this.seriesId()}`) : null));
     const loaded$ = toObservable(source).pipe(
       distinctUntilChanged(),
       tap(() => this.pastChanges.set({ deletedUids: [], addedAttachments: [] })),
@@ -214,16 +221,12 @@ export class MeetingDetailsAgendaComponent {
         .filter((attachment) => attachment.type === 'link')
         .map((attachment) => {
           const url = attachment.link && isValidUrl(attachment.link) ? attachment.link : null;
-          return { uid: attachment.uid, name: attachment.name, url, host: url ? new URL(url).hostname.replace(/^www\./, '') : '' };
+          const name = attachment.name?.trim();
+          // A link saved without a title shows its URL as the title, and no host under it.
+          if (!name || name === attachment.link) return { uid: attachment.uid, name: attachment.link ?? '', url, host: '' };
+          return { uid: attachment.uid, name, url, host: url ? new URL(url).hostname.replace(/^www\./, '') : '' };
         })
     );
-  }
-
-  private openComposer(section: MeetingComposerSectionId): void {
-    // The composer opens over the page, so the drawer closes first.
-    const row = this.context.shownRow();
-    this.drawer?.requestClose();
-    this.editService.edit(row, section);
   }
 
   private loadAttachments(): Observable<(MeetingAttachment | PastMeetingAttachment)[]> {

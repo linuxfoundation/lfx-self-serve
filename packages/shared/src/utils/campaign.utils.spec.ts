@@ -13,6 +13,7 @@ import {
 } from '../constants/campaign.constants';
 import type { BriefMetricsActionRule, CampaignOptimizeLever } from '../interfaces/campaign.interface';
 import {
+  briefSlugYearCandidates,
   campaignActionItemLever,
   campaignActionRuleLever,
   campaignEtagVersion,
@@ -367,6 +368,26 @@ describe('describeCampaignDispatchFailure', () => {
     'dispatcher returned no campaign',
   ])('does not flag %j as nothing created', (error) => {
     expect(describeCampaignDispatchFailure(error)).toEqual({ message: error, nextStep: null, nothingCreated: false });
+  });
+});
+
+describe('briefSlugYearCandidates (#5492)', () => {
+  it('gives the slug with this year and each of the next two, latest first', () => {
+    // Latest first: this year's edition has often already happened, and the first hit is offered.
+    expect(briefSlugYearCandidates('kubecon-cloudnativecon-europe', 2026)).toEqual([
+      'kubecon-cloudnativecon-europe-2028',
+      'kubecon-cloudnativecon-europe-2027',
+      'kubecon-cloudnativecon-europe-2026',
+    ]);
+  });
+
+  it('gives none when the slug already ends in a year, or is empty', () => {
+    expect(briefSlugYearCandidates('open-source-summit-europe-2027', 2026)).toEqual([]);
+    expect(briefSlugYearCandidates('', 2026)).toEqual([]);
+  });
+
+  it('still guesses when a number in the slug is not a trailing four-digit year', () => {
+    expect(briefSlugYearCandidates('kubeday-26', 2026)).toEqual(['kubeday-26-2028', 'kubeday-26-2027', 'kubeday-26-2026']);
   });
 });
 

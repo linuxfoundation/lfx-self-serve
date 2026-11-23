@@ -40,15 +40,18 @@ export const listProjectApplicationQueue = async (req: Request, res: Response, n
   }
 };
 
-/** `GET /api/project-applications/access` — whether the caller is on the formation team. */
+/** `GET /api/project-applications/access` — whether the caller is on the formation team, and whether they are LF staff (#5544). */
 export const getProjectApplicationAccess = async (req: Request, res: Response, next: NextFunction) => {
   const startTime = logger.startOperation(req, 'get_project_application_access');
   try {
     await requireUsername(req, 'get_project_application_access');
-    const isFormationTeam = await projectApplicationService.isFormationTeamMember(req);
+    const [isFormationTeam, isLfStaff] = await Promise.all([
+      projectApplicationService.isFormationTeamMember(req),
+      projectApplicationService.isLfStaffMember(req),
+    ]);
     res.set('Cache-Control', PROJECT_APPLICATION_CACHE_CONTROL);
-    logger.success(req, 'get_project_application_access', startTime, { is_formation_team: isFormationTeam });
-    return res.json({ is_formation_team: isFormationTeam });
+    logger.success(req, 'get_project_application_access', startTime, { is_formation_team: isFormationTeam, is_lf_staff: isLfStaff });
+    return res.json({ is_formation_team: isFormationTeam, is_lf_staff: isLfStaff });
   } catch (error) {
     return next(error);
   }

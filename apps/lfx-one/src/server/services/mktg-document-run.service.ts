@@ -51,7 +51,7 @@ import {
   MktgActiveRunStartOptions,
   MktgMember360QuestionsClaim,
 } from '@lfx-one/shared/interfaces';
-import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CLOSED } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CLOSED, MKTG_RUN_NOT_FAILED } from '@lfx-one/shared/constants/mktg-run.constants';
 import { createMember360Redactor } from '@lfx-one/shared/server';
 import { isMktgRunPendingQuestions, mktgRunClaimAnswers } from '@lfx-one/shared/utils/mktg-document-store.utils';
 import {
@@ -708,6 +708,23 @@ export class MktgDocumentRunService {
     }
   }
 
+  /** Closes a failed run as discarded so it leaves Started runs for everyone; no document or revision is written. */
+  public async dismiss(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<void> {
+    const stored = await this.selected(req, project, agentKey, documentId, runId);
+    // Already off every list: no write and no audit.
+    if (isMktgRunClosed(stored.record.state)) return;
+    if (stored.record.state !== 'failed') throw this.notFailedConflict(stored.record);
+    await this.settleRedraft(
+      req,
+      stored.record,
+      { status: 'failed', failureText: 'This run was dismissed.' },
+      await this.redrafts.forSession(req, stored.record.sessionId)
+    );
+    const closed = await this.mark(req, stored, 'discarded');
+    // A concurrent retry moved the run before this write landed.
+    if (!isMktgRunClosed(closed.state)) throw this.notFailedConflict(closed);
+  }
+
   /** Caller resolves writer access and validates the creator token; only the returned CAS winner may send. */
   public async prepareMember360QuestionsClaim(req: Request, project: string, sessionId: string, questionsId: string): Promise<MktgMember360QuestionsClaim> {
     if (!/^[a-f0-9]{64}$/.test(questionsId)) throw ServiceValidationError.forField('questionsId', 'Select the current questions.');
@@ -887,6 +904,16 @@ export class MktgDocumentRunService {
     const answeredBy = await this.displayName(req, run.answeredBy);
     return new ConflictError(answeredBy ? `Already answered by ${answeredBy}` : 'Already answered', MKTG_RUN_ANSWERED, {
       details: { runId: run.runId, questionsId, answeredBy, answeredAt: run.answeredAt ?? null },
+    });
+  }
+
+  /** Details carry only the opaque run id; the client re-reads Started runs for the current state. */
+  private notFailedConflict(run: MktgStartedRunRecord): ConflictError {
+    return new ConflictError('Only a failed run can be dismissed.', MKTG_RUN_NOT_FAILED, {
+      operation: 'mktg_run_dismiss',
+      service: 'object_store',
+      clientMessage: 'This run is no longer failed. Refresh to see where it stands.',
+      details: { runId: run.runId },
     });
   }
 
@@ -1163,16 +1190,23 @@ export class MktgDocumentRunService {
     if (written && isMktgRunTerminal(state)) {
       logger.info(req, 'mktg_run_mark', 'Recorded terminal run state', { project: run.project, run: run.runId, state });
       if (state === 'discarded') {
-        logger.info(req, 'mktg_run_discard', 'Active run discarded before a new start', {
-          project: run.project,
-          runId: run.runId,
-          documentId: run.documentId,
-          agentKey: run.agentKey,
-          discardedBySubject,
-          creatorSubject: run.creatorSubject ?? null,
-          self: !!discardedBySubject && discardedBySubject === run.creatorSubject,
-          at: closedAt,
-        });
+        // Start discards only target active runs; a failed run is closed only by an explicit dismiss.
+        const dismissed = run.state === 'failed';
+        logger.info(
+          req,
+          dismissed ? 'mktg_run_dismiss_audit' : 'mktg_run_discard',
+          dismissed ? 'Failed run dismissed from Started runs' : 'Active run discarded before a new start',
+          {
+            project: run.project,
+            runId: run.runId,
+            documentId: run.documentId,
+            agentKey: run.agentKey,
+            discardedBySubject,
+            creatorSubject: run.creatorSubject ?? null,
+            self: !!discardedBySubject && discardedBySubject === run.creatorSubject,
+            at: closedAt,
+          }
+        );
       }
     }
     const current = await this.read(req, run.project, stored.key);

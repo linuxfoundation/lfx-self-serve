@@ -229,6 +229,15 @@ export function isMentorshipHttpUrl(value: string): boolean {
 }
 
 /**
+ * A link as the mentorship service takes it, which is only an absolute http(s) URL: one typed without a scheme, such as
+ * `github.com/org/repo`, gets `https://`. A value `isMentorshipHttpUrl` refuses comes back trimmed and otherwise unchanged.
+ */
+export function toMentorshipHttpUrl(value: string): string {
+  const trimmed = value.trim();
+  return normalizeToUrl(trimmed) ?? trimmed;
+}
+
+/**
  * The mentorship site's `page` listing at `base`, or one entry's public page when `id` is given.
  * A trailing `/` on `base` is dropped, so the join never doubles it.
  */
@@ -373,7 +382,7 @@ function toMentorshipEnrollProgramFields(
     projectName: project.name,
     name: form.name.trim(),
     description: form.description,
-    repositoryUrl: form.repositoryUrl.trim(),
+    repositoryUrl: toMentorshipHttpUrl(form.repositoryUrl),
     skills: uniqueMentorshipList(form.skills),
     prerequisites: form.prerequisites.map((item) => {
       const description = item.description.trim();
@@ -390,9 +399,9 @@ function toMentorshipEnrollProgramFields(
   };
 
   if (project.logoUrl) request.projectLogoUrl = project.logoUrl;
-  const websiteUrl = form.websiteUrl.trim();
+  const websiteUrl = toMentorshipHttpUrl(form.websiteUrl);
   if (websiteUrl) request.websiteUrl = websiteUrl;
-  const codeOfConductUrl = form.codeOfConductUrl.trim();
+  const codeOfConductUrl = toMentorshipHttpUrl(form.codeOfConductUrl);
   if (codeOfConductUrl) request.codeOfConductUrl = codeOfConductUrl;
   const ciiProjectId = form.ciiProjectId.trim();
   if (ciiProjectId) request.ciiProjectId = ciiProjectId;

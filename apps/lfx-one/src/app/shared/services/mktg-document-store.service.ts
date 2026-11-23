@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import { LINKEDIN_API, MKTG_DOCUMENTS_API_PATH } from '@lfx-one/shared/constants';
 import {
   LinkedinShareLinkResponse,
+  MktgDismissDocumentRunRequest,
   MktgDocumentDetailResponse,
   MktgDocumentsResponse,
   MktgRestoreRevisionRequest,
@@ -103,6 +104,12 @@ export class MktgDocumentStoreService {
   public retryRun(projectUid: string, agentKey: string, documentId: string, runId: string): Observable<MktgDocumentDetailResponse> {
     const body: MktgRetryDocumentRunRequest = { project: projectUid };
     return this.http.post<MktgDocumentDetailResponse>(`${this.documentPath(agentKey, documentId)}/runs/${encodeURIComponent(runId)}/retry`, body).pipe(take(1));
+  }
+
+  /** Close a failed run so it leaves Started runs for everyone; the 204 carries no body. */
+  public dismissRun(projectUid: string, agentKey: string, documentId: string, runId: string): Observable<void> {
+    const body: MktgDismissDocumentRunRequest = { project: projectUid };
+    return this.http.post<void>(`${this.documentPath(agentKey, documentId)}/runs/${encodeURIComponent(runId)}/dismiss`, body).pipe(take(1));
   }
 
   private readApprovedRevision(

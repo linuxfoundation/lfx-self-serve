@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { booleanAttribute, ChangeDetectionStrategy, Component, ElementRef, inject, input, model } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, ElementRef, inject, input, model, output } from '@angular/core';
 
 import { UiInputComponent } from '../input/input.component';
 
@@ -26,8 +26,17 @@ export class UiSearchInputComponent {
   public readonly ariaLabel = input<string>('Search');
   /** Disables the field. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Caps what can be typed or pasted, so the field never shows more than a search applies; `null` leaves it uncapped. */
+  public readonly maxlength = input<number | null>(null);
   /** The current text. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string>('');
+  /** Fires after the clear button empties the field; Esc clearing the text does not fire it. */
+  public readonly cleared = output<void>();
+
+  /** Moves focus to the field, e.g. after a reset removes the control that had it. */
+  public focus(): void {
+    this.host.nativeElement.querySelector('input')?.focus();
+  }
 
   /** Esc clears the text and keeps the event from closing an enclosing dialog; with no text the event passes through. */
   protected onEscape(event: Event): void {
@@ -42,9 +51,14 @@ export class UiSearchInputComponent {
     this.clear();
   }
 
-  protected clear(): void {
+  protected onClearClick(): void {
+    this.clear();
+    this.cleared.emit();
+  }
+
+  private clear(): void {
     this.value.set('');
     // The clear button leaves the page with the text, so hand focus back to the field.
-    this.host.nativeElement.querySelector('input')?.focus();
+    this.focus();
   }
 }

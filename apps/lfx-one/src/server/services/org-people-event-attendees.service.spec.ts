@@ -55,17 +55,16 @@ import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
 const ACCOUNT = 'acct-a';
 
-const DEFAULT_PICK: Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'> = {
+const DEFAULT_PICK: Pick<OrgEventsFilters, 'range' | 'participation'> = {
   range: '730d',
-  attribution: 'verified',
   participation: 'registered',
 };
 
 let service: OrgPeopleEventAttendeesService;
 
 /** The cache key of the compact read for a pick. */
-function compactKey(pick: Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'> = DEFAULT_PICK): string {
-  return buildOrgCacheKey(ACCOUNT, `people-event-attendees:v6:${pick.range}:${pick.attribution}:${pick.participation}`)!;
+function compactKey(pick: Pick<OrgEventsFilters, 'range' | 'participation'> = DEFAULT_PICK): string {
+  return buildOrgCacheKey(ACCOUNT, `people-event-attendees:v7:${pick.range}:${pick.participation}`)!;
 }
 
 /**
@@ -221,44 +220,20 @@ describe('OrgPeopleEventAttendeesService response', () => {
     expect(JSON.stringify(response)).not.toContain('@');
   });
 
-  it('reads the summary row of the picked range, attribution and participation, with one bind per placeholder', async () => {
-    await service.getEventAttendees(ACCOUNT, { range: '90d', attribution: 'all', participation: 'attended' });
+  it('reads the summary row of the picked range and participation, with one bind per placeholder', async () => {
+    await service.getEventAttendees(ACCOUNT, { range: '90d', participation: 'attended' });
 
     const summaryCall = execute.mock.calls.find(([query]) => (query as string).includes('ORG_EVENT_PARTICIPATION_SUMMARY'))!;
-    expect(summaryCall[1]).toEqual([ACCOUNT, '90d', 'all', 'attended']);
+    expect(summaryCall[1]).toEqual([ACCOUNT, '90d', 'verified', 'attended']);
     for (const [sql, binds] of execute.mock.calls as [string, string[]][]) {
       expect(sql.match(/\?/g)?.length ?? 0).toBe(binds.length);
     }
   });
 
-  // lfx-self-serve#5315: Self-reported only is person-level, decided once by dbt in ORG_EVENT_PARTICIPATION_RANGED (which the
-  // summary counts too); every row read joins it on the picked range instead of re-deriving the rule with a subquery.
-  it('joins the ranged person-level table under Self-reported only, binding the picked range, and no other attribution does', async () => {
-    await service.getEventAttendees(ACCOUNT, { range: '90d', attribution: 'self_reported', participation: 'attended' });
-
-    const rowReads = (execute.mock.calls as [string, string[]][]).filter(([query]) => !query.includes('ORG_EVENT_PARTICIPATION_SUMMARY'));
-    expect(rowReads).toHaveLength(3);
-    for (const [sql, binds] of rowReads) {
-      expect(sql).toContain('INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_RANGED r');
-      expect(sql).toContain('r.TIME_RANGE = ?');
-      expect(sql).toContain('r.IS_COUNTED_ATTENDED_SELF_REPORTED = TRUE');
-      expect(sql).not.toMatch(/EXISTS\s*\(/);
-      expect(sql.match(/\?/g)?.length ?? 0).toBe(binds.length);
-      expect(binds).toEqual(['90d', ACCOUNT]);
-    }
-    expect(rowReads.find(([query]) => query.includes('SELECT p.PARTICIPANT_REF'))![0]).toContain(
-      'p.IS_COUNTED_SPEAKER_SELF_REPORTED = TRUE AND r.IS_COUNTED_SPEAKER_SELF_REPORTED = TRUE'
-    );
-
-    execute.mockClear();
-    await service.getEventAttendees(ACCOUNT, { range: '90d', attribution: 'all', participation: 'attended' });
-    expect(execute.mock.calls.some(([query]) => (query as string).includes('ORG_EVENT_PARTICIPATION_RANGED'))).toBe(false);
-  });
-
   it('returns zeros when the account has no summary row', async () => {
     execute.mockImplementation(async () => ({ rows: [] }));
 
-    const response = await service.getEventAttendees(ACCOUNT, { ...DEFAULT_PICK, attribution: 'all' });
+    const response = await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
 
     expect(response.summary).toEqual({ attendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 });
     expect(response.details).toEqual([]);
@@ -284,7 +259,6 @@ describe('OrgPeopleEventAttendeesService cache keys', () => {
 
   it.each([
     ['range', { range: '90d' }],
-    ['attribution', { attribution: 'all' }],
     ['participation', { participation: 'attended' }],
   ] as const)('keeps a different %s out of the same entry', async (_filter, change) => {
     await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
@@ -295,7 +269,7 @@ describe('OrgPeopleEventAttendeesService cache keys', () => {
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
-  it('keys the picked attribution and reads no coverage flag (lfx-self-serve#5315 removed the company-email fallback)', async () => {
+  it('keys the picked range and participation and reads no coverage flag (lfx-self-serve#5315 removed the company-email fallback)', async () => {
     await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
 
     expect(cacheValues.has(compactKey())).toBe(true);
@@ -460,29 +434,18 @@ function dayOffset(days: number): string {
 }
 
 /**
- * The nine row-level conjunction flags dbt computes: (registered | attended | registered or attended) AND (Employee match |
- * Self-reported only | All). Employee match is a company email or a roster LF account; Self-reported only is All AND NOT
- * Employee match on the same row.
+ * The three row-level conjunction flags dbt computes for Employee match: (registered | attended | registered or attended).
+ * Employee match is a company email or a roster LF account.
  */
-function countsFlags(fixture: {
-  companyEmail?: boolean;
-  selfReported?: boolean;
-  roster?: boolean;
-  registered?: boolean;
-  attended?: boolean;
-}): Record<string, number> {
+function countsFlags(fixture: { companyEmail?: boolean; roster?: boolean; registered?: boolean; attended?: boolean }): Record<string, number> {
   const registered = fixture.registered !== false;
   const attended = fixture.attended === true;
   const verified = fixture.companyEmail !== false || fixture.roster === true;
-  const all = verified || fixture.selfReported === true;
-  const credited = { VERIFIED: verified, SELF_REPORTED: all && !verified, ALL: all };
-  return Object.fromEntries(
-    Object.entries(credited).flatMap(([suffix, flag]) => [
-      [`IS_COUNTED_REGISTERED_${suffix}`, registered && flag ? 1 : 0],
-      [`IS_COUNTED_ATTENDED_${suffix}`, attended && flag ? 1 : 0],
-      [`IS_COUNTED_ALL_${suffix}`, (registered || attended) && flag ? 1 : 0],
-    ])
-  );
+  return {
+    IS_COUNTED_REGISTERED_VERIFIED: registered && verified ? 1 : 0,
+    IS_COUNTED_ATTENDED_VERIFIED: attended && verified ? 1 : 0,
+    IS_COUNTED_ALL_VERIFIED: (registered || attended) && verified ? 1 : 0,
+  };
 }
 
 interface ParticipationFixture {
@@ -493,19 +456,17 @@ interface ParticipationFixture {
   foundationId?: string;
   foundationName?: string;
   companyEmail?: boolean;
-  /** Linked only through the organization named on the registration. */
-  selfReported?: boolean;
   roster?: boolean;
   registered?: boolean;
   attended?: boolean;
   /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the read must ignore it. */
   listable?: boolean;
-  /** The row's speaker flags: an ACCEPTED talk credited with an Employee match (`verified`) or by any relation (`all`). */
-  speaker?: { verified?: boolean; all?: boolean };
+  /** The row's speaker flag: an ACCEPTED talk credited with an Employee match. */
+  speaker?: { verified?: boolean };
   account?: string;
 }
 
-type AttendeesPick = Partial<Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'>>;
+type AttendeesPick = Partial<Pick<OrgEventsFilters, 'range' | 'participation'>>;
 
 /** The real SQL against SQLite: the boundaries of the ended-only rule, the range window and each predicate are exercised, not their spelling. */
 describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
@@ -514,7 +475,6 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
   function addRow(fixture: ParticipationFixture): void {
     const date = dayOffset(fixture.days);
     const speakerVerified = fixture.speaker?.verified === true;
-    const speakerAll = speakerVerified || fixture.speaker?.all === true;
     const record: Record<string, string | number | null> = {
       ACCOUNT_ID: fixture.account ?? ACCOUNT,
       EVENT_ID: `event-${fixture.days}`,
@@ -534,8 +494,6 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
       FOUNDATION_NAME: fixture.foundationName ?? (fixture.foundationId === 'foundation-two' ? 'Foundation Two' : 'Foundation One'),
       ...countsFlags(fixture),
       IS_COUNTED_SPEAKER_VERIFIED: speakerVerified ? 1 : 0,
-      IS_COUNTED_SPEAKER_SELF_REPORTED: speakerAll && !speakerVerified ? 1 : 0,
-      IS_COUNTED_SPEAKER_ALL: speakerAll ? 1 : 0,
       IS_LISTABLE: fixture.listable === false ? 0 : 1,
     };
     const columns = Object.keys(record);
@@ -546,11 +504,6 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
 
   const refs = async (pick: AttendeesPick = {}): Promise<number[]> => (await read(pick)).details.map((row) => row.participantRef).sort((a, b) => a - b);
 
-  const rowKeys = async (pick: AttendeesPick = {}): Promise<string[]> => (await read(pick)).details.map((row) => `${row.participantRef}@${row.eventId}`).sort();
-
-  const speakers = async (pick: AttendeesPick = {}): Promise<number[]> =>
-    [...new Set((await read(pick)).details.filter((row) => row.isSpeaker).map((row) => row.participantRef))].sort((a, b) => a - b);
-
   beforeEach(() => {
     database = new DatabaseSync(':memory:');
     database.exec(
@@ -558,10 +511,8 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
         ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, PERSON_KEY TEXT, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
         EVENT_NAME TEXT, EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT, EVENT_URL TEXT,
         EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
-        IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_REGISTERED_SELF_REPORTED INTEGER, IS_COUNTED_REGISTERED_ALL INTEGER,
-        IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_SELF_REPORTED INTEGER, IS_COUNTED_ATTENDED_ALL INTEGER,
-        IS_COUNTED_ALL_VERIFIED INTEGER, IS_COUNTED_ALL_SELF_REPORTED INTEGER, IS_COUNTED_ALL_ALL INTEGER,
-        IS_COUNTED_SPEAKER_VERIFIED INTEGER, IS_COUNTED_SPEAKER_SELF_REPORTED INTEGER, IS_COUNTED_SPEAKER_ALL INTEGER, IS_LISTABLE INTEGER
+        IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ALL_VERIFIED INTEGER,
+        IS_COUNTED_SPEAKER_VERIFIED INTEGER, IS_LISTABLE INTEGER
       )`
     );
     database.exec(
@@ -570,33 +521,8 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
         ATTENDEES_COUNT INTEGER, LISTED_ATTENDEES_COUNT INTEGER, SPEAKERS_COUNT INTEGER, EVENTS_COUNT INTEGER, FOUNDATIONS_COUNT INTEGER
       )`
     );
-    // dbt's ORG_EVENT_PARTICIPATION_RANGED: one row per (account, range, person) with an ended in-range row counted under All;
-    // a Self-reported only flag is "counted under All in the range AND no Employee match row in the range", per participation.
-    database.exec(
-      `CREATE TABLE ORG_EVENT_PARTICIPATION_RANGED (
-        ACCOUNT_ID TEXT, TIME_RANGE TEXT, PARTICIPANT_REF INTEGER,
-        IS_COUNTED_REGISTERED_SELF_REPORTED INTEGER, IS_COUNTED_ATTENDED_SELF_REPORTED INTEGER,
-        IS_COUNTED_ALL_SELF_REPORTED INTEGER, IS_COUNTED_SPEAKER_SELF_REPORTED INTEGER
-      )`
-    );
     execute.mockReset();
     execute.mockImplementation(async (query: string, binds: string[]) => {
-      // Rebuilt before every read, the way dbt would build it from the rows the test inserted.
-      database.exec(`DELETE FROM ORG_EVENT_PARTICIPATION_RANGED;
-        INSERT INTO ORG_EVENT_PARTICIPATION_RANGED
-        SELECT p.ACCOUNT_ID, rg.TIME_RANGE, p.PARTICIPANT_REF,
-               MAX(p.IS_COUNTED_REGISTERED_ALL) = 1 AND MAX(p.IS_COUNTED_REGISTERED_VERIFIED) = 0,
-               MAX(p.IS_COUNTED_ATTENDED_ALL) = 1 AND MAX(p.IS_COUNTED_ATTENDED_VERIFIED) = 0,
-               MAX(p.IS_COUNTED_ALL_ALL) = 1 AND MAX(p.IS_COUNTED_ALL_VERIFIED) = 0,
-               MAX(p.IS_COUNTED_SPEAKER_ALL) = 1 AND MAX(p.IS_COUNTED_SPEAKER_VERIFIED) = 0
-        FROM ORG_EVENT_PARTICIPATION p
-        INNER JOIN (
-          SELECT '30d' AS TIME_RANGE, 30 AS DAYS UNION ALL SELECT '90d', 90 UNION ALL SELECT '365d', 365
-          UNION ALL SELECT '730d', 730 UNION ALL SELECT 'all', NULL
-        ) rg ON rg.DAYS IS NULL OR p.EVENT_DATE >= date('now', '-' || rg.DAYS || ' day')
-        WHERE p.EVENT_DATE < date('now')
-        GROUP BY p.ACCOUNT_ID, rg.TIME_RANGE, p.PARTICIPANT_REF
-        HAVING MAX(p.IS_COUNTED_ALL_ALL) = 1 OR MAX(p.IS_COUNTED_SPEAKER_ALL) = 1`);
       const translated = query
         .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
         .replaceAll(/DATEADD\(day, -(\d+), CURRENT_DATE\(\)\)/g, "date('now', '-$1 day')")
@@ -652,17 +578,6 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     expect(await refs({ range: 'all' })).toEqual([1, 2, 3, 4]);
   });
 
-  it('applies the attribution predicate to each way a person can be linked to the organization', async () => {
-    addRow({ ref: 1, days: -5, companyEmail: true });
-    addRow({ ref: 2, days: -5, companyEmail: false, selfReported: true });
-    addRow({ ref: 3, days: -5, companyEmail: false, roster: true });
-    addRow({ ref: 4, days: -5, companyEmail: false });
-
-    expect(await refs({ attribution: 'verified' })).toEqual([1, 3]);
-    expect(await refs({ attribution: 'self_reported' })).toEqual([2]);
-    expect(await refs({ attribution: 'all' })).toEqual([1, 2, 3]);
-  });
-
   it('separates registered from attended, and a rejected registration is neither', async () => {
     addRow({ ref: 1, days: -5, attended: true });
     addRow({ ref: 2, days: -5 });
@@ -672,142 +587,44 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     expect(await refs({ participation: 'attended' })).toEqual([1]);
   });
 
-  it('lists everyone who registered or attended when Count is All, through the ALL flag of the attribution', async () => {
+  it('lists everyone who registered or attended when Count is All', async () => {
     addRow({ ref: 1, days: -5, attended: true });
     addRow({ ref: 2, days: -5 });
     addRow({ ref: 3, days: -5, registered: false });
     addRow({ ref: 4, days: -5, registered: false, attended: true });
-    addRow({ ref: 5, days: -5, companyEmail: false, selfReported: true });
 
     expect(await refs({ participation: 'all' })).toEqual([1, 2, 4]);
-    expect(await refs({ participation: 'all', attribution: 'self_reported' })).toEqual([5]);
-    expect(await refs({ participation: 'all', attribution: 'all' })).toEqual([1, 2, 4, 5]);
-  });
-
-  // lfx-self-serve#5315: Self-reported only is person-level, like its summary row. A person with an Employee match anywhere in the
-  // range and participation is counted under Employee match only, so people add up: Employee match + Self-reported only = All.
-  it('lists a person who is an Employee match at one event and self-reported at another under Employee match only', async () => {
-    addRow({ ref: 7, days: -5 });
-    addRow({ ref: 7, days: -10, companyEmail: false, selfReported: true });
-    addRow({ ref: 8, days: -6, companyEmail: false, selfReported: true });
-    addRow({ ref: 8, days: -12, companyEmail: false, selfReported: true });
-
-    expect(await rowKeys({ attribution: 'verified' })).toEqual(['7@event--5']);
-    expect(await rowKeys({ attribution: 'self_reported' })).toEqual(['8@event--12', '8@event--6']);
-    expect(await rowKeys({ attribution: 'all' })).toEqual(['7@event--10', '7@event--5', '8@event--12', '8@event--6']);
-
-    const people = async (attribution: OrgEventsFilters['attribution']): Promise<number> => new Set(await refs({ attribution })).size;
-    expect(await people('verified')).toBe(1);
-    expect(await people('self_reported')).toBe(1);
-    expect((await people('verified')) + (await people('self_reported'))).toBe(await people('all'));
-  });
-
-  it('applies the person-level rule within the picked range and participation only', async () => {
-    // Person 9: Employee match only outside a 90-day range, self-reported inside it.
-    addRow({ ref: 9, days: -400 });
-    addRow({ ref: 9, days: -10, companyEmail: false, selfReported: true });
-    // Person 10: registered with an Employee match but did not attend; attended where only self-reported.
-    addRow({ ref: 10, days: -20 });
-    addRow({ ref: 10, days: -30, companyEmail: false, selfReported: true, attended: true });
-
-    expect(await refs({ range: '90d', attribution: 'self_reported' })).toEqual([9]);
-    expect(await refs({ range: '730d', attribution: 'self_reported' })).toEqual([]);
-    expect(await refs({ range: '90d', attribution: 'self_reported', participation: 'attended' })).toEqual([10]);
-    expect(await refs({ range: '90d', attribution: 'verified', participation: 'attended' })).toEqual([]);
-  });
-
-  it('flags a Speaker only for an accepted talk the picked attribution credits', async () => {
-    // Person 1: self-reported registrant with an accepted talk credited only through the named organization.
-    addRow({ ref: 1, days: -5, companyEmail: false, selfReported: true, speaker: { all: true } });
-    addRow({ ref: 1, days: -6, companyEmail: false, selfReported: true });
-    // Person 2: an accepted talk credited with an Employee match.
-    addRow({ ref: 2, days: -5, speaker: { verified: true } });
-    // Person 3: no talk.
-    addRow({ ref: 3, days: -5 });
-
-    expect(await speakers({ attribution: 'verified' })).toEqual([2]);
-    expect(await speakers({ attribution: 'self_reported' })).toEqual([1]);
-    expect(await speakers({ attribution: 'all' })).toEqual([1, 2]);
-  });
-
-  it('does not flag a Speaker under Self-reported only for someone who spoke with an Employee match', async () => {
-    addRow({ ref: 1, days: -5, companyEmail: false, selfReported: true, speaker: { all: true } });
-    addRow({ ref: 2, days: -5, companyEmail: false, selfReported: true, speaker: { verified: true } });
-    addRow({ ref: 3, days: -5, companyEmail: false, selfReported: true });
-
-    expect(await refs({ attribution: 'self_reported' })).toEqual([1, 2, 3]);
-    expect(await speakers({ attribution: 'self_reported' })).toEqual([1]);
-  });
-
-  it('does not flag a Speaker under Self-reported only for someone verified as a speaker at another event in the range', async () => {
-    // Person 1: accepted talk with an Employee match at one event, self-reported accepted talk at another.
-    addRow({ ref: 1, days: -5, companyEmail: false, selfReported: true, speaker: { verified: true } });
-    addRow({ ref: 1, days: -8, companyEmail: false, selfReported: true, speaker: { all: true } });
-    // Person 2: the same self-reported talk, with the Employee match talk outside a 90-day range.
-    addRow({ ref: 2, days: -400, companyEmail: false, selfReported: true, speaker: { verified: true } });
-    addRow({ ref: 2, days: -8, companyEmail: false, selfReported: true, speaker: { all: true } });
-
-    expect(await rowKeys({ range: '90d', attribution: 'self_reported' })).toEqual(['1@event--5', '1@event--8', '2@event--8']);
-    expect(await speakers({ range: '90d', attribution: 'self_reported' })).toEqual([2]);
-    expect(await speakers({ range: '730d', attribution: 'self_reported' })).toEqual([]);
-  });
-
-  it('lists exactly the people the ranged table counts as Self-reported only, the set the summary counts', async () => {
-    // Mixed: Employee match at one event, self-reported at another (not listed), next to people only ever self-reported.
-    addRow({ ref: 1, days: -5 });
-    addRow({ ref: 1, days: -10, companyEmail: false, selfReported: true });
-    addRow({ ref: 2, days: -6, companyEmail: false, selfReported: true, attended: true });
-    addRow({ ref: 3, days: -7, companyEmail: false, selfReported: true });
-    addRow({ ref: 3, days: -9, attended: true, registered: false });
-
-    for (const participation of ['registered', 'attended', 'all'] as const) {
-      const listed = [...new Set(await refs({ range: '90d', attribution: 'self_reported', participation }))];
-      const column = `IS_COUNTED_${participation.toUpperCase()}_SELF_REPORTED`;
-      const counted = database
-        .prepare(`SELECT PARTICIPANT_REF FROM ORG_EVENT_PARTICIPATION_RANGED WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND ${column} = 1 ORDER BY 1`)
-        .all(ACCOUNT, '90d')
-        .map((row) => row['PARTICIPANT_REF']);
-      expect(listed).toEqual(counted);
-    }
-    expect(await refs({ range: '90d', attribution: 'self_reported', participation: 'registered' })).toEqual([2, 3]);
-    expect(await refs({ range: '90d', attribution: 'self_reported', participation: 'attended' })).toEqual([2]);
-    expect(await refs({ range: '90d', attribution: 'self_reported', participation: 'all' })).toEqual([2]);
   });
 
   it('lists everyone the selection credits, whatever the legacy listable flag says', async () => {
     addRow({ ref: 1, days: -5 });
-    addRow({ ref: 2, days: -5, name: 'Self-reported Registrant', companyEmail: false, selfReported: true, listable: false });
+    addRow({ ref: 2, days: -5, name: 'Roster Registrant', roster: true, listable: false });
 
-    const response = await read({ attribution: 'all' });
+    const response = await read();
 
     expect(response.details.map((row) => [row.participantRef, row.displayName])).toEqual([
       [1, 'Person 1'],
-      [2, 'Self-reported Registrant'],
+      [2, 'Roster Registrant'],
     ]);
   });
 
-  it('Employee match (verified) leaves out people linked only by what they named on their registration', async () => {
+  it('leaves out people who are not an Employee match', async () => {
     addRow({ ref: 1, days: -5 });
     addRow({ ref: 2, days: -5, companyEmail: false, roster: true });
-    addRow({ ref: 3, days: -5, companyEmail: false, selfReported: true });
-    addRow({ ref: 4, days: -5, companyEmail: false, selfReported: true, speaker: { all: true } });
-    addRow({ ref: 5, days: -5, speaker: { verified: true } });
+    addRow({ ref: 3, days: -5, companyEmail: false });
+    addRow({ ref: 4, days: -5, speaker: { verified: true } });
 
-    const response = await read({ attribution: 'verified' });
+    const response = await read();
 
-    expect(response.details.map((row) => row.participantRef).sort((a, b) => a - b)).toEqual([1, 2, 5]);
-    expect(response.details.filter((row) => row.isSpeaker).map((row) => row.participantRef)).toEqual([5]);
+    expect(response.details.map((row) => row.participantRef).sort((a, b) => a - b)).toEqual([1, 2, 4]);
+    expect(response.details.filter((row) => row.isSpeaker).map((row) => row.participantRef)).toEqual([4]);
   });
 
   it("never reads another account's rows", async () => {
     addRow({ ref: 1, days: -5 });
     addRow({ ref: 2, days: -5, account: 'acct-b' });
-    addRow({ ref: 3, days: -5, companyEmail: false, selfReported: true });
-    // Another account's Employee match row for person 3 must not hide them here.
-    addRow({ ref: 3, days: -6, account: 'acct-b' });
 
     expect(await refs()).toEqual([1]);
-    expect(await refs({ attribution: 'self_reported' })).toEqual([3]);
   });
 
   it('narrows the foundation and event options to the same filtered rows', async () => {
@@ -821,14 +638,14 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     expect(response.eventOptions.map((option) => option.eventId)).toEqual(['event--5']);
   });
 
-  it('reads the summary row of the picked range, attribution and participation only', async () => {
+  it('reads the summary row of the picked range and participation only', async () => {
     database
       .prepare(
         'INSERT INTO ORG_EVENT_PARTICIPATION_SUMMARY (ACCOUNT_ID, TIME_RANGE, ATTRIBUTION, PARTICIPATION, ATTENDEES_COUNT, LISTED_ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(ACCOUNT, '90d', 'self_reported', 'attended', 11, 4, 2, 3, 1);
+      .run(ACCOUNT, '90d', 'verified', 'attended', 11, 4, 2, 3, 1);
 
-    const response = await read({ range: '90d', attribution: 'self_reported', participation: 'attended' });
+    const response = await read({ range: '90d', participation: 'attended' });
 
     expect(response.summary).toEqual({ attendeesCount: 11, speakersCount: 2, eventsCount: 3, foundationsCount: 1 });
   });
@@ -837,10 +654,10 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     const insertSummary = database.prepare(
       'INSERT INTO ORG_EVENT_PARTICIPATION_SUMMARY (ACCOUNT_ID, TIME_RANGE, ATTRIBUTION, PARTICIPATION, ATTENDEES_COUNT, LISTED_ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    insertSummary.run(ACCOUNT, '730d', 'all', 'registered', 8, 3, 2, 4, 2);
-    insertSummary.run(ACCOUNT, '730d', 'all', 'all', 13, 5, 2, 6, 3);
+    insertSummary.run(ACCOUNT, '730d', 'verified', 'registered', 8, 3, 2, 4, 2);
+    insertSummary.run(ACCOUNT, '730d', 'verified', 'all', 13, 5, 2, 6, 3);
 
-    const response = await read({ range: '730d', attribution: 'all', participation: 'all' });
+    const response = await read({ range: '730d', participation: 'all' });
 
     expect(response.summary).toEqual({ attendeesCount: 13, speakersCount: 2, eventsCount: 6, foundationsCount: 3 });
   });

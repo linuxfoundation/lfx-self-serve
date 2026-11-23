@@ -24,7 +24,7 @@
 
     <lfx-ui-select label="Stage" [(value)]="stage" data-testid="formation-record-stage">
       @for (option of stageOptions(); track option.value) {
-        <lfx-ui-option [value]="option.value" [label]="option.value" [disabled]="option.disabled" />
+        <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="option.disabled" />
       }
     </lfx-ui-select>
 

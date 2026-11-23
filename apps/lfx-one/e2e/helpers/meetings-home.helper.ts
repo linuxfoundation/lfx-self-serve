@@ -20,7 +20,7 @@ import {
   MeetingsHomeFeedOptions,
 } from '../fixtures/mock-data';
 import { suppressCookieBanner } from './account-settings-email.helper';
-import { stubMeetingsRedesignFlag } from './meetings-v2-flag.helper';
+import { stubMeetingsRedesignFlag } from './meetings-redesign-flag.helper';
 
 export const MEETINGS_HOME_LOAD_TIMEOUT = 30_000;
 
@@ -155,6 +155,14 @@ export function homeRow(page: Page, title: string): Locator {
 }
 
 /** The desktop right column; the folded copy of its cards stays in the DOM, hidden. */
+/** Opens the collapsed Search button into its field and returns the field. */
+export async function openMeetingsSearch(page: Page): Promise<Locator> {
+  await page.getByTestId('meetings-redesign-search-button').getByRole('button').click();
+  const field = page.getByTestId('meetings-redesign-search').getByRole('searchbox');
+  await expect(field).toBeFocused();
+  return field;
+}
+
 export function rightColumn(page: Page): Locator {
   return page.getByTestId('meetings-redesign-right-column');
 }

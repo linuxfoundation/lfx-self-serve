@@ -8,6 +8,7 @@ import {
   CreateNewsletterRequest,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterAudience,
   NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
@@ -16,9 +17,14 @@ import {
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
+  NewsletterResolveAudiencePayload,
   NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterShareRequest,
+  NewsletterTemplateManifest,
+  NewsletterTemplatesResponse,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -52,6 +58,30 @@ export class NewsletterServiceClient {
       undefined,
       undefined,
       options
+    );
+  }
+
+  public async getTemplates(req: Request, projectUid: string): Promise<NewsletterTemplatesResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterTemplatesResponse>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/templates`, 'GET');
+  }
+
+  public async getTemplateManifest(req: Request, projectUid: string, templateKey: string): Promise<NewsletterTemplateManifest> {
+    return this.microserviceProxy.proxyRequest<NewsletterTemplateManifest>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`,
+      'GET'
+    );
+  }
+
+  public async renderPreview(req: Request, projectUid: string, payload: NewsletterRenderPreviewPayload): Promise<NewsletterRenderPreviewResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterRenderPreviewResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/render-preview`,
+      'POST',
+      undefined,
+      payload
     );
   }
 
@@ -199,6 +229,31 @@ export class NewsletterServiceClient {
       'POST',
       undefined,
       payload
+    );
+  }
+
+  public async resolveAudience(
+    req: Request,
+    projectUid: string,
+    newsletterUid: string,
+    payload: NewsletterResolveAudiencePayload
+  ): Promise<NewsletterAudience> {
+    return this.microserviceProxy.proxyRequest<NewsletterAudience>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/audience`,
+      'POST',
+      undefined,
+      payload
+    );
+  }
+
+  public async getAudience(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAudience> {
+    return this.microserviceProxy.proxyRequest<NewsletterAudience>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/audience`,
+      'GET'
     );
   }
 

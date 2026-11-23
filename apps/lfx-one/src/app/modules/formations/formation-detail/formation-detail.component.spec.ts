@@ -23,6 +23,8 @@ import { FormationDetailComponent } from './formation-detail.component';
 class StubFormationChecklistSectionComponent {
   public reloadCount = 0;
   public readonly projectSlug = input<string | null>(null);
+  public readonly heading = input<string>('Formation Checklist');
+  public readonly stage = input<string | null>(null);
   public readonly responseLoaded = output<FormationChecklistResponse | null>();
 
   public reload(): void {
@@ -112,6 +114,56 @@ describe('FormationDetailComponent', () => {
     expect(stub?.componentInstance.projectSlug()).toBe('child-project');
   });
 
+  it('passes the neutral "Formation items" heading to the section', async () => {
+    getProjectStrict.mockReturnValue(of(buildProject()));
+
+    await render('child-project');
+
+    const stub = fixture.debugElement.children[0].query((node) => node.componentInstance instanceof StubFormationChecklistSectionComponent);
+    expect(stub?.componentInstance.heading()).toBe('Formation items');
+  });
+
+  // #5635: whichever state the page is in, none of its own copy says "checklist".
+  describe('renders no "checklist" wording (#5635)', () => {
+    const lookups: [string, () => unknown][] = [
+      ['loading', () => new Subject<Project>()],
+      ['not-found', () => throwError(() => ({ status: 404 }))],
+      ['error', () => throwError(() => ({ status: 500 }))],
+      ['post-formation', () => of(buildProject({ stage: 'Active' }))],
+      ['in formation', () => of(buildProject())],
+    ];
+
+    it.each(lookups)('in the %s state', async (_state, lookup) => {
+      getProjectStrict.mockReturnValue(lookup());
+
+      await render('child-project');
+
+      expect(fixture.nativeElement.textContent).not.toMatch(/checklist/i);
+    });
+  });
+
+  it.each([
+    ['Active', 'It has completed formation.'],
+    ['Archived', 'It has been archived.'],
+  ])('words the post-formation subtitle for a %s project', async (stage, subtitle) => {
+    getProjectStrict.mockReturnValue(of(buildProject({ stage })));
+
+    await render('child-project');
+
+    const text = fixture.nativeElement.querySelector('[data-testid="formation-detail-not-in-formation"]')?.textContent;
+    expect(text).toContain(subtitle);
+    expect(text).not.toContain(stage === 'Active' ? 'archived' : 'completed formation');
+  });
+
+  it("passes the project's stage to the section, so its empty state can say why there is nothing to track", async () => {
+    getProjectStrict.mockReturnValue(of(buildProject({ stage: 'Formation - Disengaged' })));
+
+    await render('child-project');
+
+    const stub = fixture.debugElement.children[0].query((node) => node.componentInstance instanceof StubFormationChecklistSectionComponent);
+    expect(stub?.componentInstance.stage()).toBe('Formation - Disengaged');
+  });
+
   it('shows the loading skeleton while the project lookup is in flight', async () => {
     getProjectStrict.mockReturnValue(new Subject<Project>());
 
@@ -178,6 +230,25 @@ describe('FormationDetailComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-not-in-formation"]')).toBeNull();
   });
+
+  // #5541: a Draft project, or a live one formation-service has not started, has no checklist. The section
+  // owns that empty state (its read 404s), so the page must keep it mounted, with no rail, and not turn it into
+  // its own error or "no longer in formation" body.
+  it.each(['Prospect', 'Formation - Exploratory'])(
+    'keeps the checklist section mounted, without a rail, for a %s project whose checklist read is empty',
+    async (stage) => {
+      getProjectStrict.mockReturnValue(of(buildProject({ stage })));
+      await render('child-project');
+      const section = fixture.debugElement.query((node) => node.componentInstance instanceof StubFormationChecklistSectionComponent);
+      (section.componentInstance as StubFormationChecklistSectionComponent).responseLoaded.emit(null);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-sidebar"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-error"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-not-in-formation"]')).toBeNull();
+    }
+  );
 
   // #2719: this page shipped without the rail that `/project/formation` has, so staff saw a
   // checklist with no project info card beside it. The card is fed from the checklist response the

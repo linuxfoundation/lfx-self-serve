@@ -2,8 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import type {
+  BehavioralClassDisplayConfig,
+  CommitteeCategoryInfo,
+  CommitteeTab,
+  GroupBehavioralClass,
+  GroupsHomeFilters,
+  JoinMode,
+} from '../interfaces/committee.interface';
 import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
+import type { UiTone } from '../interfaces/uikit.interface';
 import { lfxColors } from './colors.constants';
 
 // Re-export helper functions from utils for backward compatibility
@@ -507,11 +515,11 @@ export const COMMITTEE_FORM_STEPS = {
  * Inline note shown on feature toggles that gate-keep the org-name/URL join requirement.
  * Extracted to avoid the two copies drifting if the wording ever changes.
  */
-const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide an organization name and URL.';
+const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide a company name and URL.';
 
 /**
  * Committee settings features for Step 2 form
- * @description Feature toggles for committee settings (follows MEETING_FEATURES pattern)
+ * @description Feature toggles for committee settings
  */
 export const COMMITTEE_SETTINGS_FEATURES = [
   {
@@ -558,7 +566,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-users-rectangle',
     title: 'Show Meeting Attendees',
     description:
-      'Let guests see who else is invited, and who has accepted, on the meeting in LFX. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never share their guest list.',
+      'Let guests see who else is invited, and who has accepted, on the meeting in LFX. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board meetings never share their guest list.',
     color: lfxColors.blue[500],
   },
 ];
@@ -702,6 +710,31 @@ export const BEHAVIORAL_CLASS_CONFIG: Record<GroupBehavioralClass, BehavioralCla
   },
 };
 
+/** Colour role of each behavioral class, matching the hues of {@link BEHAVIORAL_CLASS_CONFIG}; drives the Groups type tab dots. */
+export const BEHAVIORAL_CLASS_TONE: Record<GroupBehavioralClass, UiTone> = {
+  'governing-board': 'feature',
+  'oversight-committee': 'success',
+  'working-group': 'warning',
+  'special-interest-group': 'accent',
+  'ambassador-program': 'danger',
+  other: 'neutral',
+};
+
+/** Groups shown per batch on the redesigned Groups page; scrolling near the end shows the next batch. */
+export const GROUPS_HOME_PAGE_SIZE = 20;
+
+/** No filters applied on the redesigned Groups page. */
+export const GROUPS_HOME_DEFAULT_FILTERS: GroupsHomeFilters = { scope: null, voting: null };
+
+/** Width of the redesigned Groups page Filters popover above phone width, in px. */
+export const GROUPS_HOME_FILTERS_PANEL_WIDTH = 344;
+
+/** Navigation state for links from the redesigned Groups page, so the group page shows "Groups" as its back link. */
+export const GROUPS_HOME_LINK_STATE = { backLabel: 'Groups', fromMeLens: true } as const;
+
+/** How long Undo stays offered after a withdraw or decline on the Groups page. */
+export const GROUPS_HOME_UNDO_MS = 8000;
+
 /** Max concurrent create-invite requests when fanning out a bulk committee invite. */
 export const COMMITTEE_INVITE_CONCURRENCY = 5;
 
@@ -740,4 +773,7 @@ export const GROUPS_ENGAGEMENT_ICON_CLASS = {
  * List routes a group details page can return to. The page reads `backPath` from navigation state,
  * so an unknown value must fall back to `/groups` rather than navigate anywhere arbitrary.
  */
-export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/surveys', '/votes', '/mailing-lists'];
+export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/surveys', '/votes', '/mailing-lists', '/meetings', '/documents'];
+
+/** How often the Members tab re-evaluates which pending invitations have expired while it stays open. */
+export const COMMITTEE_INVITE_EXPIRY_TICK_MS = 60 * 1000;

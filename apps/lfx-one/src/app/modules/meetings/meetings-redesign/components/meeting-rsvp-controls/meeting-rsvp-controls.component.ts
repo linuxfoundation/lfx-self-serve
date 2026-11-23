@@ -6,6 +6,7 @@ import { ConnectedPosition } from '@angular/cdk/overlay';
 import { DOCUMENT } from '@angular/common';
 import {
   afterNextRender,
+  booleanAttribute,
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -41,6 +42,8 @@ import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { take } from 'rxjs';
 
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingDetailsSource } from '../meeting-details-drawer/meeting-details.source';
 import { MeetingRsvpScopeModalComponent } from '../meeting-rsvp-scope-modal/meeting-rsvp-scope-modal.component';
 
 /**
@@ -58,6 +61,8 @@ import { MeetingRsvpScopeModalComponent } from '../meeting-rsvp-scope-modal/meet
 export class MeetingRsvpControlsComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly rsvpService = inject(MeetingRsvpService);
+  private readonly store = inject(MeetingsHomeStore, { optional: true });
+  private readonly source = inject(MeetingDetailsSource, { optional: true });
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -69,24 +74,49 @@ export class MeetingRsvpControlsComponent {
   public readonly row = input.required<MeetingHomeRow>();
   /** Size of the Yes / Maybe / No buttons: 28px in the list and the Pending RSVPs popover. */
   public readonly size = input<UiButtonSize>('small');
+  /** Stretches the buttons, or the answer badge, across the container, as in the meeting details card. */
+  public readonly fullWidth = input<boolean, unknown>(false, { transform: booleanAttribute });
 
   /** The answer being saved; the BFF holds the request until the new answer is indexed (up to 5s). */
   protected readonly saving = signal<RsvpResponse | null>(null);
   protected readonly choices = MEETINGS_HOME_RSVP_CHOICES;
-  // The badge sits at the row's end, so its menu opens from the badge's end edge.
-  protected readonly menuPositions: ConnectedPosition[] = [
-    { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' },
-    { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom' },
-    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
-    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom' },
-  ];
+  // In a row the badge sits at the end, so its menu opens from the end edge; a full-width badge opens it from the start.
+  protected readonly menuPositions: Signal<ConnectedPosition[]> = computed(() => {
+    const end: ConnectedPosition[] = [
+      { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' },
+      { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom' },
+    ];
+    const start: ConnectedPosition[] = [
+      { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
+      { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom' },
+    ];
+    return this.fullWidth() ? [...start, ...end] : [...end, ...start];
+  });
   protected readonly iconColor: Record<RsvpResponse, string> = { accepted: 'text-emerald-600', declined: 'text-red-600', maybe: 'text-amber-600' };
+  /** The optimistic registration cannot answer through the index-dependent RSVP endpoint yet. */
+  protected readonly invitationSyncing: Signal<boolean> = computed(
+    () => (this.source?.selfInviteOf?.(this.row().meeting.id) ?? this.store?.selfInviteOf(this.row().meeting.id)) !== undefined
+  );
   /** This row is saving, or another date of the same series is: a second write could be confirmed out of order. */
-  protected readonly busy: Signal<boolean> = computed(() => !!this.saving() || this.rsvpService.submittingMeetingIds().has(this.row().meeting.id));
+  protected readonly busy: Signal<boolean> = computed(
+    () => this.invitationSyncing() || !!this.saving() || this.rsvpService.submittingMeetingIds().has(this.row().meeting.id)
+  );
   protected readonly visible: Signal<boolean> = this.initVisible();
   protected readonly current: Signal<MeetingRsvpChoice | null> = computed(
     () => this.choices.find((choice) => choice.response === this.row().myRsvp?.response_type) ?? null
   );
+  protected readonly layoutClass: Signal<string> = computed(() => {
+    if (!this.fullWidth()) return 'inline-flex flex-none items-center gap-[6px]';
+    return this.current() ? 'flex w-full' : 'grid w-full grid-cols-3 gap-[8px]';
+  });
+  /** 112×28 per the design in a row, matching the small RSVP buttons; the card's badge spans it at 32px. */
+  protected readonly badgeClass: Signal<string> = computed(() => (this.fullWidth() ? 'w-full !h-ui-small' : 'w-[112px] !h-ui-xsmall'));
+
+  protected refreshInvitation(): void {
+    if (!this.invitationSyncing()) return;
+    if (this.source?.retrySelfInvites) this.source.retrySelfInvites();
+    else this.store?.retrySelfInvites();
+  }
 
   protected choose(response: RsvpResponse): void {
     const row = this.row();
@@ -110,7 +140,9 @@ export class MeetingRsvpControlsComponent {
           variant: 'warning',
           position: 'bottom-center',
           message: 'RSVP Not Saved',
-          description: 'Another response to this meeting is still saving. Try again.',
+          description: this.invitationSyncing()
+            ? 'Your invitation is saved but is still syncing. Try RSVP again shortly.'
+            : 'Another response to this meeting is still saving. Try again.',
           duration: 5000,
         });
       else this.submit(row, response, scope);

@@ -20,6 +20,7 @@ const HOST_TEMPLATE = `
     <lfx-ui-drawer heading="Weekly Sync" [subtitle]="subtitle">
       <span drawerLeading id="tile">T</span>
       <ng-container drawerActions><button id="edit" type="button">Edit meeting</button></ng-container>
+      <ng-container drawerToolbar><button id="filter" type="button">All events</button></ng-container>
       <input id="name" />
       <button id="save" type="button" (click)="ref.close('saved')">Save</button>
       <ng-container drawerFooter><button id="done" type="button">Done</button></ng-container>
@@ -65,6 +66,18 @@ class TestBareContentComponent {
   public readonly context = inject(UiDrawerContext);
 }
 
+// Inert at both ends, like the meeting details drawer's hidden compact header and inactive tab panel.
+const INERT_TEMPLATE = `
+  <lfx-ui-drawer heading="Details">
+    <div inert><a id="hidden-first" href="#first">Compact header</a></div>
+    <button id="live" type="button">Live</button>
+    <div inert><button id="hidden-last" type="button">Inactive tab</button></div>
+  </lfx-ui-drawer>
+`;
+
+@Component({ selector: 'lfx-ui-test-inert-content', template: '' })
+class TestInertContentComponent {}
+
 // True when the CDK scroll dispatcher tracks the element, so overlays anchored inside it follow its scrolling.
 const registered = (el: Element): boolean => [...TestBed.inject(ScrollDispatcher).scrollContainers.keys()].some((s) => s.getElementRef().nativeElement === el);
 
@@ -97,6 +110,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     TestBed.configureTestingModule({ imports: [TestHostComponent] });
     // Set here because an inline template this long trips component-max-inline-declarations.
     TestBed.overrideComponent(TestHostComponent, { set: { imports: [UiDrawerComponent, UiButtonComponent], template: HOST_TEMPLATE } });
+    TestBed.overrideComponent(TestInertContentComponent, { set: { imports: [UiDrawerComponent], template: INERT_TEMPLATE } });
     fixture = TestBed.createComponent(TestHostComponent);
     document.body.appendChild(fixture.nativeElement);
     container = TestBed.inject(OverlayContainer).getContainerElement();
@@ -110,7 +124,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     TestBed.inject(OverlayContainer).ngOnDestroy();
   });
 
-  it('opens a named dialog with the title, subtitle, header action, body, footer and a close button', async () => {
+  it('opens a named dialog with the title, subtitle, header action, toolbar, body, footer and a close button', async () => {
     await open();
 
     expect(dialog()?.getAttribute('role')).toBe('dialog');
@@ -123,6 +137,9 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     // The leading tile comes before the title in the header.
     expect(testId('ui-drawer-leading').compareDocumentPosition(testId('ui-drawer-title')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(testId('ui-drawer-header').querySelector('#edit')).not.toBeNull();
+    // The toolbar is a full-width row in the header, after the close button.
+    expect(testId('ui-drawer-toolbar').querySelector('#filter')).not.toBeNull();
+    expect(testId('ui-drawer-toolbar').parentElement).toBe(testId('ui-drawer-header'));
     expect(testId('ui-drawer-body').querySelector('#name')).not.toBeNull();
     expect(testId('ui-drawer-footer').querySelector('#done')).not.toBeNull();
     expect(testId('ui-drawer-close').querySelector('button')?.getAttribute('aria-label')).toBe('Close');
@@ -135,6 +152,15 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     expect(container.querySelector('.cdk-overlay-backdrop')?.className).toContain('bg-ui-overlay');
   });
 
+  it('keeps the drawer and its backdrop below the impersonation banner', async () => {
+    await open();
+
+    const pane = container.querySelector('.cdk-overlay-pane') as HTMLElement;
+    expect(pane.style.marginTop).toBe('calc(8px + var(--lfx-banner-height, 0px))');
+    expect(pane.style.height).toBe('calc(100% - 16px - var(--lfx-banner-height, 0px))');
+    expect((container.querySelector('.cdk-overlay-backdrop') as HTMLElement).style.top).toBe('var(--lfx-banner-height, 0px)');
+  });
+
   it('floats 8px inside the right edge at 560px with the medium radius and the library title style', async () => {
     await open();
 
@@ -145,9 +171,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     expect(drawer()?.className).not.toContain('min-w-[');
     const pane = container.querySelector('.cdk-overlay-pane') as HTMLElement;
     expect((container.querySelector('.cdk-global-overlay-wrapper') as HTMLElement).style.justifyContent).toBe('flex-end');
-    expect(pane.style.marginTop).toBe('8px');
     expect(pane.style.marginRight).toBe('8px');
-    expect(pane.style.height).toBe('calc(100% - 16px)');
     expect(pane.style.maxWidth).toBe('calc(100vw - 16px)');
     expect(testId('ui-drawer-title').className).toContain('text-[20px] leading-[28px]');
     expect(testId('ui-drawer-subtitle').className).toContain('copy-13');
@@ -201,6 +225,38 @@ describe('UiDrawerComponent and UiDrawerService', () => {
 
     expect(document.activeElement).toBe(byId('name'));
     expect(container.querySelectorAll('.cdk-focus-trap-anchor').length).toBe(2);
+  });
+
+  describe('with inert content at either end', () => {
+    const anchors = () => [...container.querySelectorAll<HTMLElement>('.cdk-focus-trap-anchor')];
+    const openInert = async (config: UiDrawerConfig) => {
+      // jsdom lays nothing out, and the CDK skips elements without a size.
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1);
+      opener.focus();
+      TestBed.inject(UiDrawerService).open(TestInertContentComponent, config);
+      await settle();
+    };
+
+    it('bare: moves focus past the inert header and wraps Tab within the live content', async () => {
+      await openInert({ bare: true });
+      expect(document.activeElement).toBe(byId('live'));
+
+      anchors()[0].focus();
+      expect(document.activeElement).toBe(byId('live'));
+      anchors()[1].focus();
+      expect(document.activeElement).toBe(byId('live'));
+    });
+
+    it('with a header: moves focus to the first live control and wraps Tab past the inert panel', async () => {
+      await openInert({});
+      const close = testId('ui-drawer-close').querySelector('button');
+      expect(document.activeElement).toBe(close);
+
+      anchors()[0].focus();
+      expect(document.activeElement).toBe(byId('live'));
+      anchors()[1].focus();
+      expect(document.activeElement).toBe(close);
+    });
   });
 
   it('closes on Escape and gives focus back to the opener', async () => {

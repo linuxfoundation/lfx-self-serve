@@ -20,7 +20,7 @@ import {
   VoteLinkBallot,
   VoteLinkBallotState,
 } from '@lfx-one/shared/interfaces';
-import { buildCommentResponses, getCommentPromptsData, isRankedPollType, reconcileCommentFormControls } from '@lfx-one/shared/utils';
+import { buildCommentResponses, getCommentPromptsData, isRankedPollType, rankedAnswerChoices, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { CheckboxModule } from 'primeng/checkbox';
 
@@ -43,6 +43,8 @@ export class VoteBallotFormComponent {
   public readonly prefill = input<VoteLinkBallotState | null>(null);
   public readonly submitting = input<boolean>(false);
   public readonly submitLabel = input<string>('Submit Vote');
+  /** Shown above Submit when the vote makes submitted ballots final (#4723); null hides it. */
+  public readonly finalNotice = input<string | null>(null);
   public readonly submitted = output<VoteBallotSubmission>();
 
   // === Forms ===
@@ -61,6 +63,8 @@ export class VoteBallotFormComponent {
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
   protected readonly questions: Signal<PollQuestion[]> = computed(() => this.ballot().poll_questions ?? []);
   protected readonly isRankedPoll: Signal<boolean> = computed(() => isRankedPollType(this.ballot().poll_type));
+  /** Only named recorded ballots may prefill answers; private ballots retain their existing non-prefill policy. */
+  protected readonly preservesRecordedChoices: Signal<boolean> = computed(() => !!this.prefill()?.already_voted && this.ballot().pseudo_anonymity === false);
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.ballot().allow_abstain);
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.ballot().poll_comment_prompts ?? []);
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = computed(() => {
@@ -100,7 +104,7 @@ export class VoteBallotFormComponent {
     for (const question of this.questions()) {
       const raw = this.form.get(question.question_id)?.value;
       const order = Array.isArray(raw) ? (raw as string[]) : null;
-      if (!order?.length) {
+      if (!order) {
         result.set(question.question_id, question.choices);
         continue;
       }
@@ -108,6 +112,18 @@ export class VoteBallotFormComponent {
       result.set(
         question.question_id,
         order.map((id) => byId.get(id)).filter((choice): choice is UserChoice => !!choice)
+      );
+    }
+    return result;
+  });
+  protected readonly unrankedChoicesByQuestion: Signal<Map<string, UserChoice[]>> = computed(() => {
+    const result = new Map<string, UserChoice[]>();
+    if (!this.preservesRecordedChoices() || !this.isRankedPoll()) return result;
+    const selected = this.selectedByQuestion();
+    for (const question of this.questions()) {
+      result.set(
+        question.question_id,
+        question.choices.filter((choice) => !selected.get(question.question_id)?.has(choice.choice_id))
       );
     }
     return result;
@@ -138,6 +154,26 @@ export class VoteBallotFormComponent {
 
   protected moveRank(questionId: string, fromIndex: number, toIndex: number): void {
     this.reorder(questionId, fromIndex, toIndex);
+  }
+
+  protected toggleRankedChoice(questionId: string, choiceId: string): void {
+    if (!this.preservesRecordedChoices() || this.abstain() || this.submitting()) return;
+    const question = this.questions().find((item) => item.question_id === questionId);
+    const control = this.form.get(questionId);
+    if (question?.type !== 'multiple_choice' || !question.choices.some((choice) => choice.choice_id === choiceId) || !control) return;
+    const current = Array.isArray(control.value) ? (control.value as string[]) : [];
+    control.setValue(current.includes(choiceId) ? current.filter((id) => id !== choiceId) : [...current, choiceId]);
+    this.bump();
+  }
+
+  protected rankAllChoices(questionId: string): void {
+    if (!this.preservesRecordedChoices() || this.abstain() || this.submitting()) return;
+    const question = this.questions().find((item) => item.question_id === questionId);
+    const control = this.form.get(questionId);
+    if (question?.type !== 'single_choice' || !control) return;
+    const current = Array.isArray(control.value) ? (control.value as string[]) : [];
+    control.setValue([...current, ...question.choices.map((choice) => choice.choice_id).filter((id) => !current.includes(id))]);
+    this.bump();
   }
 
   protected onSubmit(): void {
@@ -184,9 +220,9 @@ export class VoteBallotFormComponent {
       const answer = applyPrefill ? prefill?.poll_answers?.find((a) => a.question_id === question.question_id) : undefined;
       if (ranked) {
         const declared = question.choices.map((choice) => choice.choice_id);
-        const answered = [...(answer?.ranked_user_choice ?? [])].sort((a, b) => (a.choice_rank ?? 0) - (b.choice_rank ?? 0)).map((choice) => choice.choice_id);
+        const answered = answer ? rankedAnswerChoices(answer).map((choice) => choice.choice_id) : [];
         const known = answered.filter((id) => declared.includes(id));
-        const order = known.length === declared.length ? known : declared;
+        const order = applyPrefill ? known : declared;
         this.form.addControl(question.question_id, new FormControl<string[]>(order, { nonNullable: true, validators: [Validators.required] }), {
           emitEvent: false,
         });

@@ -300,6 +300,17 @@ describe('MktgDocumentStoreService', () => {
     retry.flush({});
   });
 
+  it('dismisses the exact recorded run with only the project in the body', () => {
+    const id = 'b'.repeat(64);
+    const next = vi.fn();
+    service.dismissRun('proj-1', 'brand-kit', 'living', id).subscribe({ next });
+    const dismiss = http.expectOne(`/api/mktg-agents/documents/brand-kit/living/runs/${id}/dismiss`);
+    expect(dismiss.request.method).toBe('POST');
+    expect(dismiss.request.body).toEqual({ project: 'proj-1' });
+    dismiss.flush(null, { status: 204, statusText: 'No Content' });
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it.each([true, false])('rethrows a document 404 but logs it only when expectedPending is false (%s)', (expectedPending) => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const error = vi.fn();

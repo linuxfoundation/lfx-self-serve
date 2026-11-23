@@ -313,7 +313,7 @@ export type MaintainerConfirmationResult = 'maintainer' | 'contributor';
 /**
  * Social identity providers supported for OAuth verification flow
  */
-export type SocialProvider = 'github' | 'google' | 'linkedin';
+export type SocialProvider = 'github' | 'gitlab' | 'google' | 'linkedin';
 
 /**
  * Pending social connection stored in session during Flow C chain
@@ -665,8 +665,20 @@ export type EmailVerificationStatus = 'already_connected';
 /**
  * Email outcome appended to the Flow C callback's authorization-success redirect when a pending
  * email verification was replayed. Presentation-only — it carries no email, code, or token.
+ * `already_linked` means the code was proven but the address is linked to an LFX account.
  */
-export type EmailVerificationCallbackStatus = EmailVerificationStatus | 'retry_required';
+export type EmailVerificationCallbackStatus = EmailVerificationStatus | 'retry_required' | 'already_linked';
+
+/** Private, short-lived callback context. Contains only the caller's proven address, never an OTP/token. */
+export interface LinkedEmailSupportContext {
+  email: string;
+  expiresAt: number;
+}
+
+/** One-shot authenticated response; unavailable/expired context returns an empty object. */
+export interface LinkedEmailSupportDraft {
+  email?: string;
+}
 
 /**
  * Response from NATS email OTP verification request. A new-address success carries the identity

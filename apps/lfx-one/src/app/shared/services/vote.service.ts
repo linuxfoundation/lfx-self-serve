@@ -24,6 +24,7 @@ import {
   MyVoteBallot,
   MyVoteResponse,
   MyVotesApiResponse,
+  MyVoteWouldEndVote,
   MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
@@ -31,6 +32,7 @@ import {
   SendVoteReminderRequest,
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
+  UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
@@ -371,6 +373,20 @@ export class VoteService {
     return this.http.post<VoteLinkBallot>('/public/api/votes/link-ballot', { vote_token: voteToken }).pipe(take(1));
   }
 
+  /**
+   * Re-reads the link ballot at submit time: whether this first submission would end the vote (#4726).
+   * Advisory and fail-open — a failed read emits false so voting is never blocked. Logs the status only, never the token.
+   */
+  public getLinkWouldEndVote(voteToken: string): Observable<boolean> {
+    return this.getLinkBallot(voteToken).pipe(
+      map((ballot) => ballot?.ballot?.would_end_vote === true),
+      catchError((error: unknown) => {
+        console.warn('Last-voter check failed; submitting without confirmation', error instanceof HttpErrorResponse ? error.status : 'unknown');
+        return of(false);
+      })
+    );
+  }
+
   /** Anonymous branding lookup for the vote link page (#4692); a 404 (hidden or unknown project) is a branding miss, not an error. */
   public getPublicProjectSummary(identifier: string): Observable<PublicProjectSummary | null> {
     return this.http.get<PublicProjectSummary>(`/public/api/projects/${encodeURIComponent(identifier)}/summary`).pipe(
@@ -632,6 +648,11 @@ export class VoteService {
     return this.http.post<void>('/api/votes/responses', payload).pipe(take(1));
   }
 
+  /** Changes the caller's own submitted ballot (#4723); the BFF resolves which ballot from the caller's identity. */
+  public updateMyResponse(voteUid: string, body: UpdateMyVoteResponseRequest): Observable<void> {
+    return this.http.put<void>(`/api/votes/${encodeURIComponent(voteUid)}/my-response`, body).pipe(take(1));
+  }
+
   /**
    * Wraps getMyVoteResponse + createVoteResponse for an initial ballot; throws INVITATION_NOT_FOUND if no row exists.
    */
@@ -665,6 +686,21 @@ export class VoteService {
         if (err?.status === 404) return of(null);
         console.error(`Failed to load my-response for vote ${voteUid}:`, err);
         return throwError(() => err);
+      })
+    );
+  }
+
+  /**
+   * Whether the caller's first submission would end the vote (#4726), read at submit time.
+   * Advisory and fail-open — a failed read emits false so voting is never blocked. Logs the status only.
+   */
+  public getMyWouldEndVote(voteUid: string): Observable<boolean> {
+    return this.http.get<MyVoteWouldEndVote>(`/api/votes/${encodeURIComponent(voteUid)}/my-response/would-end-vote`).pipe(
+      take(1),
+      map((response) => response?.would_end_vote === true),
+      catchError((error: unknown) => {
+        console.warn('Last-voter check failed; submitting without confirmation', error instanceof HttpErrorResponse ? error.status : 'unknown');
+        return of(false);
       })
     );
   }

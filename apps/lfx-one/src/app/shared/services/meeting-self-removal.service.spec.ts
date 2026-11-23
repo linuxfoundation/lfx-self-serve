@@ -21,6 +21,7 @@ describe('MeetingSelfRemovalService', () => {
   let user: WritableSignal<User | null>;
   let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
   let markRegistrationRemoved: ReturnType<typeof vi.fn>;
+  let rememberRemovedRegistrants: ReturnType<typeof vi.fn>;
   let clearConfirmedMeetingRsvps: ReturnType<typeof vi.fn>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
 
@@ -28,12 +29,13 @@ describe('MeetingSelfRemovalService', () => {
     user = signal({ sub: 'synthetic-subject' } as User);
     removeMyMeetingRegistration = vi.fn().mockReturnValue(of(complete));
     markRegistrationRemoved = vi.fn();
+    rememberRemovedRegistrants = vi.fn();
     clearConfirmedMeetingRsvps = vi.fn();
     refreshUserMeetings = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
-        { provide: MeetingService, useValue: { removeMyMeetingRegistration, markRegistrationRemoved } },
+        { provide: MeetingService, useValue: { removeMyMeetingRegistration, markRegistrationRemoved, rememberRemovedRegistrants } },
         { provide: UserService, useValue: { user, viewerUsername: signal(null), clearConfirmedMeetingRsvps, refreshUserMeetings } },
       ],
     });
@@ -51,8 +53,16 @@ describe('MeetingSelfRemovalService', () => {
 
     expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'meetings-home');
     expect(clearConfirmedMeetingRsvps).toHaveBeenCalledWith(MEETING_ID, 'synthetic-subject', complete);
-    expect(markRegistrationRemoved).toHaveBeenCalledWith(MEETING_ID);
+    expect(markRegistrationRemoved).toHaveBeenCalledWith(MEETING_ID, ['synthetic-reg']);
     expect(refreshUserMeetings).not.toHaveBeenCalled();
+  });
+
+  it('forwards a saved registration UID when subscribed', async () => {
+    const removal$ = service.remove$(MEETING_ID, 'meeting-card', 'saved-self');
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+
+    await expect(firstValueFrom(removal$)).resolves.toEqual(complete);
+    expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'meeting-card', 'saved-self');
   });
 
   it('keeps the meeting and defers a feed refresh when some registrations remain', async () => {
@@ -62,6 +72,7 @@ describe('MeetingSelfRemovalService', () => {
 
     expect(clearConfirmedMeetingRsvps).toHaveBeenCalledWith(MEETING_ID, 'synthetic-subject', partial);
     expect(markRegistrationRemoved).not.toHaveBeenCalled();
+    expect(rememberRemovedRegistrants).toHaveBeenCalledWith(MEETING_ID, ['synthetic-reg']);
     expect(refreshUserMeetings).toHaveBeenCalledWith(false);
   });
 

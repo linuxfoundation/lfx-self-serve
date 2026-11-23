@@ -27,7 +27,6 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
-  HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
@@ -35,18 +34,23 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
   HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_L2_RANGES,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
 
+import { healthMetricsTrimSql } from '../helpers/health-metrics-sort.helper';
 import { HealthMetricsEventsService, isSupportedEventsRange } from './health-metrics-events.service';
 
-import type { HealthMetricsEventsOrganizationsQuery } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsOrganizationsQuery, HealthMetricsEventsSpeakerProposalsQuery } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 /** The logger only reads request metadata off this, so a bare cast is enough for the service call. */
 const req = {} as Request;
+// The forecast view keeps closed events, so its reads take the registrations view's past flag.
+const NOT_ENDED_SCOPE =
+  /EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_REGISTRATIONS r\s*WHERE r\.event_id = f\.event_id\s*AND r\.event_is_past = FALSE\s*\)/;
 
 function eventRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -62,6 +66,8 @@ function eventRow(overrides: Record<string, unknown> = {}) {
     // The model counts days left from yesterday, negative before the event.
     DAYS_LEFT: -41,
     IS_NEW_EVENT: false,
+    EVENT_CITY: 'Springfield',
+    EVENT_LOCATION: null,
     ...overrides,
   };
 }
@@ -90,6 +96,8 @@ function pastRow(overrides: Record<string, unknown> = {}) {
     GOAL_MET: false,
     REVENUE_USD: 0,
     PACE_STATUS: 'needs_attention',
+    EVENT_CITY: 'Springfield',
+    EVENT_LOCATION: null,
     IS_IN_PERIOD_YTD: true,
     SCOPE_PAST_EVENTS_COUNT_YTD: 4,
     SCOPE_REGISTRATIONS_COUNT_YTD: 2400,
@@ -120,17 +128,58 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     execute.mockResolvedValue({ rows: [eventRow()] });
   });
 
-  it('binds only the foundation, keeps upcoming events, and reads one past the cap', async () => {
+  it('binds only the foundation, twice, keeps events that have not ended, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(sql).toContain('is_all_projects = TRUE');
-    expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+    expect(sql).toMatch(NOT_ENDED_SCOPE);
+    expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}`);
-    expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id');
-    expect(sql).not.toContain('GROUP BY');
-    expect(sql).toContain('BOOLAND_AGG(is_new_event) OVER (PARTITION BY event_id)');
+    expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY f.event_id');
+    expect(sql).toContain('BOOLAND_AGG(f.is_new_event) OVER (PARTITION BY f.event_id)');
+  });
+
+  it("joins the registrations view's city and location, one row per event so the headline never repeats", async () => {
+    await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('LEFT JOIN (');
+    expect(sql).toContain("MAX(NULLIF(TRIM(event_city), '')) AS event_city");
+    expect(sql).toContain("MAX(NULLIF(TRIM(event_location), '')) AS event_location");
+    expect(sql).toContain('GROUP BY event_id');
+    expect(sql).toContain(') p ON p.event_id = f.event_id');
+  });
+
+  it.each([
+    [
+      { EVENT_CITY: ' Toronto ', EVENT_LOCATION: 'Metro Toronto Convention Centre' },
+      { city: 'Toronto', isVirtual: false },
+    ],
+    [
+      { EVENT_CITY: null, EVENT_LOCATION: 'Virtual Event' },
+      { city: null, isVirtual: true },
+    ],
+    [
+      { EVENT_CITY: 'Online', EVENT_LOCATION: null },
+      { city: null, isVirtual: true },
+    ],
+    [
+      { EVENT_CITY: 'Toronto', EVENT_LOCATION: 'Toronto + online' },
+      { city: 'Toronto', isVirtual: true },
+    ],
+    [
+      { EVENT_CITY: null, EVENT_LOCATION: null },
+      { city: null, isVirtual: false },
+    ],
+  ])("reads %o as %o, calling an event virtual by dbt's rule", async (place, expected) => {
+    execute.mockResolvedValue({ rows: [eventRow(place)] });
+
+    const { events } = await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
+
+    expect(events[0]).toMatchObject(expected);
   });
 
   it('maps a row to the event headline', async () => {
@@ -149,6 +198,8 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
         goal: 1000,
         daysLeft: 40,
         isNewEvent: false,
+        city: 'Springfield',
+        isVirtual: false,
       },
     ]);
   });
@@ -159,6 +210,16 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     const { events } = await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
 
     expect(events.map((event) => event.daysLeft)).toEqual([0, null]);
+  });
+
+  it('shows no days left once a running event is past its start day, rather than counting the elapsed days up', async () => {
+    execute.mockResolvedValue({
+      rows: [eventRow({ EVENT_ID: 'day-2', DAYS_LEFT: 0 }), eventRow({ EVENT_ID: 'day-4', DAYS_LEFT: 2 }), eventRow({ EVENT_ID: 'ahead', DAYS_LEFT: -41 })],
+    });
+
+    const { events } = await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
+
+    expect(events.map((event) => event.daysLeft)).toEqual([null, null, 40]);
   });
 
   it('keeps nulls as unmeasured and drops an event with no id', async () => {
@@ -194,6 +255,8 @@ describe('HealthMetricsEventsService.getRegistrationForecastCurve', () => {
 
     const [sql, binds] = execute.mock.calls[0];
     expect(binds).toEqual(['acme', 'evt-1']);
+    expect(sql).toMatch(NOT_ENDED_SCOPE);
+    expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
     expect(sql).toContain('pred_type');
     expect(sql).not.toContain('GROUP BY');
     expect(curve.eventId).toBe('evt-1');
@@ -249,7 +312,8 @@ describe('HealthMetricsEventsService.getRegistrationHistory', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(binds).toEqual(['evt-1', -180, 'acme']);
     expect(sql).toContain('MARKETING_EVENT_REGISTRATION_PREDICTIONS');
-    expect(sql).toContain('event_start_date < CURRENT_DATE()');
+    // The past-events view alone decides that the event has ended; no start-date rule of its own.
+    expect(sql).not.toContain('event_start_date < CURRENT_DATE()');
     expect(sql).toMatch(/EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS p\s*WHERE p\.foundation_slug = \?/);
     // Blank or padded formats fold into one series rather than splitting the curve.
     expect(sql).toContain("NULLIF(TRIM(h.event_registration_type), '') AS event_registration_type");
@@ -382,17 +446,28 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     execute.mockResolvedValue({ rows: [pastRow()] });
   });
 
-  it('binds only the foundation, keeps events in some period, newest first, and reads one past the cap', async () => {
+  it('binds only the foundation, twice, keeps events in some period, newest first, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(sql).toContain('MARKETING_EVENT_PAST_EVENTS');
     expect(sql).toContain('is_all_projects = TRUE');
     expect(sql).toContain('is_in_period_3rd_last_completed_year OR is_in_period_prev_completed_year OR is_in_period_last_completed_year OR is_in_period_ytd');
     expect(sql).toContain('scope_registrations_count_3rd_last_completed_year');
     expect(sql).toContain('ORDER BY event_start_date DESC');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}`);
+  });
+
+  it("joins each event's city and location from the registrations view, one row per event", async () => {
+    await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS e');
+    expect(sql).toContain('WHERE event_id IN (SELECT event_id FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS WHERE foundation_slug = ?)');
+    expect(sql).toContain('GROUP BY event_id\n      ) p ON p.event_id = e.event_id');
+    expect(sql).toContain('p.event_city,');
   });
 
   it('maps an event with the periods it closed in, keeping $0 revenue as measured', async () => {
@@ -409,6 +484,8 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
         revenueUsd: 0,
         paceStatus: 'needs_attention',
         ranges: ['YTD'],
+        city: 'Springfield',
+        isVirtual: false,
       },
     ]);
   });
@@ -581,7 +658,7 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     expect(sql).toMatch(/FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+LIMIT 1/);
   });
 
-  it('keeps the tab when the only event is still to come, reading the forecast after past events', async () => {
+  it('keeps the tab when the only event has not ended, reading the forecast after past events', async () => {
     execute
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
@@ -592,8 +669,8 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     const [sql, binds] = execute.mock.calls[2];
     expect(glance.hasEvents).toBe(true);
     expect(binds).toEqual(['acme']);
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST');
-    expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST f');
+    expect(sql).toMatch(NOT_ENDED_SCOPE);
   });
 
   it('keeps the tab for a foundation with revenue rows but no event in the events views', async () => {
@@ -772,6 +849,8 @@ function revenueRow(overrides: Record<string, unknown> = {}) {
     COMBINED_REVENUE_GOAL: 200000,
     IS_PAST_EVENT: true,
     IS_REVENUE_GOAL_MET: false,
+    EVENT_CITY: null,
+    EVENT_LOCATION: 'Virtual',
     FOUNDATION_TOTAL_REVENUE_USD_YTD: 258000,
     FOUNDATION_REGISTRATION_REVENUE_USD_YTD: 180000,
     FOUNDATION_SPONSORSHIP_REVENUE_USD_YTD: 78000,
@@ -804,11 +883,21 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     execute.mockResolvedValue({ rows: [revenueRow()] });
   });
 
-  it('binds only the foundation, sorts older events and those outside every period last, and reads one past the cap', async () => {
+  it("joins each event's city and location, reading a location that says virtual as a virtual event", async () => {
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE e');
+    expect(sql).toContain(') p ON p.event_id = e.event_id');
+    expect(events[0]).toMatchObject({ city: null, isVirtual: true });
+  });
+
+  it('binds only the foundation, twice, sorts older events and those outside every period last, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(execute).toHaveBeenCalledTimes(1);
     expect(sql).toContain('MARKETING_EVENT_REVENUE');
     expect(sql).toContain("event_start_date >= DATE_TRUNC('YEAR', CURRENT_DATE()) AND event_start_date < CURRENT_DATE()) AS in_period_ytd");
@@ -843,6 +932,8 @@ describe('HealthMetricsEventsService.getRevenue', () => {
         isPastEvent: true,
         goalMet: false,
         ranges: ['YTD'],
+        city: null,
+        isVirtual: true,
       },
     ]);
   });
@@ -1042,14 +1133,21 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
       [
         drilldownRow(),
         drilldownRow({ IS_ALL_ORGANIZATIONS: false, IS_UNAFFILIATED_ORGANIZATION: true, PROPOSALS_SUBMITTED_COUNT_YTD: 1351 }),
-        drilldownRow({ IS_ALL_ORGANIZATIONS: false, ACCOUNT_ID: 'org-a', ACCOUNT_NAME: 'Acme Motors', PROPOSALS_SUBMITTED_COUNT_YTD: 324, SORT_RANK_YTD: 1 }),
-        drilldownRow({ IS_ALL_ORGANIZATIONS: false, ACCOUNT_ID: 'org-b', ACCOUNT_NAME: 'Beta Coastal', SORT_RANK_YTD: 9, SORT_RANK_LAST_COMPLETED_YEAR: 4 }),
+        drilldownRow({
+          IS_ALL_ORGANIZATIONS: false,
+          ACCOUNT_ID: 'org-a',
+          ACCOUNT_NAME: 'Acme Motors',
+          LOGO_URL: 'https://logos.example/acme.png',
+          PROPOSALS_SUBMITTED_COUNT_YTD: 324,
+          SORT_RANK_YTD: 1,
+        }),
+        drilldownRow({ IS_ALL_ORGANIZATIONS: false, ACCOUNT_ID: 'org-b', ACCOUNT_NAME: 'Beta Coastal', SORT_RANK_YTD: 12, SORT_RANK_LAST_COMPLETED_YEAR: 4 }),
       ],
       [proposalRow()]
     );
   });
 
-  it('binds only the foundation in both reads and keeps the latest few per period and tab', async () => {
+  it('binds only the foundation in both reads, joins company logos, and keeps the top ten and the latest few per period', async () => {
     await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
 
     expect(execute).toHaveBeenCalledTimes(2);
@@ -1057,16 +1155,19 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     const [listSql, listBinds] = execute.mock.calls.find(([sql]) => sql.includes('PROPOSALS_LIST')) ?? [];
     expect(drilldownBinds).toEqual(['acme']);
     expect(listBinds).toEqual(['acme']);
-    expect(drilldownSql).toContain('sort_rank_3rd_last_completed_year <= 5');
-    expect(drilldownSql).toContain('speakers_count_change_pct_last_completed_year');
+    expect(drilldownSql).toContain('d.sort_rank_3rd_last_completed_year <= 10');
+    expect(drilldownSql).toContain('d.speakers_count_change_pct_last_completed_year');
     expect(drilldownSql).not.toContain('change_pct_prev_completed_year');
+    expect(drilldownSql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = d.account_id');
     expect(drilldownSql).toContain(
-      'ORDER BY is_all_organizations DESC, is_unaffiliated_organization DESC, account_name ASC NULLS LAST, account_id ASC NULLS LAST'
+      'ORDER BY d.is_all_organizations DESC, d.is_unaffiliated_organization DESC, d.account_name ASC NULLS LAST, d.account_id ASC NULLS LAST'
     );
-    expect(listSql).toContain("WHEN is_ytd THEN 'YTD'");
-    expect(listSql).toContain("proposal_status_group IN ('Accepted', 'In review')");
-    expect(listSql).toContain(`<= ${HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS}`);
-    expect(listSql).toContain('ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key');
+    expect(listSql).toContain("WHEN p.is_ytd THEN 'YTD'");
+    expect(listSql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = p.account_id');
+    expect(listSql).toContain(
+      `QUALIFY ROW_NUMBER() OVER (PARTITION BY period ORDER BY TO_DATE(p.submission_date) DESC NULLS LAST, p.proposal_key) <= ${HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS}`
+    );
+    expect(listSql).not.toContain('proposal_status_group IN');
     // The speaker is shown by job title; the name never leaves the warehouse.
     expect(listSql).toContain('job_title');
     expect(listSql).not.toContain('speaker_name');
@@ -1089,14 +1190,13 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     expect(periods.find((period) => period.range === 'COMPLETED_YEAR_3')).toMatchObject({ submitted: 8017, changes: null });
   });
 
-  it('keeps organizations to the periods they rank in and the unaffiliated row apart', async () => {
-    const { organizations, unaffiliated } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
+  it('keeps companies to the periods they rank in, leaving the unaffiliated row out of the ranking', async () => {
+    const { organizations } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
 
     expect(organizations).toEqual([
-      { accountId: 'org-a', accountName: 'Acme Motors', periods: [{ range: 'YTD', rank: 1, submitted: 324 }] },
-      { accountId: 'org-b', accountName: 'Beta Coastal', periods: [{ range: 'COMPLETED_YEAR', rank: 4, submitted: null }] },
+      { accountId: 'org-a', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', periods: [{ range: 'YTD', rank: 1, submitted: 324 }] },
+      { accountId: 'org-b', accountName: 'Beta Coastal', logoUrl: '', periods: [{ range: 'COMPLETED_YEAR', rank: 4, submitted: null }] },
     ]);
-    expect(unaffiliated.find((entry) => entry.range === 'YTD')).toEqual({ range: 'YTD', submitted: 1351 });
   });
 
   it('maps a proposal with its status group and drops one with no key or period', async () => {
@@ -1106,8 +1206,8 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     const [listSql] = execute.mock.calls.find(([sql]) => sql.includes('PROPOSALS_LIST')) ?? [];
 
     // Filtered before the cap, so a key-less row cannot crowd a real one out of the list.
-    expect(listSql.indexOf('AND proposal_key IS NOT NULL')).toBeGreaterThan(-1);
-    expect(listSql.indexOf('AND proposal_key IS NOT NULL')).toBeLessThan(listSql.indexOf('QUALIFY'));
+    expect(listSql.indexOf('AND p.proposal_key IS NOT NULL')).toBeGreaterThan(-1);
+    expect(listSql.indexOf('AND p.proposal_key IS NOT NULL')).toBeLessThan(listSql.indexOf('QUALIFY'));
 
     expect(proposals).toEqual([
       {
@@ -1115,6 +1215,7 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
         range: 'YTD',
         jobTitle: 'Staff Engineer',
         organizationName: 'Acme Motors',
+        logoUrl: '',
         unaffiliated: false,
         eventName: 'Acme Summit',
         sessionTitle: 'A talk',
@@ -1139,14 +1240,21 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     await expect(new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' })).resolves.toEqual({
       periods: [],
       organizations: [],
-      unaffiliated: [],
       proposals: [],
     });
   });
 });
 
 describe('HealthMetricsEventsService.getOrganizations', () => {
-  const baseQuery: HealthMetricsEventsOrganizationsQuery = { foundationSlug: 'acme', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25 };
+  const baseQuery: HealthMetricsEventsOrganizationsQuery = {
+    foundationSlug: 'acme',
+    range: 'YTD',
+    segment: 'all',
+    search: '',
+    offset: 0,
+    pageSize: 25,
+    sort: null,
+  };
 
   function organizationRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -1157,8 +1265,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
       ACCOUNT_NAME: 'Acme Motors',
       LOGO_URL: 'https://acme-motors.example/logo.png',
       IS_MEMBER: true,
+      MEMBERSHIP_TIER: ' Gold ',
       REGISTRATIONS_COUNT: 420,
-      REGISTRATIONS_SHARE: '0.5',
       SPONSORSHIP_REVENUE: 150000,
       PROPOSALS_COUNT: 12,
       SPEAKERS_COUNT: 4,
@@ -1178,7 +1286,7 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_ORG_OVERVIEW');
     expect(sql).toContain('registrations_count_3rd_last_completed_year AS registrations_count');
-    expect(sql).toContain('registrations_share_of_scope_max_3rd_last_completed_year AS registrations_share');
+    expect(sql).not.toContain('registrations_share');
     expect(sql).toContain('sort_rank_3rd_last_completed_year AS sort_rank');
     expect(sql).toContain('AND is_all_projects = TRUE');
     // The mapper drops a row with no account id, so the counts must not include it either.
@@ -1186,7 +1294,38 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     expect(sql).toContain('events_count_3rd_last_completed_year > 0');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC');
     expect(sql).not.toContain('ILIKE');
-    expect(binds).toEqual(['acme']);
+    expect(binds).toEqual(['acme', 'acme']);
+  });
+
+  it("joins the mapped logo over the view's own, and the company's current tier from the foundation's all-projects rows", async () => {
+    await new HealthMetricsEventsService().getOrganizations(req, baseQuery);
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).toContain("COALESCE(NULLIF(TRIM(logos.logo_url), ''), NULLIF(TRIM(page.logo_url), '')) AS logo_url");
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION');
+    // The tier joins before the page is cut, so a Membership sort covers every page.
+    expect(sql).toMatch(
+      /WITH tiers AS \(\s+--[^\n]*\n\s+SELECT account_id, MAX\(NULLIF\(TRIM\(membership_tier\), ''\)\) AS membership_tier\s+FROM ANALYTICS\.PLATINUM_LFX_ONE\.ENGAGEMENT_ORG_PARTICIPATION\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+GROUP BY account_id/
+    );
+    expect(sql).toContain('SELECT scoped.*, tiers.membership_tier FROM scoped LEFT JOIN tiers ON tiers.account_id = scoped.account_id');
+    expect(sql).toContain('page.membership_tier,');
+  });
+
+  it("sorts every page by the reader's column, empty values last, then the view's rank, and keeps that order after the joins", async () => {
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, sort: { key: 'sponsorship', direction: 'desc' } });
+
+    const [sql] = execute.mock.calls[0];
+    const order = 'NULLIF(sponsorship_revenue, 0) DESC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC';
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY ${order}) AS page_position`);
+    // The page cut follows the same order as its row positions.
+    expect((sql as string).replace(/\s+/g, ' ')).toContain(`ORDER BY ${order} LIMIT`);
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+
+    execute.mockClear();
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, sort: { key: 'membership', direction: 'desc' } });
+    // A non-member ranks lowest; a member with no tier or a "Non-Member" one reads "Member", an unnamed tier.
+    expect(execute.mock.calls[0][0]).toContain('CASE WHEN NOT COALESCE(is_member, FALSE) THEN 0 ELSE COALESCE(NULLIF(CASE WHEN');
   });
 
   it('binds the search once, with its wildcards escaped', async () => {
@@ -1195,7 +1334,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(sql).toContain("account_name ILIKE ? ESCAPE '!'");
     expect((sql as string).match(/\?/g)).toHaveLength(binds.length);
-    expect(binds).toEqual(['acme', '%50!%!_off%']);
+    // The tier lookup's slug comes first in the text, then the scope's, then the search.
+    expect(binds).toEqual(['acme', 'acme', '%50!%!_off%']);
   });
 
   it.each([
@@ -1216,7 +1356,10 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
 
   it('maps the page rows and reads the totals off the first row', async () => {
     execute.mockResolvedValue({
-      rows: [organizationRow(), organizationRow({ ACCOUNT_ID: 'org-b', ACCOUNT_NAME: null, LOGO_URL: '', IS_MEMBER: null, SPONSORSHIP_REVENUE: null })],
+      rows: [
+        organizationRow(),
+        organizationRow({ ACCOUNT_ID: 'org-b', ACCOUNT_NAME: null, LOGO_URL: '', IS_MEMBER: null, MEMBERSHIP_TIER: '  ', SPONSORSHIP_REVENUE: null }),
+      ],
     });
 
     await expect(new HealthMetricsEventsService().getOrganizations(req, baseQuery)).resolves.toEqual({
@@ -1226,8 +1369,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
           accountName: 'Acme Motors',
           logoUrl: 'https://acme-motors.example/logo.png',
           isMember: true,
+          membershipTier: 'Gold',
           registrations: 420,
-          registrationsShare: 0.5,
           sponsorshipUsd: 150000,
           proposals: 12,
           speakers: 4,
@@ -1238,8 +1381,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
           accountName: 'org-b',
           logoUrl: null,
           isMember: false,
+          membershipTier: null,
           registrations: 420,
-          registrationsShare: 0.5,
           sponsorshipUsd: null,
           proposals: 12,
           speakers: 4,
@@ -1267,6 +1410,148 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const { rows } = await new HealthMetricsEventsService().getOrganizations(req, baseQuery);
 
     expect(rows).toEqual([]);
+  });
+});
+
+describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
+  const baseQuery: HealthMetricsEventsSpeakerProposalsQuery = {
+    foundationSlug: 'acme',
+    range: 'YTD',
+    eventId: '',
+    status: null,
+    offset: 0,
+    pageSize: 25,
+    includeEvents: false,
+    sort: null,
+  };
+  const PAGE_SQL = /WITH matched AS/;
+
+  function proposalRow(overrides: Record<string, unknown> = {}) {
+    return {
+      TOTAL_RECORDS: 42,
+      IS_PAGE_ROW: true,
+      PROPOSAL_KEY: 'p-1',
+      ACCOUNT_NAME: 'Acme Motors',
+      JOB_TITLE: ' Staff Engineer ',
+      EVENT_NAME: 'Acme Summit',
+      SESSION_TITLE: 'Scaling builds',
+      SUBMISSION_DATE: new Date('2026-03-02T00:00:00.000Z'),
+      SUBMISSION_STATUS_ORIGINAL: 'Accepted',
+      PROPOSAL_STATUS_GROUP: 'Accepted',
+      IS_UNAFFILIATED_PROPOSAL: false,
+      LOGO_URL: 'https://acme-motors.example/logo.png',
+      ...overrides,
+    };
+  }
+
+  function respond(pageRows: unknown[], eventRows: unknown[] = []): void {
+    execute.mockImplementation(async (sql: string) => ({ rows: PAGE_SQL.test(sql) ? pageRows : eventRows }));
+  }
+
+  function pageCall() {
+    return execute.mock.calls.find(([sql]) => PAGE_SQL.test(sql as string)) ?? [];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    respond([proposalRow()]);
+  });
+
+  it('reads the period flag of the all-projects proposals, newest day first, with no filter bound', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, range: 'COMPLETED_YEAR_2' });
+
+    const [sql, binds] = pageCall();
+    expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_LIST');
+    expect(sql).toContain('AND p.is_all_projects = TRUE');
+    expect(sql).toContain('AND p.is_prev_completed_year = TRUE');
+    expect(sql).toContain('AND p.proposal_key IS NOT NULL');
+    expect(sql).toContain('ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).not.toContain('event_id = ?');
+    expect(binds).toEqual(['acme']);
+  });
+
+  it('sorts the whole period by a picked column, each as its cell reads, then the most recent first, and keeps the order', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'status', direction: 'asc' } });
+
+    const [sql, binds] = pageCall();
+    const status =
+      "CASE WHEN proposal_status_group = 'Accepted' THEN 'Accepted' WHEN proposal_status_group = 'In review' THEN 'In review' WHEN proposal_status_group = 'Declined' THEN 'Declined' ELSE COALESCE(submission_status_original, proposal_status_group) END";
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY COLLATE(NULLIF(NULLIF(TRIM(${status}`);
+    expect(sql).toContain("'en-ci-ai') ASC NULLS LAST, TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC");
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+    expect(binds).toEqual(['acme']);
+
+    // The speaker's job title is blank after the same trim the cell uses, so a whitespace-only one falls to the session title.
+    execute.mockClear();
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'speaker', direction: 'asc' } });
+    expect(pageCall()[0]).toContain(`COALESCE(NULLIF(${healthMetricsTrimSql('job_title')}, ''), session_title)`);
+    expect(healthMetricsTrimSql('job_title')).toContain('\\u00a0');
+
+    execute.mockClear();
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'company', direction: 'desc' } });
+    // An unaffiliated speaker reads "Individual", as the Company cell shows it.
+    expect(pageCall()[0]).toContain("CASE WHEN is_unaffiliated_proposal = TRUE THEN 'Individual' ELSE account_name END");
+  });
+
+  it('binds the event and the status group the view names', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, eventId: 'evt-1', status: 'in-review' });
+
+    const [sql, binds] = pageCall();
+    expect(sql).toContain('AND p.event_id = ?');
+    expect(sql).toContain('AND p.proposal_status_group = ?');
+    expect((sql as string).match(/\?/g)).toHaveLength(binds.length);
+    expect(binds).toEqual(['acme', 'evt-1', 'In review']);
+  });
+
+  it('clamps the page size and offset it interpolates', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, pageSize: 5000, offset: Number.MAX_SAFE_INTEGER });
+
+    const maxOffset = MAX_SNOWFLAKE_PAGINATION_PAGE * HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE;
+    expect(pageCall()[0]).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE} OFFSET ${maxOffset}`);
+  });
+
+  it('maps the page rows to the requested period and lists the period events when asked', async () => {
+    respond(
+      [proposalRow(), proposalRow({ PROPOSAL_KEY: 'p-2', JOB_TITLE: null, IS_UNAFFILIATED_PROPOSAL: true, PROPOSAL_STATUS_GROUP: 'Other', LOGO_URL: null })],
+      [
+        { EVENT_ID: 'evt-2', EVENT_NAME: ' Acme Summit 2026 ' },
+        { EVENT_ID: 'evt-1', EVENT_NAME: null },
+        { EVENT_ID: null, EVENT_NAME: 'Orphan' },
+      ]
+    );
+
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, includeEvents: true });
+
+    expect(page.totalRecords).toBe(42);
+    expect(page.rows.map((row) => [row.proposalKey, row.range, row.jobTitle, row.unaffiliated, row.statusGroup, row.logoUrl])).toEqual([
+      ['p-1', 'YTD', 'Staff Engineer', false, 'accepted', 'https://acme-motors.example/logo.png'],
+      ['p-2', 'YTD', null, true, null, ''],
+    ]);
+    expect(page.events).toEqual([
+      { id: 'evt-2', name: 'Acme Summit 2026' },
+      { id: 'evt-1', name: 'evt-1' },
+    ]);
+    const eventsCall = execute.mock.calls.find(([sql]) => !PAGE_SQL.test(sql as string));
+    expect(eventsCall?.[0]).toContain('GROUP BY event_id');
+    expect(eventsCall?.[0]).toContain('ORDER BY MAX(event_start_date) DESC NULLS LAST');
+    expect(eventsCall?.[0]).toContain('AND is_ytd = TRUE');
+    expect(eventsCall?.[1]).toEqual(['acme']);
+  });
+
+  it('skips the events read unless asked, as filter changes keep the list', async () => {
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, baseQuery);
+
+    expect(page.events).toBeNull();
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the total when the page is past the end', async () => {
+    respond([proposalRow({ IS_PAGE_ROW: null, PROPOSAL_KEY: null })]);
+
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, offset: 500 });
+
+    expect(page).toEqual({ rows: [], totalRecords: 42, events: null });
   });
 });
 
@@ -1389,8 +1674,8 @@ describe('HealthMetricsEventsService.getGeography', () => {
     COUNTRIES_COUNT_3RD_LAST_COMPLETED_YEAR: null,
   };
 
-  function countryRow(country: string | null, ytd: number | null, lastYear: number | null = 0) {
-    return { COUNTRY: country, REGISTRATION_COUNT_YTD: ytd, REGISTRATION_COUNT_LAST_COMPLETED_YEAR: lastYear };
+  function countryRow(country: string | null, ytd: number | null, lastYear: number | null = 0, code: string | null = null) {
+    return { COUNTRY_CODE: code, COUNTRY: country, REGISTRATION_COUNT_YTD: ytd, REGISTRATION_COUNT_LAST_COMPLETED_YEAR: lastYear };
   }
 
   function mockReads(scope: Record<string, unknown>[], countries: Record<string, unknown>[]) {
@@ -1402,12 +1687,15 @@ describe('HealthMetricsEventsService.getGeography', () => {
     mockReads(
       [scopeRow],
       [
-        countryRow('Japan', 50),
-        countryRow('Canada', 300, 10),
-        countryRow('Germany', 50),
-        countryRow('Brazil', 20),
-        countryRow('Kenya', 10),
-        countryRow('Norway', 5),
+        countryRow('Japan', 50, 0, 'JP'),
+        countryRow('Canada', 300, 10, 'CA'),
+        countryRow('Germany', 50, 0, 'DE'),
+        countryRow('Brazil', 20, 0, 'BR'),
+        countryRow('Kenya', 10, 0, 'KE'),
+        // A malformed or unassigned code keys nothing.
+        countryRow('Norway', 5, 0, 'NOR'),
+        countryRow('Britain', 2, 0, 'UK'),
+        countryRow('Atlantis', 1),
         countryRow('Chile', 0),
         countryRow('Peru', null),
         countryRow(null, 99),
@@ -1426,16 +1714,37 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(scopeSql).toContain('countries_change_pct_last_completed_year');
     expect(scopeSql).not.toContain('countries_change_pct_prev_completed_year');
     expect(countryBinds).toEqual(['fdn-acme']);
-    expect(countrySql).toContain("NULLIF(TRIM(country), '') AS country");
     expect(countrySql).toContain("AND NULLIF(TRIM(country), '') IS NOT NULL");
+    // Rows fold by name first, keeping any valid two-letter code, then names sharing a code fold into one.
+    // Only an assigned code (or XK) survives the first fold, so a placeholder code can neither merge countries nor outrank a real one.
+    const kept = /UPPER\(TRIM\(country_code\)\) IN \(([^)]*)\)/.exec(countrySql as string)?.[1] ?? '';
+    expect(kept).toContain("'US'");
+    expect(kept).toContain("'GB'");
+    expect(kept).toContain("'XK'");
+    expect(kept).not.toContain("'UK'");
+    expect(kept).not.toContain("'ZZ'");
     expect(countrySql).toContain("GROUP BY NULLIF(TRIM(country), '')");
+    // Spellings fold by their words first, taking any code one carries, then by code; each group keeps its most common spelling.
+    // Trimmed after the underscores turn to spaces, so "_united_kingdom_" reads as the same words as "United Kingdom".
+    const nameKey = "LOWER(TRIM(REGEXP_REPLACE(REPLACE(country, '_', ' '), '[[:space:]]+', ' ')))";
+    expect(countrySql).toContain(`${nameKey} AS name_key`);
+    // The label's weights read the source's columns, qualified, never the SUM aliases of the same name.
+    expect(countrySql).toMatch(
+      /by_name AS \(\s+SELECT\s+name_key,\s+MAX\(country_code\) AS country_code,\s+MAX_BY\(spellings\.country, COALESCE\(spellings\.registration_count_/
+    );
+    expect(countrySql).toContain('COALESCE(spellings.registration_count_ytd, 0)');
+    expect(countrySql).toContain('MAX_BY(by_name.country, COALESCE(by_name.registration_count_');
+    expect(countrySql).toContain('GROUP BY name_key');
+    expect(countrySql).toContain('GROUP BY COALESCE(country_code, name_key)');
+    expect(countrySql).not.toContain('MAX(country) AS country');
     for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
       expect(scopeSql).toContain(`countries_count_${suffix}`);
       expect(countrySql).toContain(`SUM(registration_count_${suffix}) AS registration_count_${suffix}`);
+      expect(countrySql).toContain(`SUM(by_name.registration_count_${suffix}) AS registration_count_${suffix}`);
     }
   });
 
-  it('ranks each period by registrations, then name, and caps the list while counting every country', async () => {
+  it('ranks every country in each period by registrations, then name, keeping only assigned codes', async () => {
     const { periods } = await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
 
     const byRange = (range: string) => periods.find((period) => period.range === range);
@@ -1444,24 +1753,39 @@ describe('HealthMetricsEventsService.getGeography', () => {
       range: 'YTD',
       countries: 7,
       changes: { countries: 0.4 },
-      topCountries: [
-        { country: 'Canada', registrations: 300 },
-        { country: 'Germany', registrations: 50 },
-        { country: 'Japan', registrations: 50 },
-        { country: 'Brazil', registrations: 20 },
-        { country: 'Kenya', registrations: 10 },
+      registrationsByCountry: [
+        { code: 'CA', country: 'Canada', registrations: 300 },
+        { code: 'DE', country: 'Germany', registrations: 50 },
+        { code: 'JP', country: 'Japan', registrations: 50 },
+        { code: 'BR', country: 'Brazil', registrations: 20 },
+        { code: 'KE', country: 'Kenya', registrations: 10 },
+        { code: null, country: 'Norway', registrations: 5 },
+        { code: null, country: 'Britain', registrations: 2 },
+        { code: null, country: 'Atlantis', registrations: 1 },
       ],
-      rankedCountries: 6,
     });
-    expect(byRange('YTD')?.topCountries).toHaveLength(HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES);
     expect(byRange('COMPLETED_YEAR')).toMatchObject({
       countries: 6,
       changes: { countries: null },
-      topCountries: [{ country: 'Canada', registrations: 10 }],
-      rankedCountries: 1,
+      registrationsByCountry: [{ code: 'CA', country: 'Canada', registrations: 10 }],
     });
-    expect(byRange('COMPLETED_YEAR_2')).toMatchObject({ countries: 2, changes: null, topCountries: [], rankedCountries: 0 });
+    expect(byRange('COMPLETED_YEAR_2')).toMatchObject({ countries: 2, changes: null, registrationsByCountry: [] });
     expect(byRange('COMPLETED_YEAR_3')).toMatchObject({ countries: null, changes: null });
+  });
+
+  it("names a country by its code, never by the data's own spelling, and reads a name with no code as words", async () => {
+    mockReads(
+      [scopeRow],
+      [countryRow('us', 30, 0, 'US'), countryRow('united_kingdom', 20, 0, 'GB'), countryRow('kosovo', 5, 0, 'XK'), countryRow('north_atlantis', 3)]
+    );
+
+    const { periods } = await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
+    expect(periods.find((period) => period.range === 'YTD')?.registrationsByCountry.map((country) => country.country)).toEqual([
+      'United States',
+      'United Kingdom',
+      'Kosovo',
+      'North Atlantis',
+    ]);
   });
 
   it('returns no periods without a rollup row, skipping the country read', async () => {

@@ -21,17 +21,21 @@ export class MeetingSelfRemovalService {
   private readonly userService = inject(UserService);
 
   /** Work starts on subscribe, which is when the viewer is captured. */
-  public remove$(meetingId: string, source: MeetingRemovalSource): Observable<MeetingRegistrationRemovalResult> {
+  public remove$(meetingId: string, source: MeetingRemovalSource, registrantUid?: string): Observable<MeetingRegistrationRemovalResult> {
     return defer(() => {
       const subject = this.subject();
-      return this.meetingService.removeMyMeetingRegistration(meetingId, source).pipe(
+      const removal$ = registrantUid
+        ? this.meetingService.removeMyMeetingRegistration(meetingId, source, registrantUid)
+        : this.meetingService.removeMyMeetingRegistration(meetingId, source);
+      return removal$.pipe(
         tap((result) => this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result)),
         filter(() => this.subject() === subject),
         tap((result) => {
           if (result.remaining_registrant_ids.length > 0) {
+            this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
             this.userService.refreshUserMeetings(false);
           } else {
-            this.meetingService.markRegistrationRemoved(meetingId);
+            this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
           }
         })
       );

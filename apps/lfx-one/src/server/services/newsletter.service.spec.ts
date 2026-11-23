@@ -395,3 +395,40 @@ describe('NewsletterService.getSharePreview', () => {
     await expect(service.getSharePreview(req, 'acme', 'news-1')).rejects.toBe(failure);
   });
 });
+
+describe('NewsletterService.assertLiveSendAllowed', () => {
+  const lockReq = { path: '/x' } as unknown as Request;
+
+  beforeEach(() => {
+    getNewsletter.mockReset();
+  });
+
+  it('refuses a draft with a layout while live send is off', async () => {
+    getNewsletter.mockResolvedValue({ version: 3, body_layout: { blocks: [] } });
+
+    await expect(new NewsletterService().assertLiveSendAllowed(lockReq, 'p1', 'n1', 3, 'newsletter_send')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'NEWSLETTER_LIVE_SEND_LOCKED',
+    });
+  });
+
+  it('refuses a stale version before checking the layout', async () => {
+    getNewsletter.mockResolvedValue({ version: 4, body_layout: null });
+
+    await expect(new NewsletterService().assertLiveSendAllowed(lockReq, 'p1', 'n1', 3, 'newsletter_send')).rejects.toMatchObject({ statusCode: 412 });
+  });
+
+  it('allows a basic editor draft at the expected version', async () => {
+    getNewsletter.mockResolvedValue({ version: 3, body_layout: null });
+
+    await expect(new NewsletterService().assertLiveSendAllowed(lockReq, 'p1', 'n1', 3, 'newsletter_send')).resolves.toBeUndefined();
+    expect(getNewsletter).toHaveBeenCalledWith(lockReq, 'p1', 'n1', undefined);
+  });
+
+  it('fails closed when the read fails', async () => {
+    const err = new MicroserviceError('upstream down', 503, 'UPSTREAM_ERROR');
+    getNewsletter.mockRejectedValue(err);
+
+    await expect(new NewsletterService().assertLiveSendAllowed(lockReq, 'p1', 'n1', 3, 'newsletter_send')).rejects.toBe(err);
+  });
+});

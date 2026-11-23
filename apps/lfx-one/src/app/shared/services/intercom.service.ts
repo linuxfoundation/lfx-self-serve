@@ -137,12 +137,18 @@ export class IntercomService {
   // onLoadError fires if the widget script fails to load (e.g. ad-blockers) — including a click
   // landing while a startup boot is still in flight. It is never registered by page-load boots
   // and is cleared once the script loads, so ad-blocked users are only toasted after a click.
-  public openMessenger(appId: string, onLoadError?: () => void): void {
+  // A non-empty prefill opens a new conversation with that text in the composer (Intercom
+  // `showNewMessage`), left for the user to edit or send; without one the messenger opens as usual.
+  public openMessenger(appId: string, onLoadError?: () => void, prefill?: string): void {
     if (!this.isBootRequested) {
       this.boot(this.identity ?? { app_id: appId });
     }
     if (!this.isLoaded) {
       this.onLoadError = onLoadError;
+    }
+    if (prefill) {
+      this.showNewMessage(prefill);
+      return;
     }
     this.show();
   }
@@ -162,6 +168,14 @@ export class IntercomService {
       window.Intercom('shutdown');
       this.isBootRequested = false;
     }
+  }
+
+  // Guarded like show(): pre-load, the stub queues the call and replays it once the script boots.
+  private showNewMessage(content: string): void {
+    if (typeof window === 'undefined' || !window.Intercom || !this.isBootRequested) {
+      return;
+    }
+    window.Intercom('showNewMessage', content);
   }
 
   // Launcher attributes for a phone-width boot; empty on desktop and during SSR. Both attributes are

@@ -64,12 +64,13 @@ test.describe('Admin enroll wizard — structure', () => {
 
   test('gives the leave prompt a Stay button and an accept button', async ({ page }) => {
     await page.locator('#name').fill('Acme Rocket Mentorship');
-    await page.getByTestId('mentorship-enroll-back-to-programs').click();
+    await page.getByTestId('mentorship-enroll-back-to-programs').getByRole('button').click();
 
     const confirmation = page.locator('.p-confirmdialog');
     await expect(confirmation).toBeVisible();
-    await expect(confirmation.getByRole('button')).toHaveCount(2);
+    // Named, not counted: the dialog also renders its own close button.
     await expect(confirmation.getByRole('button', { name: 'Stay', exact: true })).toBeVisible();
+    await expect(confirmation.getByRole('button', { name: 'Yes, cancel', exact: true })).toBeVisible();
   });
 });
 
