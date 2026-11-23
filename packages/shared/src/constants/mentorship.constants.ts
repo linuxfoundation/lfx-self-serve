@@ -474,7 +474,7 @@ export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
 export const MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS: readonly MentorshipUpstreamReasonMessage[] = [
   {
     match: 'belongs to another mentorship user',
-    message: "This person's LF email address is already used by another Mentorship account, so they can't be invited.",
+    message: "This person's LF email address is already used by another Mentorship user, so they can't be invited.",
   },
 ];
 

@@ -177,7 +177,7 @@ describe('MenteeProfileEditDrawerComponent', () => {
     await fixture.whenStable();
   });
 
-  it('seeds the form from the profile context on open, keeping the About Me HTML as stored', () => {
+  it('seeds the form from the profile context on open, keeping the Introduction HTML as stored', () => {
     const raw = comp['form'].getRawValue();
 
     expect(raw.introduction).toBe('<p>Hello world</p>');
@@ -616,7 +616,7 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(element().querySelector('[data-testid="mentee-profile-edit-drawer-body"]')).toBeTruthy();
   });
 
-  it('renders the header subtitle and About Me prompts', () => {
+  it('renders the header subtitle and Introduction prompts', () => {
     expect(comp['subtitle']).toBe(MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE);
     expect(element().querySelectorAll('[data-testid="mentee-profile-edit-about-prompts"] li').length).toBe(4);
   });
@@ -629,7 +629,7 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(comp['saveLabel']).toBe(MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL);
   });
 
-  it('renders About Me, both skill pickers and additional notes, with no resume', () => {
+  it('renders Introduction, both skill pickers and additional notes, with no resume', () => {
     expect(element().querySelector('[data-testid="mentee-profile-edit-about"]')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentee-profile-edit-skills"]')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentee-profile-edit-additional-notes"]')).toBeTruthy();

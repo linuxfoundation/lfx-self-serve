@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 export const LFX_PROFILE_CARD_TITLE = 'From Your LFX Profile';
-export const LFX_PROFILE_CARD_SUBTITLE = 'Your name, avatar, email, mailing address, phone number and connected accounts are used from your LFX account.';
+export const LFX_PROFILE_CARD_SUBTITLE = 'Your name, avatar, email, mailing address, phone number and connected accounts are used from your LFX profile.';
 export const LFX_PROFILE_CARD_EDIT_LABEL = 'Edit LFX Profile';
 
 /**

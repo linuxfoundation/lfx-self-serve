@@ -21,8 +21,8 @@ export const MENTORSHIP_MENTEE_REGISTER_SUBTITLE_PREFIX = 'Register as a mentee 
 export const MENTORSHIP_MENTEE_REGISTER_SUBTITLE_SUFFIX = ' are required.';
 
 export const MENTORSHIP_MENTEE_INTRODUCTION_INTRO =
-  'This information is displayed on your mentee profile page. Your name, email and avatar come from your LFX account.';
-/** Canonical About Me prompts — register placeholder and profile-edit list both derive from this. */
+  'This information is displayed on your mentee profile page. Your name, email and avatar come from your LFX profile.';
+/** Canonical Introduction prompts — register placeholder and profile-edit list both derive from this. */
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS = [
   'What is your current status, are you a student/transitioning into a new career?',
   'What are your goals and aspirations?',
@@ -494,7 +494,7 @@ export const MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE = 'The due date has 
 
 export const MENTORSHIP_MENTEE_PROFILE_DETAILS_TITLE = 'Mentee Profile';
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL = 'Edit Mentee Profile';
-export const MENTORSHIP_MENTEE_PROFILE_ABOUT_LABEL = 'About Me';
+export const MENTORSHIP_MENTEE_PROFILE_ABOUT_LABEL = 'Introduction';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_LABEL = 'Skills';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_LABEL = 'Areas to Improve';
 export const MENTORSHIP_MENTEE_PROFILE_NOTES_LABEL = 'Additional Notes';
@@ -514,7 +514,7 @@ export const MENTORSHIP_MENTEE_PROFILE_CREATED_STATE = 'menteeProfileCreated';
 export const MENTORSHIP_MENTEE_APPLY_TITLE_PREFIX = 'Apply to ';
 export const MENTORSHIP_MENTEE_APPLY_PROFILE_TITLE = 'Your Mentee Profile';
 export const MENTORSHIP_MENTEE_APPLY_PROFILE_SUBTITLE =
-  'Your about me, skills and links are used from your mentee profile and shared with the mentors reviewing this application.';
+  'Your introduction, skills and links are used from your mentee profile and shared with the mentors reviewing this application.';
 
 export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_OPTIONAL = '(optional)';
 export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_INTRO =
@@ -687,10 +687,10 @@ export const MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES: readonly MentorshipM
 /**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the
  * "Edit Mentee Profile" button. Drawer-only labels: the Become a Mentee register form keeps its
- * own intro / skill copy. About Me uses the register rich editor and its introduction rule.
+ * own intro / skill copy. Introduction uses the register rich editor and its introduction rule.
  */
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
-  'Your mentee profile is shared with mentors reviewing your applications. It is separate from your LFX account details.';
+  'Your mentee profile is shared with mentors reviewing your applications. It is separate from your LFX profile.';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO = 'Your background, goals, and what makes you a good fit for a mentorship. Answer the following:';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO =
   'Enter your current skills as well as skills you would like to improve, so mentors can match you with the right program.';
