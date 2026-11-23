@@ -1,9 +1,25 @@
 ---
 title: Events and Event Attendees
-description: How the Company lens Events page and People → Event Attendees count and list people at events, what each filter (Range, Foundation, Count, Show) does, what is shown about each person, and what the attendees and speakers panels for an event show, and what a company family roll-up shows.
+description: How the Company lens Events page and People → Event Attendees count and list people at events, what each filter (Range, Foundation, Count, Show) does, what is shown about each person, what the attendees and speakers panels for an event show, and what a company family roll-up shows.
 audience: [all]
 product_area: Company
-tags: [company, org, org-lens, events, event-attendees, registered, attended, employee-match, company-email, filters, all-employees, speakers, roll-up, company-family]
+tags:
+  [
+    company,
+    org,
+    org-lens,
+    events,
+    event-attendees,
+    registered,
+    attended,
+    employee-match,
+    company-email,
+    filters,
+    all-employees,
+    speakers,
+    roll-up,
+    company-family,
+  ]
 last_updated: 2026-11-23
 intercom_collection: Company
 ---
@@ -55,7 +71,7 @@ The filters are kept in the page address (`?range=`, `?foundation=`, `?participa
 
 ### What does the Events page show for a company family?
 
-When you pick **All <company> Companies** in the company selector, the Events page covers every company in that family that you have access to.
+When you pick a company family in the company selector, listed as **All**, the family's name and **Companies** (for example, **All Acme Companies**), the Events page covers every company in that family that you have access to.
 
 - The tables have one row per event and company. An event that two of the family's companies took part in appears twice, once for each, with the event's details repeated, and a **Company** column after **Event Name** names each row's company.
 - **Event Attendees**, **Event Speakers** and **Event Sponsor** on a row are that company's own figures. The tiles and the tab counts count rows, so two companies at one event count as two.

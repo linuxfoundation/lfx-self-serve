@@ -81,7 +81,6 @@ describe('OrgLensNavigationService', () => {
       expect(service.orgLensLandingLink()).toEqual(['/company', 'overview']);
     });
 
-    // #4133: Memberships is the one page a roll-up renders, so entering Org Lens on one lands there.
     it('lands a family roll-up on its Memberships page', () => {
       selectedAccount.set({ ...placeholder, uid: 'family-0014100000RootAAAA', accountId: 'family-0014100000RootAAAA' });
       isAddressedSelection.set(true);

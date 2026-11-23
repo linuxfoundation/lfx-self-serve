@@ -261,8 +261,6 @@ describe('My Meetups routes', () => {
   }
 });
 
-// #4133: a family roll-up renders Memberships only, so every other page is preceded by the
-// roll-up-unavailable page — on both mounts, so a legacy address is covered as well.
 describe('Org Lens roll-up routes', () => {
   const org = shellRoute.children!.find((route) => route.path === ORG_LENS_URL_ROOT)!;
   const addressed = org.children!.find((route) => route.path === `:${ORG_SEGMENT_PARAM}`)!;
