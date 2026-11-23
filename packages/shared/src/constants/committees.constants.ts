@@ -14,6 +14,7 @@ import type {
 import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
 import type { UiTone } from '../interfaces/uikit.interface';
 import { lfxColors } from './colors.constants';
+import { SOCIAL_LISTENING_GROUP_CATEGORIES } from './social-listening.constants';
 
 // Re-export helper functions from utils for backward compatibility
 export {
@@ -575,8 +576,9 @@ export const COMMITTEE_SETTINGS_FEATURES: CommitteeSettingsFeature[] = [
     icon: 'fa-light fa-ear-listen',
     title: 'Members Can View Social Listening',
     description:
-      "Let this group's members view Social Listening for the whole foundation and filter it by project. Applies to the foundation's own groups, not its projects' groups. Executive Directors and LF staff always have access.",
+      "Let this board's members view Social Listening for the whole foundation and filter it by project. Applies to the foundation's own boards, not its projects' groups. Executive Directors and LF staff always have access.",
     color: lfxColors.violet[500],
+    categories: SOCIAL_LISTENING_GROUP_CATEGORIES,
   },
 ];
 

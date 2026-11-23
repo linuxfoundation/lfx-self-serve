@@ -49,7 +49,7 @@ import {
   QueryServiceResponse,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { canGroupGrantSocialListening, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -1502,7 +1502,7 @@ export class CommitteeService {
     const groupUids = [
       ...new Set(
         memberships
-          .filter((m) => m.status === CommitteeMemberStatus.ACTIVE)
+          .filter((m) => m.status === CommitteeMemberStatus.ACTIVE && canGroupGrantSocialListening(m.committee_category))
           .map((m) => m.committee_uid)
           .filter((uid): uid is string => Boolean(uid))
       ),

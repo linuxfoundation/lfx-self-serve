@@ -294,3 +294,39 @@ describe('CommitteeSettingsComponent — chat-channel / website label associatio
     expect(fixture.nativeElement.querySelector(`[data-testid="${inputTestId}"]`)?.contains(label.control)).toBe(true);
   });
 });
+
+describe('CommitteeSettingsComponent — Social Listening toggle is Board only', () => {
+  let fixture: ComponentFixture<CommitteeSettingsComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsComponent],
+      providers: [provideRouter([]), provideNoopAnimations()],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CommitteeSettingsComponent);
+    fixture.componentRef.setInput('form', buildForm());
+  });
+
+  function hasToggle(): boolean {
+    return !!fixture.nativeElement.querySelector('[data-testid="feature-members_can_view_social_listening"]');
+  }
+
+  it('shows the toggle for a Board group', async () => {
+    fixture.componentRef.setInput('category', 'Board');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(hasToggle()).toBe(true);
+  });
+
+  it('hides the toggle for any other group or no category', async () => {
+    fixture.componentRef.setInput('category', 'Working Group');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(hasToggle()).toBe(false);
+
+    fixture.componentRef.setInput('category', null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(hasToggle()).toBe(false);
+  });
+});

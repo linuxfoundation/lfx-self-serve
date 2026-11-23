@@ -26,7 +26,7 @@ import {
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   WG_WEEKLY_BRIEF_SLACK_FLAG,
 } from '@lfx-one/shared/constants';
-import { getMailingListCommitteeSync } from '@lfx-one/shared/utils';
+import { canGroupGrantSocialListening, getMailingListCommitteeSync } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -363,6 +363,10 @@ export class CommitteeSettingsTabComponent {
   // established pattern (weekly-brief-card, profile-panel) of gating on
   // `userService.impersonating()` directly, not on module input plumbing.
   public readonly impersonating = this.userService.impersonating;
+
+  // Category being edited (falls back to the saved one) — the Social Listening toggle is Board only.
+  public readonly editedCategory = toSignal(this.form.controls.category.valueChanges, { initialValue: this.form.controls.category.value });
+  public readonly settingsCategory = computed(() => this.editedCategory() || this.committee()?.category);
 
   // Whether the committee already has a Slack webhook configured — drives the settings card's Configured/Replace vs. empty-input display.
   public slackWebhookConfigured = computed(() => !!this.committee()?.has_slack_webhook);
@@ -790,7 +794,8 @@ export class CommitteeSettingsTabComponent {
         public: values.public ?? false,
         sso_group_enabled: values.sso_group_enabled ?? false,
         show_meeting_attendees: values.show_meeting_attendees ?? false,
-        members_can_view_social_listening: values.members_can_view_social_listening ?? false,
+        members_can_view_social_listening:
+          canGroupGrantSocialListening(values.category || committee.category) && (values.members_can_view_social_listening ?? false),
         chat_channel: values.chat_channel || null,
         website: values.website || null,
         ...(chatWebhookUrlIncludedInSave ? { chat_webhook_url: values.chat_webhook_url || null } : {}),

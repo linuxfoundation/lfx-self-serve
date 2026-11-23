@@ -58,7 +58,10 @@ vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
   CommitteeMemberStatus: { ACTIVE: 'Active', INACTIVE: 'Inactive' },
 }));
-vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
+vi.mock('@lfx-one/shared/utils', () => ({
+  invitationRequiresOrganization: vi.fn(),
+  canGroupGrantSocialListening: (category?: string) => category === 'Board',
+}));
 vi.mock('@lfx-one/shared/constants', async () => {
   const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
     '../../../../../packages/shared/src/constants/regex.constants'
@@ -2115,10 +2118,10 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
 
   describe('canGroupMemberViewSocialListening', () => {
     /** Membership query, then one settings read per active group. */
-    function upstream(memberships: string[], settings: Record<string, boolean | Error>, status = 'Active'): void {
+    function upstream(memberships: string[], settings: Record<string, boolean | Error>, status = 'Active', category = 'Board'): void {
       proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
         if (path === '/query/resources') {
-          return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid, status } })) });
+          return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid, status, committee_category: category } })) });
         }
         const value = settings[path.split('/')[2]];
         return value instanceof Error ? Promise.reject(value) : Promise.resolve({ members_can_view_social_listening: value });
@@ -2141,6 +2144,13 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
 
     it('ignores an inactive seat without reading its settings', async () => {
       upstream(['board-1'], { 'board-1': true }, 'Inactive');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a non-Board group even when its setting is on, without reading its settings', async () => {
+      upstream(['wg-1'], { 'wg-1': true }, 'Active', 'Working Group');
 
       await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
       expect(proxyRequest).toHaveBeenCalledTimes(1);

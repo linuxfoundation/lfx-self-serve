@@ -5,11 +5,11 @@ display_order: 2
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, analytics, charts, sentiment, trends, export]
-last_updated: 2026-10-19
+last_updated: 2026-11-23
 intercom_collection: Social Listening
 ---
 
-This article applies to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's groups can use it too when that group's **Members Can View Social Listening** setting is on. The **Analytics** tab of the Social Listening page turns your mentions into charts and summary statistics.
+This article applies to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's board can use it too when the board's **Members Can View Social Listening** setting is on. The **Analytics** tab of the Social Listening page turns your mentions into charts and summary statistics.
 
 ## Open the Analytics tab
 

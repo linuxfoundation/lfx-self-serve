@@ -27,6 +27,7 @@ import {
   GROUPS_ENGAGEMENT_ICON_CLASS,
   OTHER_GROUPS_LABEL,
 } from '../constants/committees.constants';
+import { SOCIAL_LISTENING_GROUP_CATEGORIES } from '../constants/social-listening.constants';
 import { formatRelativeTime } from './date-time.utils';
 import { getMailingListCommands } from './mailing-list.utils';
 import { getEntityCommands } from './entity-route.utils';
@@ -674,4 +675,9 @@ function resolveEngagementSubLine(stats: GroupsEngagementStats | null): string |
 function resolveActiveMembersSubLine(stats: GroupsEngagementStats | null, baseSubLine: string | undefined): string | undefined {
   if (!stats?.coverage || stats.coverage.covered >= stats.coverage.total) return baseSubLine;
   return `${baseSubLine} · across ${stats.coverage.covered} of ${stats.coverage.total} groups`;
+}
+
+/** Whether a group of this category can grant its members Social Listening (Board only for now). */
+export function canGroupGrantSocialListening(category: string | null | undefined): boolean {
+  return !!category && SOCIAL_LISTENING_GROUP_CATEGORIES.includes(category);
 }

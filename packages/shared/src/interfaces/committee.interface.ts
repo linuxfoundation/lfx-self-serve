@@ -903,6 +903,8 @@ export interface CommitteeSettingsFeature {
   note?: string;
   recommended?: boolean;
   color: string;
+  /** Group categories the toggle is shown for; omitted means every category. */
+  categories?: readonly string[];
 }
 
 /**
