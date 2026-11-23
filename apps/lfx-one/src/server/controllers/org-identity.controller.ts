@@ -88,6 +88,7 @@ export class OrgIdentityController {
         affiliation_has_employer: result.affiliation?.hasEmployer,
         affiliation_employer_is_member: result.affiliation?.employerIsMember,
         employee_view: !!result.employeeView,
+        employee_view_lookup: result.employeeViewLookup,
         lookup_outcome: result.lookupOutcome,
         staff_check: result.staffCheck,
       });
