@@ -82,6 +82,45 @@ describe('AccountLayoutComponent', () => {
     expect(query('account-layout-save-bar')).toBeNull();
   });
 
+  it('moves the nav down when the header grows, such as a description wrapping beside the save bar', async () => {
+    let resized: () => void = () => undefined;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        public constructor(callback: () => void) {
+          resized = callback;
+        }
+        public observe(): void {}
+        public disconnect(): void {}
+      }
+    );
+    await setup();
+    const header = query('account-layout-header')!;
+    const navTop = () => (query('account-layout-nav')?.firstElementChild as HTMLElement).style.top;
+
+    Object.defineProperty(header, 'offsetHeight', { value: 140, configurable: true });
+    resized();
+    fixture.detectChanges();
+
+    expect(navTop()).toBe('160px');
+    vi.unstubAllGlobals();
+  });
+
+  it('moves focus to the heading when Save or Revert clears the changes and the bar goes', async () => {
+    await setup();
+    document.body.appendChild(fixture.nativeElement);
+    unsaved.dirty.set(true);
+    fixture.detectChanges();
+
+    (query('account-layout-revert')?.querySelector('button') as HTMLButtonElement).focus();
+    unsaved.dirty.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(query('account-layout-title'));
+    fixture.nativeElement.remove();
+  });
+
   it('holds Revert while a save is running', async () => {
     await setup();
     unsaved.dirty.set(true);

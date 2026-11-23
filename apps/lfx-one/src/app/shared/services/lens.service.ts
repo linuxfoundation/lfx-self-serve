@@ -119,7 +119,12 @@ export class LensService {
    */
   public switchLens(lens: Lens): void {
     const target = this.switchTarget(lens);
+    const previous = this.activeLens();
+    const previousNavLens = this.navLensSelection();
     if (this.setLens(target)) {
+      // Like a menu pick: if the navigation never leaves the page (a declined unsaved-changes prompt, a refusing guard),
+      // the page's lens comes back. The epoch never matches, so no drawer preview is restored.
+      this.restoreLensIfPickFails({ previous, previousNavLens, committed: this.activeLens(), previewed: this.activeLens(), epoch: -1 });
       this.router.navigate(target === 'org' ? this.orgLensNavigation.orgLensLandingLink() : [LENS_DEFAULT_ROUTES[target]]);
     }
   }

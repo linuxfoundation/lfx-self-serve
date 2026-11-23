@@ -12,7 +12,10 @@
       class="sticky z-10 -mx-[40px] -mt-[28px] flex flex-col gap-[4px] bg-white px-[40px] pb-[18px] pt-[28px] max-[640px]:-mx-[20px] max-[640px]:-mt-[20px] max-[640px]:px-[20px] max-[640px]:pt-[20px]"
       [style.top.px]="headerTopPx()"
       data-testid="account-layout-header">
-      <h1 class="m-0 font-display text-[24px] font-light leading-[1.2] text-gray-900" data-testid="account-layout-title">{{ title }}</h1>
+      <!-- Focusable from script only: focus lands here when the save bar holding it goes away. -->
+      <h1 #heading tabindex="-1" class="m-0 font-display text-[24px] font-light leading-[1.2] text-gray-900 outline-none" data-testid="account-layout-title">
+        {{ title }}
+      </h1>
       <!-- Leaves room for the save bar beside it while that shows. -->
       <p class="m-0 text-[12px] leading-[16px] text-gray-500" [class.min-[641px]:pr-[300px]]="showSaveBar()" data-testid="account-layout-description">
         {{ description }}
@@ -21,6 +24,8 @@
       @if (showSaveBar()) {
         <div
           class="absolute bottom-[18px] right-[40px] flex flex-row items-center gap-[8px] max-[640px]:static max-[640px]:mt-[12px] max-[640px]:justify-end"
+          (focusin)="saveBarHasFocus = true"
+          (focusout)="onSaveBarFocusOut($event)"
           data-testid="account-layout-save-bar">
           <lfx-ui-button
             variant="secondary"
