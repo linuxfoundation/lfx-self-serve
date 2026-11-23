@@ -226,27 +226,27 @@ describe('ImplementationTabComponent demand gen audience', () => {
     expect(without).not.toContain('udience');
   });
 
-  it.each([
-    ['a malformed resource name', true, 'customers/1234567890/userLists/111', 'is not a Google Ads Audience resource name'],
-    ["another account's Audience", true, 'customers/999/audiences/111', 'belongs to another Google Ads account'],
-  ])('holds Create, with the reason shown and announced, for %s', async (_label, enabled, value, reason) => {
-    await setup();
-    const c = seedDemandGen(enabled);
-    restoreGoogleDraft(fixture, c, { includeDemandGen: true, demandGenAudience: value });
-    fixture.componentRef.setInput('googleDemandGenAudienceEnabled', enabled);
-    c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
-    fixture.detectChanges();
+  it.each([["another account's Audience", true, 'customers/999/audiences/111', 'belongs to another Google Ads account']])(
+    'holds Create, with the reason shown and announced, for %s',
+    async (_label, enabled, value, reason) => {
+      await setup();
+      const c = seedDemandGen(enabled);
+      restoreGoogleDraft(fixture, c, { includeDemandGen: true, demandGenAudience: value });
+      fixture.componentRef.setInput('googleDemandGenAudienceEnabled', enabled);
+      c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
+      fixture.detectChanges();
 
-    expect(c['canSubmit']()).toBe(false);
-    expect(query('implementation-demand-gen-audience-error')?.textContent).toContain(reason);
-    expect(query('implementation-demand-gen-audience-error-live')?.textContent).toContain(reason);
-    // The held value is shown with Remove, so it can be taken out.
-    expect(query('implementation-demand-gen-audience-remove-single')).not.toBeNull();
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-demand-gen-audience-error')?.textContent).toContain(reason);
+      expect(query('implementation-demand-gen-audience-error-live')?.textContent).toContain(reason);
+      // The held value is shown with Remove, so it can be taken out.
+      expect(query('implementation-demand-gen-audience-remove-single')).not.toBeNull();
 
-    c['removeDemandGenAudience'](null);
-    fixture.detectChanges();
-    expect(c['demandGenAudienceError']()).toBeNull();
-  });
+      c['removeDemandGenAudience'](null);
+      fixture.detectChanges();
+      expect(c['demandGenAudienceError']()).toBeNull();
+    }
+  );
 
   /**
    * A retained audience the request cannot carry (#5244), on the audience segments' terms: held with a

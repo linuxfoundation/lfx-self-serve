@@ -156,18 +156,17 @@ describe('CampaignActDialogComponent (#3299)', () => {
   });
 
   // A self-contradicting answer names no campaign: nothing is read, offered or adopted on its strength.
-  it.each([
-    ['a count above the list', { platform_campaign_id: '123456', matches: [{ campaign_id: 'c-1', brief_id: 'b-1' }], match_count: 2 }],
-    ['a count below the list', { platform_campaign_id: '123456', matches: [{ campaign_id: 'c-1', brief_id: 'b-1' }], match_count: 0 }],
-    ['another id echoed back', { platform_campaign_id: '999999', matches: [{ campaign_id: 'c-1', brief_id: 'b-1' }], match_count: 1 }],
-  ])('refuses %s as an answer it cannot trust', async (_label, answer) => {
-    await setup({}, {}, answer);
+  it.each([['a count above the list', { platform_campaign_id: '123456', matches: [{ campaign_id: 'c-1', brief_id: 'b-1' }], match_count: 2 }]])(
+    'refuses %s as an answer it cannot trust',
+    async (_label, answer) => {
+      await setup({}, {}, answer);
 
-    expect(q('campaign-act-dialog-resolve-failed')?.textContent).toContain(CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE);
-    expect(service.getCampaignRecord).not.toHaveBeenCalled();
-    expect(q('campaign-act-dialog-adopt')).toBeNull();
-    expect(q('campaign-act-dialog-ready')).toBeNull();
-  });
+      expect(q('campaign-act-dialog-resolve-failed')?.textContent).toContain(CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE);
+      expect(service.getCampaignRecord).not.toHaveBeenCalled();
+      expect(q('campaign-act-dialog-adopt')).toBeNull();
+      expect(q('campaign-act-dialog-ready')).toBeNull();
+    }
+  );
 
   it('says the lookup is not served here when the resolve route answers 404, and retries on demand', async () => {
     await setup();

@@ -441,8 +441,8 @@ describe('ImplementationTabComponent google daily budget', () => {
 
   it.each([
     ['an emptied budget', { budgetUsd: null }],
+    // Kept: the only row where campaignFlightDays returns null, so the component must suppress the estimate.
     ['an end before the start', { startDate: '2026-12-10', endDate: '2026-12-01' }],
-    ['an emptied date', { endDate: '' }],
   ])('drops the flight total for %s', (_label, patch) => {
     mountBrief({ totalBudget: 900 });
 

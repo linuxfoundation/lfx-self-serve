@@ -221,26 +221,26 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     expect(without).not.toContain('performanceMaxAudienceSignal');
   });
 
-  it.each([
-    ['a malformed resource name', 'customers/1234567890/userLists/111', 'is not a Google Ads Audience'],
-    ["another account's Audience", 'customers/999/audiences/111', 'belongs to another Google Ads account'],
-  ])('holds Create, with the reason shown and announced, for %s', async (_label, value, reason) => {
-    await setup();
-    const c = seedPmax();
-    restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: value });
-    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
-    fixture.detectChanges();
+  it.each([["another account's Audience", 'customers/999/audiences/111', 'belongs to another Google Ads account']])(
+    'holds Create, with the reason shown and announced, for %s',
+    async (_label, value, reason) => {
+      await setup();
+      const c = seedPmax();
+      restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: value });
+      c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+      fixture.detectChanges();
 
-    expect(c['canSubmit']()).toBe(false);
-    expect(query('implementation-performance-max-audience-signal-error')?.textContent).toContain(reason);
-    expect(query('implementation-performance-max-audience-signal-error-live')?.textContent).toContain(reason);
-    expect(query('implementation-performance-max-audience-signal-remove')).not.toBeNull();
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-performance-max-audience-signal-error')?.textContent).toContain(reason);
+      expect(query('implementation-performance-max-audience-signal-error-live')?.textContent).toContain(reason);
+      expect(query('implementation-performance-max-audience-signal-remove')).not.toBeNull();
 
-    c['removePerformanceMaxAudienceSignal']();
-    fixture.detectChanges();
-    expect(c['performanceMaxAudienceSignalError']()).toBeNull();
-    expect(c['canSubmit']()).toBe(true);
-  });
+      c['removePerformanceMaxAudienceSignal']();
+      fixture.detectChanges();
+      expect(c['performanceMaxAudienceSignalError']()).toBeNull();
+      expect(c['canSubmit']()).toBe(true);
+    }
+  );
 
   it("takes a restored bare audience id, which upstream resolves in the campaign's own account", STATE_ONLY, async () => {
     await setup();

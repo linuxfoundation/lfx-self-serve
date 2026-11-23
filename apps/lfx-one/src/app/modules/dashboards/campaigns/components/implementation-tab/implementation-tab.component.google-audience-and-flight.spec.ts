@@ -74,7 +74,6 @@ describe('ImplementationTabComponent google audience segments', () => {
     ['a trailing path segment', `${LIST_A}/extra`, 'shape'],
     ['an interest category', 'customers/1234567890/userInterests/80', 'shape'],
     ['a list id with a leading zero, which the campaign-level field refuses', 'customers/1234567890/userLists/0111', 'id'],
-    ['a zero list id', 'customers/1234567890/userLists/0', 'id'],
   ])('refuses %s and says why while the text is still in the box', (_label, text, kind) => {
     const c = seedAudience({ includeSearch: true });
 

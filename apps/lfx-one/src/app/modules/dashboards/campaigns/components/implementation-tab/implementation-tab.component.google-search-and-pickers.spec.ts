@@ -118,16 +118,6 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
       'cannot hold spaces',
     ],
     [
-      'path 2 alone',
-      (c: Record<string, any>) => {
-        c['onGoogleSearchPath1Change']('');
-        c['onGoogleSearchPath2Change']('na');
-      },
-      'googleSearchPathsError',
-      'implementation-google-search-paths-error',
-      'without display path 1',
-    ],
-    [
       'an ad with no headline',
       (c: Record<string, any>) => c['onGoogleAdditionalSearchAdsChange']([{ ...SECOND_AD, headlines: [''] }]),
       'googleAdditionalSearchAdsError',

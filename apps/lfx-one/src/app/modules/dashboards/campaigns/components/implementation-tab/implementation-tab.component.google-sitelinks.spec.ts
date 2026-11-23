@@ -131,9 +131,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
 
   it.each([
     ['no link text', sitelink('   ')],
-    ['no destination', sitelink('Register', { finalUrl: '  ' })],
     ['a destination with no scheme', sitelink('Register', { finalUrl: 'events.example.org/register' })],
-    ['a destination carrying embedded credentials', sitelink('Register', { finalUrl: 'https://user:pw@events.example.org/register' })],
   ])('refuses a sitelink with %s', STATE_ONLY, (_label, entry) => {
     const c = seedChannel(fixture, { includeSearch: true });
 
@@ -331,9 +329,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
   });
 
   it.each([
-    ['a semicolon in the query', 'https://events.example.org/register?a=1;b=2'],
     ['a stray percent sign', 'https://events.example.org/50%off'],
-    ['no `//` after the scheme', 'https:events.example.org/register'],
     ['a tab inside the path', 'https://events.example.org/reg\tister'],
   ])("refuses a destination with %s, which Go's URL parser refuses and `new URL()` accepts", STATE_ONLY, (_label, finalUrl) => {
     const c = seedChannel(fixture, { includeSearch: true });

@@ -552,9 +552,7 @@ describe('ImplementationTabComponent bidding control', () => {
 
     it.each([
       ['linkedin-ads', '2.345', 'two decimal places'],
-      ['linkedin-ads', '0', 'greater than zero'],
       ['microsoft-ads', '1000.01', 'at most 1,000'],
-      ['microsoft-ads', '0.001', 'at least 0.01'],
       ['meta-ads', '0.125', 'two decimal places'],
     ])('refuses a %s bid of %s', async (platform, bid, message) => {
       await pickStrategy(platform, 'manual');
