@@ -21,6 +21,10 @@ The folder name is the event slug (lowercase letters, digits and hyphens) and mu
 
 Every kit is behind the `event-share-kit` LaunchDarkly flag (`EVENT_SHARE_KIT_FLAG`). While it is off, the page shows "not found" for every event. Turn it on for named LFIDs first to check a kit in production, then for everyone. Signed-out visitors are one audience, so they get it all at once, and can take up to five minutes to see a change. No deploy is needed either way. Remove the flag once the feature is stable.
 
+## Member discount
+
+A kit can describe a member-only discount in `memberBenefit` (membership slug, display name, discount label and a join link). The code itself never goes in this repository: it is read from the `SHARE_KIT_MEMBER_CODES` environment variable, a JSON object of event slug to code set from the deployment's secret store, and is only sent to a signed-in visitor whose verified email belongs to an active member company of that membership. With no code configured for an event, the page shows no offer.
+
 ## Checking a change
 
 `yarn workspace lfx-one-ui test:server src/server/services/share-kit.service.spec.ts` validates every file in this folder and fails with the field and problem for anything invalid. CI runs the same check, so an invalid file fails the PR rather than production.

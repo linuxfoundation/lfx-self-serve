@@ -67,6 +67,24 @@ describe('validateShareKitContent', () => {
     expect(validateShareKitContent(kit).problems.join('\n')).toContain('startDate: must be a real date');
   });
 
+  it('accepts a public member benefit, which carries no code', () => {
+    const kit = validKit();
+    kit['memberBenefit'] = { membershipSlug: 'example-foundation', membershipName: 'Example', discountLabel: '20% off', joinUrl: 'https://example.org/join' };
+    expect(validateShareKitContent(kit).ok).toBe(true);
+  });
+
+  it('rejects a code placed inside the member benefit', () => {
+    const kit = validKit();
+    kit['memberBenefit'] = {
+      membershipSlug: 'example-foundation',
+      membershipName: 'Example',
+      discountLabel: '20% off',
+      joinUrl: 'https://example.org/join',
+      code: 'SECRET',
+    };
+    expect(validateShareKitContent(kit).ok).toBe(false);
+  });
+
   it('rejects an end date before the start date', () => {
     const kit = validKit();
     kit['endDate'] = '2027-04-27';

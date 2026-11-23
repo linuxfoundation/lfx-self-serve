@@ -168,6 +168,10 @@ export const shareKitContentSchema = z
       .strict()
       .optional(),
     theme: themeSchema.optional(),
+    memberBenefit: z
+      .object({ membershipSlug: slug, membershipName: plainText(80), discountLabel: plainText(80), joinUrl: httpsUrl })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((content) => content.endDate >= content.startDate, { message: 'endDate must not be before startDate', path: ['endDate'] })

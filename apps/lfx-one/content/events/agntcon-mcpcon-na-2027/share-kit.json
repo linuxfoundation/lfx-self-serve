@@ -100,5 +100,11 @@
     },
     "headline": "Where the agentic stack is being built",
     "headingFont": "inter-tight"
+  },
+  "memberBenefit": {
+    "membershipSlug": "aaif",
+    "membershipName": "AAIF",
+    "discountLabel": "20% off registration",
+    "joinUrl": "https://aaif.io/members#join"
   }
 }
