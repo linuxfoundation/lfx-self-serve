@@ -853,6 +853,49 @@ describe('MktgDocumentsComponent', () => {
     expect(store.listDocuments).toHaveBeenCalledTimes(1);
   });
 
+  it.each([401, 403])('keeps a refused list latched through a type change: the same scope is not read again (%s)', async (status) => {
+    store.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(store.listDocuments).toHaveBeenCalledTimes(1);
+    // A type change is a new request for the same project and user: the latch belongs to that scope, not to the request.
+    await TestBed.inject(Router).navigateByUrl('/?type=faq');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.listDocuments).toHaveBeenCalledTimes(1);
+    expect(query('mktg-documents-list-failed')).not.toBeNull();
+    expect(query('mktg-documents-error')?.textContent).toContain('write access');
+    // The latched request settles: no loading state is left waiting for a read that is never sent.
+    expect(fixture.componentInstance['loading']()).toBe(false);
+    expect(fixture.componentInstance['listPending']()).toBe(false);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(store.listDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([401, 403])('keeps a refused detail latched when the list reports a new revision count (%s)', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const updated = documentsResponse();
+    const current = updated.groups.find((group) => group.type.agentKey === BRAND_KIT.agentKey)?.documents[0];
+    if (!current) throw new Error('Missing synthetic document');
+    current.revisionCount = 3;
+    store.listDocuments.mockReturnValueOnce(of(documentsResponse())).mockReturnValue(of(updated));
+    store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(store.getDocument).toHaveBeenCalledTimes(1);
+    expect(query('mktg-documents-error')).not.toBeNull();
+    // The list poll sees a new revision, so the detail request is issued again for the same document: nothing is sent.
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.listDocuments).toHaveBeenCalledTimes(2);
+    expect(store.getDocument).toHaveBeenCalledTimes(1);
+    expect(query('mktg-documents-error')).not.toBeNull();
+    expect(fixture.componentInstance['detailLoading']()).toBe(false);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(store.getDocument).toHaveBeenCalledTimes(1);
+  });
+
   it('retains same-scope revisions on a detail 503 behind the plain line, with no recheck button', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const updated = documentsResponse();

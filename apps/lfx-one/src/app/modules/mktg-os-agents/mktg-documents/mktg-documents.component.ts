@@ -134,6 +134,13 @@ export class MktgDocumentsComponent {
   private pendingSelectionScroll = false;
   private listedScope = '';
   private detailedScope = '';
+  /**
+   * The scope whose read was refused (401/403), RFC 9110 §15.5.4: held on the component, not in the request's closure,
+   * so a new request for the same scope (a type change, a new revision count) does not send the same credentials again.
+   * Only a scope change clears it.
+   */
+  private listDeniedScope: string | null = null;
+  private detailDeniedScope: string | null = null;
   private destroyed = false;
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
@@ -269,6 +276,7 @@ export class MktgDocumentsComponent {
             const scope = JSON.stringify([request.project, request.userSub, request.agentKey, request.documentId]);
             if (scope !== this.detailedScope) {
               this.detailedScope = scope;
+              this.detailDeniedScope = null;
               this.detail.set(this.detailCache.get(scope) ?? null);
               this.detailFailed.set(false);
               if (!this.listFailed()) this.errorText.set('');
@@ -280,12 +288,14 @@ export class MktgDocumentsComponent {
             if (!request.project || !request.userSub || !request.documentId) {
               return of(null);
             }
+            // A refused read is latched for this document (RFC 9110 §15.5.4): no wake and no new request for it (a new
+            // revision count from the list) sends the same credentials again. The refusal's own line stays.
+            const scope = this.detailedScope;
+            if (this.detailDeniedScope === scope) return of(null);
             this.detailLoading.set(true);
             const known = this.detail();
-            let denied = false;
             const read = () => {
-              // A refused read is latched for this document (RFC 9110 §15.5.4): no wake sends the same credentials again.
-              if (denied) return EMPTY;
+              if (this.detailDeniedScope === scope) return EMPTY;
               return this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
                 // Clears only this reader's flags; the list's own line and error are the list's.
                 tap(() => {
@@ -304,7 +314,7 @@ export class MktgDocumentsComponent {
                   }
                   this.detailFailing.set(false);
                   this.detailFailed.set(true);
-                  denied = error.status === 401 || error.status === 403;
+                  if (error.status === 401 || error.status === 403) this.detailDeniedScope = scope;
                   this.errorText.set(this.actionErrorText(error));
                   return of(null);
                 })
@@ -403,6 +413,7 @@ export class MktgDocumentsComponent {
         if (scope !== this.listedScope) {
           this.detailCache.clear();
           this.listedScope = scope;
+          this.listDeniedScope = null;
           this.loading.set(true);
           this.documents.set(null);
           this.startedRunsVisible.set(false);
@@ -416,10 +427,12 @@ export class MktgDocumentsComponent {
       switchMap((request) => {
         if (!request.project || !request.userSub) return EMPTY;
         const scope = JSON.stringify([request.project, request.userSub]);
+        // A refused list is latched for this scope (RFC 9110 §15.5.4): no wake and no new request for it (a type change, a
+        // re-read) sends the same credentials again. The refusal's own line stays; the request settles with no list.
+        if (this.listDeniedScope === scope) return of(null);
         const currentScope = () => JSON.stringify([this.projectContext.activeContextUid(), this.userService.user()?.sub]);
         let known = this.documents();
         let failures = 0;
-        let denied = false;
         // One plain connection-state line while a check fails; it clears on the next good read and the loaded list stays.
         const unavailable = () => {
           failures++;
@@ -457,8 +470,7 @@ export class MktgDocumentsComponent {
             })
           );
         const observe = () => {
-          // A refused list is latched for this scope (RFC 9110 §15.5.4): no wake sends the same credentials again.
-          if (denied) return EMPTY;
+          if (this.listDeniedScope === scope) return EMPTY;
           return read().pipe(
             expand(() => {
               // After a failed or partial read: capped jittered backoff floored at the healthy interval, never a stop.
@@ -477,7 +489,8 @@ export class MktgDocumentsComponent {
               }
               this.listFailing.set(false);
               this.listFailed.set(true);
-              denied = error.status === 403 || error.status === 401;
+              const denied = error.status === 403 || error.status === 401;
+              if (denied) this.listDeniedScope = scope;
               this.errorText.set(denied ? 'You need write access to this project to see its Marketing OS documents.' : 'The documents could not be loaded.');
               return of(null);
             })
