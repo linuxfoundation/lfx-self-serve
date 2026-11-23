@@ -1540,6 +1540,29 @@ describe('MktgDocumentViewComponent', () => {
       vi.useRealTimers();
     });
 
+    it('keeps the loading state through a transiently failed first read, and shows the audit as generating once the retry is answered', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.waitForStorage.mockReturnValue(NEVER);
+      store.getDocument
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      // The read is still being retried: the page keeps loading behind the one line, it does not go blank.
+      expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-run-loading') ?? query('mktg-document-view-loading')).not.toBeNull();
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      // The server answered (the report is not stored yet): nothing is retrying, and the storage wait shows as loading.
+      expect(pending.waitForStorage).toHaveBeenCalledTimes(1);
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      expect(query('mktg-document-view-run-loading') ?? query('mktg-document-view-loading')).not.toBeNull();
+      expect(query('mktg-document-view-error')).toBeNull();
+      vi.useRealTimers();
+    });
+
     it('drops the retrying line when a retried first read ends for good: the final error stands alone', async () => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
       vi.spyOn(Math, 'random').mockReturnValue(0);

@@ -1937,6 +1937,8 @@ export class MktgDocumentViewComponent {
       return read().pipe(
         catchError((error: HttpErrorResponse) => {
           if (error.status !== 404 || !canResume || !pending || !intake) throw error;
+          // The server answered (the report is not stored yet): nothing is retrying while the storage wait runs.
+          this.refreshWarning.set('');
           this.generating.set(true);
           const anchored = this.pendingDocuments.markWaitStarted(pending);
           return this.pendingDocuments
@@ -1972,8 +1974,9 @@ export class MktgDocumentViewComponent {
         this.refreshWarning.set(event.kind === 'error' ? MKTG_POLL_RETRYING_TEXT : '');
         if (event.kind === 'ok' && event.value) this.errorText.set('');
       }),
-      // A loaded report stays through a failed re-read (last loaded content stays): only a result replaces it.
-      filter((event) => event.kind === 'ok' || !this.view()),
+      // Only a result reaches the view: a loaded report stays through a failed re-read, and a failed first read keeps the
+      // loading state behind the one line (ending it would leave the page blank, and hide the storage wait a retry starts).
+      filter((event) => event.kind === 'ok'),
       map((event) => (event.kind === 'ok' ? event.value : null))
     );
   }
