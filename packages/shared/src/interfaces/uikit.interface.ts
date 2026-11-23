@@ -438,6 +438,9 @@ export interface UiFocusable {
 /** Padding of a uikit popover panel: the default 16px, or none for content that runs edge to edge. */
 export type UiPopoverPadding = 'default' | 'none';
 
+/** Which side of its host a uikit hover card prefers; it flips to the other when it does not fit. */
+export type UiHoverCardSide = 'top' | 'bottom';
+
 /** Size of a uikit empty state: `default` for pages and lists, `small` for cards, side panels and popovers. */
 export type UiEmptyStateSize = 'default' | 'small';
 

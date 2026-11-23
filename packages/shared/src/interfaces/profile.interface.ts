@@ -24,6 +24,9 @@ export interface AccountSettingsNavItem {
   blurb: string;
 }
 
+/** How a profile pill draws its 48px picture: `logo` sits in a ringed tile, `image` (a badge) stands on its own. */
+export type ProfilePillTile = 'logo' | 'image';
+
 /** One section of the settings page: Email settings, Password or Developer settings. */
 export type AccountSettingsSection = (typeof ACCOUNT_SETTINGS_SECTIONS)[keyof typeof ACCOUNT_SETTINGS_SECTIONS];
 
