@@ -61,7 +61,12 @@ export function trackStateOnlyTests(): void {
   });
 }
 
-/** The tab class the running test mounts: the empty-template subclass under {@link STATE_ONLY}, otherwise the real tab. */
+/**
+ * The tab class the running test mounts: the empty-template subclass under {@link STATE_ONLY}, otherwise the real tab.
+ * Component-level overrides (`overrideComponent(..., { set: { providers } })`) must target this class, not
+ * `ImplementationTabComponent`: the subclass declares its own providers, so an override on the real tab leaves it with
+ * the real service and a test can pass without reaching the fake.
+ */
 export function tabComponentUnderTest(): Type<ImplementationTabComponent> {
   return stateOnlyTest ? StateOnlyImplementationTab : ImplementationTabComponent;
 }

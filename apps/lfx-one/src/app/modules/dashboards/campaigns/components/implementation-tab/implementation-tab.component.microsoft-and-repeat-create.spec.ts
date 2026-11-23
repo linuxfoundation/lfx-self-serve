@@ -853,7 +853,7 @@ describe('ImplementationTabComponent create another campaign', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     })
-      .overrideComponent(ImplementationTabComponent, { set: { providers: [{ provide: DialogService, useValue: { open: dialogOpen } }] } })
+      .overrideComponent(tabComponentUnderTest(), { set: { providers: [{ provide: DialogService, useValue: { open: dialogOpen } }] } })
       .compileComponents();
     createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(NEVER);
     fixture = TestBed.createComponent(tabComponentUnderTest());
