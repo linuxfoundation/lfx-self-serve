@@ -402,7 +402,7 @@ describe('VoteCastDrawerComponent — ranked listVote survives a failed first-op
   });
 });
 
-describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
+describe('VoteCastDrawerComponent — locked review of a final ballot (#4331)', () => {
   const REVIEW_VOTE: Vote = {
     ...VOTE,
     allow_abstain: true,
@@ -440,6 +440,8 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
     ],
     comment_responses: [{ prompt_id: 'p1', comment_text: 'Needs a second reading' }],
     vote_creation_time: '2026-10-20T10:00:00Z',
+    // The app reaches a locked review only through change mode on a ballot that can no longer change.
+    can_change_vote: false,
   };
 
   const RANKED_VOTE: Vote = {
@@ -478,7 +480,7 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
 
   async function openReview(vote: Vote, getMyVoteBallot: ReturnType<typeof vi.fn>, overrides: Record<string, unknown> = {}): Promise<void> {
     await setup(vi.fn().mockReturnValue(of(vote)), { getMyVoteBallot, ...overrides });
-    fixture.componentRef.setInput('readOnly', true);
+    fixture.componentRef.setInput('changeMode', true);
     await openWithoutListVote();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -490,10 +492,10 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
 
   it.each([true, undefined, null])('hides private Review content during impersonation (privacy %s)', async (privacy) => {
     const getMyVoteBallot = vi.fn().mockReturnValue(of(BALLOT));
-    const submitMyResponse = vi.fn();
-    await setup(vi.fn().mockReturnValue(of({ ...REVIEW_VOTE, pseudo_anonymity: privacy })), { getMyVoteBallot, submitMyResponse });
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await setup(vi.fn().mockReturnValue(of({ ...REVIEW_VOTE, pseudo_anonymity: privacy })), { getMyVoteBallot, updateMyResponse });
     impersonating.set(true);
-    fixture.componentRef.setInput('readOnly', true);
+    fixture.componentRef.setInput('changeMode', true);
     await openWithoutListVote();
     expect(el('vote-cast-impersonation-notice')?.textContent).toContain('This ballot is private');
     expect(getMyVoteBallot).not.toHaveBeenCalled();
@@ -501,19 +503,21 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
     expect(fixture.componentInstance['drawerPt']()).toEqual({ footer: { class: 'hidden' } });
     expect(submitButton()).toBeNull();
     fixture.componentInstance['onSubmit']();
-    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(updateMyResponse).not.toHaveBeenCalled();
   });
 
   it('allows locked named Review during impersonation', async () => {
     const getMyVoteBallot = vi.fn().mockReturnValue(of(BALLOT));
     await setup(vi.fn().mockReturnValue(of({ ...REVIEW_VOTE, pseudo_anonymity: false })), { getMyVoteBallot });
     impersonating.set(true);
-    fixture.componentRef.setInput('readOnly', true);
+    fixture.componentRef.setInput('changeMode', true);
     await openWithoutListVote();
     expect(getMyVoteBallot).toHaveBeenCalledWith(VOTE.uid);
     expect(fixture.componentInstance.form.get('q1')?.value).toBe('c2');
     expect(fixture.componentInstance.form.disabled).toBe(true);
     expect(el('vote-cast-impersonation-notice')?.textContent).toContain('Ballots are read-only');
+    expect(el('vote-cast-review-notice')?.textContent?.trim()).toBe('Your vote has been recorded.');
+    expect(el('vote-cast-ballot-final')).toBeNull();
     expect(submitButton()).toBeNull();
   });
 
@@ -587,7 +591,7 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
     expect(component.form.disabled).toBe(true);
     expect(component.commentForm.disabled).toBe(true);
     expect(component.abstainControl.disabled).toBe(true);
-    expect(el('vote-cast-review-notice')?.textContent?.trim()).toBe('Your vote has been recorded.');
+    expect(el('vote-cast-ballot-final')?.textContent?.trim()).toBe("Your vote is final and can't be changed.");
     expect(submitButton()).toBeNull();
     expect(el('vote-cast-cancel-button')?.textContent?.trim()).toBe('Close');
     expect(el('vote-cast-footer')?.contains(el('vote-cast-cancel-button'))).toBe(true);
@@ -675,13 +679,13 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
   });
 
   it('cannot submit a review even when the submit handler is invoked directly', async () => {
-    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
-    await openReview(REVIEW_VOTE, vi.fn().mockReturnValue(of(BALLOT)), { submitMyResponse });
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await openReview(REVIEW_VOTE, vi.fn().mockReturnValue(of(BALLOT)), { updateMyResponse });
     const component = fixture.componentInstance;
     const emitted = vi.spyOn(component.voteSubmitted, 'emit');
 
     component['onSubmit']();
-    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(updateMyResponse).not.toHaveBeenCalled();
     expect(emitted).not.toHaveBeenCalled();
     expect(TestBed.inject(MessageService).add).not.toHaveBeenCalled();
     expect(component['submitDisabled']()).toBe(true);
@@ -787,7 +791,7 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
     const component = fixture.componentInstance;
     component.visible.set(false);
     await fixture.whenStable();
-    fixture.componentRef.setInput('readOnly', false);
+    fixture.componentRef.setInput('changeMode', false);
     fixture.componentRef.setInput('voteId', 'new-vote');
     getVote.mockReturnValue(of({ ...REVIEW_VOTE, uid: 'new-vote' }));
     component.visible.set(true);
@@ -838,10 +842,9 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     can_change_vote: true,
   };
 
-  async function open(vote: Vote, overrides: Record<string, unknown>, inputs: { changeMode?: boolean; readOnly?: boolean } = {}): Promise<void> {
+  async function open(vote: Vote, overrides: Record<string, unknown>, inputs: { changeMode?: boolean } = {}): Promise<void> {
     await setup(vi.fn().mockReturnValue(of(vote)), overrides);
     if (inputs.changeMode) fixture.componentRef.setInput('changeMode', true);
-    if (inputs.readOnly) fixture.componentRef.setInput('readOnly', true);
     await openWithoutListVote();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -1118,6 +1121,7 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(fixture.componentInstance.form.disabled).toBe(true);
     expect(el('vote-cast-submit-button')).toBeNull();
     expect(el('vote-cast-ballot-final')).toBeNull();
+    expect(el('vote-cast-review-notice')?.textContent?.trim()).toBe('Your vote has been recorded.');
     expect(el('vote-cast-impersonation-notice')).not.toBeNull();
     fixture.componentInstance['onSubmit']();
     expect(updateMyResponse).not.toHaveBeenCalled();
@@ -1475,10 +1479,14 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
   });
 
   it('shows no final notice while reviewing a submitted ballot', async () => {
-    await open({ ...CHANGE_VOTE, allow_vote_change: false } as Vote, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)) }, { readOnly: true });
+    await open(
+      { ...CHANGE_VOTE, allow_vote_change: false } as Vote,
+      { getMyVoteBallot: vi.fn().mockReturnValue(of({ ...BALLOT, can_change_vote: false })) },
+      { changeMode: true }
+    );
 
     expect(el('vote-cast-final-notice')).toBeNull();
-    expect(el('vote-cast-review-notice')).not.toBeNull();
+    expect(el('vote-cast-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
     expect(fixture.componentInstance.form.disabled).toBe(true);
   });
 });
