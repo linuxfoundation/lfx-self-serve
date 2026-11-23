@@ -280,7 +280,6 @@ describe('Org Lens roll-up routes', () => {
       'roi',
       'people',
       'contributions',
-      'events',
       'training',
       'meetings',
       'groups',
@@ -303,10 +302,10 @@ describe('Org Lens roll-up routes', () => {
   });
 
   it('lazy-loads the unavailable page for every address under a gated page', async () => {
-    const events = gates(addressed.children!).find((gate) => gate.path === 'events')!;
+    const people = gates(addressed.children!).find((gate) => gate.path === 'people')!;
 
-    expect(events.children?.map((child) => child.path)).toEqual(['**']);
-    expect(await events.children?.[0].loadComponent?.()).toBe(OrgRollUpUnavailableComponent);
+    expect(people.children?.map((child) => child.path)).toEqual(['**']);
+    expect(await people.children?.[0].loadComponent?.()).toBe(OrgRollUpUnavailableComponent);
   });
 
   it("sends a bare roll-up address to its Memberships page and an organization's to its overview", () => {

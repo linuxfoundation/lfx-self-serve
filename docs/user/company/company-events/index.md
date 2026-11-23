@@ -1,10 +1,10 @@
 ---
 title: Events and Event Attendees
-description: How the Company lens Events page and People → Event Attendees count and list people at events, what each filter (Range, Foundation, Count, Show) does, what is shown about each person, and what the attendees and speakers panels for an event show.
+description: How the Company lens Events page and People → Event Attendees count and list people at events, what each filter (Range, Foundation, Count, Show) does, what is shown about each person, and what the attendees and speakers panels for an event show, and what a company family roll-up shows.
 audience: [all]
 product_area: Company
-tags: [company, org, org-lens, events, event-attendees, registered, attended, employee-match, company-email, filters, all-employees, speakers]
-last_updated: 2026-11-17
+tags: [company, org, org-lens, events, event-attendees, registered, attended, employee-match, company-email, filters, all-employees, speakers, roll-up, company-family]
+last_updated: 2026-11-23
 intercom_collection: Company
 ---
 
@@ -52,6 +52,17 @@ Selecting an event's attendee count or speaker count opens a panel that names th
 When a panel has no one to show, it says **No attendees found for this event.** or **No speakers found for this event.** A search that matches no one says **No attendees match your search.** or **No speakers match your search.** If a panel fails to load, it says **Could not load attendees. Close this panel and open it again to retry.** or **Could not load speakers. Close this panel and open it again to retry.**
 
 The filters are kept in the page address (`?range=`, `?foundation=`, `?participation=`, `?eventScope=`), left out while they are at their defaults, and carried when you switch between the Upcoming and Past tabs. **Clear filters** returns all of them, and the search and status, to their defaults.
+
+### What does the Events page show for a company family?
+
+When you pick **All <company> Companies** in the company selector, the Events page covers every company in that family that you have access to.
+
+- The tables have one row per event and company. An event that two of the family's companies took part in appears twice, once for each, with the event's details repeated, and a **Company** column after **Event Name** names each row's company.
+- **Event Attendees**, **Event Speakers** and **Event Sponsor** on a row are that company's own figures. The tiles and the tab counts count rows, so two companies at one event count as two.
+- A **Company** filter narrows the tiles, the tab counts and the tables to one company. It is kept in the page address (`?company=`), and **Clear filters** resets it.
+- **Show** is not offered: a family view lists only events where each company has activity.
+- Selecting a row's attendee or speaker count opens that company's panel, titled with its name.
+- If some of the family's companies are left out because you do not have access to them, or could not all be loaded, a notice on the page says so.
 
 ## People → Event Attendees
 
