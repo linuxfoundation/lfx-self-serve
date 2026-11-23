@@ -235,7 +235,7 @@ describe('InviteMentorDialogComponent', () => {
       ['lfid "priya" has no LF account', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE],
       [
         'the primary email of lfid "priya" belongs to another Mentorship user',
-        "This person's LF email address is already used by another Mentorship account, so they can't be invited.",
+        "This person's LF email address is already used by another Mentorship user, so they can't be invited.",
       ],
     ])('on a 422 for "%s" names that reason', (reason, message) => {
       const body = { error: `eligibility criteria not met: ${reason}`, code: 'VALIDATION_ERROR' };

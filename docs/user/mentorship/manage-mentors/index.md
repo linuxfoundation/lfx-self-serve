@@ -22,7 +22,7 @@ The **Mentors** tab is where you bring mentors onto a program and act on the req
 2. Go to the **Mentors** tab.
 3. Narrow the list with the **Search** box and the **Filter By Status** filter (**All statuses**, or one status).
 4. To bring someone on, select **Invite mentor**. The **Invite a mentor** dialog opens.
-   1. Type at least two characters into **Name, LFID or email**. Search by name, LF username, or full email address. Name search only finds people already in Mentorship; find anyone else by their exact LF username or full email address.
+   1. Type at least two characters into **Name, LF username or email**. Search by name, LF username, or full email address. Name search only finds people already in Mentorship; find anyone else by their exact LF username or full email address.
    2. Select the person in the list. Each result shows their name and LF username.
    3. Select **Send invite**, or press **Enter**.
 
@@ -65,7 +65,7 @@ On an approved program (**Accepting**, **In Progress**, **Upcoming** or **Comple
 | "We could not load the mentors. Try again."                                                                      | A transient failure reading the mentor list.                                                                                        |
 | "No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username." | No LF account has that username. Check it, or invite them by their full email address.                                              |
 | "No LF account uses this email"                                                                                  | No account uses that email address. Select **Send email invite** to invite them anyway; they create an LF account when they accept. |
-| "This person's LF email address is already used by another Mentorship account, so they can't be invited."        | Their LF account's primary email address is already on a different Mentorship account, so the invitation can't be linked to them.   |
+| "This person's LF email address is already used by another Mentorship user, so they can't be invited."           | Their LF account's primary email address is already used by a different Mentorship user, so the invitation can't be linked to them. |
 | "No one matches that search."                                                                                    | Name search only finds people already in Mentorship. Try their exact LF username or full email address.                             |
 | "Mentors can only be invited to a published program."                                                            | The program is not approved: it is not **Accepting**, **In Progress**, **Upcoming** or **Completed**.                               |
 | "This person is already on the program."                                                                         | They are already invited to, or a mentor of, the program.                                                                           |
