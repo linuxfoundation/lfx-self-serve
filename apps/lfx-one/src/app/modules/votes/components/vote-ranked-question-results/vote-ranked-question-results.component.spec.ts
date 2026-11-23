@@ -129,10 +129,10 @@ describe('VoteRankedQuestionResultsComponent', () => {
         outcome({ kind: 'irv', roundCount: 2, condorcetFallback: true }),
         'No candidate beat every other candidate head-to-head, so the vote went to instant-runoff elimination. Candidate One is the winner after 2 rounds.',
       ],
-      [outcome({ kind: 'meek_stv', winnerTexts: ['Candidate One'] }), 'Candidate One was elected by meeting the quota through proportional vote transfers.'],
+      [outcome({ kind: 'meek_stv', winnerTexts: ['Candidate One'] }), 'Candidate One was elected using Meek STV proportional counting.'],
       [
         outcome({ kind: 'meek_stv', winnerTexts: ['Candidate One', 'Candidate Two'] }),
-        'Candidate One and Candidate Two were elected by meeting the quota through proportional vote transfers.',
+        'Candidate One and Candidate Two were elected using Meek STV proportional counting.',
       ],
     ])('words the banner for each outcome (%#)', (value, expected) => {
       const el = render(question({ outcome: value }), 'creator', true);

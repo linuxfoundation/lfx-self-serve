@@ -79,7 +79,7 @@ The outcome is hidden while voting is open. After the vote ends and its final re
 - A banner names the winner, says the options are tied, or says **No winner could be determined.** The wording follows the voting method:
   - **Condorcet IRV**: the winner defeated every other option in head-to-head matchups. When no option did, the banner says the vote went to instant-runoff elimination and names the winner after the elimination rounds.
   - **Instant runoff**: the winner had a majority of continuing ballots in the final round.
-  - **Meek STV**: the options that were elected by meeting the quota.
+  - **Meek STV**: the options that were elected using Meek STV proportional counting.
 - **Standings** list every option in finishing order (**1st**, **2nd**, and so on). The winner is marked **Winner**, or **Tied** when several share first place. Condorcet IRV standings show each option's head-to-head record, for example **Won 6 out of 6 possible head-to-head matchups**. Instant-runoff standings show the round each option was knocked out (**Eliminated in round 2**). Meek STV standings show **Elected in round 3**, or **Not elected**.
 - The per-rank breakdown follows under **Rank distribution**.
 

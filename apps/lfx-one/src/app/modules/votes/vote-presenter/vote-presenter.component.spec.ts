@@ -438,11 +438,14 @@ describe('VotePresenterComponent', () => {
         num_recipients: 10,
         num_votes_cast: 3,
         num_abstained: 0,
+        comment_results: [],
+        poll_end_time: '2026-12-01T17:00:00Z',
         poll_results: [
           {
             question: {
               question_id: 'q1',
               prompt: 'Elect the synthetic chair',
+              type: 'single_choice',
               choices: [
                 { choice_id: 'a', choice_text: 'Candidate A' },
                 { choice_id: 'b', choice_text: 'Candidate B' },
@@ -463,7 +466,7 @@ describe('VotePresenterComponent', () => {
             ranked_choice_winner_info: { poll_choices: [{ choice_id: 'b', choice_text: 'Candidate B' }], condorcet_irv_used_for_eliminations: false },
           },
         ],
-      } as unknown as VoteResultsResponse)
+      } satisfies VoteResultsResponse)
     );
     fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, poll_type: PollType.CONDORCET_IRV })));
     await mount();

@@ -55,7 +55,7 @@ export class VoteRankedQuestionResultsComponent {
       if (outcome.result === 'none') return { lead: 'No winner could be determined.', names: '', tail: '' };
       if (outcome.kind === 'meek_stv') {
         const verb = outcome.winnerTexts.length === 1 ? 'was' : 'were';
-        return { lead: '', names, tail: ` ${verb} elected by meeting the quota through proportional vote transfers.` };
+        return { lead: '', names, tail: ` ${verb} elected using Meek STV proportional counting.` };
       }
       if (outcome.result === 'tie') return { lead: '', names, tail: ' are tied. No single winner could be determined.' };
       if (outcome.kind === 'condorcet') return { lead: '', names, tail: ' is the winner, having defeated every other candidate in head-to-head matchups.' };
