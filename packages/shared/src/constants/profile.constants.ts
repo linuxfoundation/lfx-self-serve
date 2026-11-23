@@ -347,6 +347,10 @@ export const ACCOUNT_SETTINGS_SECTIONS = {
   DEVELOPER_SETTINGS: 'developer-settings',
 } as const;
 
+/** Items a profile section grid shows before "View all (N)": nine pills, or six group cards (#6067). */
+export const PROFILE_GRID_LIMIT = 9;
+export const PROFILE_GROUP_GRID_LIMIT = 6;
+
 /** Base path of the Account & Settings area that replaces the Profile & Account hub's tabs (#6067). */
 export const ACCOUNT_BASE_PATH = '/account';
 /** Account & Settings pages that start Flow C from their own address, so the server accepts them as a return path. */
