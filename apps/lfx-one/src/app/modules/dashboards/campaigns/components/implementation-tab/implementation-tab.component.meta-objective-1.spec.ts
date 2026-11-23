@@ -262,8 +262,8 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   // === Geo eligibility, and display/dispatch agreement ===
 
   /**
-   * The counterpart that stops the guard over-broadening: a guard rejecting every country would
-   * pass the test above while breaking geo targeting outright.
+   * Wiring counterpart to the shared `metaGeoIsIneligible` / `metaAcceptedGeos` tables: the chip add
+   * must still accept an eligible code, or geo targeting breaks outright.
    */
   it('still accepts an eligible geo code', async () => {
     const c = component();

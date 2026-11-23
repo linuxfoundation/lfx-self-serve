@@ -10,20 +10,21 @@ import {
   META_SELECTABLE_PLACEMENTS,
   normalizeGeoTargets,
 } from '../constants/campaign.constants';
-import type { CampaignBriefOutput, MetaAdVariant, MetaCampaignCreateRequest, MetaObjective, MetaPlacement } from '../interfaces/campaign.interface';
+import type {
+  CampaignBriefOutput,
+  MetaBriefSeed,
+  MetaCampaignCreateRequest,
+  MetaCreateRefusalInput,
+  MetaInstagramDsaInput,
+  MetaObjective,
+  MetaPlacement,
+} from '../interfaces/campaign.interface';
 
 /**
  * The Meta create form's rules on the Implement tab (#5980, approach 4): geo, placements, pixel, and the
  * Instagram account and EU DSA disclosures. Pure, so their full input matrix is tested here; the
  * component reads them through its signals and keeps only wiring tests.
  */
-
-/** The Instagram account and DSA text as the operator typed it. */
-export interface MetaInstagramDsaInput {
-  instagramUserId: string;
-  dsaBeneficiary: string;
-  dsaPayor: string;
-}
 
 /** Whether Meta will not target `code`. Matched after trim and upper-casing, as the chip input receives it raw. */
 export function metaGeoIsIneligible(code: string): boolean {
@@ -169,12 +170,6 @@ export function metaObjectiveIsUnavailable(options: readonly MetaObjective[], ob
   return !options.includes(objective);
 }
 
-/** The Meta copy a brief seeds the form with: its variants and its eligible recommended geos. */
-export interface MetaBriefSeed {
-  variants: MetaAdVariant[];
-  geoTargets: string[];
-}
-
 /**
  * What a brief seeds the Meta section with, or `null` when it carries no Meta copy. The AI's
  * `structuredCopy.meta_ads` (snake_case, untyped JSON) wins over the typed `metaCopy`; geos go through
@@ -204,20 +199,6 @@ export function metaBasicsRefusal(budgetUsd: number, effectiveGeoTargets: readon
   if (budgetUsd < 1) return 'Meta Ads: set a budget of at least $1.';
   if (effectiveGeoTargets.length === 0) return 'Meta Ads: add a location, or a country code.';
   return null;
-}
-
-/** The Meta state {@link metaCreateRefusal} reads. Each `string | null` is a section's message, `null` when clear. */
-export interface MetaCreateRefusalInput {
-  variants: readonly Pick<MetaAdVariant, 'primaryText' | 'headline'>[];
-  hasPlacement: boolean;
-  pixelValid: boolean;
-  /** Whether the Instagram id or either EU DSA disclosure has an error. */
-  instagramDsaInvalid: boolean;
-  audienceTargetingBlock: string | null;
-  audienceTargetingError: string | null;
-  adOptionsBlock: string | null;
-  adOptionsError: string | null;
-  leadFormError: string | null;
 }
 
 /** Why the Meta form refuses Create, or `null`. The first failing check wins, in this order. */

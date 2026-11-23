@@ -4,13 +4,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { META_DEFAULT_PLACEMENTS, META_OBJECTIVE_LABELS } from '../constants/campaign.constants';
-import type { MetaPlacement } from '../interfaces/campaign.interface';
+import type { MetaCreateRefusalInput, MetaPlacement } from '../interfaces/campaign.interface';
 import {
   metaAcceptedGeos,
   metaBasicsRefusal,
   metaBriefSeed,
   metaCreateRefusal,
-  type MetaCreateRefusalInput,
   metaDsaCountries,
   metaDsaFieldError,
   metaEffectiveGeoTargets,
@@ -295,7 +294,7 @@ describe('metaBriefSeed', () => {
   });
 
   it('seeds the typed brief geos through the same rule', () => {
-    const seed = metaBriefSeed({ structuredCopy: null, metaCopy: { variants: [], recommendedGeos: ['de', 'DE', ' fr ', 'IR'] } as never });
+    const seed = metaBriefSeed({ structuredCopy: null, metaCopy: { variants: [], recommendedGeos: ['de', 'DE', ' fr ', 'IR'] } });
     expect(seed?.geoTargets).toEqual(['DE', 'FR']);
   });
 
@@ -317,7 +316,7 @@ describe('metaBriefSeed', () => {
   it('prefers the structured copy over the typed copy', () => {
     const seed = metaBriefSeed({
       structuredCopy: { meta_ads: { recommended_geos: ['JP'] } },
-      metaCopy: { variants: [], recommendedGeos: ['DE'] } as never,
+      metaCopy: { variants: [], recommendedGeos: ['DE'] },
     });
     expect(seed?.geoTargets).toEqual(['JP']);
   });
