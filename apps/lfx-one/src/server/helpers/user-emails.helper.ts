@@ -63,5 +63,6 @@ export async function resolveVerifiedUserEmails(
     verified_count: verifiedEmails.length,
   });
 
-  return verifiedEmails.length > 0 ? verifiedEmails : fallback;
+  // Strict callers never fall back to the session email: it may no longer be on the LFX profile.
+  return verifiedEmails.length > 0 || options.strict ? verifiedEmails : fallback;
 }

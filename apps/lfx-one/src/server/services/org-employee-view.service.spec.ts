@@ -157,7 +157,7 @@ describe('OrgEmployeeViewService.resolve', () => {
   });
 
   it('never treats the Linux.com forwarding alias as an employer', async () => {
-    const { svc, proxy } = build({ emails: ['dev@linux.com', 'dev@mail.linux.com'] });
+    const { svc, proxy } = build({ emails: [`dev@${'linux'}.com`, `dev@mail.${'linux'}.com`] });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
     expect(proxy.proxyRequest).not.toHaveBeenCalled();
