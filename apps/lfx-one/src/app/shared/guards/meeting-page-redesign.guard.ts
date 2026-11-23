@@ -88,7 +88,7 @@ async function resolveFlag(featureFlagService: FeatureFlagService): Promise<bool
 }
 
 // The server can't read local storage, so the QA override travels as a cookie; ignored in production like the original.
-export function readCookieOverride(request: Request | null): boolean | undefined {
+export function readCookieOverride(request: Request | null, flag: string = MEETINGS_REDESIGN_FLAG): boolean | undefined {
   if (environment.production || !request) {
     return undefined;
   }
@@ -101,7 +101,7 @@ export function readCookieOverride(request: Request | null): boolean | undefined
     return undefined;
   }
   try {
-    const value = (JSON.parse(decodeURIComponent(raw.slice(FEATURE_FLAG_OVERRIDE_STORAGE_KEY.length + 1))) as Record<string, unknown>)[MEETINGS_REDESIGN_FLAG];
+    const value = (JSON.parse(decodeURIComponent(raw.slice(FEATURE_FLAG_OVERRIDE_STORAGE_KEY.length + 1))) as Record<string, unknown>)[flag];
     return typeof value === 'boolean' ? value : undefined;
   } catch {
     return undefined;

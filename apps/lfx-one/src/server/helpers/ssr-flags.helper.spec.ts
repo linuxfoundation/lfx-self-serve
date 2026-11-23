@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEETINGS_REDESIGN_FLAG } from '@lfx-one/shared/constants';
+import { MEETINGS_REDESIGN_FLAG, PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import { User } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +36,21 @@ describe('resolveSsrFlags', () => {
 
   it.each(['/meetings', '/meetings/create', '/meetings/123/details', '/groups/123', '/project/meetings/create', '/org/meetings'])('skips %s', async (path) => {
     expect(await resolveSsrFlags(request(path), user)).toEqual({});
+    expect(isFlagEnabled).not.toHaveBeenCalled();
+  });
+
+  it.each(['/profile', '/profile/identities?success=profile_token_obtained', '/account', '/account/password'])(
+    'evaluates the profile redesign flag for %s with the browser context',
+    async (path) => {
+      const req = request(path);
+
+      expect(await resolveSsrFlags(req, user)).toEqual({ profileRedesign: true });
+      expect(isFlagEnabled).toHaveBeenCalledExactlyOnceWith(req, PROFILE_REDESIGN_FLAG, false, { key: 'pat', name: 'Pat Viewer', email: 'pat@example.org' });
+    }
+  );
+
+  it('leaves the profile redesign off for a signed-out render without asking', async () => {
+    expect(await resolveSsrFlags(request('/account/identities'), null)).toEqual({ profileRedesign: false });
     expect(isFlagEnabled).not.toHaveBeenCalled();
   });
 
