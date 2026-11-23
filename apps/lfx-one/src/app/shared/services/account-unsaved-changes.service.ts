@@ -7,7 +7,7 @@ import { ACCOUNT_CHANGES_REVERTED_MESSAGE } from '@lfx-one/shared/constants';
 import { AccountPageForm } from '@lfx-one/shared/interfaces';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { map, Observable, of } from 'rxjs';
+import { finalize, map, Observable, of } from 'rxjs';
 
 import { DiscardChangesModalComponent } from '../components/discard-changes-modal/discard-changes-modal.component';
 
@@ -54,7 +54,11 @@ export class AccountUnsavedChangesService {
   public confirmLeave(): Observable<boolean> {
     if (!this.dirty()) return of(true);
     const ref = this.modal.open<boolean>(DiscardChangesModalComponent, { role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' });
-    return ref.closed.pipe(map((discard) => discard === true));
+    // A newer navigation, such as a second Back, drops this one's guard; the dialog goes with it rather than stranding over the page.
+    return ref.closed.pipe(
+      map((discard) => discard === true),
+      finalize(() => ref.close())
+    );
   }
 
   private readonly onBeforeUnload = (event: BeforeUnloadEvent): void => {

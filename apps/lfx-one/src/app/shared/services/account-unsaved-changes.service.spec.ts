@@ -17,6 +17,7 @@ describe('AccountUnsavedChangesService', () => {
   let service: AccountUnsavedChangesService;
   let open: ReturnType<typeof vi.fn>;
   let show: ReturnType<typeof vi.fn>;
+  let close: ReturnType<typeof vi.fn>;
   let closed: Subject<boolean | undefined>;
   let dirty: ReturnType<typeof signal<boolean>>;
   let saving: ReturnType<typeof signal<boolean>>;
@@ -30,7 +31,8 @@ describe('AccountUnsavedChangesService', () => {
   beforeEach(() => {
     TestBed.resetTestingModule();
     closed = new Subject();
-    open = vi.fn(() => ({ closed }));
+    close = vi.fn();
+    open = vi.fn(() => ({ closed, close }));
     show = vi.fn();
     TestBed.configureTestingModule({
       providers: [
@@ -93,6 +95,15 @@ describe('AccountUnsavedChangesService', () => {
     closed.next(result);
 
     expect(await answer).toBe(leaves);
+  });
+
+  it('closes the dialog when a newer navigation drops the one that opened it', () => {
+    service.register(page, destroyRef);
+    dirty.set(true);
+
+    service.confirmLeave().subscribe().unsubscribe();
+
+    expect(close).toHaveBeenCalled();
   });
 
   it("blocks a reload with the browser's prompt only while there are unsaved changes", () => {

@@ -47,6 +47,8 @@ export class AccountLayoutComponent {
   protected readonly impersonating = this.userService.impersonating;
   /** The shown page's unsaved changes, for the header save bar. */
   protected readonly unsavedChanges = inject(AccountUnsavedChangesService);
+  /** Hidden while impersonating, when editing is disabled. */
+  protected readonly showSaveBar = computed(() => this.unsavedChanges.dirty() && !this.impersonating());
 
   /** Shows the fade under the header once the page has scrolled. */
   protected readonly scrolled = signal(false);

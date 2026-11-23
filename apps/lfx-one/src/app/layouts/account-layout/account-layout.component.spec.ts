@@ -74,6 +74,14 @@ describe('AccountLayoutComponent', () => {
     expect(unsaved.revert).toHaveBeenCalled();
   });
 
+  it('hides the save bar while impersonating, when editing is disabled', async () => {
+    impersonating.set(true);
+    unsaved.dirty.set(true);
+    await setup();
+
+    expect(query('account-layout-save-bar')).toBeNull();
+  });
+
   it('holds Revert while a save is running', async () => {
     await setup();
     unsaved.dirty.set(true);
