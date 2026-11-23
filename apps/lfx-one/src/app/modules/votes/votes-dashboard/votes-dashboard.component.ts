@@ -189,6 +189,9 @@ export class VotesDashboardComponent {
   });
 
   public constructor() {
+    // A management cancellation can finish after the same dashboard has switched to the personal Me lens.
+    this.voteService.voteCancellationCompleted$.pipe(takeUntilDestroyed()).subscribe(() => this.refreshVotes());
+
     toObservable(this.castDrawerVisible)
       .pipe(
         filter((visible) => !visible),

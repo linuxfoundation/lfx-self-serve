@@ -68,6 +68,7 @@ describe('VotesDashboardComponent personal summary', () => {
   let canWrite: WritableSignal<boolean>;
   let getMyVotes: ReturnType<typeof vi.fn>;
   let hasVotesAwaitingInvitationCount: ReturnType<typeof vi.fn>;
+  let cancellationCompleted: Subject<void>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
   const tabPills = () =>
@@ -96,6 +97,7 @@ describe('VotesDashboardComponent personal summary', () => {
     canWrite = signal(false);
     getMyVotes = vi.fn(() => of({ votes: feed, complete: true }));
     hasVotesAwaitingInvitationCount = vi.fn(() => false);
+    cancellationCompleted = new Subject<void>();
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
       providers: [
@@ -105,6 +107,8 @@ describe('VotesDashboardComponent personal summary', () => {
         {
           provide: VoteService,
           useValue: {
+            cancellingVoteUids: signal(new Set<string>()),
+            voteCancellationCompleted$: cancellationCompleted,
             getMyVotes,
             mergeRecentlyOpenedVotes: (votes: Vote[]) => votes,
             mergeRecentlyCreatedVotes: (votes: Vote[]) => votes,
@@ -156,9 +160,49 @@ describe('VotesDashboardComponent personal summary', () => {
     table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
   }
 
+  it.each<Lens>(['project', 'foundation', 'me'])('refreshes the current lens on cancellation completion (%s)', async (lens) => {
+    if (lens !== 'me') await management(lens);
+    const refresh = vi.spyOn(dashboard as unknown as { refreshVotes: () => void }, 'refreshVotes');
+    cancellationCompleted.next();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    fixture.destroy();
+    cancellationCompleted.next();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the personal feed when a management cancellation completes after switching to Me', async () => {
+    await management();
+    const pending = new Subject<void>();
+    pending.subscribe(() => cancellationCompleted.next());
+    activeLens.set('me');
+    await settle();
+    getMyVotes.mockClear();
+    getMyVotes.mockReturnValue(of({ votes: feed.filter((row) => row.uid !== 'soon'), complete: true }));
+    pending.next();
+    pending.complete();
+    await settle();
+    expect(getMyVotes).toHaveBeenCalledTimes(1);
+    expect(rows()).not.toContain('soon');
+    expect(table.canCancelVotes()).toBe(false);
+  });
+
   it.each<Lens>(['project', 'foundation'])('enables participation progress in the %s lens', async (lens) => {
     await management(lens);
     expect(table.showParticipationProgress()).toBe(true);
+  });
+
+  it('offers row-menu Cancel vote on the project and foundation lens, never the Me lens (#5968)', async () => {
+    expect(table.canCancelVotes()).toBe(false);
+
+    await management('project');
+    expect(table.canCancelVotes()).toBe(true);
+    await management('foundation');
+    expect(table.canCancelVotes()).toBe(true);
+
+    activeLens.set('me');
+    await settle();
+    table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
+    expect(table.canCancelVotes()).toBe(false);
   });
 
   it('re-fetches the page and counts while a just-opened vote is still counting invitations (GH-4078)', async () => {

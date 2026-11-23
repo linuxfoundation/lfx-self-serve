@@ -1,10 +1,10 @@
 ---
 title: Manage Votes
-description: How to find, edit, delete, vote on, and send reminders for votes in LFX Self Serve.
+description: How to find, edit, delete, cancel, vote on, and send reminders for votes in LFX Self Serve.
 audience: [all]
 product_area: Votes
-tags: [votes, manage, drafts, cast, results, reminders, mailing-list, copy-link]
-last_updated: 2026-11-20
+tags: [votes, manage, drafts, cancel, cast, results, reminders, mailing-list, copy-link]
+last_updated: 2026-11-23
 intercom_collection: Votes
 ---
 
@@ -33,21 +33,23 @@ Active and ended votes also have a **⋮** (**More actions**) menu. Selecting a 
 
 ### The ⋮ menu
 
-| Item                              | Who sees it                                                       | When                   |
-| --------------------------------- | ----------------------------------------------------------------- | ---------------------- |
-| **Copy link**                     | Anyone who can see the row                                        | Active and ended votes |
-| **Present**                       | People who can manage the vote                                    | Active and ended votes |
-| **Extend**                        | People who can manage the vote                                    | Active votes           |
-| **Send reminder**                 | People who can manage the vote                                    | Active votes           |
-| **Send reminder to mailing list** | People who can manage the vote                                    | Active votes           |
-| **Send summary**                  | People who can manage the vote                                    | Ended votes            |
-| **Clone**                         | People who can manage votes for the project, foundation, or group | Active and ended votes |
+| Item                              | Who sees it                                                                                                                | When                   |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| **Copy link**                     | Anyone who can see the row                                                                                                 | Active and ended votes |
+| **Present**                       | People who can manage the vote                                                                                             | Active and ended votes |
+| **Extend**                        | People who can manage the vote                                                                                             | Active votes           |
+| **Send reminder**                 | People who can manage the vote                                                                                             | Active votes           |
+| **Send reminder to mailing list** | People who can manage the vote                                                                                             | Active votes           |
+| **Close vote**                    | People who can manage the vote                                                                                             | Active votes           |
+| **Cancel vote**                   | People who can manage the vote, on the Project and Foundation dashboards and a group's **Votes** tab (not the **Me** lens) | Active votes           |
+| **Send summary**                  | People who can manage the vote                                                                                             | Ended votes            |
+| **Clone**                         | People who can manage votes for the project, foundation, or group                                                          | Active and ended votes |
 
-**Present**, **Extend**, **Send summary**, and **Clone** are covered in [Present, Extend, Clone, and Send a Summary](../present-extend-clone/). Reminders and **Copy link** are below.
+**Present**, **Extend**, **Close vote**, **Send summary**, and **Clone** are covered in [Present, Extend, Clone, and Send a Summary](../present-extend-clone/). **Cancel vote**, reminders and **Copy link** are below.
 
 ## Edit or delete a draft
 
-Only drafts can be edited. An active vote can't be edited, and there is no action to close a vote early. If an active vote has a mistake, [clone it](../present-extend-clone/#clone-a-vote) into a corrected vote.
+Only drafts can be edited. An active vote can't be edited. To end it early and keep its results, use [**Close vote**](../present-extend-clone/#close-the-vote-early). To delete it, use [**Cancel vote**](#cancel-an-active-vote). If an active vote has a mistake, [clone it](../present-extend-clone/#clone-a-vote) into a corrected vote.
 
 1. Open the **Draft** tab.
 2. Select **Edit** on the draft. The create form opens with your saved answers, and you can jump between steps freely. The voting method can't be changed.
@@ -56,6 +58,28 @@ Only drafts can be edited. An active vote can't be edited, and there is no actio
 To delete a draft, select **Delete** on its row and confirm. Deleting can't be undone.
 
 See [Create a Vote](../create-vote/) for what each field means.
+
+## Cancel an active vote
+
+Cancelling deletes an open vote, for example one that was opened by mistake. People who can manage the vote see **Cancel vote** in its **⋮** menu on the Project and Foundation **Votes** dashboards and on a group's **Votes** tab. It isn't offered in the **Me** lens. You can cancel a vote even after some members have voted.
+
+1. Find the active vote and select the **More** (⋮) menu on its row.
+2. Select **Cancel vote**. LFX names the vote and warns that it will be deleted.
+3. Select **Cancel vote** to confirm, or **Keep vote** (or press **Esc**) to back out without changing anything.
+
+After you confirm, a **Vote cancelled** message appears and the vote disappears from the list. Cancelling:
+
+- permanently deletes the vote and every response submitted so far,
+- can't be undone,
+- emails the invited voters that the vote was cancelled.
+
+Once a vote has ended, whether it was closed early, ended because everyone voted, or reached its deadline, it can't be cancelled and **Cancel vote** isn't shown. If the vote ends while you are confirming, LFX tells you it has already ended and refreshes the list. If cancelling fails for another reason, LFX shows an error and the vote stays as it was.
+
+| Action          | Applies to   | What happens                                                                                                                   |
+| --------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Delete**      | Drafts       | Deletes a draft that was never opened.                                                                                         |
+| **Close vote**  | Active votes | Ends voting now. The vote and its results are kept. See [Close the vote early](../present-extend-clone/#close-the-vote-early). |
+| **Cancel vote** | Active votes | Deletes the vote and all its responses, and notifies the invited voters.                                                       |
 
 ## Cast your vote
 

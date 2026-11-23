@@ -15,6 +15,8 @@ import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  VOTE_DELETE_ENDED,
+  VOTE_DELETE_ENDED_MESSAGE,
   VOTE_REMINDER_INACTIVE,
   VOTE_REMINDER_PRECHECK_FAILED,
   VOTE_REMINDER_SELECTION_STALE,
@@ -321,6 +323,26 @@ describe('VoteService', () => {
       await expect(service.deleteVote(req, '..')).rejects.toThrow(ServiceValidationError);
 
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the upstream ended-vote 400 as a 409 VOTE_DELETE_ENDED conflict without polling the index (#5968)', async () => {
+      proxyRequest.mockRejectedValueOnce(new MicroserviceError('ended polls cannot be deleted', 400, 'BAD_REQUEST'));
+
+      const error = await service.deleteVote(req, CANONICAL_UID).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).toMatchObject({ statusCode: 409, code: VOTE_DELETE_ENDED, message: VOTE_DELETE_ENDED_MESSAGE });
+      expect(pollEndpoint).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['403', new MicroserviceError('Forbidden', 403, 'FORBIDDEN')],
+      ['404', new MicroserviceError('Not Found', 404, 'NOT_FOUND')],
+    ])('passes an upstream %s through unchanged (#5968)', async (_status, upstream) => {
+      proxyRequest.mockRejectedValueOnce(upstream);
+
+      await expect(service.deleteVote(req, CANONICAL_UID)).rejects.toBe(upstream);
+      expect(pollEndpoint).not.toHaveBeenCalled();
     });
   });
 

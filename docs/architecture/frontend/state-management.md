@@ -49,6 +49,12 @@ export class DataService {
 - **Simplicity**: Easier to understand than RxJS for simple state
 - **Debugging**: Clear state flow and mutations
 
+### Vote cancellation lifetime
+
+`VoteService.cancelVote()` owns pending vote IDs and a non-ref-counted write subscription. Destroying the initiating table or switching group tabs cannot abort an initiated cancellation or reset its duplicate in-flight guard. The surviving Project/Foundation Votes dashboard and group page subscribe to `voteCancellationCompleted$` with their own destruction scopes; success, cancellation 404 and `409 VOTE_DELETE_ENDED` refresh those hosts. The table keeps confirmation and toast presentation. Draft deletion uses the existing `deleteVote()` flow unchanged.
+
+Before an ended-state refresh, `markVoteEnded()` reconciles the recently-created and recently-opened carriers without restarting their TTLs and records a confirmed-ended override independently of those windows. A stale ACTIVE index row cannot reopen that vote in the UI or put it back into Active results. A real indexed ENDED row retires the override; internally overlaid rows do not count as index convergence. The cancellation-only 404 path evicts both carriers and cached detail; confirming ENDED also invalidates cached detail so the next detail navigation re-reads the server. A locally confirmed ended row is checked against unfiltered inputs and Close overrides, so the group Active filter cannot hide its explanation. Completion refreshes the dashboard's current lens even after switching to Me, without enabling cancellation there. These guards are in-memory concurrency control, not cross-tab or server-side idempotency.
+
 ### Meetings home self-invite confirmation
 
 The feature-flagged meetings home keeps successful self-invites in viewer/feed-scoped `MeetingsHomeStore` state until the feed confirms their registration IDs. An empty UID list means the write succeeded without returning an ID; removed IDs cannot confirm a re-add. `MeetingDetailsSource` forwards both that state and `retrySelfInvites` to the drawer, so a stale drawer roster cannot duplicate an invitation. Index-dependent RSVP and resend actions wait for confirmation; row removal can use a saved UID.
