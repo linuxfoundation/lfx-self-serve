@@ -7,6 +7,7 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { ORG_EVENTS_PAGE_COPY, ORG_EVENTS_ROLL_UP_PAGE_COPY } from '@lfx-one/shared/constants';
 import type { OrgEvent, OrgEventRowVm, OrgEventsResponse, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -22,10 +23,11 @@ export class OrgEventsTableComponent {
   public readonly sortOrder = input<'ASC' | 'DESC'>('ASC');
   // Past tab (LFXV2-1900) drops the Action column; upcoming keeps it.
   public readonly showAction = input<boolean>(true);
+  public readonly rollUp = input<boolean>(false);
   // What the Event Attendees number counts and who it is credited to (the shared caption phrases), as the column's tooltip.
   public readonly attendeesCaption = input<string>('');
   public readonly emptyStateTitle = input<string>('No upcoming events');
-  public readonly emptyStateSubtitle = input<string>('No upcoming events were found for your company.');
+  public readonly emptyStateSubtitle = input<string>(ORG_EVENTS_PAGE_COPY.upcomingEmpty);
   public readonly emptyStateIcon = input<string>('fa-light fa-calendar-plus');
 
   public readonly pageChange = output<PageChangeEvent>();
@@ -36,8 +38,9 @@ export class OrgEventsTableComponent {
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.eventsResponse().total > 10 ? [10, 25, 50] : undefined));
 
-  // Single source of truth for the empty-row colspan: 8 columns with the Action column, 7 without.
-  protected readonly columnCount = computed<number>(() => (this.showAction() ? 8 : 7));
+  protected readonly copy = computed(() => (this.rollUp() ? ORG_EVENTS_ROLL_UP_PAGE_COPY : ORG_EVENTS_PAGE_COPY));
+
+  protected readonly columnCount = computed<number>(() => 7 + (this.showAction() ? 1 : 0) + (this.rollUp() ? 1 : 0));
 
   /**
    * Whether to name the goal in the column header. Driven by the data, not by a role input: the
@@ -51,7 +54,11 @@ export class OrgEventsTableComponent {
 
   // Pre-bake the formatted date range per row so the template reads a property instead of calling a method each CD cycle.
   protected readonly rows = computed<OrgEventRowVm[]>(() =>
-    this.eventsResponse().data.map((event) => ({ ...event, dateRange: this.formatDateRange(event.eventStartDate, event.eventEndDate) }))
+    this.eventsResponse().data.map((event) => ({
+      ...event,
+      dateRange: this.formatDateRange(event.eventStartDate, event.eventEndDate),
+      rowKey: event.organization ? `${event.eventId}-${event.organization.accountId}` : event.eventId,
+    }))
   );
 
   protected readonly sortAriaMap = computed<Record<string, string>>(() => {

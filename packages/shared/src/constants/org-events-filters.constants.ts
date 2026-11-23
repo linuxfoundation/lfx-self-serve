@@ -103,3 +103,5 @@ export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMet
 
 /** Longest foundation id the Events filters accept; ids are short opaque strings and the value is only ever bound, never inlined. */
 export const ORG_EVENTS_FOUNDATION_ID_MAX_LENGTH = 128;
+
+export const ORG_EVENTS_COMPANY_QUERY_PARAM = 'company';

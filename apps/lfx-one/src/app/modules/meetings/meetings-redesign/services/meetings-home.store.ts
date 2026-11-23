@@ -5,7 +5,12 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_NO_PAST_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import {
+  MEETING_SELF_INVITE_RECONCILIATION_DELAYS_MS,
+  MEETINGS_HOME_DEFAULT_FILTERS,
+  MEETINGS_HOME_NO_PAST_FILTERS,
+  MEETINGS_HOME_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
 import {
   Meeting,
   MeetingDashboardView,
@@ -45,10 +50,13 @@ import { UiToastService } from '@shared/uikit/toast/toast.service';
 import {
   catchError,
   combineLatest,
+  concatMap,
   debounceTime,
   defer,
   distinctUntilChanged,
+  EMPTY,
   filter,
+  from,
   interval,
   map,
   merge,
@@ -61,6 +69,7 @@ import {
   switchMap,
   take,
   tap,
+  timer,
 } from 'rxjs';
 
 import { MeetingsHomeFeed } from './meetings-home-feed';
@@ -98,9 +107,28 @@ export class MeetingsHomeStore {
   private readonly lastMeetingFailedState: WritableSignal<boolean> = signal(false);
   private readonly retry$ = new Subject<void>();
   private refreshFailedToast: UiToastRef | null = null;
+  private readonly selfInviteRetry$ = new Subject<void>();
+  private selfInviteSyncToast: UiToastRef | null = null;
   // Kept for the page's lifetime, so a refetch that still lists a deleted meeting or cancelled date does not bring it back.
   private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
   private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
+  /** Removed UIDs stay suppressed after a re-add clears the meeting-level marker; a different viewer starts empty. */
+  private readonly removedSelfRegistrantIds: WritableSignal<ReadonlyMap<string, ReadonlySet<string>>> = linkedSignal({
+    source: this.feed.key,
+    computation: () => new Map(),
+  });
+  /** Registrant uids of the meetings the viewer added themselves to here, until the feed's index lists them or the viewer removes them; a new viewer starts empty. */
+  private readonly selfInvitedIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = linkedSignal({
+    source: () => ({
+      key: this.feed.key(),
+      meetings: this.upcomingMeetings(),
+      removed: this.removedSelfRegistrantIds(),
+      removedMeetings: this.meetingService.removedRegistrationMeetingIds(),
+      deletedMeetings: this.deletedMeetingIds(),
+    }),
+    computation: (source, previous): ReadonlyMap<string, readonly string[]> =>
+      previous?.source.key === source.key ? this.withoutListedSelfInvites(previous.value, source.meetings) : new Map(),
+  });
   /** Key of the concurrent date picked on the Next meeting card; the first one when it is not among them. */
   private readonly nextCardKey: WritableSignal<string | null> = linkedSignal({ source: this.feed.key, computation: () => null });
   /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
@@ -135,9 +163,16 @@ export class MeetingsHomeStore {
   private pastNextPage: Subscription | null = null;
   // Bumped whenever the first past page is requested, so a next page for an older query is dropped.
   private pastQueryVersion = 0;
+  private pastChangedSearchFailed = false;
   // Search and filters the first past page was loaded with; its cursor only continues that query.
   private readonly pastQuery: WritableSignal<string> = signal('');
   private readonly pastFilters: WritableSignal<MeetingsHomePastFilters> = signal(MEETINGS_HOME_NO_PAST_FILTERS);
+  // Search whose first past page failed after an earlier one loaded; its list is then the error state, not still pending.
+  private readonly pastFailedQuery: WritableSignal<string | null> = linkedSignal({ source: this.feed.key, computation: (): string | null => null });
+  /** A paged past feed's first page for the current search failed, so its rows are another search's. */
+  private readonly pastSearchFailed: Signal<boolean> = computed(
+    () => this.pastQuery() !== this.search().trim() && this.pastFailedQuery() === this.search().trim()
+  );
   private readonly pastPageFailedState: WritableSignal<boolean> = signal(false);
   // Past meetings of the last load without server filters; server-filtered rows only hold the picked values. A new scope drops them.
   private readonly pastOptionMeetings: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.feed.key, computation: (): PastMeeting[] => [] });
@@ -147,7 +182,9 @@ export class MeetingsHomeStore {
     this.feed.pastRefresh$,
     this.pastLoadingState,
     this.pastFailedState,
-    this.initPastReloads()
+    this.initPastReloads(),
+    // A failed changed search leaves no list to keep, so no toast says one was kept.
+    () => this.pastChangedSearchFailed
   );
   private readonly pastNextPages: WritableSignal<PastMeeting[]> = linkedSignal({ source: this.pastFirstPage, computation: () => [] as PastMeeting[] });
   private readonly pastMeetings: Signal<PastMeeting[]> = computed(() => [...this.pastFirstPage(), ...this.pastNextPages()]);
@@ -195,7 +232,9 @@ export class MeetingsHomeStore {
   /** The active tab's feed failed to load; its rows are empty but not confirmed empty. */
   public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastShowsError() : this.upcomingFailed()));
   /** The past count is unknown: its load failed, or a next page failed with no past meetings loaded, whatever the tab. */
-  public readonly pastCountUnknown: Signal<boolean> = computed(() => this.pastFailed() || (this.pastPageFailedState() && this.pastMeetings().length === 0));
+  public readonly pastCountUnknown: Signal<boolean> = computed(
+    () => this.pastFailed() || this.pastSearchFailed() || (this.pastPageFailedState() && this.pastMeetings().length === 0)
+  );
   /**
    * The past list is in its error state: its load failed, or, on the Past tab, a next page failed for the current search
    * with nothing to show, so the viewer gets Retry.
@@ -203,7 +242,8 @@ export class MeetingsHomeStore {
   public readonly pastShowsError: Signal<boolean> = computed(
     () =>
       this.pastFailed() ||
-      (this.tab() === 'past' && this.pastPageFailedState() && this.search().trim() === this.pastQuery() && this.filteredRows().length === 0)
+      (this.tab() === 'past' && this.pastPageFailedState() && this.search().trim() === this.pastQuery() && this.filteredRows().length === 0) ||
+      (this.tab() === 'past' && this.pastSearchFailed())
   );
   /** The active tab's rows before search and filters. */
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
@@ -241,6 +281,8 @@ export class MeetingsHomeStore {
     const from = this.pastCalendarFromState();
     return !!from && this.pastPageToken() !== undefined && this.oldestPastDayAtOrAfter(from);
   });
+  /** The first past page, or a later one the calendar asked for, failed; {@link retryCalendarPast} retries it. */
+  public readonly calendarPastFailed: Signal<boolean> = computed(() => this.pastFailedState() || (this.pastPageFailedState() && this.calendarNeedsOlderPast()));
   /** The picked day once every one of its rows is loaded and shown; the page then scrolls to it and calls {@link completeReveal}. */
   public readonly revealedDay: Signal<string | null> = computed(() => {
     const day = this.revealDayState();
@@ -288,6 +330,10 @@ export class MeetingsHomeStore {
   public readonly lastMeetingRecordingUrl: Signal<string | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingRecording(id).pipe(map((recording) => getLargestSessionShareUrl(recording)))
   );
+  /** A paged past search changed and its first page has not loaded yet, so the rows shown are the old query's. */
+  public readonly pastQueryPending: Signal<boolean> = computed(
+    () => this.pagedPast && this.search().trim() !== this.pastQuery() && this.search().trim() !== this.pastFailedQuery()
+  );
   public readonly hasActiveQuery: Signal<boolean> = computed(() => this.search().trim() !== '' || countAppliedMeetingFilters(this.filters()) > 0);
   /** One chip per applied filter. */
   public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() =>
@@ -296,6 +342,7 @@ export class MeetingsHomeStore {
 
   public constructor() {
     this.initPastAutoLoad();
+    this.initSelfInviteReconciliation();
   }
 
   /** Switches tab and clears the filters; search is kept. */
@@ -321,6 +368,12 @@ export class MeetingsHomeStore {
     this.pastCalendarFromState.update((current) => (current && current <= day ? current : day));
     // Going back another month is the calendar's way to retry a page that failed.
     this.retryPastPage();
+  }
+
+  /** Retries the calendar's failed past meetings: the first page through {@link retry}, a later one by asking again for `day`. */
+  public retryCalendarPast(day: string): void {
+    if (this.pastFailedState()) this.retry();
+    else this.showPastFrom(day);
   }
 
   /** Keeps the rows a picked day brought in and ends the reveal. */
@@ -380,6 +433,38 @@ export class MeetingsHomeStore {
     this.cancelledOccurrenceIds.update((ids) => new Map(ids).set(meetingId, [...(ids.get(meetingId) ?? []), occurrenceId]));
   }
 
+  /** Refreshes pending invitations now and starts another bounded reconciliation window. */
+  public retrySelfInvites(): void {
+    if (this.destroyRef.destroyed || !isPlatformBrowser(this.platformId) || !this.pendingSelfInviteKey()) return;
+    this.selfInviteRetry$.next();
+    this.userService.refreshUserMeetings();
+  }
+
+  /** Marks the viewer invited to a meeting they just added themselves to, with the registrations the add confirmed. */
+  public markSelfInvited(meetingId: string, registrantUids: readonly string[]): void {
+    const removed = this.removedSelfRegistrantIds().get(meetingId);
+    const active = registrantUids.filter((uid) => !removed?.has(uid));
+    this.selfInvitedIds.update((ids) => new Map(ids).set(meetingId, active));
+  }
+
+  /** Registrant uids of a self-invite made here that the feed does not list yet; empty when the add returned none, undefined without one. */
+  public selfInviteOf(meetingId: string): readonly string[] | undefined {
+    return this.selfInvitedIds().get(meetingId);
+  }
+
+  /** Drops the registrations the viewer just removed from a self-invite made here, so a later removal never sends them again. */
+  public forgetSelfInvite(meetingId: string, removedRegistrantUids: readonly string[]): void {
+    this.removedSelfRegistrantIds.update((ids) => new Map(ids).set(meetingId, new Set([...(ids.get(meetingId) ?? []), ...removedRegistrantUids])));
+    this.selfInvitedIds.update((ids) => {
+      const kept = ids.get(meetingId)?.filter((uid) => !removedRegistrantUids.includes(uid));
+      if (!kept) return ids;
+      const next = new Map(ids);
+      if (kept.length) next.set(meetingId, kept);
+      else next.delete(meetingId);
+      return next;
+    });
+  }
+
   /** Records an organizer's edit or approval of the summary opened from row `key`; the Last card takes it only while that row is last. */
   public applySummaryChange(key: string, summary: PastMeetingSummary): void {
     if (this.lastMeeting()?.key === key) this.lastMeetingSummaryState.set(summary);
@@ -403,6 +488,59 @@ export class MeetingsHomeStore {
     return toSignal(interval(60_000).pipe(map(() => new Date())), { initialValue: new Date() });
   }
 
+  /** A stale initial refresh gets three delayed follow-ups, never an unbounded poll. */
+  private initSelfInviteReconciliation(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const pending = computed(() => this.pendingSelfInviteKey());
+    combineLatest([toObservable(pending), this.selfInviteRetry$.pipe(startWith(undefined))])
+      .pipe(
+        tap(() => {
+          this.selfInviteSyncToast?.dismiss();
+          this.selfInviteSyncToast = null;
+        }),
+        switchMap(([key]) =>
+          key
+            ? from(MEETING_SELF_INVITE_RECONCILIATION_DELAYS_MS).pipe(
+                concatMap((delayMs) => timer(delayMs)),
+                tap({
+                  next: () => this.userService.refreshUserMeetings(),
+                  complete: () => this.showSelfInviteSyncToast(),
+                })
+              )
+            : EMPTY
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
+    this.destroyRef.onDestroy(() => this.selfInviteSyncToast?.dismiss());
+  }
+
+  /** Scope belongs to this viewer/feed and only invitations not subsequently removed. */
+  private pendingSelfInviteKey(): string | null {
+    const removed = this.meetingService.removedRegistrationMeetingIds();
+    const ids = [...this.selfInvitedIds().keys()].filter((meetingId) => !removed.has(meetingId));
+    return ids.length ? JSON.stringify([this.feed.key(), ids]) : null;
+  }
+
+  private showSelfInviteSyncToast(): void {
+    const key = this.pendingSelfInviteKey();
+    if (!key) return;
+    this.selfInviteSyncToast = this.toast.show({
+      variant: 'warning',
+      position: 'bottom-center',
+      message: 'Invitation syncing',
+      description: 'Your invitation is saved but has not appeared yet. Refresh to try again.',
+      actions: [
+        {
+          label: 'Refresh invitation',
+          run: () => {
+            if (this.pendingSelfInviteKey() === key) this.retrySelfInvites();
+          },
+        },
+      ],
+    });
+  }
+
   /**
    * Re-requests the feed when the viewer changes (login, impersonation), never keeping the previous viewer's rows.
    * @description Only a first load that fails shows the error state; a failed refresh keeps the rows already loaded.
@@ -412,7 +550,8 @@ export class MeetingsHomeStore {
     refresh$: Observable<void>,
     loading: WritableSignal<boolean>,
     failed: WritableSignal<boolean>,
-    reload$: Observable<unknown> = of(undefined)
+    reload$: Observable<unknown> = of(undefined),
+    quietFailure: () => boolean = () => false
   ): Signal<T[]> {
     if (!isPlatformBrowser(this.platformId)) return signal<T[]>([]);
     let previousIdentity: string | null = null;
@@ -439,8 +578,8 @@ export class MeetingsHomeStore {
               error: (error: unknown) => {
                 console.error('Failed to load meetings for the meetings home page:', error);
                 loading.set(false);
-                if (loaded && !fromError) this.showRefreshFailedToast();
-                else failed.set(true);
+                if (!loaded || fromError) failed.set(true);
+                else if (!quietFailure()) this.showRefreshFailedToast();
               },
             }),
             // The shared feed ends on an error, so subscribe again when the next refresh is requested.
@@ -529,6 +668,7 @@ export class MeetingsHomeStore {
         if (version !== this.pastQueryVersion) return;
         this.pastQuery.set(query);
         this.pastFilters.set(filters);
+        this.pastFailedQuery.set(null);
         this.pastPageFailedState.set(false);
         this.pastPageToken.set(page.pageToken);
         if (!this.isNarrowed(filters)) this.pastOptionMeetings.set(page.meetings);
@@ -538,6 +678,14 @@ export class MeetingsHomeStore {
         error: () => {
           const current = query === this.search().trim() && this.samePastFilters(filters, this.pastServerFilters());
           if (version === this.pastQueryVersion && this.tab() === 'past' && current) this.revealDayState.set(null);
+        },
+      }),
+      // A failed refresh of the loaded search keeps its rows; only a changed search is left without a list.
+      tap({
+        error: () => {
+          // Judged on the query that failed, not on what the field holds by now.
+          this.pastChangedSearchFailed = this.feed.pagedPast && query !== this.pastQuery();
+          if (this.pastChangedSearchFailed && version === this.pastQueryVersion) this.pastFailedQuery.set(query);
         },
       }),
       map((page) => page.meetings)
@@ -656,6 +804,7 @@ export class MeetingsHomeStore {
         .filter((meeting) => !deleted.has(meeting.id) && (meeting.organizer || keepsRemoved || !removed.has(meeting.id)))
         .map((meeting) => this.withLocalCancellations(meeting))
         .map((meeting) => (removed.has(meeting.id) ? { ...meeting, invited: false, my_registrant_ids: [], my_rsvp: null, my_rsvps: [] } : meeting))
+        .map((meeting) => (removed.has(meeting.id) ? meeting : this.withSelfInvite(meeting)))
         .map((meeting) => this.withCurrentRsvps(meeting));
       return expandMeetingOccurrences(meetings, this.now()).map((row) => this.withConfirmedRowRsvp(row));
     });
@@ -681,6 +830,32 @@ export class MeetingsHomeStore {
   private withLocalCancellations(meeting: Meeting): Meeting {
     const ids = this.cancelledOccurrenceIds().get(meeting.id);
     return ids ? { ...meeting, cancelled_occurrences: [...(meeting.cancelled_occurrences ?? []), ...ids] } : meeting;
+  }
+
+  /** Applies a self-invite made this session, which the feed can still miss while it indexes. */
+  private withSelfInvite(meeting: Meeting): Meeting {
+    const removed = this.removedSelfRegistrantIds().get(meeting.id);
+    const registrantIds = meeting.my_registrant_ids?.filter((uid) => !removed?.has(uid));
+    const added = this.selfInvitedIds().get(meeting.id);
+    if (!added) return removed?.size ? { ...meeting, my_registrant_ids: registrantIds } : meeting;
+    // Without a returned UID, only a non-removed indexed registration can stand in for the new invitation.
+    if (!added.length) return { ...meeting, invited: true, my_registrant_ids: registrantIds?.length ? registrantIds : undefined };
+    return { ...meeting, invited: true, my_registrant_ids: [...new Set([...(registrantIds ?? []), ...added])] };
+  }
+
+  /** Keeps only the self-invites the feed does not list yet: invited, with every saved uid, or with a registration of its own when none was saved. */
+  private withoutListedSelfInvites(ids: ReadonlyMap<string, readonly string[]>, meetings: Meeting[]): ReadonlyMap<string, readonly string[]> {
+    const listed = new Map(meetings.map((meeting) => [meeting.id, meeting]));
+    const kept = [...ids].filter(([meetingId, uids]) => {
+      if (this.meetingService.removedRegistrationMeetingIds().has(meetingId) || this.deletedMeetingIds().has(meetingId)) return false;
+      const meeting = listed.get(meetingId);
+      if (!meeting?.invited) return true;
+      const removed = this.removedSelfRegistrantIds().get(meetingId);
+      const registrantIds = meeting.my_registrant_ids?.filter((uid) => !removed?.has(uid));
+      if (!uids.length) return !registrantIds?.length;
+      return !uids.every((uid) => registrantIds?.includes(uid));
+    });
+    return kept.length === ids.size ? ids : new Map(kept);
   }
 
   /** Loads one artifact of the last meeting, again whenever it changes; a missing or failed lookup reads as null. */

@@ -1265,6 +1265,10 @@ export interface CampaignImplementationDraft {
   metaAdOptions?: MetaAdOptions;
   /** The foundation slug {@link metaAdOptions} was chosen under: restored only under the same one, like the targeting. */
   metaAdOptionsProject?: string;
+  /** The Meta lead form id as picked or typed (#5940); absent means the draft predates it. */
+  metaLeadFormId?: string;
+  /** The foundation slug {@link metaLeadFormId} was picked under: a form belongs to that foundation's Page, so restored only under the same one. */
+  metaLeadFormProject?: string;
   /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
@@ -2319,14 +2323,40 @@ export interface MetaBriefCopy {
   recommendedGeos: string[];
 }
 
+/** The Instagram account and DSA text as the operator typed it. */
+export interface MetaInstagramDsaInput {
+  instagramUserId: string;
+  dsaBeneficiary: string;
+  dsaPayor: string;
+}
+
+/** The Meta copy a brief seeds the form with: its variants and its eligible recommended geos. */
+export interface MetaBriefSeed {
+  variants: MetaAdVariant[];
+  geoTargets: string[];
+}
+
+/** The Meta state `metaCreateRefusal` (`campaign-meta-form.utils.ts`) reads. Each `string | null` is a section's message, `null` when clear. */
+export interface MetaCreateRefusalInput {
+  variants: readonly Pick<MetaAdVariant, 'primaryText' | 'headline'>[];
+  hasPlacement: boolean;
+  pixelValid: boolean;
+  /** Whether the Instagram id or either EU DSA disclosure has an error. */
+  instagramDsaInvalid: boolean;
+  audienceTargetingBlock: string | null;
+  audienceTargetingError: string | null;
+  adOptionsBlock: string | null;
+  adOptionsError: string | null;
+  leadFormError: string | null;
+}
+
 export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
 
 /**
- * Objectives deliberately withheld from the campaign objective selector.
+ * Objectives withheld from the objective selector unless a condition holds.
  *
- * `leads` dispatches as a website-traffic campaign (see `META_OBJECTIVE_PARAMS`), so offering it
- * would label a traffic campaign "Leads". LFXV2-2665 builds instant-form support and removes it
- * from this union.
+ * `leads` dispatches as a website-traffic campaign without a lead form (see `META_OBJECTIVE_PARAMS`),
+ * so it is offered only to a caller who may send one (`metaObjectiveChoices`, #5940).
  *
  * Declared as a type so `SelectableMetaObjective` can be DERIVED rather than restated: a new member
  * of `MetaObjective` is then a compile error in `META_SELECTABLE_OBJECTIVES` unless it is named
@@ -2522,6 +2552,46 @@ export interface MetaLeadFormOption {
 export interface MetaLeadFormsResult {
   pageId: string;
   forms: MetaLeadFormOption[];
+}
+
+/** One row of the Implement tab's lead form picker (#5940): only an ACTIVE form with a valid id can be picked. */
+export interface MetaLeadFormChoice {
+  value: string;
+  label: string;
+  disabled: boolean;
+}
+
+/** Where the lead form picker stands; `unavailable` carries the sentence the typed form id box is offered with. */
+export interface MetaLeadFormPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  choices: MetaLeadFormChoice[];
+  reason: string | null;
+}
+
+/** What a saved Implement-tab draft restores for the Meta lead form (#5940); `leadFormId` `null` keeps the current one. */
+export interface MetaLeadFormRestore {
+  objective: MetaObjective;
+  leadFormId: string | null;
+}
+/** What the lead form picker shows once the forms are read (#5940). */
+export interface MetaLeadFormPickerView {
+  /** The Page has no forms: show the empty text. */
+  empty: boolean;
+  /** Show the select: there are forms, or a held id the list does not show. */
+  select: boolean;
+  /** The held id is not in the list, so it gets its own option. */
+  heldIdUnlisted: boolean;
+}
+/** What the Implement tab's lead form check reads: the Meta draft as the screen holds it (#5940). */
+export interface MetaLeadFormDraft {
+  /** Whether this caller may send a lead form: `CampaignListResult.metaLeadFormsEnabled` is an explicit yes. */
+  leadFormsEnabled: boolean;
+  objective: MetaObjective;
+  /** The picked or typed form id; blank is none. */
+  leadFormId: string;
+  manualBidding: boolean;
+  /** The chosen call to action; absent or blank is "Not set". */
+  callToAction?: string;
 }
 
 /** Where the Meta custom-audience picker stands; `unavailable` carries the sentence the typed boxes are offered with. */

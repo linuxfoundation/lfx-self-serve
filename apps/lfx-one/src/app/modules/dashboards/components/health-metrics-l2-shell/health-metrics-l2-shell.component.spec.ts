@@ -6,7 +6,7 @@ import { Component, output, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, NavigationEnd, NavigationSkipped, provideRouter, Router, Scroll } from '@angular/router';
-import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_L2_JUMP_REAIM_MS, HEALTH_METRICS_L2_OFFSET_SETTLE_MS, HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, filter, firstValueFrom, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -212,6 +212,12 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   function scrollIntoView(): ReturnType<typeof vi.fn> {
     return Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+  }
+
+  /** Waits out the debounce the shell puts on a new sticky offset. */
+  async function offsetSettled(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, HEALTH_METRICS_L2_OFFSET_SETTLE_MS + 50));
+    fixture.detectChanges();
   }
 
   async function flush(): Promise<void> {
@@ -463,14 +469,99 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(spyObserver().rootMargin).toBe(`-${offset}px 0px -${Math.round((400 - offset) * 0.7)}px 0px`);
   });
 
-  it('rebuilds the observer when the gate re-measures the sticky header', () => {
+  it('rebuilds the observer once the re-measured sticky header settles, not on every frame of its animation', async () => {
     const before = spyObserver();
 
+    chrome.headerHeightPx.set(128);
+    fixture.detectChanges();
     chrome.headerHeightPx.set(120);
     fixture.detectChanges();
+    expect(before.disconnected).toBe(false);
+
+    await offsetSettled();
 
     expect(before.disconnected).toBe(true);
-    expect(spyObserver().rootMargin).toBe(`-136px 0px -${bandBottomPx(136)}px 0px`);
+    const rebuilt = spyObserver();
+    expect(rebuilt.rootMargin).toBe(`-136px 0px -${bandBottomPx(136)}px 0px`);
+
+    // The same height again leaves the rebuilt observer alone.
+    chrome.headerHeightPx.set(120);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(rebuilt.disconnected).toBe(false);
+  });
+
+  it('keeps a jump waiting through an offset change that is not the header compacting', async () => {
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
+    fixture.detectChanges();
+
+    chrome.headerHeightPx.set(chrome.headerHeightPx() + 10);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 50);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets the reader take over a deep link jump after the link is released', async () => {
+    fragment.next('gamma');
+    allSettle();
+    await flush();
+    const jumps = scrollIntoView().mock.calls.length;
+
+    window.dispatchEvent(new WheelEvent('wheel'));
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 40);
+    fixture.detectChanges();
+    await offsetSettled();
+
+    expect(scrollIntoView()).toHaveBeenCalledTimes(jumps);
+  });
+
+  it('drops a jump the reader takes over before the header settles', async () => {
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
+    fixture.detectChanges();
+
+    window.dispatchEvent(new WheelEvent('wheel'));
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 40);
+    fixture.detectChanges();
+    await offsetSettled();
+
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a jump that has already landed alone when the header compacts later', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
+    fixture.detectChanges();
+
+    now.mockReturnValue(1_000 + HEALTH_METRICS_L2_JUMP_REAIM_MS + 1);
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 40);
+    fixture.detectChanges();
+    await offsetSettled();
+
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+    now.mockRestore();
+  });
+
+  it('re-aims a section jump when the header compacts on its way, but not when it grows back', async () => {
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
+    fixture.detectChanges();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+
+    chrome.headerHeightPx.set(chrome.headerHeightPx() - 40);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(2);
+
+    fixture.nativeElement.querySelector('[data-testid="test-sub-nav-beta"]').click();
+    fixture.detectChanges();
+    chrome.headerHeightPx.set(chrome.headerHeightPx() + 40);
+    fixture.detectChanges();
+    await offsetSettled();
+    expect(scrollIntoView()).toHaveBeenCalledTimes(3);
   });
 
   it('lights exactly one item, the topmost intersecting heading', () => {
@@ -520,13 +611,15 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   it('scrolls to the section the sub-nav emits', () => {
     const scrollIntoViewSpy = vi.fn();
-    vi.spyOn(document, 'getElementById').mockReturnValue({ scrollIntoView: scrollIntoViewSpy } as unknown as HTMLElement);
+    const focusSpy = vi.fn();
+    vi.spyOn(document, 'getElementById').mockReturnValue({ scrollIntoView: scrollIntoViewSpy, focus: focusSpy } as unknown as HTMLElement);
 
     fixture.nativeElement.querySelector('[data-testid="test-sub-nav-gamma"]').click();
     fixture.detectChanges();
 
     expect(activeKey()).toBe('gamma');
     expect(scrollIntoViewSpy).toHaveBeenCalledOnce();
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
   });
 
   it('scrolls to a fragment that was already in the URL before the sections existed', async () => {
@@ -772,6 +865,8 @@ describe('HealthMetricsL2ShellComponent', () => {
 
     expect(activeKey()).toBe('beta');
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('test-section-beta');
+    expect(document.activeElement?.getAttribute('aria-labelledby')).toBe(document.querySelector('[data-testid="test-section-beta"] h2')?.id);
 
     child('beta').settled.emit(false);
     await flush();
@@ -817,13 +912,15 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   // The handlers sit on three of the browser's hottest event streams, so a settled read has to
   // give them back rather than leave them running for the rest of the page's life.
-  it('unregisters the reader-intent listeners once every section has settled', async () => {
+  // The release scrolls to the section, and that jump keeps them until its re-aim window closes.
+  it('unregisters the reader-intent listeners once every section has settled and the jump has landed', async () => {
     const removeEventListener = vi.spyOn(window, 'removeEventListener');
     fragment.next('gamma');
     fixture.detectChanges();
 
     allSettle();
     await flush();
+    await new Promise((resolve) => setTimeout(resolve, HEALTH_METRICS_L2_JUMP_REAIM_MS + 50));
 
     for (const type of ['wheel', 'touchmove', 'keydown']) expect(removeEventListener).toHaveBeenCalledWith(type, expect.any(Function));
   });

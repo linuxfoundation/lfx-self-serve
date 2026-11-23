@@ -124,3 +124,13 @@ export const MAILING_LIST_JOIN_REFRESH_DELAY_MS = 1000;
  * trap them in an unclosable dialog forever (PR #5489 review).
  */
 export const MAILING_LIST_SYNC_POLL_DEADLINE_MS = 10 * 60 * 1000;
+
+/**
+ * Groups.io subscriber emails that are system/automation accounts, not real subscribers — ITX
+ * (and Groups.io itself) subscribe this account to every synced subgroup to drive the webhook
+ * integration. It has no business being shown as a subscriber to remove, add, or list, since it
+ * isn't a person and its subscription is not something sync or member-management should ever
+ * touch. Filtered from display only (the subscription itself is left alone) wherever subscriber
+ * data reaches the UI: the mailing list members table and the committee sync diff preview.
+ */
+export const GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS: readonly string[] = ['groupsio-automation-bot@linuxfoundation.org'];

@@ -19,6 +19,7 @@
         class="min-w-[240px] flex-[1_1_240px] max-[640px]:min-w-0 max-[640px]:basis-full"
         placeholder="Search members..."
         ariaLabel="Search members"
+        [maxlength]="maxSearchLength"
         [(value)]="searchText"
         data-testid="members-directory-search" />
       <lfx-ui-select class="max-[640px]:basis-full" size="small" ariaLabel="Membership tier" [(value)]="tierValue" data-testid="members-directory-tier">

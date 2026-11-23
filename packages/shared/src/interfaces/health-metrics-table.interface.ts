@@ -55,6 +55,8 @@ export interface HealthMetricsCellPersonLead {
   name: string;
   /** Photo URL; empty falls back to initials. */
   photoUrl: string;
+  /** Overrides the avatar's initials, such as one letter for a one-word name; empty keeps its default. */
+  initials?: string;
 }
 
 /** A 24px company logo box inline before a cell's text; its description indents 32px to line up with the name. */

@@ -189,9 +189,8 @@ export class VotesDashboardComponent {
   });
 
   public constructor() {
-    this.voteService.voteCancellationCompleted$.pipe(takeUntilDestroyed()).subscribe(() => {
-      if (this.isManagementVotesLens()) this.refreshVotes();
-    });
+    // A management cancellation can finish after the same dashboard has switched to the personal Me lens.
+    this.voteService.voteCancellationCompleted$.pipe(takeUntilDestroyed()).subscribe(() => this.refreshVotes());
 
     toObservable(this.castDrawerVisible)
       .pipe(
@@ -293,6 +292,11 @@ export class VotesDashboardComponent {
   // Me-lens uses myVotes (refresh$); fetch$ feeds initVotes (non-Me) and would just cause extra churn.
   protected onCastVoteSubmitted(voteId: string): void {
     this.submittedVoteIds.update((ids) => new Set(ids).add(voteId));
+    this.refresh$.next();
+  }
+
+  // A rejected update (vote ended, voter removed, ballot not found — #5964) refreshes the Me-lens list without marking the vote submitted.
+  protected onCastBallotUnavailable(): void {
     this.refresh$.next();
   }
 

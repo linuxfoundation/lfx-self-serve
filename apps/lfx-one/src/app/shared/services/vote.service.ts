@@ -65,6 +65,9 @@ export class VoteService {
   // (GH-4078), so a later stale Draft row is overlaid with it (e.g. Ended) instead of being reopened as Active.
   private readonly recentlyOpenedConfirmedStatus = new Map<string, PollStatus>();
   private readonly recentlyCreatedVotes: WritableSignal<Map<string, { vote: Vote; markedAt: number }>> = signal(new Map());
+  private readonly confirmedEndedVotes = new Set<string>();
+  // Both carrier merges run in sequence: our own ENDED copies are not proof of index convergence.
+  private readonly endedVoteOverlays = new WeakSet<Vote>();
   private readonly cancellingVotes = signal<ReadonlySet<string>>(new Set());
   private readonly voteCancellationCompleted = new Subject<void>();
   public readonly cancellingVoteUids = this.cancellingVotes.asReadonly();
@@ -322,14 +325,16 @@ export class VoteService {
       take(1),
       tap(() => {
         this.voteDetailCache.delete(voteUid);
+        this.confirmedEndedVotes.delete(voteUid);
         // Otherwise a deleted synthesized draft (GH-4007) keeps reappearing in the list until its TTL expires.
         this.evictRecentlyCreatedVote(voteUid);
       })
     );
   }
 
-  /** Records confirmed ended state in both optimistic carriers without extending their original TTLs. */
+  /** Records confirmed ended state until the index agrees, independently of the optimistic carriers' TTLs. */
   public markVoteEnded(voteUid: string): void {
+    this.confirmedEndedVotes.add(voteUid);
     this.updateRecentlyCreatedVoteStatus(voteUid, PollStatus.ENDED);
     if (this.recentlyOpenedVotes().has(voteUid)) this.recentlyOpenedConfirmedStatus.set(voteUid, PollStatus.ENDED);
   }
@@ -347,6 +352,7 @@ export class VoteService {
             if (!(error instanceof HttpErrorResponse)) return;
             const code = (error.error as { code?: unknown } | null)?.code;
             if (error.status === 404) {
+              this.confirmedEndedVotes.delete(voteUid);
               this.evictRecentlyCreatedVote(voteUid);
               this.evictRecentlyOpenedVote(voteUid);
             } else if (error.status === 409 && code === VOTE_DELETE_ENDED) {
@@ -539,6 +545,7 @@ export class VoteService {
    * overlaid with it (e.g. Ended) rather than reopened as Active.
    */
   public mergeRecentlyOpenedVotes(votes: Vote[]): Vote[] {
+    votes = this.reconcileConfirmedEndedVotes(votes);
     const recentlyOpened = this.getLiveRecentlyOpenedVotes();
     if (recentlyOpened.size === 0) {
       return votes;
@@ -650,6 +657,7 @@ export class VoteService {
     } = {}
   ): Vote[] {
     const { projectUid, committeeUid, statusFilter, closingOnly, nowMs = Date.now(), searchName, group, isFirstPage = true } = options;
+    votes = this.reconcileConfirmedEndedVotes(votes, statusFilter);
     const recentlyCreated = this.getLiveRecentlyCreatedVotes();
     if (recentlyCreated.size === 0) {
       return votes;
@@ -854,6 +862,33 @@ export class VoteService {
         this.voteDetailCache.delete(key);
       }
     }
+  }
+
+  /** A definitive ended response wins over stale indexed statuses until a real indexed ENDED row catches up. */
+  private reconcileConfirmedEndedVotes(votes: Vote[], statusFilter?: PollStatus | null): Vote[] {
+    if (this.confirmedEndedVotes.size === 0) return votes;
+    let changed = false;
+    const reconciled: Vote[] = [];
+    for (const vote of votes) {
+      if (!this.confirmedEndedVotes.has(vote.uid)) {
+        reconciled.push(vote);
+        continue;
+      }
+      if (vote.status === PollStatus.ENDED && !this.endedVoteOverlays.has(vote)) this.confirmedEndedVotes.delete(vote.uid);
+      if (statusFilter != null && statusFilter !== PollStatus.ENDED) {
+        changed = true;
+        continue;
+      }
+      if (vote.status === PollStatus.ENDED) {
+        reconciled.push(vote);
+      } else {
+        const ended = { ...vote, status: PollStatus.ENDED };
+        this.endedVoteOverlays.add(ended);
+        reconciled.push(ended);
+        changed = true;
+      }
+    }
+    return changed ? reconciled : votes;
   }
 
   /** Returns the live recently-created map (uid → Vote), pruning entries older than RECENTLY_OPENED_VOTE_TTL_MS. */

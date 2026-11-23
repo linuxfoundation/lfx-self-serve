@@ -21,7 +21,7 @@ import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { getLocalDayKey } from '@lfx-one/shared/utils';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeFeed, UserMeetingsHomeFeed } from './meetings-home-feed';
 import { MeetingsHomeStore } from './meetings-home.store';
@@ -168,8 +168,96 @@ describe('MeetingsHomeStore', () => {
       confirmedMeetingRsvps: vi.fn(() => confirmed()),
       isMeetingRsvpCurrent: vi.fn(() => true),
       authenticated: signal(true),
+      refreshUserMeetings: vi.fn(() => meetingsRefresh$.next()),
       meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }),
     };
+  });
+
+  describe('self-invite reconciliation', () => {
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }));
+    afterEach(() => {
+      TestBed.resetTestingModule();
+      vi.useRealTimers();
+    });
+
+    it.each([[], ['reg-new']])('recovers from a stale initial refresh without an unrelated mutation: %j', (...uids) => {
+      const store = create();
+      const stale = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([stale]);
+      store.markSelfInvited('organized', uids);
+      upcoming$.next([stale]);
+      TestBed.tick();
+      const refresh = userService['refreshUserMeetings'] as ReturnType<typeof vi.fn>;
+      refresh.mockImplementation(() =>
+        upcoming$.next([{ ...stale, invited: true, my_registrant_ids: refresh.mock.calls.length === 1 ? undefined : ['reg-new'] }])
+      );
+
+      vi.advanceTimersByTime(1000);
+      TestBed.tick();
+      expect(store.selfInviteOf('organized')).toEqual(uids);
+      vi.advanceTimersByTime(4000);
+      TestBed.tick();
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      vi.advanceTimersByTime(60000);
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(toast.show).not.toHaveBeenCalledWith(expect.objectContaining({ message: 'Invitation syncing' }));
+    });
+
+    it('bounds stale confirmation reads and lets an explicit retry start a new bounded window', () => {
+      const store = create();
+      const stale = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([stale]);
+      store.markSelfInvited('organized', []);
+      TestBed.tick();
+      const refresh = userService['refreshUserMeetings'] as ReturnType<typeof vi.fn>;
+      refresh.mockImplementation(() => upcoming$.next([stale]));
+
+      for (const delay of [1000, 4000, 10000]) {
+        vi.advanceTimersByTime(delay);
+        TestBed.tick();
+      }
+      expect(refresh).toHaveBeenCalledTimes(3);
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      expect(toast.show).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Invitation syncing', actions: [expect.objectContaining({ label: 'Refresh invitation' })] })
+      );
+      vi.advanceTimersByTime(60000);
+      expect(refresh).toHaveBeenCalledTimes(3);
+
+      store.retrySelfInvites();
+      expect(refresh).toHaveBeenCalledTimes(4);
+      for (const delay of [1000, 4000, 10000]) {
+        vi.advanceTimersByTime(delay);
+        TestBed.tick();
+      }
+      expect(refresh).toHaveBeenCalledTimes(7);
+      vi.advanceTimersByTime(60000);
+      expect(refresh).toHaveBeenCalledTimes(7);
+    });
+
+    it.each(['removal', 'deletion', 'viewer', 'destruction'])('stops delayed work after %s', (change) => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-new']);
+      TestBed.tick();
+      if (change === 'removal') removed.set(new Set(['organized']));
+      if (change === 'deletion') store.removeMeeting('organized');
+      if (change === 'viewer') identity.set('viewer-b');
+      if (change === 'destruction') TestBed.resetTestingModule();
+      else TestBed.tick();
+      if (change !== 'destruction') expect(store.selfInviteOf('organized')).toBeUndefined();
+      vi.advanceTimersByTime(60000);
+      expect(userService['refreshUserMeetings']).not.toHaveBeenCalled();
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    it('does not schedule or retry confirmation reads during SSR', () => {
+      const store = create('server');
+      store.markSelfInvited('organized', []);
+      store.retrySelfInvites();
+      vi.advanceTimersByTime(60000);
+      expect(userService['refreshUserMeetings']).not.toHaveBeenCalled();
+    });
   });
 
   describe('loading', () => {
@@ -231,6 +319,23 @@ describe('MeetingsHomeStore', () => {
       TestBed.tick();
 
       expect(store.revealedDay()).toBe(day);
+    });
+
+    it('keeps the loaded past rows, searched locally, when a reload after a search change fails on the whole feed', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = create();
+      past$.next([buildPastMeeting('a', inDays(-1))]);
+      upcoming$.error(new Error('down'));
+      (userService['getUserMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(of([]));
+      (userService['getUserPastMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(throwError(() => new Error('past down')));
+      store.setTab('past');
+      store.setSearch('Past');
+
+      store.retry();
+      TestBed.tick();
+
+      expect(store.pastShowsError()).toBe(false);
+      expect(store.pastRows()).toHaveLength(1);
     });
 
     it('keeps the loaded rows on a failed refresh, shows one toast and takes the next refresh', () => {
@@ -295,6 +400,159 @@ describe('MeetingsHomeStore', () => {
       const [organized] = store.upcomingRows();
       expect(organized.meeting).toMatchObject({ invited: false, my_registrant_ids: [], my_rsvp: null });
       expect(organized.myRsvp ?? null).toBeNull();
+    });
+
+    it('keeps a self-invited meeting invited, with its new registration, while a refetch still misses it', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+
+      store.markSelfInvited('organized', ['reg-self']);
+      upcoming$.next([organized]);
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: true, my_registrant_ids: ['reg-self'] });
+    });
+
+    it('lets invited decide when the self-invite returned no registration uid', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+
+      store.markSelfInvited('organized', []);
+
+      expect(store.upcomingRows()[0].meeting.invited).toBe(true);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toBeUndefined();
+    });
+
+    it('lets a later removal win over a self-invite', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+
+      store.markSelfInvited('organized', ['reg-self']);
+      removed.set(new Set(['organized']));
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      removed.set(new Set());
+      store.markSelfInvited('organized', ['reg-readded']);
+      expect(store.selfInviteOf('organized')).toEqual(['reg-readded']);
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: true, my_registrant_ids: ['reg-readded'] });
+    });
+
+    it('retires a self-invite once the feed lists it, so a later feed decides again', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+      store.markSelfInvited('organized', ['reg-self']);
+
+      upcoming$.next([{ ...organized, invited: true, my_registrant_ids: ['reg-self'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      upcoming$.next([organized]);
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+    });
+
+    it('keeps a self-invite without a uid until the feed lists a registration of the viewer', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: true, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+      store.markSelfInvited('organized', []);
+
+      upcoming$.next([organized]);
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-self'] }]);
+
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+    });
+
+    it('does not confirm a no-UID invitation from unknown registration enrichment', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+      store.markSelfInvited('organized', []);
+      upcoming$.next([{ ...organized, invited: true, my_registrant_ids: undefined }]);
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      upcoming$.next([{ ...organized, invited: true, my_registrant_ids: ['reg-confirmed'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+    });
+
+    it('forgets the registrations the viewer removed from a self-invite', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-self', 'reg-other']);
+
+      store.forgetSelfInvite('organized', ['reg-self']);
+      expect(store.selfInviteOf('organized')).toEqual(['reg-other']);
+      store.forgetSelfInvite('organized', ['reg-other']);
+
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+    });
+
+    it.each([
+      ['reg-old', 'reg-new'],
+      ['reg-new', 'reg-old'],
+    ])('saves only active UIDs from a mixed re-invite roster: %j', (...uids) => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: true, my_registrant_ids: ['reg-old'] });
+      upcoming$.next([organized]);
+      // The removed registration can already have retired its self-invite override.
+      store.forgetSelfInvite('organized', ['reg-old']);
+      store.markSelfInvited('organized', uids);
+
+      expect(store.selfInviteOf('organized')).toEqual(['reg-new']);
+      expect(store.selfInviteOf('organized')?.at(-1)).toBe('reg-new');
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-new']);
+
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-new'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-old', 'reg-new'] }]);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-new']);
+    });
+
+    it.each([{ ids: ['reg-old'] }, { ids: [] }, { ids: undefined }])('keeps a no-UID re-add pending without an active indexed UID: $ids', ({ ids }) => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: true, my_registrant_ids: ['reg-old'] });
+      upcoming$.next([organized]);
+      store.forgetSelfInvite('organized', ['reg-old']);
+      removed.set(new Set(['organized']));
+      expect(store.upcomingRows()[0].meeting.invited).toBe(false);
+
+      removed.set(new Set());
+      store.markSelfInvited('organized', []);
+      upcoming$.next([{ ...organized, my_registrant_ids: ids }]);
+
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      expect(store.upcomingRows()[0].meeting.invited).toBe(true);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toBeUndefined();
+
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-old', 'reg-new'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-new']);
+    });
+
+    it("resets removed UIDs with the viewer instead of suppressing the next viewer's registration", () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, my_registrant_ids: ['reg-old'] })]);
+      store.forgetSelfInvite('organized', ['reg-old']);
+      identity.set('viewer-b');
+      TestBed.tick();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-old']);
+
+      expect(store.selfInviteOf('organized')).toEqual(['reg-old']);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-old']);
+    });
+
+    it('forgets a self-invite on a viewer change', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-self']);
+
+      identity.set('viewer-b');
+      TestBed.tick();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
     });
 
     it('shows an answer confirmed this session on the date it applies to', () => {
@@ -869,6 +1127,7 @@ describe('MeetingsHomeStore', () => {
       const feed: MeetingsHomeFeed = {
         key: identity,
         scope: 'project',
+        showsProject: signal(false),
         pagedPast: true,
         upcomingRefresh$: meetingsRefresh$,
         pastRefresh$: pastMeetingsRefresh$,
@@ -1403,6 +1662,51 @@ describe('MeetingsHomeStore', () => {
       expect(store.failed()).toBe(false);
     });
 
+    it('shows no kept-list toast when a changed search fails after the field moved on', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 2));
+        TestBed.tick();
+
+        store.setSearch('board');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        store.setSearch('boards');
+        TestBed.tick();
+        pastPages[1].error(new Error('search failed'));
+        TestBed.tick();
+
+        expect(toast.show).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('treats the past count as unknown on Upcoming when the first page for a changed search fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 2));
+        TestBed.tick();
+
+        store.setSearch('board');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        pastPages[1].error(new Error('search failed'));
+        TestBed.tick();
+
+        expect(store.tab()).toBe('upcoming');
+        expect(store.pastCountUnknown()).toBe(true);
+        store.setTab('past');
+        expect(store.pastShowsError()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('treats the past count as unknown on any tab when a next page failed with nothing loaded', () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const store = createPaged();
@@ -1682,6 +1986,20 @@ describe('MeetingsHomeStore', () => {
         expect(store.pastRows()).toHaveLength(15);
       });
 
+      it('reports a failed first past page to the calendar, and retries it from the first page', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const store = createPaged();
+        pastPages[0].error(new Error('down'));
+        TestBed.tick();
+
+        expect(store.calendarPastFailed()).toBe(true);
+
+        store.retryCalendarPast(getLocalDayKey(inDays(-30)));
+        TestBed.tick();
+        expect(past).toHaveBeenCalledTimes(2);
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS);
+      });
+
       it('stops, without retrying, when an older page fails', () => {
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const store = createPaged();
@@ -1694,12 +2012,14 @@ describe('MeetingsHomeStore', () => {
         TestBed.tick();
 
         expect(past).toHaveBeenCalledTimes(2);
+        expect(store.calendarPastFailed()).toBe(true);
 
         // Going back another month retries the page from the kept cursor.
         store.showPastFrom(getLocalDayKey(inDays(-90)));
         TestBed.tick();
         expect(past).toHaveBeenCalledTimes(3);
         expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+        expect(store.calendarPastFailed()).toBe(false);
       });
     });
 

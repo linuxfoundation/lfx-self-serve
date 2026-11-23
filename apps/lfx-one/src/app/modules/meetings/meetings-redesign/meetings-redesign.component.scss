@@ -1,0 +1,41 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The search field grows out of its 96px button and shrinks back into it.
+.meetings-search.is-closing {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .meetings-search.is-opening {
+    animation: meetings-search-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .meetings-search.is-closing {
+    animation: meetings-search-out 0.18s ease both;
+  }
+}
+
+@keyframes meetings-search-in {
+  from {
+    width: 96px;
+    opacity: 0.6;
+  }
+
+  to {
+    width: 280px;
+    opacity: 1;
+  }
+}
+
+@keyframes meetings-search-out {
+  from {
+    width: 280px;
+    opacity: 1;
+  }
+
+  to {
+    width: 96px;
+    opacity: 0;
+  }
+}

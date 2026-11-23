@@ -7,6 +7,7 @@ import type { ActivatedRoute, Router } from '@angular/router';
 import {
   DEFAULT_ORG_EVENTS_PARTICIPATION,
   DEFAULT_ORG_EVENTS_SCOPE,
+  ORG_EVENTS_COMPANY_QUERY_PARAM,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
   ORG_EVENTS_SCOPE_QUERY_PARAM,
@@ -28,6 +29,10 @@ export function readOrgEventsScope(route: ActivatedRoute): OrgEventsScope {
 /** The foundation id a route's `?foundation=` selects (`''`, All Foundations, when absent). */
 export function readOrgEventsFoundation(route: ActivatedRoute): string {
   return route.snapshot.queryParamMap.get(ORG_EVENTS_FOUNDATION_QUERY_PARAM) ?? '';
+}
+
+export function readOrgEventsCompany(route: ActivatedRoute): string {
+  return route.snapshot.queryParamMap.get(ORG_EVENTS_COMPANY_QUERY_PARAM) ?? '';
 }
 
 /** Keeps a "Count" picker and `?participation=` in step (see {@link syncOrgEventsParamWithUrl}). Call from an injection context. */
@@ -52,6 +57,14 @@ export function syncOrgEventsScopeWithUrl(control: FormControl<OrgEventsScope>, 
 export function syncOrgEventsFoundationWithUrl(control: FormControl<string>, route: ActivatedRoute, router: Router): void {
   syncOrgEventsParamWithUrl(control, route, router, {
     param: ORG_EVENTS_FOUNDATION_QUERY_PARAM,
+    fromUrl: (value) => value ?? '',
+    toUrl: (value) => value || null,
+  });
+}
+
+export function syncOrgEventsCompanyWithUrl(control: FormControl<string>, route: ActivatedRoute, router: Router): void {
+  syncOrgEventsParamWithUrl(control, route, router, {
+    param: ORG_EVENTS_COMPANY_QUERY_PARAM,
     fromUrl: (value) => value ?? '',
     toUrl: (value) => value || null,
   });

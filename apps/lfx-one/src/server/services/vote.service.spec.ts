@@ -24,6 +24,7 @@ import {
   VOTE_SUMMARY_NOT_ENDED,
   VOTE_SUMMARY_PRECHECK_FAILED,
   VOTE_SUMMARY_SEND_FAILED,
+  VOTE_VOTER_REMOVED_ERROR_CODE,
   VOTE_VOTERS_DRAFT,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
@@ -2161,6 +2162,32 @@ describe('VoteService', () => {
       });
     });
 
+    describe.each(['vote_uid', 'poll_id'] as const)('incomplete invitation lookup via %s (#5964)', (parentKey) => {
+      it.each(['read', 'update'] as const)('propagates a later-page failure during %s instead of classifying removal', async (operation) => {
+        const paginator = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+        fetchAllQueryResources.mockImplementation(paginator.fetchAllQueryResources);
+        const failure = new MicroserviceError('Synthetic query service failure', 503, 'UNAVAILABLE');
+        proxyRequest.mockImplementation(
+          async (_req: unknown, _service: unknown, _path: string, _method: unknown, params: { filters: string[]; page_token?: string }) => {
+            if (!params.filters.includes(`${parentKey}:${VOTE_UID}`)) return { resources: [] };
+            if (params.page_token) throw failure;
+            return {
+              resources: [{ data: { uid: 'vr-removed', [parentKey]: VOTE_UID, username: 'spec-user', voter_removed: true } }],
+              page_token: 'next-page',
+            };
+          }
+        );
+
+        const result =
+          operation === 'read'
+            ? service.getMyVoteResponse(req, VOTE_UID)
+            : service.updateMyVoteResponse(req, VOTE_UID, { abstain: true, comment_responses: [] });
+        await expect(result).rejects.toBe(failure);
+        expect(fetchAllQueryResources).toHaveBeenCalledWith(req, expect.any(Function), expect.objectContaining({ failOnPartial: true }));
+        expect(proxyRequest.mock.calls.every((call) => call[2] === '/query/resources' && call[3] === 'GET')).toBe(true);
+      });
+    });
+
     it('prefers a current poll_id-only invitation over a removed vote_uid invitation', async () => {
       proxyRequest
         .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-removed', vote_uid: VOTE_UID, username: 'spec-user', voter_removed: true } }] })
@@ -2524,13 +2551,13 @@ describe('VoteService', () => {
     });
 
     it.each([
-      ['no row', null],
-      ['a removed row', ownRow({ voter_removed: true })],
-      ['an awaiting row', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE })],
-    ])('returns 404 without calling upstream for %s', async (_label, row) => {
+      ['no row', 'NOT_FOUND', null],
+      ['a removed row', VOTE_VOTER_REMOVED_ERROR_CODE, ownRow({ voter_removed: true })],
+      ['an awaiting row', 'NOT_FOUND', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE })],
+    ])('returns 404 without calling upstream for %s (#5964 code %s)', async (_label, code, row) => {
       vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row);
 
-      await expect(service.updateMyVoteResponse(req, VOTE_UID, payload)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(service.updateMyVoteResponse(req, VOTE_UID, payload)).rejects.toMatchObject({ statusCode: 404, code });
       expect(proxyRequest).not.toHaveBeenCalled();
     });
 

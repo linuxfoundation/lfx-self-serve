@@ -47,6 +47,14 @@ describe('UiSearchInputComponent', () => {
     expect(input().getAttribute('aria-label')).toBe('Search meetings');
   });
 
+  it('passes a max length to the field, and leaves it uncapped by default', async () => {
+    expect(input().hasAttribute('maxlength')).toBe(false);
+
+    await set('maxlength', 100);
+
+    expect(input().maxLength).toBe(100);
+  });
+
   it('defaults the placeholder and accessible name to Search', () => {
     expect(input().placeholder).toBe('Search');
     expect(input().getAttribute('aria-label')).toBe('Search');
@@ -95,6 +103,15 @@ describe('UiSearchInputComponent', () => {
     expect(clear()?.getAttribute('aria-label')).toBe('Clear search');
     expect(clear()?.type).toBe('button');
     expect(clear()?.classList).toContain('cursor-pointer');
+  });
+
+  it('moves focus to the field on request', async () => {
+    document.body.appendChild(host);
+
+    fixture.componentInstance.focus();
+
+    expect(document.activeElement).toBe(input());
+    host.remove();
   });
 
   it('clears the text, hides the button and returns focus to the field', async () => {
@@ -180,6 +197,34 @@ describe('UiSearchInputComponent', () => {
 
     expect(event.defaultPrevented).toBe(false);
     expect(outer).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits cleared from the clear button only, not from Escape', async () => {
+    const cleared = vi.fn();
+    fixture.componentInstance.cleared.subscribe(cleared);
+    fixture.componentInstance.value.set('kube');
+    await fixture.whenStable();
+
+    input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    expect(cleared).not.toHaveBeenCalled();
+
+    fixture.componentInstance.value.set('kube');
+    await fixture.whenStable();
+    (clear() as HTMLButtonElement).click();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe('');
+    expect(cleared).toHaveBeenCalledOnce();
+  });
+
+  it('moves focus into the field from focus()', () => {
+    document.body.appendChild(host);
+
+    fixture.componentInstance.focus();
+
+    expect(document.activeElement).toBe(input());
+    host.remove();
   });
 
   it('hides the clear button while disabled', async () => {

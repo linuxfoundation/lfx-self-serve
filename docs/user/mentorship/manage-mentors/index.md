@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, mentors, invite, approve, decline, requests]
 last_generated: 2026-10-26
-last_updated: 2026-11-17
+last_updated: 2026-11-23
 intercom_collection: Mentorship
 ---
 
@@ -28,7 +28,7 @@ The **Mentors** tab is where you bring mentors onto a program and act on the req
 
    You see **Invitation sent.** They receive an email and answer it in LFX Self Serve.
 
-   If they don't have an LF account yet, type their full email address instead. When no account uses it, the dialog says **No LF account uses this email** and shows **Invite** with that address, followed by what they'll need to do: create an LF account with this email, set up a mentor profile, then accept the invitation. Select **Send email invite**, or press **Enter**. You see **Invitation sent. They need to create an LF account with this email address to accept it.** Their row shows the email address with **Awaiting LF account** until they accept. Only an LF account that uses that address can accept the invitation.
+   If they don't have an LF account yet, type their full email address instead. When no account uses it, the dialog says **No LF account uses this email** and shows **Invite** with that address, followed by **Once you send it, the invitee will need to:** and their steps: create an LF account with this email, set up a mentor profile, then accept the invitation. Select **Send email invite**, or press **Enter**. You see **Invitation sent. They need to create an LF account with this email address to accept it.** Their row shows the email address with **Awaiting LF account** until they accept. Only an LF account that uses that address can accept the invitation.
 
    Select **Cancel** to close the dialog without inviting anyone. If an invite can't be sent, the dialog stays open so you can try again.
 

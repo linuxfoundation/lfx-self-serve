@@ -716,6 +716,40 @@ describe('VoteService', () => {
       expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
     });
 
+    it.each([false, true])('preserves confirmed-ended state through stale ACTIVE refreshes (recent carrier: %s)', (recent) => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 });
+      if (recent) {
+        service.markVoteCreated(active, true);
+        service.markVoteOpened('new-vote');
+      }
+      http.delete.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: VOTE_DELETE_ENDED } })));
+      service.cancelVote('new-vote').subscribe({ error: vi.fn() });
+      // The composed All-tab pipeline must not mistake its own overlay for index convergence.
+      const all = service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([active]));
+      expect(all[0].status).toBe(PollStatus.ENDED);
+      expect(service.mergeRecentlyCreatedVotes([active], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      expect(service.mergeRecentlyCreatedVotes([active], { statusFilter: PollStatus.ENDED })[0].status).toBe(PollStatus.ENDED);
+      expect(service.mergeRecentlyOpenedVotes([active])[0].status).toBe(PollStatus.ENDED);
+      // A real indexed ENDED row retires the override; later reads use the server's actual state.
+      service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([{ ...active, status: PollStatus.ENDED }]));
+      expect(service.mergeRecentlyCreatedVotes([active])[0].status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('retains confirmed-ended state after the optimistic windows expire', () => {
+      vi.useFakeTimers();
+      try {
+        const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+        service.markVoteCreated(active, true);
+        service.markVoteOpened('new-vote');
+        service.markVoteEnded('new-vote');
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS + 1);
+        expect(service.mergeRecentlyCreatedVotes([active], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+        expect(service.mergeRecentlyOpenedVotes([active])[0].status).toBe(PollStatus.ENDED);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('records ended state without restarting either carrier TTL', () => {
       vi.useFakeTimers();
       try {

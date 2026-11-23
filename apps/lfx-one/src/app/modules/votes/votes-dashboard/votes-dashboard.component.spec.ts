@@ -34,6 +34,7 @@ class StubVoteCastDrawerComponent {
   public readonly changeMode = input<boolean>(false);
   public readonly visible = model<boolean>(false);
   public readonly voteSubmitted = output<string>();
+  public readonly ballotUnavailable = output<string>();
 }
 
 const NOW = Date.parse('2026-01-10T12:00:00Z');
@@ -159,14 +160,30 @@ describe('VotesDashboardComponent personal summary', () => {
     table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
   }
 
-  it.each<Lens>(['project', 'foundation', 'me'])('refreshes cancellation completion only on management hosts (%s)', async (lens) => {
+  it.each<Lens>(['project', 'foundation', 'me'])('refreshes the current lens on cancellation completion (%s)', async (lens) => {
     if (lens !== 'me') await management(lens);
     const refresh = vi.spyOn(dashboard as unknown as { refreshVotes: () => void }, 'refreshVotes');
     cancellationCompleted.next();
-    expect(refresh).toHaveBeenCalledTimes(lens === 'me' ? 0 : 1);
+    expect(refresh).toHaveBeenCalledTimes(1);
     fixture.destroy();
     cancellationCompleted.next();
-    expect(refresh).toHaveBeenCalledTimes(lens === 'me' ? 0 : 1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the personal feed when a management cancellation completes after switching to Me', async () => {
+    await management();
+    const pending = new Subject<void>();
+    pending.subscribe(() => cancellationCompleted.next());
+    activeLens.set('me');
+    await settle();
+    getMyVotes.mockClear();
+    getMyVotes.mockReturnValue(of({ votes: feed.filter((row) => row.uid !== 'soon'), complete: true }));
+    pending.next();
+    pending.complete();
+    await settle();
+    expect(getMyVotes).toHaveBeenCalledTimes(1);
+    expect(rows()).not.toContain('soon');
+    expect(table.canCancelVotes()).toBe(false);
   });
 
   it.each<Lens>(['project', 'foundation'])('enables participation progress in the %s lens', async (lens) => {
@@ -1248,6 +1265,20 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(element('votes-load-error')).toBeNull();
       expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).toBe('Voted');
       expect(element('votes-cast-soon')?.textContent).toContain('Review');
+    });
+
+    it('refreshes the list without marking the vote voted when an update is rejected (#5964)', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      const callsBefore = getMyVotes.mock.calls.length;
+
+      drawer()!.ballotUnavailable.emit('soon');
+      await settle();
+
+      expect(getMyVotes).toHaveBeenCalledTimes(callsBefore + 1);
+      expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).not.toBe('Voted');
+      expect(element('votes-cast-soon')?.textContent?.trim()).toBe('Vote');
+      expect(dashboard['submittedVoteIds']().has('soon')).toBe(false);
     });
 
     it('marks the emitted vote UID, never another selected ballot, and retains multiple submissions', async () => {

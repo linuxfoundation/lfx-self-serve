@@ -35,7 +35,6 @@ const baseApplication: MentorshipUpstreamApplication = {
   role: 'mentee',
   status: 'pending',
   tasks_submitted: false,
-  admin_notified: false,
   created_on: '2026-06-28T10:00:00Z',
   updated_on: '2026-06-29T10:00:00Z',
   program: { id: 'prog-1', name: 'Test Program', slug: 'test-program', logo_url: 'https://example.com/logo.png', project_name: 'Test Project' },

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibilityKind } from '../enums';
+import { RECURRENCE_DAYS_OF_WEEK } from './meeting.constants';
 import type {
+  MeetingCalendarTypeColor,
   MeetingDetailsFeature,
   MeetingGroupTypePattern,
   MeetingHomeArtifact,
@@ -27,6 +29,9 @@ export const MEETINGS_HOME_PAGE_SIZE = 20;
 
 /** Gap in px between the tabs rule and a day heading; must match the day-group separator's -mt-[20px] and pt-[20px]. */
 export const MEETINGS_HOME_DAY_HEADING_GAP_PX = 20;
+
+/** How long the meetings home search field takes to collapse back into its button; must match its closing animation. */
+export const MEETINGS_HOME_SEARCH_CLOSE_MS = 180;
 
 /** Filters with nothing applied. */
 export const MEETINGS_HOME_DEFAULT_FILTERS: MeetingsHomeFilters = {
@@ -190,8 +195,42 @@ export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_ITEMS = 6;
 /** Tooltip centre never closer than this to the window's right edge (half its 280px width plus a margin). */
 export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX = 152;
 
+/** Room a full mini calendar tooltip needs above its day; with less, and more room below, it opens below the day. */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_MAX_HEIGHT_PX = 220;
+
+/** Room a calendar dialog chip tooltip (title and detail) needs above its chip; with less it opens below. */
+export const MEETINGS_HOME_CALENDAR_CHIP_TOOLTIP_HEIGHT_PX = 72;
+
+/** Delay before a mini calendar tooltip closes once the pointer leaves its day, so the pointer can move onto it. */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS = 120;
+
 /** Gap between the sticky tabs bar and the first row of a day picked on the calendar. */
 export const MEETINGS_HOME_DAY_SCROLL_OFFSET_PX = 36;
 
 /** Wait before scrolling to a picked day, so its rows have rendered. */
 export const MEETINGS_HOME_DAY_SCROLL_DELAY_MS = 120;
+
+/** Meeting types of the calendar dialog's legend, in order, with their chip colour; any other type uses the last. */
+export const MEETINGS_HOME_CALENDAR_TYPE_COLORS: readonly MeetingCalendarTypeColor[] = [
+  { type: 'Board', color: 'var(--ui-danger-500)' },
+  { type: 'Maintainers', color: 'var(--ui-accent-500)' },
+  { type: 'Marketing', color: 'var(--ui-success-500)' },
+  { type: 'Technical', color: 'var(--ui-feature-500)' },
+  { type: 'Legal', color: 'var(--ui-warning-500)' },
+  { type: 'Other', color: 'var(--ui-neutral-500)' },
+];
+
+/** Weekday names of the calendar dialog, Sunday first. */
+export const MEETINGS_HOME_CALENDAR_WEEKDAY_NAMES: readonly string[] = RECURRENCE_DAYS_OF_WEEK.map((day) => day.label);
+
+/** Height of one hour in the calendar dialog's week view. */
+export const MEETINGS_HOME_CALENDAR_HOUR_PX = 48;
+
+/** Least height a week view event is drawn at, so its time stays readable. */
+export const MEETINGS_HOME_CALENDAR_EVENT_MIN_HEIGHT_PX = 22;
+
+/** Hour the week view opens scrolled to. */
+export const MEETINGS_HOME_CALENDAR_START_HOUR = 8;
+
+/** Chips a month view cell shows before "+N more". */
+export const MEETINGS_HOME_CALENDAR_MONTH_CHIPS = 3;

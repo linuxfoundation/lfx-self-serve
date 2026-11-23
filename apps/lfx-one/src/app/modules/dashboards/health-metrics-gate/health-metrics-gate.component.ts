@@ -6,7 +6,13 @@ import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, P
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationCancel, NavigationEnd, NavigationError, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
-import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_BASE_PATH,
+  HEALTH_METRICS_HEADER_COMPACT_AFTER_PX,
+  HEALTH_METRICS_HEADER_COMPACT_SHRINK_PX,
+  HEALTH_METRICS_OVERVIEW_ENABLED_FLAG,
+  HEALTH_METRICS_TABS,
+} from '@lfx-one/shared/constants';
 import { buildHealthMetricsYtdRangeLabel } from '@lfx-one/shared/utils';
 import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -14,7 +20,7 @@ import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
-import { EMPTY, filter, Observable, switchMap } from 'rxjs';
+import { EMPTY, filter, fromEvent, Observable, switchMap } from 'rxjs';
 
 import { HealthMetricsTruncationTipDirective } from '../components/health-metrics-truncation-tip/health-metrics-truncation-tip.directive';
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
@@ -81,6 +87,8 @@ export class HealthMetricsGateComponent {
   protected readonly ytdRangeLabel = buildHealthMetricsYtdRangeLabel(new Date());
   /** The narrowest header's view dropdown, kept on the routed tab. */
   protected readonly selectedTab = signal<string | null>(this.activeTabKey(this.router.url));
+  /** The header's scrolled state: compact once the page scrolls, back to default at the top. */
+  protected readonly compact = signal(false);
 
   // queryParams must be `ignored` rather than the `{ exact: true }` shorthand's `exact` — the tab
   // links carry no query params of their own while the URL always carries `foundationSlug`.
@@ -90,13 +98,18 @@ export class HealthMetricsGateComponent {
   protected readonly pageHeader = viewChild<ElementRef<HTMLElement>>('pageHeader');
 
   private headerObserved = false;
+  /** The tab the router last landed on, so a new tab can reset the header; the dropdown changes ahead of it. */
+  private routedTab: HealthMetricsTabKey = this.activeTabKey(this.router.url);
   private readonly hydrated = signal(false);
   private readonly rawOverviewEnabled = this.featureFlagService.getBooleanFlag(HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, false);
 
   protected readonly overviewEnabled = computed(() => this.hydrated() && this.rawOverviewEnabled());
 
   public constructor() {
-    afterNextRender(() => this.hydrated.set(true));
+    afterNextRender(() => {
+      this.hydrated.set(true);
+      this.observeScroll();
+    });
     this.initFooter();
     this.initTabSelect();
     // The header only exists inside the enabled branch, so it appears a render after `hydrated`
@@ -135,7 +148,34 @@ export class HealthMetricsGateComponent {
         filter((event) => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
         takeUntilDestroyed()
       )
-      .subscribe(() => this.selectedTab.set(this.activeTabKey(this.router.url)));
+      .subscribe(() => {
+        const tab = this.activeTabKey(this.router.url);
+        // A new tab opens at the top with the default header.
+        if (tab !== this.routedTab) this.compact.set(false);
+        this.routedTab = tab;
+        this.selectedTab.set(tab);
+      });
+  }
+
+  /** Runs in the browser only, from `afterNextRender`; the page itself scrolls, so the window is the source. */
+  private observeScroll(): void {
+    fromEvent(window, 'scroll', { passive: true })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.updateCompact());
+  }
+
+  /** Compacts past a small scroll and expands only back at the top, so a position near the top cannot bounce. */
+  private updateCompact(): void {
+    const top = window.scrollY;
+    if (this.compact()) {
+      if (top <= 0) this.compact.set(false);
+      return;
+    }
+    // Compacting shortens the page, so it waits for enough room to stay scrolled after it.
+    const room = document.documentElement.scrollHeight - window.innerHeight;
+    if (top > HEALTH_METRICS_HEADER_COMPACT_AFTER_PX && room > HEALTH_METRICS_HEADER_COMPACT_SHRINK_PX + HEALTH_METRICS_HEADER_COMPACT_AFTER_PX) {
+      this.compact.set(true);
+    }
   }
 
   /** The tab a URL routes to: the segment after the base path, or the Overview. */
