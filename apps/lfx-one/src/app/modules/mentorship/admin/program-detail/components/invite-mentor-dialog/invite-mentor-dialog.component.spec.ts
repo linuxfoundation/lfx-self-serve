@@ -12,6 +12,7 @@ import {
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS,
+  MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS_INTRO,
   MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_PROMPT,
@@ -299,6 +300,7 @@ describe('InviteMentorDialogComponent', () => {
 
       expect(byTestId('mentorship-mentors-candidates-empty')?.textContent).toContain(MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE);
       expect(byTestId('mentorship-mentors-email-invite')?.textContent).toContain('Invite new.mentor@example.org by email');
+      expect(byTestId('mentorship-mentors-email-invite-steps-intro')?.textContent?.trim()).toBe(MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS_INTRO);
       const steps = Array.from(element().querySelectorAll('[data-testid="mentorship-mentors-email-invite-steps"] li')).map((li) => li.textContent?.trim());
       expect(steps).toEqual([...MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS]);
       expect(sendButton()?.disabled).toBe(false);

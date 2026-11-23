@@ -503,7 +503,10 @@ export const MENTORSHIP_ADMIN_MENTOR_INVITE_SEARCH_PLACEHOLDER = 'Name, LFID or 
 /** The Invite a mentor dialog's empty state, before a search of at least two characters. */
 export const MENTORSHIP_ADMIN_MENTOR_INVITE_PROMPT = 'Start typing a name, LFID or email.';
 
-/** The steps the invitation email lists, in order; the Invite a mentor dialog shows the same ones for an email invite. */
+/** Leads the email invite's steps in the Invite a mentor dialog, so the admin reads them as the invitee's to do, not their own. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS_INTRO = 'Once you send it, the invitee will need to:';
+
+/** The steps the invitation email lists, in order; the Invite a mentor dialog shows the same ones for an email invite, after `MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS_INTRO`. */
 export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS: readonly string[] = [
   'Create an LF account with this email',
   'Set up a mentor profile',
