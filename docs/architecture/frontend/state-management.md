@@ -446,8 +446,9 @@ are recovery hints, never evidence that a run is writing, waiting or complete. F
 observation gates the page behind one neutral, layout-shaped skeleton; no intake,
 old document or local questions appear first. Recorded state wins on open, focus and
 visibility return. A private questions block can continue only for the matching server
-run/questions turn; missing or contradictory recorded state retires that private
-block immediately. Capability-only agents without a document-run contract are not
+run/questions turn; a `questions` row that omits its block (a reader the BFF could not
+verify, or a non-writer poll) keeps the held block, and only a visible newer round or
+another recorded state retires it (`mktgRunHoldsQuestions`). Capability-only agents without a document-run contract are not
 promoted into public run-state evidence. Documents labels use only the recorded state. The shared
 visibility poller pauses hidden work, re-reads on focus and keeps live lists/documents
 fresh while idle as well as running. Selected closed-run detail requests carry the
@@ -473,10 +474,34 @@ its document instead. Other writers submit
 without any session capability. An accepted answer resumes public progress;
 403 retains a reason-bearing waiting notice without retries. A scoped 409
 `MKTG_RUN_ANSWERED` retires the submitted questions block, shows the server's
-safe display name (or Another writer), and resumes writing progress without
-resending. Identifier-like names are not echoed. A genuinely new server questions
-block remains answerable; other 409/412 responses refresh the current row. A waiting reader can also Refresh progress after another
-browser answers; successful Send resumes normal polling. One-off answers remain creator-only.
+safe display name (or Someone on your team), resumes writing progress without
+resending, and keeps the sent draft read-only under the notice (`locked` questions block: every
+box disabled, no Send, the stepper still browsable) until a newer block, another run or leaving.
+The same conflict learnt at read time, from a poll that shows the held block moved to writing,
+storing or completed while this browser's own send is not open, is heard the same way when the
+form was typed (an answer differs, trimmed, from what it opened with): the notice names nobody
+("Someone on your team"), or "another window" when this profile's stored attempt shows the block
+answered there (the sibling window's accepted send reaches shared storage, never this window's
+memory copy, so the attempt store reads storage for that look, and the save that retires the held
+block carries the stored answered round forward rather than erasing it), and the typed draft stays
+below; an untouched form moves on to Writing quietly. While either form's own send is open, a poll
+changes nothing: the server claims the block before it replies, so the reply, or its 409, settles
+it. A poll that finds the run already completed (or absent from a complete, non-unavailable read
+that lists runs) says "the asset is ready" instead of "the agent is writing"; a line heard while
+writing says the same once the document view sees its run landed, since a line must be true when
+read, and the document view scopes the remembered line as the reader does: gone once the run closed
+without landing (failed, discarded, superseded), once it asks a newer round, or once the page
+follows another run, which means a `run=` selection naming one or a genuinely newer run (still
+active, or started after the notice's); an older or failed row in the history is not one, and the
+run page likewise makes the run it follows the remembered one. The
+notice travels with the kept block (`MktgRunAnsweredNotice.kept`): the progress
+reader draws the block directly under its line on both pages, and the document the run landed on
+shows the same line with the draft beside the produced revision. One notice text builder serves
+both paths and both forms, public and private. Identifier-like names are not echoed. A genuinely new server questions
+block remains answerable; other 409/412 responses refresh the current row. The waiting state
+checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`) and keeps a held block through polls that
+omit it; it offers no Refresh button, and Refresh appears only once automatic checks pause after
+the poll deadline. Successful Send resumes normal polling. One-off answers remain creator-only.
 Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,

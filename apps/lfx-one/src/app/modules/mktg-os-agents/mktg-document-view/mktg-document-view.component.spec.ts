@@ -204,6 +204,13 @@ describe('MktgDocumentViewComponent', () => {
     harness.detectChanges();
   }
 
+  /** A return to the tab: the document reader debounces its wake, so the re-read starts only after that window. */
+  async function wake(): Promise<void> {
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((resolve) => setTimeout(resolve, VISIBILITY_POLL_WAKE_DEBOUNCE_MS));
+    await settle();
+  }
+
   /** A Brand Kit revision's sidecar, as the store serves it: the kit's envelope without its Markdown. */
   function kitSidecar(kit = brandKitTestRevision()): Record<string, unknown> {
     return {
@@ -828,6 +835,8 @@ describe('MktgDocumentViewComponent', () => {
   });
 
   it('renders a late already-answered notice on the landed document without replacing its body', async () => {
+    // A complete read listing no runs: the notice's run has landed. (A read without a runs list says nothing about it.)
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [] }));
     await render('/documents/brand-kit/living');
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
     const body = component?.['view']();
@@ -837,7 +846,153 @@ describe('MktgDocumentViewComponent', () => {
       message: 'Someone on your team already answered these — the agent is writing.',
     });
     await settle();
-    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Someone on your team already answered these — the agent is writing.');
+    // The document has landed and the read carries no such run any more: the line is true when read — the asset is ready.
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Someone on your team already answered these — the asset is ready.');
+    expect(component?.['view']()).toBe(body);
+  });
+
+  it('keeps the ready notice and its draft when the history still lists an older failed run', async () => {
+    const run = started('writing');
+    const questionsId = 'c'.repeat(64);
+    const olderFailed = { ...started('failed'), runId: 'a'.repeat(64), startedAt: '2026-10-18T08:00:00Z' };
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run, olderFailed] }));
+    await render('/documents/brand-kit/living');
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId,
+      message: 'Someone on your team already answered these — the agent is writing. Your draft is kept below.',
+      kept: { questionsId, questions: [], draft: { index: 0, answers: {}, dirty: true } },
+    });
+    await settle();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing');
+    // The run landed: closed runs leave the list, the older failed row stays in it. That row is history, not another run.
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [olderFailed] }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Someone on your team already answered these — the asset is ready.');
+    expect(query('mktg-run-questions-locked')).not.toBeNull();
+    expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT.uid, 'brand-kit', 'living')).not.toBeNull();
+  });
+
+  it('flips a notice heard while writing to the asset is ready once its run has landed, and not before', async () => {
+    const run = started('writing');
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId: 'c'.repeat(64),
+      message: 'Synthetic writer already answered these — the agent is writing. Your draft is kept below.',
+    });
+    await settle();
+    // Still writing: the line stands as heard.
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Synthetic writer already answered these — the agent is writing.');
+    // Landed (the run completed): the same line, true when read.
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [{ ...run, state: 'completed' as const }] }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain(
+      'Synthetic writer already answered these — the asset is ready. Your draft is kept below.'
+    );
+    // Gone from the active runs altogether: landed as well.
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [] }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the asset is ready');
+  });
+
+  it('leaves a remembered notice as heard while run progress cannot be checked', async () => {
+    const run = started('writing');
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId: 'c'.repeat(64),
+      message: 'Someone on your team already answered these — the agent is writing. Your draft is kept below.',
+    });
+    await settle();
+    // The unavailable reply carries no runs: that is not a landed run, and the line must not flap to "ready".
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [], progressUnavailable: true }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing. Your draft is kept below.');
+    expect(query('mktg-document-view-answered-note')?.textContent).not.toContain('the asset is ready');
+  });
+
+  it('keeps the notice while its run writes on, whatever newer failed or retired rows the history gains', async () => {
+    const run = started('writing');
+    const questionsId = 'c'.repeat(64);
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render('/documents/brand-kit/living');
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId,
+      message: 'Someone on your team already answered these — the agent is writing. Your draft is kept below.',
+      kept: { questionsId, questions: [], draft: { index: 0, answers: {}, dirty: true } },
+    });
+    await settle();
+    // A later start that failed at once, and a later one discarded: neither is a run this page follows.
+    const newerFailed = { ...started('failed'), runId: 'd'.repeat(64), startedAt: '2026-10-19T08:10:00Z' };
+    const newerDiscarded = { ...started('writing'), runId: 'e'.repeat(64), startedAt: '2026-10-19T08:11:00Z', state: 'discarded' as const };
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run, newerFailed, newerDiscarded] }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing. Your draft is kept below.');
+    expect(query('mktg-run-questions-locked')).not.toBeNull();
+    expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT.uid, 'brand-kit', 'living')?.runId).toBe(run.runId);
+  });
+
+  it.each([
+    ['failed', (run: MktgDocumentRunProgress) => [{ ...run, state: 'failed' as const }]],
+    [
+      'was discarded',
+      (run: MktgDocumentRunProgress) => [{ ...run, state: 'discarded' as const, closedBy: 'Synthetic owner', closedAt: '2026-10-19T08:09:00Z' }],
+    ],
+    ['was superseded', (run: MktgDocumentRunProgress) => [{ ...run, state: 'superseded' as const, replacedBy: 'f'.repeat(64) }]],
+    [
+      'asks a newer round',
+      (run: MktgDocumentRunProgress) => [
+        { ...run, state: 'questions' as const, pendingQuestions: { questionsId: 'e'.repeat(64), askedAt: '2026-10-19T08:05:00Z', questions: [] } },
+      ],
+    ],
+    ['was replaced by a newer run started here', (run: MktgDocumentRunProgress) => [{ ...run, runId: 'f'.repeat(64), startedAt: '2026-10-19T08:10:00Z' }]],
+  ])('hides the remembered notice and its kept draft once the run %s', async (_case, runsAfter) => {
+    const run = started('writing');
+    const questionsId = 'c'.repeat(64);
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render('/documents/brand-kit/living');
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId,
+      message: 'Someone on your team already answered these — the agent is writing. Your draft is kept below.',
+      kept: { questionsId, questions: [], draft: { index: 0, answers: {}, dirty: true } },
+    });
+    await settle();
+    expect(query('mktg-document-view-answered-note')).not.toBeNull();
+    expect(query('mktg-run-questions-locked')).not.toBeNull();
+    store.getDocument.mockReturnValue(of({ ...detail, runs: runsAfter(run) }));
+    await wake();
+    expect(query('mktg-document-view-answered-note')).toBeNull();
+    expect(query('mktg-run-questions-locked')).toBeNull();
+    // A newer run observed here retires the remembered notice for good, as the run page does when it starts one.
+    if (_case.startsWith('was replaced')) expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT.uid, 'brand-kit', 'living')).toBeNull();
+  });
+
+  it('keeps the typed draft read-only beside the produced revision when the remembered notice carries it', async () => {
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    const body = component?.['view']();
+    const questionsId = 'c'.repeat(64);
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: 'b'.repeat(64),
+      questionsId,
+      message: 'Someone on your team already answered these — the asset is ready. Your draft is kept below.',
+      kept: {
+        questionsId,
+        questions: [{ key: 'audience', label: 'Audience', question: 'Who is this for?', why: '', suggestedAnswer: 'Synthetic maintainers', basis: [] }],
+        draft: { index: 0, answers: { audience: 'Synthetic typed audience' }, dirty: true },
+      },
+    });
+    await settle();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the asset is ready. Your draft is kept below.');
+    const box = query('mktg-run-questions-locked')?.querySelector('textarea') as HTMLTextAreaElement;
+    expect(box.disabled).toBe(true);
+    expect(box.value).toBe('Synthetic typed audience');
+    expect(query('mktg-run-questions-locked')?.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
     expect(component?.['view']()).toBe(body);
   });
 

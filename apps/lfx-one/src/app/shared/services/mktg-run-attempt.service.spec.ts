@@ -56,6 +56,50 @@ describe('MktgRunAttemptService', () => {
     }
   });
 
+  it('sees another window of the same profile answer the block through storage, past this window held copy', () => {
+    const questionsId = 'd'.repeat(64);
+    const attempt = {
+      runId: 'b'.repeat(64),
+      priorVersion: 0,
+      session: { agentId: request.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+    };
+    const pending = { attempt, questionsId, questions: [] };
+    service.save({ request, attempt, pendingQuestions: pending, state: 'questions', updatedAt: new Date().toISOString() });
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(false);
+    // The sibling window's accepted send: its own service writes storage; this window's memory still holds the block.
+    const sibling = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    sibling.save({ request, attempt, answered: { questions: [], answers: [], questionsId }, state: 'writing', updatedAt: new Date().toISOString() });
+    expect(service.load(request.projectUid, request.agentId)?.pendingQuestions?.questionsId).toBe(questionsId);
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(true);
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, 'e'.repeat(64))).toBe(false);
+    // A save that retires this window's block spreads the stored round for THAT block back in, so the sibling's marker survives.
+    service.save({
+      request,
+      attempt,
+      ...service.storedAnswered(request.projectUid, request.agentId, questionsId),
+      pendingQuestions: undefined,
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+    });
+    expect(service.storedAnswered(request.projectUid, request.agentId, questionsId).answered?.questionsId).toBe(questionsId);
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(true);
+    // An OLDER round's marker is never carried into a newer block's retiring save: a resume would take its id as the ignore-id.
+    const newer = 'e'.repeat(64);
+    expect(service.storedAnswered(request.projectUid, request.agentId, newer)).toEqual({ answered: undefined });
+    service.save({
+      request,
+      attempt,
+      pendingQuestions: { attempt, questionsId: newer, questions: [] },
+      ...service.storedAnswered(request.projectUid, request.agentId, newer),
+      state: 'questions',
+      updatedAt: new Date().toISOString(),
+    });
+    expect(service.storedAnswered(request.projectUid, request.agentId, questionsId)).toEqual({ answered: undefined });
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(false);
+    user.set({ sub: 'other-subject' } as User);
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(false);
+  });
+
   it('restores only the exact subject/revision redraft nonce, with no source text or serialized endpoint', () => {
     const scope = { projectUid: request.projectUid, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
     const intent = { scope, clientRequestId: 'send-one', commentIds: ['comment-one'], priorVersion: 1, updatedAt: new Date().toISOString() };

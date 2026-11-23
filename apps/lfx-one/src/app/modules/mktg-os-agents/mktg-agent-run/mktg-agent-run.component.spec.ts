@@ -45,6 +45,7 @@ import {
   User,
 } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
@@ -1799,7 +1800,7 @@ describe('MktgAgentRunComponent', () => {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'living' && entry.agentKey === 'foundation-message');
     if (!type?.catalogAgentId) throw new Error('Missing living receiver fixture');
     const intake = MKTG_AGENT_INTAKES[type.catalogAgentId];
-    const record = (state: 'writing' | 'questions') => ({
+    const record = (state: 'writing' | 'questions' | 'completed') => ({
       project: PROJECT_1.uid,
       type,
       documentId: 'living',
@@ -1844,7 +1845,10 @@ describe('MktgAgentRunComponent', () => {
       expect(component['publicReceiver']()).toBe(true);
       expect(query('mktg-run-public-progress')?.querySelectorAll('h1, h2')).toHaveLength(1);
       expect(query('mktg-run-public-progress')?.querySelectorAll('p[role="status"]')).toHaveLength(1);
-      if (state === 'questions') expect(host().textContent).toContain('browser that started this run');
+      if (state === 'questions') {
+        expect(host().textContent).toContain('Waiting for your answers.');
+        expect(host().textContent).not.toContain('browser that started this run');
+      }
       expect(generate).not.toHaveBeenCalled();
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
     });
@@ -2197,16 +2201,21 @@ describe('MktgAgentRunComponent', () => {
       navigate.mockClear();
       component['onAnswerQuestions']([{ key: 'goal', text: 'Synthetic adoption', origin: 'accepted' }]);
       await fixture.whenStable();
-      expect(query('mktg-run-progress-answered-note')?.textContent).toContain('Synthetic writer already answered these — the agent is writing.');
+      const notice = 'Synthetic writer already answered these — the agent is writing. Your draft is kept below.';
+      expect(query('mktg-run-progress-answered-note')?.textContent).toContain(notice);
       expect(navigate).not.toHaveBeenCalled();
       // A child observer can remount while writing; its initial reset must not erase the host's scoped notice.
       component['publicReceiver'].set(false);
       await fixture.whenStable();
       component['publicReceiver'].set(true);
       await fixture.whenStable();
-      expect(query('mktg-run-progress-answered-note')?.textContent).toContain('Synthetic writer already answered these — the agent is writing.');
+      expect(query('mktg-run-progress-answered-note')?.textContent).toContain(notice);
       expect(navigate).not.toHaveBeenCalled();
-      expect(query('mktg-run-questions')).toBeNull();
+      // The lost send keeps its block read-only under the notice: the private form itself is gone.
+      expect(query('mktg-agent-run-questions')).toBeNull();
+      const kept = query('mktg-run-questions-locked');
+      expect(kept?.querySelector('textarea')?.disabled).toBe(true);
+      expect(kept?.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
       expect(component['phase']()).toBe('running');
       expect(answerQuestions).toHaveBeenCalledOnce();
       expect(generate).not.toHaveBeenCalled();
@@ -2321,6 +2330,242 @@ describe('MktgAgentRunComponent', () => {
         expect(query('mktg-document-view-run-steps')).not.toBeNull();
         expect(answerQuestions).not.toHaveBeenCalled();
       }
+    });
+
+    it('keeps this browser’s questions through polls that omit them, until a newer round or another state', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const attempt = { runId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-owned', ownerToken: 'synthetic-proof' } };
+      const question = { key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: '', basis: [] };
+      TestBed.inject(MktgRunAttemptService).save({
+        request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+        state: 'questions',
+        updatedAt: new Date().toISOString(),
+        attempt,
+        pendingQuestions: { attempt, questionsId: 'synthetic-block', questions: [question] },
+      });
+      const read = vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument);
+      const held = () => TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, intake.agentId)?.pendingQuestions?.questionsId;
+      // The row waits on answers but carries no block: a reader the BFF could not verify, or a non-writer poll.
+      read.mockReturnValue(of(record('questions')));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('questions');
+      expect(query('mktg-run-questions')).not.toBeNull();
+      expect(held()).toBe('synthetic-block');
+      expect(query('mktg-run-progress-owner-note')).toBeNull();
+      expect(query('mktg-document-view-refresh-progress')).toBeNull();
+      // A partial read whose row still waits confirms the held block rather than clearing it.
+      read.mockReturnValue(of({ ...record('questions'), progressUnavailable: true }));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('questions');
+      expect(query('mktg-run-questions')).not.toBeNull();
+      expect(held()).toBe('synthetic-block');
+      // A visible newer round retires the held block; the public form for that round takes over.
+      const measured = record('questions');
+      read.mockReturnValue(
+        of({
+          ...measured,
+          runs: [{ ...measured.runs[0], pendingQuestions: { questionsId: 'e'.repeat(64), askedAt: measured.runs[0].startedAt, questions: [question] } }],
+        })
+      );
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('running');
+      expect(held()).toBeUndefined();
+      expect(query('mktg-run-questions')).not.toBeNull();
+      // Another state clears the form.
+      read.mockReturnValue(of(record('writing')));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('running');
+      expect(query('mktg-run-questions')).toBeNull();
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
+    describe('a typed private draft hears that someone else answered', () => {
+      const questionsId = 'd'.repeat(64);
+      const attempt = { runId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-owned', ownerToken: 'synthetic-proof' } };
+      const question = { key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: 'Synthetic adoption', basis: [] };
+      const open = async () => {
+        await configure('browser', type.catalogAgentId, { run: runId });
+        TestBed.inject(MktgRunAttemptService).save({
+          request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+          state: 'questions',
+          updatedAt: new Date().toISOString(),
+          attempt,
+          pendingQuestions: { attempt, questionsId, questions: [question] },
+        });
+        vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('questions')));
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        expect(component['phase']()).toBe('questions');
+      };
+      const typeAnswer = async (value: string) => {
+        const textarea = host().querySelector('textarea[data-test="mktg-run-questions-answer-goal"]') as HTMLTextAreaElement;
+        textarea.value = value;
+        textarea.dispatchEvent(new Event('input'));
+        await fixture.whenStable();
+      };
+      const pollWriting = async () => {
+        vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('writing')));
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+      };
+
+      it.each([false, true])(
+        'keeps a typed draft read-only under the notice when a poll shows the block answered (another window: %s)',
+        async (otherWindow) => {
+          await open();
+          await typeAnswer('Synthetic typed goal');
+          const attempts = TestBed.inject(MktgRunAttemptService);
+          if (otherWindow) {
+            // The sibling window's accepted send: its own service writes the answered round to shared storage; this
+            // window's memory copy still holds the block.
+            const sibling = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+            sibling.save({
+              request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+              attempt,
+              answered: { questions: [question], answers: [{ key: 'goal', text: 'Synthetic sibling goal', origin: 'edited' }], questionsId },
+              state: 'writing',
+              updatedAt: new Date().toISOString(),
+            });
+            expect(attempts.load(PROJECT_1.uid, intake.agentId)?.pendingQuestions?.questionsId).toBe(questionsId);
+          }
+          await pollWriting();
+          expect(component['phase']()).toBe('running');
+          expect(query('mktg-run-progress-answered-note')?.textContent?.trim()).toBe(
+            otherWindow
+              ? 'These were answered in another window — the agent is writing. Your draft is kept below.'
+              : 'Someone on your team already answered these — the agent is writing. Your draft is kept below.'
+          );
+          expect(query('mktg-agent-run-questions')).toBeNull();
+          const kept = query('mktg-run-questions-locked');
+          // Drawn by the progress reader directly under its line, as on the public page — not after the writing steps.
+          expect(query('mktg-run-progress-answered-note')?.nextElementSibling).toBe(kept);
+          const box = kept?.querySelector('textarea') as HTMLTextAreaElement;
+          expect(box.disabled).toBe(true);
+          expect(box.value).toBe('Synthetic typed goal');
+          expect(kept?.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
+          expect(attempts.load(PROJECT_1.uid, intake.agentId)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
+          expect(attempts.load(PROJECT_1.uid, intake.agentId)?.pendingQuestions).toBeUndefined();
+          // The retiring saves carried the sibling's stored round forward: its later resume still has its ignore-id.
+          if (otherWindow) expect(attempts.storedAnswered(PROJECT_1.uid, intake.agentId, questionsId).answered?.questionsId).toBe(questionsId);
+          expect(answerQuestions).not.toHaveBeenCalled();
+          // The next poll of the same writing run keeps the block and says nothing new.
+          await pollWriting();
+          expect(query('mktg-run-questions-locked')).not.toBeNull();
+          expect(host().querySelectorAll('[data-testid="mktg-run-progress-answered-note"]')).toHaveLength(1);
+        }
+      );
+
+      it('does not carry an older round’s marker into the retiring save of a newer block', async () => {
+        await open();
+        await typeAnswer('Synthetic typed goal');
+        const attempts = TestBed.inject(MktgRunAttemptService);
+        // The sibling answered an EARLIER round of this run; the block this window holds is a later one.
+        const sibling = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+        sibling.save({
+          request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+          attempt,
+          answered: { questions: [question], answers: [], questionsId: 'a'.repeat(64) },
+          state: 'writing',
+          updatedAt: new Date().toISOString(),
+        });
+        await pollWriting();
+        expect(query('mktg-run-progress-answered-note')?.textContent).toContain('Someone on your team already answered these');
+        expect(attempts.load(PROJECT_1.uid, intake.agentId)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
+        expect(attempts.storedAnswered(PROJECT_1.uid, intake.agentId, 'a'.repeat(64))).toEqual({ answered: undefined });
+        expect(window.localStorage.getItem(Object.keys(window.localStorage).find((key) => key.includes(intake.agentId)) ?? '')).not.toContain('a'.repeat(64));
+      });
+
+      it('keeps the typed draft when a writing poll lands during this window’s own send and the send then loses', async () => {
+        await open();
+        await typeAnswer('Synthetic typed goal');
+        const response = new Subject<MktgGenerateProgress>();
+        answerQuestions.mockReturnValue(response);
+        (host().querySelector('[data-testid="mktg-run-questions-send"] button') as HTMLButtonElement).click();
+        await fixture.whenStable();
+        expect(answerQuestions).toHaveBeenCalledOnce();
+        // The server claims the block before it replies: the poll shows writing for an answer that may be ours. Nothing moves.
+        await pollWriting();
+        expect(component['phase']()).toBe('questions');
+        expect(query('mktg-agent-run-questions')).not.toBeNull();
+        expect(query('mktg-run-progress-answered-note')).toBeNull();
+        response.error(
+          new HttpErrorResponse({
+            status: 409,
+            error: { code: MKTG_RUN_ANSWERED, details: { answeredBy: 'Synthetic writer', answeredAt: '2026-10-28T10:01:00Z' } },
+          })
+        );
+        await fixture.whenStable();
+        expect(host().querySelectorAll('[data-testid="mktg-run-progress-answered-note"]')).toHaveLength(1);
+        expect(query('mktg-run-progress-answered-note')?.textContent?.trim()).toBe(
+          'Synthetic writer already answered these — the agent is writing. Your draft is kept below.'
+        );
+        expect(query('mktg-agent-run-questions')).toBeNull();
+        const kept = query('mktg-run-questions-locked');
+        expect((kept?.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Synthetic typed goal');
+        expect((kept?.querySelector('textarea') as HTMLTextAreaElement).disabled).toBe(true);
+        expect(component['phase']()).toBe('running');
+      });
+
+      it('says the asset is ready when the poll finds the run already landed, the draft kept beside it', async () => {
+        await open();
+        await typeAnswer('Synthetic typed goal');
+        vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('completed')));
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+        expect(query('mktg-run-progress-answered-note')?.textContent?.trim()).toBe(
+          'Someone on your team already answered these — the asset is ready. Your draft is kept below.'
+        );
+        expect((query('mktg-run-questions-locked')?.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Synthetic typed goal');
+        // The document the run landed on shows the same line with the draft: the notice is remembered with its block.
+        expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT_1.uid, type.agentKey, 'living')).toMatchObject({
+          runId,
+          questionsId,
+          message: 'Someone on your team already answered these — the asset is ready. Your draft is kept below.',
+          kept: { questionsId, draft: { answers: { goal: 'Synthetic typed goal' } } },
+        });
+      });
+
+      it('remembers the notice for the run followed now even after an older run of the same asset was remembered', async () => {
+        await open();
+        const answers = TestBed.inject(MktgRunAnswersService);
+        // An earlier run of this asset left its notice in the session; this page follows a newer run, as its URL says.
+        answers.remember(PROJECT_1.uid, type.agentKey, 'living', {
+          runId: 'a'.repeat(64),
+          questionsId: 'b'.repeat(64),
+          message: 'Someone on your team already answered these — the asset is ready. Your draft is kept below.',
+        });
+        expect(answers.notice(PROJECT_1.uid, type.agentKey, 'living')?.runId).toBe('a'.repeat(64));
+        await typeAnswer('Synthetic typed goal');
+        vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('completed')));
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+        expect(query('mktg-run-progress-answered-note')?.textContent?.trim()).toBe(
+          'Someone on your team already answered these — the asset is ready. Your draft is kept below.'
+        );
+        // The newer run's notice replaces the older one, with its kept draft: the document shows this draft, not nothing.
+        expect(answers.notice(PROJECT_1.uid, type.agentKey, 'living')).toMatchObject({
+          runId,
+          questionsId,
+          kept: { questionsId, draft: { answers: { goal: 'Synthetic typed goal' } } },
+        });
+      });
+
+      it('moves an untouched form on quietly when a poll shows the block answered', async () => {
+        await open();
+        await typeAnswer('  Synthetic adoption ');
+        await pollWriting();
+        expect(component['phase']()).toBe('running');
+        expect(query('mktg-run-progress-answered-note')).toBeNull();
+        expect(query('mktg-run-questions-locked')).toBeNull();
+        expect(query('mktg-run-questions')).toBeNull();
+        expect(TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, intake.agentId)?.pendingQuestions).toBeUndefined();
+        expect(answerQuestions).not.toHaveBeenCalled();
+      });
     });
   });
 
