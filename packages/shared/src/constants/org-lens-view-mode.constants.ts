@@ -31,7 +31,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<strin
   // project-detail
   'project-detail': [],
   // contributions
-  contributions: [],
+  contributions: [/^\/contributions\/?$/],
   // events
   events: [],
   // training
