@@ -22,6 +22,7 @@ import {
   MKTG_KIT_FAMILIES,
   MKTG_DOCUMENT_TYPES,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
+  MKTG_POLL_RETRYING_TEXT,
 } from '@lfx-one/shared/constants';
 import {
   MktgLastIntake,
@@ -199,7 +200,7 @@ describe('LinkedIn profile and post surface', () => {
     await fixture.whenStable();
     expect(component['contentForm'].controls.text.value).toBe('Synthetic unsent edit');
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
-    expect(component['runWarning']()).toContain('checking again');
+    expect(component['runWarning']()).toBe(MKTG_POLL_RETRYING_TEXT);
     documents.listDocuments.mockReturnValue(
       of({
         project: 'project-one',
@@ -258,7 +259,7 @@ describe('LinkedIn profile and post surface', () => {
     const fixture = await render();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
-    expect(fixture.componentInstance['runWarning']()).toContain('checking again');
+    expect(fixture.componentInstance['runWarning']()).toBe(MKTG_POLL_RETRYING_TEXT);
     fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic unsent edit');
     documents.listDocuments.mockReturnValue(of({ project: 'project-one', groups: [], runs: [], creatorScoped: true }));
     window.dispatchEvent(new Event('focus'));

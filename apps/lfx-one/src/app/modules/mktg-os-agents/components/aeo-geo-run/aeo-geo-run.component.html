@@ -14,8 +14,12 @@
   </div>
   @if (loading()) {
     <div class="p-8 text-gray-500" role="status" data-testid="mktg-aeo-run-loading">Loading the project…</div>
-  } @else if (!writer() && !error()) {
+  } @else if (!writer() && !error() && !retrying()) {
     <lfx-message severity="warn" text="You need write access to this project to run an AEO/GEO audit." data-testid="mktg-aeo-run-no-access" />
+  }
+  @if (retrying()) {
+    <!-- The project read is still being retried on its own: one quiet status line, no button. -->
+    <p role="status" class="text-xs text-gray-500" data-testid="mktg-aeo-run-retrying">{{ retryingText }}</p>
   }
   @if (error()) {
     <lfx-message severity="error" [text]="error()" data-testid="mktg-aeo-run-error" />
@@ -24,11 +28,6 @@
     }
     @if (activeRun() && !busy()) {
       <button type="button" class="min-h-10 rounded-lg border border-gray-300 px-4" (click)="onRunAgain()" data-testid="mktg-aeo-run-again">Run again</button>
-    }
-    @if (!writer() && !loading()) {
-      <button type="button" class="min-h-10 rounded-lg border border-gray-300 px-4" (click)="reload.set(reload() + 1)" data-testid="mktg-aeo-run-retry">
-        Try again
-      </button>
     }
   }
   @if (activeRun()) {
