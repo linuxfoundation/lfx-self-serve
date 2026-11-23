@@ -51,6 +51,10 @@
         (failed)="onPublicLanding(true)" />
       @if (!publicIdentityPending() && publicWaitingText()) {
         <p role="status" class="text-xs text-gray-500" data-testid="mktg-run-public-waiting">{{ publicWaitingText() }}</p>
+        @if (publicRetrying() && !checkingRun()) {
+          <!-- The reader is headless in the waiting state too: its connection-state line is shown here, under the waiting copy. -->
+          <p role="status" class="text-xs text-gray-500" data-testid="mktg-run-public-retrying">{{ retryingText }}</p>
+        }
         <lfx-button
           label="Open the document"
           [routerLink]="publicDocumentLink()"
