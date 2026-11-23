@@ -1174,6 +1174,9 @@ describe('MktgRunProgressComponent', () => {
     await fixture.whenStable();
     expect(retrying.mock.calls).toEqual([[true], [false], [true], [false]]);
     expect(fixture.componentInstance['readFailure']()).toContain('write access');
+    // The reader's own retrying line goes with the retries: a latched refusal is never read again, so nothing else would clear it.
+    expect(fixture.componentInstance['warning']()).toBe('');
+    expect(text()).not.toContain(MKTG_POLL_RETRYING_TEXT);
   });
 
   it.each([401, 403])(
