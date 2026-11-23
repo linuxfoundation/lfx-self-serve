@@ -735,7 +735,9 @@ export class Member360RunComponent {
                 this.loadingIssue.set([key, transient ? '' : 'The run state could not be checked.', transient ? 'retrying' : 'error']);
                 // A transient re-read leaves `error` alone: a failed submission's message is terminal and actionable and
                 // must not be cleared, or hidden, by the connection line.
-                if (!transient) this.error.set('The run could not be checked. No new run is started.');
+                // A 400/404 abandons the run and opens the create form below: no "No new run is started." line beside that form.
+                const abandoned = event.error instanceof HttpErrorResponse && [400, 404].includes(event.error.status);
+                if (!transient) this.error.set(abandoned ? '' : 'The run could not be checked. No new run is started.');
                 if (event.error instanceof HttpErrorResponse && [400, 401, 403, 404].includes(event.error.status)) {
                   // Latch before the attempt is cleared: the roster may still list this run, and restoring it would repeat
                   // the refused read with no backoff. A 401/403 also latches the scope (the plain access state), and the

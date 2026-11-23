@@ -1055,6 +1055,9 @@ describe('Member360RunComponent', () => {
     expect(run.questions).toHaveBeenCalledTimes(1);
     expect(fixture.componentInstance['serverDenied']()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+    // The create form is offered, so no "No new run is started." line sits beside it.
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('No new run is started.');
     await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
     window.dispatchEvent(new Event('focus'));
     await fixture.whenStable();
