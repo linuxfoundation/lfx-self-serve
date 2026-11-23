@@ -321,7 +321,8 @@ export class VoteDetailComponent {
   /** Condorcet IRV gets its own results layout (#5969); Instant Runoff and Meek STV keep the ranked distributions. */
   protected readonly isCondorcetPoll: Signal<boolean> = computed(() => this.vote()?.poll_type === PollType.CONDORCET_IRV);
   /** Which vote's named ballots to read for the Condorcet ballot ranking distribution — a manager on a named vote only (#5969). */
-  private readonly condorcetBallotsKey: Signal<{ uid: string; tick: number } | null> = this.initCondorcetBallotsKey();
+  private readonly condorcetBallotsKey: Signal<{ uid: string; tick: number; votesCast: number; closed: boolean; draft: boolean } | null> =
+    this.initCondorcetBallotsKey();
   /** The latest ballots read and the vote it belongs to; `voters` is null when the read failed. */
   private readonly condorcetBallotsRead: Signal<{ uid: string; voters: VoteVoter[] | null } | null> = this.initCondorcetBallotsRead();
   /** Ballots for the current vote; null hides the table behind the "not available" note. */
@@ -843,29 +844,42 @@ export class VoteDetailComponent {
   }
 
   /**
-   * A manager of a named Condorcet vote reads the voters list once per vote (and after a ballot from this page), so the
-   * Results tab can count identical ballot orderings. Pseudo-anonymous votes return participation-only rows, and voters
-   * can't read ballots at all, so neither gets a key and the table gives way to a note (#5969).
+   * A manager of a named Condorcet vote reads the voters list once its results load, again whenever the results poll
+   * reports a different ballot count or the vote finalizes, and after a ballot from this page, so the Results tab's
+   * ballot orderings match its other tables. Pseudo-anonymous votes return participation-only rows, and voters can't
+   * read ballots at all, so neither gets a key and the table gives way to a note (#5969). A draft has no ballots and
+   * GET /api/votes/:uid/voters refuses it (409), so it skips the read, just as `showVotersTab` hides the Voters tab.
    */
-  private initCondorcetBallotsKey(): Signal<{ uid: string; tick: number } | null> {
+  private initCondorcetBallotsKey(): Signal<{ uid: string; tick: number; votesCast: number; closed: boolean; draft: boolean } | null> {
     return computed(() => {
       const uid = this.vote()?.uid;
-      if (!uid || !this.isCondorcetPoll() || this.audience() !== 'creator' || this.isPseudoAnonymous() || !this.showsResults()) return null;
-      return { uid, tick: this.refreshTick() };
+      const results = this.voteResults();
+      if (!uid || !results || !this.isCondorcetPoll() || this.audience() !== 'creator' || this.isPseudoAnonymous() || !this.showsResults()) return null;
+      return { uid, tick: this.refreshTick(), votesCast: results.num_votes_cast, closed: this.isVoteClosed(), draft: !this.showVotersTab() };
     });
   }
 
-  /** A failed read settles with null voters, so it ends the loading state and shows the "not available" note. */
+  /**
+   * A failed first read settles with null voters, so it ends the loading state and shows the "not available" note;
+   * a failed re-read of the same vote keeps its last ballots.
+   */
   private initCondorcetBallotsRead(): Signal<{ uid: string; voters: VoteVoter[] | null } | null> {
+    let last: { uid: string; voters: VoteVoter[] | null } | null = null;
     return toSignal(
       toObservable(this.condorcetBallotsKey).pipe(
-        distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.tick === b?.tick),
+        distinctUntilChanged(
+          (a, b) => a?.uid === b?.uid && a?.tick === b?.tick && a?.votesCast === b?.votesCast && a?.closed === b?.closed && a?.draft === b?.draft
+        ),
         switchMap((key) => {
           if (!key) return of(null);
+          if (key.draft) return of({ uid: key.uid, voters: [] });
           return this.voteService.getVoteVoters(key.uid).pipe(
             map((voters) => ({ uid: key.uid, voters: voters.filter((voter): voter is VoteVoter => 'uid' in voter) })),
-            catchError(() => of({ uid: key.uid, voters: null }))
+            catchError(() => of({ uid: key.uid, voters: last?.uid === key.uid ? last.voters : null }))
           );
+        }),
+        tap((read) => {
+          last = read;
         })
       ),
       { initialValue: null }

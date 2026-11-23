@@ -136,6 +136,20 @@ describe('VoteCondorcetResultsComponent', () => {
     expect(byTestId(el, 'vote-condorcet-rank-summary')).toBeTruthy();
   });
 
+  it('says the result is being finalized, never in progress, once voting has ended but final totals are pending', () => {
+    fixture.componentRef.setInput('isEnded', true);
+    const el = render(question(), false);
+    expect(text(byTestId(el, 'vote-condorcet-finalizing'))).toBe('Voting has ended. The final outcome will appear once the final totals are confirmed.');
+    expect(byTestId(el, 'vote-condorcet-in-progress')).toBeNull();
+    expect(byTestId(el, 'vote-condorcet-outcome-message')).toBeNull();
+    expect(byTestId(el, 'vote-condorcet-standings')).toBeNull();
+
+    fixture.componentRef.setInput('isClosed', true);
+    fixture.detectChanges();
+    expect(byTestId(el, 'vote-condorcet-finalizing')).toBeNull();
+    expect(byTestId(el, 'vote-condorcet-outcome-message')).not.toBeNull();
+  });
+
   it('renders pairwise cells with icons and screen-reader results', () => {
     const el = render(question());
     const rows = byTestId(el, 'vote-condorcet-pairwise')?.querySelectorAll('tbody tr') ?? [];

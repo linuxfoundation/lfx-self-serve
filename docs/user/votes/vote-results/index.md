@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, condorcet, tallies, voters]
-last_updated: 2026-11-20
+last_updated: 2026-11-23
 intercom_collection: Votes
 ---
 
@@ -82,7 +82,7 @@ A Condorcet IRV vote shows its own results for each question. The winner comes f
 - **Ballot Ranking Distribution** shows each distinct order in which voters ranked the candidates, and how many ballots used it, most common first. Only managers of a named vote see this table. On a pseudo-anonymous vote, or for voters, it says **Ballot-by-ballot rankings aren't available for this vote.**
 - **Candidate Rank Summary** shows how many voters placed each candidate at each rank (**1st**, **2nd**, and so on).
 
-While the vote is open, the outcome and standings are replaced by **The vote is currently in progress. Final results will be available once voting has ended.** The pairwise, ballot and rank tables show the counts so far.
+While the vote is open, the outcome and standings are replaced by **The vote is currently in progress. Final results will be available once voting has ended.** After voting ends, until the final totals load, they are replaced by **Voting has ended. The final outcome will appear once the final totals are confirmed.** The pairwise, ballot and rank tables show the counts so far, and the ballot table refreshes when more ballots arrive and again when the results become final.
 
 ### Pseudo-anonymous votes
 

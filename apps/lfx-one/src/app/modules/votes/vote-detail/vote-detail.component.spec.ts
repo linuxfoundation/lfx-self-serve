@@ -556,6 +556,102 @@ describe('VoteDetailComponent', () => {
       expect(condorcetQuestion(fixture).ballotsLoading()).toBe(false);
       expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ count: 1, ranking: ['No', 'Yes'] }]);
     });
+
+    it('never reads ballots for a draft, which has none yet', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.DISABLED, pseudo_anonymity: false })));
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+
+      expect(voteService.getVoteVoters).not.toHaveBeenCalled();
+      expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([]);
+      expect(testId(fixture, 'vote-condorcet-ballots-empty')).not.toBeNull();
+      expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).toBeNull();
+    });
+
+    describe('live refresh', () => {
+      /** Ten recipients, so a few more ballots never reach the 100% participation that reads as closed. */
+      const liveResults = (votesCast: number): VoteResultsResponse => ({ ...condorcetResults(), num_recipients: 10, num_votes_cast: votesCast });
+      const activeVote = makeVote({ poll_type: PollType.CONDORCET_IRV, pseudo_anonymity: false });
+      const firstBallot = namedBallot('ballot-1', ['choice-no', 'choice-yes']);
+      const laterBallot = (uid: string): VoteVoter => namedBallot(uid, ['choice-yes', 'choice-no']);
+
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+        voteService.fetchVote.mockReturnValue(of(activeVote));
+        voteService.getVoteResults.mockReturnValue(of(liveResults(1)));
+        voteService.getVoteVoters.mockReturnValue(of([firstBallot]));
+        queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      });
+
+      afterEach(() => {
+        TestBed.resetTestingModule();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+      });
+
+      async function nextPoll(fixture: ComponentFixture<VoteDetailComponent>): Promise<void> {
+        await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+        TestBed.tick();
+        fixture.detectChanges();
+      }
+
+      it('re-reads the ballots when the results poll reports more ballots, and again when the vote finalizes', async () => {
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ count: 1, ranking: ['No', 'Yes'] }]);
+
+        // An unchanged tally never re-reads the ballots.
+        await nextPoll(fixture);
+        expect(voteService.getVoteResults).toHaveBeenCalledTimes(2);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+
+        voteService.getVoteResults.mockReturnValue(of(liveResults(2)));
+        voteService.getVoteVoters.mockReturnValue(of([firstBallot, laterBallot('ballot-2')]));
+        await nextPoll(fixture);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([
+          { count: 1, ranking: ['No', 'Yes'] },
+          { count: 1, ranking: ['Yes', 'No'] },
+        ]);
+        expect(condorcetQuestion(fixture).isClosed()).toBe(false);
+
+        // The vote ends elsewhere with the same tally; the final read still refreshes the ballots.
+        voteService.fetchVote.mockReturnValue(of({ ...activeVote, status: PollStatus.ENDED }));
+        voteService.getVoteVoters.mockReturnValue(of([firstBallot, laterBallot('ballot-2'), laterBallot('ballot-3')]));
+        await nextPoll(fixture);
+        expect(condorcetQuestion(fixture).isClosed()).toBe(true);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(3);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([
+          { count: 2, ranking: ['Yes', 'No'] },
+          { count: 1, ranking: ['No', 'Yes'] },
+        ]);
+      });
+
+      it('keeps the last ballots when a refresh read fails', async () => {
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+        voteService.getVoteResults.mockReturnValue(of(liveResults(2)));
+        voteService.getVoteVoters.mockReturnValue(httpError(503));
+        await nextPoll(fixture);
+
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ count: 1, ranking: ['No', 'Yes'] }]);
+        expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).toBeNull();
+      });
+
+      it('says the result is being finalized while an ended vote waits for its final read', async () => {
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+        const finalRead = new Subject<VoteResultsResponse>();
+        voteService.fetchVote.mockReturnValue(of({ ...activeVote, status: PollStatus.ENDED }));
+        voteService.getVoteResults.mockReturnValue(finalRead);
+        await nextPoll(fixture);
+
+        expect(condorcetQuestion(fixture).isClosed()).toBe(false);
+        expect(testId(fixture, 'vote-condorcet-finalizing')).not.toBeNull();
+        expect(testId(fixture, 'vote-condorcet-in-progress')).toBeNull();
+      });
+    });
   });
 
   describe.each([true, false])('ranked Results question positions (manager: %s)', (manager) => {

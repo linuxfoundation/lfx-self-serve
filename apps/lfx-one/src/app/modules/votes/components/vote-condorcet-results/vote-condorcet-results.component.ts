@@ -6,15 +6,17 @@ import { TagComponent } from '@components/tag/tag.component';
 import { CondorcetOutcome } from '@lfx-one/shared/enums';
 import { CondorcetQuestionView } from '@lfx-one/shared/interfaces';
 import { joinNames } from '@lfx-one/shared/utils';
+import { OrdinalPipe } from '@pipes/ordinal.pipe';
 
 /**
  * Condorcet IRV results for one question (#5969), ported from PCC's condorcet-poll-result: how the voting service
  * decided the winner, standings, the pairwise comparison table, the ballot ranking distribution and the candidate rank
- * summary. While the vote is open the outcome and standings give way to an in-progress note; the tables show live counts.
+ * summary. Until the vote is closed the outcome and standings give way to an in-progress note (or, once voting has
+ * ended, a finalizing note); the tables show live counts.
  */
 @Component({
   selector: 'lfx-vote-condorcet-results',
-  imports: [TagComponent],
+  imports: [TagComponent, OrdinalPipe],
   templateUrl: './vote-condorcet-results.component.html',
   host: { class: 'contents' },
 })
@@ -24,6 +26,8 @@ export class VoteCondorcetResultsComponent {
   /** One-based position in a multi-question Results view; omit for an unnumbered heading. */
   public readonly questionNumber = input<number>();
   public readonly isClosed = input.required<boolean>();
+  /** Voting has ended; until `isClosed`, the final results are still being confirmed. */
+  public readonly isEnded = input<boolean>(false);
   /** Named ballots are still loading, so the ballot section waits instead of saying they aren't available. */
   public readonly ballotsLoading = input<boolean>(false);
 
@@ -33,23 +37,6 @@ export class VoteCondorcetResultsComponent {
     () => this.question().outcome === CondorcetOutcome.CONDORCET_WINNER || this.question().outcome === CondorcetOutcome.IRV_WINNER
   );
   protected readonly isTie: Signal<boolean> = computed(() => this.question().outcome === CondorcetOutcome.TIE);
-
-  // === Protected Methods ===
-  /** 1 → "1st", 2 → "2nd", 11 → "11th", 23 → "23rd". */
-  protected ordinal(rank: number): string {
-    const lastTwo = rank % 100;
-    if (lastTwo >= 11 && lastTwo <= 13) return `${rank}th`;
-    switch (rank % 10) {
-      case 1:
-        return `${rank}st`;
-      case 2:
-        return `${rank}nd`;
-      case 3:
-        return `${rank}rd`;
-      default:
-        return `${rank}th`;
-    }
-  }
 
   // === Private Initializers ===
   private initOutcomeMessage(): Signal<string> {

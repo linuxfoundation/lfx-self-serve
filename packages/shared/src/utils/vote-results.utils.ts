@@ -128,8 +128,8 @@ export function buildVoteResultsQuestions(results: VoteResultsResponse | null, i
 
 /**
  * Builds the ranked-choice per-question view model from the results API payload
- * @description The round-summary payload is untyped upstream, so only its presence is surfaced (`hasRoundSummary`);
- * detailed round visualization is deferred to a placeholder banner.
+ * @description Round-by-round visualization is deferred, so only the presence of a round summary is surfaced
+ * (`hasRoundSummary`) for a placeholder banner.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @returns One RankedQuestionView per poll question, in API order
  */

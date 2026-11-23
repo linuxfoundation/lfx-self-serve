@@ -15,7 +15,12 @@
     <h5 class="text-sm font-semibold text-gray-900">
       {{ q.usedIrv ? 'Instant Runoff Voting (IRV) – Final Voting Outcome' : 'Condorcet IRV – Final Voting Outcome' }}
     </h5>
-    @if (!isClosed()) {
+    @if (!isClosed() && isEnded()) {
+      <p class="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800" data-testid="vote-condorcet-finalizing">
+        <i class="fa-light fa-clock mt-0.5" aria-hidden="true"></i>
+        <span>Voting has ended. The final outcome will appear once the final totals are confirmed.</span>
+      </p>
+    } @else if (!isClosed()) {
       <p class="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800" data-testid="vote-condorcet-in-progress">
         <i class="fa-light fa-clock mt-0.5" aria-hidden="true"></i>
         <span>The vote is currently in progress. Final results will be available once voting has ended.</span>
@@ -47,7 +52,7 @@
       <ol class="flex flex-col gap-1">
         @for (standing of q.standings; track standing.choiceId) {
           <li class="flex items-start gap-3 rounded-md px-2 py-1.5 text-sm" [attr.data-testid]="'vote-condorcet-standing-' + standing.choiceId">
-            <span class="w-10 flex-shrink-0 font-semibold text-slate-500">{{ ordinal(standing.rank) }}</span>
+            <span class="w-10 flex-shrink-0 font-semibold text-slate-500">{{ standing.rank | ordinal }}</span>
             <div class="flex min-w-0 flex-col gap-0.5">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-semibold text-gray-900 break-words">{{ standing.choiceText }}</span>
@@ -137,7 +142,7 @@
               <tr class="bg-gray-50">
                 <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-500">Voters</th>
                 @for (rank of q.ranks; track rank) {
-                  <th scope="col" class="px-3 py-2 text-left font-medium text-gray-500">{{ ordinal(rank) }}</th>
+                  <th scope="col" class="px-3 py-2 text-left font-medium text-gray-500">{{ rank | ordinal }}</th>
                 }
               </tr>
             </thead>
@@ -178,7 +183,7 @@
           <tr class="bg-gray-50">
             <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-500">Candidates</th>
             @for (rank of q.ranks; track rank) {
-              <th scope="col" class="px-3 py-2 text-left font-medium text-gray-500">{{ ordinal(rank) }}</th>
+              <th scope="col" class="px-3 py-2 text-left font-medium text-gray-500">{{ rank | ordinal }}</th>
             }
           </tr>
         </thead>

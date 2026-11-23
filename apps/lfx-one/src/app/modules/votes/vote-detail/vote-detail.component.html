@@ -267,6 +267,7 @@
               [question]="question"
               [questionNumber]="condorcetQuestions().length > 1 ? idx + 1 : undefined"
               [isClosed]="isVoteClosed()"
+              [isEnded]="isEnded()"
               [ballotsLoading]="condorcetBallotsLoading()" />
           }
         } @else {
