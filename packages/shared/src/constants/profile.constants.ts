@@ -416,6 +416,8 @@ export const PROFILE_TAB_ACCOUNT_ROUTES: Readonly<Record<string, string>> = {
   'settings#email-settings': 'email-settings',
   'settings#password': 'password',
   'settings#developer-settings': 'developer-settings',
+  // The Account Recovery card sits in the Password section.
+  'settings#account-recovery': 'password',
 };
 
 /** The Profile & Account hub page each `/account` page falls back to while the redesign flag is off. */

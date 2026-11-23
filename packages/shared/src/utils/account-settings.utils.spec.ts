@@ -18,6 +18,7 @@ describe('accountPathForProfileTab', () => {
     expect(accountPathForProfileTab('settings', 'password')).toBe('/account/password');
     expect(accountPathForProfileTab('settings', 'developer-settings')).toBe('/account/developer-settings');
     expect(accountPathForProfileTab('settings', 'email-settings')).toBe('/account/email-settings');
+    expect(accountPathForProfileTab('settings', 'account-recovery')).toBe('/account/password');
     expect(accountPathForProfileTab('settings')).toBe('/account/email-settings');
     expect(accountPathForProfileTab('settings', 'nowhere')).toBe('/account/email-settings');
   });
