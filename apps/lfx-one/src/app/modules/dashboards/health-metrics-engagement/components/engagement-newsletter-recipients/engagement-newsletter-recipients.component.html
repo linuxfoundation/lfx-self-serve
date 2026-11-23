@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="engagement-newsletter-recipients">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="engagement-newsletter-recipients">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -13,113 +13,120 @@
   } @else if (loading()) {
     <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="engagement-newsletter-recipients-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    <p class="text-[13px] text-gray-500" data-testid="engagement-newsletter-recipients-newsletter">
-      Latest newsletter: <span class="font-medium text-gray-900">{{ newsletterLabel() }}</span>
-    </p>
+    <lfx-health-metrics-metrics-row [items]="metrics()" testId="engagement-newsletter-recipients-metrics" />
 
-    <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-      <div class="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center">
-        <!-- 280px fits the design's full placeholder. -->
-        <div class="w-full lg:w-[280px]">
-          <!-- The placeholder and icon give the box no accessible name, so the label carries it. -->
-          <label class="sr-only" for="engagement-newsletter-recipients-search">Search recipients or organizations</label>
-          <lfx-input-text
-            [form]="searchForm"
-            control="search"
-            inputId="engagement-newsletter-recipients-search"
-            placeholder="Search recipients or organizations..."
-            icon="fa-light fa-search"
-            size="small"
-            styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
-            dataTest="engagement-newsletter-recipients-search-input" />
-        </div>
-        <lfx-filter-pills
-          variant="track"
-          [options]="filterOptions()"
-          [selectedFilter]="filter()"
-          (filterChange)="onFilterChange($event)"
-          data-testid="engagement-newsletter-recipients-filters" />
-      </div>
-      <span class="text-[13px] text-gray-500" data-testid="engagement-newsletter-recipients-count">{{ countLabel() }}</span>
+    <!-- The search fills the row from 240px beside the status select; on phones each takes the full width. -->
+    <div class="flex flex-wrap items-center gap-[10px]">
+      <lfx-ui-search-input
+        class="min-w-[240px] flex-[1_1_240px] max-[640px]:min-w-0 max-[640px]:basis-full"
+        placeholder="Search recipients or companies..."
+        ariaLabel="Search recipients or companies"
+        [(value)]="searchText"
+        data-testid="engagement-newsletter-recipients-search" />
+      <lfx-ui-select
+        class="max-[640px]:basis-full"
+        size="small"
+        ariaLabel="Status"
+        [value]="filter()"
+        (valueChange)="onFilterChange($event)"
+        data-testid="engagement-newsletter-recipients-status">
+        @for (option of filters; track option.key) {
+          <lfx-ui-option [value]="option.key" [label]="option.label" />
+        }
+      </lfx-ui-select>
     </div>
 
     @if (response().truncated) {
-      <p class="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700" data-testid="engagement-newsletter-recipients-truncated">
+      <lfx-ui-note variant="warning" size="small" data-testid="engagement-newsletter-recipients-truncated">
         Showing the {{ loadedCount() }} most engaged recipients. The rest are not loaded, so the counts above cover only these.
-      </p>
+      </lfx-ui-note>
     }
 
     @if (totalRecords() === 0) {
       <lfx-empty-state
         variant="compact"
-        icon="fa-light fa-envelope-open-text"
+        icon="fa-light fa-magnifying-glass"
         title="No recipients match this view"
         subtitle="No recipient of the latest newsletter matches the current search and filter."
+        [resettable]="true"
+        (resetFilters)="onResetFilters()"
         data-testid="engagement-newsletter-recipients-no-match" />
     } @else {
-      <!-- No [totalRecords]: p-table keeps only its first value and pins the paginator there, so it counts the rows instead. -->
+      <!-- The design's 700px minimum; a narrower card scrolls the table sideways. -->
       <lfx-table
         styleClass="hm-table"
         [rowHover]="false"
-        [value]="rowViews()"
-        [paginator]="totalRecords() > size()"
-        [rows]="size()"
-        [first]="first()"
-        [showCurrentPageReport]="true"
-        [showFirstLastIcon]="false"
-        currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-        (onPage)="onTablePage($event)"
+        [value]="pageRows()"
+        [paginator]="false"
+        [tableStyle]="{ 'min-width': '700px' }"
         data-testid="engagement-newsletter-recipients-table">
         <ng-template #header>
           <tr>
-            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Recipient</span></th>
-            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Delivery</span></th>
-            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Engagement</span></th>
-            <th scope="col" class="text-right"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Opens</span></th>
-            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Last opened</span></th>
-            <th scope="col" class="text-right"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Clicks</span></th>
-            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Last clicked</span></th>
+            <th scope="col" [attr.aria-sort]="sorting.headers().recipient.ariaSort">
+              <lfx-health-metrics-th
+                label="Recipient"
+                [sort]="sorting.headers().recipient.state"
+                (sorted)="sorting.toggle('recipient')"
+                data-testid="engagement-newsletter-recipients-sort-recipient" />
+            </th>
+            <!-- Exact %: the design's 0.7 / 0.8 / 0.9 / 0.9 shares of the columns after Recipient. -->
+            <th scope="col" class="w-[13%]" [attr.aria-sort]="sorting.headers().delivery.ariaSort">
+              <lfx-health-metrics-th
+                label="Delivery"
+                [sort]="sorting.headers().delivery.state"
+                (sorted)="sorting.toggle('delivery')"
+                data-testid="engagement-newsletter-recipients-sort-delivery" />
+            </th>
+            <th scope="col" class="w-[15%]" [attr.aria-sort]="sorting.headers().engagement.ariaSort">
+              <lfx-health-metrics-th
+                label="Engagement"
+                [sort]="sorting.headers().engagement.state"
+                (sorted)="sorting.toggle('engagement')"
+                data-testid="engagement-newsletter-recipients-sort-engagement" />
+            </th>
+            <th scope="col" class="w-[17%] text-right" [attr.aria-sort]="sorting.headers().opens.ariaSort">
+              <lfx-health-metrics-th
+                label="Opens"
+                [sort]="sorting.headers().opens.state"
+                (sorted)="sorting.toggle('opens')"
+                data-testid="engagement-newsletter-recipients-sort-opens" />
+            </th>
+            <th scope="col" class="w-[17%] text-right" [attr.aria-sort]="sorting.headers().clicks.ariaSort">
+              <lfx-health-metrics-th
+                label="Clicks"
+                [sort]="sorting.headers().clicks.state"
+                (sorted)="sorting.toggle('clicks')"
+                data-testid="engagement-newsletter-recipients-sort-clicks" />
+            </th>
           </tr>
         </ng-template>
 
         <ng-template #body let-row>
           <tr [attr.data-testid]="'engagement-newsletter-recipients-row-' + row.rank">
-            <td class="min-w-[200px]">
-              <div class="flex flex-col">
-                <span class="text-[13px] font-semibold text-gray-900">{{ row.nameLabel }}</span>
-                <span class="text-[12px] text-gray-500">{{ row.organizationLabel }}</span>
-              </div>
+            <td>
+              <lfx-health-metrics-cell [text]="row.nameLabel" [lead]="{ kind: 'person', name: row.avatarName, photoUrl: '' }" [description]="row.description" />
             </td>
             <td>
-              <!-- The design's tag: 11px text on a tinted pill. -->
-              <span class="inline-flex h-[20px] items-center whitespace-nowrap rounded-full px-[8px] text-[11px] font-medium" [class]="row.deliveryClass">{{
+              <lfx-ui-badge [tone]="row.deliveryTone" [attr.data-testid]="'engagement-newsletter-recipients-row-' + row.rank + '-delivery'">{{
                 row.deliveryLabel
-              }}</span>
+              }}</lfx-ui-badge>
             </td>
             <td>
               @if (row.engagementLabel) {
-                <span class="inline-flex h-[20px] items-center whitespace-nowrap rounded-full px-[8px] text-[11px] font-medium" [class]="row.engagementClass">{{
+                <lfx-ui-badge [tone]="row.engagementTone" [attr.data-testid]="'engagement-newsletter-recipients-row-' + row.rank + '-engagement'">{{
                   row.engagementLabel
-                }}</span>
+                }}</lfx-ui-badge>
               } @else {
-                <span class="text-[13px] text-gray-400">—</span>
+                <lfx-health-metrics-cell text="—" />
               }
             </td>
-            <td class="text-right">
-              <span class="text-[13px] tabular-nums text-gray-900">{{ row.opensLabel }}</span>
-            </td>
-            <td>
-              <span class="whitespace-nowrap text-[13px] text-gray-500">{{ row.lastOpenedLabel }}</span>
-            </td>
-            <td class="text-right">
-              <span class="text-[13px] tabular-nums text-gray-900">{{ row.clicksLabel }}</span>
-            </td>
-            <td>
-              <span class="whitespace-nowrap text-[13px] text-gray-500">{{ row.lastClickedLabel }}</span>
-            </td>
+            <td><lfx-health-metrics-cell class="items-end" [text]="row.opensLabel" [description]="row.opensDescription" /></td>
+            <td><lfx-health-metrics-cell class="items-end" [text]="row.clicksLabel" [description]="row.clicksDescription" /></td>
           </tr>
         </ng-template>
       </lfx-table>
+
+      <lfx-ui-pagination [total]="totalRecords()" [pageSize]="size" [(page)]="page" />
     }
   }
 </div>

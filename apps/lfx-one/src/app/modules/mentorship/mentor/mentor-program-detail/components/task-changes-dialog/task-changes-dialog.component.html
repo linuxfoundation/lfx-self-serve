@@ -1,0 +1,38 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="mentorship-task-changes-dialog">
+  <p class="text-sm text-gray-600">
+    Send <span class="font-semibold text-gray-900">{{ data.taskName }}</span> back to <span class="font-semibold text-gray-900">{{ data.menteeName }}</span
+    >. {{ reasonHint }}
+  </p>
+
+  <div class="flex flex-col gap-1">
+    <label for="mentorship-task-changes-reason" class="text-sm font-medium text-gray-700"> <span class="text-red-500">*</span> {{ reasonLabel }} </label>
+    <lfx-textarea
+      [form]="form"
+      control="reason"
+      inputId="mentorship-task-changes-reason"
+      [placeholder]="reasonPlaceholder"
+      [rows]="6"
+      [maxlength]="reasonMax"
+      [required]="true"
+      [invalid]="showRequired()"
+      [describedBy]="showRequired() ? 'mentorship-task-changes-reason-error' : undefined"
+      styleClass="w-full min-h-36"
+      dataTest="mentorship-task-changes-reason-input" />
+    <div class="flex items-start gap-2">
+      @if (showRequired()) {
+        <span id="mentorship-task-changes-reason-error" class="text-xs text-red-600" role="alert" data-testid="mentorship-task-changes-reason-error">{{
+          reasonRequired
+        }}</span>
+      }
+      <span class="ml-auto shrink-0 text-xs text-gray-400" aria-hidden="true">{{ reasonLength() }}/{{ reasonMax }}</span>
+    </div>
+  </div>
+
+  <div class="flex items-center justify-end gap-2">
+    <lfx-button label="Cancel" severity="secondary" size="small" [text]="true" (onClick)="onCancel()" data-testid="mentorship-task-changes-cancel" />
+    <lfx-button [label]="submitLabel" severity="primary" size="small" (onClick)="onSubmit()" data-testid="mentorship-task-changes-submit" />
+  </div>
+</div>

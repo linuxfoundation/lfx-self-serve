@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Mentee apply page — blocked states and submit (linuxfoundation/lfx-mentorship#192).
+ * Mentee apply page — blocked states and submit (linuxfoundation/lfx-mentorship#192), and the pending-application limit
+ * (linuxfoundation/lfx-mentorship#368).
  *
  * Stubs the profile check, the profile read, the apply-target read and the submit via
  * `page.route`, so each upstream answer runs against a synthetic term rather than whatever the
@@ -46,10 +47,13 @@ interface ApplyStub {
 
 /**
  * Answers the apply-target read with `targetStatus` (a 200 carries `acceptingApplications`) and
- * the submit with `submitStatus`, recording each submit body.
+ * the submit with `submitStatus` and `submitError` as its `error` text, recording each submit body.
  */
-async function stubApplyFlow(page: Page, options: { targetStatus?: number; acceptingApplications?: boolean; submitStatus?: number }): Promise<ApplyStub> {
-  const { targetStatus = 200, acceptingApplications = true, submitStatus = 201 } = options;
+async function stubApplyFlow(
+  page: Page,
+  options: { targetStatus?: number; acceptingApplications?: boolean; submitStatus?: number; submitError?: string }
+): Promise<ApplyStub> {
+  const { targetStatus = 200, acceptingApplications = true, submitStatus = 201, submitError = 'upstream text' } = options;
   const stub: ApplyStub = { submitBodies: [] };
 
   await page.route('**/api/mentorship/mentee/has-profile', (route) =>
@@ -77,7 +81,7 @@ async function stubApplyFlow(page: Page, options: { targetStatus?: number; accep
     if (submitStatus === 201) {
       return route.fulfill({ status: 201, body: '' });
     }
-    return route.fulfill({ status: submitStatus, contentType: 'application/json', body: JSON.stringify({ error: 'upstream text' }) });
+    return route.fulfill({ status: submitStatus, contentType: 'application/json', body: JSON.stringify({ error: submitError }) });
   });
 
   return stub;
@@ -150,6 +154,25 @@ test.describe('Mentee apply — submit', () => {
     await submitApplication(page);
 
     await expectBlocked(page, 'closed');
+    await expect(page.getByTestId('mentorship-mentee-apply-blocked')).toContainText('This term is not accepting applications');
+    expect(stub.submitBodies).toHaveLength(1);
+  });
+
+  // The limit is a 422 too, so it keeps the closed state's `data-reason`; only its copy tells it apart.
+  test('a 422 naming the pending-application limit says how to apply again', async ({ page }) => {
+    const stub = await stubApplyFlow(page, {
+      submitStatus: 422,
+      submitError: 'eligibility criteria not met: the mentee already has 3 applications under review',
+    });
+    await openApplyPage(page);
+
+    await submitApplication(page);
+
+    await expectBlocked(page, 'closed');
+    const blocked = page.getByTestId('mentorship-mentee-apply-blocked');
+    await expect(blocked).toContainText('You have reached the application limit');
+    await expect(blocked).toContainText('You can have up to 3 applications under review at a time.');
+    await expect(blocked).not.toContainText('This term is not accepting applications');
     expect(stub.submitBodies).toHaveLength(1);
   });
 });

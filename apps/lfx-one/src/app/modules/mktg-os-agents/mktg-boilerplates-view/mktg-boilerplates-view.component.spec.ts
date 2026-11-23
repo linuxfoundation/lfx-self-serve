@@ -188,7 +188,18 @@ describe('MktgBoilerplatesViewComponent', () => {
     expect(query('mktg-boilerplates-view-sources-read')?.textContent).toContain('https://testorbit.example.org');
     expect(query('mktg-boilerplates-view-sources-failed')?.textContent).toContain('Not found');
     expect(query('mktg-boilerplates-view-gaps')?.textContent).toContain('The launch year is not stated.');
+    expect(query('mktg-boilerplates-view-gaps-accepted')).toBeNull();
     expect(query('mktg-boilerplates-view-checks-empty')).not.toBeNull();
+  });
+
+  it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {
+    await render();
+    fixture.componentRef.setInput('approval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+    query('mktg-boilerplates-view-tab-sources')?.click();
+    await fixture.whenStable();
+
+    expect(query('mktg-boilerplates-view-gaps')?.textContent).toContain('The launch year is not stated.');
+    expect(query('mktg-boilerplates-view-gaps-accepted')?.textContent?.trim()).toBe('Accepted when v2 was approved; still open.');
   });
 
   it('moves along the tabs with the arrow keys, Home and End', async () => {

@@ -19,6 +19,7 @@ import {
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { AccountContextService } from '@app/shared/services/account-context.service';
 import { OrgLensMembershipsService } from '@app/shared/services/org-lens-memberships.service';
 import { OrgLensNavigationService } from '@app/shared/services/org-lens-navigation.service';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -42,6 +43,7 @@ type OrgMembershipProjectVm = OrgMembershipProject & { link: string[] };
   templateUrl: './membership-projects-drawer.component.html',
 })
 export class MembershipProjectsDrawerComponent {
+  private readonly accountContext = inject(AccountContextService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -131,7 +133,13 @@ export class MembershipProjectsDrawerComponent {
     const term = this.searchTerm().toLowerCase().trim();
     const projects = this.projectsData()?.projects ?? [];
     const matched = term ? projects.filter((p) => p.projectName.toLowerCase().includes(term)) : projects;
-    return matched.map((p) => ({ ...p, link: this.orgLens.orgLensLink('projects', p.projectSlug || p.projectId) }));
+    return matched.map((p) => ({ ...p, link: this.projectLink(p.projectSlug || p.projectId) }));
+  }
+
+  // A family roll-up key is not a valid project-detail segment, so roll-up links go to the row's own organization.
+  private projectLink(project: string): string[] {
+    if (this.accountContext.isRollUp()) return ['/company', this.orgUid(), 'projects', project];
+    return this.orgLens.orgLensLink('projects', project);
   }
 
   private initProjectsData() {

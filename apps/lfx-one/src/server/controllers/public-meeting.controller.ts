@@ -1005,16 +1005,12 @@ export class PublicMeetingController {
   }
 
   /**
-   * Reads the meeting passcode from the request header the client sends it in (keeping it out of
-   * request URLs), falling back to the legacy `?password=` query param for older client bundles.
+   * Reads the meeting passcode from the request header the client sends it in, keeping it out of
+   * request URLs. A `?password=` query param is ignored.
    */
   private getRequestMeetingPassword(req: Request): string {
     const fromHeader = req.headers[MEETING_PASSWORD_HEADER];
-    if (typeof fromHeader === 'string' && fromHeader) {
-      return fromHeader;
-    }
-    const fromQuery = req.query['password'];
-    return typeof fromQuery === 'string' ? fromQuery : '';
+    return typeof fromHeader === 'string' ? fromHeader : '';
   }
 
   /**

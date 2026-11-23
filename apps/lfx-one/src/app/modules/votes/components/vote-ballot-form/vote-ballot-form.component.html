@@ -55,15 +55,56 @@
                   <button
                     type="button"
                     (click)="moveRank(question.question_id, i, i + 1)"
-                    [disabled]="i === question.choices.length - 1 || abstain()"
+                    [disabled]="i === (rankedOrderByQuestion().get(question.question_id)?.length ?? 0) - 1 || abstain()"
                     class="flex items-center justify-center min-w-[44px] min-h-[44px] flex-shrink-0 text-slate-500 hover:text-slate-700 disabled:opacity-30"
                     [attr.data-testid]="'vote-link-rank-down-' + choice.choice_id"
                     [attr.aria-label]="'Move ' + choice.choice_text + ' down'">
                     <i class="fa-light fa-arrow-down" aria-hidden="true"></i>
                   </button>
+                  @if (preservesRecordedChoices() && question.type === 'multiple_choice') {
+                    <button
+                      type="button"
+                      (click)="toggleRankedChoice(question.question_id, choice.choice_id)"
+                      [disabled]="abstain() || submitting()"
+                      class="flex items-center justify-center min-w-[44px] min-h-[44px] flex-shrink-0 text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                      [attr.data-testid]="'vote-link-rank-remove-' + choice.choice_id"
+                      [attr.aria-label]="'Remove ' + choice.choice_text + ' from ranking'">
+                      <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                    </button>
+                  }
                 </div>
               }
             </div>
+            @let unranked = unrankedChoicesByQuestion().get(question.question_id) ?? [];
+            @if (unranked.length > 0) {
+              <div class="flex flex-col gap-2" [attr.data-testid]="'vote-link-unranked-' + question.question_id">
+                <h3 class="text-sm font-medium text-slate-700">Not ranked</h3>
+                @if (question.type === 'single_choice') {
+                  <lfx-button
+                    label="Rank all options"
+                    size="small"
+                    severity="secondary"
+                    [disabled]="abstain() || submitting()"
+                    (onClick)="rankAllChoices(question.question_id)"
+                    [attr.data-testid]="'vote-link-rank-all-' + question.question_id" />
+                }
+                @for (choice of unranked; track choice.choice_id) {
+                  <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
+                    <span class="min-w-0 text-base text-slate-700 break-words">{{ choice.choice_text }}</span>
+                    @if (question.type === 'multiple_choice') {
+                      <lfx-button
+                        label="Add to ranking"
+                        size="small"
+                        severity="secondary"
+                        [disabled]="abstain() || submitting()"
+                        [ariaLabel]="'Add ' + choice.choice_text + ' to ranking'"
+                        (onClick)="toggleRankedChoice(question.question_id, choice.choice_id)"
+                        [attr.data-testid]="'vote-link-rank-add-' + choice.choice_id" />
+                    }
+                  </div>
+                }
+              </div>
+            }
           } @else if (question.type === 'multiple_choice') {
             @for (choice of question.choices; track choice.choice_id) {
               <div
@@ -165,6 +206,9 @@
   <div
     class="sticky bottom-0 mt-auto -mx-4 sm:mx-0 px-4 sm:px-0 py-3 bg-white border-t border-slate-200 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
     data-testid="vote-link-footer">
+    @if (finalNotice(); as notice) {
+      <p class="pb-2 text-center text-sm font-medium text-amber-700" role="note" data-testid="vote-link-final-notice">{{ notice }}</p>
+    }
     @if (selectionHelper(); as helper) {
       <p class="pb-2 text-center text-sm text-slate-600" data-testid="vote-link-submit-helper">{{ helper }}</p>
     }

@@ -24,6 +24,14 @@ export function mktgRunHoldsQuestions(run: Pick<MktgDocumentRunProgress, 'state'
   return run?.state === 'questions' && (!run.pendingQuestions || run.pendingQuestions.questionsId === questionsId);
 }
 
+/**
+ * Whether a server row has moved past its questions: the agent is writing, storing or done. Someone
+ * answered them. A newer `questions` round and a `failed` run are other states with their own paths.
+ */
+export function mktgRunMovedPast(run: Pick<MktgDocumentRunProgress, 'state'> | null | undefined): boolean {
+  return run?.state === 'writing' || run?.state === 'storing' || run?.state === 'completed';
+}
+
 /** Read only the optional safe navigation hint, never a private record or its arbitrary fields. */
 export function readMktgRetiredRunHint(value: unknown): MktgRetiredRunHint | null {
   if (

@@ -8,9 +8,7 @@ import {
   isOrgLensTimeRange,
   normalizeLegacyOrgLensTimeRange,
   orgLensTimeRangeDays,
-  orgLensTimeRangeStartDate,
   orgLensTimeRangeUrlParam,
-  orgLensUtcToday,
   parseOrgLensTimeRange,
 } from './org-lens-time-range.utils';
 
@@ -63,18 +61,5 @@ describe('Org Lens time range', () => {
     expect(orgLensTimeRangeUrlParam('30d')).toBe('30d');
     expect(orgLensTimeRangeUrlParam('365d')).toBe('365d');
     expect(orgLensTimeRangeUrlParam('all')).toBe('all');
-  });
-
-  it('starts a bounded range N days before today in UTC, matching DATEADD(day, -N, CURRENT_DATE())', () => {
-    const now = new Date('2028-03-15T23:30:00.000Z');
-
-    expect(orgLensTimeRangeStartDate('30d', now)).toBe('2028-02-14');
-    expect(orgLensTimeRangeStartDate('90d', now)).toBe('2027-12-16');
-    // 365 days, not twelve months: across a leap day it starts the day after the same date last year.
-    expect(orgLensTimeRangeStartDate('365d', now)).toBe('2027-03-16');
-    // 730 days back across the 2028 leap day lands one day after the same date two years earlier.
-    expect(orgLensTimeRangeStartDate('730d', now)).toBe('2026-03-16');
-    expect(orgLensTimeRangeStartDate('all', now)).toBeNull();
-    expect(orgLensUtcToday(now)).toBe('2028-03-15');
   });
 });

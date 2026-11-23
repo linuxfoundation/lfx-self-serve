@@ -1,0 +1,217 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="sync-preview-dialog">
+  @if (needsDirectionSelector && !applyResult()) {
+    <div class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5" data-testid="sync-preview-direction-selector">
+      <span class="text-[12.5px] font-medium text-gray-700">Sync direction</span>
+      <lfx-select-button [form]="directionForm" control="direction" [options]="directionOptions" optionLabel="label" optionValue="value" size="small" />
+    </div>
+  }
+
+  @if (applyResult(); as result) {
+    <!-- Results view -->
+    <div class="flex flex-col gap-4">
+      @if (result.status === 'failed') {
+        <div
+          class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-600"
+          data-testid="sync-preview-apply-failed-banner">
+          <i class="fa-light fa-triangle-exclamation"></i>
+          <span>{{ applyError() }}</span>
+        </div>
+      } @else {
+        <p class="text-[12.5px] text-gray-500 -mt-1">
+          Sync applied to <span class="font-semibold text-gray-700">{{ mailingListName }}</span
+          >.
+        </p>
+      }
+
+      @if (addedResults().length > 0 || removedResults().length > 0) {
+        <div class="flex gap-3" data-testid="sync-preview-apply-summary">
+          <div class="flex-1 rounded-lg border border-emerald-200 p-3 text-center">
+            <p class="text-[11.5px] text-gray-500">Added</p>
+            <p class="text-xl font-semibold text-emerald-600">{{ addedSucceededCount() }}</p>
+          </div>
+          <div class="flex-1 rounded-lg border border-blue-200 p-3 text-center">
+            <p class="text-[11.5px] text-gray-500">Removed</p>
+            <p class="text-xl font-semibold text-blue-600">{{ removedSucceededCount() }}</p>
+          </div>
+          <div class="flex-1 rounded-lg border border-amber-200 p-3 text-center">
+            <p class="text-[11.5px] text-gray-500">Failed</p>
+            <p class="text-xl font-semibold text-amber-600">{{ failedCount() }}</p>
+          </div>
+        </div>
+      }
+
+      @if (addedResults().length > 0) {
+        <div class="flex flex-col gap-2">
+          <p class="text-[11.5px] font-medium text-gray-500">Add results ({{ addedSucceededCount() }} of {{ addedResults().length }} succeeded)</p>
+          <div class="flex flex-col gap-1 rounded-lg border border-gray-200 p-2">
+            @for (row of addedResults(); track row.email) {
+              <div class="flex items-center gap-2 text-[12.5px]" [attr.data-testid]="'sync-result-add-' + row.email">
+                <span class="text-gray-900">{{ row.email }}</span>
+                <span class="text-gray-500">— {{ row.outcomeText }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      @if (removedResults().length > 0) {
+        <div class="flex flex-col gap-2">
+          <p class="text-[11.5px] font-medium text-gray-500">Remove results ({{ removedSucceededCount() }} of {{ removedResults().length }} succeeded)</p>
+          <div class="flex flex-col gap-1 rounded-lg border border-gray-200 p-2">
+            @for (row of removedResults(); track row.email) {
+              <div class="flex items-center gap-2 text-[12.5px]" [attr.data-testid]="'sync-result-remove-' + row.email">
+                <span class="text-gray-900">{{ row.email }}</span>
+                <span class="text-gray-500">— {{ row.outcomeText }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="mt-4 flex justify-end gap-2">
+      <lfx-button label="Close" severity="info" size="small" (onClick)="close()" data-testid="sync-preview-close-btn"></lfx-button>
+    </div>
+  } @else if (loadingDiff() || applying()) {
+    <!-- Progress bar once the job has reported a total; elapsed-time fallback before the first poll response arrives. -->
+    <div class="flex flex-col items-center justify-center gap-3 py-12" data-testid="sync-preview-loading">
+      @if (applying() && applyTotalCount() > 0) {
+        <lfx-ui-progress class="w-full max-w-xs" [value]="applyProcessedCount()" [max]="applyTotalCount()" label="Applying changes" />
+      } @else if (!applying() && diffTotalCount() > 0) {
+        <lfx-ui-progress class="w-full max-w-xs" [value]="diffProcessedCount()" [max]="diffTotalCount()" label="Loading sync preview" />
+      } @else {
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-500"></i>
+        <p class="text-[12.5px] text-gray-500">
+          {{ applying() ? 'Applying changes' : 'Loading sync preview' }}… this can take a few minutes ({{ elapsedSeconds() }}s elapsed)
+        </p>
+      }
+    </div>
+  } @else if (loadError() || applyError(); as error) {
+    <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="sync-preview-error">
+      <i class="fa-light fa-triangle-exclamation text-xl text-red-500"></i>
+      <p class="text-[12.5px] text-gray-500">{{ error }}</p>
+    </div>
+    <div class="mt-4 flex justify-end gap-2">
+      <lfx-button label="Close" severity="secondary" [outlined]="true" size="small" (onClick)="close()" data-testid="sync-preview-error-close-btn"></lfx-button>
+    </div>
+  } @else if (diff(); as syncDiff) {
+    <p class="text-[12.5px] text-gray-500 -mt-1">
+      @if (isReverseSync()) {
+        Preview of pending committee membership changes from <span class="font-semibold text-gray-700">{{ mailingListName }}</span
+        >. Check a row to include it.
+      } @else {
+        Preview of pending changes for <span class="font-semibold text-gray-700">{{ mailingListName }}</span
+        >. Check a row to include it.
+      }
+    </p>
+
+    <lfx-filter-pills
+      [options]="tabOptions()"
+      [selectedFilter]="activeTab()"
+      variant="segmented"
+      ariaLabel="Sync preview tabs"
+      (filterChange)="onTabChange($event)" />
+
+    <div class="max-h-80 overflow-y-auto rounded-lg border border-gray-200" data-testid="sync-preview-table">
+      @if (activeTab() === 'adds') {
+        @if (syncDiff.adds.length === 0) {
+          <div class="py-8 text-center text-[12.5px] text-gray-400">No members to add.</div>
+        } @else {
+          <table class="w-full border-collapse text-[12.5px]">
+            <thead>
+              <tr class="sticky top-0 bg-gray-50">
+                <th class="w-10 px-4 py-2.5" scope="col"><span class="sr-only">Include in sync</span></th>
+                <th class="px-2 py-2.5 text-left text-[11.5px] font-medium text-gray-500" scope="col">Name</th>
+                <th class="px-4 py-2.5 text-left text-[11.5px] font-medium text-gray-500" scope="col">Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (add of syncDiff.adds; track add.email) {
+                <tr class="border-t border-gray-100" [attr.data-testid]="'sync-add-row-' + add.email">
+                  <td class="px-4 py-2.5">
+                    <lfx-checkbox
+                      [form]="addCheckboxForm"
+                      [control]="add.member_id"
+                      [binary]="true"
+                      [ariaLabelledBy]="'sync-add-email-' + add.member_id"></lfx-checkbox>
+                  </td>
+                  <td class="px-2 py-2.5 font-semibold text-gray-900">{{ add.name || '—' }}</td>
+                  <td class="px-4 py-2.5 text-gray-500" [id]="'sync-add-email-' + add.member_id">{{ add.email }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      } @else if (activeTab() === 'removes') {
+        @if (syncDiff.removes.length === 0) {
+          <div class="py-8 text-center text-[12.5px] text-gray-400">No members to remove.</div>
+        } @else {
+          <table class="w-full border-collapse text-[12.5px]">
+            <thead>
+              <tr class="sticky top-0 bg-gray-50">
+                <th class="w-10 px-4 py-2.5" scope="col"><span class="sr-only">Include in sync</span></th>
+                <th class="px-4 py-2.5 text-left text-[11.5px] font-medium text-gray-500" scope="col">Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (remove of syncDiff.removes; track remove.email) {
+                <tr class="border-t border-gray-100" [attr.data-testid]="'sync-remove-row-' + remove.email">
+                  <td class="px-4 py-2.5">
+                    <lfx-checkbox
+                      [form]="removeCheckboxForm"
+                      [control]="remove.member_id"
+                      [binary]="true"
+                      [ariaLabelledBy]="'sync-remove-email-' + remove.member_id"></lfx-checkbox>
+                  </td>
+                  <td class="px-4 py-2.5 font-semibold text-gray-900" [id]="'sync-remove-email-' + remove.member_id">{{ remove.email }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      } @else {
+        @if (syncDiff.conflicts.length === 0) {
+          <div class="py-8 text-center text-[12.5px] text-gray-400">No conflicts found.</div>
+        } @else {
+          <table class="w-full border-collapse text-[12.5px]">
+            <thead>
+              <tr class="sticky top-0 bg-gray-50">
+                <th class="px-4 py-2.5 text-left text-[11.5px] font-medium text-gray-500">Committee email</th>
+                <th class="px-4 py-2.5 text-left text-[11.5px] font-medium text-gray-500">Mailing list email</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (conflict of syncDiff.conflicts; track conflict.committee_email) {
+                <tr class="border-t border-gray-100" [attr.data-testid]="'sync-conflict-row-' + conflict.committee_email">
+                  <td class="px-4 py-2.5 text-gray-900">{{ conflict.committee_email }}</td>
+                  <td class="px-4 py-2.5 text-gray-500">{{ conflict.mailing_list_email }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      }
+    </div>
+
+    @if (impersonating()) {
+      <p class="text-[11.5px] text-amber-600" data-testid="sync-preview-impersonating-notice">
+        <i class="fa-light fa-triangle-exclamation"></i>
+        Applying sync changes isn't available while impersonating a user. You can still review this preview.
+      </p>
+    }
+
+    <div class="mt-4 flex justify-end gap-2">
+      <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="close()" data-testid="sync-preview-cancel-btn"></lfx-button>
+      <lfx-button
+        label="Apply Changes"
+        severity="info"
+        size="small"
+        [disabled]="impersonating() || (selectedAdds().length === 0 && selectedRemoves().length === 0)"
+        (onClick)="apply()"
+        data-testid="sync-preview-apply-btn"></lfx-button>
+    </div>
+  }
+</div>

@@ -21,16 +21,19 @@ import {
   CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
+  DonationAnonymityResult,
   DonationStats,
   InitiativeDetail,
   InitiativesResponse,
   InitiativesScope,
   MyDonationsResponse,
+  OrgDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
   RecurringDonation,
   RecurringDonationsResponse,
   UpdateAnnouncementInput,
+  UpdateDonationAnonymityInput,
   UpdateInitiativeAttributionInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
@@ -66,10 +69,16 @@ export class CrowdfundingService {
     );
   }
 
-  public getInitiativeBySlug(slug: string): Observable<InitiativeDetail | null> {
-    return this.http
-      .get<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}`)
-      .pipe(catchError(this.handleCfError(null, 'getInitiativeBySlug')));
+  /** Rethrows so the page can show not-found (404), no access (403) or unavailable; logs only the unexpected failures. */
+  public getInitiativeBySlug(slug: string): Observable<InitiativeDetail> {
+    return this.http.get<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}`).pipe(
+      catchError((err: HttpErrorResponse) => {
+        if (err.status !== 404 && err.status !== 403) {
+          console.error('[CrowdfundingService] getInitiativeBySlug failed', err);
+        }
+        return throwError(() => err);
+      })
+    );
   }
 
   public getMyPaymentMethod(): Observable<PaymentMethod | null> {
@@ -106,6 +115,17 @@ export class CrowdfundingService {
     return this.http
       .get<MyDonationsResponse>('/api/crowdfunding/my-donations', { params: httpParams })
       .pipe(catchError(this.handleCfError(EMPTY_MY_DONATIONS, 'getMyDonations')));
+  }
+
+  /** Donations matched to an organization (Org lens, #415). Errors surface (403 not an auditor, 5xx CF/FGA down) for the page to show. */
+  public getOrgDonations(params: { orgUid: string; pageSize?: number; offset?: number }): Observable<OrgDonationsResponse> {
+    let httpParams = new HttpParams().set('orgUid', params.orgUid);
+    if (params.pageSize != null) httpParams = httpParams.set('pageSize', String(params.pageSize));
+    if (params.offset != null) httpParams = httpParams.set('offset', String(params.offset));
+
+    return this.http
+      .get<OrgDonationsResponse>('/api/crowdfunding/org-donations', { params: httpParams })
+      .pipe(catchError(this.logAndRethrow('getOrgDonations')));
   }
 
   public getPresignedUrl(contentType: string): Observable<PresignedURLResult> {
@@ -153,6 +173,18 @@ export class CrowdfundingService {
 
   public cancelSubscription(id: string): Observable<void> {
     return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`);
+  }
+
+  /** Hides or shows the caller's name on one of their one-time donations (lfx-crowdfunding#466). `id` is the row's `donationId`. */
+  public updateDonationAnonymity(id: string, anonymous: boolean): Observable<DonationAnonymityResult> {
+    const body: UpdateDonationAnonymityInput = { anonymous };
+    return this.http.patch<DonationAnonymityResult>(`/api/crowdfunding/my-donations/${encodeURIComponent(id)}`, body);
+  }
+
+  /** Hides or shows the caller's name on every charge of a recurring donation (lfx-crowdfunding#466). `id` is the subscription id. */
+  public updateSubscriptionAnonymity(id: string, anonymous: boolean): Observable<DonationAnonymityResult> {
+    const body: UpdateDonationAnonymityInput = { anonymous };
+    return this.http.patch<DonationAnonymityResult>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`, body);
   }
 
   public getInitiativeTransactions(

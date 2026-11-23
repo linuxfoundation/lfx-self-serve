@@ -5,14 +5,11 @@ import { Clipboard } from '@angular/cdk/clipboard';
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { IcalSubscribeDialogData } from '@lfx-one/shared/interfaces';
+import { getCalendarSubscribeUrls } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig } from 'primeng/dynamicdialog';
 
 const COPIED_STATE_RESET_MS = 2000;
-
-function toWebcal(url: string): string {
-  return url.replace(/^https?:\/\//i, 'webcal://');
-}
 
 @Component({
   selector: 'lfx-ical-subscribe-dialog',
@@ -29,14 +26,11 @@ export class IcalSubscribeDialogComponent {
   public readonly feedUrl = this.dialogConfig.data?.feedUrl ?? '';
   public readonly name = this.dialogConfig.data?.name ?? 'Calendar';
 
-  public readonly googleCalendarUrl = this.feedUrl ? `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(toWebcal(this.feedUrl))}` : '';
-  public readonly outlookLiveUrl = this.feedUrl
-    ? `https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(this.feedUrl)}&name=${encodeURIComponent(this.name)}`
-    : '';
-  public readonly outlook365Url = this.feedUrl
-    ? `https://outlook.office.com/calendar/0/addfromweb?url=${encodeURIComponent(this.feedUrl)}&name=${encodeURIComponent(this.name)}`
-    : '';
-  public readonly webcalUrl = this.feedUrl ? toWebcal(this.feedUrl) : '';
+  private readonly urls = this.feedUrl ? getCalendarSubscribeUrls(this.feedUrl, this.name) : null;
+  public readonly googleCalendarUrl = this.urls?.google ?? '';
+  public readonly outlookLiveUrl = this.urls?.outlookLive ?? '';
+  public readonly outlook365Url = this.urls?.outlook365 ?? '';
+  public readonly webcalUrl = this.urls?.apple ?? '';
 
   public copied = signal(false);
 

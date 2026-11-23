@@ -11,6 +11,7 @@ import {
   MENTORSHIP_PROGRAM_HIDE_CONFIRM,
   MENTORSHIP_PROGRAM_HIDE_DESCRIPTION,
   MENTORSHIP_PROGRAM_HIDEABLE_STATUSES,
+  MENTORSHIP_PROGRAM_PUBLISHED_STATUSES,
   MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
   MENTORSHIP_PROGRAM_STATUS_LABELS,
   MENTORSHIP_PROGRAM_UNHIDE_CONFIRM,
@@ -21,20 +22,24 @@ import {
   MentorshipProgram,
   MentorshipProgramDetailTab,
   MentorshipProgramMenuItem,
+  MentorshipProgramSubmitter,
   MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
 import { buildMentorshipProgramsUrl, getMentorshipProgramDetailTabs } from '@lfx-one/shared/utils';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
+import { ProgramMetaComponent } from '../../../../components/program-meta/program-meta.component';
+
 /**
- * Admin program-detail header: title, season line, status, View Public Page, Edit Program, a `…` menu that hides a
+ * Admin program-detail header: title, season line, status, created date and program admin, View Public Page (published programs only, since the public
+ * site has no page for a pending, rejected or hidden one), Edit Program, a `…` menu that hides a
  * published program or unhides a hidden one after a confirm, and underline tabs with count badges; a pending program
  * shows the Terms tab only. Visual spec matches the admin screenshot and the crowdfunding initiative header.
  */
 @Component({
   selector: 'lfx-mentorship-program-detail-header',
-  imports: [ButtonComponent, MenuComponent, ConfirmDialogModule],
+  imports: [ButtonComponent, MenuComponent, ConfirmDialogModule, ProgramMetaComponent],
   providers: [ConfirmationService],
   templateUrl: './program-detail-header.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -46,6 +51,8 @@ export class ProgramDetailHeaderComponent {
   private readonly confirmationService = inject(ConfirmationService);
 
   public readonly program = input.required<MentorshipProgram>();
+  /** Who submitted the program; `null` leaves the program admin out of the header. */
+  public readonly submitter = input<MentorshipProgramSubmitter | null>(null);
   /** A count is `null` when its read failed; the badge then shows a dash. */
   public readonly tabCounts = input.required<MentorshipAdminProgramTabCounts>();
   public readonly activeTab = input.required<MentorshipProgramDetailTab>();
@@ -62,8 +69,9 @@ export class ProgramDetailHeaderComponent {
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
   protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
   protected readonly publicPageUrl = computed(() => buildMentorshipProgramsUrl(environment.urls.mentorship, this.program().id));
+  protected readonly showPublicPage = computed(() => MENTORSHIP_PROGRAM_PUBLISHED_STATUSES.includes(this.program().status));
 
-  /** Hide for a published (open or completed) program, Unhide for a hidden one; a pending or rejected program has no menu. */
+  /** Hide for a published program, Unhide for a hidden one; a pending or rejected program has no menu. */
   protected readonly moreMenuItems = computed<MentorshipProgramMenuItem[]>(() => {
     const status = this.program().status;
     if (status === 'hidden') {

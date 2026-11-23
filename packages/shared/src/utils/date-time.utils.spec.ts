@@ -13,7 +13,9 @@ import {
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
+  getTimezoneAbbreviation,
   isLocalDateOnlyString,
+  isSameMinute,
   localDateStamp,
   normalizeSnowflakeTimestamp,
   parseIsoDateAsUtcMidnight,
@@ -455,6 +457,45 @@ describe('toZonedDateCarrier', () => {
   });
 });
 
+/**
+ * Pins the exact boundary a `<= 60_000` millisecond tolerance gets wrong (GH-4944 review feedback):
+ * a genuine one-minute edit -- the smallest increment a time picker supports -- must count as a
+ * real change, not get folded into "unchanged" alongside round-tripping seconds/ms noise.
+ */
+describe('isSameMinute', () => {
+  it('treats sub-minute differences as the same minute (round-tripping noise)', () => {
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:00:45.000Z')).toBe(true);
+  });
+
+  it('treats an exact one-minute difference as a real change', () => {
+    // The exact boundary a `<= 60_000` ms tolerance let through.
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:01:00.000Z')).toBe(false);
+  });
+
+  it('treats identical instants as the same minute', () => {
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:00:00.000Z')).toBe(true);
+  });
+
+  // Pins the DST fall-back collision review feedback caught: truncating with the local-time
+  // `setSeconds` (rather than `setUTCSeconds`) reads and reconstructs through the host's
+  // wall-clock fields, and the repeated local hour during a fall-back can make two UTC instants
+  // a full hour apart reconstruct to the same result. 2027-11-07 05:30Z and 06:30Z are both
+  // 1:30 AM America/New_York (once EDT, once EST, an hour apart in UTC) -- a real one-hour Start
+  // time edit, not sub-minute noise, and must not be treated as unchanged.
+  describe('across a DST fall-back transition', () => {
+    const originalTz = process.env.TZ;
+
+    afterEach(() => {
+      process.env.TZ = originalTz;
+    });
+
+    it('does not collapse two UTC instants an hour apart that share a local wall-clock reading', () => {
+      process.env.TZ = 'America/New_York';
+      expect(isSameMinute('2027-11-07T05:30:00.000Z', '2027-11-07T06:30:00.000Z')).toBe(false);
+    });
+  });
+});
+
 // Dates use the local constructor: the function reads host-local wall fields, so an ISO-string
 // date would shift with the test machine's TZ (convention: vote.validators.spec.ts).
 describe('wallTimeExistsInTimezone', () => {
@@ -557,5 +598,29 @@ describe('findSameWallClockZone', () => {
 
   it('does not pair zones whose clocks change an hour or a day apart', () => {
     expect(findSameWallClockZone('REF', 2026, ['HOUR_LATER', 'DAY_LATER'], offsetAt)).toBeNull();
+  });
+});
+
+describe('getTimezoneAbbreviation', () => {
+  it('returns the standard abbreviation in winter and the daylight one in summer', () => {
+    expect(getTimezoneAbbreviation('2026-01-15T20:00:00Z', 'America/Los_Angeles')).toBe('PST');
+    expect(getTimezoneAbbreviation('2026-07-15T20:00:00Z', 'America/Los_Angeles')).toBe('PDT');
+  });
+
+  it('resolves the abbreviation for the instant, across a DST boundary', () => {
+    expect(getTimezoneAbbreviation('2026-03-08T09:59:00Z', 'America/Los_Angeles')).toBe('PST');
+    expect(getTimezoneAbbreviation('2026-03-08T10:01:00Z', 'America/Los_Angeles')).toBe('PDT');
+  });
+
+  it('returns UTC for the UTC zone', () => {
+    expect(getTimezoneAbbreviation('2026-01-15T20:00:00Z', 'UTC')).toBe('UTC');
+  });
+
+  it('falls back to the zone id for an invalid zone', () => {
+    expect(getTimezoneAbbreviation('2026-01-15T20:00:00Z', 'Not/AZone')).toBe('Not/AZone');
+  });
+
+  it('returns an empty string for an invalid date', () => {
+    expect(getTimezoneAbbreviation('not-a-date', 'America/New_York')).toBe('');
   });
 });

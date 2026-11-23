@@ -3,137 +3,106 @@
 
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import { lfxColors } from './colors.constants';
-import {
-  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
-  HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
-  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
-} from './health-metrics-engagement.constants';
+import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE } from './health-metrics-engagement.constants';
 
 import type { FilterOption } from '../interfaces/filter.interface';
 import type { HealthMetricsEngagementAttendanceRule } from '../interfaces/health-metrics-engagement.interface';
-import type { HealthMetricsFootnotePart, HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskBucket,
   HealthMetricsMembersAtRiskFilterOption,
-  HealthMetricsMembersBridge,
+  HealthMetricsMembersAtRiskSortKey,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardCohort,
-  HealthMetricsMembersBoardLatestTone,
   HealthMetricsMembersBoardCohortOption,
-  HealthMetricsMembersBridgeStepType,
+  HealthMetricsMembersBoardSortKey,
+  HealthMetricsMembersBreakdownTableClasses,
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDepartures,
-  HealthMetricsMembersChurnModeOption,
+  HealthMetricsMembersChurnDeparturesSortKey,
+  HealthMetricsMembersChurnSectionOption,
+  HealthMetricsMembersChurnTierSortKey,
   HealthMetricsMembersDataSectionKey,
   HealthMetricsMembersDirectory,
+  HealthMetricsMembersDirectorySortKey,
   HealthMetricsMembersDirectoryTierOption,
   HealthMetricsMembersEngagementLevel,
-  HealthMetricsMembersMovementDrawerCopy,
-  HealthMetricsMembersMovementListType,
-  HealthMetricsMembersMovements,
+  HealthMetricsMembersGrowth,
   HealthMetricsMembersNps,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersQueryParams,
   HealthMetricsMembersRenewals,
+  HealthMetricsMembersRenewalsSortKey,
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsMembersRenewalsWindowOption,
+  HealthMetricsMembersReservedTier,
+  HealthMetricsMembersTierIcon,
   HealthMetricsMembersTiers,
-  HealthMetricsMembersTiersMode,
-  HealthMetricsMembersTiersModeOption,
 } from '../interfaces/health-metrics-members.interface';
+import type { HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
 
 /**
- * The seven Members sections in render order. `key` is the section's URL fragment and the scroll-spy
- * allowlist; the DOM id is `sec-mem-<key>`. Footnotes land with each section's data.
+ * The eight Members sections in render order. `key` is the section's URL fragment and the scroll-spy
+ * allowlist; the DOM id is `sec-mem-<key>`.
  */
 export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   {
-    key: 'tiers',
+    key: 'growth',
+    // One read serves every period, so the empty state never names a past year.
+    empty: { icon: 'fa-light fa-chart-line', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members, snapshot: true },
+    label: 'Member growth by year',
+    heading: 'Member growth by year',
+    description: 'Are new members joining faster than last year?',
+  },
+  {
+    key: 'breakdown',
     empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
-    label: 'Membership & revenue',
-    heading: 'Membership & revenue by tier',
-    description:
-      'The most-used view. Composition over time rather than a total-members line — where the base is shifting is the question a total cannot answer.',
-    footnote: [],
-    footnoteCaution: false,
+    label: 'Membership breakdown by tier',
+    heading: 'Membership breakdown by tier',
+    description: 'How the mix of membership levels has changed.',
   },
   {
     key: 'list',
     empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'All members',
     heading: 'All members',
-    description:
-      "The full directory — PCC's most-used table, carried over with its columns intact and the engagement touchpoints added. Sorted by annual dues, highest first, so the accounts that carry the revenue lead; within a tier, least engaged first.",
-    footnote: [
-      { text: 'This is the ' },
-      { text: 'whole table at Level 2', bold: true },
-      { text: ", not behind a drill-in — it is the most-used view in PCC, so it stays one click from the tab. PCC's " },
-      { text: 'Period', bold: true },
-      { text: ' column is replaced by ' },
-      { text: 'Renews', bold: true },
-      {
-        text: ': the term start is rarely acted on, the end date always is. Contribution, Sponsorship, Training and Events show — where not yet tracked — a data gap reads as "not tracked", never as zero.',
-      },
-    ],
-    footnoteCaution: false,
+    description: 'Every member, with dues and engagement.',
   },
   {
     key: 'risk',
     empty: { icon: 'fa-light fa-file-invoice-dollar', source: HEALTH_METRICS_L2_EMPTY_SOURCES.invoice, snapshot: true },
     label: 'At-risk & balance',
     heading: 'At-risk & outstanding balance',
-    description: 'Act-now view. Sorted by dues at risk rather than days overdue — the ED needs the money order, not the calendar order.',
-    footnote: [
-      {
-        text: 'Overdue balance and lapsed engagement together are the strongest churn predictor available today — which is why this sits above churn, not below it.',
-      },
-    ],
-    footnoteCaution: false,
+    description: 'Members with unpaid invoices who may not renew.',
   },
   {
     key: 'renewals',
     empty: { icon: 'fa-light fa-arrow-trend-down', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Renewals',
     heading: 'Renewals',
-    description: 'The forward-looking view: what is up for renewal and what it is worth, while there is still time to act.',
-    footnote: [
-      { text: 'Organization, tier, dues and renewal date', bold: true },
-      {
-        text: ' come from the membership record — the term end date PCC shows as "Period". Renewal status (Confirmed / In discussion / Unconfirmed) is a CRM pipeline stage no system we read carries, so it is left out rather than every row reading Unconfirmed.',
-      },
-    ],
-    footnoteCaution: true,
+    description: 'Memberships coming up for renewal, and their value.',
   },
   {
     key: 'board',
     empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board },
     label: 'Board & voting attendance',
     heading: 'Board & voting-member attendance',
-    description:
-      'Governance participation. This lives in Members rather than Engagement because it sits next to dues and renewals — an unused board seat is a paid benefit going to waste.',
-    footnote: [],
-    footnoteCaution: false,
+    description: 'Whether board and voting members show up to meetings.',
   },
   {
     key: 'nps',
     empty: { icon: 'fa-light fa-clipboard-list', source: HEALTH_METRICS_L2_EMPTY_SOURCES.survey },
     label: 'Satisfaction (NPS)',
     heading: 'Satisfaction (NPS)',
-    description:
-      'Deliberately low in this section — NPS moves once a quarter at most, so it is context rather than a signal to act on. Non-responses are shown at full weight.',
-    footnote: [],
-    footnoteCaution: false,
+    description: 'How likely members are to recommend the foundation.',
   },
   {
     key: 'churn',
     empty: { icon: 'fa-light fa-arrow-trend-down', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Membership churn',
     heading: 'Membership churn',
-    description:
-      'Lagging by definition and deliberately last: it reports members already gone. Revenue churn leads — logo churn counts a top-tier and an entry-tier loss as one each.',
-    footnote: [],
-    footnoteCaution: false,
+    description: 'Members who left, and the revenue that left with them.',
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
@@ -141,7 +110,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_MEMBERS_BLANK: HealthMetricsL2Blank = {
   icon: 'fa-light fa-building',
   noun: 'member',
-  lead: 'Member details appear once organizations hold an active membership with the foundation.',
+  lead: 'Member details appear once companies hold an active membership with the foundation.',
   reasons: ['The foundation may be newly launched', 'Memberships may not be linked to it yet', 'Your Program Manager can check membership records'],
   pastActivity: 'membership',
 };
@@ -149,10 +118,10 @@ export const HEALTH_METRICS_MEMBERS_BLANK: HealthMetricsL2Blank = {
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
 
-/** Reads a deep link waits for: each section's issue adds its key; `bridge` is the second read in `#tiers`. */
+/** Reads a deep link waits for: each section's issue adds its key. */
 export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
-  'tiers',
-  'bridge',
+  'growth',
+  'breakdown',
   'list',
   'risk',
   'renewals',
@@ -161,103 +130,110 @@ export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
   'churn',
 ] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
 
-/** A delta or share the data cannot support, e.g. a partial year with no same-window comparison. */
-export const HEALTH_METRICS_MEMBERS_NOT_AVAILABLE = 'not available';
+/** Read-failed / no-foundation value: no month rows, so the section renders no figures. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED: HealthMetricsMembersGrowth = { months: [] };
+
+/** The earliest year read; the chart draws at most one line per colour, newest first. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR = 2017;
+
+/** Upper bound on month rows read: 12 a year, from the first year on, with decades to spare. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP = 600;
+
+/** The plot's SVG viewBox, stretched to the card; January and December sit `insetX` in from each edge. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_PLOT = { width: 1000, height: 300, insetX: 40 } as const;
+
+/** One colour per year, newest first: this year in accent, then the design's palette. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS = [
+  lfxColors.blue[500],
+  lfxColors.violet[400],
+  lfxColors.emerald[400],
+  lfxColors.amber[400],
+  lfxColors.red[400],
+  lfxColors.gray[400],
+  lfxColors.violet[300],
+  lfxColors.emerald[300],
+  lfxColors.amber[300],
+  lfxColors.red[300],
+] as const;
 
 /** Read-failed / no-foundation value: no tier rows, so the section renders no figures. */
-export const HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED: HealthMetricsMembersTiers = { rows: [], foundationRevenue: [] };
-
-/** The toggle over the hero; the first is the default. */
-export const HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS: readonly HealthMetricsMembersTiersModeOption[] = [
-  { id: 'members', label: 'Members' },
-  { id: 'revenue', label: 'Revenue' },
-];
-
-/** The matrix caption per mode: the design's counts wording, with the unit swapped for revenue. */
-export const HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS: Record<HealthMetricsMembersTiersMode, string> = {
-  members: 'the most-used table in PCC — exact counts',
-  revenue: 'the most-used table in PCC — in USD',
-};
-
-/** The composition chart's caption, in either mode. */
-export const HEALTH_METRICS_MEMBERS_TIERS_COMPOSITION_CAPTION = 'the same table as shares, so a shifting mix is visible';
+export const HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED: HealthMetricsMembersTiers = { rows: [] };
 
 /** Upper bound on tier rows read; the busiest foundation has around a hundred. */
 export const HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP = 500;
 
-/** One colour per tier in `tier_sort_rank` order, darkest for the top tier; reused past the eighth. */
-export const HEALTH_METRICS_MEMBERS_TIERS_COLORS: readonly string[] = [
-  lfxColors.blue[900],
-  lfxColors.blue[600],
-  lfxColors.blue[300],
-  lfxColors.violet[700],
-  lfxColors.violet[400],
-  lfxColors.emerald[600],
-  lfxColors.emerald[300],
-  lfxColors.amber[500],
-];
+/** The first year the breakdown shows; a foundation that started later starts at its own first year. */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR = 2019;
 
-/** Read-failed / no-foundation value: no steps, so the bridge renders no bars. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED: HealthMetricsMembersBridge = { steps: [] };
+/** The tiers with an icon of their own. */
+export const HEALTH_METRICS_MEMBERS_RESERVED_TIERS = ['diamond', 'platinum', 'gold', 'silver'] as const;
 
-/** Upper bound on bridge rows read: six per year, so a century of years. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP = 600;
-
-/** Every `MEMBERSHIP_WATERFALL` step in bar order, and the allowlist the bridge read keeps rows against. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES = ['start_of_year', 'new', 'upgrade', 'downgrade', 'churned', 'today'] as const;
-
-/** The movements a bar opens as a named list, and the allowlist the movements read validates against. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES = ['new', 'upgrade', 'downgrade'] as const;
-
-/** Read-failed value for a movement list. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENTS_UNMEASURED: HealthMetricsMembersMovements = { rows: [], totalRecords: 0 };
-
-/** Rows per page of a movement list; the longest list today runs to several hundred. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE = 25;
-
-/** Largest page a caller may ask for. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE = 100;
-
-/** Bar labels in the design's order; the closing total's label depends on the year, so it is built. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS: Record<Exclude<HealthMetricsMembersBridgeStepType, 'today'>, string> = {
-  start_of_year: 'Start of year',
-  new: 'New',
-  upgrade: 'Upgrades',
-  downgrade: 'Downgrades',
-  churned: 'Churned',
+/** How a reserved tier reads, whatever the foundation's spelling of it. */
+export const HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS: Record<HealthMetricsMembersReservedTier, string> = {
+  diamond: 'Diamond',
+  platinum: 'Platinum',
+  gold: 'Gold',
+  silver: 'Silver',
 };
 
-/** Under the bridge: why it stands in for a total-members line. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_FOOTER: readonly HealthMetricsFootnotePart[] = [
-  { text: "The bridge replaces PCC's total-members all-time line: it says " },
-  { text: 'why', bold: true },
-  { text: ' the number moved — adds, upgrades, downgrades and churn — rather than only that it did.' },
-];
-
-/** Each movement drawer's copy, from the design's named lists. The from-tier is not in the data yet. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY: Record<HealthMetricsMembersMovementListType, HealthMetricsMembersMovementDrawerCopy> = {
-  new: {
-    title: 'Joined this year',
-    pastTitle: 'Joined in',
-    subtitle: 'New memberships, largest dues first',
-    note: "The dues column is annual. A new member's first 90 days predict whether they renew — worth checking that each one has attended something.",
-    verb: 'joined',
+/**
+ * The tier icons as the design draws them: a gradient cut to a diamond (Diamond, Platinum) or a ring (Gold, Silver).
+ * The Platinum gradient is the design's darker one.
+ */
+export const HEALTH_METRICS_MEMBERS_TIER_ICONS: Record<HealthMetricsMembersReservedTier, HealthMetricsMembersTierIcon> = {
+  diamond: {
+    // Platinum's shape in purple; the design's deep stop has no palette token.
+    background: `linear-gradient(135deg, ${lfxColors.violet[400]} 0%, ${lfxColors.violet[900]} 40%, ${lfxColors.violet[300]} 58%, #2F0D68 85%, ${lfxColors.violet[800]} 100%)`,
+    mask: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.6 14.4 8 8 14.4 1.6 8Z' fill='none' stroke='%23000' stroke-width='2.2' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat`,
+    radius: '0',
   },
-  upgrade: {
-    title: 'Moved up a tier',
-    pastTitle: 'Moved up a tier in',
-    subtitle: 'Existing members who increased their commitment',
-    note: 'Upgrades are the strongest signal a member is getting value. Worth understanding what changed for them — it is repeatable.',
-    verb: 'moved up',
+  platinum: {
+    background: `linear-gradient(135deg, ${lfxColors.gray[500]} 0%, ${lfxColors.gray[800]} 40%, ${lfxColors.gray[400]} 58%, ${lfxColors.gray[900]} 85%, ${lfxColors.gray[700]} 100%)`,
+    mask: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.6 14.4 8 8 14.4 1.6 8Z' fill='none' stroke='%23000' stroke-width='2.2' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat`,
+    radius: '0',
   },
-  downgrade: {
-    title: 'Moved down a tier',
-    pastTitle: 'Moved down a tier in',
-    subtitle: 'Reduced commitment — often a precursor to churn',
-    note: 'A downgrade keeps the logo but loses the revenue, so logo churn misses it entirely. These accounts are the highest-value save opportunities.',
-    verb: 'moved down',
+  gold: {
+    // The ring's highlights have no palette tokens.
+    background: 'conic-gradient(from 45deg, #FDE68A, #D08700, #FFF1B8, #A65F00, #FDE68A)',
+    mask: 'radial-gradient(circle closest-side, transparent 52%, #000 56%)',
+    radius: '9999px',
+  },
+  silver: {
+    background: 'conic-gradient(from 45deg, #F4F4F5, #A1A1AA, #FAFAFA, #71717A, #F4F4F5)',
+    mask: 'radial-gradient(circle closest-side, transparent 52%, #000 56%)',
+    radius: '9999px',
   },
 };
+
+/** Room a column's popup needs on its right before it opens on the left; the design caps the popup at 280px. */
+export const HEALTH_METRICS_MEMBERS_CHART_TIP_ROOM_PX = 292;
+
+/**
+ * The breakdown table's classes: row labels and value cells by kind, the striped and total fills, and the rules
+ * between cells. Applied via [class], so Tailwind's safelist carries them.
+ */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES: HealthMetricsMembersBreakdownTableClasses = {
+  label: {
+    tier: 'text-[14px] font-medium text-gray-900',
+    total: 'text-[14px] font-semibold text-gray-900',
+  },
+  cell: {
+    tier: 'text-[14px] font-normal text-gray-900',
+    total: 'text-[14px] font-semibold text-gray-900',
+  },
+  stripe: 'bg-gray-50',
+  totalFill: 'bg-blue-100',
+  cellBase: 'flex min-w-0 items-center justify-end whitespace-nowrap px-[10px] py-[11px] leading-[18px]',
+  rowRule: 'border-b border-[color:var(--ui-neutral-alpha-100)]',
+  cellRule: 'border-l border-[color:var(--ui-neutral-alpha-100)]',
+  totalRule: 'border-t border-gray-900',
+};
+
+/** A year column's least width: "2026 YTD" at 12px, its 10px sort arrow and 10px padding each side; narrower tables scroll. */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_YEAR_MIN_PX = 92;
+
+/** The breakdown opens on the view's tier rank, highest-paying first; it is not paged, so it sorts in the browser. */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_DEFAULT_SORT: HealthMetricsTableSort = { key: 'tier', direction: 'desc' };
 
 /** The directory's filter, search and page state in the URL; each key is namespaced to the section. */
 export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
@@ -272,7 +248,7 @@ export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
   boardCohort: 'boardCohort',
   boardPage: 'boardPage',
   npsAudience: 'npsAudience',
-  churnMode: 'churnMode',
+  churnView: 'churnView',
   churnPage: 'churnPage',
 } as const satisfies Record<string, keyof HealthMetricsMembersQueryParams>;
 
@@ -303,13 +279,10 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED: HealthMetricsMembersDi
   rows: [],
   totalRecords: 0,
   scopeTotal: 0,
-  atRiskCount: 0,
 };
 
-/** Rows per page, and the design's rows-per-page choices; the largest foundation has several hundred members. */
+/** Rows per page on the numbered pager; the largest foundation has several hundred members. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE = 10;
-
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
 
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE = 100;
@@ -324,36 +297,48 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_SEARCH_DEBOUNCE_MS = 200;
 /** Upper bound on the tier options read; a foundation has a handful. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP = 100;
 
-/** One pill style for every tier, as the design draws it. */
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS = 'bg-blue-50 text-blue-700';
+/** The All members table's sortable columns; Membership sorts by annual dues, the order the table opens in. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersDirectorySortKey>[] = [
+  { key: 'name', kind: 'text' },
+  { key: 'membership', kind: 'number' },
+  { key: 'renewal', kind: 'date' },
+  { key: 'sponsorship', kind: 'number' },
+  { key: 'engagement', kind: 'number' },
+];
 
-/** NPS chips after the member's name. */
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES: Record<HealthMetricsMembersNpsCategory, string> = {
-  Promoter: 'bg-emerald-50 text-emerald-700',
-  Passive: 'bg-gray-100 text-gray-500',
-  Detractor: 'bg-red-50 text-red-700',
+/** All members opens on the view's rank: highest annual dues first, then least engaged. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersDirectorySortKey> = {
+  key: 'membership',
+  direction: 'desc',
 };
 
-/** Engagement band dots. */
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES: Record<HealthMetricsMembersEngagementLevel, string> = {
-  High: 'bg-emerald-600',
-  Medium: 'bg-amber-600',
-  Low: 'bg-red-600',
+/** The dot before a member's NPS description, in its category's colour. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_ICON_CLASSES: Record<HealthMetricsMembersNpsCategory, string> = {
+  Promoter: 'fa-solid fa-circle-small text-emerald-500',
+  Passive: 'fa-solid fa-circle-small text-amber-400',
+  Detractor: 'fa-solid fa-circle-small text-red-400',
 };
 
-/** Hover text on a not-tracked cell. */
-export const HEALTH_METRICS_MEMBERS_DIRECTORY_NOT_TRACKED = 'Not tracked yet for this foundation';
+/** The gray dot before "No NPS response". */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_NO_NPS_ICON_CLASS = 'fa-solid fa-circle-small text-gray-300';
+
+/** The Engagement badge's tone per level. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_BADGE_CLASSES: Record<HealthMetricsMembersEngagementLevel, string> = {
+  High: 'bg-emerald-50 text-emerald-700',
+  Medium: 'bg-amber-50 text-amber-800',
+  Low: 'bg-red-50 text-red-700',
+};
 
 /** `MEMBERSHIP_AT_RISK`'s buckets past 60 days, oldest last; the section leaves out balances under 60 days. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS = ['60_89_days', '90_plus_days'] as const;
 
-/** The design's label for each aging bucket, on its pill and its aging bar. */
+/** The design's label for each aging bucket, on its switch option. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS: Record<HealthMetricsMembersAtRiskBucket, string> = {
   '60_89_days': '60–89 days',
   '90_plus_days': '90+ days',
 };
 
-/** The bucket pills over the hero; the first is the default. */
+/** The bucket switch in the card header; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS: readonly HealthMetricsMembersAtRiskFilterOption[] = [
   { id: 'all', label: 'All at risk' },
   ...HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map((bucket) => ({ id: bucket, label: HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[bucket] })),
@@ -366,7 +351,7 @@ export const HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISKS = ['High', 'Medium', 'Lo
 export const HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED: HealthMetricsMembersAtRisk = {
   rows: [],
   totalRecords: 0,
-  summary: { outstandingBalanceUsd: 0, highRiskBalanceUsd: 0, mediumRiskBalanceUsd: 0, memberCount: 0 },
+  summary: { outstandingBalanceUsd: 0, memberCount: 0 },
   aging: [],
 };
 
@@ -376,20 +361,40 @@ export const HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE = 10;
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE = 100;
 
-/** The aging bars' fill. */
-export const HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS = 'bg-red-600';
+/** The at-risk table's sortable columns. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersAtRiskSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'membership', kind: 'tier' },
+  { key: 'overdue', kind: 'number' },
+  { key: 'age', kind: 'number' },
+];
+
+/** At-risk opens on the view's rank, the largest balance overdue first. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersAtRiskSortKey> = { key: 'overdue', direction: 'desc' };
+
+/** The dot before each row's age, and before the High and Medium risk metrics: red at 90+ days, amber at 60–89. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_DOT_CLASSES: Record<HealthMetricsMembersAtRiskBucket, string> = {
+  '90_plus_days': 'bg-red-400',
+  '60_89_days': 'bg-amber-400',
+};
+
+/** The High and Medium risk metrics' question-mark tips. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_TIPS: Record<HealthMetricsMembersAtRiskBucket, string> = {
+  '90_plus_days': 'Dues overdue for 90 days or more. These members are the most likely to churn.',
+  '60_89_days': 'Dues overdue for 60 to 89 days. Still recoverable with a timely follow-up.',
+};
 
 /** Read-failed / no-foundation value: no renewals, and no figures rather than zeros. */
 export const HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED: HealthMetricsMembersRenewals = {
   rows: [],
   totalRecords: 0,
-  summary: { renewalCount: null, valueUsd: null, withoutDuesCount: null },
+  summary: { renewalCount: null, valueUsd: null },
 };
 
 /** `MEMBERSHIP_RENEWALS`' windows, one per `is_renewing_*` flag; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS = ['90_days', '180_days', 'this_year'] as const;
 
-/** The window pills over the hero. */
+/** The window switch in the card header; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_OPTIONS: readonly HealthMetricsMembersRenewalsWindowOption[] = [
   { id: '90_days', label: 'Next 90 days' },
   { id: '180_days', label: 'Next 180 days' },
@@ -409,60 +414,72 @@ export const HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE = 10;
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE = 100;
 
-/** The MEM-02 marker beside a renewing member with an outstanding balance, in the Needs action colour. */
-export const HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER = {
-  label: 'Balance outstanding',
-  icon: 'fa-light fa-circle-exclamation',
-  textClass: 'text-red-600',
-} as const;
+/** The renewals table's sortable columns. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersRenewalsSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'membership', kind: 'tier' },
+  { key: 'date', kind: 'date' },
+  { key: 'dues', kind: 'number' },
+];
 
-/** The marker beside a member who already renewed; the model's window totals still count the renewal. */
-export const HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER = {
-  label: 'Renewed',
-  icon: 'fa-light fa-circle-check',
-  textClass: 'text-emerald-700',
-} as const;
+/** Renewals open on the highest dues first, as the design orders them. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersRenewalsSortKey> = { key: 'dues', direction: 'desc' };
 
 /** `MEMBERSHIP_BOARD_ATTENDANCE`'s cohorts; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_BOARD_COHORTS = ['board', 'voting_members'] as const;
 
-/** The cohort toggle over the hero. */
+/** The card header's Board / Voting members switch. */
 export const HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS: readonly HealthMetricsMembersBoardCohortOption[] = [
   { id: 'board', label: 'Board' },
   { id: 'voting_members', label: 'Voting members' },
 ];
 
-/** The meeting noun in each cohort's hero caption. */
+/** The meeting noun in each cohort's empty note. */
 export const HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS: Record<HealthMetricsMembersBoardCohort, string> = {
   board: 'board meeting',
   voting_members: 'voting meeting',
 };
 
-/** Each cohort's attendance rule: the board's (ENG-01), and voting members as another voting group (ENG-03). */
+/** Each cohort's level: the board's 90% (ENG-01), and voting members' 50% as another voting group (ENG-03); below it reads red. */
 export const HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES: Record<HealthMetricsMembersBoardCohort, HealthMetricsEngagementAttendanceRule> = {
   board: HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
   voting_members: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
 };
 
-/** The hero caption's suffix when the latest meeting is below its cohort's rule; the board's is the design's. */
-export const HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS: Record<HealthMetricsMembersBoardCohort, string> = {
-  board: 'below the ~100% this should be',
-  voting_members: `below the ${Math.round(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE.threshold * 100)}% a voting group needs`,
+/** Each cohort's people, as its metrics name them. */
+export const HEALTH_METRICS_MEMBERS_BOARD_COHORT_PEOPLE: Record<HealthMetricsMembersBoardCohort, string> = {
+  board: 'board members',
+  voting_members: 'voting members',
 };
 
-/** The trend's latest bar: red or amber below the cohort's rule, the accent otherwise. */
-export const HEALTH_METRICS_MEMBERS_BOARD_LATEST_BAR_COLORS: Record<HealthMetricsMembersBoardLatestTone, string> = {
-  critical: lfxColors.red[600],
-  low: lfxColors.amber[500],
-  ok: lfxColors.blue[500],
+/** The other cohort's metric, beside the selected one's latest meeting. */
+export const HEALTH_METRICS_MEMBERS_BOARD_OTHER_COHORT_LABELS: Record<HealthMetricsMembersBoardCohort, string> = {
+  board: 'Board attendance',
+  voting_members: 'Voting-member attendance',
 };
 
-/** The hero value's colour: red or amber below the cohort's rule, ink otherwise. */
-export const HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS: Record<HealthMetricsMembersBoardLatestTone, string> = {
-  critical: 'text-red-600',
-  low: 'text-amber-600',
-  ok: 'text-gray-900',
+/** A voting meeting with no committee reads as the cohort; a board meeting without one reads "—". */
+export const HEALTH_METRICS_MEMBERS_BOARD_MEETING_FALLBACKS: Record<HealthMetricsMembersBoardCohort, string | null> = {
+  board: null,
+  voting_members: 'Voting members',
 };
+
+/** The chart's bars and the table's fills: red below the cohort's level, the accent otherwise. */
+export const HEALTH_METRICS_MEMBERS_BOARD_BAR_COLORS = { low: lfxColors.red[600], ok: lfxColors.blue[500] } as const;
+export const HEALTH_METRICS_MEMBERS_BOARD_FILL_CLASSES = { low: 'bg-red-500', ok: 'bg-blue-500' } as const;
+
+/** The design's chart: 200px tall, 28px bars, earlier meetings at 20% behind the latest. */
+export const HEALTH_METRICS_MEMBERS_BOARD_CHART = { heightPx: 200, barWidthPx: 28, earlierOpacity: 0.2 } as const;
+
+/** The meetings table's sortable columns; it pages on the server, so the read sorts. */
+export const HEALTH_METRICS_MEMBERS_BOARD_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersBoardSortKey>[] = [
+  { key: 'meeting', kind: 'text' },
+  { key: 'date', kind: 'date' },
+  { key: 'attendance', kind: 'number' },
+];
+
+/** The newest meeting first, as the view orders them. */
+export const HEALTH_METRICS_MEMBERS_BOARD_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersBoardSortKey> = { key: 'date', direction: 'desc' };
 
 /** Read-failed / no-foundation value: no cohorts measured, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED: HealthMetricsMembersBoardAttendance = {
@@ -481,13 +498,6 @@ export const HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE = 100;
 /** Meetings the attendance chart plots: the latest twelve in the period, oldest first. */
 export const HEALTH_METRICS_MEMBERS_BOARD_TREND_MEETINGS = 12;
 
-/** Where "see who" lands: Engagement's representatives, cut to those who never attended. */
-export const HEALTH_METRICS_MEMBERS_BOARD_NEVER_ATTENDED_LINK = {
-  route: 'engagement',
-  fragment: 'reps',
-  queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter]: 'never' },
-} as const;
-
 /** Read-failed / no-foundation value: no audience surveyed, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_NPS_UNMEASURED: HealthMetricsMembersNps = {
   audiences: [],
@@ -495,8 +505,8 @@ export const HEALTH_METRICS_MEMBERS_NPS_UNMEASURED: HealthMetricsMembersNps = {
   trend: [],
 };
 
-/** Audiences the toggle leads with, in order; the rest follow alphabetically. */
-export const HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES = ['Board', 'Maintainers'] as const;
+/** Audiences the switch leads with, in order, the first selected by default; the rest follow alphabetically. */
+export const HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES = ['All', 'Board', 'Maintainers'] as const;
 
 /** Longest audience name a caller may pass; the view's names are far shorter. */
 export const HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH = 100;
@@ -504,24 +514,32 @@ export const HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH = 100;
 /** Below this whole-percent response rate the sample is too small to trust the score (NPS-04). */
 export const HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT = 35;
 
-/** A response-rate fall of at least this many points makes a rising score unproven; a smaller one is noise. */
-export const HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP = 5;
-
 /** The response distribution's segments, left to right, with non-responses last at full weight. */
 export const HEALTH_METRICS_MEMBERS_NPS_SEGMENTS = [
-  { key: 'promoters', label: 'Promoters', colorClass: 'bg-emerald-600' },
-  { key: 'passives', label: 'Passives', colorClass: 'bg-amber-600' },
-  { key: 'detractors', label: 'Detractors', colorClass: 'bg-red-600' },
+  { key: 'promoters', label: 'Promoters', colorClass: 'bg-emerald-500' },
+  { key: 'passives', label: 'Passives', colorClass: 'bg-amber-500' },
+  { key: 'detractors', label: 'Detractors', colorClass: 'bg-red-500' },
   { key: 'noResponse', label: 'No response', colorClass: 'bg-gray-200' },
 ] as const;
+
+/** A trend bar's colour by score: +30 and up is good, 0 to +29 fair, below 0 poor. */
+export const HEALTH_METRICS_MEMBERS_NPS_SCORE_GOOD = 30;
+export const HEALTH_METRICS_MEMBERS_NPS_SCORE_COLORS = { good: lfxColors.emerald[500], fair: lfxColors.amber[500], poor: lfxColors.red[500] } as const;
+
+/** The response rate's dashed line and its popup dot. */
+export const HEALTH_METRICS_MEMBERS_NPS_RATE_COLOR = lfxColors.blue[500];
+
+/** The design's trend: 180px tall, 40px bars, earlier quarters at 30% behind the latest. */
+export const HEALTH_METRICS_MEMBERS_NPS_CHART = { heightPx: 180, barWidthPx: 40, earlierOpacity: 0.3 } as const;
 
 /** Read-failed / no-foundation value: no churn rows, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED: HealthMetricsMembersChurn = { years: [], tiers: [] };
 
-/** The toggle over the hero; revenue churn leads. */
-export const HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS: readonly HealthMetricsMembersChurnModeOption[] = [
-  { id: 'revenue', label: 'Revenue churn' },
-  { id: 'logo', label: 'Logo churn' },
+/** The view switch under the metrics; the first is the default. */
+export const HEALTH_METRICS_MEMBERS_CHURN_SECTION_OPTIONS: readonly HealthMetricsMembersChurnSectionOption[] = [
+  { id: 'members', label: 'Members lost' },
+  { id: 'tiers', label: 'By tier' },
+  { id: 'trend', label: 'Churn trend' },
 ];
 
 /** Upper bound on churn rows read: the busiest foundation has around a hundred, about nine a year. */
@@ -530,24 +548,47 @@ export const HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP = 1000;
 /** Years the trend plots, ending at the selected one. */
 export const HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS = 4;
 
-/** A tier churn rate (percent) at or above this renders in the Needs action colour. */
+/** The churn trend's chart: 180px tall, 40px bars, earlier years at 30% behind the selected one. */
+export const HEALTH_METRICS_MEMBERS_CHURN_TREND_CHART = { heightPx: 180, barWidthPx: 40, earlierOpacity: 0.3 } as const;
+
+/** Revenue churn's bars and logo churn's dashed line. */
+export const HEALTH_METRICS_MEMBERS_CHURN_TREND_COLORS = { revenue: lfxColors.red[500], logo: lfxColors.blue[500] } as const;
+
+/** A tier churn rate (percent) at or above this reads as a danger badge. */
 export const HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT = 25;
 
-/** The share-of-loss bar fill. */
-export const HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS = 'bg-red-600';
-
-/** Under the churn trend: why churn leads rather than renewal rate. */
-export const HEALTH_METRICS_MEMBERS_CHURN_FOOTER: readonly HealthMetricsFootnotePart[] = [
-  {
-    text: 'Renewal rate is unreliable mid-year because renewals are lumpy, so churn leads instead. Not on the landing page at all — it is an outcome, not a decision.',
-  },
+/** By tier's sortable columns; it is not paged, so it sorts in the browser. */
+export const HEALTH_METRICS_MEMBERS_CHURN_TIER_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersChurnTierSortKey>[] = [
+  { key: 'membership', kind: 'tier' },
+  { key: 'lost', kind: 'number' },
+  { key: 'rate', kind: 'number' },
+  { key: 'dues', kind: 'number' },
+  { key: 'share', kind: 'number' },
 ];
 
-/** Read-failed value for "Who left". */
+/** By tier opens on the most dues lost first, as the design orders it. */
+export const HEALTH_METRICS_MEMBERS_CHURN_TIER_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersChurnTierSortKey> = { key: 'dues', direction: 'desc' };
+
+/** Members lost's sortable columns. */
+export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsMembersChurnDeparturesSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'membership', kind: 'tier' },
+  { key: 'dues', kind: 'number' },
+  { key: 'lapsed', kind: 'date' },
+  { key: 'engaged', kind: 'date' },
+];
+
+/** Members lost opens on the view's rank, the most dues lost first. */
+export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsMembersChurnDeparturesSortKey> = {
+  key: 'dues',
+  direction: 'desc',
+};
+
+/** Read-failed value for Members lost. */
 export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED: HealthMetricsMembersChurnDepartures = { rows: [], totalRecords: 0 };
 
-/** Rows per page of "Who left". */
-export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE = 25;
+/** Rows per page of Members lost. */
+export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE = 10;
 
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE = 100;

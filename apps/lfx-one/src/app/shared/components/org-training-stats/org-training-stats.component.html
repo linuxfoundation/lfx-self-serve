@@ -1,0 +1,40 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="org-training-stats">
+    @for (tile of tiles(); track tile.key) {
+      <div
+        class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        [class.hidden]="isHidden(tile)"
+        tabindex="0"
+        role="note"
+        [attr.aria-label]="tile.ariaLabel"
+        [pTooltip]="tile.tooltip"
+        tooltipPosition="top"
+        tooltipEvent="both"
+        [attr.data-testid]="tile.testId">
+        <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full" [class]="tile.iconClass" aria-hidden="true">
+          <i [class]="tile.icon"></i>
+        </span>
+        <div class="flex min-w-0 flex-col">
+          <div class="text-2xl font-semibold leading-none text-gray-900" [attr.data-testid]="tile.testId + '-value'">{{ tile.display }}</div>
+          <div class="mt-1 text-xs font-medium text-gray-700" [attr.data-testid]="tile.testId + '-label'">{{ tile.label }}</div>
+          <div class="mt-0.5 text-xs text-gray-500" [attr.data-testid]="tile.testId + '-caption'">{{ tile.caption }}</div>
+        </div>
+      </div>
+    }
+  </div>
+
+  @if (hiddenCount() > 0) {
+    <button
+      type="button"
+      class="inline-flex items-center gap-1.5 self-start rounded bg-transparent p-0 text-sm font-medium text-blue-600 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      [attr.aria-expanded]="expanded()"
+      data-testid="org-training-stats-toggle"
+      (click)="toggle()">
+      {{ expanded() ? 'Show fewer stats' : 'Show ' + hiddenCount() + ' more stats' }}
+      <i class="fa-light text-xs" [class.fa-chevron-down]="!expanded()" [class.fa-chevron-up]="expanded()" aria-hidden="true"></i>
+    </button>
+  }
+</div>

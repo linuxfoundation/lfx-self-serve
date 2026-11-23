@@ -5,6 +5,9 @@ import { EVENT_SOURCE_BACKFILL } from '../constants/events.constants';
 import { toLocalDateOnlyString } from './date-time.utils';
 import { sanitizeFilename } from './file.utils';
 
+/** The exact character set Snowflake's `TRIM(EVENT_SOURCE, ' \t\n\r')` strips. */
+const SQL_TRIM_CHARS = ' \t\n\r';
+
 /**
  * True when an event registration row came from the CSV backfill import.
  *
@@ -24,9 +27,23 @@ import { sanitizeFilename } from './file.utils';
  *
  * This parity requirement only binds callers mirroring isPastEventSql() against Snowflake. A
  * JS-only caller (no SQL counterpart) may pre-trim with String.prototype.trim() before calling.
+ *
+ * Trimmed with index scans rather than an anchored `[ \t\n\r]+$` regex, which backtracks in
+ * quadratic time on a long whitespace run that is not at the end of the string.
  */
 export function isBackfillEventSource(source: string | null | undefined): boolean {
-  return source?.replace(/^[ \t\n\r]+|[ \t\n\r]+$/g, '').toLowerCase() === EVENT_SOURCE_BACKFILL;
+  if (source == null) {
+    return false;
+  }
+  let start = 0;
+  let end = source.length;
+  while (start < end && SQL_TRIM_CHARS.includes(source[start])) {
+    start++;
+  }
+  while (end > start && SQL_TRIM_CHARS.includes(source[end - 1])) {
+    end--;
+  }
+  return source.slice(start, end).toLowerCase() === EVENT_SOURCE_BACKFILL;
 }
 
 /** Overall certificate filename length budget, matching the `sanitizeFilename()` call below. */

@@ -54,7 +54,7 @@ export const PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,
 
 /** CSV export columns, in order. */
 export const PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER: readonly string[] = [
-  'Organization',
+  'Company',
   'Membership',
   'Tier',
   'Unidentified',
@@ -95,11 +95,11 @@ export const PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER = 'X-Export-Trun
 /** Download name when the export response carries no `Content-Disposition` filename. */
 export const PROJECT_PARTICIPATING_ORGS_EXPORT_FALLBACK_FILENAME = 'participating-orgs.csv';
 
-export const PROJECT_PARTICIPATING_ORGS_EXPORT_EMPTY_MESSAGE = 'No organizations match these filters, so there is nothing to export.';
+export const PROJECT_PARTICIPATING_ORGS_EXPORT_EMPTY_MESSAGE = 'No companies match these filters, so there is nothing to export.';
 
-export const PROJECT_PARTICIPATING_ORGS_EXPORT_ERROR_MESSAGE = 'Unable to export participating organizations. Please try again.';
+export const PROJECT_PARTICIPATING_ORGS_EXPORT_ERROR_MESSAGE = 'Unable to export participating companies. Please try again.';
 
-export const PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_MESSAGE = `The export holds only the first ${PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS.toLocaleString('en-US')} organizations.`;
+export const PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_MESSAGE = `The export holds only the first ${PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS.toLocaleString('en-US')} companies.`;
 
 export const PROJECT_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS = 300;
 

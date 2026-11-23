@@ -49,27 +49,33 @@
               }
             </div>
 
-            <!-- Response Type -->
-            <div class="flex flex-col gap-1">
-              <label [for]="'vote-response-type-' + qIdx" class="text-sm font-medium text-gray-700"> Response Type <span class="text-red-500">*</span> </label>
-              <lfx-select
-                [form]="questionData.group"
-                control="response_type"
-                [options]="responseTypeOptions"
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Select response type"
-                styleClass="w-full"
-                [attr.data-testid]="'vote-response-type-select-' + qIdx">
-              </lfx-select>
-              <p class="text-xs text-gray-400">
-                @if (questionData.responseTypeControl.value === 'single') {
-                  Each participant will select one option.
-                } @else {
-                  Participants can select multiple options.
-                }
-              </p>
-            </div>
+            <!-- Response Type — not for ranked methods, whose voters rank every option -->
+            @if (!isRankedMethod()) {
+              <div class="flex flex-col gap-1">
+                <label [for]="'vote-response-type-' + qIdx" class="text-sm font-medium text-gray-700">
+                  Response Type <span class="text-red-500">*</span>
+                </label>
+                <lfx-select
+                  [form]="questionData.group"
+                  control="response_type"
+                  [options]="responseTypeOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder="Select response type"
+                  styleClass="w-full"
+                  [attr.data-testid]="'vote-response-type-select-' + qIdx">
+                </lfx-select>
+                <p class="text-xs text-gray-400">
+                  @if (questionData.responseTypeControl.value === 'single') {
+                    Each participant will select one option.
+                  } @else {
+                    Participants can select multiple options.
+                  }
+                </p>
+              </div>
+            } @else {
+              <p class="text-xs text-gray-500" [attr.data-testid]="'vote-ranked-note-' + qIdx">Voters rank these options in order of preference.</p>
+            }
 
             <!-- Options -->
             <div class="flex flex-col gap-2">

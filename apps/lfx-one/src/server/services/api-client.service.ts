@@ -345,6 +345,7 @@ export class ApiClientService {
               service: 'api_client_service',
               path: url,
               originalError: readError instanceof Error ? readError : undefined,
+              retryAfter: response.headers.get('Retry-After'),
             });
           }
           // The status arrived; the body did not. Nothing here establishes what upstream did with
@@ -378,6 +379,7 @@ export class ApiClientService {
           service: 'api_client_service',
           path: url,
           errorBody: errorBody,
+          retryAfter: response.headers.get('Retry-After'),
         });
       }
 

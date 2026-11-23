@@ -1,18 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-4" data-testid="engagement-non-member-participation">
-  <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-    <!-- 13px caption is the design's own pixel size. -->
-    <span class="text-[13px] text-gray-500 sm:ml-auto" data-testid="engagement-non-member-participation-count">
-      @if (loading() || loadFailed()) {
-        &mdash;
-      } @else {
-        {{ countLabel() }}
-      }
-    </span>
-  </div>
-
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[12px]" data-testid="engagement-non-member-participation">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -21,52 +11,56 @@
       subtitle="We could not load non-member participation for this foundation. Refresh the page to try again."
       data-testid="engagement-non-member-participation-error" />
   } @else if (!empty()) {
+    <!-- The design's caution sits above the table it qualifies. -->
+    <lfx-ui-note variant="warning" size="small" data-testid="engagement-non-member-participation-caution">{{ caution }}</lfx-ui-note>
+
+    <!-- The design's 560px minimum; a narrower card scrolls the table sideways. -->
     <lfx-table
       styleClass="hm-table"
       [rowHover]="false"
-      [value]="rowViews()"
+      [value]="pageRows()"
       [loading]="loading()"
-      [paginator]="totalRecords() > size()"
-      [rows]="size()"
-      [first]="first()"
-      [totalRecords]="totalRecords()"
-      [showCurrentPageReport]="true"
-      [showFirstLastIcon]="false"
-      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-      (onPage)="onTablePage($event)"
+      [paginator]="false"
+      [tableStyle]="{ 'min-width': '560px' }"
       data-testid="engagement-non-member-participation-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Meetings attended</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">People</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Membership</span></th>
+          <th scope="col" [attr.aria-sort]="sorting.headers().company.ariaSort">
+            <lfx-health-metrics-th
+              label="Company"
+              [sort]="sorting.headers().company.state"
+              (sorted)="sorting.toggle('company')"
+              data-testid="engagement-non-member-participation-sort-company" />
+          </th>
+          <!-- Exact %: the design's 0.9 / 0.5 shares of the columns after Company. -->
+          <th scope="col" class="w-[26%]" [attr.aria-sort]="sorting.headers().meetings.ariaSort">
+            <lfx-health-metrics-th
+              label="Meetings attended"
+              [sort]="sorting.headers().meetings.state"
+              (sorted)="sorting.toggle('meetings')"
+              data-testid="engagement-non-member-participation-sort-meetings" />
+          </th>
+          <th scope="col" class="w-[15%]" [attr.aria-sort]="sorting.headers().people.ariaSort">
+            <lfx-health-metrics-th
+              label="People"
+              [sort]="sorting.headers().people.state"
+              (sorted)="sorting.toggle('people')"
+              data-testid="engagement-non-member-participation-sort-people" />
+          </th>
         </tr>
       </ng-template>
 
       <ng-template #body let-view>
-        @let row = view.row;
-        @let period = view.period;
-        <tr [attr.data-testid]="'engagement-non-member-participation-row-' + row.accountId">
+        <tr [attr.data-testid]="'engagement-non-member-participation-row-' + view.key">
           <td>
-            <span class="text-[13px] font-medium text-gray-900">{{ row.accountName }}</span>
+            <lfx-health-metrics-cell [text]="view.name" [lead]="{ kind: 'company', name: view.name, logoUrl: view.logoUrl }" />
           </td>
-          <td>
-            <span class="text-[13px] tabular-nums text-gray-900">{{ period?.meetingsAttended ?? '—' }}</span>
-          </td>
-          <td>
-            <span class="text-[13px] tabular-nums text-gray-900">{{ period?.distinctPeople ?? '—' }}</span>
-          </td>
-          <td>
-            <!-- The design's `memStat`; the status string is the view's own, rendered as-is. -->
-            <span
-              class="text-[12px] text-gray-400 lg:whitespace-nowrap"
-              [attr.data-testid]="'engagement-non-member-participation-row-' + row.accountId + '-status'"
-              ><span aria-hidden="true">○ </span>{{ row.membershipStatus }}</span
-            >
-          </td>
+          <td><lfx-health-metrics-cell [text]="view.meetings" /></td>
+          <td><lfx-health-metrics-cell [text]="view.people" /></td>
         </tr>
       </ng-template>
     </lfx-table>
+
+    <lfx-ui-pagination [total]="totalRecords()" [pageSize]="size" [(page)]="page" />
   }
 </div>

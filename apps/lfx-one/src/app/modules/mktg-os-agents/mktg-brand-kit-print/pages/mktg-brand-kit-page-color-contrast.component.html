@@ -1,0 +1,83 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-contrast-intro">{{ intro() }}</p>
+  <!-- The matrix and the pairs in one placed block, in flow: the matrix block keeps the mock's room so the pairs sit at
+       y 610 under four colours; a bigger palette pushes them down, and the pairs the footer's room cannot hold are
+       counted in a line, never dropped in silence. -->
+  <div [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-contrast-flow">
+    <div [style.min-height.px]="layout().matrixMinHeight">
+      <table class="kp-matrix" data-testid="brand-kit-contrast-matrix">
+        <thead>
+          <tr>
+            <th class="kp-matrix-corner"></th>
+            @for (column of v.color.palette; track column.hex) {
+              <th>on {{ column.name }}</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of matrix(); track row.hex) {
+            <tr>
+              <th><span class="kp-matrix-dot" [style.background]="row.hex"></span>{{ row.name }} text</th>
+              @for (cell of row.cells; track cell.background) {
+                <td>
+                  @if (cell.ratio === null) {
+                    <div class="kp-matrix-same" data-testid="brand-kit-contrast-matrix-same"></div>
+                  } @else {
+                    <div
+                      class="kp-matrix-cell"
+                      [style.background]="cell.background"
+                      [attr.data-ratio]="cell.label"
+                      data-testid="brand-kit-contrast-matrix-cell">
+                      <span class="kp-matrix-aa" [style.color]="cell.foreground">Aa</span>
+                      <div class="kp-matrix-meta">
+                        <span class="kp-matrix-ratio" [class.kp-matrix-ratio--tinted]="cell.tinted">{{ cell.label }}:1</span>
+                        <span
+                          class="kp-pill"
+                          [style.background]="cell.grade?.background"
+                          [style.color]="cell.grade?.color"
+                          data-testid="brand-kit-contrast-grade"
+                          >{{ cell.grade?.label }}</span
+                        >
+                      </div>
+                    </div>
+                  }
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (pairs().length) {
+      <div class="kp-pairs-block" data-testid="brand-kit-contrast-pairs">
+        <div class="pp-lab pp-lab--dark">The kit's pairs</div>
+        <div class="kp-pairs">
+          @for (pair of pairs(); track $index) {
+            <div class="kp-pair" data-testid="brand-kit-contrast-pair">
+              <span class="kp-pair-sample" [style.background]="pair.backgroundHex" [style.color]="pair.foregroundHex">Aa</span>
+              <span class="kp-pair-names" data-testid="brand-kit-contrast-pair-names">{{ pair.foreground }} on {{ pair.background }}</span>
+              <span class="kp-pair-ratio" data-testid="brand-kit-contrast-pair-ratio">{{ pair.ratio }}</span>
+              <span class="kp-pill" [style.background]="pair.pill.background" [style.color]="pair.pill.color" data-testid="brand-kit-contrast-grade">{{
+                pair.pill.label
+              }}</span>
+            </div>
+          }
+        </div>
+        @if (layout().more) {
+          <div class="kp-pairs-more" data-testid="brand-kit-contrast-pairs-more">{{ layout().moreLine }}</div>
+        }
+      </div>
+    }
+  </div>
+</lfx-mktg-portrait-page>

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { OverlayContainer } from '@angular/cdk/overlay';
+import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiTabItem } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -89,7 +90,10 @@ describe('UiTabsComponent', () => {
 
     expect(list.className).toContain('gap-[24px]');
     expect(list.className).toContain('overflow-x-auto');
-    expect((fixture.nativeElement as HTMLElement).className).toContain('flow-root');
+    expect(list.className).toContain('shrink-0');
+    expect(list.className).toContain('max-w-full');
+    expect((fixture.nativeElement as HTMLElement).className).toContain('flex-wrap');
+    expect((fixture.nativeElement as HTMLElement).className).toContain('gap-[16px]');
     expect((fixture.nativeElement as HTMLElement).className).toContain('shadow-[inset_0_-1px_0_0]');
     expect((fixture.nativeElement as HTMLElement).className).toContain('shadow-ui-neutral-alpha-200');
     expect((fixture.nativeElement as HTMLElement).className).not.toContain('var(');
@@ -98,7 +102,7 @@ describe('UiTabsComponent', () => {
     expect(tab('upcoming').className).toContain('pb-[14px]');
     expect(tab('upcoming').className).toContain('gap-[7px]');
     expect(tab('upcoming').className).toContain('aria-selected:after:h-[2px]');
-    expect(tab('upcoming').className).toContain('text-ui-neutral-500');
+    expect(tab('upcoming').className).toContain('text-ui-neutral-700');
     expect(tab('upcoming').className).toContain('hover:text-ui-neutral-900');
     expect(tab('upcoming').className).toContain('duration-ui-base');
     expect(tab('upcoming').className).toContain('focus-visible:shadow-focus');
@@ -177,6 +181,7 @@ describe('UiTabsComponent', () => {
     expect(tab('drafts').className).toContain('aria-disabled:text-ui-neutral-400');
     expect(tab('drafts').className).toContain('aria-disabled:cursor-not-allowed');
     expect(tab('upcoming').getAttribute('aria-disabled')).toBeNull();
+    expect(tab('upcoming').className).toContain('cursor-pointer');
   });
 
   it('explains a disabled tab in a tooltip on hover, and shows none on enabled tabs', async () => {
@@ -280,5 +285,277 @@ describe('UiTabsComponent', () => {
   it('moves focus to the newly selected tab', async () => {
     await press('upcoming', 'ArrowRight');
     expect(document.activeElement).toBe(tab('past'));
+  });
+
+  it('renders projected content after the tablist, inside the ruled host', async () => {
+    @Component({
+      selector: 'lfx-ui-test-tabs-host',
+      imports: [UiTabsComponent],
+      template: `<lfx-ui-tabs [tabs]="tabs"><span data-testid="trailing">Search</span></lfx-ui-tabs>`,
+    })
+    class HostComponent {
+      protected readonly tabs = tabs;
+    }
+    const host = TestBed.createComponent(HostComponent);
+    await host.whenStable();
+
+    const tabsHost = host.nativeElement.querySelector('lfx-ui-tabs') as HTMLElement;
+    expect(tabsHost.lastElementChild?.getAttribute('data-testid')).toBe('trailing');
+    expect(tabsHost.firstElementChild?.getAttribute('role')).toBe('tablist');
+    host.destroy();
+  });
+
+  it('shows a 7px dot in the tone colour before the label, only where given', async () => {
+    fixture.componentRef.setInput('tabs', [
+      { value: 'all', label: 'All' },
+      { value: 'boards', label: 'Boards', count: 2, dotTone: 'feature' },
+    ]);
+    await fixture.whenStable();
+
+    const dot = tab('boards').querySelector('[data-testid="ui-tab-dot-boards"]') as HTMLElement;
+    expect(dot.className).toContain('h-[7px] w-[7px]');
+    expect(dot.className).toContain('rounded-ui-full');
+    expect(dot.className).toContain('bg-ui-feature-700');
+    expect(dot.getAttribute('aria-hidden')).toBe('true');
+    expect(tab('boards').firstElementChild).toBe(dot);
+    expect(tab('all').querySelector('[data-testid^="ui-tab-dot-"]')).toBeNull();
+  });
+
+  it.each([
+    ['neutral', 'bg-ui-neutral-500'],
+    ['accent', 'bg-ui-accent-600'],
+    ['feature', 'bg-ui-feature-700'],
+    ['warning', 'bg-ui-warning-600'],
+    ['danger', 'bg-ui-danger-600'],
+    ['success', 'bg-ui-success-600'],
+  ] as const)('colours a %s dot with %s', async (dotTone, colour) => {
+    fixture.componentRef.setInput('tabs', [{ value: 'x', label: 'X', dotTone }]);
+    await fixture.whenStable();
+    expect(tab('x').querySelector('[data-testid="ui-tab-dot-x"]')?.className).toContain(colour);
+  });
+
+  describe('collapseToSelect', () => {
+    const typeTabs: UiTabItem[] = [
+      { value: 'all', label: 'All', count: 42, icon: 'fa-light fa-layer-group' },
+      { value: 'boards', label: 'Boards', count: 2, dotTone: 'feature', countLabel: '2 groups' },
+      { value: 'sigs', label: 'SIGs', count: 11, dotTone: 'accent' },
+      { value: 'other', label: 'Other', count: 4, dotTone: 'neutral', disabled: true },
+    ];
+    let observers: (() => void)[] = [];
+    const resize = (): void => observers.forEach((callback) => callback());
+    let listWidth = 900;
+    let rowWidth = 600;
+    let collapsing: ComponentFixture<UiTabsComponent>;
+    let row: HTMLElement | null = null;
+
+    beforeEach(async () => {
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          public observe = vi.fn();
+          public disconnect = vi.fn();
+          public constructor(callback: () => void) {
+            observers.push(callback);
+          }
+        }
+      );
+      // The tab list reports its content width; the host reports the row's width.
+      vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return this.getAttribute('role') === 'tablist' ? listWidth : 0;
+      });
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return this === row ? rowWidth : 0;
+      });
+      observers = [];
+      listWidth = 900;
+      rowWidth = 600;
+      collapsing = TestBed.createComponent(UiTabsComponent);
+      row = collapsing.nativeElement;
+      collapsing.componentRef.setInput('tabs', typeTabs);
+      collapsing.componentRef.setInput('ariaLabel', 'Group type');
+      collapsing.componentRef.setInput('collapseToSelect', true);
+      collapsing.componentInstance.value.set('boards');
+      await collapsing.whenStable();
+    });
+
+    afterEach(() => {
+      collapsing.destroy();
+      delete (document as { fonts?: unknown }).fonts;
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    });
+
+    const el = (testId: string): HTMLElement | null => collapsing.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    const trigger = (): HTMLElement => el('ui-select-trigger') as HTMLElement;
+
+    it('keeps the tabs when the input is off, however narrow the row', async () => {
+      collapsing.componentRef.setInput('collapseToSelect', false);
+      await collapsing.whenStable();
+      expect(el('ui-tabs-select')).toBeNull();
+      expect(el('ui-tabs-list')?.hasAttribute('inert')).toBe(false);
+      expect(collapsing.nativeElement.className).not.toContain('relative');
+    });
+
+    it('swaps the tabs for a labelled select when they do not fit', () => {
+      expect(el('ui-tabs-select')).not.toBeNull();
+      expect(trigger().getAttribute('aria-label')).toBe('Group type');
+      const list = el('ui-tabs-list') as HTMLElement;
+      expect(list.hasAttribute('inert')).toBe(true);
+      for (const name of ['invisible', 'absolute', 'right-[4px]', 'w-max', 'max-w-none']) expect(list.classList).toContain(name);
+    });
+
+    it('shows the chosen tab with its dot and count in the trigger', () => {
+      const value = trigger().querySelector('[data-testid="ui-tabs-value-boards"]') as HTMLElement;
+      expect(value.querySelector('[data-testid="ui-tab-dot-boards"]')?.className).toContain('bg-ui-feature-700');
+      expect(value.textContent).toContain('Boards');
+      expect(value.textContent).toContain('2');
+      expect(value.textContent).toContain('2 groups');
+    });
+
+    it('lists every tab with its icon, dot and count, keeps a dot-width spacer for dotless tabs, and disables disabled tabs', async () => {
+      trigger().click();
+      await collapsing.whenStable();
+
+      const options = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ui-option"]'));
+      expect(options.map((o) => o.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['All42', 'Boards2, 2 groups', 'SIGs11', 'Other4']);
+      expect(options[0].querySelector('.w-\\[7px\\]')).not.toBeNull();
+      expect(options[0].querySelector('[data-testid="ui-option-icon"] i')?.className).toContain('fa-layer-group');
+      expect(options[2].querySelector('[data-testid="ui-tab-dot-sigs"]')?.className).toContain('bg-ui-accent-600');
+      expect(options[3].getAttribute('aria-disabled')).toBe('true');
+      expect(options[1].getAttribute('aria-selected')).toBe('true');
+    });
+
+    it("shows the chosen tab's icon in the trigger", async () => {
+      collapsing.componentInstance.value.set('all');
+      await collapsing.whenStable();
+      expect(trigger().querySelector('[data-testid="ui-select-icon"] i')?.className).toContain('fa-layer-group');
+    });
+
+    it('selects a tab from the list', async () => {
+      trigger().click();
+      await collapsing.whenStable();
+      document.querySelector<HTMLElement>('[data-testid="ui-tabs-option-sigs"]')?.closest<HTMLElement>('[data-testid="ui-option"]')?.click();
+      await collapsing.whenStable();
+      expect(collapsing.componentInstance.value()).toBe('sigs');
+    });
+
+    it('opens and picks with the keyboard', async () => {
+      // CDK's key manager reads `keyCode`, so the synthetic events carry it.
+      for (const [key, keyCode] of [
+        ['ArrowDown', 40],
+        ['ArrowDown', 40],
+        ['Enter', 13],
+      ] as const) {
+        trigger().dispatchEvent(new KeyboardEvent('keydown', { key, keyCode, bubbles: true, cancelable: true }));
+        await collapsing.whenStable();
+      }
+      expect(collapsing.componentInstance.value()).toBe('sigs');
+    });
+
+    it('brings the tabs back when the row widens, and collapses again when it narrows', async () => {
+      rowWidth = 900;
+      resize();
+      await collapsing.whenStable();
+      expect(el('ui-tabs-select')).toBeNull();
+      expect(el('ui-tabs-list')?.hasAttribute('inert')).toBe(false);
+
+      rowWidth = 899;
+      resize();
+      await collapsing.whenStable();
+      expect(el('ui-tabs-select')).not.toBeNull();
+    });
+
+    it('hands focus to the control that replaces the focused one', async () => {
+      rowWidth = 900;
+      resize();
+      await collapsing.whenStable();
+      const boards = el('ui-tab-boards') as HTMLElement;
+      boards.focus();
+
+      rowWidth = 600;
+      resize();
+      await collapsing.whenStable();
+      expect(document.activeElement).toBe(trigger());
+
+      rowWidth = 900;
+      resize();
+      await collapsing.whenStable();
+      expect(document.activeElement).toBe(el('ui-tab-boards'));
+    });
+
+    it('leaves focus alone when it is outside the tabs', async () => {
+      const outside = document.createElement('button');
+      document.body.appendChild(outside);
+      outside.focus();
+      rowWidth = 900;
+      resize();
+      await collapsing.whenStable();
+      expect(document.activeElement).toBe(outside);
+      outside.remove();
+    });
+
+    it('measures against the content box, so side padding counts as taken', async () => {
+      row = collapsing.nativeElement as HTMLElement;
+      row.style.padding = '0 24px';
+      listWidth = 580;
+      resize();
+      await collapsing.whenStable();
+      expect(el('ui-tabs-select')).not.toBeNull();
+
+      listWidth = 552;
+      resize();
+      await collapsing.whenStable();
+      expect(el('ui-tabs-select')).toBeNull();
+    });
+
+    it('keeps focus on projected content when the mode changes', async () => {
+      @Component({
+        selector: 'lfx-ui-test-collapsing-host',
+        imports: [UiTabsComponent],
+        template: `<lfx-ui-tabs [tabs]="tabs" ariaLabel="Group type" collapseToSelect><input data-testid="search" /></lfx-ui-tabs>`,
+      })
+      class HostComponent {
+        protected readonly tabs = typeTabs;
+      }
+      const host = TestBed.createComponent(HostComponent);
+      row = host.nativeElement.querySelector('lfx-ui-tabs');
+      await host.whenStable();
+      const search = host.nativeElement.querySelector('[data-testid="search"]') as HTMLInputElement;
+      search.focus();
+
+      rowWidth = 900;
+      resize();
+      await host.whenStable();
+      expect(host.nativeElement.querySelector('[data-testid="ui-tabs-select"]')).toBeNull();
+      expect(document.activeElement).toBe(search);
+      host.destroy();
+    });
+
+    it('re-measures once web fonts have loaded', async () => {
+      let fontsLoaded: () => void = () => undefined;
+      const ready = new Promise<void>((resolve) => (fontsLoaded = resolve));
+      Object.defineProperty(document, 'fonts', { value: { ready }, configurable: true });
+      const loading = TestBed.createComponent(UiTabsComponent);
+      loading.componentRef.setInput('tabs', typeTabs);
+      loading.componentRef.setInput('collapseToSelect', true);
+      row = loading.nativeElement;
+      await loading.whenStable();
+      expect(loading.nativeElement.querySelector('[data-testid="ui-tabs-select"]')).not.toBeNull();
+
+      // The swapped-in font is narrower, without either observed box resizing.
+      listWidth = 500;
+      fontsLoaded();
+      await ready;
+      await loading.whenStable();
+      expect(loading.nativeElement.querySelector('[data-testid="ui-tabs-select"]')).toBeNull();
+      loading.destroy();
+    });
+
+    it('re-measures when the tabs change', async () => {
+      listWidth = 300;
+      collapsing.componentRef.setInput('tabs', typeTabs.slice(0, 2));
+      await collapsing.whenStable();
+      expect(el('ui-tabs-select')).toBeNull();
+    });
   });
 });

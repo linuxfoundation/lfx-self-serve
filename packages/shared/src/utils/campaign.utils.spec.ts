@@ -13,12 +13,23 @@ import {
 } from '../constants/campaign.constants';
 import type { BriefMetricsActionRule, CampaignOptimizeLever } from '../interfaces/campaign.interface';
 import {
+  briefSlugYearCandidates,
   campaignActionItemLever,
   campaignActionRuleLever,
   campaignEtagVersion,
+  campaignSurveySourceTextLength,
+  campaignSurveySourceTextTooLong,
+  deriveSurveySlug,
+  surveySourceTitle,
+  campaignEventStartDate,
   campaignFlightDays,
+  campaignLabelColumns,
   dailyBudgetFromTotal,
+  defaultCampaignEndDate,
   describeCampaignDispatchFailure,
+  googleAdsCampaignUrl,
+  googleSeededFlight,
+  isReversedCampaignFlight,
   keywordActionKey,
   normalizeSponsors,
   parseNegativeKeywordInput,
@@ -360,6 +371,86 @@ describe('describeCampaignDispatchFailure', () => {
   });
 });
 
+describe('briefSlugYearCandidates (#5492)', () => {
+  it('gives the slug with this year and each of the next two, latest first', () => {
+    // Latest first: this year's edition has often already happened, and the first hit is offered.
+    expect(briefSlugYearCandidates('kubecon-cloudnativecon-europe', 2026)).toEqual([
+      'kubecon-cloudnativecon-europe-2028',
+      'kubecon-cloudnativecon-europe-2027',
+      'kubecon-cloudnativecon-europe-2026',
+    ]);
+  });
+
+  it('gives none when the slug already ends in a year, or is empty', () => {
+    expect(briefSlugYearCandidates('open-source-summit-europe-2027', 2026)).toEqual([]);
+    expect(briefSlugYearCandidates('', 2026)).toEqual([]);
+  });
+
+  it('still guesses when a number in the slug is not a trailing four-digit year', () => {
+    expect(briefSlugYearCandidates('kubeday-26', 2026)).toEqual(['kubeday-26-2028', 'kubeday-26-2027', 'kubeday-26-2026']);
+  });
+});
+
+describe('deriveSurveySlug', () => {
+  // The ONE derivation the planner looks a survey up with and the BFF saves it under: two copies
+  // that disagreed left a saved Google Form survey impossible to reopen.
+  it("uses the promoted link's last path segment", () => {
+    expect(deriveSurveySlug('https://surveys.example.com/r/Cloud_Native-2026/', 'Anything')).toBe('cloud-native-2026');
+  });
+
+  it.each([
+    ['a Google Form', 'https://docs.google.com/forms/d/e/1FAIpQ/viewform'],
+    ['a link with no path', 'https://surveys.example.com/?sid=5'],
+  ])("names %s after the source document's title", (_label, url) => {
+    expect(deriveSurveySlug(url, '\n  2026 Cloud Native Survey\nTwelve questions.')).toBe('2026-cloud-native-survey');
+  });
+
+  it('names two Microsoft Forms apart by their titles, not their shared page name', () => {
+    expect(deriveSurveySlug('https://forms.office.com/Pages/ResponsePage.aspx?id=A', 'Developer Survey')).toBe('developer-survey');
+    expect(deriveSurveySlug('https://forms.office.com/Pages/ResponsePage.aspx?id=B', 'Maintainer Survey')).toBe('maintainer-survey');
+  });
+
+  it('is empty when neither the link nor the text names the asset', () => {
+    expect(deriveSurveySlug('https://docs.google.com/forms/d/e/1FAIpQ/viewform', '   ')).toBe('');
+    expect(deriveSurveySlug('not a url', '')).toBe('');
+  });
+});
+
+describe('surveySourceTitle', () => {
+  it('is the first non-empty line, trimmed and capped at 120 characters', () => {
+    expect(surveySourceTitle('\n   2026 Cloud Native Survey  \nTwelve questions.')).toBe('2026 Cloud Native Survey');
+    expect(surveySourceTitle('x'.repeat(130))).toHaveLength(120);
+    expect(surveySourceTitle('  \n ')).toBe('');
+  });
+});
+
+describe('campaignSurveySourceTextLength', () => {
+  it('collapses whitespace as Go strings.Fields does: U+0085 is a space, U+FEFF is not', () => {
+    expect(campaignSurveySourceTextLength('a\u0085\u0085b')).toBe(3);
+    expect(campaignSurveySourceTextLength('a\uFEFF\uFEFF\uFEFFb')).toBe(5);
+    expect(campaignSurveySourceTextLength('\uFEFFa\u0085')).toBe(2);
+  });
+
+  it('counts as campaign-service does: whitespace runs as one space, trimmed, in code points', () => {
+    expect(campaignSurveySourceTextLength('  a \n\n\t b  ')).toBe(3);
+    // One emoji is one rune upstream, though two UTF-16 units here.
+    expect(campaignSurveySourceTextLength('😀')).toBe(1);
+  });
+});
+
+describe('campaignSurveySourceTextTooLong', () => {
+  it("applies campaign-service's counted limit", () => {
+    expect(campaignSurveySourceTextTooLong('x'.repeat(3000))).toBe(false);
+    expect(campaignSurveySourceTextTooLong('x'.repeat(3001))).toBe(true);
+  });
+
+  it('refuses on the raw length first, before normalising or counting an oversized body', () => {
+    // Collapses to one character, so only the raw ceiling can refuse it.
+    expect(campaignSurveySourceTextTooLong(' '.repeat(24_001) + 'a')).toBe(true);
+    expect(campaignSurveySourceTextTooLong(' '.repeat(23_999) + 'a')).toBe(false);
+  });
+});
+
 describe('campaignFlightDays', () => {
   it('counts the start and end days both', () => {
     expect(campaignFlightDays('2026-10-29', '2026-11-28')).toBe(31);
@@ -389,6 +480,26 @@ describe('campaignFlightDays', () => {
   });
 });
 
+describe('isReversedCampaignFlight', () => {
+  it('is true for an end before the start', () => {
+    expect(isReversedCampaignFlight('2026-12-10', '2026-12-09')).toBe(true);
+    expect(isReversedCampaignFlight('2027-01-01', '2026-12-31')).toBe(true);
+  });
+
+  it('is false for a same-day flight, which Google accepts', () => {
+    expect(isReversedCampaignFlight('2026-12-10', '2026-12-10')).toBe(false);
+  });
+
+  it('is false for a forward flight', () => {
+    expect(isReversedCampaignFlight('2026-12-10', '2026-12-11')).toBe(false);
+  });
+
+  it.each([[''], ['2026-1-01'], ['2026-02-30'], ['not a date']])('is false when a date is not a real calendar day (%j)', (bad) => {
+    expect(isReversedCampaignFlight(bad, '2026-01-01')).toBe(false);
+    expect(isReversedCampaignFlight('2026-12-31', bad)).toBe(false);
+  });
+});
+
 describe('dailyBudgetFromTotal', () => {
   it('divides the total over the days, rounded down to the cent', () => {
     expect(dailyBudgetFromTotal(900, 31)).toBe(29.03);
@@ -413,6 +524,13 @@ describe('dailyBudgetFromTotal', () => {
     expect(dailyBudgetFromTotal(500, 1)).toBe(500);
   });
 
+  it('steps back a cent when a total holding a fraction of a cent would round up past itself', () => {
+    // Rounding 31.309 to the cent gives 31.31, which divides to 1.01 a day and 31.31 over the flight.
+    expect(dailyBudgetFromTotal(31.309, 31)).toBe(1);
+    expect(dailyBudgetFromTotal(31.304, 31)).toBe(1);
+    expect((dailyBudgetFromTotal(31.309, 31) as number) * 31).toBeLessThanOrEqual(31.309);
+  });
+
   it('can return less than one when the total is small for the flight', () => {
     expect(dailyBudgetFromTotal(10, 31)).toBe(0.32);
   });
@@ -427,5 +545,178 @@ describe('dailyBudgetFromTotal', () => {
     [900, -1],
   ])('returns null for a total of %d over %d day(s)', (total, days) => {
     expect(dailyBudgetFromTotal(total, days)).toBeNull();
+  });
+});
+
+/** #4983 ("ss-4"): the labels that tell a brief's campaigns on one platform apart, "—" when absent. */
+describe('campaignLabelColumns', () => {
+  it('names the Google channel, stage, tactic and created date a labelled campaign records', () => {
+    const labels = campaignLabelColumns(
+      {
+        platform: 'google-ads',
+        variant: 'demand-gen',
+        funnel_stage: 'mid',
+        tactic: 'content-promotion',
+        created_at: '2026-11-02T12:00:00Z',
+      },
+      'UTC'
+    );
+    expect(labels).toEqual({ channel: 'Demand Gen', stage: 'Mid funnel', tactic: 'Content promotion', created: 'Nov 2, 2026' });
+  });
+
+  it("leaves the created date to the browser when the viewer's zone is not known (a server render)", () => {
+    expect(campaignLabelColumns({ platform: 'google-ads', created_at: '2026-11-02T12:00:00Z' }, null).created).toBe('—');
+  });
+
+  it('dates a campaign by the calendar day in the zone it is given', () => {
+    const lateEvening = { platform: 'google-ads', created_at: '2026-11-03T03:00:00Z' };
+    expect(campaignLabelColumns(lateEvening, 'UTC').created).toBe('Nov 3, 2026');
+    expect(campaignLabelColumns(lateEvening, 'America/Los_Angeles').created).toBe('Nov 2, 2026');
+  });
+
+  it("reads Google's default variant as Search, and names no channel on a single-channel platform", () => {
+    expect(campaignLabelColumns({ platform: 'google-ads', variant: 'default' }).channel).toBe('Search');
+    expect(campaignLabelColumns({ platform: 'microsoft-ads', variant: 'default' }).channel).toBe('—');
+  });
+
+  it('shows "—" for every label a legacy campaign does not record', () => {
+    expect(campaignLabelColumns({ platform: 'google-ads' })).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
+  });
+
+  it('shows "—", never raw text or "Invalid Date", for values this build does not know', () => {
+    const labels = campaignLabelColumns({
+      platform: 'google-ads',
+      variant: 'shopping',
+      // @ts-expect-error an unknown stage, as the unvalidated index can carry
+      funnel_stage: 'toString',
+      // @ts-expect-error an unknown tactic, as the unvalidated index can carry
+      tactic: '<b>other</b>',
+      created_at: 'yesterday',
+    });
+    expect(labels).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
+  });
+});
+
+describe('campaignEventStartDate (#1614)', () => {
+  it.each([
+    ['2027-03-15', '2027-03-15'],
+    ['March 15, 2027', '2027-03-15'],
+    ['Mar. 15th, 2027', '2027-03-15'],
+    ['Monday, March 15, 2027', '2027-03-15'],
+    ['March 23-26, 2027', '2027-03-23'],
+    ['March 30 \u2013 April 1, 2027', '2027-03-30'],
+    ['15 March 2027', '2027-03-15'],
+    ['23\u201326 March 2027', '2027-03-23'],
+    ['30 March - 1 April 2027', '2027-03-30'],
+    // Both shapes match here; the earlier one is the start.
+    ['30 March \u2013 April 1, 2027', '2027-03-30'],
+    ['December 30, 2026 - January 2, 2027', '2026-12-30'],
+    // The year written once, for the end of a range that crosses New Year.
+    ['December 30 \u2013 January 2, 2027', '2026-12-30'],
+    ['30 December - 2 January 2027', '2026-12-30'],
+    ['December 28-31, 2026', '2026-12-28'],
+    // The one year written after the START is the start's, not the end's (PR #5387 review).
+    ['December 30, 2026 - January 2', '2026-12-30'],
+    ['30 December 2026 - 2 January', '2026-12-30'],
+    // A word that only starts like a month is not one (PR #5387 review): read as a later, lower month
+    // ahead of the year, each of these would move the start a year back.
+    ['December 3 at the Marriott Marquis, 2028', '2028-12-03'],
+    ['December 2, Rio de Janeiro 2028', '2028-12-02'],
+    ['November 5 at Junction City, 2028', '2028-11-05'],
+    ['March 3 in Decatur, 2028', '2028-03-03'],
+    ['September 10, 2028 at the Marriott Marquis', '2028-09-10'],
+    ['September 1 2027', '2027-09-01'],
+  ])('reads %s as %s', (dates, expected) => {
+    expect(campaignEventStartDate(dates)).toBe(expected);
+  });
+
+  it.each([
+    ['no year', 'March 15'],
+    ['no month', '15 2027'],
+    ['an impossible day', 'February 30, 2027'],
+    ['an impossible ISO date', '2027-02-30'],
+    ['a month and year only', 'March 2027'],
+    ['blank', ''],
+    ['a duration', 'Self-paced, 40 hours'],
+  ])('is null for %s', (_label, dates) => {
+    expect(campaignEventStartDate(dates)).toBeNull();
+  });
+
+  it('is null for a missing value', () => {
+    expect(campaignEventStartDate(undefined)).toBeNull();
+    expect(campaignEventStartDate(null)).toBeNull();
+  });
+});
+
+describe('defaultCampaignEndDate (#1614)', () => {
+  const today = '2026-11-07';
+  const fallback = '2026-12-07';
+
+  it('ends on the event day when it is after today, even past the fallback', () => {
+    expect(defaultCampaignEndDate('March 15, 2027', today, fallback)).toBe('2027-03-15');
+  });
+
+  it('ends on the event day when it is before the fallback', () => {
+    expect(defaultCampaignEndDate('November 20, 2026', today, fallback)).toBe('2026-11-20');
+  });
+
+  it('keeps the fallback for an event today, since every other platform refuses an end that is not after the start', () => {
+    expect(defaultCampaignEndDate('November 7, 2026', today, fallback)).toBe(fallback);
+  });
+
+  it('keeps the fallback for a past event or unreadable dates', () => {
+    expect(defaultCampaignEndDate('March 15, 2026', today, fallback)).toBe(fallback);
+    expect(defaultCampaignEndDate('Self-paced', today, fallback)).toBe(fallback);
+    expect(defaultCampaignEndDate(undefined, today, fallback)).toBe(fallback);
+  });
+
+  it('divides the brief total over the same flight it ends', () => {
+    const end = defaultCampaignEndDate('March 15, 2027', today, fallback);
+    expect(campaignFlightDays(today, end)).toBe(129);
+    expect(dailyBudgetFromTotal(1000, campaignFlightDays(today, end) as number)).toBe(7.75);
+  });
+});
+
+describe('googleAdsCampaignUrl (#1614)', () => {
+  it('links to the campaign in the Google Ads UI', () => {
+    expect(googleAdsCampaignUrl('24447438160')).toBe('https://ads.google.com/aw/campaigns?campaignId=24447438160');
+  });
+
+  it('is empty without an id', () => {
+    expect(googleAdsCampaignUrl('')).toBe('');
+    expect(googleAdsCampaignUrl(undefined)).toBe('');
+  });
+
+  it('percent-encodes the id', () => {
+    expect(googleAdsCampaignUrl('1&x=2')).toBe('https://ads.google.com/aw/campaigns?campaignId=1%26x%3D2');
+  });
+});
+
+describe('googleSeededFlight (#4847, #1614)', () => {
+  const today = '2026-11-07';
+
+  it('divides the total over the flight when that is at least the floor, either way', () => {
+    expect(googleSeededFlight(1000, today, '2026-12-07', true)).toEqual({ endDate: '2026-12-07', dailyBudget: 32.25 });
+    expect(googleSeededFlight(1000, today, '2026-12-07', false)).toEqual({ endDate: '2026-12-07', dailyBudget: 32.25 });
+  });
+
+  it('shortens a Google-only flight to the days the total funds at the floor, never seeding under it', () => {
+    // 100 over the 129 days to 15 March is 0.77 a day; 100 days at 1 a day ends 14 February.
+    expect(googleSeededFlight(100, today, '2027-03-15', true)).toEqual({ endDate: '2027-02-14', dailyBudget: 1 });
+  });
+
+  it('gives a total under two days at the floor the shortest flight the platforms accept, not the whole run-up', () => {
+    // PR #5389 review: 1.5 kept the 129-day flight at 1 a day, about 129 against a plan of 1.5.
+    expect(googleSeededFlight(1.5, today, '2027-03-15', true)).toEqual({ endDate: '2026-11-08', dailyBudget: 1 });
+  });
+
+  it('keeps an end date shared with other platforms and seeds the floor (PR #5389 review)', () => {
+    expect(googleSeededFlight(100, today, '2027-03-15', false)).toEqual({ endDate: '2027-03-15', dailyBudget: 1 });
+    expect(googleSeededFlight(1.5, today, '2027-03-15', false)).toEqual({ endDate: '2027-03-15', dailyBudget: 1 });
+  });
+
+  it('seeds no budget without a usable total', () => {
+    expect(googleSeededFlight(null, today, '2027-03-15', true)).toEqual({ endDate: '2027-03-15', dailyBudget: null });
+    expect(googleSeededFlight(0, today, '2027-03-15', true)).toEqual({ endDate: '2027-03-15', dailyBudget: null });
   });
 });

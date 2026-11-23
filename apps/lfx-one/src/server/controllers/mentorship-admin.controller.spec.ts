@@ -62,9 +62,9 @@ describe('MentorshipAdminController', () => {
     it('passes the trimmed search, status and paging to the service', async () => {
       const read = vi.spyOn(MentorshipAdminService.prototype, 'getPrograms').mockResolvedValue({ data: [], total: 0 });
 
-      await controller.getPrograms(buildReq({ search: '  grid ', status: 'open', offset: '12', limit: '24' }), res, next);
+      await controller.getPrograms(buildReq({ search: '  grid ', status: 'in-progress', offset: '12', limit: '24' }), res, next);
 
-      expect(read).toHaveBeenCalledWith(expect.anything(), { search: 'grid', status: 'open', offset: 12, limit: 24 });
+      expect(read).toHaveBeenCalledWith(expect.anything(), { search: 'grid', status: 'in-progress', offset: 12, limit: 24 });
     });
 
     it('never logs the search text', async () => {
@@ -96,7 +96,7 @@ describe('MentorshipAdminController', () => {
       const read = vi.spyOn(MentorshipAdminService.prototype, 'getPrograms');
 
       await controller.getPrograms(buildReq({ search: ['a', 'b'] }), res, next);
-      await controller.getPrograms(buildReq({ status: ['open', 'hidden'] }), res, next);
+      await controller.getPrograms(buildReq({ status: ['accepting', 'hidden'] }), res, next);
       await controller.getPrograms(buildReq({ offset: ['0', '12'] }), res, next);
 
       expect(vi.mocked(next).mock.calls.map(([error]) => (error as { statusCode?: number }).statusCode)).toEqual([400, 400, 400]);
@@ -118,6 +118,76 @@ describe('MentorshipAdminController', () => {
       const read = vi.spyOn(MentorshipAdminService.prototype, 'getPrograms');
 
       await controller.getPrograms(buildReq(), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+      expect(read).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getProjectPrograms', () => {
+    const PROJECT_UID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+    it('passes the project and the parsed filters and paging to the service', async () => {
+      const page = { data: [], total: 0 };
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms').mockResolvedValue(page);
+
+      await controller.getProjectPrograms(buildReq({ search: ' grid ', status: 'hidden', offset: '12' }, { projectUid: ` ${PROJECT_UID} ` }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROJECT_UID, { search: 'grid', status: 'hidden', offset: 12, limit: 12, includeSubprojects: false });
+      expect(res.json).toHaveBeenCalledWith(page);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('asks for the sub-projects’ programs too when includeSubprojects is true (the Foundation lens)', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms').mockResolvedValue({ data: [], total: 0 });
+
+      await controller.getProjectPrograms(buildReq({ includeSubprojects: 'true' }, { projectUid: PROJECT_UID }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROJECT_UID, expect.objectContaining({ includeSubprojects: true }));
+    });
+
+    it('rejects an includeSubprojects that is not true or false with a 400', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms');
+
+      await controller.getProjectPrograms(buildReq({ includeSubprojects: 'yes' }, { projectUid: PROJECT_UID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it.each([['not-a-uuid'], ['']])('rejects the project %j with a 400', async (projectUid) => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms');
+
+      await controller.getProjectPrograms(buildReq({}, { projectUid }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown status with a 400', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms');
+
+      await controller.getProjectPrograms(buildReq({ status: 'bogus' }, { projectUid: PROJECT_UID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('passes a service failure, such as the gateway’s 403, to next', async () => {
+      const error = Object.assign(new Error('Forbidden'), { statusCode: 403 });
+      vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms').mockRejectedValue(error);
+
+      await controller.getProjectPrograms(buildReq({}, { projectUid: PROJECT_UID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('passes an AuthenticationError to next when no user is signed in', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms');
+
+      await controller.getProjectPrograms(buildReq({}, { projectUid: PROJECT_UID }), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
       expect(read).not.toHaveBeenCalled();
@@ -501,12 +571,21 @@ describe('MentorshipAdminController', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('forwards only the LFID, never an email or a user id', async () => {
+    it('forwards only the LFID, never a user id', async () => {
       const invite = vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor').mockResolvedValue('mem_1');
 
-      await controller.inviteProgramMentor(buildWrite({ lfid: 'ada', email: 'ada@example.org', user_id: 'u1' }), writeRes, next);
+      await controller.inviteProgramMentor(buildWrite({ lfid: 'ada', user_id: 'u1' }), writeRes, next);
 
       expect(invite).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { lfid: 'ada' });
+    });
+
+    it('invites the trimmed email of someone with no LF account and answers 204', async () => {
+      const invite = vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor').mockResolvedValue('mem_1');
+
+      await controller.inviteProgramMentor(buildWrite({ email: ' new.mentor@example.org ', user_id: 'u1' }), writeRes, next);
+
+      expect(invite).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { email: 'new.mentor@example.org' });
+      expect(writeRes.status).toHaveBeenCalledWith(204);
     });
 
     it.each([
@@ -514,6 +593,9 @@ describe('MentorshipAdminController', () => {
       ['a blank lfid', { lfid: '   ' }, { programId: PROGRAM_ID }],
       ['a non-string lfid', { lfid: 42 }, { programId: PROGRAM_ID }],
       ['an lfid over 100 characters', { lfid: 'a'.repeat(101) }, { programId: PROGRAM_ID }],
+      ['both an lfid and an email', { lfid: 'ada', email: 'ada@example.org' }, { programId: PROGRAM_ID }],
+      ['an invalid email', { email: 'not an email' }, { programId: PROGRAM_ID }],
+      ['an email over 254 characters', { email: `${'a'.repeat(250)}@example.org` }, { programId: PROGRAM_ID }],
       ['a programId that is not a UUID', { lfid: 'ada' }, { programId: 'not-a-uuid' }],
     ])('rejects %s with a 400', async (_label, body, params) => {
       const invite = vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor');
@@ -606,9 +688,29 @@ describe('MentorshipAdminController', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
+    it('updateApplicationStatus passes an accept without an attendance type, which undoes a graduation', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationStatus').mockResolvedValue();
+      const out = writeRes();
+      const req = { ...buildReq({}, { applicationId: APPLICATION_ID }), body: { status: 'accepted' } } as Request;
+
+      await controller.updateApplicationStatus(req, out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, { status: 'accepted' });
+      expect(out.status).toHaveBeenCalledWith(204);
+    });
+
+    it('updateApplicationStatus passes a re-open as pending, dropping any attendance type', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationStatus').mockResolvedValue();
+      const req = { ...buildReq({}, { applicationId: APPLICATION_ID }), body: { status: 'pending', attendanceType: 'full_time' } } as Request;
+
+      await controller.updateApplicationStatus(req, writeRes(), next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, { status: 'pending' });
+    });
+
     it.each([
-      ['an accept without an attendance type', { status: 'accepted' }],
       ['an accept with an unknown attendance type', { status: 'accepted', attendanceType: 'weekends' }],
+      ['an accept with a null attendance type', { status: 'accepted', attendanceType: null }],
       ['a status the admin cannot set', { status: 'withdrawn' }],
       ['no body', undefined],
     ])('updateApplicationStatus rejects %s with a 400 and no upstream call', async (_label, body) => {

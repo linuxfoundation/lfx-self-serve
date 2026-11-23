@@ -29,6 +29,10 @@ describe('UiSpinnerComponent', () => {
     bars.forEach((bar) => expect(bar.getAttribute('aria-hidden')).toBe('true'));
   });
 
+  it('paints the bars CanvasText in forced colours', () => {
+    host.querySelectorAll('i').forEach((bar) => expect(bar.className).toContain('forced-colors:bg-[color:CanvasText]'));
+  });
+
   it('rotates each bar 30 degrees further and delays it 0.1s later', () => {
     const bars = host.querySelectorAll('i');
     expect(bars[0].style.transform).toBe('rotate(0deg)');

@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- The error, announced. Always mounted, and only its text changes, as in the exclusions panel. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-ad-group-demographics-live">
+  {{ error() ?? '' }}
+</div>
+
+@if (anyShown()) {
+  <fieldset
+    class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+    [attr.aria-describedby]="describedBy()"
+    data-testid="implementation-google-ad-group-demographics">
+    <legend class="float-left mb-1 text-xs font-medium text-gray-700">More demographics</legend>
+    <p id="google-ad-group-demographics-hint" class="text-xs text-gray-500">
+      These apply to every ad group in the campaign. With nothing ticked the campaign serves to everyone. Unknown is the people Google could not classify.
+    </p>
+
+    @if (showObserved()) {
+      <fieldset class="flex flex-col gap-2" data-testid="implementation-google-observed-demographics">
+        <legend class="mb-1 text-xs text-gray-700">Observe (report and adjust bids, without narrowing reach)</legend>
+        <div class="flex flex-wrap gap-x-4 gap-y-2">
+          @for (row of observedRows(); track row.value) {
+            <lfx-ui-checkbox
+              [label]="row.label"
+              [checked]="row.checked"
+              (checkedChange)="onObserved(row.value, $event)"
+              [attr.data-testid]="'implementation-google-observed-' + row.value" />
+          }
+        </div>
+      </fieldset>
+    }
+
+    @if (showTargeting()) {
+      <lfx-campaign-google-demographic-targeting
+        legend="Target only (tick nothing in a group to reach all of it)"
+        testId="implementation-google-demographic-targeting"
+        optionTestIdPrefix="implementation-google-target-"
+        [(targeting)]="displayDemographics" />
+    }
+
+    @if (showIncomeExclusions()) {
+      <fieldset class="flex flex-col gap-2" data-testid="implementation-google-income-exclusions">
+        <legend class="mb-1 text-xs text-gray-700">Exclude household income</legend>
+        <div class="flex flex-wrap gap-x-4 gap-y-2">
+          @for (row of incomeRows(); track row.value) {
+            <lfx-ui-checkbox
+              [label]="row.label"
+              [checked]="row.checked"
+              (checkedChange)="onIncome(row.value, $event)"
+              [attr.data-testid]="'implementation-google-income-' + row.value" />
+          }
+        </div>
+      </fieldset>
+    }
+
+    @if (showParentalExclusions()) {
+      <fieldset class="flex flex-col gap-2" data-testid="implementation-google-parental-exclusions">
+        <legend class="mb-1 text-xs text-gray-700">Exclude parental status</legend>
+        <div class="flex flex-wrap gap-x-4 gap-y-2">
+          @for (row of parentalRows(); track row.value) {
+            <lfx-ui-checkbox
+              [label]="row.label"
+              [checked]="row.checked"
+              (checkedChange)="onParental(row.value, $event)"
+              [attr.data-testid]="'implementation-google-parental-' + row.value" />
+          }
+        </div>
+      </fieldset>
+    }
+
+    @if (error(); as message) {
+      <p id="google-ad-group-demographics-error" class="text-xs text-red-600" data-testid="implementation-google-ad-group-demographics-error">{{ message }}</p>
+    }
+  </fieldset>
+}

@@ -4,6 +4,7 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { UiFocusable } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiChipGroupComponent } from './chip-group.component';
@@ -22,7 +23,7 @@ const GROUP_TEMPLATE = `
 @Component({ selector: 'lfx-ui-test-host', template: '' })
 class TestHostComponent {
   public readonly filters = signal(['Project: CNCF', 'Meeting type: Committee', 'RSVP: Going']);
-  public readonly fallback = signal<{ focus(): void } | null>(null);
+  public readonly fallback = signal<UiFocusable | null>(null);
   public readonly removed = signal<string[]>([]);
   /** When set, a dismissal waits here, like a removal that needs a request, until `flush`. */
   public readonly deferred = signal(false);
@@ -90,6 +91,20 @@ describe('UiChipComponent', () => {
     expect(button.getAttribute('aria-label')).toBe('Remove Project: CNCF');
     expect(button.querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
     expect(button.className).toContain('focus-visible:shadow-focus');
+  });
+
+  it('has no prefix by default and shows a regular-weight key before the label when given', async () => {
+    expect(host.querySelector('[data-testid="ui-chip-prefix"]')).toBeNull();
+
+    fixture.componentRef.setInput('prefix', 'Project:');
+    fixture.componentRef.setInput('label', 'CNCF');
+    await fixture.whenStable();
+
+    const prefix = host.querySelector('[data-testid="ui-chip-prefix"]') as HTMLElement;
+    expect(prefix.textContent).toBe('Project:');
+    expect(prefix.className).toContain('font-normal');
+    expect(host.querySelector('[data-testid="ui-chip-label"]')?.textContent).toBe('Project: CNCF');
+    expect(dismiss()?.getAttribute('aria-label')).toBe('Remove Project: CNCF');
   });
 
   it('keeps a 24px hit area on both sizes and a circle that fits inside the badge', async () => {

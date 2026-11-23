@@ -12,13 +12,12 @@ import {
   ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_SIGN_SELECTION_STATE,
-  ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_EASYCLA_SIGNATURE_PARAM,
   ORG_LENS_EMPTY_STATE_COPY,
 } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
-import { orgClaOpenLabel } from '@lfx-one/shared/utils';
+import { easyclaReturnOrgParam, orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, of, skip, switchMap, take, tap } from 'rxjs';
@@ -125,19 +124,19 @@ export class OrgEasyclaComponent {
     // Every reason the control is disabled needs a branch here, or assistive technology announces
     // "disabled" with no explanation. Loading sits above the company check because it is why the
     // company is not known yet.
-    if (!this.orgContextLoaded()) return 'Sign a corporate CLA — checking your organization access';
-    if (!this.hasCompany()) return 'Sign a corporate CLA — select an organization first';
+    if (!this.orgContextLoaded()) return 'Sign a corporate CLA — checking your company access';
+    if (!this.hasCompany()) return 'Sign a corporate CLA — select a company first';
     if (this.signingOpen()) return 'Sign a corporate CLA — a signing request is already open';
     if (this.easyclaRoleMissing()) return ORG_CLA_EASYCLA_ROLE_MISSING_COPY.signClaAriaLabel;
-    if (this.fetchError()) return 'Sign a corporate CLA — this organization’s agreements could not be loaded';
-    if (!this.claListReady()) return 'Sign a corporate CLA — loading the agreements this organization already holds';
+    if (this.fetchError()) return 'Sign a corporate CLA — this company’s agreements could not be loaded';
+    if (!this.claListReady()) return 'Sign a corporate CLA — loading the agreements this company already holds';
     return 'Sign a corporate CLA';
   });
 
   /**
-   * Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016). The
-   * route guard only checks the dark-launch flag, so without this an unauthorized deep link would be
-   * told "hasn't signed any CLAs yet" — a statement about their CLAs rather than about their access.
+   * Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016).
+   * Without this an unauthorized deep link would be told "hasn't signed any CLAs yet" — a statement
+   * about their CLAs rather than about their access.
    * Decided by the shared classifier so it cannot drift from the other pages or the sidebar gate.
    */
   protected readonly pageState = this.emptyState.pageState;
@@ -468,7 +467,7 @@ export class OrgEasyclaComponent {
     // The address is only followed in a browser, and the strip below is a browser navigation.
     if (!isPlatformBrowser(this.platformId)) return;
 
-    const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    const named = easyclaReturnOrgParam((name) => this.route.snapshot.queryParamMap.get(name));
     if (!named) return;
 
     // `?org=` names an organization on the leftover mount only (`/org/easycla…`, until one release

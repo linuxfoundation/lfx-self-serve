@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Clipboard } from '@angular/cdk/clipboard';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfilePanelComponent } from './profile-panel.component';
@@ -16,7 +18,7 @@ describe('ProfilePanelComponent — impersonation (#2399, #2400)', () => {
   let comp: ProfilePanelComponent;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [ProfilePanelComponent] });
+    TestBed.configureTestingModule({ imports: [ProfilePanelComponent], providers: [{ provide: MessageService, useValue: { add: vi.fn() } }] });
     fixture = TestBed.createComponent(ProfilePanelComponent);
     comp = fixture.componentInstance;
     fixture.detectChanges();
@@ -61,7 +63,7 @@ describe('ProfilePanelComponent — member since (#2837)', () => {
   let fixture: ComponentFixture<ProfilePanelComponent>;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [ProfilePanelComponent] });
+    TestBed.configureTestingModule({ imports: [ProfilePanelComponent], providers: [{ provide: MessageService, useValue: { add: vi.fn() } }] });
     fixture = TestBed.createComponent(ProfilePanelComponent);
     fixture.detectChanges();
   });
@@ -82,5 +84,60 @@ describe('ProfilePanelComponent — member since (#2837)', () => {
 
     const el = fixture.nativeElement.querySelector('[data-testid="profile-panel-member-since"]');
     expect(el).toBeNull();
+  });
+});
+
+/** The LFID is labelled and copyable so users can tell it apart and paste it into forms (#5318). */
+describe('ProfilePanelComponent — LFID (#5318)', () => {
+  let fixture: ComponentFixture<ProfilePanelComponent>;
+  let comp: ProfilePanelComponent;
+  const copy = vi.fn();
+  const add = vi.fn();
+
+  beforeEach(() => {
+    copy.mockReset();
+    add.mockReset();
+    TestBed.configureTestingModule({
+      imports: [ProfilePanelComponent],
+      providers: [
+        { provide: Clipboard, useValue: { copy } },
+        { provide: MessageService, useValue: { add } },
+      ],
+    });
+    fixture = TestBed.createComponent(ProfilePanelComponent);
+    comp = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+
+  it('labels the username as the LFID', () => {
+    fixture.componentRef.setInput('username', 'alovelace');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement.querySelector('[data-testid="profile-panel-lfid"]');
+    expect(el.textContent).toContain('LFID: alovelace');
+    expect(fixture.nativeElement.querySelector('[data-testid="profile-panel-lfid-copy"]')).not.toBeNull();
+  });
+
+  it('hides the LFID row when there is no username', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="profile-panel-lfid"]')).toBeNull();
+  });
+
+  it('copies only the username and confirms with a success toast', () => {
+    fixture.componentRef.setInput('username', 'alovelace');
+    copy.mockReturnValue(true);
+
+    comp.copyLfid();
+
+    expect(copy).toHaveBeenCalledWith('alovelace');
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  it('shows an error toast when the copy fails', () => {
+    fixture.componentRef.setInput('username', 'alovelace');
+    copy.mockReturnValue(false);
+
+    comp.copyLfid();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
   });
 });

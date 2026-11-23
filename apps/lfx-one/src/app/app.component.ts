@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, signal, TransferState } from '@angular/core';
+import { Component, computed, DestroyRef, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, TransferState } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
-import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MAILING_LIST_ACCESS_DENIED_MESSAGE } from '@lfx-one/shared/constants';
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { filter } from 'rxjs';
 
+import { SupportLauncherComponent } from '@components/support-launcher/support-launcher.component';
 import { MeetingComposerHostComponent } from './modules/meetings/meeting-composer/meeting-composer-host.component';
 import { MeetingComposerService } from './modules/meetings/meeting-composer/meeting-composer.service';
+import { ChunkLoadRecoveryComponent } from './shared/components/chunk-load-recovery/chunk-load-recovery.component';
 import { getRuntimeConfig } from './shared/providers/runtime-config.provider';
 import { AccountContextService } from './shared/services/account-context.service';
 import { DataDogRumService } from './shared/services/datadog-rum.service';
@@ -22,13 +24,14 @@ import { PersonaService } from './shared/services/persona.service';
 import { PlausibleService } from './shared/services/plausible.service';
 import { ProjectContextService } from './shared/services/project-context.service';
 import { SegmentService } from './shared/services/segment.service';
+import { TranscendService } from './shared/services/transcend.service';
 import { UserService } from './shared/services/user.service';
 import { isBrowserCredentialUrlPath, isBrowserInviteLandingPath } from './shared/utils/invite-landing.util';
 import { identifiedIntercomBootOptions } from './shared/utils/intercom-boot.util';
 
 const ACCESS_DENIED_MESSAGES: Record<string, string> = {
   meetings: "You don't have permission to schedule meetings for this project.",
-  'mailing-lists': "You don't have permission to manage mailing lists for this project.",
+  'mailing-lists': MAILING_LIST_ACCESS_DENIED_MESSAGE,
   votes: "You don't have permission to manage votes for this project.",
   surveys: "You don't have permission to manage surveys for this project.",
   committees: "You don't have permission to manage committees for this project.",
@@ -36,7 +39,7 @@ const ACCESS_DENIED_MESSAGES: Record<string, string> = {
 
 @Component({
   selector: 'lfx-root',
-  imports: [RouterOutlet, ToastModule, MeetingComposerHostComponent],
+  imports: [RouterOutlet, ToastModule, MeetingComposerHostComponent, SupportLauncherComponent, ChunkLoadRecoveryComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
@@ -50,69 +53,28 @@ export class AppComponent {
   private readonly intercomService = inject(IntercomService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly transcendService = inject(TranscendService);
   protected readonly meetingComposer = inject(MeetingComposerService);
-  /**
-   * Whether meetings v2 is enabled for this user.
-   * @description The host is mounted here for every page, so this is the one read that decides
-   * whether the composer exists in the tree at all. Read as a signal so the host appears once
-   * LaunchDarkly resolves without any manual change detection, and defaulted to `false` so a slow
-   * or unreachable provider leaves the tree exactly as pre-v2 — the entry points are gated on the
-   * same flag, so with it off nothing can ask the composer to open. See `MEETING_V2_ENABLED_FLAG`.
-   */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   // Mirrors writerGuard's cheap paths so the composer chunk is prefetched for the personas that
   // actually open it. Meeting-coordinator and committee-writer grants aren't known this early, so
-  // those users fall back to the `when` trigger and download the chunk on click. Gated on the flag
-  // too, so a non-targeted user never downloads the v2 chunk at all.
+  // those users fall back to the `when` trigger and download the chunk on click.
   protected readonly canPrefetchComposer = computed(
-    () => this.meetingsV2Enabled() && (this.projectContextService.canWrite() || this.personaService.currentPersona() === 'executive-director')
+    () => this.projectContextService.canWrite() || this.personaService.currentPersona() === 'executive-director'
   );
-  /**
-   * Latches once the host has been in the tree, and never goes back.
-   * @description Closing is not the end of the host's job: `onSubmit()` announces a successful create
-   * on the keyed `<p-toast>` that lives *inside* the host and calls `composer.close()` in the same
-   * tick. On the flag alone those two legs both read false at that point, so the outlet is destroyed
-   * on the next change-detection pass and the toast is unsubscribed before it ever paints —
-   * `MessageService` is a plain Subject with no replay, so the message is gone for good. Creating no
-   * longer navigates, so the organizer would be left with no confirmation at all that the meeting
-   * saved. Keeping the host mounted costs almost nothing once the composer is closed — the drawer is
-   * bound to `isOpen()` and `meetingEntityContext` returns null — and it cannot let an untargeted
-   * user back in: every entry point and the prefetch trigger stay on the flag alone.
-   */
-  private readonly hostEverMounted = signal(false);
-  /**
-   * Whether the composer host belongs in the tree right now.
-   * @description `meetingsV2Enabled()` is deliberately reactive — `FeatureFlagService` re-evaluates it
-   * on LaunchDarkly's `ConfigurationChanged`/`ContextChanged` events — so a targeting change mid-session
-   * can flip it true → false under a composer that is already open. On the flag alone that unmounts the
-   * host, which takes the component-scoped `MeetingComposerFormService` and the organizer's unfilled
-   * meeting with it, while `MeetingComposerService.isOpen()` stays true because only `close()` clears the
-   * context: the composer is gone from the screen but still logically open, and a later flag-on remounts a
-   * host that immediately reopens that stale context. So an open composer keeps itself mounted until it
-   * closes, and `hostEverMounted` holds it there afterwards so the create toast it renders survives the
-   * close. This cannot let an untargeted user in: every entry point is gated on the same flag and the
-   * deep-link routes render the pre-v2 screens, so `isOpen()` is false for them and neither the host nor
-   * its chunk is ever reached (`canPrefetchComposer` stays on the flag alone).
-   */
-  protected readonly composerHostMounted = computed(() => this.meetingsV2Enabled() || this.meetingComposer.isOpen() || this.hostEverMounted());
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
   public serverKey = makeStateKey<AuthContext>('auth');
 
   public constructor() {
-    // Flip the latch the first time the host is genuinely in the tree. Reading the two live legs
-    // rather than `composerHostMounted()` keeps this from feeding on its own output.
-    effect(() => {
-      if (this.meetingsV2Enabled() || this.meetingComposer.isOpen()) {
-        this.hostEverMounted.set(true);
-      }
-    });
-
     const onInviteLanding = isBrowserInviteLandingPath();
     // Segment, Plausible and Intercom record the page URL, which carries the invite token here.
     const onCredentialUrl = isBrowserCredentialUrlPath();
+    // Inside a frame Transcend shows no notice and no Cookie settings, so analytics never start there:
+    // a visitor in an opt-out regime would be tracked with no way to say no (lfx-self-serve-ops#1438).
+    // Datadog RUM is gated the same way in provideDataDogRum.
+    const startAnalytics = !onCredentialUrl && this.transcendService.preferencesAvailable;
 
-    if (!onCredentialUrl) {
+    if (startAnalytics) {
       this.segmentService.initialize();
       this.plausibleService.initialize();
     }
@@ -141,10 +103,13 @@ export class AppComponent {
       this.userService.authenticated.set(true);
       this.userService.user.set(this.auth.user);
 
-      // Initialize user organizations from backend (matched from committee memberships)
-      if (this.auth.organizations && this.auth.organizations.length > 0) {
-        this.accountContextService.initializeUserOrganizations(this.auth.organizations);
-      }
+      // Initialize user organizations from backend (matched from committee memberships).
+      // Called even with an empty list: a caller whose organizations are all inherited grants has no
+      // persona seeds, and skipping this left their stored selection unread — so a restored
+      // roll-up selection never came back, and org-items could pin a concrete organization over it
+      // (#4415 review 8). With no seeds and nothing stored this settles on the placeholder, which is
+      // what the bootstrap value already was.
+      this.accountContextService.initializeUserOrganizations(this.auth.organizations ?? []);
 
       this.userService.canImpersonate.set(Boolean(this.auth?.canImpersonate));
 
@@ -155,7 +120,7 @@ export class AppComponent {
 
       const authedUser = this.auth.user;
 
-      if (!onCredentialUrl) {
+      if (startAnalytics) {
         this.segmentService.setImpersonating(isImpersonating);
         this.plausibleService.setImpersonating(isImpersonating);
         this.segmentService.identifyUser(authedUser);

@@ -64,8 +64,13 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const regexConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
     '../../../../../packages/shared/src/constants/regex.constants'
   );
+  // Real delete-type allowlist: the delete route's `type` validation must be exercised against it.
+  const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
+    '../../../../../packages/shared/src/constants/documents.constants'
+  );
   return {
     ALLOWED_FILE_TYPES: [],
+    DOCUMENT_DELETE_TYPES: documentConstants.DOCUMENT_DELETE_TYPES,
     LENS_REDIRECT_RESOURCES: actual.LENS_REDIRECT_RESOURCES,
     EDITABLE_STAFF_ROLES: staffConstants.EDITABLE_STAFF_ROLES,
     EMAIL_REGEX: regexConstants.EMAIL_REGEX,
@@ -1308,10 +1313,10 @@ describe('ProjectController.downloadProjectDocument uid/documentId validation', 
 describe('ProjectController.deleteProjectDocument uid/documentId validation', () => {
   let controller: ProjectController;
 
-  function buildDeleteDocumentReqRes(uid: string, documentId: string) {
+  function buildDeleteDocumentReqRes(uid: string, documentId: string, type = 'folder') {
     const req = {
       params: { uid, documentId },
-      query: { type: 'folder' },
+      query: { type },
       path: `/projects/${uid}/documents/${documentId}`,
     } as any;
     const res = { json: vi.fn(), status: vi.fn(() => res), send: vi.fn() } as any;
@@ -1356,6 +1361,25 @@ describe('ProjectController.deleteProjectDocument uid/documentId validation', ()
     expect(projectSvc.deleteProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, 'folder');
     expect(res.status).toHaveBeenCalledWith(204);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['file', 'link', 'folder'])('accepts type=%s', async (type) => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, PROJECT_UID, type);
+    projectSvc.deleteProjectDocument.mockResolvedValue(undefined);
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, type);
+    expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it('rejects an unknown type without calling the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, PROJECT_UID, 'meeting');
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
 });
 

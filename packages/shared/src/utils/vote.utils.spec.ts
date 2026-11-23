@@ -14,11 +14,13 @@ import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState, VoteVoterStatus } from '../enums';
 import type {
+  IndexedPollAnswer,
   MyVoteBallot,
   MyVoteResponse,
   PollAnswer,
   PollCommentResponse,
   PollCommentResult,
+  PollQuestion,
   PollQuestionResult,
   RankedQuestionView,
   UserChoice,
@@ -30,6 +32,7 @@ import type {
   VoterResultsState,
   VoteVoter,
 } from '../interfaces/poll.interface';
+import type { CommitteeMember } from '../interfaces/member.interface';
 import { getUserTimezone } from './date-time.utils';
 import {
   buildCreateVoteRequest,
@@ -44,10 +47,14 @@ import {
   buildVoteVoterChoiceFilterOptions,
   buildVoteVoterChoiceSummaries,
   buildVoteVoterRowView,
+  canChangeSubmittedBallot,
   canVoterFetchVoteResults,
+  buildVoteSummarySendNotice,
   compareVotesByRecency,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
+  countEligibleVoters,
   countVoteParticipationByStatus,
   countVoteVotersByStatus,
   getRecentCommentResponses,
@@ -56,6 +63,7 @@ import {
   isRankedPollType,
   isVoteAwaitingMyBallot,
   isVoteBallotReviewable,
+  isVoteChangeAllowed,
   isVoteClosingSoon,
   mapFiltersToEligibility,
   mapMyBallotToCastForm,
@@ -64,6 +72,9 @@ import {
   matchesMyVotesQuickFilter,
   matchesVoteVoterChoice,
   mergeCommentResults,
+  parseVoteMethodParam,
+  partitionVoteSummaryRecipients,
+  rankedAnswerChoices,
   resolveVoterResultsState,
   sortVoteVotersForDisplay,
   votePermalinkPath,
@@ -79,10 +90,12 @@ function formValue(overrides: Partial<VoteFormValue> = {}): VoteFormValue {
     description: 'Pick the next board members',
     committee: { uid: 'committee-uid', name: 'Board' },
     eligible_participants: 'voting_rep',
+    poll_type: PollType.GENERIC,
     close_date: new Date('2025-06-01T00:00:00Z'),
     close_time: '11:59 PM',
     timezone: 'UTC',
     allow_abstain: false,
+    allow_vote_change: true,
     questions: [{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }],
     commentPrompts: [],
     ...overrides,
@@ -191,6 +204,41 @@ describe('isVoteBallotReviewable (#4331)', () => {
   });
 });
 
+describe('isVoteChangeAllowed (#4723)', () => {
+  it.each([
+    ['allowed', { allow_vote_change: true }, true],
+    ['locked', { allow_vote_change: false }, false],
+    ['legacy (field absent)', {}, true],
+    ['no vote loaded yet', null, true],
+  ])('is %s → %s', (_label, vote, expected) => {
+    expect(isVoteChangeAllowed(vote)).toBe(expected);
+  });
+});
+
+describe('canChangeSubmittedBallot (#4723)', () => {
+  const base = { allowVoteChange: true, status: 'active', submitted: true, voterRemoved: false };
+
+  it.each([
+    ['ITX true wins over a locked vote', { ...base, allowVoteChange: false, canChangeVote: true }, true],
+    ['ITX false wins over an allowed active vote', { ...base, canChangeVote: false }, false],
+  ])('%s', (_label, input, expected) => {
+    expect(canChangeSubmittedBallot(input)).toBe(expected);
+  });
+
+  it.each([
+    ['allowed, active and submitted', base, true],
+    ['legacy vote without the setting', { ...base, allowVoteChange: undefined }, true],
+    ['status in another case', { ...base, status: 'ACTIVE' }, true],
+    ['locked vote', { ...base, allowVoteChange: false }, false],
+    ['ended vote', { ...base, status: 'ended' }, false],
+    ['missing status', { ...base, status: undefined }, false],
+    ['no submitted ballot', { ...base, submitted: false }, false],
+    ['removed voter', { ...base, voterRemoved: true }, false],
+  ])('falls back when ITX omits can_change_vote: %s', (_label, input, expected) => {
+    expect(canChangeSubmittedBallot(input)).toBe(expected);
+  });
+});
+
 // All four builders must always emit allow_abstain explicitly: ITX updatePoll rebuilds the
 // DynamoDB item via PutItem full-replace, so omitting the field would silently reset an
 // enabled flag to false on any edit.
@@ -212,6 +260,31 @@ for (const [name, build] of voteRequestBuilders) {
 
       expect(request.allow_abstain).toBe(false);
       expect('allow_abstain' in request).toBe(true);
+    });
+
+    it.each([true, false])('always emits allow_vote_change: %s (full-replace safe)', (allowVoteChange) => {
+      const request = build(formValue({ allow_vote_change: allowVoteChange }), 'project-uid');
+
+      expect(request.allow_vote_change).toBe(allowVoteChange);
+      expect('allow_vote_change' in request).toBe(true);
+    });
+
+    it.each([
+      ['plain text with indentation and blank lines', '\n  First paragraph\n\n\n    - indented  bullet\n1.  numbered\n'],
+      ['rich HTML', '<p>One</p>\n<ul><li>A<ul><li>B</li></ul></li></ul>'],
+    ])('preserves the description exactly for %s', (_label, description) => {
+      expect(build(formValue({ description }), 'project-uid').description).toBe(description);
+    });
+
+    it.each([[''], ['   \n  '], [undefined], [null]])('emits an empty description for %j', (description) => {
+      expect(build(formValue({ description: description as string }), 'project-uid').description).toBe('');
+    });
+
+    it('still trims the title but not the description', () => {
+      const request = build(formValue({ title: '  Title  ', description: '  keep  ' }), 'project-uid');
+
+      expect(request.name).toBe('Title');
+      expect(request.description).toBe('  keep  ');
     });
 
     // v2 requires end_time_timezone on every vote mutation — the builders must never omit it.
@@ -282,6 +355,129 @@ for (const [name, build] of draftVoteRequestBuilders) {
   });
 }
 
+// Voting method (#2921): ITX rejects any non-multiple_choice question on a ranked poll, on create and
+// update alike, and keeps the stored method whenever poll_type is absent on update.
+describe('voting method in the request builders (#2921)', () => {
+  const rankedForm = (overrides: Partial<VoteFormValue> = {}): VoteFormValue =>
+    formValue({
+      poll_type: PollType.CONDORCET_IRV,
+      questions: [
+        { question: 'Who should chair?', response_type: 'single', options: ['Alice', 'Bob', 'Carol'] },
+        { question: 'Which venue?', response_type: 'multiple', options: ['North', 'South'] },
+      ],
+      ...overrides,
+    });
+
+  it.each([
+    ['buildCreateVoteRequest', buildCreateVoteRequest],
+    ['buildDraftVoteRequest', buildDraftVoteRequest],
+  ] as const)('%s sends poll_type', (_name, build) => {
+    expect(build(rankedForm(), 'project-uid').poll_type).toBe(PollType.CONDORCET_IRV);
+    expect(build(formValue(), 'project-uid').poll_type).toBe(PollType.GENERIC);
+  });
+
+  it.each([
+    ['buildUpdateVoteRequest', buildUpdateVoteRequest],
+    ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
+  ] as const)('%s never sends poll_type, so the stored method is kept', (_name, build) => {
+    expect('poll_type' in build(rankedForm(), 'project-uid')).toBe(false);
+    expect('poll_type' in build(formValue(), 'project-uid')).toBe(false);
+  });
+
+  it.each(voteRequestBuilders)('%s sends every Condorcet IRV question as multiple_choice', (_name, build) => {
+    const request = build(rankedForm(), 'project-uid');
+
+    expect(request.poll_questions?.map((question) => question.type)).toEqual(['multiple_choice', 'multiple_choice']);
+  });
+
+  it.each(voteRequestBuilders)('%s keeps plurality response types unchanged', (_name, build) => {
+    const request = build(
+      formValue({
+        questions: [
+          { question: 'Single?', response_type: 'single', options: ['Yes', 'No'] },
+          { question: 'Multiple?', response_type: 'multiple', options: ['A', 'B'] },
+        ],
+      }),
+      'project-uid'
+    );
+
+    expect(request.poll_questions?.map((question) => question.type)).toEqual(['single_choice', 'multiple_choice']);
+  });
+
+  it.each([
+    ['buildDraftVoteRequest', buildDraftVoteRequest],
+    ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
+  ] as const)('%s pads a partial ranked question as multiple_choice', (_name, build) => {
+    const request = build(rankedForm({ questions: [{ question: '', response_type: 'single', options: ['Only one', ''] }] }), 'project-uid');
+
+    expect(request.poll_questions).toEqual([
+      { prompt: 'Untitled question', type: 'multiple_choice', choices: [{ choice_text: 'Only one' }, { choice_text: 'Option 1' }] },
+    ]);
+  });
+
+  it.each([
+    ['buildDraftVoteRequest', buildDraftVoteRequest],
+    ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
+  ] as const)('%s sends a multiple_choice placeholder for an empty ranked draft', (_name, build) => {
+    expect(build(rankedForm({ questions: [] }), 'project-uid').poll_questions).toEqual([
+      { prompt: 'Untitled question', type: 'multiple_choice', choices: [{ choice_text: 'Option 1' }, { choice_text: 'Option 2' }] },
+    ]);
+    expect(build(formValue({ questions: [] }), 'project-uid').poll_questions?.[0]?.type).toBe('single_choice');
+  });
+});
+
+describe('countEligibleVoters (#2921)', () => {
+  /** Typed builder, no cast: a new required `CommitteeMember` field fails the spec type-check here. */
+  const member = (status: CommitteeMemberVotingStatus | null): CommitteeMember => ({
+    uid: `member-${status}`,
+    committee_uid: 'committee-uid',
+    committee_name: 'Synthetic Group',
+    email: 'member@example.com',
+    first_name: 'Synthetic',
+    last_name: 'Member',
+    voting: status ? { status } : null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  });
+  const members = [
+    member(CommitteeMemberVotingStatus.VOTING_REP),
+    member(CommitteeMemberVotingStatus.VOTING_REP),
+    member(CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP),
+    member(CommitteeMemberVotingStatus.OBSERVER),
+    member(CommitteeMemberVotingStatus.EMERITUS),
+    member(CommitteeMemberVotingStatus.NONE),
+    member(null),
+  ];
+
+  it.each([
+    ['voting_rep', 2],
+    ['voting_rep,alternate_voting_rep', 3],
+    ['all', 5],
+  ])('counts members matching %s', (eligibility, expected) => {
+    expect(countEligibleVoters(members, eligibility, true)).toBe(expected);
+  });
+
+  it('counts every member when the group has voting disabled, matching ITX', () => {
+    expect(countEligibleVoters(members, 'voting_rep', false)).toBe(members.length);
+  });
+
+  it('returns 0 for an empty group', () => {
+    expect(countEligibleVoters([], 'all', true)).toBe(0);
+  });
+});
+
+describe('parseVoteMethodParam (#2921)', () => {
+  it.each([
+    ['generic', PollType.GENERIC],
+    ['condorcet_irv', PollType.GENERIC],
+    ['meek_stv', PollType.GENERIC],
+    ['bogus', PollType.GENERIC],
+    [null, PollType.GENERIC],
+  ])('%s -> %s', (value, expected) => {
+    expect(parseVoteMethodParam(value)).toBe(expected);
+  });
+});
+
 describe('mapVoteToFormValue', () => {
   /** Minimal Vote fixture — the mapper only reads the fields set here. */
   function vote(overrides: Partial<Vote> = {}): Vote {
@@ -299,12 +495,49 @@ describe('mapVoteToFormValue', () => {
     expect(mapVoteToFormValue(vote({ allow_abstain: true })).allow_abstain).toBe(true);
   });
 
+  it('hydrates poll_type, defaulting to plurality when the vote has none (#2921)', () => {
+    expect(mapVoteToFormValue(vote({ poll_type: PollType.CONDORCET_IRV })).poll_type).toBe(PollType.CONDORCET_IRV);
+    expect(mapVoteToFormValue(vote({ poll_type: undefined })).poll_type).toBe(PollType.GENERIC);
+  });
+
+  it("drops a ranked draft's multiple_choice placeholder on re-open (#2921)", () => {
+    const placeholder: PollQuestion = {
+      question_id: 'q1',
+      prompt: 'Untitled question',
+      type: 'multiple_choice',
+      choices: [
+        { choice_id: 'c1', choice_text: 'Option 1' },
+        { choice_id: 'c2', choice_text: 'Option 2' },
+      ],
+    };
+
+    expect(mapVoteToFormValue(vote({ poll_type: PollType.CONDORCET_IRV, poll_questions: [placeholder] })).questions).toEqual([]);
+    expect(mapVoteToFormValue(vote({ poll_type: PollType.GENERIC, poll_questions: [placeholder] })).questions).toHaveLength(1);
+  });
+
   it('maps allow_abstain: false explicitly', () => {
     expect(mapVoteToFormValue(vote({ allow_abstain: false })).allow_abstain).toBe(false);
   });
 
   it('defaults allow_abstain to false when the vote predates the field', () => {
     expect(mapVoteToFormValue(vote()).allow_abstain).toBe(false);
+  });
+
+  it('maps allow_vote_change: false explicitly', () => {
+    expect(mapVoteToFormValue(vote({ allow_vote_change: false })).allow_vote_change).toBe(false);
+  });
+
+  it('defaults allow_vote_change to true when the vote predates the field', () => {
+    expect(mapVoteToFormValue(vote()).allow_vote_change).toBe(true);
+  });
+
+  it.each([
+    ['form', mapVoteToFormValue],
+    ['clone form', mapVoteToCloneFormValue],
+  ])('keeps the stored description untouched in the %s value', (_label, map) => {
+    const description = '  Indented\n\n\n<p>Rich</p>  ';
+
+    expect(map(vote({ description })).description).toBe(description);
   });
 
   it('hydrates close time and zone from end_time in the stored timezone', () => {
@@ -371,6 +604,21 @@ describe('mapVoteToCloneFormValue', () => {
   it('prefixes the title with "Copy of "', () => {
     const form = mapVoteToCloneFormValue(vote({ name: 'Board election' }), NOW);
     expect(form.title).toBe('Copy of Board election');
+  });
+
+  it.each(['2025-06-01T00:00:00Z', '2025-04-01T00:00:00Z'])(
+    'maps a majority clone to plurality for deadline %s without changing the source method',
+    (endTime) => {
+      const source = vote({ poll_type: PollType.MAJORITY, end_time: endTime });
+
+      expect(mapVoteToCloneFormValue(source, NOW).poll_type).toBe(PollType.GENERIC);
+      expect(mapVoteToFormValue(source).poll_type).toBe(PollType.MAJORITY);
+      expect(source.poll_type).toBe(PollType.MAJORITY);
+    }
+  );
+
+  it('carries the source vote allow_vote_change: false into the clone', () => {
+    expect(mapVoteToCloneFormValue(vote({ allow_vote_change: false }), NOW).allow_vote_change).toBe(false);
   });
 
   it('does not double-prefix when cloning an already-cloned vote', () => {
@@ -601,6 +849,45 @@ describe('buildVoteResultsQuestions', () => {
     expect(question.options[0].text).toBe('c9');
   });
 
+  it.each([undefined, null])('keeps absent or empty tallies empty when choices is %s', (choices) => {
+    for (const tallies of [undefined, []]) {
+      const pollResult = genericQuestion([]);
+      // Simulate an upstream payload that omits required choice metadata.
+      Object.assign(pollResult.question, { choices });
+      pollResult.generic_choice_votes = tallies;
+
+      const [question] = buildVoteResultsQuestions(resultsWith([pollResult]), false);
+
+      expect(question.options).toEqual([]);
+      expect(question.totalVotes).toBe(0);
+    }
+  });
+
+  it.each([undefined, null])('preserves tally order and uses id labels when choices is %s', (choices) => {
+    const pollResult = genericQuestion([
+      ['c2', 1, 25],
+      ['c1', 3, 75],
+    ]);
+    Object.assign(pollResult.question, { choices });
+
+    const [question] = buildVoteResultsQuestions(resultsWith([pollResult]), false);
+
+    expect(question.options.map((o) => [o.choiceId, o.text, o.voteCount, o.percentage, o.isLeading])).toEqual([
+      ['c2', 'c2', 1, 25, false],
+      ['c1', 'c1', 3, 75, true],
+    ]);
+    expect(question.totalVotes).toBe(4);
+  });
+
+  it('falls back to the choice id when the configured label is empty', () => {
+    const pollResult = genericQuestion([['c1', 1, 100]]);
+    pollResult.question.choices[0].choice_text = '';
+
+    const [question] = buildVoteResultsQuestions(resultsWith([pollResult]), false);
+
+    expect(question.options[0].text).toBe('c1');
+  });
+
   it('marks the leading option while live, without winner or tie markers', () => {
     const [question] = buildVoteResultsQuestions(
       resultsWith([
@@ -660,6 +947,270 @@ describe('buildVoteResultsQuestions', () => {
       true
     );
     expect(question.options.every((o) => !o.isWinner && !o.isTied && !o.isLeading)).toBe(true);
+  });
+
+  describe('configured choice order (#5021)', () => {
+    /** Generic question whose configured `choices` ([id, text]) and tally rows ([id, voteCount, apiPercentage]) are ordered independently. */
+    function orderedQuestion(questionId: string, choices: [string, string][], tallies: [string, number, number][] | undefined): PollQuestionResult {
+      return {
+        question: {
+          question_id: questionId,
+          prompt: `Prompt ${questionId}`,
+          type: 'single_choice',
+          choices: choices.map(([choiceId, text]) => ({ choice_id: choiceId, choice_text: text })),
+        },
+        generic_choice_votes: tallies?.map(([choiceId, voteCount, percentage]) => ({ choice_id: choiceId, vote_count: voteCount, percentage })),
+        ranked_choice_votes: [],
+      };
+    }
+
+    const yesNo: [string, string][] = [
+      ['c-yes', 'Yes'],
+      ['c-no', 'No'],
+    ];
+    // Configured order (Zeta, Alpha, Mid) differs from both label order (Alpha, Mid, Zeta) and count order (Alpha, Mid, Zeta).
+    const threeChoices: [string, string][] = [
+      ['c-zeta', 'Zeta'],
+      ['c-alpha', 'Alpha'],
+      ['c-mid', 'Mid'],
+    ];
+    const threeTallies: [string, number, number][] = [
+      ['c-alpha', 5, 56],
+      ['c-zeta', 1, 11],
+      ['c-mid', 3, 33],
+    ];
+    const rows = (question: VoteResultsQuestion) => question.options.map((o) => [o.choiceId, o.text, o.voteCount, o.percentage, o.isLeading]);
+
+    it('keeps the reported Yes / No order when the tally rows arrive reversed', () => {
+      const ballotOrder = buildVoteResultsQuestions(
+        resultsWith(
+          [
+            orderedQuestion('q1', yesNo, [
+              ['c-yes', 88, 87],
+              ['c-no', 7, 7],
+            ]),
+          ],
+          { num_votes_cast: 101, num_abstained: 6 }
+        ),
+        false
+      );
+      const reversed = buildVoteResultsQuestions(
+        resultsWith(
+          [
+            orderedQuestion('q1', yesNo, [
+              ['c-no', 7, 7],
+              ['c-yes', 88, 87],
+            ]),
+          ],
+          { num_votes_cast: 101, num_abstained: 6 }
+        ),
+        false
+      );
+
+      expect(rows(reversed[0])).toEqual([
+        ['c-yes', 'Yes', 88, 87, true],
+        ['c-no', 'No', 7, 7, false],
+      ]);
+      expect(reversed).toEqual(ballotOrder);
+    });
+
+    it('orders options by ballot position, not by count or label, for every tally permutation', () => {
+      const permutations: [string, number, number][][] = [
+        [threeTallies[0], threeTallies[1], threeTallies[2]],
+        [threeTallies[0], threeTallies[2], threeTallies[1]],
+        [threeTallies[1], threeTallies[0], threeTallies[2]],
+        [threeTallies[1], threeTallies[2], threeTallies[0]],
+        [threeTallies[2], threeTallies[0], threeTallies[1]],
+        [threeTallies[2], threeTallies[1], threeTallies[0]],
+      ];
+
+      for (const tallies of permutations) {
+        const [question] = buildVoteResultsQuestions(resultsWith([orderedQuestion('q1', threeChoices, tallies)], { num_votes_cast: 9 }), false);
+        expect(rows(question)).toEqual([
+          ['c-zeta', 'Zeta', 1, 11, false],
+          ['c-alpha', 'Alpha', 5, 56, true],
+          ['c-mid', 'Mid', 3, 33, false],
+        ]);
+        expect(question.totalVotes).toBe(9);
+      }
+    });
+
+    it('keeps a row in place when its count changes between refreshes', () => {
+      const [before] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', yesNo, [
+            ['c-no', 7, 7],
+            ['c-yes', 88, 87],
+          ]),
+        ]),
+        false
+      );
+      const [after] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', yesNo, [
+            ['c-no', 60, 55],
+            ['c-yes', 49, 45],
+          ]),
+        ]),
+        false
+      );
+
+      expect(before.options.map((o) => o.choiceId)).toEqual(['c-yes', 'c-no']);
+      expect(rows(after)).toEqual([
+        ['c-yes', 'Yes', 49, 45, false],
+        ['c-no', 'No', 60, 55, true],
+      ]);
+    });
+
+    it('orders each question by its own configured choices and keeps API question order', () => {
+      const questions = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q-b', threeChoices, [...threeTallies].reverse()),
+          orderedQuestion('q-a', [...yesNo].reverse(), [
+            ['c-yes', 2, 67],
+            ['c-no', 1, 33],
+          ]),
+        ]),
+        false
+      );
+
+      expect(questions.map((q) => q.questionId)).toEqual(['q-b', 'q-a']);
+      expect(questions[0].options.map((o) => o.choiceId)).toEqual(['c-zeta', 'c-alpha', 'c-mid']);
+      expect(questions[1].options.map((o) => o.choiceId)).toEqual(['c-no', 'c-yes']);
+    });
+
+    it('keeps winner, tie and zero-state flags attached to the right options after reordering', () => {
+      const [winner] = buildVoteResultsQuestions(resultsWith([orderedQuestion('q1', threeChoices, threeTallies)]), true);
+      expect(winner.options.map((o) => [o.choiceId, o.isWinner, o.isTied, o.isLeading])).toEqual([
+        ['c-zeta', false, false, false],
+        ['c-alpha', true, false, true],
+        ['c-mid', false, false, false],
+      ]);
+
+      const [tied] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', threeChoices, [
+            ['c-mid', 4, 40],
+            ['c-alpha', 2, 20],
+            ['c-zeta', 4, 40],
+          ]),
+        ]),
+        true
+      );
+      expect(tied.options.map((o) => [o.choiceId, o.isWinner, o.isTied])).toEqual([
+        ['c-zeta', false, true],
+        ['c-alpha', false, false],
+        ['c-mid', false, true],
+      ]);
+
+      const [zero] = buildVoteResultsQuestions(
+        resultsWith(
+          [
+            orderedQuestion('q1', yesNo, [
+              ['c-no', 0, 0],
+              ['c-yes', 0, 0],
+            ]),
+          ],
+          { num_votes_cast: 0 }
+        ),
+        true
+      );
+      expect(zero.options.map((o) => o.choiceId)).toEqual(['c-yes', 'c-no']);
+      expect(zero.options.every((o) => !o.isWinner && !o.isTied && !o.isLeading)).toBe(true);
+    });
+
+    it('lists unknown choice ids after configured ones, in their payload order, with the id as the label', () => {
+      const [question] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', yesNo, [
+            ['c-other-2', 1, 10],
+            ['c-no', 2, 20],
+            ['c-other-1', 3, 30],
+            ['c-yes', 4, 40],
+          ]),
+        ]),
+        false
+      );
+
+      expect(question.options.map((o) => [o.choiceId, o.text, o.voteCount])).toEqual([
+        ['c-yes', 'Yes', 4],
+        ['c-no', 'No', 2],
+        ['c-other-2', 'c-other-2', 1],
+        ['c-other-1', 'c-other-1', 3],
+      ]);
+    });
+
+    it('keeps payload order when the question has no configured choices', () => {
+      const [question] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion(
+            'q1',
+            [],
+            [
+              ['c-b', 1, 50],
+              ['c-a', 1, 50],
+            ]
+          ),
+        ]),
+        false
+      );
+      expect(question.options.map((o) => [o.choiceId, o.text])).toEqual([
+        ['c-b', 'c-b'],
+        ['c-a', 'c-a'],
+      ]);
+    });
+
+    it('projects only the supplied tally rows: omitted and empty stay empty, partial rows gain no zeros, explicit zeros stay', () => {
+      expect(buildVoteResultsQuestions(resultsWith([orderedQuestion('q1', threeChoices, undefined)]), false)[0].options).toEqual([]);
+      expect(buildVoteResultsQuestions(resultsWith([orderedQuestion('q1', threeChoices, [])]), false)[0].options).toEqual([]);
+
+      const [partial] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', threeChoices, [
+            ['c-mid', 2, 100],
+            ['c-zeta', 0, 0],
+          ]),
+        ]),
+        false
+      );
+      expect(partial.options.map((o) => [o.choiceId, o.voteCount])).toEqual([
+        ['c-zeta', 0],
+        ['c-mid', 2],
+      ]);
+    });
+
+    it('does not mutate the results payload', () => {
+      const deepFreeze = <T>(value: T): T => {
+        if (value && typeof value === 'object') {
+          Object.values(value).forEach(deepFreeze);
+          Object.freeze(value);
+        }
+        return value;
+      };
+      const payload = resultsWith([orderedQuestion('q1', threeChoices, threeTallies)]);
+      const snapshot = structuredClone(payload);
+      deepFreeze(payload);
+
+      const first = buildVoteResultsQuestions(payload, false);
+      const second = buildVoteResultsQuestions(payload, false);
+
+      expect(payload).toEqual(snapshot);
+      expect(payload.poll_results[0].generic_choice_votes?.map((cv) => cv.choice_id)).toEqual(['c-alpha', 'c-zeta', 'c-mid']);
+      expect(second).toEqual(first);
+    });
+
+    it('names tied generic choices in configured order in the results summary', () => {
+      const questions = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', yesNo, [
+            ['c-no', 5, 50],
+            ['c-yes', 5, 50],
+          ]),
+        ]),
+        false
+      );
+      expect(buildVoteResultsSummary(questions, [], true, false)[0].text).toBe('Tied: Yes and No (50% each)');
+    });
   });
 });
 
@@ -1942,5 +2493,196 @@ describe('buildVoteAnswerSummary', () => {
 
   it('returns no lines for an abstention', () => {
     expect(buildVoteAnswerSummary(questions, { abstain: true })).toEqual([]);
+  });
+});
+
+describe('buildVoteSummarySendNotice', () => {
+  const counts = { recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0, recipients: [] };
+
+  it('reports a plain success only when every invited voter was sent', () => {
+    expect(buildVoteSummarySendNotice({ ...counts, recipient_count: 3 })).toEqual({
+      severity: 'success',
+      summary: 'Summary sent',
+      detail: 'Summary sent to 3 voter(s).',
+    });
+  });
+
+  it('warns about a partial send and names the skipped voters', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, recipient_count: 2, skipped_count: 1 });
+    expect(notice.severity).toBe('warn');
+    expect(notice.summary).toBe('Summary partially sent');
+    expect(notice.detail).toContain('Sent to 2 voter(s)');
+    expect(notice.detail).toContain('1 skipped (no email address)');
+    expect(notice.life).toBe(8000);
+  });
+
+  it('warns about a partial send and names the failed voters', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, recipient_count: 2, failed_count: 1 });
+    expect(notice.severity).toBe('warn');
+    expect(notice.summary).toBe('Summary partially sent');
+    expect(notice.detail).toContain('1 failed');
+    expect(notice.detail).not.toContain('skipped');
+  });
+
+  it('lists sent, skipped and failed together', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, recipient_count: 4, skipped_count: 2, failed_count: 1 });
+    expect(notice.detail).toContain('Sent to 4 voter(s)');
+    expect(notice.detail).toContain('2 skipped');
+    expect(notice.detail).toContain('1 failed');
+  });
+
+  it('warns that retrying may duplicate when any outcome is uncertain, alone or mixed with others', () => {
+    const alone = buildVoteSummarySendNotice({ ...counts, uncertain_count: 3 });
+    expect(alone.severity).toBe('warn');
+    expect(alone.summary).toBe('Summary delivery unconfirmed');
+    expect(alone.detail).toContain('3 unconfirmed');
+    expect(alone.detail).toContain('retrying may send duplicate summaries');
+    expect(alone.life).toBe(8000);
+
+    const mixed = buildVoteSummarySendNotice({ ...counts, recipient_count: 2, failed_count: 1, skipped_count: 1, uncertain_count: 2 });
+    expect(mixed.summary).toBe('Summary delivery unconfirmed');
+    expect(mixed.detail).toContain('Sent to 2 voter(s)');
+    expect(mixed.detail).toContain('1 skipped');
+    expect(mixed.detail).toContain('1 failed');
+    expect(mixed.detail).toContain('2 unconfirmed');
+    expect(mixed.detail).toContain('retrying may send duplicate summaries');
+  });
+
+  it('reports that nothing was sent when nobody has an email address', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, skipped_count: 4 });
+    expect(notice.severity).toBe('info');
+    expect(notice.summary).toBe('No summaries sent');
+    expect(notice.detail).toContain('4 invited voter(s) have no email address');
+  });
+
+  it('reports that nothing was sent when there are no invited voters', () => {
+    const notice = buildVoteSummarySendNotice(counts);
+    expect(notice.severity).toBe('info');
+    expect(notice.summary).toBe('No summaries sent');
+    expect(notice.detail).toContain('no invited voters have an email address');
+  });
+
+  it('describes total failures in voters rather than email send attempts', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, failed_count: 2, skipped_count: 1 });
+    expect(notice.summary).toBe('No summaries sent');
+    expect(notice.detail).toContain('2 voter(s) not sent');
+    expect(notice.detail).toContain('1 invited voter(s) have no email address');
+    expect(notice.detail).not.toContain('send(s) failed');
+  });
+});
+
+describe('partitionVoteSummaryRecipients (#4830)', () => {
+  it('splits voters with and without an email address, preserving input order', () => {
+    const result = partitionVoteSummaryRecipients([
+      { uid: 'r-1', user_name: 'Ada', user_email: 'ada@example.test' },
+      { uid: 'r-2', user_name: 'Ben' },
+      { uid: 'r-3', user_name: 'Cy', user_email: 'cy@example.test' },
+      { uid: 'r-4', user_name: 'Dee', user_email: '' },
+    ]);
+
+    expect(result.ready.map(({ uid }) => uid)).toEqual(['r-1', 'r-3']);
+    expect(result.missingEmail.map(({ uid }) => uid)).toEqual(['r-2', 'r-4']);
+    expect(result.uniqueEmailRecipients.map(({ uid }) => uid)).toEqual(['r-1', 'r-3']);
+    expect(result.sharedEmailVoterCount).toBe(0);
+  });
+
+  it('keeps the first voter per case-insensitive address and counts every voter sharing one', () => {
+    const result = partitionVoteSummaryRecipients([
+      { uid: 'r-1', user_email: 'Shared@Example.test' },
+      { uid: 'r-2', user_email: 'solo@example.test' },
+      { uid: 'r-3', user_email: 'shared@example.test' },
+      { uid: 'r-4' },
+    ]);
+
+    expect(result.ready).toHaveLength(3);
+    expect(result.uniqueEmailRecipients.map(({ uid }) => uid)).toEqual(['r-1', 'r-2']);
+    expect(result.sharedEmailVoterCount).toBe(2);
+    expect(result.missingEmail.map(({ uid }) => uid)).toEqual(['r-4']);
+  });
+
+  it('returns empty groups for no recipients', () => {
+    expect(partitionVoteSummaryRecipients([])).toEqual({ ready: [], missingEmail: [], uniqueEmailRecipients: [], sharedEmailVoterCount: 0 });
+  });
+});
+
+describe('computeParticipationSegments', () => {
+  const stats = (eligibleVoters: number, totalResponses: number) => ({
+    eligibleVoters,
+    totalResponses,
+    participationRate: 0,
+    abstainedVoters: 0,
+    abstainedRate: 0,
+  });
+
+  it('puts every response in the voted segment when nobody abstained', () => {
+    expect(computeParticipationSegments(stats(10, 4), 0)).toEqual({ voted: 40, abstained: 0 });
+  });
+
+  it('separates abstentions from substantive ballots', () => {
+    expect(computeParticipationSegments(stats(10, 5), 2)).toEqual({ voted: 30, abstained: 20 });
+  });
+
+  it('returns zeros when there are no eligible voters', () => {
+    expect(computeParticipationSegments(stats(0, 0), 0)).toEqual({ voted: 0, abstained: 0 });
+  });
+
+  it('caps combined participation when overcounted responses include abstentions', () => {
+    expect(computeParticipationSegments(stats(5, 9), 2)).toEqual({ voted: 60, abstained: 40 });
+  });
+
+  it('clamps inconsistent counts into 0-100', () => {
+    expect(computeParticipationSegments(stats(5, 9), 0)).toEqual({ voted: 100, abstained: 0 });
+    expect(computeParticipationSegments(stats(5, 2), 7)).toEqual({ voted: 0, abstained: 40 });
+    expect(computeParticipationSegments(stats(5, 2), -3)).toEqual({ voted: 40, abstained: 0 });
+  });
+});
+
+describe('rankedAnswerChoices', () => {
+  it('prefers nonempty ranked choices and sorts without mutating their recorded array', () => {
+    const ranked: UserChoice[] = [
+      { choice_id: 'c-b', choice_text: 'Second', choice_rank: 2 },
+      { choice_id: 'c-a', choice_text: 'First', choice_rank: 1 },
+    ];
+    const answer: PollAnswer = {
+      question_id: 'q1',
+      prompt: 'Rank candidates',
+      type: 'multiple_choice',
+      ranked_user_choice: ranked,
+      user_choice: [{ choice_id: 'c-other', choice_text: 'Unused fallback' }],
+    };
+
+    expect(rankedAnswerChoices(answer).map((choice) => choice.choice_id)).toEqual(['c-a', 'c-b']);
+    expect(ranked.map((choice) => choice.choice_id)).toEqual(['c-b', 'c-a']);
+  });
+
+  it.each([[], undefined])('falls back to user_choice when ranked_user_choice is %s', (rankedUserChoice) => {
+    const answer: IndexedPollAnswer = {
+      question_id: 'q1',
+      prompt: 'Rank candidates',
+      type: 'multiple_choice',
+      ranked_user_choice: rankedUserChoice,
+      user_choice: [
+        { choice_id: 'c-b', choice_text: 'Second', choice_rank: 2 },
+        { choice_id: 'c-a', choice_text: 'First', choice_rank: 1 },
+      ],
+    };
+
+    expect(rankedAnswerChoices(answer).map((choice) => choice.choice_id)).toEqual(['c-a', 'c-b']);
+    expect(answer.user_choice?.map((choice) => choice.choice_id)).toEqual(['c-b', 'c-a']);
+  });
+
+  it('preserves array order when saved preferences omit ranks', () => {
+    const choices: UserChoice[] = [
+      { choice_id: 'c-b', choice_text: 'First' },
+      { choice_id: 'c-a', choice_text: 'Second' },
+    ];
+    const answer: IndexedPollAnswer = { question_id: 'q1', prompt: 'Rank candidates', type: 'multiple_choice', user_choice: choices };
+
+    expect(rankedAnswerChoices(answer)).toEqual(choices);
+    expect(rankedAnswerChoices(answer)).not.toBe(choices);
+  });
+
+  it('returns no preferences when neither answer array is populated', () => {
+    expect(rankedAnswerChoices({ question_id: 'q1', prompt: 'Rank candidates', type: 'multiple_choice' })).toEqual([]);
   });
 });

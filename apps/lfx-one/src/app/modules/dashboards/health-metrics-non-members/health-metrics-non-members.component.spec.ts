@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, signal } from '@angular/core';
+import { Component, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject } from 'rxjs';
@@ -19,7 +19,7 @@ import { HealthMetricsNonMembersComponent } from './health-metrics-non-members.c
 /** Stands in for Company participation, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-non-members-orgs', template: '<div data-testid="non-members-orgs-stub"></div>' })
 class OrgsStubComponent {
-  public readonly countChange = output<number | null>();
+  public readonly filter = model<string>('all');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -27,12 +27,11 @@ class OrgsStubComponent {
 /** Stands in for Engaged people, whose read its own spec covers. */
 @Component({ selector: 'lfx-non-members-people', template: '<div data-testid="non-members-people-stub"></div>' })
 class PeopleStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
-/** Stands in for Conversion opportunity, whose read its own spec covers; it reports no count. */
+/** Stands in for Conversion opportunity, whose read its own spec covers. */
 @Component({ selector: 'lfx-non-members-conversion', template: '<div data-testid="non-members-conversion-stub"></div>' })
 class ConversionStubComponent {
   public readonly settled = output<boolean | null>();
@@ -45,13 +44,19 @@ describe('HealthMetricsNonMembersComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   let fixture: ComponentFixture<HealthMetricsNonMembersComponent>;
 
-  async function setup(initialFragment: string | null = null): Promise<void> {
+  async function setup(initialFragment: string | null = null, queryParams: Record<string, string> = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsNonMembersComponent],
       providers: [
         HealthMetricsChromeService,
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            fragment: new BehaviorSubject<string | null>(initialFragment).asObservable(),
+            snapshot: { queryParamMap: convertToParamMap(queryParams) },
+          },
+        },
       ],
     })
       .overrideComponent(HealthMetricsNonMembersComponent, {
@@ -97,14 +102,31 @@ describe('HealthMetricsNonMembersComponent', () => {
     });
   });
 
-  it('lists every section in the sub-nav, with no badge and the Engagement note', async () => {
+  it('lists every section in the sub-nav, with no note', async () => {
     await setup();
     const nav = fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav"]');
 
     for (const section of HEALTH_METRICS_NON_MEMBERS_SECTIONS) {
       expect(fixture.nativeElement.querySelector(`[data-testid="non-members-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
-    expect(nav.textContent).not.toMatch(/\d/);
+    expect(nav.querySelector('[role="tooltip"]')).toBeNull();
+  });
+
+  it("puts Company participation's All / Attends meetings / High fit switch in its card header and hands the pick to the section", async () => {
+    await setup(null, { nonFit: 'meetings' });
+    const controls = fixture.nativeElement.querySelector('[data-testid="non-members-controls-orgs"]') as HTMLElement;
+    const labels = [...controls.querySelectorAll('[data-testid^="non-members-orgs-filter-"]')].map((option) => option.textContent?.trim());
+
+    expect(labels).toEqual(['All', 'Attends meetings', 'High fit']);
+    expect(stub(OrgsStubComponent).filter()).toBe('meetings');
+
+    fixture.componentInstance['onOrgsFilterChange']('high-fit');
+    fixture.detectChanges();
+    expect(stub(OrgsStubComponent).filter()).toBe('high-fit');
+
+    fixture.componentInstance['onOrgsFilterChange']('medium-fit');
+    fixture.detectChanges();
+    expect(stub(OrgsStubComponent).filter()).toBe('all');
   });
 
   it('re-lands a held deep link once every data section settles, then releases it', async () => {
@@ -125,41 +147,5 @@ describe('HealthMetricsNonMembersComponent', () => {
     stub(ConversionStubComponent).settled.emit(false);
     await flush();
     expect(scrollIntoView).not.toHaveBeenCalled();
-  });
-
-  it('badges Company participation with the organization count once it reports one', async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-orgs"]').textContent;
-
-    stub(OrgsStubComponent).countChange.emit(412);
-    await flush();
-    expect(item()).toContain('412');
-
-    stub(OrgsStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
-  });
-
-  it('badges Engaged people with the individuals count once it reports one', async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-people"]').textContent;
-
-    stub(PeopleStubComponent).countChange.emit(388);
-    await flush();
-    expect(item()).toContain('388');
-
-    stub(PeopleStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
-  });
-
-  it('never badges Conversion opportunity, even once the other sections report counts', async () => {
-    await setup();
-
-    stub(OrgsStubComponent).countChange.emit(412);
-    stub(PeopleStubComponent).countChange.emit(388);
-    stub(ConversionStubComponent).settled.emit(false);
-    await flush();
-    expect(fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-conversion"]').textContent).not.toMatch(/\d/);
   });
 });

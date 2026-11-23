@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="events-revenue">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="events-revenue">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -13,139 +13,68 @@
   } @else if (loading()) {
     <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="events-revenue-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    <span class="self-end text-[12px] text-gray-400" data-testid="events-revenue-pending">{{ pendingNote }}</span>
+    <lfx-health-metrics-metrics-row [items]="view().metrics" testId="events-revenue-metrics" />
 
-    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-revenue-hero">
-      <div class="flex flex-col gap-2" data-testid="events-revenue-headline">
-        <div class="flex items-baseline gap-2">
-          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-revenue-headline-value">{{
-            view().headline.value
-          }}</span>
-          @if (view().headlineUnconverted) {
-            <span class="text-amber-600" aria-hidden="true" data-testid="events-revenue-headline-unconverted">*</span>
-            <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
-          }
-          @if (view().headline.delta !== null) {
-            <span
-              class="text-[13px] font-medium tabular-nums"
-              [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
-              [class.text-red-600]="view().headline.deltaDirection === 'down'"
-              [class.text-gray-400]="view().headline.deltaDirection === 'neutral'"
-              data-testid="events-revenue-headline-delta">
-              {{ view().headline.delta }}
-            </span>
-          }
-        </div>
-        <span class="text-[12px] text-gray-500">{{ view().headline.label }}</span>
-      </div>
+    <h3 class="m-0 mt-[4px] text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500" data-testid="events-revenue-by-event-heading">
+      Revenue by event
+    </h3>
+    @if (!view().eventsMeasured) {
+      <p class="m-0 text-[13px] text-gray-500" data-testid="events-revenue-events-unmeasured">Per-event revenue is not available for this foundation yet.</p>
+    } @else if (view().rows.length === 0) {
+      <p class="m-0 text-[13px] text-gray-500" data-testid="events-revenue-empty">No events to list for the selected period.</p>
+    } @else {
+      <!-- Upcoming events soonest first (current year only), then past events latest first; the design's 660px minimum. -->
+      <lfx-table
+        styleClass="hm-table"
+        [rowHover]="false"
+        [value]="pageRows()"
+        [paginator]="false"
+        [tableStyle]="{ 'min-width': '660px' }"
+        data-testid="events-revenue-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col" [attr.aria-sort]="sorting.headers().event.ariaSort">
+              <lfx-health-metrics-th
+                label="Event"
+                [sort]="sorting.headers().event.state"
+                (sorted)="sorting.toggle('event')"
+                data-testid="events-revenue-sort-event" />
+            </th>
+            <th scope="col" [attr.aria-sort]="sorting.headers().registration.ariaSort">
+              <lfx-health-metrics-th
+                label="Registration revenue"
+                [sort]="sorting.headers().registration.state"
+                (sorted)="sorting.toggle('registration')"
+                data-testid="events-revenue-sort-registration" />
+            </th>
+            <th scope="col" [attr.aria-sort]="sorting.headers().sponsorship.ariaSort">
+              <lfx-health-metrics-th
+                label="Sponsorship revenue"
+                [sort]="sorting.headers().sponsorship.state"
+                (sorted)="sorting.toggle('sponsorship')"
+                data-testid="events-revenue-sort-sponsorship" />
+            </th>
+          </tr>
+        </ng-template>
 
-      <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-revenue-side">
-        @for (stat of view().side; track stat.key) {
-          <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-revenue-side-' + stat.key">
-            <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
-            <dd class="flex items-baseline gap-1.5 text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900">
-              <span [attr.data-testid]="'events-revenue-side-' + stat.key + '-value'">{{ stat.value }}</span>
-              @if (stat.key === 'registration' && view().headlineUnconverted) {
-                <span class="text-amber-600" aria-hidden="true" data-testid="events-revenue-side-registration-unconverted">*</span>
-                <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
-              }
-              @if (stat.delta !== null) {
-                <span
-                  class="text-[12px] font-medium"
-                  [class.text-emerald-600]="stat.deltaDirection === 'up'"
-                  [class.text-red-600]="stat.deltaDirection === 'down'"
-                  [class.text-gray-400]="stat.deltaDirection === 'neutral'"
-                  [attr.data-testid]="'events-revenue-side-' + stat.key + '-delta'">
-                  {{ stat.delta }}
-                </span>
-              }
-            </dd>
-          </div>
-        }
-      </dl>
-    </div>
-
-    <div class="flex flex-col gap-2" data-testid="events-revenue-by-event">
-      <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 data-testid="events-revenue-by-event-heading" class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Revenue by event</h4>
-        <span class="text-[12px] text-gray-400" data-testid="events-revenue-by-event-note">against goal where one is set</span>
-      </div>
-
-      @if (!view().eventsMeasured) {
-        <p class="text-[13px] text-gray-500" data-testid="events-revenue-events-unmeasured">Per-event revenue is not available for this foundation yet.</p>
-      } @else if (view().rows.length === 0) {
-        <p class="text-[13px] text-gray-500" data-testid="events-revenue-empty">No events to list for the selected period.</p>
-      } @else {
-        <!-- One table: upcoming events soonest first (current year only), then past events latest first. -->
-        <lfx-table styleClass="hm-table" [rowHover]="false" [value]="view().rows" data-testid="events-revenue-table">
-          <ng-template #header>
-            <tr>
-              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Event</span></th>
-              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Date</span></th>
-              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Registration revenue</span></th>
-              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Sponsorship revenue</span></th>
-            </tr>
-          </ng-template>
-
-          <ng-template #body let-view>
-            <tr [attr.data-testid]="'events-revenue-row-' + view.event.eventId">
-              <td>
-                <span class="text-[13px] font-medium text-gray-900">{{ view.event.eventName }}</span>
-              </td>
-              <td>
-                <span class="text-[13px] tabular-nums text-gray-900">{{ view.dateLabel }}</span>
-              </td>
-              <td>
-                <!-- The design's goal cell: the value in bold, then a small grey "/ goal", or "no goal set" under it. -->
-                <div class="flex flex-col" [attr.data-testid]="'events-revenue-registration-' + view.event.eventId">
-                  <span class="text-[13px] tabular-nums">
-                    <b class="font-semibold text-gray-900" [attr.data-testid]="'events-revenue-registration-value-' + view.event.eventId">{{
-                      view.registrationLabel
-                    }}</b>
-                    @if (view.event.hasUnconverted) {
-                      <!-- The footer note explains the marker; screen readers get the same text inline. -->
-                      <span class="text-amber-600" aria-hidden="true" [attr.data-testid]="'events-revenue-unconverted-' + view.event.eventId">*</span>
-                      <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
-                    }
-                    @if (view.registrationGoalLabel) {
-                      <span class="text-[12px] text-gray-400" [attr.data-testid]="'events-revenue-registration-goal-' + view.event.eventId">
-                        / {{ view.registrationGoalLabel }}</span
-                      >
-                    }
-                  </span>
-                  @if (!view.registrationGoalLabel) {
-                    <span class="text-[12px] text-gray-400" [attr.data-testid]="'events-revenue-registration-no-goal-' + view.event.eventId">no goal set</span>
-                  }
-                </div>
-              </td>
-              <td>
-                <div class="flex flex-col" [attr.data-testid]="'events-revenue-sponsorship-' + view.event.eventId">
-                  <span class="text-[13px] tabular-nums">
-                    <b class="font-semibold text-gray-900" [attr.data-testid]="'events-revenue-sponsorship-value-' + view.event.eventId">{{
-                      view.sponsorshipLabel
-                    }}</b>
-                    @if (view.sponsorshipGoalLabel) {
-                      <span class="text-[12px] text-gray-400" [attr.data-testid]="'events-revenue-sponsorship-goal-' + view.event.eventId">
-                        / {{ view.sponsorshipGoalLabel }}</span
-                      >
-                    }
-                  </span>
-                  @if (!view.sponsorshipGoalLabel) {
-                    <span class="text-[12px] text-gray-400" [attr.data-testid]="'events-revenue-sponsorship-no-goal-' + view.event.eventId">no goal set</span>
-                  }
-                </div>
-              </td>
-            </tr>
-          </ng-template>
-        </lfx-table>
-      }
-    </div>
-
-    @if (view().hasUnconverted) {
-      <p class="flex items-start gap-1.5 border-t border-gray-100 pt-3 text-[12px] text-gray-500" data-testid="events-revenue-unconverted-note">
-        <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
-        {{ unconvertedNote }}
-      </p>
+        <ng-template #body let-row>
+          <tr [attr.data-testid]="'events-revenue-row-' + row.eventId">
+            <td><lfx-health-metrics-cell [text]="row.eventName" [description]="row.placeLabel" /></td>
+            <!-- The design's inline goal suffix: 13px neutral-400, 5px into the cell's 8px gap. -->
+            <td>
+              <lfx-health-metrics-cell [text]="row.registrationLabel" [attr.data-testid]="'events-revenue-registration-' + row.eventId">
+                <span class="-ml-[5px] whitespace-nowrap text-[13px] text-gray-400">{{ row.registrationGoalSuffix }}</span>
+              </lfx-health-metrics-cell>
+            </td>
+            <td>
+              <lfx-health-metrics-cell [text]="row.sponsorshipLabel" [attr.data-testid]="'events-revenue-sponsorship-' + row.eventId">
+                <span class="-ml-[5px] whitespace-nowrap text-[13px] text-gray-400">{{ row.sponsorshipGoalSuffix }}</span>
+              </lfx-health-metrics-cell>
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+      <lfx-ui-pagination [total]="rows().length" [pageSize]="pageSize" [(page)]="page" />
     }
   }
 </div>

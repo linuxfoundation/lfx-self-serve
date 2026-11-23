@@ -4,7 +4,8 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { HEALTH_METRICS_MEMBERS_NPS_UNMEASURED, lfxColors } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_MEMBERS_NPS_UNMEASURED } from '@lfx-one/shared/constants';
+import { parseHealthMetricsMembersNpsAudience } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { isObservable, Observable, of, Subject, throwError } from 'rxjs';
@@ -13,8 +14,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { MembersNpsComponent } from './members-nps.component';
 
-import type { ChartDataset } from 'chart.js';
-import type { HealthMetricsMembersNps, HealthMetricsMembersNpsAudience, HealthMetricsMembersNpsQuarter } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsMembersNps,
+  HealthMetricsMembersNpsAudience,
+  HealthMetricsMembersNpsAudienceSwitch,
+  HealthMetricsMembersNpsQuarter,
+} from '@lfx-one/shared/interfaces';
 
 function audience(overrides: Partial<HealthMetricsMembersNpsAudience> = {}): HealthMetricsMembersNpsAudience {
   return {
@@ -46,8 +51,8 @@ function quarter(
 
 function response(overrides: Partial<HealthMetricsMembersNps> = {}): HealthMetricsMembersNps {
   return {
-    audiences: [audience(), audience({ audience: 'Committers', npsScore: 40, scoreChangePp: -2 })],
-    selectedAudience: 'Board',
+    audiences: [audience({ audience: 'All' }), audience(), audience({ audience: 'Committers', npsScore: 40, scoreChangePp: -2 })],
+    selectedAudience: 'All',
     trend: [quarter('2025-10-01', 'Q4 25', 54, 0.71), quarter('2026-04-01', 'Q2 26', 62, 0.69)],
     ...overrides,
   };
@@ -61,6 +66,7 @@ describe('MembersNpsComponent', () => {
   let selectedRange: ReturnType<typeof signal<string>>;
   let lifecycle: string[];
   let verdicts: boolean[];
+  let switches: HealthMetricsMembersNpsAudienceSwitch[];
 
   // `payload` answers the first read; `followUpPayload` (a value or a stream) every read after it.
   async function render(
@@ -87,6 +93,9 @@ describe('MembersNpsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(MembersNpsComponent);
+    // The page seeds the audience from the same URL and owns the header switch.
+    fixture.componentRef.setInput('audience', parseHealthMetricsMembersNpsAudience(queryParams['npsAudience'] ?? null));
+    fixture.componentInstance.audienceSwitch.subscribe((value) => switches.push(value));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -115,149 +124,116 @@ describe('MembersNpsComponent', () => {
     selectedRange = signal<string>('YTD');
     lifecycle = [];
     verdicts = [];
+    switches = [];
   });
 
-  it("reads the period's survey, renders the audience's score with its sample, and settles", async () => {
+  it("reads the period's survey, reports the switch, and renders the score and response rate", async () => {
     await render();
 
     expect(getMembersNps).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', audience: null });
-    expect(text('members-nps-audience-pills')).toContain('Committers');
-    expect(text('members-nps-updated')).toBe('Last updated Q2 2026');
-    expect(text('members-nps-score')).toBe('+62');
-    expect(query('members-nps-score')?.classList).toContain('text-gray-900');
-    expect(text('members-nps-change')).toBe('+4pp');
-    expect(query('members-nps-change')?.classList).toContain('text-emerald-600');
-    expect(text('members-nps-caption')).toBe('Net Promoter Score · board audience');
-    expect(text('members-nps-responded')).toBe('18 of 26');
-    expect(text('members-nps-rate')).toBe('69%');
-    expect(query('members-nps-rate')?.classList).toContain('text-gray-900');
-    expect(query('members-nps-low-sample')).toBeNull();
-    expect(text('members-nps-footer')).toContain('Non-responses are rendered as the grey segment');
+    expect(switches.at(-1)).toEqual({
+      options: [
+        { id: 'All', label: 'All' },
+        { id: 'Board', label: 'Board' },
+        { id: 'Committers', label: 'Committers' },
+      ],
+      selected: 'All',
+    });
+    expect(text('members-nps-metrics-score-label')).toBe('NPS・All');
+    expect(text('members-nps-metrics-score-value')).toBe('+62');
+    expect(text('members-nps-metrics-score-description')).toBe('+4 vs Q4 25');
+    expect(text('members-nps-metrics-rate-value')).toBe('69%');
+    expect(text('members-nps-metrics-rate-description')).toBe('18 of 26 responded');
+    expect(query('members-nps-low-response')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
   });
 
   it('sizes the distribution against everyone surveyed and leaves out an empty segment', async () => {
-    await render(response({ audiences: [audience({ recipientsCount: 20, promotersCount: 10, passivesCount: 4, detractorsCount: 0, noResponseCount: 6 })] }));
-
-    expect(text('members-nps-surveyed')).toBe('out of 20 surveyed');
-    expect(query('members-nps-segment-promoters')?.style.width).toBe('50%');
-    expect(query('members-nps-segment-noResponse')?.style.width).toBe('30%');
-    expect(query('members-nps-segment-detractors')).toBeNull();
-    expect(text('members-nps-legend-detractors')).toBe('Detractors 0');
-    expect(query('members-nps-bar')?.getAttribute('aria-label')).toBe(
-      'Response distribution: Promoters 10, Passives 4, Detractors 0, No response 6, out of 20 surveyed.'
+    await render(
+      response({
+        audiences: [audience({ audience: 'All', recipientsCount: 20, promotersCount: 10, passivesCount: 4, detractorsCount: 0, noResponseCount: 6 })],
+      })
     );
+
+    expect(query('members-nps-segment-promoters')?.style.flexGrow).toBe('50');
+    expect(query('members-nps-segment-noResponse')?.style.flexGrow).toBe('30');
+    // The counts cover everyone surveyed, so nothing is left unfilled.
+    expect(query('members-nps-segment-unknown')).toBeNull();
+    expect(query('members-nps-segment-detractors')).toBeNull();
+    const legend = [...(query('members-nps-legend-detractors')?.querySelectorAll('span') ?? [])].map((span) => span.textContent?.trim());
+    expect(legend).toEqual(['', 'Detractors', '0']);
+    expect(query('members-nps-bar')?.getAttribute('aria-label')).toBe('Response distribution: Promoters 10, Passives 4, Detractors 0, No response 6.');
   });
 
-  it('draws the waves as score bars and a rate line, with a screen-reader table and the holding note', async () => {
+  it('leaves the share no count covers unfilled, so partial counts never stretch to fill the bar', async () => {
+    await render(
+      response({
+        audiences: [audience({ audience: 'All', recipientsCount: 20, promotersCount: 10, passivesCount: null, detractorsCount: null, noResponseCount: null })],
+      })
+    );
+
+    expect(query('members-nps-segment-promoters')?.style.flexGrow).toBe('50');
+    expect(query('members-nps-segment-unknown')?.style.flexGrow).toBe('50');
+  });
+
+  it('charts the quarters as score bars under a dashed response-rate line', async () => {
     await render();
 
-    const rows = [...(query('members-nps-chart-table')?.querySelectorAll('tbody tr') ?? [])].map((row) =>
-      [...row.querySelectorAll('th, td')].map((cell) => cell.textContent?.trim())
+    expect(text('members-nps-trend')).toContain('NPS trend');
+    expect([...fixture.nativeElement.querySelectorAll('[data-testid^="members-nps-chart-value-"]')].map((label: Element) => label.textContent?.trim())).toEqual(
+      ['+54', '+62']
     );
-    expect(rows).toEqual([
-      ['Q4 25', '+54', '71%'],
-      ['Q2 26', '+62', '69%'],
-    ]);
-    expect(query('members-nps-chart')?.getAttribute('aria-label')).toContain('over 2 survey waves');
-    expect(query('members-nps-legend-low-response')).toBeNull();
-    expect(text('members-nps-trend-note')).toBe('Response rate is holding around 69%, so the movement in the score is meaningful.');
+    expect(query('members-nps-chart-fill-2025-10-01')?.style.opacity).toBe('0.3');
+    expect(query('members-nps-chart-fill-2026-04-01')?.style.opacity).toBe('1');
+    expect(query('members-nps-chart-line')).not.toBeNull();
+    expect(text('members-nps-chart-legend')).toBe('Response rate');
+    expect(query('members-nps-chart-bar-2026-04-01')?.getAttribute('aria-label')).toBe('Q2 26, NPS +62, Response rate 69%');
   });
 
-  it('marks a wave below the rate floor in red and warns a rising score on a falling rate is unproven', async () => {
-    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 45, 0.55), quarter('2026-04-01', 'Q2 26', 60, 0.33)] }));
-
-    const [line, bars] = fixture.componentInstance['chartData']().datasets as ChartDataset<'line'>[];
-    expect(line.pointBackgroundColor).toEqual([lfxColors.amber[600], lfxColors.red[600]]);
-    expect(bars.backgroundColor).toEqual([lfxColors.blue[300], lfxColors.amber[300]]);
-    expect(text('members-nps-trend-note')).toBe(
-      'The score is up 15 points while the response rate fell from 55% to 33%. A rising score on a shrinking sample usually means the unhappy members stopped replying — treat this as unproven, not as improvement.'
-    );
-  });
-
-  it('warns that a rate below the floor makes neither the score nor its trend a foundation-wide signal', async () => {
-    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 60, 0.32), quarter('2026-04-01', 'Q2 26', 55, 0.3)] }));
-
-    expect(text('members-nps-trend-note')).toBe('Response rate is 30% — below the 35% floor, so neither the score nor its trend is a foundation-wide signal.');
-  });
-
-  it('leaves out the trend for a single wave', async () => {
+  it('leaves out the trend for a single quarter', async () => {
     await render(response({ trend: [quarter('2026-04-01', 'Q2 26', 62, 0.69)] }));
 
     expect(query('members-nps-trend')).toBeNull();
-    expect(query('members-nps-hero')).not.toBeNull();
-    // The hero sits flush in the section, as the design draws it, not inside a card.
-    expect(query('members-nps-hero')?.classList).not.toContain('border');
+    expect(query('members-nps-metrics')).not.toBeNull();
+    expect(text('members-nps-metrics-score-description')).toBeUndefined();
   });
 
-  it('shows a score on too small a sample in amber, with the side stats and a caution', async () => {
-    const flagged = audience({ npsScore: 80, recipientsCount: 24, responsesCount: 5, responseRatePct: 0.208, noResponseCount: 19, isSampleTooSmall: true });
-    await render(response({ audiences: [flagged], trend: [quarter('2025-10-01', 'Q4 25', 54, 0.71), quarter('2026-04-01', 'Q2 26', 80, 0.21, true)] }));
+  it('warns over a score on a response rate below the floor', async () => {
+    const flagged = audience({ audience: 'All', npsScore: 80, recipientsCount: 24, responsesCount: 5, responseRatePct: 0.208, noResponseCount: 19 });
+    await render(response({ audiences: [flagged] }));
 
-    expect(text('members-nps-low-sample')).toBe('Only 5 of 24 responded (21%). Below the confidence threshold, so read this score with caution.');
-    expect(text('members-nps-score')).toBe('+80');
-    expect(query('members-nps-score')?.classList).toContain('text-amber-600');
-    expect(query('members-nps-score')?.classList).not.toContain('text-gray-900');
-    expect(text('members-nps-caption')).toBe('Net Promoter Score · board audience');
-    expect(text('members-nps-responded')).toBe('5 of 24');
-    expect(query('members-nps-rate')?.classList).toContain('text-amber-600');
-    expect(text('members-nps-footer')).toBe('19 of 24 did not respond. A score computed on 5 replies is not a foundation-wide signal.');
-    const rows = [...(query('members-nps-chart-table')?.querySelectorAll('tbody tr') ?? [])].map((row) =>
-      [...row.querySelectorAll('td')].map((cell) => cell.textContent?.trim())
-    );
-    expect(rows).toEqual([
-      ['+54', '71%'],
-      ['+80 (low response)', '21%'],
-    ]);
-    expect(query('members-nps-legend-low-response')).not.toBeNull();
-  });
-
-  it('dashes an audience the view has no score for, keeping the side stats', async () => {
-    await render(response({ audiences: [audience({ npsScore: null, scoreChangePp: null })] }));
-
-    expect(text('members-nps-score')).toBe('—');
-    expect(query('members-nps-score')?.classList).toContain('text-gray-400');
-    expect(text('members-nps-caption')).toBe('Not enough responses to report a score');
-    expect(query('members-nps-low-sample')).toBeNull();
-    expect(text('members-nps-responded')).toBe('18 of 26');
+    expect(text('members-nps-low-response')).toBe('Only 5 of 24 responded (21%). Below the confidence threshold, so read this score with caution.');
+    expect(text('members-nps-metrics-score-value')).toBe('+80');
   });
 
   it('switches audience, re-reading it and writing it to the URL, and clears the URL back on the first audience', async () => {
     await render(response(), {}, response({ selectedAudience: 'Committers' }));
     getMembersNps.mockClear();
 
-    fixture.componentInstance['onAudienceChange']('Committers');
+    fixture.componentRef.setInput('audience', 'Committers');
     await settle();
 
     expect(getMembersNps).toHaveBeenCalledWith(expect.objectContaining({ audience: 'Committers' }));
-    expect(text('members-nps-score')).toBe('+40');
+    expect(text('members-nps-metrics-score-label')).toBe('NPS・Committers');
+    expect(text('members-nps-metrics-score-value')).toBe('+40');
+    expect(switches.at(-1)?.selected).toBe('Committers');
     expect(navigate).toHaveBeenLastCalledWith(
       [],
       expect.objectContaining({ queryParams: { npsAudience: 'Committers' }, preserveFragment: true, replaceUrl: true })
     );
 
-    fixture.componentInstance['onAudienceChange']('Board');
+    fixture.componentRef.setInput('audience', 'All');
     await settle();
 
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { npsAudience: null } }));
   });
 
-  it('ignores an audience the period did not survey', async () => {
-    await render();
-    getMembersNps.mockClear();
-
-    fixture.componentInstance['onAudienceChange']('Maintainers');
-    await settle();
-
-    expect(getMembersNps).not.toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
-  });
-
   it('starts on the audience the URL carries, trimmed, and lets the read pick for a blank one', async () => {
     await render(response({ selectedAudience: 'Committers' }), { npsAudience: ' Committers ' });
     expect(getMembersNps).toHaveBeenCalledWith(expect.objectContaining({ audience: 'Committers' }));
-    expect(text('members-nps-score')).toBe('+40');
+    expect(text('members-nps-metrics-score-value')).toBe('+40');
+    expect(navigate).not.toHaveBeenCalled();
 
     TestBed.resetTestingModule();
     await render(response(), { npsAudience: '   ' });
@@ -269,9 +245,10 @@ describe('MembersNpsComponent', () => {
 
     expect(getMembersNps).toHaveBeenCalledTimes(1);
     expect(getMembersNps).toHaveBeenCalledWith(expect.objectContaining({ audience: 'Ambassador' }));
-    expect(text('members-nps-score')).toBe('+62');
+    expect(text('members-nps-metrics-score-value')).toBe('+62');
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { npsAudience: null } }));
-    expect(fixture.componentInstance['audience']()).toBeNull();
+    expect(fixture.componentInstance.audience()).toBeNull();
+    expect(switches.at(-1)?.selected).toBe('All');
   });
 
   it('re-reads for a new period, and reads the default for one the views do not carry', async () => {
@@ -295,15 +272,14 @@ describe('MembersNpsComponent', () => {
     await settle();
 
     expect(query('members-nps-loading')).not.toBeNull();
-    expect(query('members-nps-score')).toBeNull();
-    expect(text('members-nps-updated')).toBe('—');
+    expect(query('members-nps-metrics')).toBeNull();
   });
 
-  it('settles empty, with no body, when the period holds no survey', async () => {
+  it('settles empty, with no body and no switch options, when the period holds no survey', async () => {
     await render(HEALTH_METRICS_MEMBERS_NPS_UNMEASURED);
 
-    expect(query('members-nps-controls')).toBeNull();
-    expect(query('members-nps-hero')).toBeNull();
+    expect(query('members-nps-metrics')).toBeNull();
+    expect(switches.at(-1)).toEqual({ options: [], selected: null });
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([true]);
   });
@@ -317,6 +293,7 @@ describe('MembersNpsComponent', () => {
     await settle();
 
     expect(query('members-nps-error')).not.toBeNull();
+    expect(switches.at(-1)).toEqual({ options: [], selected: null });
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false, false]);
   });
@@ -339,6 +316,6 @@ describe('MembersNpsComponent', () => {
 
     expect(getMembersNps).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', audience: 'Committers' });
     expect(navigate).not.toHaveBeenCalled();
-    expect(text('members-nps-score')).toBe('+40');
+    expect(text('members-nps-metrics-score-value')).toBe('+40');
   });
 });

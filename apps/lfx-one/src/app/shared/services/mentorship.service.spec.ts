@@ -48,6 +48,14 @@ describe('MentorshipService — lookup error mapping', () => {
     expect(projects).toContain('page_token=ab%2Bcd%2Fef%3D');
   });
 
+  it('asks for one project’s sub-projects only when given a parent, and leaves the parent off otherwise', () => {
+    service.getLfProjects({ parentUid: 'parent-1' }).subscribe();
+    expect(http.expectOne((req) => req.url === '/api/mentorship/lf-projects').request.params.get('parentUid')).toBe('parent-1');
+
+    service.getLfProjects().subscribe();
+    expect(http.expectOne((req) => req.url === '/api/mentorship/lf-projects').request.params.has('parentUid')).toBe(false);
+  });
+
   it('maps a missing CII project to null and lets other CII failures propagate', () => {
     let missing: unknown = 'unset';
     service.getCiiBadge('1842').subscribe((badge) => {

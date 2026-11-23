@@ -47,6 +47,16 @@ describe('UiTextareaComponent', () => {
     expect(field().getAttribute('aria-label')).toBeNull();
   });
 
+  it('marks a required field with a red asterisk that screen readers skip', async () => {
+    const mark = (): HTMLElement | null => host.querySelector('[data-testid="ui-textarea-required"]');
+    expect(mark()).toBeNull();
+
+    await set('required', true);
+
+    expect(mark()?.textContent).toBe(' *');
+    expect(mark()?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('uses ariaLabel when there is no visible label', async () => {
     await set('label', '');
     await set('ariaLabel', 'Release notes');
@@ -131,12 +141,12 @@ describe('UiTextareaComponent', () => {
   });
 
   it('disables the field and drops the hover ring', async () => {
-    expect(field().className).toContain('edge-hover');
+    expect(field().className).toContain('edge-control-hover');
 
     await set('disabled', true);
 
     expect(field().disabled).toBe(true);
-    expect(field().className).not.toContain('edge-hover');
+    expect(field().className).not.toContain('edge-control-hover');
   });
 
   it('marks required for assistive technology', async () => {

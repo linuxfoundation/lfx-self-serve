@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [faq, mentorship, mentee, mentor, program-admin, applications, tasks]
 last_generated: 2026-10-26
-last_updated: 2026-10-30
+last_updated: 2026-11-17
 intercom_collection: Mentorship
 ---
 
@@ -34,7 +34,7 @@ Prerequisite tasks are part of your application and come before a decision. Task
 
 ### Can I undo a withdrawal?
 
-No, a withdrawal cannot be undone. You would have to apply again, and the term may have closed in the meantime.
+Not yourself. Ask a Program Admin of the program: they can re-open the application, which puts it back under review. Otherwise you would have to apply again, and the term may have closed in the meantime.
 
 ### Where do I actually apply?
 
@@ -61,7 +61,7 @@ No, mentors cannot accept or decline applications. Mentors review applicants, se
 
 ### How do I contact my mentees?
 
-Mentorship does not show mentees' contact details to mentors. Use the channels your program has set up with its mentees. Program Admins can find mentees' email addresses with **Download By Status** (see [Export Mentees](../export-mentees/)).
+Select the envelope icon on the mentee's row, on **Applicants** or **Mentees**, to open an email to them in your mail app (see [Contact a mentee](../mentor-program-detail/#contact-a-mentee)). Program Admins use **Contact Mentee** in the row's actions menu, or **Download By Status** for many mentees' email addresses at once (see [Export Mentees](../export-mentees/)).
 
 ### Who can see my reviewer note?
 
@@ -71,7 +71,7 @@ Every Program Admin and mentor on that program can see your note. The mentee can
 
 ### When do I invite mentors?
 
-You invite mentors after the program is approved, from the **Mentors** tab. Search for the person in **Search and select mentors...** by name, LF username or full email address, pick them, and select **Invite**. Enrolling a program does not invite mentors. See [Manage a Program's Mentors](../manage-mentors/).
+You invite mentors after the program is approved, from the **Mentors** tab. Select **Invite mentor**, search for the person by name, LF username or full email address, select them, and select **Send invite**. Someone with no LF account yet can be invited by their email address. Enrolling a program does not invite mentors. See [Manage a Program's Mentors](../manage-mentors/).
 
 ### How many open terms can a program have?
 
@@ -79,7 +79,7 @@ A program can have up to four open terms at a time.
 
 ### What does "Decline by Term" do?
 
-It declines every **pending** application in the term you pick. Accepted mentees are not affected, and it cannot be undone.
+It declines every **pending** application in the term you pick. Accepted mentees are not affected. There is no bulk undo; you can **Re-open** each application on its own row. See [Review Applications and Decide](../review-applications/#re-opening-an-application).
 
 ### What happens if I graduate a mentee with unfinished tasks?
 
@@ -95,11 +95,11 @@ A logo is rejected when it is the wrong format, the wrong size, or too large a f
 
 ### How do I see my program's public page?
 
-Open the program from [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin) and select **View Public Page**. It opens the program's page on [mentorship.linuxfoundation.org](https://mentorship.linuxfoundation.org) in a new tab.
+Open the program from [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin) and select **View Public Page**. It opens the program's page on [mentorship.linuxfoundation.org](https://mentorship.linuxfoundation.org) in a new tab. The button shows only on an approved program, not on one in **Pending Review**, **Rejected** or **Hidden**.
 
 ### How do I hide a program from the public site?
 
-Open the program and select **Hide Program** from the **⋯** menu. Only an **Open** or **Completed** program can be hidden, and not while it has active applications. Select **Unhide Program** on a **Hidden** program to show it again. See [Hide or Show a Program](../program-visibility/).
+Open the program and select **Hide Program** from the **⋯** menu. Only an approved program (**Accepting**, **In Progress**, **Upcoming** or **Completed**) can be hidden, and not while it has active applications. Select **Unhide Program** on a **Hidden** program to show it again. See [Hide or Show a Program](../program-visibility/).
 
 ## Statuses
 

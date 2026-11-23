@@ -1,0 +1,39 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+:host {
+  display: table-row;
+  break-inside: avoid;
+}
+
+/* Named by the caller for a block that may run longer than a page: its own break rules decide. */
+:host(.lfx-print-sheet-row-flows) {
+  break-inside: auto;
+}
+
+.lfx-print-sheet-cell {
+  display: table-cell;
+  padding: 0;
+  vertical-align: top;
+}
+
+/* The sheet's bottom room, 0.55in, on its last row's cell: once per sheet, not per page (a repeating
+   footer group makes Chromium emit an empty page per table; lfx-mktg-print-sheet carries the same
+   value in its head row). Not a custom property: jsdom, where the specs read it, resolves none. */
+:host(:last-child) .lfx-print-sheet-cell {
+  padding-bottom: 0.55in;
+}
+
+/* On the page margins (WebKit: MKTG_PRINT_PAGE_MARGINS_CLASS on the frame's body) the margin gives the
+   room and the cell gives none. The same specificity as the rule above, by design: it wins by order. */
+:host-context(.lfx-print-page-margins) .lfx-print-sheet-cell {
+  padding-bottom: 0;
+}
+
+/* The row and its cell paint white under print, as the section chain they replaced did. */
+@media print {
+  :host,
+  .lfx-print-sheet-cell {
+    background: white;
+  }
+}

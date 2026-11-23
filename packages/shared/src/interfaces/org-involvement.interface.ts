@@ -40,32 +40,11 @@ export interface OrgInvolvementMaintainersMonthlyResponse {
 export interface OrgInvolvementEventAttendanceMonthlyResponse {
   accountId: string;
   accountName: string;
+  /** Distinct people who registered or attended foundation events over the window — NOT the sum of the monthly points. */
   totalAttended: number;
+  /** Distinct accepted speakers over the window — NOT the sum of the monthly points. */
   totalSpeakers: number;
   attendeesMonthlyData: number[];
   speakersMonthlyData: number[];
   monthlyLabels: string[];
-}
-
-/** GET /api/analytics/org-involvement-certified-employees-monthly — cross-foundation certified employees (12-month window). */
-export interface OrgInvolvementCertifiedEmployeesMonthlyResponse {
-  accountId: string;
-  totalCertifications: number;
-  totalCertifiedEmployees: number;
-  monthlyData: number[];
-  monthlyLabels: string[];
-}
-
-/** Daily data point for training enrollments. */
-export interface OrgTrainingEnrollmentDailyDataPoint {
-  date: string;
-  count: number;
-  cumulativeCount: number;
-}
-
-/** GET /api/analytics/org-involvement-training-enrollments — cross-foundation training enrollments YTD (daily grain). */
-export interface OrgTrainingEnrollmentsResponse {
-  accountId: string;
-  totalEnrollments: number;
-  dailyData: OrgTrainingEnrollmentDailyDataPoint[];
 }

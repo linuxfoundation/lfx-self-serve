@@ -146,12 +146,11 @@ describe.each([
   ['/events-revenue', 'foundationSlug'],
   ['/events-speakers', 'foundationSlug'],
   ['/events-organizations', 'foundationSlug'],
+  ['/events-speaker-proposals', 'foundationSlug'],
   ['/events-sponsorship', 'foundationSlug'],
   ['/events-geography', 'foundationSlug'],
+  ['/members-growth', 'foundationSlug'],
   ['/members-tiers', 'foundationSlug'],
-  ['/members-bridge', 'foundationSlug'],
-  // The year and movement ride ahead of the slug so the handler past the gate has a valid query.
-  ['/members-movements', 'year=2025&movementType=new&foundationSlug'],
   ['/members-directory', 'foundationSlug'],
   ['/members-directory-tiers', 'foundationSlug'],
   ['/members-at-risk', 'foundationSlug'],
@@ -371,8 +370,6 @@ const ORG_SCOPED_ROWS = new Set([
   '/org-involvement-contributors-monthly',
   '/org-involvement-maintainers-monthly',
   '/org-involvement-event-attendance-monthly',
-  '/org-involvement-certified-employees-monthly',
-  '/org-involvement-training-enrollments',
   '/org-lens-account-context',
 ]);
 

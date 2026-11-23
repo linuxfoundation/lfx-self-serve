@@ -14,6 +14,8 @@ const {
   getRegistrationHistory,
   getRegistrationsGrowth,
   getRevenue,
+  getSnapshot,
+  getSpeakerProposalsPage,
   getSpeakers,
   getSponsorship,
 } = vi.hoisted(() => ({
@@ -26,6 +28,8 @@ const {
   getRegistrationHistory: vi.fn(),
   getRegistrationsGrowth: vi.fn(),
   getRevenue: vi.fn(),
+  getSnapshot: vi.fn(),
+  getSpeakerProposalsPage: vi.fn(),
   getSpeakers: vi.fn(),
   getSponsorship: vi.fn(),
 }));
@@ -41,8 +45,10 @@ vi.mock('../services/health-metrics-events.service', () => ({
     public getRevenue = getRevenue;
     public getSpeakers = getSpeakers;
     public getOrganizations = getOrganizations;
+    public getSpeakerProposalsPage = getSpeakerProposalsPage;
     public getSponsorship = getSponsorship;
     public getGeography = getGeography;
+    public getSnapshot = getSnapshot;
   },
   // Mirrors the service: the Events views carry no columns for the oldest range.
   isSupportedEventsRange: (range: string) => range !== 'COMPLETED_YEAR_4',
@@ -73,6 +79,7 @@ import {
   HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED,
   HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED,
+  HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED,
 } from '@lfx-one/shared/constants';
@@ -84,12 +91,14 @@ type Handler =
   | 'getEventsRegistrationForecast'
   | 'getEventsRegistrationForecastCurve'
   | 'getEventsRegistrationHistory'
+  | 'getEventsSnapshot'
   | 'getEventsPast'
   | 'getEventsAtAGlance'
   | 'getEventsRegistrationsGrowth'
   | 'getEventsRevenue'
   | 'getEventsSpeakers'
   | 'getEventsOrganizations'
+  | 'getEventsSpeakerProposals'
   | 'getEventsSponsorship'
   | 'getEventsGeography';
 
@@ -215,6 +224,50 @@ describe('AnalyticsController.getEventsRegistrationHistory', () => {
     getRegistrationHistory.mockRejectedValue(failure);
 
     const { next, promise } = call('getEventsRegistrationHistory', { foundationSlug: 'acme', eventId: 'evt-1' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getEventsSnapshot', () => {
+  beforeEach(() => {
+    getSnapshot.mockReset();
+    getSnapshot.mockResolvedValue(HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED);
+  });
+
+  it('passes the foundation and event to the service', async () => {
+    const { res, next, promise } = call('getEventsSnapshot', { foundationSlug: 'acme', eventId: 'evt_1-A' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getSnapshot).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', eventId: 'evt_1-A' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED);
+  });
+
+  it('requires the foundation even when the event is given', async () => {
+    const { next, promise } = call('getEventsSnapshot', { eventId: 'evt-1' });
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it.each<Record<string, string>>([{ foundationSlug: 'acme' }, { foundationSlug: 'acme', eventId: "evt'1" }])(
+    'rejects a missing or malformed event id (%o)',
+    async (query) => {
+      const { next, promise } = call('getEventsSnapshot', query);
+      await promise;
+
+      expect(rejectedField(next)).toBe('eventId');
+      expect(getSnapshot).not.toHaveBeenCalled();
+    }
+  );
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getSnapshot.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsSnapshot', { foundationSlug: 'acme', eventId: 'evt-1' });
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);
@@ -408,7 +461,8 @@ describe('AnalyticsController.getEventsOrganizations', () => {
       segment: 'all',
       search: '',
       offset: 0,
-      pageSize: 25,
+      pageSize: 10,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED);
   });
@@ -422,6 +476,8 @@ describe('AnalyticsController.getEventsOrganizations', () => {
       search,
       offset: '50',
       pageSize: '25',
+      sortKey: 'membership',
+      sortDir: 'desc',
     });
     await promise;
 
@@ -432,7 +488,21 @@ describe('AnalyticsController.getEventsOrganizations', () => {
       search: 'a'.repeat(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH),
       offset: 50,
       pageSize: 25,
+      sort: { key: 'membership', direction: 'desc' },
     });
+  });
+
+  it("keeps the view's rank for a sort column or direction the table does not allow", async () => {
+    for (const [sortKey, sortDir] of [
+      ['account_name; DROP TABLE x', 'asc'],
+      ['registrations', 'sideways'],
+      ['__proto__', 'asc'],
+    ]) {
+      getOrganizations.mockClear();
+      const { promise } = call('getEventsOrganizations', { foundationSlug: 'acme', sortKey, sortDir });
+      await promise;
+      expect(getOrganizations).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
+    }
   });
 
   it.each([
@@ -454,6 +524,96 @@ describe('AnalyticsController.getEventsOrganizations', () => {
     getOrganizations.mockRejectedValue(failure);
 
     const { next, promise } = call('getEventsOrganizations', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getEventsSpeakerProposals', () => {
+  const page = { rows: [], totalRecords: 0, events: [] };
+
+  beforeEach(() => {
+    getSpeakerProposalsPage.mockReset();
+    getSpeakerProposalsPage.mockResolvedValue(page);
+  });
+
+  it('defaults the period, filters and page', async () => {
+    const { res, next, promise } = call('getEventsSpeakerProposals', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getSpeakerProposalsPage).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'YTD',
+      eventId: '',
+      status: null,
+      offset: 0,
+      pageSize: 25,
+      includeEvents: false,
+      sort: null,
+    });
+    expect(res.json).toHaveBeenCalledWith(page);
+  });
+
+  it('passes the parsed query', async () => {
+    const { promise } = call('getEventsSpeakerProposals', {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR',
+      eventId: 'evt-1',
+      status: 'declined',
+      offset: '25',
+      pageSize: '25',
+      includeEvents: 'true',
+      sortKey: 'speaker',
+      sortDir: 'asc',
+    });
+    await promise;
+
+    expect(getSpeakerProposalsPage).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR',
+      eventId: 'evt-1',
+      status: 'declined',
+      offset: 25,
+      pageSize: 25,
+      includeEvents: true,
+      sort: { key: 'speaker', direction: 'asc' },
+    });
+  });
+
+  it('keeps the most recent first for a sort column or direction the table does not allow', async () => {
+    for (const [sortKey, sortDir] of [
+      ['job_title; DROP TABLE x', 'asc'],
+      ['submitted', 'up'],
+      ['constructor', 'desc'],
+    ]) {
+      getSpeakerProposalsPage.mockClear();
+      const { promise } = call('getEventsSpeakerProposals', { foundationSlug: 'acme', sortKey, sortDir });
+      await promise;
+      expect(getSpeakerProposalsPage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
+    }
+  });
+
+  it.each([
+    [{}, 'foundationSlug'],
+    [{ foundationSlug: 'acme', range: 'COMPLETED_YEAR_4' }, 'range'],
+    [{ foundationSlug: 'acme', eventId: "evt'; DROP" }, 'eventId'],
+    [{ foundationSlug: 'acme', status: 'waitlisted' }, 'status'],
+    [{ foundationSlug: 'acme', status: 'toString' }, 'status'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call('getEventsSpeakerProposals', query as Record<string, string>);
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getSpeakerProposalsPage).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getSpeakerProposalsPage.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsSpeakerProposals', { foundationSlug: 'acme' });
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

@@ -22,6 +22,43 @@
             [style.width.%]="option.percentage"></div>
         </div>
       </div>
+    } @else if (variant() === 'compact') {
+      <div class="flex flex-col gap-1.5" [attr.data-testid]="testIdPrefix() + option.choiceId">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5 sm:gap-2 text-sm">
+          <div class="flex flex-wrap items-center gap-2 min-w-0">
+            <span
+              class="break-words min-w-0"
+              [class]="option.isWinner || option.isTied || option.isLeading ? 'font-semibold text-gray-900' : 'font-normal text-gray-600'">
+              {{ option.text }}
+            </span>
+            @if (option.isWinner) {
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                <i class="fa-solid fa-check text-[10px]"></i>
+                Winner
+              </span>
+            }
+            @if (option.isTied) {
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                <i class="fa-solid fa-equals text-[10px]"></i>
+                Tied
+              </span>
+            }
+          </div>
+          <span [class]="option.isWinner || option.isTied || option.isLeading ? 'font-semibold text-gray-900' : 'font-normal text-gray-600'">
+            <ng-container [ngTemplateOutlet]="count" [ngTemplateOutletContext]="{ $implicit: option }" />
+            · {{ option.percentage }}%
+          </span>
+        </div>
+        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div
+            class="h-full rounded-full transition-all"
+            [class.bg-emerald-500]="option.isWinner"
+            [class.bg-amber-500]="option.isTied"
+            [class.bg-blue-500]="!option.isWinner && !option.isTied && option.isLeading"
+            [class.bg-gray-300]="!option.isWinner && !option.isTied && !option.isLeading"
+            [style.width.%]="option.percentage"></div>
+        </div>
+      </div>
     } @else {
       <div
         class="rounded-lg border p-4 transition-all"

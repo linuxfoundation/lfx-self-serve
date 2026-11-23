@@ -6,6 +6,7 @@ import {
   ACCOUNT_MONITOR_CURRENCY_PATTERN,
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
   ACCOUNT_MONITOR_NO_CONNECTION_CODE,
+  ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE,
   ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE,
   ERROR_CODES,
   META_ADS_MONITOR_ACCOUNT_ID_PATTERN,
@@ -31,6 +32,7 @@ import type {
   MetaMonitorResponse,
   MonitorConnectionAccount,
   MonitorConnectionState,
+  MonitorSystemAccountRead,
   RedditMonitorResponse,
   ReportBackedMonitorResponse,
 } from '@lfx-one/shared/interfaces';
@@ -180,7 +182,8 @@ export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor
  * (`parseCampaignName`): `shortName`, `eventName`, `adFormat` and `targeting`. Google reports no
  * flight dates, so `startDate`/`endDate` are the read window, as on the legacy path, ending on the
  * day of `pulledAt`. `avgCpc` is computed from spend and clicks as the legacy path computes it.
- * The amounts are the connected account's, unconverted, and campaign-service names no currency for
+ * The amounts are those of the account that was read (the project's own connection's, or the one
+ * its recorded campaigns were created under), unconverted, and campaign-service names no currency for
  * Google, so the response says so (`amountsInAccountCurrency`) and the Monitor tab prints them
  * without a `$`, as it does a connection's Meta amounts.
  *
@@ -284,6 +287,49 @@ export function toGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, 
     },
     actionItems,
     amountsInAccountCurrency: true,
+  };
+}
+
+/**
+ * `toGoogleMonitorResponse` for a read where campaign-service picked the account (#5622): it names the
+ * customer it read, and an EMPTY `account_id` means the project has no campaigns recorded, so there
+ * was no account to read. That case carries a message saying so rather than the generic empty state.
+ */
+export function toRecordedCampaignsGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, pulledAt: string): CampaignMonitorResponse {
+  const response = toGoogleMonitorResponse(payload, pulledAt);
+  const accountId = typeof payload.account_id === 'string' ? payload.account_id.trim() : '';
+  if (accountId === '') {
+    return {
+      ...response,
+      googleAccountOrigin: 'recorded_campaigns',
+      message: 'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.',
+    };
+  }
+  return { ...response, accountId, googleAccountOrigin: 'recorded_campaigns' };
+}
+
+/**
+ * What a LinkedIn, Reddit or Meta monitor read through the LF system account adds to its response
+ * (#5889): the account campaign-service read, and the panel's empty state.
+ *
+ * Only an EMPTY `account_id` says nothing is recorded: campaign-service names no account when the
+ * project has no campaigns recorded on the platform (LinkedIn, where the account is optional). An
+ * empty read that names an account says only that no campaign came back — LinkedIn's monitor, for
+ * one, returns only active and paused campaigns, so a project with only archived ones reads empty —
+ * so its message claims nothing about what is recorded. An empty `account_id` is null, never an
+ * empty string the panel would print.
+ */
+export function toSystemAccountRead(payload: CampaignServiceAccountMonitor, platformLabel: string): MonitorSystemAccountRead {
+  const accountId = typeof payload.account_id === 'string' ? payload.account_id.trim() : '';
+  if (accountId === '') {
+    return {
+      accountId: null,
+      emptyMessage: `No ${platformLabel} campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.`,
+    };
+  }
+  return {
+    accountId,
+    emptyMessage: `No active or paused ${platformLabel} campaigns for this project were found in the LF system account for this period.`,
   };
 }
 
@@ -498,7 +544,11 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
     );
   }
   const reason = statusCode === 409 ? (error.errorBody as { reason?: unknown } | undefined)?.reason : undefined;
-  return new MicroserviceError(monitorErrorMessage(statusCode, platformLabel), statusCode, getCodeForStatus(statusCode), {
+  const message =
+    reason === 'campaign_account_mismatch'
+      ? `This project's ${platformLabel} campaigns were not all created under one ad account (or not under the account being monitored), or one of them does not record its account, so the monitor cannot read them together.`
+      : monitorErrorMessage(statusCode, platformLabel);
+  return new MicroserviceError(message, statusCode, getCodeForStatus(statusCode), {
     operation,
     service: 'campaign_controller',
     originalError: error,
@@ -507,10 +557,10 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
 }
 
 /**
- * Why the Google Ads monitor cannot read through this project's own connection (#4526), as the error
- * its panel shows. The Google panel has no account picker, so the route resolves the account from the
- * connection itself and has no connection notice to fall back on: each state becomes a sentence the
- * panel prints.
+ * Why an account monitor cannot read through this project's own connection, as the error its panel
+ * shows: the Google Ads monitor (#4526), which has no account picker, and a LinkedIn, Reddit or Meta
+ * read the BFF resolves itself because the tab sent no account (#5889). Each state becomes a sentence
+ * the panel prints.
  *
  * - `no_connection` is the same 404 and `connection_not_found` code an upstream "no connection"
  *   answer gets in `toAccountMonitorClientError`, so both ways of learning it read alike.
@@ -518,36 +568,91 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
  * - `unavailable` is a 503 `SERVICE_ADVISORY`, the one 5xx code whose text the panel shows, so the
  *   operator sees a retry prompt rather than the generic heading repeated.
  */
-export function toGoogleMonitorConnectionError(state: Exclude<MonitorConnectionState, 'connected'>, operation: string): MicroserviceError {
+export function toMonitorConnectionError(
+  state: Exclude<MonitorConnectionState, 'connected' | 'system_account'>,
+  platformLabel: string,
+  operation: string
+): MicroserviceError {
   const context = { operation, service: 'campaign_controller' };
   switch (state) {
     case 'no_connection':
-      return new MicroserviceError('This project has no Google Ads connection of its own to read the account with.', 404, getCodeForStatus(404), {
+      return new MicroserviceError(`This project has no ${platformLabel} connection of its own to read the account with.`, 404, getCodeForStatus(404), {
         ...context,
         errorBody: { error: ACCOUNT_MONITOR_NO_CONNECTION_CODE },
       });
     case 'forbidden':
       return new MicroserviceError(
-        "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project.",
+        `campaign-service refused to read this project's ${platformLabel} connection. Your account needs the campaign manager role on this project.`,
         403,
         getCodeForStatus(403),
         context
       );
     case 'no_account':
       return new MicroserviceError(
-        "This project's Google Ads connection has no ad account bound to it, so there is nothing to monitor. Ask an LFX administrator to choose the ad account on the connection.",
+        `This project's ${platformLabel} connection has no ad account bound to it, so there is nothing to monitor. Ask an LFX administrator to choose the ad account on the connection.`,
         409,
         getCodeForStatus(409),
         context
       );
     default:
       return new MicroserviceError(
-        "This project's Google Ads connection could not be read just now. Please try again shortly.",
+        `This project's ${platformLabel} connection could not be read just now. Please try again shortly.`,
         503,
         ERROR_CODES.SERVICE_ADVISORY,
         context
       );
   }
+}
+
+/**
+ * Whether a failed monitor read WITHOUT `account_id` came from a campaign-service that still requires
+ * it: Goa answers a missing required query parameter with a 400 named `missing_field`. Google Ads made
+ * the account optional in 1.0.36 (#5622) and LinkedIn in 1.0.37 (linuxfoundation/lfx-v2-campaign-service#628,
+ * #5889). The controller then reports the project's connection state, exactly as it did before the
+ * account became optional, rather than a 400 about an unusable connection.
+ *
+ * TODO(#5622, #5889): remove this fallback once every environment runs campaign-service 1.0.37 or
+ * later, where `account_id` is optional on both and this 400 can no longer happen.
+ */
+export function isAccountIdRequiredByUpstream(error: unknown): boolean {
+  return (
+    error instanceof MicroserviceError &&
+    !error.transportFailure &&
+    error.statusCode === 400 &&
+    (error.errorBody as { name?: unknown } | undefined)?.name === 'missing_field'
+  );
+}
+
+/**
+ * Whether a LinkedIn, Reddit or Meta monitor read through the LF system account (#5889) was refused
+ * as a way of reading at all, rather than failing: campaign-service's typed "no connection" 404 (no
+ * system account configured for the platform or account), or the 400 `missing_field` of a release
+ * that still requires the account (`isAccountIdRequiredByUpstream`).
+ */
+export function isSystemAccountRefusal(error: unknown): boolean {
+  if (isAccountIdRequiredByUpstream(error)) {
+    return true;
+  }
+  return error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+}
+
+/**
+ * The error for an `isSystemAccountRefusal`: a 404 carrying `ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE`,
+ * so the Monitor tab shows the notice for the project's own state behind the fallback. Upstream text
+ * is never forwarded.
+ */
+export function toSystemAccountRefusedError(error: unknown, platformLabel: string, operation: string): MicroserviceError {
+  return new MicroserviceError(
+    `campaign-service cannot read this project's ${platformLabel} campaigns through the LF system account.`,
+    404,
+    getCodeForStatus(404),
+    {
+      operation,
+      service: 'campaign_controller',
+      originalError: error instanceof Error ? error : undefined,
+      errorBody: { error: ACCOUNT_MONITOR_SYSTEM_ACCOUNT_REFUSED_CODE },
+    }
+  );
 }
 
 /**

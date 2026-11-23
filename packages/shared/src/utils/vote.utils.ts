@@ -14,15 +14,17 @@ import {
 } from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import {
+  VOTE_METHOD_OPTIONS,
   VOTE_PARTICIPATION_STATUS_FILTER_LABELS,
   VOTE_VOTER_MAX_CHOICE_CHIPS,
   VOTE_VOTER_NOT_VOTED_LABELS,
   VOTE_VOTER_STATUS_FILTER_LABELS,
   VOTE_PRESENTER_TITLE_MAX_CHARS,
+  VOTE_SUMMARY_NOTICE_LIFE_MS,
   VOTES_STATS_WINDOW_DAYS,
 } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus, VoteVoterStatus } from '../enums/poll.enum';
+import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, VoteVoterStatus } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
@@ -30,6 +32,7 @@ import { splitIntoParagraphs, truncateToUtf16Units } from './string.utils';
 import { isRankedPollType, votePermalinkPath } from './vote-results.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
+import type { CommitteeMember } from '../interfaces/member.interface';
 import type {
   CommentPromptFormValue,
   CommentResponseView,
@@ -39,6 +42,7 @@ import type {
   CreatePollQuestion,
   CreateVoteRequest,
   CursorWalkOutcome,
+  IndexedPollAnswer,
   MyVoteBallot,
   MyVoteResponse,
   MyVotesQuickFilter,
@@ -47,10 +51,12 @@ import type {
   PollCommentResult,
   PollQuestion,
   QuestionFormValue,
+  SendVoteSummaryResponse,
   UpdateVoteRequest,
   UserChoice,
   Vote,
   VoteAnswerSummaryLine,
+  VoteBallotChangeEligibility,
   VoteBallotQuestionView,
   VoteBallotSubmission,
   VoteCastFormPrefill,
@@ -64,6 +70,9 @@ import type {
   VoteVoterChoiceSummary,
   VoteVoterRowView,
   VoteVoterStatusCounts,
+  VoteSummaryRecipient,
+  VoteSummaryRecipientPartition,
+  VoteSummarySendNotice,
 } from '../interfaces/poll.interface';
 
 // Node-safe participation and result shaping live in their own files; re-exported so every existing import path is unchanged.
@@ -73,6 +82,7 @@ export {
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
   computeResultPercentage,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   isRankedPollType,
   votePermalinkPath,
@@ -94,11 +104,26 @@ export function isVoteAwaitingMyBallot(vote: Vote): boolean {
 }
 
 /**
- * True when My Votes can show the viewer's recorded ballot in a read-only drawer: active and already responded (#4331).
- * My Votes opens the cast drawer in read-only review mode for these rows instead of navigating to the vote page.
+ * True when My Votes can open the viewer's recorded-ballot Review drawer: active and already responded (#4331).
+ * Ballot-change eligibility separately determines whether the recorded ballot is editable.
  */
 export function isVoteBallotReviewable(vote: Vote): boolean {
   return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.RESPONDED;
+}
+
+/** True unless the vote's creator made submitted ballots final (#4723); votes without the setting are allowed. */
+export function isVoteChangeAllowed(vote: Pick<Vote, 'allow_vote_change'> | null | undefined): boolean {
+  return vote?.allow_vote_change !== false;
+}
+
+/**
+ * True when the voter may change their submitted ballot now (#4723).
+ * @description ITX's `can_change_vote` wins whenever it is reported. When it is omitted (an older backend), derive it
+ * from the vote: changes allowed, the vote active, and a submitted ballot from a voter who was not removed.
+ */
+export function canChangeSubmittedBallot({ canChangeVote, allowVoteChange, status, submitted, voterRemoved }: VoteBallotChangeEligibility): boolean {
+  if (typeof canChangeVote === 'boolean') return canChangeVote;
+  return allowVoteChange !== false && submitted && !voterRemoved && normalizePollStatus(status) === PollStatus.ACTIVE;
 }
 
 /** Matches the personal summary's status/response semantics at a shared time snapshot. */
@@ -131,6 +156,30 @@ export function mapEligibilityToFilters(eligibility: string): string[] {
 }
 
 /**
+ * Counts the group members a vote would go to, mirroring ITX's recipient resolution when a vote opens
+ * @description With voting enabled on the group, only members whose voting status is in the vote's
+ * eligibility filters receive it; with voting disabled, ITX ignores the filters and sends it to every member.
+ * @param members - The group's members
+ * @param eligibility - The form's eligible_participants value
+ * @param votingEnabled - Whether the group has voting enabled
+ * @returns Number of members the vote would be sent to
+ */
+export function countEligibleVoters(members: CommitteeMember[], eligibility: string, votingEnabled: boolean): number {
+  if (!votingEnabled) return members.length;
+  const filters = mapEligibilityToFilters(eligibility);
+  return members.filter((member) => !!member.voting?.status && filters.includes(member.voting.status)).length;
+}
+
+/**
+ * Reads a `?poll_type=` query param into a voting method the create form offers
+ * @param value - Raw query-param value
+ * @returns The method when enabled in {@link VOTE_METHOD_OPTIONS}, otherwise plurality
+ */
+export function parseVoteMethodParam(value: string | null): PollType {
+  return VOTE_METHOD_OPTIONS.find((option) => option.value === value && !option.disabled)?.value ?? PollType.GENERIC;
+}
+
+/**
  * Maps API committee_filters back to the form's eligible_participants value
  * @param filters - Array of committee filter strings from the API (title-case format)
  * @returns Form eligibility value ('voting_rep', 'voting_rep,alternate_voting_rep', or 'all')
@@ -154,8 +203,8 @@ export function mapFiltersToEligibility(filters: string[] | undefined): string {
 }
 
 // Exact match only — user content identical to our placeholder is treated as empty on re-open.
-function isDraftPlaceholderPollQuestion(question: PollQuestion): boolean {
-  const placeholder = DRAFT_VOTE_PLACEHOLDER_QUESTION;
+function isDraftPlaceholderPollQuestion(question: PollQuestion, pollType: PollType): boolean {
+  const placeholder = draftPlaceholderQuestion(pollType);
   if (question.prompt.trim() !== placeholder.prompt || question.type !== placeholder.type) {
     return false;
   }
@@ -199,17 +248,22 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
   // Legacy votes carry no stored zone — hydrate in Pacific, the canonical reading of their end_time.
   const zone = vote.end_time_timezone || LEGACY_VOTE_TIMEZONE;
   const endDate = vote.end_time ? new Date(vote.end_time) : null;
+  const pollType = vote.poll_type || PollType.GENERIC;
 
   return {
     title: vote.name,
     description: vote.description || '',
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
+    // Votes created before LFX One offered a method choice carry no poll_type — they are plurality votes.
+    poll_type: pollType,
     close_date: endDate ? toZonedDateCarrier(endDate, zone) : null,
     close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : VOTE_DEFAULT_CLOSE_TIME,
     timezone: zone,
     allow_abstain: vote.allow_abstain ?? false,
-    questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
+    // Legacy votes predate the setting and behave as "allowed" (#4723).
+    allow_vote_change: vote.allow_vote_change ?? true,
+    questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question, pollType)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
   };
 }
@@ -217,13 +271,15 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
 /**
  * Maps a Vote API response to a VoteFormValue for prefilling the create form when cloning a vote
  * @description Same field set as {@link mapVoteToFormValue} (committee, eligibility, questions, comment
- * prompts, abstain) — cast ballots, results, and the source vote's status/uid are never part of a form
+ * prompts, abstain, allow vote change) — cast ballots, results, and the source vote's status/uid are never part of a form
  * value, so there is nothing to strip there. Eligibility is lossy in the same direction it already is for
  * edit: {@link mapFiltersToEligibility} widens to 'all' whenever the filter set contains Observer or
  * Emeritus, so a clone can re-expand to a broader electorate than the source actually had. This is a
  * known, accepted tradeoff (not yet surfaced to the organizer) rather than an oversight — unlike the
  * poll-type/pseudo-anonymity guard below, which refuses to clone a source it can't faithfully represent,
  * electorate widening degrades silently. Revisit if this needs its own warning (GH-3781 review 3).
+ * The method is normalized to an available creation method (including legacy Majority to Plurality);
+ * the caller must still reject ranked and pseudo-anonymous sources before mapping them.
  * Two fields are deliberately mutated: the title gets a "Copy of " prefix (skipped if already present, and
  * clamped to VOTE_TITLE_MAX_LENGTH) so the organizer can tell the draft apart from the source vote, and a
  * deadline that has already elapsed resets to CLONE_VOTE_DEFAULT_DURATION_DAYS out in the organizer's own
@@ -233,7 +289,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
  * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
  * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
  * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`), matching
- * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-detail-header,
+ * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-detail-facts,
  * newsletter-list): the reset falls back to UTC on the server and is replaced by the real zone on client
  * hydration — this does not prevent a server/client difference, it just makes the server side
  * deterministic instead of resolving a second, possibly different, non-UTC zone there (GH-3781)
@@ -241,6 +297,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
  */
 export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), fallbackTimezone: string = getUserTimezone()): VoteFormValue {
   const base = mapVoteToFormValue(vote);
+  base.poll_type = parseVoteMethodParam(base.poll_type);
   const title = base.title.startsWith(CLONE_VOTE_TITLE_PREFIX)
     ? base.title
     : truncateToUtf16Units(`${CLONE_VOTE_TITLE_PREFIX}${base.title}`, VOTE_TITLE_MAX_LENGTH);
@@ -267,7 +324,7 @@ export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), 
  * @description Prompts come from the vote detail (`poll_comment_prompts`), not the results payload — the results
  * endpoint only reports prompts that have responses, which would hide prompts on zero-response votes. Responses
  * left-join in by `prompt_id` when present. Timestamped responses sort newest-first; timestamp-free
- * pseudo-anonymous responses preserve the server's comment-text order. Pagination slices this ordered list.
+ * pseudo-anonymous responses preserve the server's comment-text order. The Comments tab renders this ordered list continuously.
  * If the detail supplied no prompts (e.g. it failed and the list-vote fallback lacks them), degrade to the results payload's prompts that have responses.
  * @param commentResults - `comment_results` from the results API
  * @param detailPrompts - `poll_comment_prompts` from the vote detail, when available
@@ -316,15 +373,27 @@ export function getRecentCommentResponses(commentResults: PollCommentResult[], l
   }));
 }
 
+/** API question type for a form question — ranked votes always send `multiple_choice`, which ITX requires of every ranked question. */
+function resolveQuestionApiType(question: QuestionFormValue, pollType: PollType): CreatePollQuestion['type'] {
+  if (isRankedPollType(pollType)) return 'multiple_choice';
+  return question.response_type === 'single' ? 'single_choice' : 'multiple_choice';
+}
+
+/** The draft placeholder question for a voting method — a ranked vote's placeholder must be `multiple_choice` too. */
+function draftPlaceholderQuestion(pollType: PollType): CreatePollQuestion {
+  return isRankedPollType(pollType) ? { ...DRAFT_VOTE_PLACEHOLDER_QUESTION, type: 'multiple_choice' } : DRAFT_VOTE_PLACEHOLDER_QUESTION;
+}
+
 /**
  * Maps form question to API poll question format
  * @param question - The question form value
+ * @param pollType - The vote's voting method; ranked methods force `multiple_choice`
  * @returns CreatePollQuestion for the API request
  */
-export function mapQuestionToApiFormat(question: QuestionFormValue): CreatePollQuestion {
+export function mapQuestionToApiFormat(question: QuestionFormValue, pollType: PollType = PollType.GENERIC): CreatePollQuestion {
   return {
     prompt: question.question.trim(),
-    type: question.response_type === 'single' ? 'single_choice' : 'multiple_choice',
+    type: resolveQuestionApiType(question, pollType),
     choices: question.options
       .map((option) => option.trim())
       .filter((option) => option !== '')
@@ -410,7 +479,7 @@ function hasDraftQuestionInput(question: QuestionFormValue): boolean {
 }
 
 /** Preserves in-progress draft work by padding missing prompt/options instead of dropping partial questions. */
-function normalizeDraftQuestion(question: QuestionFormValue): CreatePollQuestion {
+function normalizeDraftQuestion(question: QuestionFormValue, pollType: PollType): CreatePollQuestion {
   const trimmedPrompt = question.question?.trim() ?? '';
   const nonEmptyOptions = (question.options ?? []).map((option) => option?.trim() ?? '').filter((option) => option !== '');
   const paddedOptions = [...nonEmptyOptions];
@@ -422,13 +491,19 @@ function normalizeDraftQuestion(question: QuestionFormValue): CreatePollQuestion
 
   return {
     prompt: trimmedPrompt.length > 0 ? trimmedPrompt : DRAFT_VOTE_PLACEHOLDER_QUESTION.prompt,
-    type: question.response_type === 'single' ? 'single_choice' : 'multiple_choice',
+    type: resolveQuestionApiType(question, pollType),
     choices: paddedOptions.map((option) => ({ choice_text: option })),
   };
 }
 
-function prepareDraftQuestions(questions: QuestionFormValue[]): CreatePollQuestion[] {
-  return questions.filter(hasDraftQuestionInput).map(normalizeDraftQuestion);
+function prepareDraftQuestions(questions: QuestionFormValue[], pollType: PollType): CreatePollQuestion[] {
+  return questions.filter(hasDraftQuestionInput).map((question) => normalizeDraftQuestion(question, pollType));
+}
+
+/** Draft poll_questions: the prepared questions, else the method's placeholder so the upstream-required list is never empty. */
+function resolveDraftQuestions(formValue: VoteFormValue): CreatePollQuestion[] {
+  const preparedQuestions = prepareDraftQuestions(formValue.questions, formValue.poll_type);
+  return preparedQuestions.length > 0 ? preparedQuestions : [draftPlaceholderQuestion(formValue.poll_type)];
 }
 
 /** Draft end_time: the combined deadline when date+time combine cleanly, else the default-duration fallback — never an empty required field. */
@@ -449,6 +524,11 @@ function resolveDraftEndTimeTimezone(formValue: VoteFormValue): string {
   return formValue.timezone || LEGACY_VOTE_TIMEZONE;
 }
 
+/** Keeps a non-empty description byte-for-byte (indentation, blank lines) so display surfaces can preserve it; blank-only becomes ''. */
+function normalizeDescription(description: string | null | undefined): string {
+  return description?.trim() ? description : '';
+}
+
 /**
  * Builds a CreateVoteRequest from form values
  * @param formValue - The vote form values
@@ -458,39 +538,42 @@ function resolveDraftEndTimeTimezone(formValue: VoteFormValue): string {
 export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: string): CreateVoteRequest {
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '',
     end_time_timezone: formValue.timezone,
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
-    poll_questions: formValue.questions.map(mapQuestionToApiFormat),
+    allow_vote_change: formValue.allow_vote_change,
+    poll_type: formValue.poll_type,
+    poll_questions: formValue.questions.map((question) => mapQuestionToApiFormat(question, formValue.poll_type)),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
 
 /** Fills upstream-required fields with sensible defaults so a partial form can be saved as a draft. */
 export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: string): CreateVoteRequest {
-  const preparedQuestions = prepareDraftQuestions(formValue.questions);
-  const poll_questions: CreatePollQuestion[] = preparedQuestions.length > 0 ? preparedQuestions : [DRAFT_VOTE_PLACEHOLDER_QUESTION];
-
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: resolveDraftEndTime(formValue),
     end_time_timezone: resolveDraftEndTimeTimezone(formValue),
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
-    poll_questions,
+    allow_vote_change: formValue.allow_vote_change,
+    poll_type: formValue.poll_type,
+    poll_questions: resolveDraftQuestions(formValue),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
 
 /**
  * Builds an UpdateVoteRequest from form values
+ * @description Never sends `poll_type`: ITX keeps the stored method when it is absent, while an explicit
+ * value would replace a draft's method — omitting it is what locks the method once the vote exists.
  * @param formValue - The vote form values
  * @param projectUid - The project UID from context
  * @returns UpdateVoteRequest for the PUT API endpoint
@@ -498,33 +581,32 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
 export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: string): UpdateVoteRequest {
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '',
     end_time_timezone: formValue.timezone,
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
-    poll_questions: formValue.questions.map(mapQuestionToApiFormat),
+    allow_vote_change: formValue.allow_vote_change,
+    poll_questions: formValue.questions.map((question) => mapQuestionToApiFormat(question, formValue.poll_type)),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
 
-/** Update-mode counterpart to buildDraftVoteRequest — fills upstream-required fields when the user clears them while editing an existing draft. */
+/** Update-mode counterpart to buildDraftVoteRequest — fills upstream-required fields when the user clears them while editing an existing draft. Like buildUpdateVoteRequest, never sends `poll_type`. */
 export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid: string): UpdateVoteRequest {
-  const preparedQuestions = prepareDraftQuestions(formValue.questions);
-  const poll_questions: CreatePollQuestion[] = preparedQuestions.length > 0 ? preparedQuestions : [DRAFT_VOTE_PLACEHOLDER_QUESTION];
-
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: resolveDraftEndTime(formValue),
     end_time_timezone: resolveDraftEndTimeTimezone(formValue),
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
-    poll_questions,
+    allow_vote_change: formValue.allow_vote_change,
+    poll_questions: resolveDraftQuestions(formValue),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
 }
@@ -685,10 +767,10 @@ export function canVoterFetchVoteResults(
 }
 
 /**
- * Copy for the vote detail page's "Visibility at a glance" card — describes who sees what today (managers see live
- * totals and comments on a named vote, and participation only on a pseudo-anonymous one until close; voters see their
- * own response, and totals and comments only after close), never a new rule. Ballot privacy itself is shown by the page header's
- * privacy tag, so it is not repeated here.
+ * Visibility explanation for the vote detail header's ballot privacy badge tooltip — describes who sees what today
+ * (managers see live totals and comments on a named vote, and participation only on a pseudo-anonymous one until close;
+ * voters see their own response, and totals and comments only after close), never a new rule. The badge itself labels
+ * ballot privacy, so the tooltip does not repeat that label.
  * @param audience - `creator` for a project or committee writer, `voter` for everyone else
  * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting; missing metadata never promises access to individual ballots
  * @param isClosed - Whether the vote has ended. A draft is not closed.
@@ -747,8 +829,8 @@ function parseVoteVoterChoiceKey(choiceKey: string): { questionId: string; choic
   return { questionId: choiceKey.slice(0, separator), choiceId: choiceKey.slice(separator + 1) };
 }
 
-/** A ranked answer's preferences in rank order — `ranked_user_choice` when present, else `user_choice`; unranked entries keep their order. */
-function rankedAnswerChoices(answer: PollAnswer): UserChoice[] {
+/** A ranked answer's preferences in rank order — nonempty `ranked_user_choice`, else `user_choice`; unranked entries keep their order. */
+export function rankedAnswerChoices(answer: IndexedPollAnswer): UserChoice[] {
   const choices = answer.ranked_user_choice?.length ? answer.ranked_user_choice : (answer.user_choice ?? []);
   return choices
     .map((choice, index) => ({ choice, index }))
@@ -971,7 +1053,7 @@ export function buildVoteBallotQuestions(vote: Pick<Vote, 'poll_type' | 'poll_qu
 /**
  * Turns the caller's current ballot into cast-drawer form values (#4331)
  * @description Single choice keeps the first selected choice, multiple choice every selected choice; ranked questions
- * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked in the read-only review.
+ * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked when Review opens.
  * Recorded choice ids are preserved even when current question metadata no longer declares them; unanswered questions are omitted.
  */
 export function mapMyBallotToCastForm(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, ballot: MyVoteBallot): VoteCastFormPrefill {
@@ -1043,4 +1125,76 @@ export function buildVoteAnswerSummary(questions: PollQuestion[], submission: Vo
         : (answer?.choice_ids ?? []).map((id) => textById.get(id) ?? id).join(', ');
     return { question_id: question.question_id, prompt: question.prompt, answer: text };
   });
+}
+
+/**
+ * Builds the summary outcome heading and detail, with legacy toast presentation hints (#4689, #4830).
+ * @description Never presents an incomplete distribution as a clean success: an uncertain outcome warns that retrying may send
+ * duplicates, nothing sent is reported as such, and a partial send names every known count.
+ * @param result - Outcome counts in voters; the dialog derives these from per-voter results, not the API's unique-address counters.
+ */
+export function buildVoteSummarySendNotice(result: SendVoteSummaryResponse): VoteSummarySendNotice {
+  const { recipient_count: sent, failed_count: failed, skipped_count: skipped, uncertain_count: uncertain } = result;
+
+  const counts = [`sent to ${sent} voter(s)`];
+  if (skipped > 0) counts.push(`${skipped} skipped (no email address)`);
+  if (failed > 0) counts.push(`${failed} failed`);
+  if (uncertain > 0) counts.push(`${uncertain} unconfirmed`);
+  const countsText = `${counts[0].charAt(0).toUpperCase()}${counts[0].slice(1)}${counts.length > 1 ? `; ${counts.slice(1).join('; ')}` : ''}.`;
+
+  if (uncertain > 0) {
+    return {
+      severity: 'warn',
+      summary: 'Summary delivery unconfirmed',
+      detail: `${countsText} Unconfirmed summaries may already have been delivered, so retrying may send duplicate summaries. Check with voters before retrying.`,
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    };
+  }
+
+  if (sent === 0) {
+    const reasons: string[] = [];
+    if (skipped > 0) reasons.push(`${skipped} invited voter(s) have no email address`);
+    if (failed > 0) reasons.push(`${failed} voter(s) not sent`);
+    return {
+      severity: 'info',
+      summary: 'No summaries sent',
+      detail: reasons.length > 0 ? `No summaries were sent: ${reasons.join('; ')}.` : 'No summaries were sent because no invited voters have an email address.',
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    };
+  }
+
+  if (failed > 0 || skipped > 0) {
+    return {
+      severity: 'warn',
+      summary: 'Summary partially sent',
+      detail: `${countsText} Not every invited voter received the summary.`,
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    };
+  }
+
+  return { severity: 'success', summary: 'Summary sent', detail: `Summary sent to ${sent} voter(s).` };
+}
+
+/**
+ * Splits vote summary recipients by whether they can be emailed (#4830).
+ * @description Shared by the recipient preview and the send so both agree on who is skipped and how many emails go out.
+ * Addresses are compared lower-cased; input order is preserved.
+ * @param recipients - Identity-only summary recipients for one vote
+ */
+export function partitionVoteSummaryRecipients(recipients: VoteSummaryRecipient[]): VoteSummaryRecipientPartition {
+  const ready = recipients.filter((recipient) => !!recipient.user_email);
+  const missingEmail = recipients.filter((recipient) => !recipient.user_email);
+
+  const votersPerEmail = new Map<string, number>();
+  const uniqueEmailRecipients: VoteSummaryRecipient[] = [];
+  for (const recipient of ready) {
+    const key = (recipient.user_email as string).toLowerCase();
+    const seen = votersPerEmail.get(key) ?? 0;
+    if (seen === 0) uniqueEmailRecipients.push(recipient);
+    votersPerEmail.set(key, seen + 1);
+  }
+
+  const sharedEmailVoterCount = ready.filter((recipient) => (votersPerEmail.get((recipient.user_email as string).toLowerCase()) ?? 0) > 1).length;
+
+  return { ready, missingEmail, uniqueEmailRecipients, sharedEmailVoterCount };
 }

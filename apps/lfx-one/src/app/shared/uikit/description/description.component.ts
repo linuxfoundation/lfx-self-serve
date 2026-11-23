@@ -18,7 +18,7 @@ export class UiDescriptionComponent {
   public readonly label = input.required<string>();
   /** The value shown under the title. */
   public readonly value = input<string>('');
-  /** Aligns the title and value to the right and sets the value in tabular figures, for numbers. */
+  /** Aligns the title and value to the right, for numbers. */
   public readonly align = input<'left' | 'right'>('left');
   /** Truncates a long value to one line with an ellipsis and shows the full value in a tooltip. Needs a width limit on the host. */
   public readonly ellipsis = input<boolean, unknown>(false, { transform: booleanAttribute });
@@ -39,13 +39,7 @@ export class UiDescriptionComponent {
   private initValueClasses(): Signal<string> {
     return computed(() => {
       const base = 'copy-14 min-w-0 text-ui-neutral-900';
-      return [
-        base,
-        this.ellipsis() ? 'max-w-full truncate focus-visible:shadow-focus focus-visible:outline-none' : '',
-        this.align() === 'right' ? 'tabular-nums' : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
+      return [base, this.ellipsis() ? 'max-w-full truncate focus-visible:shadow-focus focus-visible:outline-none' : ''].filter(Boolean).join(' ');
     });
   }
 }

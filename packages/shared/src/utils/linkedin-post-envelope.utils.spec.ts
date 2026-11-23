@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { LINKEDIN_ABOUT_FIELDS, LINKEDIN_CONTENT_SOURCES } from '../constants/linkedin-post.constants';
 import type { LinkedinEnvelope, LinkedinSetup } from '../interfaces/linkedin-post.interface';
-import { isLinkedinEnvelope, isLinkedinProfile, isLinkedinSetup } from './linkedin-post-envelope.utils';
+import { isLinkedinEnvelope, isLinkedinOptions, isLinkedinProfile, isLinkedinSetup } from './linkedin-post-envelope.utils';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from './linkedin-post.utils';
 
 const setup: LinkedinSetup = { name: 'Example author', role: 'Maintainer', focus_areas: 'Open source', primary_audience: 'Developers' };
@@ -99,5 +99,23 @@ describe('LinkedIn envelope validation', () => {
         notes: ['Verify handles before tagging.'],
       })
     ).toBe(true);
+  });
+  function withHashtags(count: number): LinkedinEnvelope {
+    const original = envelope();
+    const hashtags = Array.from({ length: count }, (_, i) => `#Tag${i + 1}`);
+    return { ...original, options: original.options.map((option) => ({ ...option, hashtags })) };
+  }
+  it.each([0, 1, 2, 5])('accepts options with %i hashtags: the floor is zero, the cap stays five', (count) => {
+    const patched = withHashtags(count);
+    expect(isLinkedinOptions(patched.options)).toBe(true);
+    expect(isLinkedinEnvelope(patched)).toBe(true);
+  });
+  it('rejects options with six hashtags and keeps the per-hashtag token rule', () => {
+    const six = withHashtags(6);
+    expect(isLinkedinOptions(six.options)).toBe(false);
+    expect(isLinkedinEnvelope(six)).toBe(false);
+    const malformed = withHashtags(1);
+    malformed.options[0].hashtags = ['no-hash'];
+    expect(isLinkedinOptions(malformed.options)).toBe(false);
   });
 });

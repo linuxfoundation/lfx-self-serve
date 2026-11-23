@@ -38,7 +38,7 @@ export const WithoutCounts: Story = {
     value: 'overview',
   },
 };
-/** The size used on Meetings: 13px text and 11px bottom padding. */
+/** 13px text and 11px bottom padding, for a dense bar. */
 export const Small: Story = { args: { size: 'small' } };
 /** A 14px icon before the label. */
 export const WithIcons: Story = {
@@ -87,4 +87,28 @@ export const WithDisabledTab: Story = {
     ],
     value: 'overview',
   },
+};
+/** A 7px dot in a colour role before the label, such as each group type's colour. */
+export const WithDots: Story = {
+  args: {
+    ariaLabel: 'Group type',
+    tabs: [
+      { value: 'all', label: 'All', count: 42 },
+      { value: 'boards', label: 'Boards', count: 2, dotTone: 'feature' },
+      { value: 'oversight', label: 'Oversight', count: 6, dotTone: 'success' },
+      { value: 'working-groups', label: 'Working Groups', count: 17, dotTone: 'warning' },
+      { value: 'sigs', label: 'SIGs', count: 11, dotTone: 'accent' },
+      { value: 'ambassadors', label: 'Ambassadors', count: 2, dotTone: 'danger' },
+      { value: 'other', label: 'Other', count: 4, dotTone: 'neutral' },
+    ],
+    value: 'all',
+  },
+};
+/** Too wide for the row, the tabs become a select that keeps the dots and counts. Widen the row to bring the tabs back. */
+export const CollapseToSelect: Story = {
+  args: { ...WithDots.args, collapseToSelect: true },
+  render: (args) => ({
+    props: args,
+    template: `<div class="w-[360px] resize-x overflow-auto"><lfx-ui-tabs ${argsToTemplate(args)} /></div>`,
+  }),
 };

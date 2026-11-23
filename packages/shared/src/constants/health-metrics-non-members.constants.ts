@@ -3,48 +3,46 @@
 
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type { HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
-import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
+import type { HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
 import type {
   HealthMetricsNonMembersConversion,
+  HealthMetricsNonMembersFitBand,
   HealthMetricsNonMembersOrgs,
   HealthMetricsNonMembersOrgsFilter,
+  HealthMetricsNonMembersOrgsFilterOption,
+  HealthMetricsNonMembersOrgsSortKey,
   HealthMetricsNonMembersPeople,
+  HealthMetricsNonMembersPeopleSortKey,
+  HealthMetricsNonMembersWarmestSortKey,
   HealthMetricsNonMembersQueryParams,
   HealthMetricsNonMembersSectionKey,
 } from '../interfaces/health-metrics-non-members.interface';
 
 /**
  * The three Non-Members sections in render order. `key` is the section's URL fragment and the
- * scroll-spy allowlist; the DOM id is `sec-non-<key>`. Footnotes land with each section's data.
+ * scroll-spy allowlist; the DOM id is `sec-non-<key>`.
  */
 export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
   {
     key: 'orgs',
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
-    label: 'Company participation',
+    label: 'Companies',
     heading: 'Company participation',
-    description:
-      'Organizations engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
-    footnote: [],
-    footnoteCaution: false,
+    description: 'Non-member companies already engaged with the foundation — your best leads.',
   },
   {
     key: 'people',
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'People',
     heading: 'People',
-    description: 'The individuals behind those organizations — the actual contact to reach out to. A company is a lead; a person is a conversation.',
-    footnote: [],
-    footnoteCaution: false,
+    description: 'Contacts at those companies you can reach out to.',
   },
   {
     key: 'conversion',
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Conversion opportunity',
     heading: 'Conversion opportunity',
-    description: 'What the pipeline is worth if the warmest organizations convert. Framed as upside — this section carries no risk badges, only opportunity.',
-    footnote: [],
-    footnoteCaution: false,
+    description: 'Potential revenue if your top leads become members.',
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
@@ -52,7 +50,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_NON_MEMBERS_BLANK: HealthMetricsL2Blank = {
   icon: 'fa-light fa-buildings',
   noun: 'non-member',
-  lead: 'Organizations show here once they take part in foundation activities without a membership.',
+  lead: 'Companies show here once they take part in foundation activities without a membership.',
   reasons: [
     'No code, event, meeting or training activity is recorded yet',
     'New activity can take 24–48 hours to appear',
@@ -79,7 +77,8 @@ export const HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS = {
 /** Company participation's filters, and the allowlist the read validates against. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS = ['all', 'meetings', 'high-fit'] as const;
 
-export const HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS: readonly (FilterPillOption & { id: HealthMetricsNonMembersOrgsFilter })[] = [
+/** The header switch's choices, in the design's order. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS: readonly HealthMetricsNonMembersOrgsFilterOption[] = [
   { id: 'all', label: 'All' },
   { id: 'meetings', label: 'Attends meetings' },
   { id: 'high-fit', label: 'High fit' },
@@ -90,13 +89,10 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_UNMEASURED: HealthMetricsNonMembers
   rows: [],
   totalRecords: 0,
   scopeTotal: 0,
-  newCount: 0,
 };
 
-/** Rows per page, and the rows-per-page choices; the largest foundation has several hundred active organizations. */
+/** Rows per page, with the numbered pager; the largest foundation has several hundred active companies. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE = 10;
-
-export const HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
 
 /** Largest page a caller may ask for. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE = 100;
@@ -105,25 +101,45 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 
-/** Under the table until the organization match is validated; the design's caution wording. */
-export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
-  'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
+/** The Contributions header tip. The design's wording, with "company" for its "organization" (#5428). */
+export const HEALTH_METRICS_NON_MEMBERS_CONTRIBUTIONS_TIP =
+  "Code contributions (commits and pull requests) this company made to the foundation's projects in the selected period.";
 
-/** Under the People table: each person's organization comes from the same unvalidated match. */
-export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE =
-  "People are matched to organizations by the same process, so treat each person's organization as provisional too.";
+/**
+ * Short foundation names for the Other memberships badges, keyed by `foundation_slug`; a foundation missing here shows its
+ * full name. Replaced by a `foundation_short_name` column once the directory carries one.
+ */
+export const HEALTH_METRICS_NON_MEMBERS_FOUNDATION_SHORT_NAMES: Readonly<Record<string, string>> = {
+  aaif: 'AAIF',
+  cncf: 'CNCF',
+  openssf: 'OpenSSF',
+  pytorch: 'PyTorch',
+};
 
-/** Both tables' last-activity dates ignore the period; the footnotes say so instead of the headers. */
-export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged / Last attended are all-time, not limited to the selected period.';
+/** The fit bands, highest first; the Fit column ranks them in this order. */
+export const HEALTH_METRICS_NON_MEMBERS_FIT_BANDS = ['High', 'Medium', 'Low'] as const;
 
-/** Fewer active organizations than this is too few to rank by fit, so Company participation flags it. */
-export const HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD = 5;
+/** The Fit badge's fill and ink per band, as the design colours them. */
+export const HEALTH_METRICS_NON_MEMBERS_FIT_BADGE_CLASSES: Readonly<Record<HealthMetricsNonMembersFitBand, string>> = {
+  High: 'bg-emerald-50 text-emerald-700',
+  Medium: 'bg-amber-50 text-amber-800',
+  Low: 'bg-red-50 text-red-700',
+};
 
-/** Fit band dot fills, as the design colours them; an unknown band falls back to the Low gray. */
-export const HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS: Readonly<Record<string, string>> = {
-  High: 'bg-emerald-600',
-  Medium: 'bg-amber-500',
-  Low: 'bg-gray-400',
+/** Company participation's sortable columns. Fit ranks its bands, so it sorts as a number, High first. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsNonMembersOrgsSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  // The highest tier held, then how many; the first click puts the highest tier first.
+  { key: 'memberships', kind: 'number' },
+  { key: 'meetings', kind: 'number' },
+  { key: 'contributions', kind: 'number' },
+  { key: 'fit', kind: 'number' },
+];
+
+/** Company participation opens on the view's rank: meetings attended, then contributions, then name. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsNonMembersOrgsSortKey> = {
+  key: 'meetings',
+  direction: 'desc',
 };
 
 /** Read-failed / no-foundation value: no individuals, so the section renders no rows. */
@@ -133,10 +149,22 @@ export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_UNMEASURED: HealthMetricsNonMembe
   scopeTotal: 0,
 };
 
-/** People rows per page, and the rows-per-page choices; the largest foundation has a few hundred engaged individuals. */
+/** People rows per page, with the numbered pager; the largest foundation has a few hundred engaged individuals. */
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE = 10;
 
-export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
+/** People's sortable columns. */
+export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsNonMembersPeopleSortKey>[] = [
+  { key: 'person', kind: 'text' },
+  { key: 'company', kind: 'text' },
+  { key: 'meetings', kind: 'number' },
+  { key: 'lastAttended', kind: 'date' },
+];
+
+/** People opens on the view's rank: meetings attended, highest first. */
+export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsNonMembersPeopleSortKey> = {
+  key: 'meetings',
+  direction: 'desc',
+};
 
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE = 100;
 
@@ -144,20 +172,27 @@ export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS = 200;
 
-/** Read-failed / no-foundation value: nothing measured, so the hero shows a muted dash and no warmest list. */
+/** Read-failed / no-foundation value: no conversion row and no warmest company. */
 export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED: HealthMetricsNonMembersConversion = {
   measured: false,
-  entryTierName: null,
-  entryTierFeeUsd: null,
-  organizationsTracked: null,
   highFitCount: null,
   newCount: null,
   estimatedPipelineUsd: null,
   warmest: [],
 };
 
-/** How many high-fit organizations the warmest list shows. */
-export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT = 10;
+/** How many of the period's top active companies Warmest companies shows. */
+export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT = 8;
 
-/** A NULL count or estimate is not zero; the section says so in words. */
-export const HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE = 'not available';
+/** Warmest companies' sortable columns; it has no pager, so they sort in the browser over the rows shown. */
+export const HEALTH_METRICS_NON_MEMBERS_WARMEST_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsNonMembersWarmestSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'meetings', kind: 'number' },
+  { key: 'contributions', kind: 'number' },
+];
+
+/** Warmest companies opens in the read's order: meetings attended, then contributions, then name. */
+export const HEALTH_METRICS_NON_MEMBERS_WARMEST_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsNonMembersWarmestSortKey> = {
+  key: 'meetings',
+  direction: 'desc',
+};

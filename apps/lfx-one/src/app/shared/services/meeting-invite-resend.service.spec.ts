@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
@@ -69,6 +70,12 @@ describe('MeetingInviteResendService', () => {
       expect(resendMeetingInvitation).not.toHaveBeenCalled();
     });
 
+    it("escapes the guest's name, since PrimeNG renders the message as HTML", () => {
+      service.confirmAndResend(confirmationService, MEETING_UID, { ...registrant, first_name: '<b>Jane</b>', last_name: '& Co' });
+
+      expect(confirm.mock.calls[0][0].message).toBe('Resend the meeting invitation to &lt;b&gt;Jane&lt;/b&gt; &amp; Co?');
+    });
+
     it('resends to the registrant and shows a success toast once accepted', () => {
       service.confirmAndResend(confirmationService, MEETING_UID, registrant);
       acceptConfirmation();
@@ -130,7 +137,7 @@ describe('MeetingInviteResendService', () => {
       expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_UID, '1700000000');
     });
 
-    it('does not ask for confirmation', () => {
+    it('sends without a dialog of its own, since callers confirm through confirmAndResendOwn', () => {
       service.resendOwn(MEETING_UID);
 
       expect(confirm).not.toHaveBeenCalled();
@@ -214,6 +221,70 @@ describe('MeetingInviteResendService', () => {
 
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to resend the invitation. Please try again.' }));
       expect(service.isResendingOwn(MEETING_UID)).toBe(false);
+    });
+
+    it('shares its in-flight state with the toast-free service', () => {
+      const ownResend = TestBed.inject(MeetingOwnInviteResendService);
+      resendMyMeetingInvitation.mockReturnValueOnce(new Subject<{ message: string }>());
+
+      ownResend.resendOwn$(MEETING_UID).subscribe();
+
+      expect(service.isResendingOwn(MEETING_UID)).toBe(true);
+      service.resendOwn(MEETING_UID);
+      expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('confirmAndResendOwn', () => {
+    it('asks the viewer to confirm, naming the meeting, and sends nothing yet', () => {
+      service.confirmAndResendOwn(confirmationService, MEETING_UID, '1700000000', 'Weekly sync');
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          header: 'Resend Your Invitation',
+          message: "Resend your invitation to “Weekly sync”? We'll email it to your own address again.",
+          acceptLabel: 'Resend',
+          rejectLabel: 'Cancel',
+        })
+      );
+      expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+    });
+
+    it('escapes the title, since PrimeNG renders the message as HTML', () => {
+      service.confirmAndResendOwn(confirmationService, MEETING_UID, null, 'TSC <EU/APAC> & "R&D" sync');
+
+      expect(confirm.mock.calls[0][0].message).toBe(
+        "Resend your invitation to “TSC &lt;EU/APAC&gt; &amp; &quot;R&amp;D&quot; sync”? We'll email it to your own address again."
+      );
+    });
+
+    it('sends nothing when the viewer cancels or dismisses the dialog', () => {
+      service.confirmAndResendOwn(confirmationService, MEETING_UID, null, 'Weekly sync');
+
+      // Only `accept` is wired, so a reject, Escape or the close icon has nothing to call.
+      expect(confirm.mock.calls[0][0].reject).toBeUndefined();
+      expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
+    it('resends once, for the occurrence being viewed, and toasts once accepted', () => {
+      service.confirmAndResendOwn(confirmationService, MEETING_UID, '1700000000', 'Weekly sync');
+      acceptConfirmation();
+
+      expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+      expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_UID, '1700000000');
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+    });
+
+    it('does not open the dialog while a send for the meeting is in flight', () => {
+      resendMyMeetingInvitation.mockReturnValueOnce(new Subject<{ message: string }>());
+      service.resendOwn(MEETING_UID);
+
+      service.confirmAndResendOwn(confirmationService, MEETING_UID, null, 'Weekly sync');
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
     });
   });
 });

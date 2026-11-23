@@ -20,7 +20,7 @@
       </div>
     </div>
 
-    @if (editLoad() === 'loading') {
+    @if (editLoad() === 'loading' || lensContextPending()) {
       <lfx-route-loading data-testid="mentorship-enroll-loading" />
     } @else if (editLoad() === 'failed') {
       <div
@@ -42,6 +42,8 @@
             [(logoFile)]="logoFile"
             [programId]="editProgramId"
             [currentLogoUrl]="currentLogoUrl()"
+            [lockedProject]="lockedProject()"
+            [parentProject]="parentProject()"
             (ciiLookupStatusChange)="onCiiLookupStatusChange($event)"
             (nameLookupStatusChange)="onNameLookupStatusChange($event)" />
         }

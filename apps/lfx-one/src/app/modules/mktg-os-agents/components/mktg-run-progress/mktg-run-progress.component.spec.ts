@@ -6,7 +6,15 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MKTG_DOCUMENT_TYPES, MKTG_POLL_MAX_BACKOFF_MS, MKTG_POLL_RETRYING_TEXT, MKTG_RUN_POLL, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants';
+import {
+  FOUNDATION_MESSAGE_INTAKE,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
+  MKTG_RUN_ANSWERED,
+  VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
+} from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentRunProgress, MktgRevisionSummary, MktgRevisionResponse, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -42,6 +50,7 @@ describe('MktgRunProgressComponent', () => {
   const revisionRead = vi.fn();
   const answer = vi.fn();
   const loadAttempt = vi.fn();
+  const answeredInAnotherWindow = vi.fn();
   const waiting = {
     ...run,
     state: 'questions' as const,
@@ -60,6 +69,7 @@ describe('MktgRunProgressComponent', () => {
     revisionRead.mockReset();
     answer.mockReset().mockReturnValue(of({ runId, state: 'writing' }));
     loadAttempt.mockReset().mockReturnValue(null);
+    answeredInAnotherWindow.mockReset().mockReturnValue(false);
     user.set({ sub: 'synthetic-creator' } as User);
     await TestBed.configureTestingModule({
       imports: [MktgRunProgressComponent],
@@ -70,7 +80,7 @@ describe('MktgRunProgressComponent', () => {
         { provide: UserService, useValue: { user } },
         { provide: MktgDocumentStoreService, useValue: { getDocument: read, getRevision: revisionRead } },
         { provide: MktgRunAnswersService, useValue: { answer } },
-        { provide: MktgRunAttemptService, useValue: { load: loadAttempt } },
+        { provide: MktgRunAttemptService, useValue: { load: loadAttempt, answeredInAnotherWindow: answeredInAnotherWindow } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(MktgRunProgressComponent);
@@ -141,6 +151,48 @@ describe('MktgRunProgressComponent', () => {
     revisionRead.mockReturnValue(of(view));
     await fixture.whenStable();
     expect(revisionRead).toHaveBeenCalledExactlyOnceWith(run.project, run.agentKey, run.documentId, produced.id, true);
+  });
+
+  it('changes body/metadata mode on the next poll without an immediate duplicate request', async () => {
+    await setup();
+    const row: MktgRevisionSummary = {
+      id: '000001-' + '1'.repeat(64),
+      number: 1,
+      createdAt: run.startedAt,
+      origin: 'generated',
+      restoredFromNumber: null,
+      intakeMode: 'form',
+      status: '',
+      contentSha256: '1'.repeat(64),
+      format: 'markdown',
+      commentCount: 0,
+      latest: true,
+      approval: null,
+    };
+    const metadata = { ...detail([]), revisions: [row] };
+    read.mockReturnValue(of(metadata));
+    revisionRead.mockReturnValue(of({ ...metadata, revision: row, markdown: '# Kept body', sidecar: null, approval: null }));
+    fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('runId', '');
+    fixture.componentRef.setInput('continuous', true);
+    fixture.componentRef.setInput('loadRevision', true);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(revisionRead).toHaveBeenCalledTimes(1);
+    fixture.componentRef.setInput('loadRevision', false);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(revisionRead).toHaveBeenCalledTimes(1);
+    fixture.componentRef.setInput('loadRevision', true);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(revisionRead).toHaveBeenCalledTimes(2);
   });
 
   it('keeps a dedicated questions receiver out of the public-card answer controls', async () => {
@@ -364,12 +416,14 @@ describe('MktgRunProgressComponent', () => {
       })
     );
     await fixture.whenStable();
-    expect(text()).toContain('Synthetic writer already answered these — the agent is writing.');
-    expect(announced).toHaveBeenCalledWith({
-      runId,
-      questionsId: waiting.pendingQuestions.questionsId,
-      message: 'Synthetic writer already answered these — the agent is writing.',
-    });
+    expect(text()).toContain('Synthetic writer already answered these — the agent is writing. Your draft is kept below.');
+    expect(announced).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId,
+        questionsId: waiting.pendingQuestions.questionsId,
+        message: 'Synthetic writer already answered these — the agent is writing. Your draft is kept below.',
+      })
+    );
     expect(answer).toHaveBeenCalledOnce();
   });
 
@@ -389,10 +443,15 @@ describe('MktgRunProgressComponent', () => {
     await fixture.whenStable();
     fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
     await fixture.whenStable();
-    expect(text()).toContain(`${expected} already answered these — the agent is writing.`);
+    expect(text()).toContain(`${expected} already answered these — the agent is writing. Your draft is kept below.`);
     if (expected === 'Someone on your team' && answeredBy) expect(text()).not.toContain(answeredBy);
     expect(fixture.componentInstance.runState()).toBe('writing');
-    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+    // A send that lost keeps what was sent, read-only, under the notice: the box is disabled and Send is gone.
+    const kept = fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]');
+    expect(kept).not.toBeNull();
+    expect(kept.querySelector('textarea').disabled).toBe(true);
+    expect(kept.querySelector('textarea').value).toBe('Synthetic maintainers');
+    expect(kept.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('script')).toBeNull();
     expect(read).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
@@ -402,7 +461,8 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of(detail([{ ...waiting, pendingQuestions: { ...waiting.pendingQuestions, questionsId: 'e'.repeat(64) } }])));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('textarea')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('textarea').disabled).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).toBeNull();
     expect(text()).not.toContain('already answered these');
     expect(answer).toHaveBeenCalledOnce();
   });
@@ -518,12 +578,243 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
     await fixture.whenStable();
     if (runPage) {
-      expect(text()).toContain('Answering needs project write access or the browser that started this run.');
+      expect(text()).toContain('Waiting for your answers.');
+      expect(text()).not.toContain('Answering needs project write access');
       expect(text()).not.toContain('This page keeps checking on its own.');
       expect(text()).not.toContain('Open the intake form');
     } else {
       expect(text()).toContain('Open the intake form to continue with an available questions block.');
     }
+  });
+
+  describe('a typed draft hears that someone else answered', () => {
+    const notice = 'Someone on your team already answered these — the agent is writing. Your draft is kept below.';
+    const type = async (value: string) => {
+      const textarea = fixture.nativeElement.querySelector('textarea');
+      textarea.value = value;
+      textarea.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      return textarea;
+    };
+    const poll = async (runs: MktgDocumentRunProgress[]) => {
+      read.mockReturnValue(of(detail(runs)));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+      await fixture.whenStable();
+    };
+
+    it.each(['writing', 'storing', 'completed'] as const)('says so when a poll shows the held block moved to %s', async (state) => {
+      // A run the poll already finds landed says the asset is ready; one still being written says so.
+      const expected = state === 'completed' ? notice.replace('the agent is writing', 'the asset is ready') : notice;
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      const announced = vi.fn();
+      fixture.componentInstance.alreadyAnswered.subscribe(announced);
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      await poll([{ ...run, state }]);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')?.textContent?.trim()).toBe(expected);
+      // The typed draft stays under the notice, read-only: disabled box with the typed text, no Send, the stepper still there.
+      const kept = fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]');
+      expect(kept).not.toBeNull();
+      expect(kept.querySelector('textarea').disabled).toBe(true);
+      expect(kept.querySelector('textarea').value).toBe('Synthetic edited audience');
+      expect(kept.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
+      expect(kept.querySelector('[data-testid="mktg-run-questions-chips"]')).not.toBeNull();
+      // The notice travels with the kept block, so the page that hears it (and the document the run lands on) can keep the draft.
+      expect(announced).toHaveBeenCalledExactlyOnceWith({
+        runId,
+        questionsId: waiting.pendingQuestions.questionsId,
+        message: expected,
+        kept: expect.objectContaining({ questionsId: waiting.pendingQuestions.questionsId, questions: waiting.pendingQuestions.questions }),
+      });
+      expect(answer).not.toHaveBeenCalled();
+      // The next poll of the same writing run says it once and keeps the block.
+      await poll([{ ...run, state }]);
+      expect(announced).toHaveBeenCalledOnce();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).not.toBeNull();
+    });
+
+    it('draws the block a retained notice carries right under the line, as the private run page relies on', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([{ ...run, state: 'writing' }])));
+      fixture.componentRef.setInput('retainedAnswersNotice', {
+        runId,
+        questionsId: waiting.pendingQuestions.questionsId,
+        message: notice,
+        kept: {
+          questionsId: waiting.pendingQuestions.questionsId,
+          questions: waiting.pendingQuestions.questions,
+          draft: { index: 0, answers: { audience: 'Synthetic private goal' }, dirty: true },
+        },
+      });
+      await fixture.whenStable();
+      const note = fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]');
+      expect(note?.textContent?.trim()).toBe(notice);
+      const kept = note.nextElementSibling;
+      expect(kept?.getAttribute('data-testid')).toBe('mktg-run-questions-locked');
+      expect(kept.querySelector('textarea').disabled).toBe(true);
+      expect(kept.querySelector('textarea').value).toBe('Synthetic private goal');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-live"]')?.compareDocumentPosition(kept) & Node.DOCUMENT_POSITION_PRECEDING
+      ).toBeTruthy();
+    });
+
+    it('names the other window when this profile answered the block there', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      answeredInAnotherWindow.mockReturnValue(true);
+      await poll([run]);
+      expect(answeredInAnotherWindow).toHaveBeenCalledWith(run.project, FOUNDATION_MESSAGE_INTAKE.agentId, waiting.pendingQuestions.questionsId);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')?.textContent?.trim()).toBe(
+        'These were answered in another window — the agent is writing. Your draft is kept below.'
+      );
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"] textarea').value).toBe('Synthetic edited audience');
+    });
+
+    it('says nothing while this browser’s own send is open, even if a poll already shows the block written', async () => {
+      // The server claims the block before it replies: a poll landing during the POST shows writing for OUR answer.
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      const announced = vi.fn();
+      fixture.componentInstance.alreadyAnswered.subscribe(announced);
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      const response = new Subject<{ runId: string; state: 'writing' }>();
+      answer.mockReturnValue(response);
+      fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+      await fixture.whenStable();
+      expect(answer).toHaveBeenCalledOnce();
+      const readsBefore = read.mock.calls.length;
+      await poll([run]);
+      // The mid-send poll did land and did show the row written: the silence below is the guard's, not a missed poll's.
+      expect(read.mock.calls.length).toBeGreaterThan(readsBefore);
+      expect(fixture.componentInstance.runState()).toBe('writing');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).toBeNull();
+      expect(announced).not.toHaveBeenCalled();
+      response.next({ runId, state: 'writing' });
+      response.complete();
+      await fixture.whenStable();
+      await poll([run]);
+      expect(fixture.componentInstance.runState()).toBe('writing');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).toBeNull();
+      expect(announced).not.toHaveBeenCalled();
+    });
+
+    it('keeps the typed draft when the open send loses to a 409 that a poll had already shown', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      const announced = vi.fn();
+      fixture.componentInstance.alreadyAnswered.subscribe(announced);
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      const response = new Subject<{ runId: string; state: 'writing' }>();
+      answer.mockReturnValue(response);
+      fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+      await fixture.whenStable();
+      const readsBefore = read.mock.calls.length;
+      await poll([run]);
+      expect(read.mock.calls.length).toBeGreaterThan(readsBefore);
+      expect(fixture.componentInstance.runState()).toBe('writing');
+      expect(announced).not.toHaveBeenCalled();
+      response.error(
+        new HttpErrorResponse({
+          status: 409,
+          error: { code: MKTG_RUN_ANSWERED, details: { answeredBy: 'Synthetic writer', answeredAt: '2026-10-28T10:01:00Z' } },
+        })
+      );
+      await fixture.whenStable();
+      // One notice, the named one, with the draft kept below it.
+      expect(fixture.nativeElement.querySelectorAll('[data-testid="mktg-run-progress-answered-note"]')).toHaveLength(1);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')?.textContent?.trim()).toBe(
+        'Synthetic writer already answered these — the agent is writing. Your draft is kept below.'
+      );
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"] textarea').value).toBe('Synthetic edited audience');
+      expect(announced).toHaveBeenCalledOnce();
+    });
+
+    it('moves an untouched form to writing quietly, even one whose text was retyped unchanged', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      const announced = vi.fn();
+      fixture.componentInstance.alreadyAnswered.subscribe(announced);
+      await fixture.whenStable();
+      await type(' Synthetic maintainers ');
+      await poll([run]);
+      expect(fixture.componentInstance.runState()).toBe('writing');
+      expect(text()).toContain('Writing…');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).toBeNull();
+      expect(announced).not.toHaveBeenCalled();
+    });
+
+    it('says nothing twice when this browser answered the block itself', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      answer.mockReturnValue(of({ accepted: true }));
+      const announced = vi.fn();
+      fixture.componentInstance.alreadyAnswered.subscribe(announced);
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+      await fixture.whenStable();
+      expect(answer).toHaveBeenCalledOnce();
+      await poll([run]);
+      expect(fixture.componentInstance.runState()).toBe('writing');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
+      expect(announced).not.toHaveBeenCalled();
+    });
+
+    it('lets a newer questions round replace a typed draft without the notice', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      const announced = vi.fn();
+      fixture.componentInstance.alreadyAnswered.subscribe(announced);
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      const newer = {
+        ...waiting.pendingQuestions,
+        questionsId: 'e'.repeat(64),
+        questions: [{ ...waiting.pendingQuestions.questions[0], suggestedAnswer: 'Newer' }],
+      };
+      await poll([{ ...waiting, pendingQuestions: newer }]);
+      expect(fixture.nativeElement.querySelector('textarea').value).toBe('Newer');
+      expect(fixture.nativeElement.querySelector('textarea').disabled).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).toBeNull();
+      expect(announced).not.toHaveBeenCalled();
+    });
+
+    it('drops the kept block once a newer questions round arrives for the run', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      await poll([run]);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).not.toBeNull();
+      const newer = { ...waiting.pendingQuestions, questionsId: 'e'.repeat(64) };
+      await poll([{ ...waiting, pendingQuestions: newer }]);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('textarea').disabled).toBe(false);
+    });
+
+    it('keeps the failure path for a typed draft whose run failed', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      const announced = vi.fn();
+      fixture.componentInstance.alreadyAnswered.subscribe(announced);
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      await poll([{ ...run, state: 'failed', failureText: 'Synthetic failure' }]);
+      expect(fixture.componentInstance.runState()).toBe('failed');
+      expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
+      expect(announced).not.toHaveBeenCalled();
+    });
   });
 
   it('never mounts public answering for a one-off row even if it carries pendingQuestions', async () => {
@@ -579,7 +870,11 @@ describe('MktgRunProgressComponent', () => {
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
     await fixture.whenStable();
     expect(fixture.componentInstance.runState()).toBe('writing');
-    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+    // The edit was typed, so the move to writing is heard and the draft stays below, read-only (hand test round 2).
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).not.toBeNull();
+    const kept = fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"] textarea');
+    expect(kept.disabled).toBe(true);
+    expect(kept.value).toBe('Synthetic edited audience');
     expect(answer).not.toHaveBeenCalled();
   });
 
@@ -722,7 +1017,9 @@ describe('MktgRunProgressComponent', () => {
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
     expect(read).toHaveBeenCalledTimes(count);
     visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
     window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(VISIBILITY_POLL_WAKE_DEBOUNCE_MS);
     await fixture.whenStable();
     expect(read).toHaveBeenCalledTimes(count + 1);
     visibility.mockRestore();
@@ -768,7 +1065,8 @@ describe('MktgRunProgressComponent', () => {
     fixture.componentRef.setInput('runPage', true);
     await fixture.whenStable();
     expect(questions).toHaveBeenCalledOnce();
-    expect(text()).toContain('Answering needs project write access or the browser that started this run.');
+    expect(text()).toContain('Waiting for your answers.');
+    expect(text()).not.toContain('Answering needs project write access');
     expect(text()).not.toContain('This page keeps checking on its own.');
   });
 

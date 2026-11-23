@@ -4,11 +4,13 @@
 import {
   AttachmentScope,
   AttachmentScopeOverrides,
+  MaterialsChangedEvent,
   Meeting,
   MeetingAttachment,
   MeetingAttachmentChanges,
   MeetingOccurrence,
   OccurrenceScopedAttachment,
+  PastMeetingAttachment,
 } from '../interfaces';
 import { isMeetingOccurrenceCancelled, isOccurrencePast } from './meeting.utils';
 import { isSameOccurrenceId } from './rsvp-calculator.util';
@@ -66,4 +68,13 @@ export function applyMeetingAttachmentChanges(attachments: MeetingAttachment[], 
   const fetchedUids = new Set(attachments.map((attachment) => attachment.uid));
   const pending = changes.added.filter((attachment) => !fetchedUids.has(attachment.uid) && !changes.deletedUids.has(attachment.uid)).reverse();
   return [...pending, ...attachments.filter((attachment) => !changes.deletedUids.has(attachment.uid))];
+}
+
+/** A past record's attachments plus this session's saved changes, newest first, since its read may lag behind them. */
+export function applyPastMeetingAttachmentChanges(attachments: PastMeetingAttachment[], changes: MaterialsChangedEvent | undefined): PastMeetingAttachment[] {
+  if (!changes) return attachments;
+  const deleted = new Set(changes.deletedUids);
+  const listed = new Set(attachments.map((attachment) => attachment.uid));
+  const added = changes.addedAttachments.filter((attachment) => !listed.has(attachment.uid)).reverse();
+  return [...added, ...attachments].filter((attachment) => !deleted.has(attachment.uid));
 }

@@ -8,13 +8,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { VOTE_COMMENT_RESPONSE_MAX_LENGTH, VOTE_LAST_VOTER_CONFIRMATION } from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { MessageService } from 'primeng/api';
+import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteBallotInlineComponent } from './vote-ballot-inline.component';
 
@@ -60,7 +60,7 @@ describe('VoteBallotInlineComponent — comment prompts (LFXV2-2562)', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: VoteService, useValue: { submitMyResponse } },
+        { provide: VoteService, useValue: { submitMyResponse, getMyWouldEndVote: vi.fn(() => of(false)) } },
         { provide: UserService, useValue: { impersonating } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
@@ -277,5 +277,199 @@ describe('VoteBallotInlineComponent — mobile layout (#4148)', () => {
     await fixture.whenStable();
 
     expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['c2']);
+  });
+});
+
+describe('VoteBallotInlineComponent — final notice (#4723)', () => {
+  let fixture: ComponentFixture<VoteBallotInlineComponent>;
+
+  const VOTE: Vote = {
+    uid: 'vote-1',
+    name: 'Test vote',
+    status: PollStatus.ACTIVE,
+    project_uid: 'project-1',
+    end_time: '2099-01-01T00:00:00Z',
+    poll_questions: [
+      {
+        question_id: 'q1',
+        prompt: 'Approve the budget?',
+        type: 'single_choice',
+        choices: [
+          { choice_id: 'c1', choice_text: 'Yes' },
+          { choice_id: 'c2', choice_text: 'No' },
+        ],
+      },
+    ],
+  } as Vote;
+
+  async function notice(vote: Vote): Promise<HTMLElement | null> {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [VoteBallotInlineComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: false, breakpoints: {} }), isMatched: () => false } },
+        { provide: VoteService, useValue: { submitMyResponse: vi.fn(() => of(undefined)) } },
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteBallotInlineComponent);
+    fixture.componentRef.setInput('vote', vote);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-vote-final-notice"]');
+  }
+
+  it('warns before the first submission that a locked vote cannot be changed', async () => {
+    const el = await notice({ ...VOTE, allow_vote_change: false } as Vote);
+
+    expect(el?.textContent?.trim()).toBe("Once you submit, your vote can't be changed.");
+    expect(el?.getAttribute('role')).toBe('note');
+  });
+
+  it.each([
+    ['an allowed vote', true],
+    ['a legacy vote without the setting', undefined],
+  ])('shows no notice on %s', async (_label, allowVoteChange) => {
+    expect(await notice({ ...VOTE, allow_vote_change: allowVoteChange } as Vote)).toBeNull();
+  });
+});
+
+describe('VoteBallotInlineComponent — last-voter confirmation (#4726)', () => {
+  let fixture: ComponentFixture<VoteBallotInlineComponent>;
+  let submitMyResponse: ReturnType<typeof vi.fn>;
+  let getMyWouldEndVote: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.spyOn>;
+
+  const VOTE: Vote = {
+    uid: 'vote-1',
+    name: 'Test vote',
+    status: PollStatus.ACTIVE,
+    project_uid: 'project-1',
+    end_time: '2099-01-01T00:00:00Z',
+    poll_questions: [
+      {
+        question_id: 'q1',
+        prompt: 'Approve the budget?',
+        type: 'single_choice',
+        choices: [
+          { choice_id: 'c1', choice_text: 'Yes' },
+          { choice_id: 'c2', choice_text: 'No' },
+        ],
+      },
+    ],
+  } as Vote;
+
+  // The dialog renders into document.body, not the fixture host: wipe it so one test's dialog never satisfies another's.
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
+  });
+
+  async function render(wouldEndVote: boolean, vote: Vote = VOTE): Promise<void> {
+    submitMyResponse = vi.fn(() => of(undefined));
+    getMyWouldEndVote = vi.fn(() => of(wouldEndVote));
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [VoteBallotInlineComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: false, breakpoints: {} }), isMatched: () => false } },
+        { provide: VoteService, useValue: { submitMyResponse, getMyWouldEndVote } },
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteBallotInlineComponent);
+    fixture.componentRef.setInput('vote', vote);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    // The component's own scoped instance, not Pending Actions'.
+    confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    (fixture.componentInstance.form.get('q1') as unknown as FormControl<string | null>).setValue('c1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  function submit(): void {
+    fixture.componentInstance['onSubmit']();
+  }
+
+  function lastConfirmation(): Confirmation {
+    return confirm.mock.calls.at(-1)?.[0] as Confirmation;
+  }
+
+  it('asks before submitting when this ballot would end the vote', async () => {
+    await render(true);
+
+    submit();
+    await fixture.whenStable();
+
+    expect(getMyWouldEndVote).toHaveBeenCalledWith(VOTE.uid);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(lastConfirmation()).toMatchObject(VOTE_LAST_VOTER_CONFIRMATION);
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['submitting']()).toBe(true);
+  });
+
+  it('renders the dialog copy from the shared constant', async () => {
+    await render(true);
+
+    submit();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.acceptLabel);
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.rejectLabel);
+  });
+
+  it('submits once the voter accepts', async () => {
+    await render(true);
+
+    submit();
+    await fixture.whenStable();
+    lastConfirmation().accept?.();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).toHaveBeenCalledOnce();
+    expect(submitMyResponse).toHaveBeenCalledWith(VOTE.uid, expect.objectContaining({ abstain: false }));
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+  });
+
+  it('goes back without submitting when the voter rejects', async () => {
+    await render(true);
+
+    submit();
+    await fixture.whenStable();
+    lastConfirmation().reject?.();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+    expect(fixture.componentInstance.form.get('q1')?.value).toBe('c1');
+  });
+
+  it('submits straight away without the dialog when this ballot would not end the vote', async () => {
+    await render(false);
+
+    submit();
+    await fixture.whenStable();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(submitMyResponse).toHaveBeenCalledOnce();
+  });
+
+  it('still asks on a vote that makes submitted ballots final (AC-4)', async () => {
+    await render(true, { ...VOTE, allow_vote_change: false } as Vote);
+
+    submit();
+    await fixture.whenStable();
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(submitMyResponse).not.toHaveBeenCalled();
   });
 });

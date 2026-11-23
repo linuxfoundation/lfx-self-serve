@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { DestroyRef, Injectable, Injector, PLATFORM_ID, inject } from '@angular/core';
+import { DestroyRef, Injectable, Injector, PLATFORM_ID, computed, inject } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FAVORITE_PROJECTS_MAX_VALUES, FAVORITE_PROJECTS_PREFERENCE_CONTEXT_ID, FAVORITE_PROJECTS_PREFERENCE_NAME } from '@lfx-one/shared/constants';
 import { PreferenceReadResponse, PreferenceUpsertRequest } from '@lfx-one/shared/interfaces';
@@ -51,6 +51,8 @@ export class FavoriteProjectsService {
   });
 
   public readonly state = this.store.state;
+  /** The BFF blocks favorite writes while impersonating, so the UI hides the toggle instead of failing it. */
+  public readonly favoritesAvailable = computed(() => !this.userService.impersonating());
 
   public constructor() {
     toObservable(this.userService.user)
@@ -62,6 +64,10 @@ export class FavoriteProjectsService {
   }
 
   public toggleFavorite(uid: string): void {
+    if (!this.favoritesAvailable()) {
+      return;
+    }
+
     const { data: ids, loading, error } = this.store.state();
     // A failed load leaves an empty fallback set — writing from it would clobber the persisted favorites.
     if (loading || error) {

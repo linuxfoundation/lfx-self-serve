@@ -7,7 +7,7 @@
 
     <!-- A button group, not `role="tablist"`. The full tab pattern also requires a matching
          `tabpanel`, `aria-controls` pairing and roving-tabindex arrow-key navigation; declaring
-         the role without them announces "tab 1 of 4" and then leads a screen reader to no panel.
+         the role without them announces "tab 1 of 5" and then leads a screen reader to no panel.
          This is the same idiom the measure toggles on the sibling charts use. -->
     <div class="inline-flex flex-wrap gap-0.5 self-start rounded-md border border-gray-200 p-0.5" role="group" aria-label="Project view">
       @for (option of views; track option) {
@@ -27,7 +27,11 @@
     </div>
   </div>
 
-  @if (loading()) {
+  @if (view() === 'drivers') {
+    <!-- Own fetch and own states: the decomposition can be missing for an organization that has
+         projects, and must not blank (or be blanked by) the project views. -->
+    <lfx-org-roi-value-drivers [method]="method()" />
+  } @else if (loading()) {
     <div class="flex flex-col gap-2" data-testid="org-roi-projects-section-loading">
       <p-skeleton width="100%" height="360px" />
     </div>

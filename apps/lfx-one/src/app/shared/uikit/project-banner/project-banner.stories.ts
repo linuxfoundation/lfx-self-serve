@@ -6,7 +6,7 @@ import { argsToTemplate, moduleMetadata, type Meta, type StoryObj } from '@story
 import { UiButtonComponent } from '../button/button.component';
 import { UiProjectBannerComponent } from './project-banner.component';
 
-const action = (label: string): string => `<lfx-ui-button banner-action variant="secondary" size="small" class="shrink-0">${label}</lfx-ui-button>`;
+const action = (label: string): string => `<lfx-ui-button banner-action variant="secondary" class="shrink-0">${label}</lfx-ui-button>`;
 
 const meta: Meta<UiProjectBannerComponent> = {
   title: 'Uikit/ProjectBanner',

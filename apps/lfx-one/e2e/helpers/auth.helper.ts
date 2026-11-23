@@ -79,8 +79,9 @@ export class AuthHelper {
    * @param page - Playwright page object
    */
   static async isAuthenticated(page: Page): Promise<boolean> {
-    // Check if we're not on the auth page
-    return !page.url().includes('auth0.com');
+    // Check if we're not on the auth page. Compare the parsed host, not a substring of the whole URL.
+    const { hostname } = new URL(page.url());
+    return !(hostname === 'auth0.com' || hostname.endsWith('.auth0.com'));
   }
 
   /**

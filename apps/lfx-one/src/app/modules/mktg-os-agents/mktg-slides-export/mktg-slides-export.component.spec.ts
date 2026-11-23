@@ -7,6 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
+  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
@@ -636,6 +637,15 @@ describe('MktgSlidesExportComponent', () => {
 
     expect(query('mktg-slides-export-done')).toBeNull();
     expect(query('mktg-slides-export-panel')).toBeNull();
+  });
+
+  it('names PDF and Slides in the approval reason while there is no approved current', async () => {
+    await setup();
+    const host = fixture.componentInstance;
+    host.target.set(null);
+    await fixture.whenStable();
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    expect(exporter.disabledReason()).toBe(MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE);
   });
 
   it('reads nothing on the server', async () => {

@@ -76,6 +76,7 @@ import { isSafeUploadFileName } from './file.utils';
 import {
   buildMentorshipMenteeApplicationView,
   hasMentorshipTaskFileExtension,
+  mentorshipTaskFileViewType,
   sanitizeMentorshipTaskFileName,
   buildMentorshipMenteeDemographicsUpdate,
   buildMentorshipMenteeProfileUpdate,
@@ -86,6 +87,8 @@ import {
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramsUrl,
   buildMentorshipPublicUrl,
+  getMentorshipAdminBasePath,
+  getMentorshipLensQueryParams,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
@@ -113,6 +116,7 @@ import {
   buildMentorshipTaskUpdate,
   mentorshipTaskSubmittedCount,
   mentorshipApplicantTaskRows,
+  mentorshipContactMenteeUrl,
   getMentorshipEnrollLogoError,
   getMentorshipEnrollStepErrors,
   getMentorshipEnrollTermDateErrors,
@@ -153,11 +157,35 @@ import {
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
   toMentorshipEnrollCreateRequest,
+  toMentorshipHttpUrl,
   toMentorshipUtcEndOfDayInstant,
   toMentorshipUtcInstant,
   buildMentorshipGraduateTaskWarning,
   mentorshipMenteeApplyBlockedState,
+  mentorshipUpstreamReasonMessage,
 } from './mentorship.utils';
+
+describe('mentorshipUpstreamReasonMessage', () => {
+  const entries = [
+    { match: 'not open for this term', message: 'the term is closed.' },
+    { match: 'program is hidden', message: 'the program is hidden.' },
+  ];
+
+  it('picks the copy of the first entry the upstream text contains, ignoring case', () => {
+    expect(mentorshipUpstreamReasonMessage(entries, 'Eligibility criteria not met: The program is hidden')).toBe('the program is hidden.');
+  });
+
+  it('matches an entry written in upstream casing', () => {
+    const cased = [{ match: 'belongs to another Mentorship user', message: 'in use.' }];
+    expect(mentorshipUpstreamReasonMessage(cased, 'eligibility criteria not met: the primary email of lfid "x" belongs to another Mentorship user')).toBe(
+      'in use.'
+    );
+  });
+
+  it.each([undefined, null, '', 'eligibility criteria not met: some new rule'])('answers undefined for %j', (message) => {
+    expect(mentorshipUpstreamReasonMessage(entries, message)).toBeUndefined();
+  });
+});
 
 describe('mentorshipMenteeApplyBlockedState', () => {
   it('picks the state for the rule named in the upstream message, ignoring case', () => {
@@ -390,6 +418,16 @@ describe('mentorship URL and logo helpers', () => {
     expect(isMentorshipLogoFileName('logo.PNG')).toBe(true);
     expect(isMentorshipLogoFileName('notes.pdf')).toBe(false);
   });
+
+  it('gives a link without a scheme https://, and leaves the rest as typed', () => {
+    expect(toMentorshipHttpUrl(' github.com/org/repo ')).toBe('https://github.com/org/repo');
+    expect(toMentorshipHttpUrl('www.example.org')).toBe('https://www.example.org');
+    expect(toMentorshipHttpUrl('http://example.org/path')).toBe('http://example.org/path');
+    expect(toMentorshipHttpUrl('  ')).toBe('');
+    // Not links the form accepts: left for isMentorshipHttpUrl to refuse, never turned into https://rocket.
+    expect(toMentorshipHttpUrl(' rocket ')).toBe('rocket');
+    expect(toMentorshipHttpUrl('ftp://example.com')).toBe('ftp://example.com');
+  });
 });
 
 describe('getMentorshipEnrollLogoError', () => {
@@ -463,6 +501,19 @@ describe('toMentorshipEnrollCreateRequest', () => {
       codeOfConductUrl: 'https://rocket.example/coc',
       ciiProjectId: '1234',
       termsAccepted: true,
+    });
+  });
+
+  it('sends a link typed without a scheme as an https:// URL, the only form upstream takes (lfx-mentorship#456)', () => {
+    const request = toMentorshipEnrollCreateRequest(
+      validForm({ repositoryUrl: ' github.com/acme/rocket ', websiteUrl: 'rocket.example', codeOfConductUrl: 'rocket.example/coc' }),
+      project
+    );
+
+    expect(request).toMatchObject({
+      repositoryUrl: 'https://github.com/acme/rocket',
+      websiteUrl: 'https://rocket.example',
+      codeOfConductUrl: 'https://rocket.example/coc',
     });
   });
 
@@ -836,6 +887,16 @@ describe('toMentorshipEnrollUpdateRequest', () => {
     expect(created.industry).toBe('Go, Rust');
   });
 
+  it('sends a stored link without a scheme as an https:// URL, so a migrated program can be saved', () => {
+    const form = Object.assign(filled(), { repositoryUrl: 'github.com/org/repo', websiteUrl: 'example.org', codeOfConductUrl: 'example.org/coc' });
+
+    expect(toMentorshipEnrollUpdateRequest(form, project, new Map())).toMatchObject({
+      repositoryUrl: 'https://github.com/org/repo',
+      websiteUrl: 'https://example.org',
+      codeOfConductUrl: 'https://example.org/coc',
+    });
+  });
+
   /** A saved term upstream holds with a mid-month start and end, as the wizard keeps it. */
   const saved = (id: string, name: string) =>
     toMentorshipEnrollSavedTerm({
@@ -909,12 +970,33 @@ describe('buildMentorshipProgramsUrl', () => {
   });
 });
 
+describe('getMentorshipAdminBasePath', () => {
+  it('keeps the Project and Foundation lenses on their Mentorship Programs and every other lens on the Me lens Admin', () => {
+    expect(getMentorshipAdminBasePath('project')).toBe('/project/mentorship');
+    expect(getMentorshipAdminBasePath('foundation')).toBe('/foundation/mentorship');
+    expect(getMentorshipAdminBasePath('me')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath('org')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath(undefined)).toBe('/mentorship/admin');
+  });
+});
+
+describe('getMentorshipLensQueryParams', () => {
+  it('names the lens project on the Project and Foundation lenses only, once it is known', () => {
+    expect(getMentorshipLensQueryParams('project', 'gridflow')).toEqual({ project: 'gridflow' });
+    expect(getMentorshipLensQueryParams('foundation', 'lf-energy')).toEqual({ project: 'lf-energy' });
+    expect(getMentorshipLensQueryParams('project', undefined)).toEqual({});
+    expect(getMentorshipLensQueryParams('project', '')).toEqual({});
+    expect(getMentorshipLensQueryParams('me', 'gridflow')).toEqual({});
+    expect(getMentorshipLensQueryParams(undefined, 'gridflow')).toEqual({});
+  });
+});
+
 describe('getMentorshipProgramDetailTabs', () => {
   it('shows a pending program the Terms tab only', () => {
     expect(getMentorshipProgramDetailTabs('pending-review').map((tab) => tab.value)).toEqual(['terms']);
   });
 
-  it.each(['open', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs in order', (status) => {
+  it.each(['accepting', 'in-progress', 'upcoming', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs in order', (status) => {
     expect(getMentorshipProgramDetailTabs(status).map((tab) => tab.value)).toEqual(['current-mentees', 'past-mentees', 'mentors', 'terms']);
   });
 });
@@ -1256,7 +1338,7 @@ describe('program detail helpers', () => {
     expect(matchesMentorshipPersonSearch(person, 'winter')).toBe(false);
   });
 
-  it('offers Current Mentees row actions by status, and none once the application ends', () => {
+  it('offers Current Mentees row actions by status, and only contact and a walk-back once the application ends', () => {
     const labelsFor = (status: MentorshipProgramMentee['status']): string[] =>
       mentorshipRowActions(
         MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[status],
@@ -1265,12 +1347,21 @@ describe('program detail helpers', () => {
       ).map((action) => action.label);
 
     // An application under review is decided.
-    expect(labelsFor('pending')).toEqual(['Accept', 'Decline', 'Withdraw']);
+    expect(labelsFor('pending')).toEqual(['Contact Mentee', 'Accept', 'Decline', 'Withdraw']);
     // Only an accepted mentee is given tasks or graduated.
-    expect(labelsFor('accepted')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
-    expect(labelsFor('declined')).toEqual([]);
-    expect(labelsFor('withdrawn')).toEqual([]);
-    expect(labelsFor('graduated')).toEqual([]);
+    expect(labelsFor('accepted')).toEqual(['Create task', 'Contact Mentee', 'Graduate', 'Decline', 'Withdraw']);
+    // A declined or withdrawn application can be re-opened, back to review.
+    expect(labelsFor('declined')).toEqual(['Contact Mentee', 'Re-open']);
+    expect(labelsFor('withdrawn')).toEqual(['Contact Mentee', 'Re-open']);
+    // A graduation can be undone, back to accepted.
+    expect(labelsFor('graduated')).toEqual(['Contact Mentee', 'Undo graduation']);
+  });
+
+  it('builds the Contact Mentee mailto: link, and none for an address not safe to put in one', () => {
+    expect(mentorshipContactMenteeUrl('ifeoma.adeyemi@example.com')).toBe('mailto:ifeoma.adeyemi@example.com');
+    expect(mentorshipContactMenteeUrl('ifeoma@example.com%0D%0ABcc:other@example.com')).toBeNull();
+    expect(mentorshipContactMenteeUrl('')).toBeNull();
+    expect(mentorshipContactMenteeUrl(undefined)).toBeNull();
   });
 
   it('reads an application as Applied until every prerequisite is submitted', () => {
@@ -2157,6 +2248,34 @@ describe('hasMentorshipTaskFileExtension', () => {
     for (const name of ['a.png', 'a.pdf.exe', 'a.pdfx', 'pdf', 'a.', '']) {
       expect(hasMentorshipTaskFileExtension(name)).toBe(false);
     }
+  });
+});
+
+describe('mentorshipTaskFileViewType', () => {
+  it('opens a PDF or plain-text response as itself, whatever the name says', () => {
+    expect(mentorshipTaskFileViewType('application/pdf', 'essay.docx')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('Text/Plain; charset=iso-8859-1', null)).toBe('text/plain;charset=utf-8');
+  });
+
+  it('refuses any other specific type, even under a viewable name', () => {
+    expect(mentorshipTaskFileViewType('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'a.pdf')).toBeNull();
+    expect(mentorshipTaskFileViewType('application/msword', 'a.doc')).toBeNull();
+    expect(mentorshipTaskFileViewType('text/html', 'a.txt')).toBeNull();
+  });
+
+  it('never matches an inherited key', () => {
+    for (const type of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(mentorshipTaskFileViewType(type, 'a.pdf')).toBeNull();
+    }
+  });
+
+  it('reads the extension when the type is missing or generic', () => {
+    expect(mentorshipTaskFileViewType(null, 'Report.PDF')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('', 'notes.v2.txt')).toBe('text/plain;charset=utf-8');
+    expect(mentorshipTaskFileViewType('application/octet-stream', 'essay.pdf')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('application/octet-stream', 'essay.docx')).toBeNull();
+    expect(mentorshipTaskFileViewType(undefined, 'submission')).toBeNull();
+    expect(mentorshipTaskFileViewType(undefined, null)).toBeNull();
   });
 });
 

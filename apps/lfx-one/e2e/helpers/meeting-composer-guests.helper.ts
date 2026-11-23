@@ -17,8 +17,6 @@ import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import type { CreatePickerProjectNode, PersistedPersonaState, PersonaType, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { expect, Frame, Page, Route, test } from '@playwright/test';
 
-import { stubMeetingsV2Flag } from './meetings-v2-flag.helper';
-
 /** Far enough out that `futureDateTime` can never fail, in the `mm/dd/yy` format `lfx-calendar` types in. */
 export const FUTURE_DATE = '12/31/2099';
 
@@ -231,11 +229,6 @@ export async function waitForHydration(page: Page, quietMs = 1200, timeoutMs = 2
 export async function stubComposerBackend(page: Page): Promise<void> {
   await seedEdPersona(page);
 
-  // The composer only exists while the flag is on — its host is gated in `app.component.html` and
-  // every entry point reads the same flag — so without this the rail's Create flow sends a meeting
-  // pick to the pre-v2 wizard and no composer is ever mounted.
-  await stubMeetingsV2Flag(page);
-
   // The create-target picker's three endpoints (tree, lazy children, search). Term-independent and
   // parent-independent on purpose: the picker is a means of reaching the composer here, not the
   // thing under test, so every request answers with the same single selectable project.
@@ -306,8 +299,8 @@ async function fillDateSchedule(page: Page): Promise<void> {
  * unreachable behind an empty Details & access — which walking to Guests necessarily destroys.
  *
  * Goes through the rail's Create flow rather than `/meetings/create`. That URL does reach the
- * composer when the flag is on (`meetingsV2Guard`), but only after a full SSR navigation and a
- * LaunchDarkly round trip. The rail is cheaper: it renders unconditionally, needs no project lens,
+ * composer, but only through a full navigation, whose server-side fetches bypass `page.route`, and
+ * a redirect to the meetings list underneath. The rail is cheaper: it renders unconditionally, needs no project lens,
  * and its target picker is stubbed above, so this still runs without a real project or committee
  * being involved.
  */

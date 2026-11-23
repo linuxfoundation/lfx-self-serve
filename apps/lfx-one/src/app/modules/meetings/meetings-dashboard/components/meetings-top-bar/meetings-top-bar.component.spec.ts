@@ -156,6 +156,9 @@ describe('MeetingsTopBarComponent', () => {
       meetingType: 'public',
       foundationFilter: 'foundation',
       projectFilter: 'project',
+      rollupProjects: [],
+      group: null,
+      groupType: null,
     });
 
     fixture.componentRef.setInput('searchQuery', '');
@@ -168,7 +171,60 @@ describe('MeetingsTopBarComponent', () => {
       meetingType: null,
       foundationFilter: null,
       projectFilter: null,
+      rollupProjects: [],
+      group: null,
+      groupType: null,
     });
     expect(searches).toEqual([]);
+  });
+
+  describe('roll-up filters', () => {
+    it('stays hidden outside the foundation/project lens', async () => {
+      fixture.componentRef.setInput('rollupProjectOptions', [
+        { label: 'A', value: 'a' },
+        { label: 'B', value: 'b' },
+      ]);
+      await fixture.whenStable();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="rollup-project-filter"]')).toBeNull();
+    });
+
+    it('shows the project, group and group type filters that have options', async () => {
+      fixture.componentRef.setInput('showRollupFilters', true);
+      fixture.componentRef.setInput('rollupProjectOptions', [
+        { label: 'A', value: 'a' },
+        { label: 'B', value: 'b' },
+      ]);
+      fixture.componentRef.setInput('groupOptions', [{ label: 'Board', value: 'g' }]);
+      await fixture.whenStable();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="rollup-project-filter"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="rollup-group-filter"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="rollup-group-type-filter"]')).toBeNull();
+    });
+
+    it('gives the group and group type filters distinct accessible names', async () => {
+      fixture.componentRef.setInput('showRollupFilters', true);
+      fixture.componentRef.setInput('groupOptions', [{ label: 'Board', value: 'g' }]);
+      fixture.componentRef.setInput('groupTypeOptions', [{ label: 'Board', value: 'Board' }]);
+      await fixture.whenStable();
+
+      const labels = ['rollup-group-filter', 'rollup-group-type-filter'].map((id) =>
+        fixture.nativeElement.querySelector(`[data-testid="${id}"] [aria-label]`)?.getAttribute('aria-label')
+      );
+      expect(labels).toEqual(['Filter by group', 'Filter by group type']);
+    });
+
+    it('reports a project selection and reflects one set from outside without echoing it', async () => {
+      const emitted: string[][] = [];
+      fixture.componentInstance.rollupProjectsFilterChange.subscribe((value) => emitted.push(value));
+
+      fixture.componentInstance.searchForm.get('rollupProjects')?.setValue(['a']);
+      fixture.componentRef.setInput('rollupProjectsFilter', ['b']);
+      await fixture.whenStable();
+
+      expect(emitted).toEqual([['a']]);
+      expect(fixture.componentInstance.searchForm.get('rollupProjects')?.value).toEqual(['b']);
+    });
   });
 });

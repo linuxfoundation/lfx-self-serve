@@ -371,11 +371,11 @@ export class ParticipatingOrgsComponent {
     const foundation = summary?.foundationName ?? summary?.foundationSlug;
     // Only a foundation's own project lists its full member roster; a sub-project lists contributing members only.
     if (foundation && summary?.projectSlug === summary?.foundationSlug) {
-      return `${foundation} members and every organization contributing to ${project}, ranked by activity.`;
+      return `${foundation} members and every company contributing to ${project}, ranked by activity.`;
     }
     return foundation
-      ? `Every organization contributing to ${project}, ranked by activity and split by ${foundation} membership.`
-      : `Every organization contributing to ${project}, ranked by activity and split by parent foundation membership.`;
+      ? `Every company contributing to ${project}, ranked by activity and split by ${foundation} membership.`
+      : `Every company contributing to ${project}, ranked by activity and split by parent foundation membership.`;
   }
 
   private initTiles(): StatCardItem[] {
@@ -386,7 +386,7 @@ export class ParticipatingOrgsComponent {
       {
         // Companies with activity in the range: contributing members + non-members.
         value: (summary?.orgsCount ?? 0).toLocaleString('en-US'),
-        label: 'Contributing Orgs',
+        label: 'Contributing Companies',
         icon: 'fa-solid fa-building',
         iconContainerClass: 'bg-blue-100 text-blue-600',
       },

@@ -268,9 +268,10 @@ export class MentorshipMentorService {
    * `incomplete` reset a task from any status, so the task is read first and anything not `submitted` is refused
    * with a 409 (`TASK_NOT_SUBMITTED`): a stale page cannot reopen approved work. Upstream checks the caller is an
    * active mentor or administrator of the program (403) and answers 404 for a task that is gone; both pass
-   * through, as does a failed read. The returned task is dropped and the page re-reads the program instead.
+   * through, as does a failed read. The returned task is dropped and the page re-reads the program instead. A
+   * request for changes sends its reason, which upstream emails to an accepted mentee; it is never logged.
    */
-  public async reviewMenteeTask(req: Request, taskId: string, status: MentorshipMentorTaskReviewDecision): Promise<void> {
+  public async reviewMenteeTask(req: Request, taskId: string, status: MentorshipMentorTaskReviewDecision, reason?: string): Promise<void> {
     const operation = 'mentorship_review_mentee_task';
     logger.debug(req, operation, 'Reviewing mentee task', { taskId, status });
     const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
@@ -279,7 +280,7 @@ export class MentorshipMentorService {
       throw new ConflictError(MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_MESSAGE, MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE, { operation });
     }
 
-    const body: MentorshipUpstreamTaskReviewUpdate = { status };
+    const body: MentorshipUpstreamTaskReviewUpdate = reason ? { status, reason } : { status };
     await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, `${taskPath}/review`, 'PATCH', undefined, body);
     logger.debug(req, operation, 'Mentee task reviewed', { taskId, status });
   }
@@ -287,7 +288,7 @@ export class MentorshipMentorService {
   /**
    * My Programs: one card for each published program the caller is an active mentor of, from upstream's
    * `GET /me/mentor-programs`, which settles each program's status, its counts across all its terms, and the
-   * order (open first, then completed, each by name). A caller with no mentorship record gets an empty list.
+   * order (accepting, in progress, upcoming, then completed, each by name). A caller with no mentorship record gets an empty list.
    */
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
     const operation = 'mentorship_get_mentor_programs';
@@ -440,7 +441,7 @@ export class MentorshipMentorService {
   private mapMentoredProgram(req: Request, item: MentorshipUpstreamMentoredProgram, operation: string): MentorshipMentorProgram {
     const { program, unknownStatus } = mapMentorshipMentorProgram(item);
     if (unknownStatus) {
-      logger.warning(req, operation, 'Unknown upstream mentor program status; showing it as open', { program_id: item.id, status: item.status });
+      logger.warning(req, operation, 'Unknown upstream mentor program status; showing it as in progress', { program_id: item.id, status: item.status });
     }
     return program;
   }

@@ -107,12 +107,15 @@ describe('requireOrgLensClaAccess', () => {
       expect(statusOf(await run(OWN))).toBe('allow');
     });
 
-    it('asks user-service for the cla-manager role only', async () => {
+    it('asks user-service for the cla-manager and cla-manager-designee roles only, one role per call', async () => {
       gatewayFetch.mockResolvedValue(permissions(scope('cla-manager', OWN)));
 
       await run(OWN);
 
-      expect(gatewayFetch).toHaveBeenCalledWith(expect.anything(), 'https://gw.test/user-service/v1/me/permissions?role=cla-manager', expect.anything());
+      expect(gatewayFetch.mock.calls.map((call) => call[1]).sort()).toEqual([
+        'https://gw.test/user-service/v1/me/permissions?role=cla-manager',
+        'https://gw.test/user-service/v1/me/permissions?role=cla-manager-designee',
+      ]);
     });
 
     it('is refused another company, holding the role somewhere is not enough', async () => {
@@ -158,15 +161,29 @@ describe('requireOrgLensClaAccess', () => {
     });
   });
 
-  describe('a caller who is not a CLA Manager', () => {
-    it.each(['cla-signatory', 'cla-manager-designee', 'company-admin'])('is refused with only a %s scope on the company', async (role) => {
+  describe('a CLA Manager designee without an Org Lens grant', () => {
+    it('is admitted to the company their cla-manager-designee scope names', async () => {
+      gatewayFetch.mockResolvedValue(permissions(scope('cla-manager-designee', OWN)));
+
+      expect(statusOf(await run(OWN))).toBe('allow');
+    });
+
+    it('is refused another company', async () => {
+      gatewayFetch.mockResolvedValue(permissions(scope('cla-manager-designee', OWN)));
+
+      expect(statusOf(await run(OTHER))).toBe(403);
+    });
+  });
+
+  describe('a caller who is neither a CLA Manager nor a designee', () => {
+    it.each(['cla-signatory', 'company-admin'])('is refused with only a %s scope on the company', async (role) => {
       gatewayFetch.mockResolvedValue(permissions(scope(role, OWN)));
 
       expect(statusOf(await run(OWN))).toBe(403);
     });
 
-    it('is refused a cla-manager scope of another type on the company', async () => {
-      gatewayFetch.mockResolvedValue(permissions(scope('cla-manager', OWN, 'organization')));
+    it.each(['cla-manager', 'cla-manager-designee'])('is refused a %s scope of another type on the company', async (role) => {
+      gatewayFetch.mockResolvedValue(permissions(scope(role, OWN, 'organization')));
 
       expect(statusOf(await run(OWN))).toBe(403);
     });

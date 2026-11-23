@@ -1,0 +1,101 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import type { HealthMetricsMembersReservedTier } from './health-metrics-members.interface';
+
+/** A sortable Health Metrics column's state: unsorted, ascending or descending. */
+export type HealthMetricsColumnSort = 'none' | 'asc' | 'desc';
+
+/** A sorted table's direction. */
+export type HealthMetricsSortDirection = 'asc' | 'desc';
+
+/** How a column compares: text sorts A to Z on its first click, every other kind highest or newest first. */
+export type HealthMetricsSortKind = 'text' | 'number' | 'date' | 'tier';
+
+/** A table's sort: the column it follows and which way. */
+export interface HealthMetricsTableSort<K extends string = string> {
+  key: K;
+  direction: HealthMetricsSortDirection;
+}
+
+/** A sortable column: its key and how its values compare. */
+export interface HealthMetricsSortColumn<K extends string = string> {
+  key: K;
+  kind: HealthMetricsSortKind;
+}
+
+/** A sortable header's state and the `aria-sort` its `th` carries. */
+export interface HealthMetricsSortHeaderView {
+  state: HealthMetricsColumnSort;
+  ariaSort: 'ascending' | 'descending' | 'none';
+}
+
+/**
+ * A cell's sort value: a number (counts, money, percentages, epoch dates, tier ranks) or text; `null` for an empty
+ * cell, which sorts last in both directions.
+ */
+export type HealthMetricsSortValue = number | string | null;
+
+/** A server-sorted column's SQL: a trusted expression from the service, never request text. */
+export interface HealthMetricsSqlSortColumn {
+  expression: string;
+  kind: HealthMetricsSortKind;
+}
+
+/** A 28px icon tile before a cell's text, which indents 38px. */
+export interface HealthMetricsCellIconLead {
+  kind: 'icon';
+  /** Font Awesome classes, e.g. `fa-light fa-ticket`. */
+  icon: string;
+}
+
+/** A 32px person avatar before a cell's text, which indents 42px. */
+export interface HealthMetricsCellPersonLead {
+  kind: 'person';
+  name: string;
+  /** Photo URL; empty falls back to initials. */
+  photoUrl: string;
+  /** Overrides the avatar's initials, such as one letter for a one-word name; empty keeps its default. */
+  initials?: string;
+}
+
+/** A 24px company logo box inline before a cell's text; its description indents 32px to line up with the name. */
+export interface HealthMetricsCellCompanyLead {
+  kind: 'company';
+  name: string;
+  /** Logo URL; empty falls back to the first letter. */
+  logoUrl: string;
+}
+
+/** What leads a Health Metrics table cell's text, if anything. */
+export type HealthMetricsCellLead = HealthMetricsCellIconLead | HealthMetricsCellPersonLead | HealthMetricsCellCompanyLead;
+
+/** A bar fill that applies below a percentage; the first threshold the value is under wins. */
+export interface HealthMetricsBarThreshold {
+  /** Exclusive upper bound, 0–100. */
+  below: number;
+  fillClass: string;
+}
+
+/** A value-and-bar cell's fill rule: thresholds over the default fill, and the fill for 0%. */
+export interface HealthMetricsBarFillRule {
+  zeroClass: string;
+  thresholds: readonly HealthMetricsBarThreshold[];
+  defaultClass: string;
+}
+
+/** One row of the design's horizontal bars (`hbars`): a label led by a tier icon, a plain icon or a company logo, a bar, and its value. */
+export interface HealthMetricsBarListRow {
+  key: string;
+  label: string;
+  /** Right-aligned, e.g. `65` or `39 proposals`. */
+  value: string;
+  /** The bar's 0–100 share of the longest row. */
+  pct: number;
+  /** A Diamond, Platinum, Gold or Silver tier draws its icon. */
+  tier: HealthMetricsMembersReservedTier | null;
+  /** Font Awesome classes for any other plain icon, e.g. `fa-light fa-ticket`. */
+  icon: string;
+  /** A company's 24px logo box; `null` for none. */
+  company: HealthMetricsCellCompanyLead | null;
+}

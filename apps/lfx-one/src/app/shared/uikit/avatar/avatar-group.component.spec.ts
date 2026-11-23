@@ -40,6 +40,12 @@ describe('UiAvatarGroupComponent', () => {
     expect(host.querySelector('[data-testid="ui-avatar-group-more"]')?.textContent?.trim()).toBe('+4');
   });
 
+  it('keeps the overflow tile neutral', () => {
+    const more = host.querySelector('[data-testid="ui-avatar-group-more"]');
+    expect(more?.className).toContain('!bg-ui-neutral-50');
+    expect(more?.className).toContain('!text-ui-neutral-600');
+  });
+
   it('names the overflow tile', () => {
     expect(host.querySelector('[data-testid="ui-avatar-group-more"]')?.getAttribute('aria-label')).toBe('4 more');
   });

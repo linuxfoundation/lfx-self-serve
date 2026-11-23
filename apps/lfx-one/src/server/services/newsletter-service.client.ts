@@ -3,10 +3,12 @@
 
 import { NEWSLETTER_SEND_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import {
+  ApiRequestOptions,
   CommitteeNewsletterListResponse,
   CreateNewsletterRequest,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterAudience,
   NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
@@ -15,8 +17,14 @@ import {
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
+  NewsletterResolveAudiencePayload,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterShareRequest,
+  NewsletterTemplateManifest,
+  NewsletterTemplatesResponse,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -40,8 +48,41 @@ export class NewsletterServiceClient {
     return this.microserviceProxy.proxyRequest<Newsletter>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters`, 'POST', undefined, payload);
   }
 
-  public async getNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
-    return this.microserviceProxy.proxyRequest<Newsletter>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/${newsletterUid}`, 'GET');
+  public async getNewsletter(req: Request, projectUid: string, newsletterUid: string, options?: ApiRequestOptions): Promise<Newsletter> {
+    return this.microserviceProxy.proxyRequest<Newsletter>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}`,
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      options
+    );
+  }
+
+  public async getTemplates(req: Request, projectUid: string): Promise<NewsletterTemplatesResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterTemplatesResponse>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/templates`, 'GET');
+  }
+
+  public async getTemplateManifest(req: Request, projectUid: string, templateKey: string): Promise<NewsletterTemplateManifest> {
+    return this.microserviceProxy.proxyRequest<NewsletterTemplateManifest>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`,
+      'GET'
+    );
+  }
+
+  public async renderPreview(req: Request, projectUid: string, payload: NewsletterRenderPreviewPayload): Promise<NewsletterRenderPreviewResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterRenderPreviewResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/render-preview`,
+      'POST',
+      undefined,
+      payload
+    );
   }
 
   public async listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
@@ -65,16 +106,25 @@ export class NewsletterServiceClient {
    * Member-facing committee-scoped list: sent newsletters whose audience
    * includes the committee, ordered by sent_at descending. The upstream
    * gateway authorizes the caller against `committee:{committee_uid}#member`
-   * (live FGA membership), so this must always run with the user's bearer
-   * token — never M2M.
+   * (live FGA membership), so My Newsletters runs it with the user's bearer
+   * token. The only M2M caller (`options.bearerToken`) is the signed-out guest
+   * reader, after its in-app member-company check (#5235).
    */
-  public async listCommitteeNewsletters(req: Request, committeeUid: string, pageToken?: string): Promise<CommitteeNewsletterListResponse> {
+  public async listCommitteeNewsletters(
+    req: Request,
+    committeeUid: string,
+    pageToken?: string,
+    options?: ApiRequestOptions
+  ): Promise<CommitteeNewsletterListResponse> {
     return this.microserviceProxy.proxyRequest<CommitteeNewsletterListResponse>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${committeeUid}/newsletters`,
       'GET',
-      pageToken ? { page_token: pageToken } : undefined
+      pageToken ? { page_token: pageToken } : undefined,
+      undefined,
+      undefined,
+      options
     );
   }
 
@@ -182,6 +232,31 @@ export class NewsletterServiceClient {
     );
   }
 
+  public async resolveAudience(
+    req: Request,
+    projectUid: string,
+    newsletterUid: string,
+    payload: NewsletterResolveAudiencePayload
+  ): Promise<NewsletterAudience> {
+    return this.microserviceProxy.proxyRequest<NewsletterAudience>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/audience`,
+      'POST',
+      undefined,
+      payload
+    );
+  }
+
+  public async getAudience(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAudience> {
+    return this.microserviceProxy.proxyRequest<NewsletterAudience>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/audience`,
+      'GET'
+    );
+  }
+
   public async recipients(req: Request, projectUid: string, payload: NewsletterRecipientCountPayload): Promise<NewsletterRecipientsResponse> {
     return this.microserviceProxy.proxyRequest<NewsletterRecipientsResponse>(
       req,
@@ -230,6 +305,38 @@ export class NewsletterServiceClient {
 
   public async listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {
     return this.microserviceProxy.proxyRequest<NewsletterOptOutListResponse>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletter-opt-outs`, 'GET');
+  }
+
+  /**
+   * Records an in-app share. newsletter-service counts one share per user per channel (repeats are
+   * no-ops) and only accepts sent newsletters. Always the user's bearer token: the share is attributed
+   * to the caller's principal, and the gateway gates it on project viewer.
+   */
+  public async recordShare(req: Request, projectUid: string, newsletterUid: string, payload: NewsletterShareRequest): Promise<void> {
+    // The controller already restricts both IDs to UUIDs; encoding keeps the path safe if a future caller skips that.
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${encodeURIComponent(projectUid)}/newsletters/${encodeURIComponent(newsletterUid)}/shares`,
+      'POST',
+      undefined,
+      payload
+    );
+  }
+
+  /**
+   * Records a unique web page view. newsletter-service counts one view per user per issue (repeats are
+   * no-ops) and only accepts sent newsletters. Always the user's bearer token: the view is attributed to
+   * the caller's principal, and the gateway gates it on project viewer.
+   */
+  public async recordPageView(req: Request, projectUid: string, newsletterUid: string): Promise<void> {
+    // The controller already restricts both IDs to UUIDs; encoding keeps the path safe if a future caller skips that.
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${encodeURIComponent(projectUid)}/newsletters/${encodeURIComponent(newsletterUid)}/page-views`,
+      'POST'
+    );
   }
 
   public async deleteOptOut(req: Request, projectUid: string, optOutId: string): Promise<void> {

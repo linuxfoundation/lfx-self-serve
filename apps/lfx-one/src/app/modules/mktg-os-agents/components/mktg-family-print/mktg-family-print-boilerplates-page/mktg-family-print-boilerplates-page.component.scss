@@ -1,0 +1,100 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The boilerplate cards (the design board's exact px); the frame's custom properties are the portrait grammar's, --fp-warn this page's. */
+.fpb-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fpb-card {
+  display: flex;
+  gap: 28px;
+  padding: 24px 26px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 12px;
+
+  &--first {
+    border-top: 3px solid var(--pp-accent);
+  }
+
+  &__meta {
+    width: 120px;
+    flex: none;
+  }
+
+  &__label {
+    font: 500 22px/1.1 var(--pp-font);
+    color: var(--pp-dark);
+  }
+
+  &__count {
+    margin-top: 6px;
+  }
+
+  &__bar {
+    height: 6px;
+    margin-top: 8px;
+    border-radius: 3px;
+    background: var(--pp-mist);
+    overflow: hidden;
+  }
+
+  &__fill {
+    height: 6px;
+    background: var(--pp-accent);
+
+    &--over {
+      background: var(--fp-warn);
+    }
+  }
+
+  &__percent {
+    margin-top: 4px;
+    font: 400 9.5px/1.4 var(--pp-font);
+    color: var(--pp-muted);
+  }
+
+  &__over {
+    margin-top: 4px;
+    font: 500 10px/1.4 var(--pp-font);
+    color: var(--fp-warn);
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__text {
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--pp-ink);
+  }
+
+  /* The cut line under a text held to the page: the book's `+N … in LFX One` convention, in the caption's ink. */
+  &__cut {
+    margin-top: 6px;
+    font: 500 10px/1.4 var(--pp-font);
+    color: var(--pp-muted);
+  }
+}
+
+/* The Built from rows as the kit's Sources page sets its lists (kp-list): a disc at the 16px indent; the global reset leaves a list bare. */
+.fpb-foot__list {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font: 400 11px/1.55 var(--pp-font);
+  color: var(--pp-ink);
+  list-style: disc;
+  overflow-wrap: anywhere;
+}
+
+/* The Built from block's cut note, exactly the one list line the fit reserves for it, aligned with the rows' text. */
+.fpb-foot__cut {
+  margin: 0;
+  padding-left: 16px;
+  font: 500 11px/1.55 var(--pp-font);
+  color: var(--pp-dark);
+}

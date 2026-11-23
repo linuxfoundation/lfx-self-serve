@@ -9,7 +9,7 @@
       styleClass="flex flex-col gap-4 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0 overflow-hidden hover:!border-gray-200"
       data-testid="initiatives-cards">
       @for (initiative of filteredInitiatives(); track initiative.id) {
-        <lfx-initiative-card [initiative]="initiative" (cardClick)="onCardClick($event)" />
+        <lfx-initiative-card [initiative]="initiative" [showCreator]="showCreator()" (cardClick)="onCardClick($event)" />
       }
     </lfx-card>
   } @else {

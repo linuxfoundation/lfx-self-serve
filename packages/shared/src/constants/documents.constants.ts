@@ -3,10 +3,31 @@
 
 import { TagSeverity } from '../interfaces/components.interface';
 import { MyDocumentSource } from '../interfaces/my-document.interface';
-import { DocumentKind, DocumentKindTag } from '../interfaces/project.interface';
+import { DocumentKind, DocumentKindTag, ProjectDocumentType } from '../interfaces/project.interface';
 
 /** Label constant for the documents feature — follows the existing COMMITTEE_LABEL, MAILING_LIST_LABEL pattern. */
 export const DOCUMENT_LABEL = { singular: 'Document', plural: 'Documents' };
+
+/** Group and project document types a writer can delete from the Documents tab. */
+export const DOCUMENT_DELETE_TYPES: readonly ProjectDocumentType[] = ['file', 'link', 'folder'];
+
+/**
+ * Group document types a writer can delete. Folders are left out for now: the committee service's folder delete only
+ * rejects a folder holding links, and the BFF can't see a just-uploaded file through the query index, so a folder with a
+ * file in it could be deleted. Add 'folder' back (use DOCUMENT_DELETE_TYPES) once a committee service release with
+ * linuxfoundation/lfx-v2-committee-service#277, which rejects a folder holding documents, is deployed.
+ */
+export const COMMITTEE_DOCUMENT_DELETE_TYPES: readonly ProjectDocumentType[] = ['file', 'link'];
+
+/** Upstream path segment each group/project document type lives under (`/committees/{id}/folders/{uid}`, `/projects/{id}/documents/{uid}`). */
+export const DOCUMENT_UPSTREAM_PATH_SEGMENTS: Record<ProjectDocumentType, string> = {
+  folder: 'folders',
+  link: 'links',
+  file: 'documents',
+};
+
+/** Shown instead of deleting a folder that still holds links or files; shared so the UI and the BFF say the same thing. */
+export const DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE = 'This folder still has documents in it. Delete or move them before deleting the folder.';
 
 /**
  * Source types that are grouped under the "Meeting" filter option.

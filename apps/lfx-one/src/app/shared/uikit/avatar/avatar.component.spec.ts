@@ -28,13 +28,14 @@ describe('UiAvatarComponent', () => {
 
   const initials = () => host.querySelector('[data-testid="ui-avatar-initials"]')?.textContent?.trim();
 
-  it('is a 32px neutral circle with a hairline ring by default', () => {
+  it('is a 32px accent-200 circle with accent-800 initials and no ring by default', () => {
     expect(host.style.width).toBe('32px');
     expect(host.style.height).toBe('32px');
     expect(host.className).toContain('rounded-ui-full');
-    expect(host.className).toContain('bg-ui-neutral-50');
-    expect(host.className).toContain('text-ui-neutral-600');
-    expect(host.className).toContain('edge');
+    expect(host.className).toContain('bg-ui-accent-200');
+    expect(host.className).toContain('text-ui-accent-800');
+    expect(host.className).not.toContain('edge');
+    expect(host.className).not.toContain('ring-');
   });
 
   it('is an image named by the literal name', () => {
@@ -46,6 +47,64 @@ describe('UiAvatarComponent', () => {
 
   it('derives two initials from the first two words', () => {
     expect(initials()).toBe('MS');
+  });
+
+  it('sets the initials size and weight for a dense table avatar', async () => {
+    expect(host.style.fontSize).toBe(`${32 * 0.38}px`);
+    expect(host.className).toContain('font-medium');
+
+    fixture.componentRef.setInput('initialsSize', 11);
+    fixture.componentRef.setInput('initialsWeight', 'semibold');
+    await fixture.whenStable();
+
+    expect(host.style.fontSize).toBe('11px');
+    expect(host.className).toContain('font-semibold');
+    expect(host.className).not.toContain('font-medium');
+  });
+
+  describe('logo shape', () => {
+    beforeEach(async () => {
+      fixture.componentRef.setInput('name', 'Acme Motors');
+      fixture.componentRef.setInput('shape', 'logo');
+      fixture.componentRef.setInput('size', 24);
+      await fixture.whenStable();
+    });
+
+    it('is a white 24px box with a slate-200 border, 6px corners and 4px padding, whatever the tone or theme', async () => {
+      fixture.componentRef.setInput('tone', 'accent');
+      await fixture.whenStable();
+
+      expect(host.style.width).toBe('24px');
+      for (const token of ['rounded-[6px]', 'border', 'border-[color:var(--ui-slate-200)]', 'bg-ui-white', 'p-[4px]']) {
+        expect(host.className).toContain(token);
+      }
+      expect(host.className).not.toContain('bg-ui-accent-600');
+    });
+
+    it('falls back to the first letter at 10px semibold slate-600, the same in both themes', () => {
+      expect(initials()).toBe('A');
+      expect(host.style.fontSize).toBe('10px');
+      expect(host.className).toContain('text-[color:var(--ui-slate-600)]');
+      expect(host.className).toContain('font-semibold');
+    });
+
+    it('contains the logo image instead of covering the box', async () => {
+      fixture.componentRef.setInput('src', 'https://example.com/logo.png');
+      await fixture.whenStable();
+
+      const img = host.querySelector('[data-testid="ui-avatar-image"]') as HTMLElement;
+      expect(img.className).toContain('object-contain');
+      expect(img.className).not.toContain('object-cover');
+      expect(img.className).not.toContain('rounded-[inherit]');
+      expect(img.getAttribute('alt')).toBe('');
+    });
+
+    it('shows a building glyph for a blank name', async () => {
+      fixture.componentRef.setInput('name', '');
+      await fixture.whenStable();
+
+      expect(host.querySelector('[data-testid="ui-avatar-fallback"]')?.className).toContain('fa-building');
+    });
   });
 
   it('takes the first two letters of a single word', async () => {
@@ -93,13 +152,13 @@ describe('UiAvatarComponent', () => {
     ['success', 'bg-ui-success-600'],
     ['warning', 'bg-ui-warning-600'],
     ['danger', 'bg-ui-danger-600'],
-  ] as const)('tints the %s tone with %s, white text and no hairline', async (tone, fill) => {
+  ] as const)('tints the %s tone with %s, white text and no ring', async (tone, fill) => {
     fixture.componentRef.setInput('tone', tone);
     await fixture.whenStable();
 
     expect(host.className).toContain(fill);
     expect(host.className).toContain('text-ui-white');
-    expect(host.className).not.toContain('edge');
+    expect(host.className).not.toContain('ring-');
   });
 
   it('has 8px corners in the rounded shape', async () => {
@@ -118,6 +177,8 @@ describe('UiAvatarComponent', () => {
     expect(img?.getAttribute('src')).toBe('https://example.com/maria.png');
     expect(img?.getAttribute('alt')).toBe('');
     expect(initials()).toBeUndefined();
+    expect(host.className).toContain('bg-ui-neutral-100');
+    expect(host.className).not.toContain('bg-ui-accent-200');
   });
 
   it('falls back to the initials when the photo fails to load', async () => {
@@ -129,6 +190,7 @@ describe('UiAvatarComponent', () => {
 
     expect(host.querySelector('img')).toBeNull();
     expect(initials()).toBe('MS');
+    expect(host.className).toContain('bg-ui-accent-200');
   });
 
   it('tries a new photo after the old one failed', async () => {
@@ -209,6 +271,50 @@ describe('UiAvatarComponent', () => {
     expect(badge?.querySelector('i')?.classList.contains('fa-github')).toBe(true);
   });
 
+  it('pins a 14px status circle to the top right, tinted by tone, and keeps the provider badge', async () => {
+    fixture.componentRef.setInput('badgeIcon', 'fa-brands fa-github');
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-check', tone: 'accent', label: 'RSVP: Yes' });
+    await fixture.whenStable();
+
+    const status = host.querySelector<HTMLElement>('[data-testid="ui-avatar-status"]');
+    expect(status?.className).toContain('-top-[3px]');
+    expect(status?.className).toContain('-right-[3px]');
+    expect(status?.className).toContain('h-[14px]');
+    expect(status?.className).toContain('bg-ui-accent-500');
+    expect(status?.className).toContain('ring-ui-background-100');
+    expect(status?.querySelector('i')?.classList.contains('fa-check')).toBe(true);
+    expect(host.querySelector('[data-testid="ui-avatar-badge"]')).not.toBeNull();
+
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-ellipsis', tone: 'neutral', label: 'RSVP: No response' });
+    await fixture.whenStable();
+    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.className).toContain('bg-ui-neutral-500');
+
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-question', tone: 'warning', label: 'RSVP: Maybe' });
+    await fixture.whenStable();
+    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.className).toContain('text-ui-neutral-900');
+  });
+
+  it('adds the status label to the accessible name and keeps the name as the title', async () => {
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-check', tone: 'accent', label: 'RSVP: Yes' });
+    await fixture.whenStable();
+
+    expect(host.getAttribute('aria-label')).toBe('Maria Santos, RSVP: Yes');
+    expect(host.getAttribute('title')).toBe('Maria Santos');
+    // An empty title on the circle stops the name tooltip from doubling up with the status tooltip.
+    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.getAttribute('title')).toBe('');
+  });
+
+  it('still announces the status of a decorative avatar', async () => {
+    fixture.componentRef.setInput('decorative', true);
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-xmark', tone: 'neutral', label: 'Absent' });
+    await fixture.whenStable();
+
+    expect(host.getAttribute('aria-hidden')).toBeNull();
+    expect(host.getAttribute('role')).toBe('img');
+    expect(host.getAttribute('aria-label')).toBe('Absent');
+    expect(host.getAttribute('title')).toBeNull();
+  });
+
   it('renders a hidden shimmer shell as a placeholder', async () => {
     fixture.componentRef.setInput('placeholder', true);
     await fixture.whenStable();
@@ -237,12 +343,11 @@ describe('UiAvatarComponent', () => {
     expect(host.getAttribute('aria-label')).toBeNull();
   });
 
-  it('swaps the hairline for a background ring when stacked', async () => {
+  it('adds a background ring when stacked', async () => {
     fixture.componentRef.setInput('stacked', true);
     await fixture.whenStable();
 
     expect(host.className).toContain('ring-ui-background-100');
-    expect(host.className).not.toContain('edge');
   });
 
   describe('after hydration', () => {

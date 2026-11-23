@@ -29,28 +29,17 @@ import {
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
-import { mktgFamilyExportAgentKeys } from '@lfx-one/shared/utils';
+import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, distinctUntilChanged, from, map, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
-import { MktgBrandKitPrintComponent } from '../../mktg-brand-kit-print/mktg-brand-kit-print.component';
-import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mktg-boilerplates-print.component';
-import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
-import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
+import { MktgFamilyPrintComponent } from '../mktg-family-print/mktg-family-print/mktg-family-print.component';
 
 /** The Family page's named slot; document export controls are independent. */
 @Component({
   selector: 'lfx-mktg-family-export-actions',
-  imports: [
-    DatePipe,
-    ButtonComponent,
-    MessageComponent,
-    MktgBrandKitPrintComponent,
-    MktgFrameworkPrintComponent,
-    MktgBoilerplatesPrintComponent,
-    MktgFaqPrintComponent,
-  ],
+  imports: [DatePipe, ButtonComponent, MessageComponent, MktgFamilyPrintComponent],
   templateUrl: './mktg-family-export-actions.component.html',
   styleUrl: './mktg-family-export-actions.component.scss',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
@@ -104,7 +93,7 @@ export class MktgFamilyExportActionsComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint)])
+      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint), toObservable(this.canExport)])
         .pipe(takeUntilDestroyed())
         .subscribe(([requested]) => {
           if (!requested || !this.focusRequested()) return;
@@ -176,7 +165,7 @@ export class MktgFamilyExportActionsComponent {
     if (!target || !members || !this.canPrint()) return;
     // A completed preparation may precede its render callback; keep this print in the click task.
     if (this.markPdfReady() && this.pdfScope === JSON.stringify([target, members])) {
-      this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
+      this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS, this.pdfTitle());
       return;
     }
     this.printing.set(true);
@@ -321,6 +310,21 @@ export class MktgFamilyExportActionsComponent {
         this.lookup.set(lookup);
         this.checking.set(false);
       });
+  }
+
+  /**
+   * The saved PDF's name, like the deck's title: the project, the family and the newest member revision's
+   * date, so the same set of members always gives the same name. The family binds several revisions, so
+   * it carries no version.
+   */
+  private pdfTitle(): string {
+    const view = this.printView();
+    return mktgPrintDocumentTitle(
+      view?.projectName ?? this.context.activeContext()?.name ?? 'Project',
+      this.familyName(),
+      null,
+      view?.newestRevisionAt ?? null
+    );
   }
 
   /** Readiness requires both completed font preparation and the current mounted document. Never prints asynchronously. */

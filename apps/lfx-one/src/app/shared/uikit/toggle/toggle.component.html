@@ -2,6 +2,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <label [class]="labelClasses()" data-testid="ui-toggle-label">
+  @if (label() && labelPosition() === 'start') {
+    <span data-testid="ui-toggle-text">{{ label() }}</span>
+  }
   <input
     type="checkbox"
     role="switch"
@@ -13,7 +16,7 @@
     (change)="onChange($event)"
     (blur)="onBlur()"
     data-testid="ui-toggle-input" />
-  @if (label()) {
+  @if (label() && labelPosition() === 'end') {
     <span data-testid="ui-toggle-text">{{ label() }}</span>
   }
 </label>

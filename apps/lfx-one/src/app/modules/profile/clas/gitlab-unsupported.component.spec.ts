@@ -13,9 +13,9 @@ import { GitlabUnsupportedComponent } from './gitlab-unsupported.component';
 /**
  * Covers the GitLab block opened by DialogService (#2002).
  *
- * What this protects is that the dead end stays a dead end. The block exists because Self Serve
- * holds no verifiable GitLab identity, so the failure mode to guard is not a wrong value but a
- * way forward appearing where there is none — a continue action, or a close that reports
+ * What this protects is that the dead end stays a dead end. GitLab account linking is
+ * supported, but the CLA signing handoff is not implemented here. Guard against a way
+ * forward appearing where there is none — a continue action, or a close that reports
  * something the parent could mistake for a choice.
  *
  * The header is asserted here rather than left to the parent because it is copy: review asked
@@ -54,8 +54,8 @@ describe('GitlabUnsupportedComponent', () => {
   });
 
   it('offers Close and nothing that continues to signing, not even disabled', () => {
-    // A disabled control would imply a condition the contributor could satisfy, and there is
-    // none — Self Serve cannot obtain a GitLab identity at all.
+    // Linking a GitLab account cannot enable the unimplemented CLA signing handoff, so
+    // a disabled control would incorrectly suggest a condition the contributor can satisfy.
     expect(query('gitlab-unsupported-close')).not.toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain('Continue');
   });

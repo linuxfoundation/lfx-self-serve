@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, hide, unhide, visibility, public-page, program]
 last_generated: 2026-10-30
-last_updated: 2026-10-30
+last_updated: 2026-11-09
 intercom_collection: Mentorship
 ---
 
@@ -16,7 +16,7 @@ Hiding a program takes it out of public view: mentees can no longer find it or a
 ## Before you begin
 
 - You must be a Program Admin on the program.
-- Only an **Open** or **Completed** program can be hidden. A program in **Pending Review** or **Rejected** has neither action.
+- Only an approved program (**Accepting**, **In Progress**, **Upcoming** or **Completed**) can be hidden. A program in **Pending Review** or **Rejected** has neither action.
 - A program with active applications cannot be hidden.
 
 ## Hide a program
@@ -39,7 +39,7 @@ You see **Program unhidden.** The program is publicly visible again.
 
 ## View the public page
 
-**View Public Page**, next to **Edit Program**, opens the program's page on [mentorship.linuxfoundation.org](https://mentorship.linuxfoundation.org) in a new tab. It shows on every program, whatever its status.
+**View Public Page**, next to **Edit Program**, opens the program's page on [mentorship.linuxfoundation.org](https://mentorship.linuxfoundation.org) in a new tab. It shows only on an approved program (**Accepting**, **In Progress**, **Upcoming** or **Completed**), so it is gone while a program is **Hidden** and comes back when you unhide it.
 
 ## Troubleshooting
 

@@ -8,7 +8,7 @@ import { provideRouter } from '@angular/router';
 import type { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -173,6 +173,15 @@ describe('DashboardMeetingCardComponent', () => {
   describe('resend my invitation', () => {
     const RESEND_BUTTON = '[data-testid="dashboard-meeting-card-resend-button"]';
 
+    /** Takes over the dialog the card's own `ConfirmationService` would open; accepts it only when asked to. */
+    const answerResendConfirmation = (accept: boolean, target: ComponentFixture<DashboardMeetingCardComponent> = fixture) => {
+      const confirmation = target.debugElement.injector.get(ConfirmationService);
+      return vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+        if (accept) options.accept?.();
+        return confirmation;
+      });
+    };
+
     it('offers the action to a signed-in invitee on an upcoming meeting', async () => {
       await render(buildMeeting({ invited: true }), { authenticated: true });
 
@@ -198,14 +207,50 @@ describe('DashboardMeetingCardComponent', () => {
       expect(fixture.componentInstance.canResendInvite()).toBe(true);
     });
 
-    it('resends to the viewer, without a confirmation, when clicked', async () => {
+    it('asks for confirmation when clicked, and sends nothing until it is accepted', async () => {
       await render(buildMeeting({ invited: true }), { authenticated: true });
+      const confirm = answerResendConfirmation(false);
+
+      fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          header: 'Resend Your Invitation',
+          message: "Resend your invitation to “LFX Extended Leadership”? We'll email it to your own address again.",
+          acceptLabel: 'Resend',
+          rejectLabel: 'Cancel',
+        })
+      );
+      expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+      expect(toastAdd).not.toHaveBeenCalled();
+    });
+
+    it('resends to the viewer once the confirmation is accepted', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true });
+      answerResendConfirmation(true);
 
       fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
       // A one-time meeting has no occurrences to tell apart, so no occurrence is named.
+      expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
       expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', null);
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+    });
+
+    it("renders its own confirm dialog, so a list of cards opens only the clicked card's", async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true });
+      const other = TestBed.createComponent(DashboardMeetingCardComponent);
+      other.componentRef.setInput('meeting', buildMeeting({ id: 'meeting-2', invited: true }));
+      other.detectChanges();
+      const confirm = answerResendConfirmation(false);
+      const otherConfirm = answerResendConfirmation(false, other);
+
+      expect(fixture.nativeElement.querySelector('p-confirmdialog')).not.toBeNull();
+      fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(otherConfirm).not.toHaveBeenCalled();
     });
 
     describe('when only the meeting is passed, as on Groups Overview', () => {
@@ -225,6 +270,7 @@ describe('DashboardMeetingCardComponent', () => {
           }),
           { authenticated: true }
         );
+        answerResendConfirmation(true);
 
         fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
@@ -233,6 +279,7 @@ describe('DashboardMeetingCardComponent', () => {
 
       it("falls back to the shown start's Unix seconds when the list has no matching occurrence", async () => {
         await render(buildMeeting({ ...recurring, invited: true, next_occurrence_start_time: NEXT_START }), { authenticated: true });
+        answerResendConfirmation(true);
 
         fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
@@ -258,6 +305,7 @@ describe('DashboardMeetingCardComponent', () => {
         authenticated: true,
         occurrence: { occurrence_id: 'occ-b', start_time: '2026-10-08T15:00:00Z', duration: 45 },
       });
+      answerResendConfirmation(true);
 
       fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
@@ -292,13 +340,16 @@ describe('DashboardMeetingCardComponent', () => {
       const pending$ = new Subject<{ message: string }>();
       await render(buildMeeting({ invited: true }), { authenticated: true });
       resendMyMeetingInvitation.mockReturnValue(pending$);
+      const confirm = answerResendConfirmation(true);
 
       const button: HTMLButtonElement = fixture.nativeElement.querySelector(RESEND_BUTTON);
       button.click();
       fixture.detectChanges();
 
       expect(button.disabled).toBe(true);
-      fixture.componentInstance.resendInvite();
+      fixture.componentInstance.confirmResendInvite();
+      // No second dialog opens and nothing more is sent while the first send is in flight.
+      expect(confirm).toHaveBeenCalledTimes(1);
       expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
 
       pending$.next({ message: 'ok' });
@@ -306,6 +357,159 @@ describe('DashboardMeetingCardComponent', () => {
       fixture.detectChanges();
 
       expect(button.disabled).toBe(false);
+    });
+  });
+
+  describe('when the card shows one date of a recurring meeting', () => {
+    const first: MeetingOccurrence = { occurrence_id: 'o1', title: 'Weekly', description: '', start_time: '2026-11-10T15:00:00Z', duration: 30 };
+    const later: MeetingOccurrence = { occurrence_id: 'o2', title: 'Weekly', description: '', start_time: '2026-11-17T15:00:00Z', duration: 30 };
+    const laterMs = String(new Date(later.start_time).getTime());
+    const series = (overrides: Partial<Meeting> = {}): Meeting => buildMeeting({ id: 'series-1', occurrences: [first, later], ...overrides });
+
+    it('names that date in the meeting details link', async () => {
+      await render(series(), { occurrence: later });
+
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({ occurrence: laterMs });
+      expect(fixture.componentInstance.meetingDetailHref()).toBe(`/meetings/series-1?occurrence=${laterMs}`);
+    });
+
+    it('names that date in the copied link, next to the password', async () => {
+      await render(series({ password: 'pass-1' }), { occurrence: later });
+
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({ password: 'pass-1', occurrence: laterMs });
+      expect(fixture.componentInstance.meetingDetailClipboardUrl()).toContain(`occurrence=${laterMs}`);
+      expect(fixture.componentInstance.meetingDetailClipboardUrl()).toContain('password=pass-1');
+    });
+
+    it('follows the date when the card moves to another one', async () => {
+      await render(series(), { occurrence: first });
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({ occurrence: String(new Date(first.start_time).getTime()) });
+
+      fixture.componentRef.setInput('occurrence', later);
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({ occurrence: laterMs });
+    });
+
+    it('adds no date for a meeting that does not recur, or when the host passes none', async () => {
+      await render(buildMeeting({ id: 'single-1', occurrences: [] }), { occurrence: later });
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({});
+
+      await render(series());
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({});
+    });
+  });
+
+  describe('join link while the meeting changes', () => {
+    const soon = (): string => new Date(Date.now() + 60 * 1000).toISOString();
+
+    it("never shows the previous meeting's link while the next one loads", async () => {
+      await render(buildMeeting({ id: 'm1', start_time: soon() }), { authenticated: true });
+      const joinUrl = TestBed.inject(MeetingService).getPublicMeetingJoinUrl as unknown as ReturnType<typeof vi.fn>;
+      const user = TestBed.inject(UserService).user as unknown as WritableSignal<{ email: string } | null>;
+      joinUrl.mockReturnValueOnce(of({ link: 'https://zoom.example/j/1' }));
+
+      user.set({ email: 'viewer@example.test' });
+      await fixture.whenStable();
+      expect(fixture.componentInstance.joinUrl()).toContain('zoom.example/j/1');
+
+      const second$ = new Subject<{ link: string }>();
+      joinUrl.mockReturnValueOnce(second$);
+      fixture.componentRef.setInput('meeting', buildMeeting({ id: 'm2', start_time: soon() }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.joinUrl()).toBeNull();
+
+      second$.next({ link: 'https://zoom.example/j/2' });
+      second$.complete();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.joinUrl()).toContain('zoom.example/j/2');
+    });
+  });
+
+  describe('header pager', () => {
+    const pager = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="dashboard-meeting-card-pager"]');
+    const button = (kind: 'previous' | 'next'): HTMLButtonElement =>
+      fixture.nativeElement.querySelector(`[data-testid="dashboard-meeting-card-pager-${kind}"]`) as HTMLButtonElement;
+    const position = (): string => (fixture.nativeElement.querySelector('[data-testid="dashboard-meeting-card-pager-position"]')?.textContent ?? '').trim();
+    const configure = (inputs: { pagerIndex?: number; pagerTotal?: number; cardLabel?: string | null }): void => {
+      for (const [name, value] of Object.entries(inputs)) {
+        fixture.componentRef.setInput(name, value);
+      }
+      fixture.detectChanges();
+    };
+
+    it('shows no pager unless the host opts in, so other cards are unchanged', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'LAST MEETING' });
+
+      expect(pager()).toBeNull();
+    });
+
+    it('shows no pager for a set of one meeting', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 0, pagerTotal: 1 });
+
+      expect(pager()).toBeNull();
+    });
+
+    it('shows a one-based position out of the total', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 1, pagerTotal: 5 });
+
+      expect(position()).toBe('2 of 5');
+      expect(button('previous').getAttribute('aria-label')).toBe('Previous upcoming meeting');
+      expect(button('next').getAttribute('aria-label')).toBe('Next upcoming meeting');
+    });
+
+    it('disables previous on the first meeting and next on the last', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 0, pagerTotal: 3 });
+      expect(button('previous').getAttribute('aria-disabled')).toBe('true');
+      expect(button('next').getAttribute('aria-disabled')).toBe('false');
+
+      configure({ pagerIndex: 2 });
+      expect(button('previous').getAttribute('aria-disabled')).toBe('false');
+      expect(button('next').getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('ignores a press on a button that is dimmed at the end of the range', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 0, pagerTotal: 3 });
+      const previous = vi.fn();
+      fixture.componentInstance.pagerPrevious.subscribe(previous);
+
+      button('previous').click();
+
+      expect(previous).not.toHaveBeenCalled();
+    });
+
+    it('keeps keyboard focus on the button when the end of the range is reached', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 1, pagerTotal: 3 });
+      button('next').focus();
+
+      configure({ pagerIndex: 2 });
+
+      expect(button('next').getAttribute('aria-disabled')).toBe('true');
+      expect(document.activeElement).toBe(button('next'));
+    });
+
+    it('emits when the buttons are used', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 1, pagerTotal: 3 });
+      const previous = vi.fn();
+      const next = vi.fn();
+      fixture.componentInstance.pagerPrevious.subscribe(previous);
+      fixture.componentInstance.pagerNext.subscribe(next);
+
+      button('previous').click();
+      button('next').click();
+
+      expect(previous).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledTimes(1);
     });
   });
 });

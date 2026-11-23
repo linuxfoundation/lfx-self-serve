@@ -18,7 +18,11 @@
   } @else if (donation(); as d) {
     <lfx-recurring-donation-initiative-header [donation]="d" />
 
-    <lfx-recurring-donation-subscription-summary [donation]="d" (cancelDonation)="onCancelDonation()" />
+    <lfx-recurring-donation-subscription-summary
+      [donation]="d"
+      [anonymitySaving]="anonymitySaving()"
+      (cancelDonation)="onCancelDonation()"
+      (toggleAnonymity)="onToggleAnonymity()" />
 
     <lfx-recurring-donation-charge-history [chargeHistory]="chargeHistory()" [hasMore]="chargeHistoryHasMore()" (loadMore)="onLoadMore()" />
   } @else {

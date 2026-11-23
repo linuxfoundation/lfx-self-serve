@@ -44,6 +44,21 @@ function buildReq(query: Record<string, unknown> = {}) {
   return { bearerToken: 'user-token', query } as any;
 }
 
+const SLUG_TO_UID = '/crowdfunding/initiatives/slug-to-uid/my-fund';
+
+// Answers each CF path with its own [status, body]; any other path is a 500 so an unexpected call fails loudly.
+function respondByPath(fetchMock: ReturnType<typeof vi.fn>, routes: Record<string, [number, unknown?]>) {
+  fetchMock.mockImplementation(async (url: string) => {
+    const [status, body = {}] = routes[url.replace('https://cf.example', '')] ?? [500];
+    return { ok: status >= 200 && status < 300, status, json: async () => body, text: async () => '' };
+  });
+}
+
+async function getDetail(slug: string, res = buildRes(), next = vi.fn()) {
+  await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug } }, res, next);
+  return { res, next };
+}
+
 describe('CrowdfundingController initiatives scope (#347, #348)', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -121,6 +136,145 @@ describe('CrowdfundingController initiatives scope (#347, #348)', () => {
   });
 });
 
+describe('CrowdfundingController org donations (#415)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv('CROWDFUNDING_API_BASE_URL', 'https://cf.example');
+    fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'd1',
+            type: 'recurring',
+            initiative_id: 'i1',
+            initiative_name: 'Synthetic Fund',
+            initiative_slug: 'synthetic-fund',
+            donor_name: 'Synthetic Donor',
+            donor_email: 'donor@example.com',
+            amount_cents: 2500,
+            frequency: 'monthly',
+            status: 'active',
+            created_on: '2026-10-01T00:00:00Z',
+          },
+        ],
+        meta: { total: 1, limit: 10, offset: 20 },
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['a missing orgUid', {}],
+    ['a non-SFID orgUid', { orgUid: 'acme' }],
+    ['a 15-char orgUid', { orgUid: '001000000000000' }],
+    ['a path traversal orgUid', { orgUid: '../me/donations' }],
+    ['a repeated orgUid', { orgUid: [ORG_UID, ORG_UID] }],
+  ])('rejects %s with a 400 before calling CF', async (_label, query) => {
+    const next = vi.fn();
+    await new CrowdfundingController().getOrgDonations(buildReq(query), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('lists from the CF organizations donations endpoint with the user token and maps rows', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+    await new CrowdfundingController().getOrgDonations(buildReq({ orgUid: ORG_UID, pageSize: '10', offset: '20' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://cf.example/crowdfunding/organizations/${ORG_UID}/donations?limit=10&offset=20`);
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer user-token');
+    expect(res.json).toHaveBeenCalledWith({
+      data: [
+        {
+          id: 'd1',
+          recurring: true,
+          initiativeId: 'i1',
+          initiativeName: 'Synthetic Fund',
+          initiativeSlug: 'synthetic-fund',
+          donorName: 'Synthetic Donor',
+          donorEmail: 'donor@example.com',
+          anonymous: false,
+          amountCents: 2500,
+          date: Date.UTC(2026, 9, 1),
+        },
+      ],
+      total: 1,
+      pageSize: 10,
+      offset: 20,
+    });
+  });
+});
+
+describe('CrowdfundingController donation anonymity (lfx-crowdfunding#466)', () => {
+  const DONATION_ID = '00000000-0000-4000-8000-0000000000d1';
+  const SUBSCRIPTION_ID = '00000000-0000-4000-8000-0000000000a1';
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv('CROWDFUNDING_API_BASE_URL', 'https://cf.example');
+    fetchMock = vi.fn(async (_url: string, init: RequestInit) => ({
+      ok: true,
+      json: async () => ({ id: 'cf-id', anonymous: JSON.parse(String(init.body)).anonymous }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  const patchReq = (id: string, body: unknown) => ({ bearerToken: 'user-token', query: {}, params: { id }, body }) as any;
+
+  it.each([
+    ['updateMyDonationAnonymity', DONATION_ID, `https://cf.example/crowdfunding/me/donations/${DONATION_ID}`],
+    ['updateMySubscriptionAnonymity', SUBSCRIPTION_ID, `https://cf.example/crowdfunding/me/subscriptions/${SUBSCRIPTION_ID}`],
+  ] as const)('%s PATCHes CF with the user token and returns the saved setting', async (handler, id, url) => {
+    const res = buildRes();
+    const next = vi.fn();
+    await new CrowdfundingController()[handler](patchReq(id, { anonymous: true }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0][0]).toBe(url);
+    expect(fetchMock.mock.calls[0][1].method).toBe('PATCH');
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer user-token');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ anonymous: true });
+    expect(res.json).toHaveBeenCalledWith({ id: 'cf-id', anonymous: true });
+  });
+
+  it.each([
+    ['a non-UUID id', 'not-a-uuid', { anonymous: true }],
+    ['a path traversal id', '../payment-method', { anonymous: true }],
+    ['a missing anonymous flag', DONATION_ID, {}],
+    ['a string anonymous flag', DONATION_ID, { anonymous: 'true' }],
+    ['no body', DONATION_ID, undefined],
+  ])('rejects %s with a 400 before calling CF', async (_label, id, body) => {
+    const controller = new CrowdfundingController();
+    for (const handler of [controller.updateMyDonationAnonymity, controller.updateMySubscriptionAnonymity]) {
+      const next = vi.fn();
+      await handler.call(controller, patchReq(id, body), buildRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("propagates a CF 404 for a donation that is not the caller's", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 404, text: async () => 'not found' });
+    const next = vi.fn();
+    await new CrowdfundingController().updateMyDonationAnonymity(patchReq(DONATION_ID, { anonymous: false }), buildRes(), next);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 404 });
+  });
+});
+
 describe('CrowdfundingController initiative writer routes (#259)', () => {
   const INITIATIVE_ID = '00000000-0000-4000-8000-000000000002';
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -128,6 +282,8 @@ describe('CrowdfundingController initiative writer routes (#259)', () => {
   const respondWith = (status: number, body: unknown = {}) =>
     fetchMock.mockResolvedValue({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => '' });
   const lastCall = (): [string, RequestInit] => fetchMock.mock.calls.at(-1) as [string, RequestInit];
+  const requestedUrls = (): string[] => fetchMock.mock.calls.map(([url]) => url as string);
+  const MANAGE = `/crowdfunding/initiatives/${INITIATIVE_ID}/manage`;
 
   beforeEach(() => {
     vi.stubEnv('CROWDFUNDING_API_BASE_URL', 'https://cf.example');
@@ -140,25 +296,56 @@ describe('CrowdfundingController initiative writer routes (#259)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reads initiative details from /manage and maps a 404 to not-found', async () => {
-    respondWith(404);
-    const res = buildRes();
-    const next = vi.fn();
-    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, next);
+  it('resolves the route slug with slug-to-uid, then reads /manage by UUID (#363)', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }], [MANAGE]: [200, { id: INITIATIVE_ID, slug: 'my-fund', status: 'published' }] });
+    const { res, next } = await getDetail('my-fund');
 
-    expect(lastCall()[0]).toBe('https://cf.example/crowdfunding/initiatives/my-fund/manage');
-    expect(lastCall()[1].headers).toMatchObject({ Authorization: 'Bearer user-token' });
+    expect(next).not.toHaveBeenCalled();
+    expect(requestedUrls()).toEqual([`https://cf.example${SLUG_TO_UID}`, `https://cf.example${MANAGE}`]);
+    for (const [, init] of fetchMock.mock.calls as [string, RequestInit][]) {
+      expect(init.headers).toMatchObject({ Authorization: 'Bearer user-token' });
+    }
+    expect(res.json.mock.calls[0][0]).toMatchObject({ id: INITIATIVE_ID, slug: 'my-fund' });
+  });
+
+  it('reports not-found when slug-to-uid 404s, without calling /manage', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [404] });
+    const { res, next } = await getDetail('my-fund');
+
+    expect(requestedUrls()).toEqual([`https://cf.example${SLUG_TO_UID}`]);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('propagates a non-writer 403 from /manage instead of reporting not-found', async () => {
-    respondWith(403);
-    const res = buildRes();
-    const next = vi.fn();
-    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, next);
+  it('reads /manage directly when the route param is already a UUID', async () => {
+    respondByPath(fetchMock, { [MANAGE]: [200, { id: INITIATIVE_ID, slug: 'my-fund', status: 'published' }] });
+    const { next } = await getDetail(INITIATIVE_ID);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(requestedUrls()).toEqual([`https://cf.example${MANAGE}`]);
+  });
+
+  it('propagates a 403 from /manage instead of reporting not-found', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }], [MANAGE]: [403] });
+    const { res, next } = await getDetail('my-fund');
 
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403 });
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('reports not-found when /manage 404s after the slug resolves (gateway bypassed)', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }], [MANAGE]: [404] });
+    const { res, next } = await getDetail('my-fund');
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates a slug-to-uid failure other than 404', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [502] });
+    const { res, next } = await getDetail('my-fund');
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 502 });
     expect(res.status).not.toHaveBeenCalled();
   });
 
@@ -217,6 +404,7 @@ describe('CrowdfundingController initiative attribution (lfx-crowdfunding#342)',
     fetchMock.mockResolvedValue({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => '' });
   const lastCall = (): [string, RequestInit] => fetchMock.mock.calls.at(-1) as [string, RequestInit];
   const sentBody = (): Record<string, unknown> => JSON.parse(lastCall()[1].body as string);
+  const MANAGE = `/crowdfunding/initiatives/${INITIATIVE_ID}/manage`;
   const putReq = (body: Record<string, unknown>, id = INITIATIVE_ID) => ({ ...buildReq(), params: { id }, body }) as any;
 
   beforeEach(() => {
@@ -361,15 +549,20 @@ describe('CrowdfundingController initiative attribution (lfx-crowdfunding#342)',
   });
 
   it('maps is_owner and attribution from the manage read', async () => {
-    respondWith(200, {
-      id: INITIATIVE_ID,
-      slug: 'my-fund',
-      status: 'submitted',
-      is_owner: true,
-      attribution: { type: 'project', entity_uid: PROJECT_UID, name: 'Vendor Project' },
+    respondByPath(fetchMock, {
+      [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }],
+      [MANAGE]: [
+        200,
+        {
+          id: INITIATIVE_ID,
+          slug: 'my-fund',
+          status: 'submitted',
+          is_owner: true,
+          attribution: { type: 'project', entity_uid: PROJECT_UID, name: 'Vendor Project' },
+        },
+      ],
     });
-    const res = buildRes();
-    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, vi.fn());
+    const { res } = await getDetail('my-fund');
 
     expect(res.json.mock.calls[0][0]).toMatchObject({
       isOwner: true,
@@ -378,9 +571,8 @@ describe('CrowdfundingController initiative attribution (lfx-crowdfunding#342)',
   });
 
   it('reads a missing is_owner as false', async () => {
-    respondWith(200, { id: INITIATIVE_ID, slug: 'my-fund', status: 'submitted' });
-    const res = buildRes();
-    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, vi.fn());
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }], [MANAGE]: [200, { id: INITIATIVE_ID, slug: 'my-fund', status: 'submitted' }] });
+    const { res } = await getDetail('my-fund');
 
     expect(res.json.mock.calls[0][0].isOwner).toBe(false);
   });

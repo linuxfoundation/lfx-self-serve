@@ -3,26 +3,32 @@
 
 import { Component, inject, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, provideRouter, Router, UrlSegment } from '@angular/router';
+import { ActivatedRoute, provideRouter, RedirectFunction, Router, UrlSegment } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_TABS, ORG_LENS_URL_ROOT, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
 import { describe, expect, it, vi } from 'vitest';
 
 import { routes } from './app.routes';
+import { OrgRollUpUnavailableComponent } from './modules/dashboards/org/org-rollup-unavailable/org-rollup-unavailable.component';
 import { HealthMetricsTrainingComponent } from './modules/dashboards/health-metrics-training/health-metrics-training.component';
 import { MyNewsletterFoundationsComponent } from './modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component';
 import { MyNewslettersComponent } from './modules/newsletters/my-newsletters/my-newsletters.component';
+import { NewsletterSharePreviewComponent } from './modules/newsletters/newsletter-share-preview/newsletter-share-preview.component';
 import { NEWSLETTER_ROUTES } from './modules/newsletters/newsletters.routes';
 import { VoteDetailComponent } from './modules/votes/vote-detail/vote-detail.component';
 import { authGuard } from './shared/guards/auth.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
+import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
+import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
+import { AccountContextService } from './shared/services/account-context.service';
 import { LensService } from './shared/services/lens.service';
 
 import type { Route } from '@angular/router';
@@ -67,14 +73,24 @@ describe('Personal newsletter route isolation', () => {
     const foundation = findRoute(routes, 'newsletters/my/:foundationSlug')!;
     expect(foundation).toMatchObject({ title: 'Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
     expect(await foundation.loadComponent!()).toBe(MyNewslettersComponent);
+    // Look these up in the shell: the signed-out share preview mounts its own top-level `newsletters/:projectSlug/:id`.
     for (const path of ['newsletters/:projectSlug/:id', 'newsletters']) {
-      expect(children.indexOf(personal)).toBeLessThan(children.indexOf(findRoute(routes, path)!));
-      expect(children.indexOf(foundation)).toBeLessThan(children.indexOf(findRoute(routes, path)!));
+      const later = children.find((route) => route.path === path)!;
+      expect(children.indexOf(personal)).toBeLessThan(children.indexOf(later));
+      expect(children.indexOf(foundation)).toBeLessThan(children.indexOf(later));
     }
-    expect(NEWSLETTER_ROUTES.map((route) => route.path)).toEqual(['', 'list', 'create', ':projectUid/:id/edit', ':projectUid/:id/analytics']);
+    expect(NEWSLETTER_ROUTES.map((route) => route.path)).toEqual([
+      '',
+      'list',
+      'create',
+      ':projectUid/publications/create',
+      ':projectUid/publications/:publicationUid/edit',
+      ':projectUid/:id/edit',
+      ':projectUid/:id/analytics',
+    ]);
   });
   it('preserves reader and publisher guards', () => {
-    expect(findRoute(routes, 'newsletters/:projectSlug/:id')?.canActivate).toEqual([authGuard]);
+    expect(shellRoute.children!.find((route) => route.path === 'newsletters/:projectSlug/:id')?.canActivate).toEqual([authGuard]);
     expect(findRoute(routes, 'newsletters')?.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
     for (const lens of ['foundation', 'project']) {
       expect(findRoute(routes, `${lens}/newsletters`)?.canActivate).toEqual([newsletterAccessGuard, projectQueryParamGuard]);
@@ -82,6 +98,23 @@ describe('Personal newsletter route isolation', () => {
     for (const route of NEWSLETTER_ROUTES.filter((route) => route.loadComponent)) {
       expect(route.canActivate).toEqual([authGuard, newsletterAccessGuard]);
     }
+  });
+});
+
+describe('Newsletter share preview route (#4940)', () => {
+  const preview = routes.find((route) => route.path === 'newsletters/:projectSlug/:id' && route.canMatch?.includes(newsletterAnonymousSsrMatchGuard))!;
+
+  it('mounts the signed-out share preview ahead of the authenticated shell', async () => {
+    expect(preview).toMatchObject({ pathMatch: 'full', canMatch: [newsletterAnonymousSsrMatchGuard] });
+    expect(preview.canActivate).toBeUndefined();
+    expect(routes.indexOf(preview)).toBeLessThan(routes.indexOf(shellRoute));
+    expect(await preview.loadComponent!()).toBe(NewsletterSharePreviewComponent);
+  });
+
+  it('leaves the signed-in reader in the shell behind authGuard', () => {
+    const reader = shellRoute.children!.find((route) => route.path === 'newsletters/:projectSlug/:id')!;
+    expect(reader.canActivate).toEqual([authGuard]);
+    expect(reader.canMatch).toBeUndefined();
   });
 });
 
@@ -226,4 +259,113 @@ describe('My Meetups routes', () => {
       }
     );
   }
+});
+
+describe('Org Lens roll-up routes', () => {
+  const org = shellRoute.children!.find((route) => route.path === ORG_LENS_URL_ROOT)!;
+  const addressed = org.children!.find((route) => route.path === `:${ORG_SEGMENT_PARAM}`)!;
+  const gates = (children: Route[]): Route[] => children.filter((route) => route.canMatch?.includes(orgRollUpUnavailablePageGuard));
+
+  it.each([
+    ['legacy', org.children!],
+    ['addressed', addressed.children!],
+  ])('declares the unavailable page ahead of every page a roll-up cannot render yet (%s mount)', (_mount, children) => {
+    expect(gates(children).map((gate) => gate.path)).toEqual([
+      'overview',
+      'memberships/:foundationSlug',
+      'projects',
+      'projects/:projectSlug',
+      'roi',
+      'people',
+      'contributions',
+      'training',
+      'meetings',
+      'groups',
+    ]);
+    for (const gate of gates(children)) {
+      expect(children[children.indexOf(gate) + 1].path).toBe(gate.path);
+    }
+  });
+
+  // A page's own match guards run on its stand-in first, so a page the caller may not match is never disclosed.
+  it.each([
+    ['legacy', org.children!],
+    ['addressed', addressed.children!],
+  ])("runs each page's own match guards ahead of the roll-up guard (%s mount)", (_mount, children) => {
+    for (const gate of gates(children)) {
+      const page = children[children.indexOf(gate) + 1];
+      expect(gate.canMatch).toEqual([...(page.canMatch ?? []), orgRollUpUnavailablePageGuard]);
+    }
+    expect(gates(children).find((gate) => gate.path === 'roi')?.canMatch).toEqual([orgLensLfStaffOnlyGuard, orgRollUpUnavailablePageGuard]);
+  });
+
+  it('lazy-loads the unavailable page for every address under a gated page', async () => {
+    const people = gates(addressed.children!).find((gate) => gate.path === 'people')!;
+
+    expect(people.children?.map((child) => child.path)).toEqual(['**']);
+    expect(await people.children?.[0].loadComponent?.()).toBe(OrgRollUpUnavailableComponent);
+  });
+
+  it("sends a bare roll-up address to its Memberships page and an organization's to its overview", () => {
+    const redirect = addressed.children!.find((route) => route.path === '')!.redirectTo as RedirectFunction;
+
+    expect(redirect({ params: { [ORG_SEGMENT_PARAM]: 'family-0014100000RootAAAA' } } as never)).toBe('memberships');
+    expect(redirect({ params: { [ORG_SEGMENT_PARAM]: 'acme-inc' } } as never)).toBe('overview');
+  });
+
+  // The segment is normalized first, as the guards do, so a differently cased or padded roll-up key still lands home.
+  it.each([['FAMILY-0014100000RootAAAA'], ['Family-0014100000RootAAAA'], [' family-0014100000RootAAAA ']])(
+    'sends a non-canonical roll-up address (%j) to its Memberships page',
+    (segment) => {
+      const redirect = addressed.children!.find((route) => route.path === '')!.redirectTo as RedirectFunction;
+
+      expect(redirect({ params: { [ORG_SEGMENT_PARAM]: segment } } as never)).toBe('memberships');
+    }
+  );
+
+  describe('bare /company', () => {
+    const legacyHome = org.children!.find((route) => route.path === '')!;
+    const overviewGate = gates(org.children!).find((gate) => gate.path === 'overview')!;
+    const sentinel = (page: string): Route[] => [{ path: '**', component: RouteSentinelComponent, data: { page } }];
+
+    // Keeps the production redirect and the production overview gate; only the lazy pages are sentinels.
+    async function visitBareOrg(isRollUp: boolean, home: Route = legacyHome): Promise<string | undefined> {
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: AccountContextService, useValue: { isRollUp: signal(isRollUp) } },
+          provideRouter([
+            {
+              path: ORG_LENS_URL_ROOT,
+              children: [
+                home,
+                { ...overviewGate, children: sentinel('Roll-up unavailable') },
+                { path: 'overview', children: sentinel('Overview') },
+                { path: 'memberships', children: sentinel('Memberships') },
+              ],
+            },
+          ]),
+        ],
+      });
+      const harness = await RouterTestingHarness.create();
+      await harness.navigateByUrl('/company');
+      return harness.routeNativeElement?.textContent?.trim();
+    }
+
+    it("sends a cookie-restored roll-up to the roll-up's Memberships page", async () => {
+      expect(await visitBareOrg(true)).toBe('Memberships');
+      expect(TestBed.inject(Router).url).toBe('/company/memberships');
+    });
+
+    it('sends an organization to its overview', async () => {
+      expect(await visitBareOrg(false)).toBe('Overview');
+      expect(TestBed.inject(Router).url).toBe('/company/overview');
+    });
+
+    // Belt and braces: were bare `/company` ever redirected to the overview on a roll-up, the gate still catches it,
+    // although the URL being recognized is `/company`.
+    it('still gates the overview when a bare-address redirect lands there on a roll-up', async () => {
+      expect(await visitBareOrg(true, { path: '', pathMatch: 'full', redirectTo: 'overview' })).toBe('Roll-up unavailable');
+      expect(TestBed.inject(Router).url).toBe('/company/overview');
+    });
+  });
 });

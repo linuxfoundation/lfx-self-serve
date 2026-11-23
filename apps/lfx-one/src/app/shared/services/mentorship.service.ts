@@ -11,6 +11,7 @@ import {
   MentorshipLfxProfileFields,
   MentorshipNameAvailability,
   MentorshipProgramDecisionRequest,
+  MentorshipProgramDecisionResult,
   MentorshipProgramReview,
   MentorshipProgramReviewDecision,
   MentorshipTaskCreateRequest,
@@ -41,12 +42,16 @@ export class MentorshipService {
     return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params }).pipe(take(1));
   }
 
-  /** One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. Errors propagate. */
-  public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number }): Observable<MentorshipLfProjectsResponse> {
+  /**
+   * One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. With
+   * `parentUid`, only that project's direct sub-projects (the Foundation lens wizard). Errors propagate.
+   */
+  public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number; parentUid?: string }): Observable<MentorshipLfProjectsResponse> {
     // Strict codec: a `+` in a typed search (`C++`) or in the opaque cursor would otherwise reach Express as a space.
     let httpParams = strictHttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
     if (params?.pageToken) httpParams = httpParams.set('page_token', params.pageToken);
+    if (params?.parentUid) httpParams = httpParams.set('parentUid', params.parentUid);
     httpParams = httpParams.set('page_size', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
 
     return this.http
@@ -54,7 +59,7 @@ export class MentorshipService {
       .pipe(take(1), catchError(this.rethrowError('getLfProjects')));
   }
 
-  /** The program an approve/reject email link points at. Rethrows so the page can branch on the status code. */
+  /** The program a review email link points at, with its details. Rethrows so the page can branch on the status code. */
   public getProgramReview(programId: string): Observable<MentorshipProgramReview> {
     return this.http
       .get<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}`)
@@ -65,9 +70,9 @@ export class MentorshipService {
    * Records an approver's decision. Not caught here: 403 (not an approver) and 409 (already
    * decided) are expected outcomes the review page renders, not failures to log.
    */
-  public submitProgramDecision(programId: string, decision: MentorshipProgramReviewDecision): Observable<MentorshipProgramReview> {
+  public submitProgramDecision(programId: string, decision: MentorshipProgramReviewDecision): Observable<MentorshipProgramDecisionResult> {
     const body: MentorshipProgramDecisionRequest = { decision };
-    return this.http.post<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}/decision`, body).pipe(take(1));
+    return this.http.post<MentorshipProgramDecisionResult>(`/api/mentorship/program-review/${encodeURIComponent(programId)}/decision`, body).pipe(take(1));
   }
 
   /**

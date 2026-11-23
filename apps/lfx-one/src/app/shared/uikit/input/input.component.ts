@@ -44,16 +44,20 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly type = input<UiInputType>('text');
   /** Virtual keyboard hint for a `text` field, for example `numeric` or `decimal`. Empty leaves the browser default. */
   public readonly inputmode = input<UiInputMode | ''>('');
-  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair with a button of the same size. */
+  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `tiny`, `default` or `large` button. */
   public readonly size = input<UiInputSize>('medium');
   /** Pill-shaped corners and 16px side padding. */
   public readonly rounded = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Marks the field as required for assistive technology. */
+  /** Marks the field as required for assistive technology and adds a red asterisk to the visible label. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Shows the value without letting it be edited; it stays focusable and is still read and submitted. */
+  public readonly readonly = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native `autocomplete` token, for example `email`. Empty leaves the browser default, so autofill and password managers keep working. */
   public readonly autocomplete = input<string>('');
+  /** Native `maxlength`, capping what can be typed or pasted; `null` leaves the field uncapped. */
+  public readonly maxlength = input<number | null>(null);
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-link`. */
   public readonly prefixIcon = input<string>('');
   /** Leading text such as `https://`. Shown after the icon when both are set. */
@@ -147,9 +151,9 @@ export class UiInputComponent implements ControlValueAccessor {
       // Library recipe: 1px ring at rest, stronger ring plus a 4px halo on focus (accent) or error (danger).
       const dangerHalo = 'shadow-[0_0_0_1px_theme(colors.ui.danger.700),0_0_0_4px_theme(colors.ui.danger.200)]';
       const interactive =
-        '[&:hover:not(:focus-within)]:edge-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
+        '[&:hover:not(:focus-within)]:edge-control-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
       // A disabled field keeps the resting ring only, so it does not look interactive on hover.
-      const rest = this.isDisabled() ? 'edge' : `edge ${interactive}`;
+      const rest = this.isDisabled() ? 'edge-control' : `edge-control ${interactive}`;
       // Library keeps one danger look focused or not (bundle.css [aria-invalid] follows :focus-within), so no focus variant here.
       const ring = this.error() ? dangerHalo : rest;
       // forced-colors: shadows vanish, so a real border keeps the field visible and an outline on the wrapper (not clipped by it) marks focus.

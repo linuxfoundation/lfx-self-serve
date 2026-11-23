@@ -32,6 +32,8 @@ export interface OrgItem {
   slug?: string | null;
   /** True for an org the caller reaches only as its CLA Manager (see `OrgResolveResponse.claOnly`). Absent means false. */
   claOnly?: boolean;
+  familyRootUid?: string;
+  familyRootName?: string | null;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -53,6 +55,12 @@ export interface OrgItemsResponse {
   upstream_failed: boolean;
   /** Optional total when upstream returns it cheaply; clients tolerate null. */
   total?: number | null;
+  /**
+   * M3 — the caller's CLA-only organizations are not on this page and should be fetched with
+   * `cla_only=1`, then listed after the held rows. Set on a first page for a non-staff caller who
+   * holds at least one grant and whose roster answered; absent otherwise.
+   */
+  cla_only_deferred?: boolean;
 }
 
 /** BFF → query-service shape built by `OrgNavigationService.buildQuery`. */
@@ -76,6 +84,8 @@ export interface GetOrgItemsParams {
   name?: string;
   /** Pin a uid at the top of the first page when it falls outside the natural results. Mutually exclusive with `pageToken`. */
   selectedUid?: string;
+  /** M3 — answer only the caller's CLA-only organizations, unfiltered and alphabetical. Mutually exclusive with `pageToken`. */
+  claOnly?: boolean;
 }
 
 /** A switcher row plus the section heading it introduces, if any. A heading is carried by the first row of its group so an empty group cannot leave a stray heading behind. */
@@ -87,6 +97,80 @@ export interface OrgSelectorRow {
   membershipLabel: string | null;
   /** Finer membership status behind the chip's tooltip, repeated as screen-reader text because a tooltip on a non-focusable span is never announced. Null when upstream omits it. */
   membershipStatus: string | null;
+}
+
+/** One Salesforce family the caller holds organizations in — the unit a roll-up combines (#4125). */
+export interface OrgRollUpFamily {
+  /** The family's top Salesforce account id; the roll-up's address and request key are built from it. */
+  rootUid: string;
+  /** Display name of the family's top account, or null when it is not known yet. */
+  name: string | null;
+  /** The caller's organizations in this family, de-duplicated. */
+  orgUids: string[];
+}
+
+/** One of the caller's organizations within a family, as `GET /api/orgs/me/roll-up-set` returns it (#4126). */
+export interface OrgRollUpSetOrg {
+  uid: string;
+  accountId: string;
+  name: string;
+  logoUrl: string | null;
+}
+
+/** One Salesforce family in the roll-up set (#4126). `orgs` are flat peers; the family's top account id appears once, as `rootUid`. */
+export interface OrgRollUpSetFamily {
+  /** The family's top Salesforce account id. */
+  rootUid: string;
+  rootName: string | null;
+  rootLogoUrl: string | null;
+  /** Only the organizations in this family the caller can access, alphabetical by name. */
+  orgs: OrgRollUpSetOrg[];
+}
+
+/** Wire shape of `GET /api/orgs/me/roll-up-set` (#4126) — the caller's organizations grouped by Salesforce family, families alphabetical by `rootName`. */
+export interface OrgRollUpSetResponse {
+  families: OrgRollUpSetFamily[];
+  /** True when the family walk was truncated or failed, so the families are a lower bound rather than the complete set. */
+  degraded: boolean;
+  lookupOutcome: OrgLensLookupOutcome;
+}
+
+export interface OrgLensRollUpScope {
+  rollUpKey: string;
+  rootUid: string;
+  members: OrgRollUpSetOrg[];
+  complete: boolean;
+  excludedCount: number;
+}
+
+export interface OrgLensRollUpCoverage {
+  complete: boolean;
+  excludedCount: number;
+}
+
+export interface OrgStaffRollUpFamily {
+  family: OrgRollUpSetFamily;
+  complete: boolean;
+}
+
+/** Where the caller's families stand: `pending` until the roll-up set first answers, `server` once it has (successfully or not). */
+export type OrgRollUpFamiliesSource = 'pending' | 'server';
+
+/** A family roll-up entry in the switcher, precomputed so the template reads prepared values rather than calling a method per change-detection pass. */
+export interface OrgRollUpSelectorRow {
+  rootUid: string;
+  name: string;
+  subtitle: string;
+  organizationCount: number;
+  isSelected: boolean;
+}
+
+export interface OrgRelatedCompanyRow {
+  org: OrgRollUpSetOrg;
+  isSelected: boolean;
+  roleLabel: string;
+  roleIcon: string;
+  roleTooltip: string;
 }
 
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */
@@ -297,6 +381,12 @@ export interface OrgListPage {
   nextPageToken: string | null;
   upstreamFailed: boolean;
   reset: boolean;
+  /** The search term the page was fetched with. */
+  term?: string;
+  /** The response's `cla_only_deferred`: the caller's CLA-only rows arrive from a separate request. */
+  claOnlyDeferred?: boolean;
+  /** The `selected_uid` a first page was fetched with, or `null` (always `null` on next pages). */
+  pinnedUid?: string | null;
 }
 
 /** Carries dispatch generation so stale responses can be filtered out of the merged stream (FR-011 race-guard). */
@@ -445,8 +535,15 @@ export interface AccessAwareOrgsResult {
   degraded: boolean;
   /** Spec 053 — whether `resolveIsStaff` answered; `failed` results are cached only under `ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS` (see `getAccessAwareOrgs`). */
   staffCheck: OrgLensStaffCheck;
+  familyRoots: Map<string, OrgFamilyRoot>;
   /** Spec 053 — per-computation UUID echoed into that computation's warnings. Set on every computed result; surfaced on the wire (`RoleGrantsResponse.correlationId`) only when `staffCheck === 'failed'`. */
   correlationId?: string;
+}
+
+export interface OrgFamilyRoot {
+  rootUid: string;
+  rootName: string | null;
+  rootLogoUrl: string | null;
 }
 
 /** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
@@ -464,6 +561,7 @@ export interface AccessAwareOrgsCacheEntry {
   degraded: boolean;
   /** Required, so an entry written before spec 053 fails the shape guard and is recomputed rather than answering `undefined` for the staff-check state. */
   staffCheck: OrgLensStaffCheck;
+  familyRoots: [string, OrgFamilyRoot][];
   /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it (or with `isStaff: true` or `isContractor: true`) fails the shape guard. */
   correlationId?: string;
 }

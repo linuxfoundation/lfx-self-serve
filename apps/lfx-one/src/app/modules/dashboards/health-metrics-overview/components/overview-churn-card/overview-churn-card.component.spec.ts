@@ -85,6 +85,26 @@ describe('OverviewChurnCardComponent', () => {
     expect(marker.getAttribute('title')).toBe('Overall churn 18%');
   });
 
+  it("opens in the view's tier rank with Tier sorted, and sorts any column across every tier", async () => {
+    await render();
+    const tiers = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid^="overview-churn-tier-"]')].map((row: Element) => row.getAttribute('data-testid') ?? '');
+    const header = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="overview-churn-sort-${key}"]`);
+
+    expect(tiers()).toEqual(['overview-churn-tier-Platinum Membership', 'overview-churn-tier-Gold Membership']);
+    expect(header('tier').parentElement?.getAttribute('aria-sort')).toBe('descending');
+
+    (header('tier').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(tiers()).toEqual(['overview-churn-tier-Gold Membership', 'overview-churn-tier-Platinum Membership']);
+
+    (header('value').querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(tiers()).toEqual(['overview-churn-tier-Platinum Membership', 'overview-churn-tier-Gold Membership']);
+    expect(header('value').parentElement?.getAttribute('aria-sort')).toBe('descending');
+    expect(header('tier').parentElement?.getAttribute('aria-sort')).toBe('none');
+  });
+
   it('shows its empty state for a period with no churn', async () => {
     await render();
 

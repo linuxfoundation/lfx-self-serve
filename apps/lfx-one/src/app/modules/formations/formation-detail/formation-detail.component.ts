@@ -7,6 +7,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { ProjectService } from '@services/project.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { FORMATION_ITEMS_HEADING, FORMATION_POST_FORMATION_SUBTITLES } from '@lfx-one/shared/constants';
 import type { FormationChecklistResponse, FormationDetailPageState } from '@lfx-one/shared/interfaces';
 import { isPostFormationStage } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -40,6 +41,8 @@ export class FormationDetailComponent {
   private readonly projectSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('projectSlug'))), {
     initialValue: this.route.snapshot.paramMap.get('projectSlug'),
   });
+  /** Neutral heading for the shared section — this page is reached by the formation team, who see "items", not the ED/PM "Checklist" label (#5635). */
+  protected readonly sectionHeading = FORMATION_ITEMS_HEADING;
   private readonly state: Signal<FormationDetailPageState> = this.initState();
   protected readonly projectLoading = computed(() => this.state().loading);
   protected readonly loadFailed = computed(() => this.state().error);
@@ -60,6 +63,11 @@ export class FormationDetailComponent {
    * In-place beats bouncing to the project overview — which would also switch context, the very
    * thing this page avoids.
    */
+  /** "It has completed formation." for Active, "It has been archived." for Archived: an archived project may never have launched (#5635). */
+  protected readonly postFormationSubtitle = computed(
+    () => FORMATION_POST_FORMATION_SUBTITLES[this.project()?.stage ?? ''] ?? FORMATION_POST_FORMATION_SUBTITLES['Active']
+  );
+
   protected readonly postFormation = computed(() => {
     const project = this.project();
     return !!project && isPostFormationStage(project.stage);

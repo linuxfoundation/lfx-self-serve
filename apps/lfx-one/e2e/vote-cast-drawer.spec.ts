@@ -21,7 +21,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD
  */
 
-import { LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { LENS_COOKIE_KEY, VOTE_LAST_VOTER_CONFIRMATION } from '@lfx-one/shared/constants';
 import { expect, Page, Route, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -124,6 +124,8 @@ async function stubAwaitingVoter(page: Page): Promise<void> {
   await page.route(`**/api/votes/${VOTE_UID}/my-response`, (route) =>
     fulfillJson(route, { uid: 'r0000000-0000-0000-0000-00000000c501', vote_uid: VOTE_UID, vote_status: 'awaiting_response' })
   );
+  // Submit-time last-voter check (#4726): not the last voter unless a test overrides it.
+  await page.route(`**/api/votes/${VOTE_UID}/my-response/would-end-vote`, (route) => fulfillJson(route, { would_end_vote: false }));
   await page.route(`**/api/projects/${PROJECT_SLUG}*`, (route) =>
     fulfillJson(route, { uid: PROJECT_UID, slug: PROJECT_SLUG, name: PROJECT_NAME, writer: false })
   );
@@ -172,5 +174,33 @@ test.describe('Vote cast drawer — always-visible header (GH-2350)', () => {
     await page.getByTestId('vote-detail-header-cast-vote').getByRole('button').click();
     await expect(page.getByTestId('vote-cast-drawer-header')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('vote-cast-question-q1')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+});
+
+test.describe('Vote cast drawer — last-voter confirmation (#4726)', () => {
+  test('asks the last voter before submitting: Go back submits nothing, Submit and end vote submits once', async ({ page }) => {
+    await gotoVotePage(page);
+    await page.route(`**/api/votes/${VOTE_UID}/my-response/would-end-vote`, (route) => fulfillJson(route, { would_end_vote: true }));
+    const submissions: string[] = [];
+    await page.route('**/api/votes/responses', (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      submissions.push(route.request().url());
+      return route.fulfill({ status: 204 });
+    });
+
+    await expect(page.getByTestId('vote-cast-question-q1')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await page.getByTestId('vote-cast-choice-c1').click();
+    await page.getByTestId('vote-cast-submit-button').getByRole('button').click();
+
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toContainText(VOTE_LAST_VOTER_CONFIRMATION.header, { timeout: ELEMENT_TIMEOUT });
+    await dialog.getByRole('button', { name: VOTE_LAST_VOTER_CONFIRMATION.rejectLabel }).click();
+    await expect(dialog).toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('vote-cast-drawer-header')).toBeVisible();
+    expect(submissions).toHaveLength(0);
+
+    await page.getByTestId('vote-cast-submit-button').getByRole('button').click();
+    await dialog.getByRole('button', { name: VOTE_LAST_VOTER_CONFIRMATION.acceptLabel }).click();
+    await expect.poll(() => submissions.length, { timeout: ELEMENT_TIMEOUT }).toBe(1);
   });
 });

@@ -4,6 +4,7 @@
 import express, { Router } from 'express';
 
 import { MeetingController } from '../controllers/meeting.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { aiRateLimiter, selfResendInviteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
@@ -15,6 +16,13 @@ router.get('/', (req, res, next) => meetingController.getMeetings(req, res, next
 
 // GET /meetings/count - get meetings count
 router.get('/count', (req, res, next) => meetingController.getMeetingsCount(req, res, next));
+
+// Roll-up filter options for a foundation or parent project's meetings list (before '/:uid').
+router.get('/rollup-filters', (req, res, next) => meetingController.getRollupFilterOptions(req, res, next));
+
+// The user's saved roll-up project selection per root (before '/:uid'); writes blocked during impersonation.
+router.get('/rollup-projects', (req, res, next) => meetingController.getRollupProjectsPreference(req, res, next));
+router.put('/rollup-projects', blockDuringImpersonation, (req, res, next) => meetingController.saveRollupProjectsPreference(req, res, next));
 
 // GET /meetings/:uid - get a single meeting
 router.get('/:uid', (req, res, next) => meetingController.getMeetingById(req, res, next));

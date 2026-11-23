@@ -12,8 +12,7 @@ import { ContactClaManagerComponent } from './contact-cla-manager.component';
 /**
  * Kebab items for Request approval / Request Removal / Contact CLA Manager.
  *
- * Returns `[]` for ICLA and Revoked, so it is safe to spread onto every row. Does not read
- * LaunchDarkly — invoke only when `my-clas-m2-enabled` is on. Does not edit profile-clas.
+ * Returns `[]` for ICLA and Revoked, so it is safe to spread onto every row.
  *
  * All three are writes, so `impersonating` renders them disabled rather than withheld: the
  * administrator sees the action exists and that it is unavailable, and the server refuses it

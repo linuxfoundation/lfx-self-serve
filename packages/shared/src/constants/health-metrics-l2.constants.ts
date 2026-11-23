@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsL2Range, HealthMetricsNoteStyle, HealthMetricsNoteTone } from '../interfaces/health-metrics-l2.interface';
 
 /** Shape a project slug must have before it reaches a read; the server rejects anything else. */
 export const HEALTH_METRICS_PROJECT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -12,6 +12,19 @@ export const HEALTH_METRICS_PROJECT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[
  * hydration and the network on top, so a slow-but-healthy read still lands its scroll.
  */
 export const HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS = 30_000;
+
+/** Scroll distance in px past which the header compacts; it expands only back at the top. Past its ~40px shrink, so
+ *  the browser's scroll anchoring, which pulls the page back by that shrink, leaves it scrolled and still compact. */
+export const HEALTH_METRICS_HEADER_COMPACT_AFTER_PX = 64;
+
+/** More than the height in px the header gives up as it compacts (about 40px): a page with less scroll room stays expanded, so it can't flicker. */
+export const HEALTH_METRICS_HEADER_COMPACT_SHRINK_PX = 56;
+
+/** How long in ms the section offsets wait for the header's 0.25s compaction to settle before the scroll-spy follows. */
+export const HEALTH_METRICS_L2_OFFSET_SETTLE_MS = 100;
+
+/** How long in ms a section jump counts as in flight, so a header that settles meanwhile re-aims it. */
+export const HEALTH_METRICS_L2_JUMP_REAIM_MS = 1_000;
 
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_L2_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
@@ -54,4 +67,19 @@ export const HEALTH_METRICS_L2_EMPTY_COPY = {
 export const HEALTH_METRICS_L2_BLANK_PAST = {
   lead: 'No {activity} was recorded for the foundation in {Y}.',
   reasons: ['The foundation may not have launched yet', 'It may have been recorded under a parent foundation', 'A later year may have data to compare'],
+} as const;
+
+/** Each note tone's `lfx-ui-note` variant and verdict label; a caution is a plain warning note. */
+export const HEALTH_METRICS_NOTE_STYLES: Readonly<Record<HealthMetricsNoteTone, HealthMetricsNoteStyle>> = {
+  caution: { variant: 'warning', label: '' },
+  healthy: { variant: 'success', label: 'Healthy:' },
+  attention: { variant: 'warning', label: 'Needs attention:' },
+  action: { variant: 'error', label: 'Needs action:' },
+  summary: { variant: 'secondary', label: 'Summary:' },
+};
+
+/** The Provisional badge beside a section heading, and its tooltip. */
+export const HEALTH_METRICS_PROVISIONAL_BADGE = {
+  label: 'Provisional',
+  tip: 'Figures are preliminary and not yet reconciled with finance, so they may change.',
 } as const;

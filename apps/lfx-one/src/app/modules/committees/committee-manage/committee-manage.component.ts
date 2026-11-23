@@ -158,7 +158,7 @@ export class CommitteeManageComponent {
     // cookie-restored last-visited project. The fallback covers BFF project-enrichment failure.
     // preferEntityKind: a foundation-owned group can be edited under a /project/* URL, so the
     // committee's own is_foundation (not the route prefix) picks the slot and re-points the route
-    // lens kind (mirror: meeting-manage post-GH-1432).
+    // lens kind (GH-1432).
     syncEntityProjectContext(this.committeeEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
     this.initCommitteeContextFallback();
     this.initCategoryFromUrl();
@@ -269,7 +269,7 @@ export class CommitteeManageComponent {
       calendar: {
         public: this.form.value.public || false,
       },
-      display_name: this.form.value.display_name || this.form.value.name,
+      display_name: this.resolveDisplayName(),
       website: this.form.value.website || null,
       project_uid: this.committee()?.project_uid || this.project()?.uid || null,
     };
@@ -361,7 +361,7 @@ export class CommitteeManageComponent {
       calendar: {
         public: this.form.value.public || false,
       },
-      display_name: this.form.value.display_name || this.form.value.name,
+      display_name: this.resolveDisplayName(),
       website: this.form.value.website || null,
       project_uid: this.committee()?.project_uid || this.project()?.uid || null,
     };
@@ -440,8 +440,7 @@ export class CommitteeManageComponent {
   /**
    * Maps the loaded committee to the {@link EntityWithProject} shape consumed by
    * syncEntityProjectContext — pre-enrichment payloads can lack the project fields entirely,
-   * so absent values map to null there (mirror: meeting-manage's initializeMeetingEntityContext;
-   * Committee already carries `uid`, so no id remap is needed).
+   * so absent values map to null there (Committee already carries `uid`, so no id remap is needed).
    */
   private initializeCommitteeEntityContext(): Signal<EntityWithProject | null> {
     return computed(() => {
@@ -465,8 +464,7 @@ export class CommitteeManageComponent {
    * `project_uid` but no `project_slug`): resolve the project by uid and set context from it.
    * `getProject(uid, false)` — `current: false` so the fetch doesn't clobber ProjectService's
    * shared `project` state — resolves to null on failure, so a failed fallback leaves the
-   * (stale) context untouched rather than erroring the page. (Mirror: meeting-manage's
-   * initMeetingContextFallback, minus its fresh-detail last resort: `getCommitteeDetail` does
+   * (stale) context untouched rather than erroring the page. (There is no fresh-detail last resort: `getCommitteeDetail` does
    * support `skipCache`, but a refetch cannot recover a missing `project_slug` — the BFF's
    * committee enrichment resolves the project through the same relation-gated `/projects/:uid`
    * GET this fallback already tried, unlike meeting enrichment's ungated query-service lookup.)
@@ -546,7 +544,7 @@ export class CommitteeManageComponent {
    *
    * The leg is pending (undefined) until its first resolution, and the predicate stays
    * provisionally true while pending — writerGuard already authorized this navigation, so an
-   * unresolved leg is not an access-lost signal (mirror: meeting-manage's initWriteAccess).
+   * unresolved leg is not an access-lost signal.
    */
   private initWriteAccess(): Signal<boolean> {
     const editCommitteeId = this.route.snapshot.paramMap.get('id');
@@ -634,6 +632,17 @@ export class CommitteeManageComponent {
       member_visibility: new FormControl('hidden'),
       show_meeting_attendees: new FormControl(false),
     });
+  }
+
+  private resolveDisplayName(): string {
+    const { name, display_name } = this.form.value;
+    const original = this.committee();
+    // A name-derived value loaded into the form is not an explicit alias.
+    // Let it follow a rename, while preserving distinct aliases and edits.
+    if (!display_name || (original && display_name === original.display_name && original.display_name === original.name)) {
+      return name;
+    }
+    return display_name;
   }
 
   private cleanFormData(formData: Record<string, unknown>): Record<string, unknown> {

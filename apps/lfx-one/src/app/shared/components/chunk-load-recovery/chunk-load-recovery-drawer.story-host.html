@@ -1,0 +1,17 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- App-level recovery integration, not part of the PrimeNG-free drawer library. -->
+
+<button type="button" (click)="open(drawer)" data-testid="open-recovery-drawer">Open recovery drawer</button>
+<lfx-chunk-load-recovery />
+<ng-template #drawer>
+  <lfx-ui-drawer heading="Unsaved draft recovery">
+    <input aria-label="Unsaved draft" data-testid="drawer-recovery-draft" />
+    <button type="button" (click)="showRecovery()" data-testid="show-drawer-recovery">Show recovery without refreshing</button>
+    @for (item of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]; track item) {
+      <p class="min-h-[80px]">Draft section {{ item }} stays available in the scrolling body.</p>
+    }
+    <ng-container drawerFooter><button type="button">Save draft</button></ng-container>
+  </lfx-ui-drawer>
+</ng-template>

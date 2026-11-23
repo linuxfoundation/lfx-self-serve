@@ -10,6 +10,7 @@ import {
   VOTE_REMINDER_SELECTION_STALE,
   VOTE_SEND_BALLOTS_BATCH_SIZE,
   VOTE_SUMMARY_NOT_ENDED,
+  VOTE_SUMMARY_PRECHECK_FAILED,
   VOTE_SUMMARY_SEND_FAILED,
   VOTE_VOTERS_DRAFT,
 } from '@lfx-one/shared/constants';
@@ -30,6 +31,7 @@ import {
   SendVoteBallotsResponse,
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
+  UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
   Vote,
   VoteLinkBallot,
@@ -42,7 +44,10 @@ import {
   VoteSummary,
   VoteParticipationVoter,
   VoteSummaryEmailContext,
+  VoteSummaryPreviewResponse,
   VoteSummaryRecipient,
+  VoteSummaryRecipientOutcome,
+  VoteSummaryRecipientResult,
   VoteResultsResponse,
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
@@ -53,6 +58,7 @@ import {
   countVotesByStatus,
   isVoteClosingSoon,
   normalizePollStatus,
+  partitionVoteSummaryRecipients,
   sortCommentResponsesByRecency,
   sortCommentResponsesByText,
 } from '@lfx-one/shared/utils';
@@ -661,6 +667,37 @@ export class VoteService {
     }
   }
 
+  /**
+   * Changes the caller's own submitted ballot via PUT /vote_responses/{uid} using the user's bearer token (#4723).
+   * @description The response uid comes only from the caller's identity-matched row (`getMyVoteResponse`), never from
+   * the client, so a caller cannot target another voter's ballot. Upstream 409 (the vote makes ballots final) and 400
+   * (the vote ended) propagate unchanged.
+   */
+  public async updateMyVoteResponse(req: Request, voteUid: string, payload: UpdateMyVoteResponseRequest): Promise<void> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) {
+      throw new ResourceNotFoundError('Vote ballot', voteUid, {
+        operation: 'update_my_vote_response',
+        service: 'vote_service',
+      });
+    }
+
+    const path = `/vote_responses/${encodeURIComponent(row.uid)}`;
+    logger.debug(req, 'update_my_vote_response', 'Updating own vote response', {
+      vote_uid: voteUid,
+      vote_response_uid: row.uid,
+      abstain: payload.abstain,
+      answer_count: payload.user_vote_content?.length ?? 0,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', path, 'PUT', undefined, payload);
+
+    logger.debug(req, 'update_my_vote_response', 'Ballot update accepted by upstream voting service', {
+      vote_uid: voteUid,
+      vote_response_uid: row.uid,
+    });
+  }
+
   // ============================================
   // Reminders (#3769)
   // ============================================
@@ -908,7 +945,7 @@ export class VoteService {
         seen.add(row.uid);
         return true;
       })
-      .map((row) => ({ uid: row.uid, user_name: row.user_name, user_email: row.user_email }))
+      .map((row) => ({ uid: row.uid, user_name: row.user_name, username: row.username, user_email: row.user_email }))
       .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
 
     logger.debug(req, 'get_vote_summary_recipients', 'Mapped vote summary recipients', {
@@ -921,74 +958,170 @@ export class VoteService {
   }
 
   /**
+   * Previews who the on-demand close summary would reach (#4830): voters ready to receive it, voters
+   * with no email address, and the unique-address counts. Uses the same partition as
+   * `sendVoteSummary`, so the preview and the send agree. Identity fields only — never ballots.
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   */
+  public async getVoteSummaryPreview(req: Request, voteUid: string): Promise<VoteSummaryPreviewResponse> {
+    const vote = await this.getVoteById(req, voteUid);
+    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+      throw new ConflictError('This vote has not closed yet.', VOTE_SUMMARY_NOT_ENDED, {
+        operation: 'get_vote_summary_preview',
+        service: 'vote_service',
+      });
+    }
+
+    const { ready, missingEmail, uniqueEmailRecipients, sharedEmailVoterCount } = partitionVoteSummaryRecipients(
+      await this.getVoteSummaryRecipients(req, voteUid)
+    );
+
+    logger.debug(req, 'get_vote_summary_preview', 'Partitioned vote summary recipients', {
+      vote_uid: voteUid,
+      ready_count: ready.length,
+      missing_email_count: missingEmail.length,
+      unique_email_count: uniqueEmailRecipients.length,
+      shared_email_voter_count: sharedEmailVoterCount,
+    });
+
+    return {
+      ready,
+      missing_email: missingEmail,
+      unique_email_count: uniqueEmailRecipients.length,
+      shared_email_voter_count: sharedEmailVoterCount,
+    };
+  }
+
+  /**
    * Sends the on-demand results summary to every invited voter (#3662), on demand only —
    * never scheduled or sent automatically on close (a future ticket). Only vote writers may send
    * it (`assertVoteWrite`), and it can only be sent once the vote has ended, so the results it
    * carries are final. The email body is built once from the aggregate results and sent unchanged
    * to each recipient — it never varies per voter, so it cannot disclose how any specific person
-   * voted. A send failure for one recipient does not block the rest; failures are counted and
-   * logged, not thrown, so a partial send still reports what it delivered — only a total failure
-   * (every recipient rejected) throws, since there would otherwise be nothing to report as sent.
+   * voted.
+   *
+   * Counts distinct email recipients (#4689) as sent (the service returned an `email_id`), failed
+   * (confirmed not sent: rejected before sending or accepted without sending), or uncertain
+   * (transport failed, the service reported an ambiguous SMTP outcome, or an unexpected error occurred). Invited voters without
+   * an email address are counted separately as skipped; shared email addresses are attempted once.
+   * One recipient's failure never blocks the rest, so a partial send reports the counts instead of
+   * throwing. Only when every attempt was confirmed failed (nothing sent, nothing uncertain) does
+   * it throw with the known counts. Both the reply and that error's `details` carry a per-voter
+   * `recipients` outcome (#4830); voters sharing an address share its outcome. Permission, validation, rate-limit and not-ended errors keep
+   * their original responses; other failures before any email attempt become
+   * `VOTE_SUMMARY_PRECHECK_FAILED`, so retrying cannot duplicate this attempt.
    */
   public async sendVoteSummary(req: Request, voteUid: string): Promise<SendVoteSummaryResponse> {
-    await assertVoteWrite(req, voteUid, 'send_vote_summary');
+    let rendered: ReturnType<typeof renderVoteSummaryEmail>;
+    let recipients: VoteSummaryRecipient[];
 
-    const vote = await this.getVoteById(req, voteUid);
-    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
-      throw new ConflictError('This vote has not closed yet.', VOTE_SUMMARY_NOT_ENDED, {
-        operation: 'send_vote_summary',
-        service: 'vote_service',
-      });
+    try {
+      await assertVoteWrite(req, voteUid, 'send_vote_summary');
+
+      const vote = await this.getVoteById(req, voteUid);
+      if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+        throw new ConflictError('This vote has not closed yet.', VOTE_SUMMARY_NOT_ENDED, {
+          operation: 'send_vote_summary',
+          service: 'vote_service',
+        });
+      }
+
+      let results: VoteResultsResponse;
+      [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid, { canWrite: true }), this.getVoteSummaryRecipients(req, voteUid)]);
+
+      rendered = renderVoteSummaryEmail(this.buildSummaryEmailContext(vote.name, results));
+    } catch (error) {
+      // Keep the existing actionable permission, validation, rate-limit and state-conflict replies.
+      if (error instanceof BaseApiError && ([400, 403, 429].includes(error.statusCode) || error.code === VOTE_SUMMARY_NOT_ENDED)) {
+        throw error;
+      }
+      // Nothing was sent yet, so a retry cannot duplicate this attempt.
+      throw new MicroserviceError(
+        'No summaries were sent because the pre-send checks failed. Please try again.',
+        error instanceof BaseApiError ? error.statusCode : 500,
+        VOTE_SUMMARY_PRECHECK_FAILED,
+        {
+          operation: 'send_vote_summary',
+          service: 'vote_service',
+          originalError: error instanceof Error ? error : undefined,
+        }
+      );
     }
 
-    const [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid, { canWrite: true }), this.getVoteSummaryRecipients(req, voteUid)]);
-
-    const rendered = renderVoteSummaryEmail(this.buildSummaryEmailContext(vote.name, results));
-
-    const emailRecipients = recipients.filter((recipient): recipient is VoteSummaryRecipient & { user_email: string } => !!recipient.user_email);
-    const seenEmails = new Set<string>();
-    const uniqueRecipients = emailRecipients.filter((recipient) => {
-      const email = recipient.user_email.toLowerCase();
-      if (seenEmails.has(email)) return false;
-      seenEmails.add(email);
-      return true;
-    });
+    // Recipients are already deduped by response uid, so `missingEmail` is exactly the voters with no address.
+    // Voters collapsed by a shared email are not skipped: they got the same email via the sibling row.
+    const { ready, missingEmail, uniqueEmailRecipients: uniqueRecipients } = partitionVoteSummaryRecipients(recipients);
+    const skippedCount = missingEmail.length;
 
     let sentCount = 0;
     let failedCount = 0;
+    let uncertainCount = 0;
+    const outcomeByEmail = new Map<string, VoteSummaryRecipientOutcome>();
     const outcomes = await settleInBatches(uniqueRecipients, VOTE_SUMMARY_EMAIL_CONCURRENCY, (recipient) =>
-      this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })
+      this.emailService.sendEmail(req, { to: recipient.user_email as string, ...rendered })
     );
     outcomes.forEach((outcome, index) => {
+      const emailKey = (uniqueRecipients[index].user_email as string).toLowerCase();
       // `email_id` absent on a fulfilled reply means the email service accepted but did not actually
       // send (disabled, or the recipient was filtered) — that voter got nothing, so it counts as a
       // failure, not a send.
       if (outcome.status === 'fulfilled' && outcome.value.email_id) {
         sentCount += 1;
+        outcomeByEmail.set(emailKey, 'sent');
         return;
       }
-      failedCount += 1;
-      logger.warning(req, 'send_vote_summary', 'Failed to send the summary email to one recipient', {
+
+      // Only an explicit pre-send rejection proves failure. Transport, ambiguous SMTP and unexpected
+      // errors (including malformed replies) can follow acceptance and must default to uncertain.
+      const uncertain =
+        outcome.status === 'rejected' &&
+        !(outcome.reason instanceof MicroserviceError && outcome.reason.code === 'EMAIL_SEND_FAILED' && outcome.reason.transportFailure !== true);
+      if (uncertain) {
+        uncertainCount += 1;
+      } else {
+        failedCount += 1;
+      }
+      outcomeByEmail.set(emailKey, uncertain ? 'uncertain' : 'failed');
+      logger.warning(req, 'send_vote_summary', 'Summary email was not confirmed sent to one recipient', {
         vote_uid: voteUid,
         recipient_uid: uniqueRecipients[index].uid,
+        outcome: uncertain ? 'uncertain' : 'failed',
         err: outcome.status === 'rejected' ? outcome.reason : 'Email service accepted the email without sending it',
       });
     });
 
-    if (sentCount === 0 && uniqueRecipients.length > 0) {
-      throw new MicroserviceError('The summary could not be sent to any recipients. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
+    // Every ready voter's address was attempted exactly once above, so its outcome is always recorded.
+    const recipientResults: VoteSummaryRecipientResult[] = [
+      ...ready.map((recipient) => ({ ...recipient, outcome: outcomeByEmail.get((recipient.user_email as string).toLowerCase()) ?? 'uncertain' })),
+      ...missingEmail.map((recipient) => ({ ...recipient, outcome: 'skipped' as const })),
+    ];
+
+    const result: SendVoteSummaryResponse = {
+      recipient_count: sentCount,
+      failed_count: failedCount,
+      skipped_count: skippedCount,
+      uncertain_count: uncertainCount,
+      recipients: recipientResults,
+    };
+
+    if (sentCount === 0 && uncertainCount === 0 && failedCount > 0) {
+      throw new MicroserviceError('No summaries were sent. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
         operation: 'send_vote_summary',
         service: 'vote_service',
+        details: { details: result },
       });
     }
 
+    // Counts only — `recipients` carries names and email addresses and is never logged.
     logger.info(req, 'send_vote_summary', 'Sent vote close summary', {
       vote_uid: voteUid,
-      recipient_count: sentCount,
-      failed_count: failedCount,
+      recipient_count: result.recipient_count,
+      failed_count: result.failed_count,
+      skipped_count: result.skipped_count,
+      uncertain_count: result.uncertain_count,
     });
 
-    return { recipient_count: sentCount, failed_count: failedCount };
+    return result;
   }
 
   // ============================================
@@ -1171,7 +1304,37 @@ export class VoteService {
       })),
       comment_responses: (detail?.comment_responses ?? []).map((response) => ({ prompt_id: response.prompt_id, comment_text: response.comment_text })),
       vote_creation_time: detail?.vote_creation_time || undefined,
+      // ITX's own answer (#4723); omitted when ITX omits it so the client can fall back to the vote's setting.
+      ...(typeof detail?.can_change_vote === 'boolean' ? { can_change_vote: detail.can_change_vote } : {}),
     };
+  }
+
+  /**
+   * Whether the caller's first submission would end the vote (#4726), read at submit time.
+   * @description Only a current, pending row is checked upstream; anything else answers false without a read. The
+   * response uid comes from the identity-matched row, never the client. `would_end_vote` is point-in-time and advisory,
+   * and a voting service that predates it omits the field, which reads as false.
+   */
+  public async getMyWouldEndVote(req: Request, voteUid: string): Promise<boolean> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.AWAITING_RESPONSE) return false;
+
+    const detail = await this.microserviceProxy.proxyRequest<VoteResponseDetail>(
+      req,
+      'LFX_V2_SERVICE',
+      `/vote_responses/${encodeURIComponent(row.uid)}`,
+      'GET'
+    );
+
+    if (detail?.vote_uid && detail.vote_uid !== voteUid) {
+      logger.warning(req, 'get_my_would_end_vote', 'Vote response belongs to a different vote, answering false', {
+        vote_uid: voteUid,
+        vote_response_uid: row.uid,
+      });
+      return false;
+    }
+
+    return detail?.would_end_vote === true;
   }
 
   // ============================================

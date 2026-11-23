@@ -7,17 +7,28 @@
   [sections]="sections"
   [idPrefix]="idPrefix"
   [dataSections]="dataSections"
-  [subNavItems]="subNavItems()"
+  [subNavItems]="subNavItems"
   [blank]="blank"
   navLabel="Training sections"
   testIdPrefix="training">
+  <ng-template lfxHealthMetricsL2SectionControls="enroll">
+    <lfx-ui-switch size="small" ariaLabel="Measure" [value]="enrollMetric()" (valueChange)="onEnrollMetricChange($event)" data-testid="training-enroll-metric">
+      @for (option of enrollMetrics; track option.id) {
+        <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'training-enroll-metric-' + option.id" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="enroll">
-    <lfx-training-enroll (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll', $event)" />
+    <lfx-training-enroll [(metric)]="enrollMetric" (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll', $event)" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="courses">
+    <lfx-ui-select size="small" ariaLabel="Course type" [value]="coursesType()" (valueChange)="onCoursesTypeChange($event)" data-testid="training-courses-type">
+      @for (option of coursesTypes; track option.id) {
+        <lfx-ui-option [value]="option.id" [label]="option.label" />
+      }
+    </lfx-ui-select>
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="courses">
-    <lfx-training-courses
-      (reading)="shell.sectionReading('courses')"
-      (settled)="shell.sectionSettled('courses', $event)"
-      (countChange)="coursesCount.set($event)" />
+    <lfx-training-courses [(type)]="coursesType" (reading)="shell.sectionReading('courses')" (settled)="shell.sectionSettled('courses', $event)" />
   </ng-template>
 </lfx-health-metrics-l2-shell>

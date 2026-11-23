@@ -8,11 +8,11 @@
 
   <div class="flex flex-col xl:flex-row xl:items-start gap-10" data-testid="formation-page-columns">
     <div class="flex-1 min-w-0">
-      <lfx-formation-checklist-section (responseLoaded)="onChecklistLoaded($event)" />
+      <lfx-formation-checklist-section #checklistSection (responseLoaded)="onChecklistLoaded($event)" />
     </div>
     @if (checklist(); as checklist) {
       <aside class="flex flex-col gap-8 w-full shrink-0 xl:w-64" data-testid="formation-page-sidebar">
-        <lfx-formation-card [formation]="checklist.formation" />
+        <lfx-formation-card [formation]="checklist.formation" [canEditRecord]="checklist.can_edit_record === true" (recordSaved)="checklistSection.reload()" />
         <lfx-formation-people-card [checklist]="checklist" />
       </aside>
     }

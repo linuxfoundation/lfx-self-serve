@@ -223,7 +223,7 @@ export class OrgDependencyDrawerComponent {
 
 ### Key Template Conventions
 
-- **Responsive width**: `xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full`. Health Metrics L2 detail drawers (e.g. `engagement-group-attendance-drawer`, `members-movements-drawer`) use the narrower `xl:w-[34%] lg:w-[45%] md:w-[60%] sm:w-[85%] w-full` to match the design's side panel
+- **Responsive width**: `xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full`
 - **Header**: Uses `ng-template #header` for PrimeNG drawer customization
 - **Content spacing**: `flex flex-col gap-6` between sections
 - **Loading spinner**: `fa-light fa-spinner-third fa-spin`
@@ -268,7 +268,7 @@ Drawer components follow the standard component organization:
 
 Two shapes exist for landing a user inside a drawer from a URL:
 
-- **URL-synced** — the drawer's open/closed state mirrors a query param for as long as it is open, and closing it clears the param. `my-newsletters` does this with `?issue=` (see its `onDrawerVisibleChange`). Use it when the drawer is a destination worth bookmarking or sharing.
+- **URL-synced** — the drawer's open/closed state mirrors a query param for as long as it is open, and closing it clears the param. The My Newsletters reader drawer used this shape with `?issue=` until #4979 replaced it with the reader permalink page; its old links now redirect there. Use it when the drawer is a destination worth bookmarking or sharing.
 - **Consumed once** — the param is a one-shot instruction: open this thing on arrival, then forget it. `FormationChecklistSectionComponent` does this with `?item=<template_item_key>` (`FORMATION_ITEM_QUERY_PARAM`), which the Me-lens pending-action row and the formation-service item-assigned email link to (#2727, #2732, #2573, #2616). Use it when the drawer is one of many over a shared surface and a stale URL would misrepresent the page.
 
 The consumed-once shape has four rules, all in `formation-checklist-section.component.ts`'s `initDeepLink`:

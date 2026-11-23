@@ -3,7 +3,7 @@
 
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, model, signal, Signal } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
-import { UiToggleSize, UiToggleTone } from '@lfx-one/shared/interfaces';
+import { UiToggleLabelPosition, UiToggleSize, UiToggleTone } from '@lfx-one/shared/interfaces';
 
 /**
  * On/off control for settings that apply at once (options saved with a form use a checkbox). A native checkbox with `role="switch"`
@@ -17,12 +17,15 @@ import { UiToggleSize, UiToggleTone } from '@lfx-one/shared/interfaces';
   providers: [{ provide: NG_VALUE_ACCESSOR, useExisting: UiToggleComponent, multi: true }],
   host: {
     class: 'inline-flex',
+    '[class.w-full]': "labelPosition() === 'start'",
     'data-testid': 'ui-toggle',
   },
 })
 export class UiToggleComponent implements ControlValueAccessor {
-  /** Visible label, shown after the control. Leave empty for a bare switch and set `ariaLabel`. */
+  /** Visible label, shown after the control (before it with `labelPosition="start"`). Leave empty for a bare switch and set `ariaLabel`. */
   public readonly label = input<string>('');
+  /** `start` puts the label first and the switch at the end of a full-width row, as in a settings list. */
+  public readonly labelPosition = input<UiToggleLabelPosition>('end');
   /** Accessible name. Required when `label` is empty, or the switch is announced without a name. Ignored when `label` is set. */
   public readonly ariaLabel = input<string>('');
   /** Native `name` attribute. Native form reset is not supported; use `[(checked)]` or reactive forms. */
@@ -91,7 +94,8 @@ export class UiToggleComponent implements ControlValueAccessor {
   private initLabelClasses(): Signal<string> {
     return computed(() => {
       // 8px gap (library spacing-2); 14px root, so no rem.
-      const base = 'inline-flex items-center gap-[8px] label-14';
+      const row = this.labelPosition() === 'start' ? ' w-full justify-between' : '';
+      const base = `inline-flex items-center gap-[8px] label-14${row}`;
       return this.isDisabled() ? `${base} cursor-not-allowed text-ui-neutral-500` : `${base} cursor-pointer text-ui-neutral-900`;
     });
   }

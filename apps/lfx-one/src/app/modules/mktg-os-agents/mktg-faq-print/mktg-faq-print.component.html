@@ -11,24 +11,39 @@
   [style.--mfp-ink]="v.brand.ink"
   aria-label="FAQ"
   data-testid="mktg-faq-print">
+  <!-- One sheet: the page's top and bottom room repeats on every page (lfx-mktg-print-sheet), one row per pair, so a page
+       breaks only between pairs; the sides are the root's padding. -->
+  <lfx-mktg-print-sheet><ng-container *ngTemplateOutlet="body" /></lfx-mktg-print-sheet>
+</section>
+
+<ng-template #body>
   <!-- Always render the document identity, even with no questions or an empty first group. -->
-  <header class="break-inside-avoid break-after-avoid">
-    <lfx-mktg-print-running-head [brand]="v.brand" [label]="projectName() + ' FAQ'" />
-    <lfx-mktg-print-chapter-header [number]="number()" title="FAQ" [accent]="v.brand.accent" />
-  </header>
+  <lfx-mktg-print-sheet-row class="break-after-avoid">
+    <header class="break-inside-avoid break-after-avoid">
+      <lfx-mktg-print-running-head [brand]="v.brand" [label]="projectName() + ' FAQ'" />
+      <lfx-mktg-print-chapter-header [number]="number()" title="FAQ" [accent]="v.brand.accent" />
+    </header>
+  </lfx-mktg-print-sheet-row>
   @for (group of v.groups; track group.path) {
     @for (row of group.questions; track row.path; let firstQuestion = $first) {
       <!-- Keep each group heading WITH its first pair. The document header avoids a break after it. -->
-      <article class="flex flex-col gap-[6pt] pb-[14pt] break-inside-avoid" data-testid="mktg-faq-print-pair">
-        @if (firstQuestion) {
-          <h3 class="border-b border-black/10 pb-[6pt] text-[14pt] font-medium break-after-avoid" data-testid="mktg-faq-print-group">{{ group.name }}</h3>
-        }
-        <h4 class="text-[11pt] font-semibold break-after-avoid">{{ row.question }}</h4>
-        <p class="whitespace-pre-line">{{ row.answered ? row.answer : unansweredLabel }}</p>
-        @if (row.source) {
-          <p class="text-[7.5pt] opacity-70" data-testid="mktg-faq-print-source">Source: {{ row.source }}</p>
-        }
-      </article>
+      <lfx-mktg-print-sheet-row>
+        <article class="flex flex-col gap-[6pt] pb-[14pt] break-inside-avoid" data-testid="mktg-faq-print-pair">
+          @if (firstQuestion) {
+            <h3 class="border-b border-black/10 pb-[6pt] text-[14pt] font-medium break-after-avoid" data-testid="mktg-faq-print-group">{{ group.name }}</h3>
+          }
+          <h4 class="text-[11pt] font-semibold break-after-avoid">{{ row.question }}</h4>
+          @if (row.answered) {
+            <!-- The answer's restricted Markdown: a paragraph, or a lead-in and a bulleted list. The sheet's typeface, size and ink are inherited (see the stylesheet). -->
+            <lfx-markdown-renderer [content]="row.answer" [restricted]="true" data-testid="mktg-faq-print-answer" />
+          } @else {
+            <p>{{ unansweredLabel }}</p>
+          }
+          @if (row.source) {
+            <p class="text-[7.5pt] opacity-70" data-testid="mktg-faq-print-source">Source: {{ row.source }}</p>
+          }
+        </article>
+      </lfx-mktg-print-sheet-row>
     }
   }
-</section>
+</ng-template>

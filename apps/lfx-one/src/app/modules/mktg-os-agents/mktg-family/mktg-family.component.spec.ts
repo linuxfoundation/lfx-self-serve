@@ -14,6 +14,7 @@ import {
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
   MKTG_AGENT_INTAKES,
   MKTG_KIT_FAMILIES,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse, MktgRevisionRef } from '@lfx-one/shared/interfaces';
@@ -547,6 +548,19 @@ describe('Marketing family page', () => {
     const current = harness.routeNativeElement?.querySelector('[data-testid="mktg-family-current-linkedin-post"]');
     expect(current?.textContent).toContain('10 Oct');
     expect(current?.textContent).not.toContain('v1');
+  });
+
+  it('reads the catalog intro in the header, naming both exports, and a family without one its description', async () => {
+    const positioning = MKTG_KIT_FAMILIES.find((family) => family.id === MKTG_KIT_POSITIONING_FAMILY_ID);
+    if (!positioning?.intro) throw new Error('The positioning family carries an intro');
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl(`/project/mktg-os-agents/families/${MKTG_KIT_POSITIONING_FAMILY_ID}`, MktgFamilyComponent);
+    const intro = () => harness.routeNativeElement?.querySelector('[data-testid="mktg-family-intro"]')?.textContent?.trim();
+    expect(intro()).toBe(positioning.intro);
+    expect(intro()).toContain('PDF or Google Slides');
+    await harness.navigateByUrl('/project/mktg-os-agents/families/events', MktgFamilyComponent);
+    const events = MKTG_KIT_FAMILIES.find((family) => family.id === 'events');
+    expect(intro()).toBe(events?.intro ?? events?.description);
   });
 
   it('handles coming-soon and unknown family ids on the same route', async () => {
