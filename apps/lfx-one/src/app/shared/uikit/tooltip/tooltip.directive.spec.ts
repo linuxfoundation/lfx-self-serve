@@ -7,7 +7,7 @@ import { ComponentPortal } from '@angular/cdk/portal';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { UiTooltipSide } from '@lfx-one/shared/interfaces';
+import { UiTooltipItem, UiTooltipSide } from '@lfx-one/shared/interfaces';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { UiTooltipDirective } from './tooltip.directive';
@@ -19,7 +19,9 @@ const HOST_TEMPLATE = `
     [attr.aria-label]="label()"
     [lfxUiTooltip]="text()"
     [lfxUiTooltipTitle]="heading()"
+    [lfxUiTooltipIcon]="icon()"
     [lfxUiTooltipShortcut]="shortcut()"
+    [lfxUiTooltipItems]="items()"
     [lfxUiTooltipSide]="side()"
     [lfxUiTooltipDelay]="delay"
     [lfxUiTooltipDisabled]="disabled()">
@@ -31,7 +33,9 @@ const HOST_TEMPLATE = `
 class TestHostComponent {
   public readonly text = signal('Copy link');
   public readonly heading = signal('');
+  public readonly icon = signal('');
   public readonly shortcut = signal<string[]>([]);
+  public readonly items = signal<UiTooltipItem[]>([]);
   public readonly side = signal<UiTooltipSide>('top');
   public readonly disabled = signal(false);
   public readonly label = signal<string | null>(null);
@@ -412,6 +416,39 @@ describe('UiTooltipDirective', () => {
       expect(container.querySelector('[data-testid="ui-tooltip-text"]')?.textContent).toBe('Weighted from activity.');
       expect(container.querySelectorAll('kbd').length).toBe(2);
       expect(tooltip()?.className).toContain('flex-col');
+      expect(container.querySelector('[data-testid="ui-tooltip-icon"]')).toBeNull();
+    });
+
+    it('renders the icon before the title', async () => {
+      await setup();
+      fixture.componentInstance.heading.set('Restricted');
+      fixture.componentInstance.icon.set('fa-solid fa-lock');
+      await flush();
+      await hover();
+
+      const icon = container.querySelector('[data-testid="ui-tooltip-icon"]');
+      expect(icon?.className).toContain('fa-lock');
+      expect(icon?.className).toContain('text-[11px]');
+      expect(icon?.getAttribute('aria-hidden')).toBe('true');
+      expect(container.querySelector('[data-testid="ui-tooltip-title"]')?.firstElementChild).toBe(icon);
+      expect(container.querySelector('[data-testid="ui-tooltip-title"]')?.textContent).toBe('Restricted');
+    });
+
+    it('shows counts in place of the text and keeps the text as the description', async () => {
+      await setup();
+      fixture.componentInstance.text.set('Yes 2, No response 1');
+      fixture.componentInstance.items.set([
+        { label: 'Yes', value: '2', dotClass: 'bg-blue-500' },
+        { label: 'No response', value: '1' },
+      ]);
+      await flush();
+      await hover();
+
+      const items = container.querySelector('[data-testid="ui-tooltip-items"]');
+      expect(items?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes2·No response1');
+      expect(items?.querySelectorAll('.bg-blue-500').length).toBe(1);
+      expect(container.querySelector('[data-testid="ui-tooltip-text"]')).toBeNull();
+      expect(descriptions()).toContain('Yes 2, No response 1');
     });
 
     it('updates the open tooltip when the text changes', async () => {

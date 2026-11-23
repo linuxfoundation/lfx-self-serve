@@ -11,6 +11,8 @@ import { BaseApiError } from './base.error';
 export class MicroserviceError extends BaseApiError {
   public readonly errorBody?: any;
   public readonly originalMessage?: string;
+  /** Allowlisted upstream cooldown; no other response headers are retained. */
+  public readonly retryAfter?: string;
 
   public constructor(
     message: string,
@@ -25,6 +27,9 @@ export class MicroserviceError extends BaseApiError {
       originalError?: Error;
       transportFailure?: boolean;
       clientMessage?: string;
+      /** Response-only fields excluded from generic error logging. */
+      details?: Record<string, unknown>;
+      retryAfter?: string | null;
     } = {}
   ) {
     super(message, statusCode, code, {
@@ -34,10 +39,15 @@ export class MicroserviceError extends BaseApiError {
       originalError: options.originalError,
       transportFailure: options.transportFailure,
       clientMessage: options.clientMessage,
+      details: options.details,
     });
 
     this.errorBody = options.errorBody;
     this.originalMessage = options.originalMessage;
+    const retryAfter = options.retryAfter?.trim();
+    if (statusCode === 429 && retryAfter && (/^\d+$/.test(retryAfter) || (/^[A-Za-z0-9,: -]+$/.test(retryAfter) && Number.isFinite(Date.parse(retryAfter))))) {
+      this.retryAfter = retryAfter;
+    }
   }
 
   public override toResponse(): Record<string, any> {
@@ -63,6 +73,11 @@ export class MicroserviceError extends BaseApiError {
       // without breaking any existing consumer of `code`/`error`.
       if (typeof this.errorBody['error'] === 'string' && this.errorBody['error'].trim()) {
         response['upstreamCode'] = this.errorBody['error'];
+      }
+      // newsletter-service's 409 audience_not_ready says why the snapshot can't be used
+      // (none / processing / failed / stale), so the client knows whether to start or wait.
+      if (typeof this.errorBody['audience_status'] === 'string' && this.errorBody['audience_status'].trim()) {
+        response['audienceStatus'] = this.errorBody['audience_status'];
       }
     }
 

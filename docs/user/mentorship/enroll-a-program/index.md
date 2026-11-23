@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, enroll, program, logo, terms, prerequisites, review]
 last_generated: 2026-10-26
-last_updated: 2026-10-30
+last_updated: 2026-11-09
 intercom_collection: Mentorship
 ---
 
@@ -41,6 +41,8 @@ The rest of the step is in three sections:
 | **Code of Conduct**                               | **Code of Conduct URL** | No       | If you leave it empty, the listing defaults to the Contributor Covenant                                                                                             |
 | **Program Design**                                | **Program Logo**        | Yes      | JPG or PNG, 420 × 420 px, max 2 MB. Select **Browse** to pick the file                                                                                              |
 
+**Repository URL**, **Website URL** and **Code of Conduct URL** take a full web address. If you type one without `https://`, such as `github.com/org/repo`, it is added when you leave the field. You cannot continue while a link is not a valid web address.
+
 If your project has no CII Project ID yet, **Apply for CII** opens the CII Best Practices site.
 
 ## Step 2 — Program Setup
@@ -72,7 +74,7 @@ Finally, review and accept the terms and conditions: the LFX Platform Use Agreem
 
 ## After completing
 
-You see **Program submitted for review.** The program sits at **Pending Review** until the LFX Mentorship team decides. Once approved it becomes **Open**, you invite mentors from the **Mentors** tab, and it starts taking applications.
+You see **Program submitted for review.** The program sits at **Pending Review** until the LFX Mentorship team decides. Once approved its status follows its terms (**Accepting**, **In Progress** or **Upcoming**), you invite mentors from the **Mentors** tab, and it starts taking applications.
 
 ## Troubleshooting
 

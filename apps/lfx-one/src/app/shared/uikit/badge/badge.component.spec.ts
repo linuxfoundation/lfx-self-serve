@@ -14,12 +14,19 @@ import { UiBadgeComponent } from './badge.component';
 })
 class HostComponent {}
 
+@Component({
+  selector: 'lfx-ui-badge-attrs-host',
+  imports: [UiBadgeComponent],
+  template: `<lfx-ui-badge role="img" tabindex="0">Weekly</lfx-ui-badge>`,
+})
+class AttrsHostComponent {}
+
 describe('UiBadgeComponent', () => {
   let fixture: ComponentFixture<UiBadgeComponent>;
   let host: HTMLElement;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [UiBadgeComponent, HostComponent] }).compileComponents();
+    await TestBed.configureTestingModule({ imports: [UiBadgeComponent, HostComponent, AttrsHostComponent] }).compileComponents();
     fixture = TestBed.createComponent(UiBadgeComponent);
     host = fixture.nativeElement as HTMLElement;
     await fixture.whenStable();
@@ -94,6 +101,21 @@ describe('UiBadgeComponent', () => {
     expect(host.className).not.toContain('bg-ui-danger');
   });
 
+  it("draws the line form in the tone's solid colour, as text and a 1px ring on a transparent fill", async () => {
+    fixture.componentRef.setInput('variant', 'line');
+    fixture.componentRef.setInput('tone', 'success');
+    await fixture.whenStable();
+
+    expect(host.className).toContain('bg-transparent');
+    expect(host.className).toContain('text-ui-success-600');
+    expect(host.className).toContain('shadow-[inset_0_0_0_1px_currentColor]');
+
+    fixture.componentRef.setInput('tone', 'neutral');
+    await fixture.whenStable();
+
+    expect(host.className).toContain('text-ui-neutral-600');
+  });
+
   it('shows a dot only when asked', async () => {
     expect(host.querySelector('[data-testid="ui-badge-dot"]')).toBeNull();
 
@@ -103,6 +125,61 @@ describe('UiBadgeComponent', () => {
     const dot = host.querySelector('[data-testid="ui-badge-dot"]');
     expect(dot?.className).toContain('bg-ui-success-600');
     expect(dot?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('is a plain label unless interactive', () => {
+    expect(host.getAttribute('role')).toBeNull();
+    expect(host.getAttribute('tabindex')).toBeNull();
+    expect(host.className).not.toContain('cursor-pointer');
+  });
+
+  it("keeps the caller's static role and tabindex on a plain badge", async () => {
+    const attrsFixture = TestBed.createComponent(AttrsHostComponent);
+    await attrsFixture.whenStable();
+    const badge = (attrsFixture.nativeElement as HTMLElement).querySelector('[data-testid="ui-badge"]');
+
+    expect(badge?.getAttribute('role')).toBe('img');
+    expect(badge?.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('acts as a button with a hover fill and focus ring when interactive', async () => {
+    fixture.componentRef.setInput('interactive', true);
+    fixture.componentRef.setInput('variant', 'outline');
+    await fixture.whenStable();
+
+    expect(host.getAttribute('role')).toBe('button');
+    expect(host.getAttribute('tabindex')).toBe('0');
+    expect(host.className).toContain('hover:bg-ui-neutral-100');
+    expect(host.className).toContain('focus-visible:outline-ui-focus');
+
+    fixture.componentRef.setInput('variant', 'solid');
+    await fixture.whenStable();
+    expect(host.className).toContain('hover:brightness-95');
+    expect(host.className).not.toContain('hover:bg-ui-neutral-100');
+  });
+
+  it('emits activated on click, Enter and Space only when interactive', async () => {
+    let count = 0;
+    fixture.componentInstance.activated.subscribe(() => count++);
+
+    host.click();
+    const plainSpace = new KeyboardEvent('keydown', { key: ' ', cancelable: true });
+    host.dispatchEvent(plainSpace);
+    host.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+    expect(count).toBe(0);
+    expect(plainSpace.defaultPrevented).toBe(false);
+
+    fixture.componentRef.setInput('interactive', true);
+    await fixture.whenStable();
+    host.click();
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+    host.dispatchEvent(enter);
+    const space = new KeyboardEvent('keydown', { key: ' ', cancelable: true });
+    host.dispatchEvent(space);
+    host.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', repeat: true, cancelable: true }));
+
+    expect(count).toBe(3);
+    expect(space.defaultPrevented).toBe(true);
   });
 
   it('projects the leading icon and the text', async () => {

@@ -13,6 +13,7 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeMemberBulkCreateResult,
   CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
@@ -200,7 +201,7 @@ export class CommitteeService {
   /**
    * Fetches a committee by ID without updating shared service state. Shares the short-TTL
    * detail cache via {@link getCommitteeDetail} so tap-free probes (writerGuard, committee
-   * sub-pages, meeting-manage's committee check) don't duplicate an in-flight detail fetch.
+   * sub-pages) don't duplicate an in-flight detail fetch.
    */
   public fetchCommittee(id: string): Observable<Committee> {
     return this.getCommitteeDetail(id);
@@ -235,6 +236,23 @@ export class CommitteeService {
     const params = options?.skipNotification ? new HttpParams().set('skip_notification', 'true') : undefined;
 
     return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData, { params }).pipe(
+      take(1),
+      tap(() => this.evictCommitteeDetailCache(committeeId))
+    );
+  }
+
+  /**
+   * Adds up to 100 members in one request and returns one result per row, in submission order
+   * (GH-5111). `options.skipNotification` applies to every row, as for createCommitteeMember.
+   */
+  public bulkCreateCommitteeMembers(
+    committeeId: string,
+    members: CreateCommitteeMemberRequest[],
+    options?: CreateCommitteeMemberOptions
+  ): Observable<CommitteeMemberBulkCreateResult> {
+    const params = options?.skipNotification ? new HttpParams().set('skip_notification', 'true') : undefined;
+
+    return this.http.post<CommitteeMemberBulkCreateResult>(`/api/committees/${encodeURIComponent(committeeId)}/members/bulk`, { members }, { params }).pipe(
       take(1),
       tap(() => this.evictCommitteeDetailCache(committeeId))
     );
@@ -322,6 +340,13 @@ export class CommitteeService {
       take(1),
       catchError(() => of([] as MyPendingApplication[]))
     );
+  }
+
+  /** Withdraws the caller's own pending application; {@link submitApplication} reopens the same record. */
+  public withdrawApplication(committeeId: string, applicationId: string): Observable<CommitteeJoinApplication> {
+    return this.http
+      .post<CommitteeJoinApplication>(`/api/committees/${encodeURIComponent(committeeId)}/applications/${encodeURIComponent(applicationId)}/withdraw`, null)
+      .pipe(take(1));
   }
 
   /** Lists join applications for a committee (from query index). */
@@ -441,6 +466,11 @@ export class CommitteeService {
         return of([]);
       })
     );
+  }
+
+  /** The caller's groups across every project, like {@link getMyCommittees}, but a failed request errors so the caller can show a failure state. */
+  public getMyCommitteesOrError(): Observable<MyCommittee[]> {
+    return this.http.get<MyCommittee[]>('/api/committees/my-committees');
   }
 
   /** Lightweight alternative to {@link getMyCommittees} — returns only UIDs. Use when only set-membership checks (e.g. member badges) are needed. */

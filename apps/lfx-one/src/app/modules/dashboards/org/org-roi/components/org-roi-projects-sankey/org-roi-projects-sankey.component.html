@@ -40,30 +40,33 @@
     </div>
 
     <!-- The canvas is otherwise the only presentation of these flows. -->
-    <table class="sr-only" data-testid="org-roi-projects-sankey-table">
-      <caption>
-        {{
-          measureLabel()
-        }}
-        flows
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">From</th>
-          <th scope="col">To</th>
-          <th scope="col">Amount</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (row of flowRows(); track row.key) {
+    <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+    <div class="sr-only">
+      <table data-testid="org-roi-projects-sankey-table">
+        <caption>
+          {{
+            measureLabel()
+          }}
+          flows
+        </caption>
+        <thead>
           <tr>
-            <th scope="row">{{ row.from }}</th>
-            <td>{{ row.to }}</td>
-            <td>{{ row.amount }}</td>
+            <th scope="col">From</th>
+            <th scope="col">To</th>
+            <th scope="col">Amount</th>
           </tr>
-        }
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          @for (row of flowRows(); track row.key) {
+            <tr>
+              <th scope="row">{{ row.from }}</th>
+              <td>{{ row.to }}</td>
+              <td>{{ row.amount }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
 
     @if (showsModelledCost()) {
       <p class="text-xs text-gray-500" data-testid="org-roi-projects-sankey-modelled-cost-note">{{ investmentExplanation }}</p>

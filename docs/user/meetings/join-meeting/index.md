@@ -4,7 +4,7 @@ description: How to join a project meeting from its LFX Self Serve link, respond
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, attendee, rsvp, register, guest, zoom]
-last_updated: 2026-10-28
+last_updated: 2026-11-19
 intercom_collection: Meetings
 ---
 
@@ -26,9 +26,19 @@ Select **Join Meeting**. When the meeting opens, you're taken to Zoom automatica
 
 If you see an error about your email address, such as that you aren't on the guest list for a restricted meeting, select **Click here** to join using a different email address, and use the email the organizer invited.
 
+### On a phone
+
+When you're signed in and the meeting hasn't ended, a bar stays at the bottom of the screen with a calendar action and a **Join Meeting** button.
+
+- If you're invited, the calendar action is **Resend Invite**. It asks you to confirm, then emails the invitation to your own address again, so the calendar entry stays the one the invitation created and keeps receiving updates.
+- If you aren't invited and the meeting is public, it's **Subscribe to calendar**. It opens the subscribe dialog for the project's calendar feed, so you can add it to your calendar app. The feed lists the project's public meetings and keeps itself up to date.
+- **Join Meeting** is greyed out and reads "Join opens" followed by the time in your own time zone, until the join window opens (10 minutes before the start, or earlier if the organizer set a longer early join time). It turns on by itself, with no need to reload the page.
+
+The bar hides while the guest list is open, and it doesn't appear if you aren't signed in, if you joined a private meeting with only its password link, or once the meeting has ended. Larger screens keep the join button and message at the top of the page.
+
 ### If you're not signed in
 
-You don't need an LFX account to join a Public or Private meeting. For a Private meeting, open the link the organizer shared, because it includes the meeting's password. Fill in the **Enter your information** form with your **Full Name**, **Email**, and **Organization**, then select **Join Meeting**.
+You don't need an LFX account to join a Public or Private meeting. For a Private meeting, open the link the organizer shared, because it includes the meeting's password. Fill in the **Enter your information** form with your **Full Name**, **Email**, and **Company**, then select **Join Meeting**.
 
 A **Restricted** meeting is different. There's no form to get past it: you need to **sign in**, and your account has to match someone on the meeting's guest list. If it doesn't, ask the organizer to add you, then sign in again.
 
@@ -43,11 +53,11 @@ What the page shows depends on the meeting's access settings and on who you are:
 
 The organizer's name and contact link are only shown to signed-in visitors, even on a public meeting.
 
-If the organizer turned on **Show attendees to guests**, invited people can open **Show Members** to see who else is invited. Without it, they see how many people are invited but not who. A Restricted or Board meeting never shows its list to guests, even with that setting on.
+If the organizer turned on **Show attendees to guests**, invited people can open **Show Members**, or select the **invited** count, to see who else is invited. Without it, they see how many people are invited but not who. A Restricted or Board meeting never shows its list to guests, even with that setting on.
 
 ## Register for a meeting
 
-If a meeting is public and not restricted, and you haven't already been invited, a signed-in visitor sees a **Register for Meeting** button. Selecting it opens a short form: **First Name**, **Last Name**, and **Email** are required, and **Job Title** and **Organization** are optional. Submitting it adds you as a registrant.
+If a meeting is public and not restricted, and you haven't already been invited, a signed-in visitor sees a **Register for Meeting** button. Selecting it opens a short form: **First Name**, **Last Name**, and **Email** are required, and **Job Title** and **Company** are optional. The company field searches as you type, and you can also keep a name that isn't in the list. Submitting it adds you as a registrant.
 
 The button doesn't appear if you aren't signed in, if you're already invited, or if the meeting is Restricted. For a Restricted meeting, ask the organizer to add you.
 
@@ -65,7 +75,7 @@ Your response and the dates it covers are shown after you save. Choosing **No** 
 
 ## Resend your invitation
 
-If you can't find your invitation email, select **Resend Invite** on the join page or on your meeting card. It sends the invitation to your own email address.
+If you can't find your invitation email, select **Resend Invite** on the join page or on your meeting card. A **Resend Your Invitation** popup asks you to confirm first: select **Resend** to send the invitation to your own email address again, or **Cancel** to send nothing.
 
 ## Remove yourself from a meeting
 
@@ -73,8 +83,9 @@ If you're registered for an upcoming meeting and can't attend, select **Remove M
 
 - Your registration ends, and your saved response is discarded. If you register again, you start with no response.
 - If you were added through a group or a mailing list, you stay a member of it. Its syncs won't add you back to this meeting unless you leave and rejoin the group or list. An organizer, or you registering yourself, can still add you.
-- Organizers who are also registered can remove their registration and stay organizers.
+- Organizers who are also registered can remove their registration and stay organizers. On the card of a meeting you organize, the button then changes back to **Add Myself**, so you can invite yourself again. See [Add yourself](../manage-participants/#add-yourself).
 - If only some of your registrations can be removed, you see **Removal incomplete**. You stay invited, and you can try again.
+- If you just added yourself from a card and it shows **Invitation syncing**, the invitation is saved but its registration details aren't available yet. Try **Remove Myself** again shortly; don't add yourself again.
 
 ## Meeting materials
 
@@ -93,6 +104,10 @@ The organizer's **Who can access recordings & summaries** setting decides who ca
 ## Meeting not found
 
 If you see the **Meeting Not Found** page, it's usually one of these: the link has expired or is no longer valid, the meeting was deleted or cancelled, you need access to a restricted meeting, or there's a typo in the URL. Contact the meeting organizer for a correct link, or use the **Contact Support** button on that page.
+
+## Get help
+
+The **Support** button in the page header opens the support chat. It's there for everyone, signed in or not, and it stays available on a phone when the bottom action bar or the guest list covers the round support button in the corner.
 
 ## Related
 

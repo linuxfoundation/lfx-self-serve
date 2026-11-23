@@ -11,35 +11,78 @@
   [blank]="blank"
   navLabel="Members sections"
   testIdPrefix="members">
-  <ng-template lfxHealthMetricsL2Section="tiers">
-    <div class="flex flex-col gap-6">
-      <lfx-members-tiers (reading)="shell.sectionReading('tiers')" (settled)="shell.sectionSettled('tiers', $event)" />
-      <lfx-members-bridge
-        (reading)="shell.sectionReading('bridge', 'tiers')"
-        (settled)="shell.sectionSettled('bridge', $event, 'tiers')"
-        (sectionPicked)="shell.scrollToSection($event)" />
-    </div>
+  <ng-template lfxHealthMetricsL2Section="growth">
+    <lfx-members-growth (reading)="shell.sectionReading('growth')" (settled)="shell.sectionSettled('growth', $event)" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2Section="breakdown">
+    <lfx-members-breakdown (reading)="shell.sectionReading('breakdown')" (settled)="shell.sectionSettled('breakdown', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="list">
-    <lfx-members-directory (countChange)="listCount.set($event)" (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list', $event)" />
+    <lfx-members-directory (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list', $event)" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="risk">
+    <lfx-ui-switch size="small" ariaLabel="Overdue age" [value]="riskBucket()" (valueChange)="onRiskBucketChange($event)" data-testid="members-at-risk-bucket">
+      @for (filter of riskFilters; track filter.id) {
+        <lfx-ui-switch-option [value]="filter.id" [label]="filter.label" [attr.data-testid]="'members-at-risk-bucket-' + filter.id" />
+      }
+    </lfx-ui-switch>
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="risk">
-    <lfx-members-at-risk (noteChange)="riskNote.set($event)" (reading)="shell.sectionReading('risk')" (settled)="shell.sectionSettled('risk', $event)" />
+    <lfx-members-at-risk
+      [(bucket)]="riskBucket"
+      (noteChange)="riskNote.set($event)"
+      (reading)="shell.sectionReading('risk')"
+      (settled)="shell.sectionSettled('risk', $event)" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="renewals">
+    <lfx-ui-switch
+      size="small"
+      ariaLabel="Renewal window"
+      [value]="renewalsWindow()"
+      (valueChange)="onRenewalsWindowChange($event)"
+      data-testid="members-renewals-window">
+      @for (window of renewalsWindows; track window.id) {
+        <lfx-ui-switch-option [value]="window.id" [label]="window.label" [attr.data-testid]="'members-renewals-window-' + window.id" />
+      }
+    </lfx-ui-switch>
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="renewals">
-    <lfx-members-renewals
-      (countChange)="renewalsCount.set($event)"
-      (reading)="shell.sectionReading('renewals')"
-      (settled)="shell.sectionSettled('renewals', $event)" />
+    <lfx-members-renewals [(window)]="renewalsWindow" (reading)="shell.sectionReading('renewals')" (settled)="shell.sectionSettled('renewals', $event)" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="board">
+    <lfx-ui-switch size="small" ariaLabel="Cohort" [value]="boardCohort()" (valueChange)="onBoardCohortChange($event)" data-testid="members-board-cohort">
+      @for (option of boardCohorts; track option.id) {
+        <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'members-board-cohort-' + option.id" />
+      }
+    </lfx-ui-switch>
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="board">
     <lfx-members-board-attendance
+      [(cohort)]="boardCohort"
       (noteChange)="boardNote.set($event)"
       (reading)="shell.sectionReading('board')"
       (settled)="shell.sectionSettled('board', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="nps">
+    @if (npsSwitch().options.length > 0) {
+      <lfx-ui-switch
+        size="small"
+        ariaLabel="Audience"
+        [value]="npsSwitch().selected"
+        (valueChange)="onNpsAudienceChange($event)"
+        data-testid="members-nps-audience">
+        @for (option of npsSwitch().options; track option.id) {
+          <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'members-nps-audience-' + option.id" />
+        }
+      </lfx-ui-switch>
+    }
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="nps">
-    <lfx-members-nps (reading)="shell.sectionReading('nps')" (settled)="shell.sectionSettled('nps', $event)" />
+    <lfx-members-nps
+      [(audience)]="npsAudience"
+      (audienceSwitch)="npsSwitch.set($event)"
+      (reading)="shell.sectionReading('nps')"
+      (settled)="shell.sectionSettled('nps', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="churn">
     <lfx-members-churn (reading)="shell.sectionReading('churn')" (settled)="shell.sectionSettled('churn', $event)" />

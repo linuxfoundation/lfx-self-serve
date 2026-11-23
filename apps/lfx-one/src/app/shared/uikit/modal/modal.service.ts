@@ -1,13 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { _IdGenerator } from '@angular/cdk/a11y';
+import { _IdGenerator, FocusTrapFactory, InteractivityChecker } from '@angular/cdk/a11y';
 import { hasModifierKey } from '@angular/cdk/keycodes';
 import { ComponentType } from '@angular/cdk/overlay';
-import { Dialog, DialogConfig, DialogRef } from '@angular/cdk/dialog';
+import { CdkDialogContainer, Dialog, DialogConfig, DialogRef } from '@angular/cdk/dialog';
 import { inject, Injectable, TemplateRef } from '@angular/core';
 import { UiModalConfig } from '@lfx-one/shared/interfaces';
 import { filter, takeUntil } from 'rxjs';
+
+/** Skips inert content: focusing it fails silently, so focus would stay outside the modal. */
+class InertAwareInteractivityChecker extends InteractivityChecker {
+  public override isFocusable(element: HTMLElement, config?: Parameters<InteractivityChecker['isFocusable']>[1]): boolean {
+    return !element.closest('[inert]') && super.isFocusable(element, config);
+  }
+
+  public override isTabbable(element: HTMLElement): boolean {
+    return !element.closest('[inert]') && super.isTabbable(element);
+  }
+}
 
 /**
  * Opens content in a modal on top of the page. Pass a component or an `<ng-template>` whose root is a `lfx-ui-modal`.
@@ -42,6 +53,14 @@ export class UiModalService {
       ariaLabelledBy: `${id}-title`,
       ariaDescribedBy: config.describedBy ? `${id}-subtitle` : null,
       restoreFocus: true,
+      // The focus trap and initial focus pass over inert content.
+      container: {
+        type: CdkDialogContainer,
+        providers: () => [
+          { provide: InteractivityChecker, useClass: InertAwareInteractivityChecker, deps: [] },
+          { provide: FocusTrapFactory, deps: [] },
+        ],
+      },
       // The CDK closes on both Escape and backdrop click, or on neither. Split them here.
       disableClose: true,
       maxWidth: 'calc(100vw - 32px)',

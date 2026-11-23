@@ -54,8 +54,10 @@ export class UiChipComponent {
   private readonly dismissButton = viewChild<ElementRef<HTMLElement>>('dismissButton');
   private readonly labelElement = viewChild.required<ElementRef<HTMLElement>>('labelElement');
 
-  /** The text of the chip, such as "Project: CNCF". It also names the × button: "Remove Project: CNCF". */
+  /** The value of the chip, such as "CNCF". With the `prefix` before it, it names the × button: "Remove Project: CNCF". */
   public readonly label = input.required<string>();
+  /** Key before the label in regular weight, such as "Project:". It joins the label in the × name and the tooltip: "Remove Project: CNCF". */
+  public readonly prefix = input<string>('');
   /** Colour role of the `subtle` look; `accent` is the filter-chip default. Ignored by `outline`. */
   public readonly tone = input<UiBadgeTone>('accent');
   /** `subtle` is the role's 100 fill with 700 text; `outline` is a hairline ring on the page background for neutral metadata. */
@@ -70,7 +72,8 @@ export class UiChipComponent {
   /** True from the moment `dismissed` is emitted until the chip is gone or the user starts a new click or key press on the ×, so a double-click or a held key emits once. A neighbour's removal skips a chip in this state. */
   public readonly dismissing = signal(false);
   protected readonly truncated = signal(false);
-  protected readonly removeLabel: Signal<string> = computed(() => `Remove ${this.label()}`);
+  protected readonly fullLabel: Signal<string> = computed(() => (this.prefix() ? `${this.prefix()} ${this.label()}` : this.label()));
+  protected readonly removeLabel: Signal<string> = computed(() => `Remove ${this.fullLabel()}`);
   protected readonly tooltipOff: Signal<boolean> = computed(() => !this.truncated());
   protected readonly dismissClasses: Signal<string> = this.initDismissClasses();
 
@@ -87,7 +90,7 @@ export class UiChipComponent {
       this.destroyRef.onDestroy(() => observer.disconnect());
     });
     afterRenderEffect(() => {
-      this.label();
+      this.fullLabel();
       this.size();
       this.measure();
     });

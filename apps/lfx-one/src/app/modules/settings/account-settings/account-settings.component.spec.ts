@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { PLATFORM_ID, signal } from '@angular/core';
+import { PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_CODE_NOT_RECEIVED_HINT,
   EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_LINKED_SUPPORT_TITLE,
   EMAIL_RESEND_FAILED_MESSAGE,
   EMAIL_RESEND_SUPPORT_MESSAGE,
   EMAIL_RESEND_SUPPORT_TITLE,
@@ -17,6 +20,7 @@ import {
   ERROR_CODES,
 } from '@lfx-one/shared/constants';
 import { EmailManagementData, MeetingInviteEmail, SendEmailVerificationResponse, UserEmail, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
+import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
@@ -629,13 +633,13 @@ describe('AccountSettingsComponent — resend escalation (#4695)', () => {
     vi.useRealTimers();
   });
 
-  it('words the complete email flow conditionally before and after a generic successful send', async () => {
+  it('distinguishes inbox ownership from account linking before and after a generic successful send (#5793)', async () => {
     const response$ = new Subject<SendEmailVerificationResponse>();
     const { component, fixture, root } = await setup(() => response$);
 
     expect(component.otpStep()).toBe(false);
-    expect(normalizedText(root)).toContain("If this address can be added to your account, we'll send a 6-digit verification code to it.");
-    expect(normalizedText(root)).not.toContain('A 6-digit verification code will be sent to the new address');
+    expect(normalizedText(root)).toContain('Confirm you own the email address before we check whether it can be linked to your account.');
+    expect(normalizedText(root)).not.toContain('already linked');
 
     response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
     response$.complete();
@@ -643,8 +647,11 @@ describe('AccountSettingsComponent — resend escalation (#4695)', () => {
 
     expect(component.otpStep()).toBe(true);
     const otpStep = root.querySelector('[data-testid="otp-step"]');
-    expect(normalizedText(otpStep)).toContain('If this address can be added to your account, a 6-digit code has been sent to new-address@example.test');
-    expect(normalizedText(otpStep)).not.toContain("we'll send a 6-digit code");
+    expect(normalizedText(otpStep)).toContain(
+      'Check new-address@example.test for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.'
+    );
+    expect(normalizedText(otpStep)).not.toContain('If this address can be added');
+    expect(normalizedText(otpStep)).not.toContain('already linked');
     expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
     expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_TITLE);
     expect(root.querySelector('[data-testid="resend-support-callout"]')).toBeNull();
@@ -871,5 +878,152 @@ describe('AccountSettingsComponent — verify and link outcome (#4253)', () => {
     });
     expect(component.otpStep()).toBe(true);
     expect(component.verifyingOtp()).toBe(false);
+  });
+
+  // #5459: a correct code for an address linked to an LFX account returns a fixed 409 — it must read as
+  // already-linked guidance, never as success, and leave the pending address in place. #5511 moves that
+  // guidance from an error toast to the code-step support callout.
+  it('shows the already-linked guidance on a proven conflict without claiming success, resetting or refreshing', async () => {
+    const { component, add, userServiceMock } = await setup(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: { success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE },
+          })
+      )
+    );
+    const loadsBefore = userServiceMock.getUserEmails.mock.calls.length;
+
+    component.verifyAndLink();
+
+    expect(add).not.toHaveBeenCalled();
+    expect(component.linkedConflict()).toBe(true);
+    expect(component.otpStep()).toBe(true);
+    expect(component.pendingEmail()).toBe('owned@example.test');
+    expect(userServiceMock.getUserEmails.mock.calls.length).toBe(loadsBefore);
+    expect(component.verifyingOtp()).toBe(false);
+  });
+});
+
+/**
+ * Guards #5511: a proven already-linked conflict replaces the code step's support hints with an
+ * "Email already linked" callout whose Contact support button opens a chat pre-filled with the
+ * pending address. Wrong or expired codes keep the generic error toast and get no callout.
+ */
+describe('AccountSettingsComponent — linked email support callout (#5511)', () => {
+  const pendingAddress = 'new-address@example.test';
+  const normalizedText = (element: Element | null): string => (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  async function setup(verify: () => Observable<VerifyAndLinkEmailResponse>) {
+    const openMessenger = vi.fn();
+    const userServiceMock = {
+      impersonating: signal(false),
+      getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+      getDeveloperTokenInfo: vi.fn(() => of({ token: '' })),
+      sendEmailVerificationCode: vi.fn(() => of<SendEmailVerificationResponse>({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE })),
+      verifyAndLinkEmail: vi.fn(verify),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: IntercomService, useValue: { openMessenger } },
+      ],
+    });
+    TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    // The component provides its own MessageService; spy on that instance.
+    const add = vi.spyOn(fixture.debugElement.injector.get(MessageService), 'add');
+
+    component.addEmailForm.setValue({ email: pendingAddress });
+    component.sendVerificationCode();
+    component.otpForm.setValue({ otp: '123456' });
+    fixture.detectChanges();
+
+    return { component, fixture, add, openMessenger, userServiceMock, root: fixture.nativeElement as HTMLElement };
+  }
+
+  const linkedConflict = () =>
+    throwError(() => new HttpErrorResponse({ status: 409, error: { success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE } }));
+
+  it('shows the callout instead of a toast and opens a support chat pre-filled with the pending address', async () => {
+    const { component, fixture, add, openMessenger, root } = await setup(linkedConflict);
+
+    component.verifyAndLink();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const callout = root.querySelector('[data-testid="linked-email-support-callout"]');
+    expect(callout?.getAttribute('role')).toBe('alert');
+    expect(normalizedText(callout)).toContain(EMAIL_LINKED_SUPPORT_TITLE);
+    expect(normalizedText(callout)).toContain(EMAIL_ALREADY_LINKED_MESSAGE);
+    expect(add).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-testid="otp-support-hint"]')).toBeNull();
+    expect(root.querySelector('[data-testid="resend-support-callout"]')).toBeNull();
+
+    root.querySelector<HTMLButtonElement>('[data-testid="linked-email-support-button"] button')!.click();
+
+    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage(pendingAddress));
+  });
+
+  it('keeps the error toast and shows no callout for a wrong or expired code', async () => {
+    const { component, fixture, add, root } = await setup(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: { success: false, error: 'verification_failed', message: 'Verification failed. Please try again or request a new code.' },
+          })
+      )
+    );
+
+    component.verifyAndLink();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Verification failed. Please try again or request a new code.',
+    });
+    expect(component.linkedConflict()).toBe(false);
+    expect(root.querySelector('[data-testid="linked-email-support-callout"]')).toBeNull();
+    expect(root.querySelector('[data-testid="otp-support-hint"]')).not.toBeNull();
+  });
+
+  it('clears the callout when the code step is cancelled or a new code is sent', async () => {
+    const { component, fixture, root } = await setup(linkedConflict);
+
+    component.verifyAndLink();
+    expect(component.linkedConflict()).toBe(true);
+    component.cancelOtpStep();
+    expect(component.linkedConflict()).toBe(false);
+
+    component.addEmailForm.setValue({ email: pendingAddress });
+    component.sendVerificationCode();
+    component.otpForm.setValue({ otp: '123456' });
+    component.verifyAndLink();
+    expect(component.linkedConflict()).toBe(true);
+    // A fresh send for another address (the initial send path) clears the conflict.
+    component.otpStep.set(false);
+    component.addEmailForm.setValue({ email: 'other-address@example.test' });
+    component.sendVerificationCode();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.linkedConflict()).toBe(false);
+    expect(root.querySelector('[data-testid="linked-email-support-callout"]')).toBeNull();
   });
 });

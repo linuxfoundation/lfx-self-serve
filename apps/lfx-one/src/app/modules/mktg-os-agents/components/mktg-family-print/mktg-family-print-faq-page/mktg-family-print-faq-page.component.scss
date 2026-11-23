@@ -1,0 +1,53 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The FAQ grid: two columns, 32px gutter (the design board's exact px); a group split across columns repeats its heading. */
+.fpq-grid {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+}
+
+.fpq-column {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* A group's label: 26px with its gap, as the plan budgets it (MKTG_FAMILY_PRINT_FAQ_LAYOUT.heading). */
+.fpq-heading {
+  display: block;
+  height: 20px;
+  margin-bottom: 6px;
+
+  /* The continued mark after a repeated heading: the label's size at the body's weight, never a second line. */
+  &__continued {
+    margin-left: 6px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: none;
+    color: var(--pp-muted);
+  }
+}
+
+.fpq-entry {
+  break-inside: avoid;
+  border-top: 1px solid var(--pp-hairline);
+  padding: 12px 0 14px;
+
+  &__question {
+    margin: 0;
+    font: 600 13.5px/1.35 var(--pp-font);
+    color: var(--pp-dark);
+  }
+
+  &__answer {
+    margin-top: 6px;
+    font: 400 12px/1.55 var(--pp-font);
+    color: var(--pp-ink);
+    white-space: pre-line;
+  }
+
+  &__source {
+    margin-top: 6px;
+  }
+}

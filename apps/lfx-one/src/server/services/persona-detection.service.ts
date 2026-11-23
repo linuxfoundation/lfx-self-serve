@@ -213,6 +213,23 @@ export class PersonaDetectionService {
   }
 
   /**
+   * `global_marketing_ops` on `projectSlug` itself — the relation campaign-service checks
+   * (`project:{uid}#global_marketing_ops` on the path project) before it sends account-level Google
+   * Ads inputs such as audiences to the shared LF customer. Narrower than `campaign_manager`, which
+   * also admits the project's `executive_director`. An unknown slug is `false`.
+   *
+   * STRICT, unlike the other checks here: a failed slug lookup or access check THROWS rather than
+   * answering `false`, so a caller can tell "not granted" (403) from "could not be verified" (503).
+   * Not request-cached; each caller asks once per request.
+   */
+  public async checkProjectGlobalMarketingOpsStrict(req: Request, projectSlug: string): Promise<boolean> {
+    if (!projectSlug) return false;
+    const { uid, exists } = await this.resolveProjectSlug(req, projectSlug);
+    if (!exists) return false;
+    return this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'global_marketing_ops' });
+  }
+
+  /**
    * Whether the caller is a member of `team:lf-staff`. Most consumers sit outside Org Lens and gate
    * privileged surfaces: `require-dashboard-access.middleware.ts`,
    * `require-executive-director.middleware.ts`, and the `allowLfStaff` bypass in

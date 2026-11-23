@@ -397,6 +397,9 @@ describe('UiMenuItemComponent shortcut keycaps', () => {
   const cases: [string, string[]][] = [
     ['+', ['+']],
     ['Ctrl++', ['Ctrl', '+']],
+    ['Ctrl+', ['Ctrl', '+']],
+    ['+K', ['+', 'K']],
+    ['Ctrl++K', ['Ctrl', '+', 'K']],
     ['⌘+', ['⌘', '+']],
     ['⌘ K', ['⌘', 'K']],
     ['Ctrl+Shift+K', ['Ctrl', 'Shift', 'K']],

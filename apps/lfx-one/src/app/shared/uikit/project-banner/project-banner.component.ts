@@ -9,8 +9,8 @@ import { UiProjectBannerVariant } from '@lfx-one/shared/interfaces';
  * dismissed: it goes away when the state is fixed. Show one at a time. If it can be dismissed without fixing anything,
  * use `lfx-ui-note` instead.
  *
- * Project one sentence in sentence case, then one small secondary button that names the fix ("Update Payment") as
- * `<lfx-ui-button banner-action variant="secondary" size="small">`.
+ * Project one sentence in sentence case, then one default-size secondary button that names the fix ("Update Payment") as
+ * `<lfx-ui-button banner-action variant="secondary">`.
  */
 @Component({
   selector: 'lfx-ui-project-banner',

@@ -40,6 +40,54 @@ export function stripDiacritics(value: string): string {
 }
 
 /**
+ * Folds text into a key for client-side substring search, so a query matches text that looks the same
+ * but differs at the code-point level (linuxfoundation/lfx-self-serve-ops#1472). Apply it to both the
+ * query and each searched field, then compare with `includes`.
+ *
+ * 1. `null`/`undefined` become `''`.
+ * 2. NFKC maps compatibility forms to their canonical ones: CJK compatibility ideographs (`U+F92E` -> `冷`),
+ *    full-width letters (`ＪＯＳＥ` -> `JOSE`), and the ideographic and no-break spaces to a plain space.
+ * 3. {@link stripDiacritics} drops accents (`José` -> `Jose`).
+ * 4. Lowercase.
+ * 5. Every whitespace and default-ignorable character (zero-width spaces and joiners, BOM, soft hyphen) is
+ *    removed, so `王小 冷` and `王小冷` fold to the same key.
+ */
+export function foldForSearch(value: string | null | undefined): string {
+  return stripDiacritics((value ?? '').normalize('NFKC'))
+    .toLowerCase()
+    .replace(/[\p{White_Space}\p{Default_Ignorable_Code_Point}]+/gu, '');
+}
+
+/**
+ * The {@link foldForSearch} keys a person's name matches in either order (linuxfoundation/lfx-self-serve#5687): the name
+ * itself, every rotation of its space-separated parts (`明华 李` -> `李明华`, `Juan Carlos Pérez` -> `perezjuancarlos` and
+ * `carlosperezjuan`), and both orders of `firstName` and `lastName` when present, for names whose parts are stored separately.
+ * Keep the original separators as well as word-boundary-aware and compact forms: lowercasing Greek sigma depends on
+ * its surrounding characters. Folding removes separators afterward. Empty keys are dropped and duplicates collapsed.
+ */
+export function nameSearchKeys(name: string | null | undefined, firstName: string | null | undefined, lastName: string | null | undefined): string[] {
+  const tokens = (name ?? '')
+    .normalize('NFKC')
+    .split(/[\p{White_Space}\p{Default_Ignorable_Code_Point}]+/u)
+    .filter(Boolean);
+  const keys = tokens.flatMap((_, i) => {
+    const parts = [...tokens.slice(i), ...tokens.slice(0, i)];
+    return [foldForSearch(parts.join(' ')), foldForSearch(parts.join(''))];
+  });
+  const first = foldForSearch(firstName);
+  const last = foldForSearch(lastName);
+  if (first && last) {
+    for (const parts of [
+      [lastName, firstName],
+      [firstName, lastName],
+    ]) {
+      keys.push(foldForSearch(parts.join(' ')), foldForSearch(parts.join('').replace(/[\p{White_Space}\p{Default_Ignorable_Code_Point}]+/gu, '')));
+    }
+  }
+  return [...new Set([foldForSearch(name), ...keys].filter(Boolean))];
+}
+
+/**
  * Wraps a text string into multiple lines, breaking on word boundaries.
  * Used to produce multi-line Chart.js axis labels (which accept `string[]`).
  * @param text - The label text to wrap
@@ -92,6 +140,20 @@ export function toTitleCase(value: string): string {
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(' ');
+}
+
+/**
+ * Humanize a snake_case / kebab-case / camelCase field key into a readable
+ * Title Case label. Used by the newsletter block-composer when a field schema
+ * omits an explicit `label`.
+ * Example: `humanizeFieldKey('blog_link')` → `'Blog Link'`.
+ */
+export function humanizeFieldKey(key: string): string {
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+  return toTitleCase(spaced);
 }
 
 /**

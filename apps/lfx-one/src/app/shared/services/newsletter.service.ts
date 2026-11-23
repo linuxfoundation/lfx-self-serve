@@ -11,25 +11,41 @@ import {
   MyNewslettersApiResponse,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterAudience,
   NewsletterCancelScheduleResult,
   NewsletterGroupJoinStatus,
+  NewsletterGuestAccessRequest,
+  NewsletterGuestInviteInfo,
+  NewsletterGuestInviteRequest,
+  NewsletterGuestIssue,
+  NewsletterGuestIssueResponse,
   NewsletterInviteResult,
   NewsletterJoinResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
+  NewsletterPublication,
+  NewsletterPublicationListResponse,
+  NewsletterPublicationRequest,
   NewsletterReaderAccess,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
+  NewsletterResolveAudiencePayload,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterSharePreview,
   NewsletterStatusCounts,
   NewsletterTestSendPayload,
+  SocialShareChannel,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, take, throwError } from 'rxjs';
+import { NEWSLETTER_PUBLICATION_MAX_PAGES } from '@lfx-one/shared/constants';
+import { PlausibleService } from '@services/plausible.service';
+import { catchError, EMPTY, expand, map, Observable, of, reduce, take, tap, throwError } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -47,9 +63,19 @@ import { catchError, Observable, take, throwError } from 'rxjs';
 })
 export class NewsletterService {
   private readonly http = inject(HttpClient);
+  private readonly plausible = inject(PlausibleService);
 
   public getRecipientCount(projectUid: string, payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientCount> {
     return this.http.post<NewsletterRecipientCount>(`/api/projects/${this.enc(projectUid)}/newsletters/recipient-count`, payload).pipe(take(1));
+  }
+
+  /** Start the background read of a draft's committees into its audience snapshot (#4352). */
+  public resolveAudience(projectUid: string, newsletterUid: string, payload: NewsletterResolveAudiencePayload): Observable<NewsletterAudience> {
+    return this.http.post<NewsletterAudience>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/audience`, payload).pipe(take(1));
+  }
+
+  public getAudience(projectUid: string, newsletterUid: string): Observable<NewsletterAudience> {
+    return this.http.get<NewsletterAudience>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/audience`).pipe(take(1));
   }
 
   public getRecipients(projectUid: string, payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientsResponse> {
@@ -58,6 +84,11 @@ export class NewsletterService {
 
   public testSend(projectUid: string, payload: NewsletterTestSendPayload): Observable<{ ok: boolean }> {
     return this.http.post<{ ok: boolean }>(`/api/projects/${this.enc(projectUid)}/newsletters/test-send`, payload).pipe(take(1));
+  }
+
+  /** Render a layout to its final email HTML server-side (the same output the send path dispatches). */
+  public renderPreview(projectUid: string, payload: NewsletterRenderPreviewPayload): Observable<NewsletterRenderPreviewResponse> {
+    return this.http.post<NewsletterRenderPreviewResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/render-preview`, payload).pipe(take(1));
   }
 
   public generate(projectUid: string, payload: GenerateNewsletterRequest): Observable<GenerateNewsletterResponse> {
@@ -134,6 +165,40 @@ export class NewsletterService {
   }
 
   /**
+   * Records an in-app share of a sent issue (#4958) and, once the server accepts it, sends the matching
+   * Plausible event — so Plausible and `total_shares` count the same accepted shares. Emits `true` when
+   * the server accepted the share, `false` when it did not (the 403 while impersonating, a 404 for a
+   * draft, a network error). It never errors: sharing must not fail because tracking did.
+   */
+  public recordShare(projectUid: string, newsletterUid: string, channel: SocialShareChannel): Observable<boolean> {
+    return this.http.post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/share`, { channel }).pipe(
+      take(1),
+      tap(() => this.plausible.trackEvent('newsletter_shared', { newsletterId: newsletterUid, channel })),
+      map(() => true),
+      catchError((error) => {
+        console.warn('[NewsletterService] Failed to record newsletter share', error);
+        return of(false);
+      })
+    );
+  }
+
+  /**
+   * Records a unique web page view of a sent issue (one per user per issue, counted server-side). Emits
+   * `true` when the server accepted it and `false` otherwise (the 403 while impersonating, a 404 for a
+   * draft, a network error). It never errors: reading must not fail because tracking did.
+   */
+  public recordPageView(projectUid: string, newsletterUid: string): Observable<boolean> {
+    return this.http.post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/page-view`, {}).pipe(
+      take(1),
+      map(() => true),
+      catchError((error) => {
+        console.warn('[NewsletterService] Failed to record newsletter page view', error);
+        return of(false);
+      })
+    );
+  }
+
+  /**
    * Me-lens My Newsletters by foundation (#3483): one card per foundation plus the full feed (tagged
    * with its foundation) and whether the user may invite colleagues. Errors propagate to the page.
    */
@@ -142,6 +207,55 @@ export class NewsletterService {
       take(1),
       catchError((error) => {
         console.error('[NewsletterService] Failed to load my newsletter foundations', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Signed-out link preview of a permalink (#4940): the subject of a sent issue, nothing else. 404 for
+   * an unknown or unsent issue; the caller falls back to a neutral card.
+   */
+  public getNewsletterSharePreview(projectSlug: string, newsletterUid: string): Observable<NewsletterSharePreview> {
+    return this.http.get<NewsletterSharePreview>(`/public/api/newsletters/${this.enc(projectSlug)}/${this.enc(newsletterUid)}/preview`).pipe(take(1));
+  }
+
+  /** Signed-out invite landing (#5235): what the invite link's modal shows. Errors propagate. */
+  public inspectNewsletterGuestInvite(token: string): Observable<NewsletterGuestInviteInfo> {
+    return this.http.post<NewsletterGuestInviteInfo>('/public/api/newsletters/invites/inspect', { token } satisfies NewsletterGuestInviteRequest).pipe(take(1));
+  }
+
+  /** Signed-out invite landing: Continue — joins the invited address to the list and returns the latest issue. */
+  public acceptNewsletterGuestInvite(token: string): Observable<NewsletterGuestIssue> {
+    return this.http.post<NewsletterGuestIssue>('/public/api/newsletters/invites/accept', { token } satisfies NewsletterGuestInviteRequest).pipe(take(1));
+  }
+
+  /** Signed-out shared link: Continue with a work email — reads the issue and emails a subscription confirmation. */
+  public requestNewsletterGuestAccess(projectSlug: string, newsletterUid: string, email: string): Observable<NewsletterGuestIssue> {
+    return this.http
+      .post<NewsletterGuestIssue>(`/public/api/newsletters/${this.enc(projectSlug)}/${this.enc(newsletterUid)}/guest-access`, {
+        email,
+      } satisfies NewsletterGuestAccessRequest)
+      .pipe(take(1));
+  }
+
+  /** Signed-out invite landing: the guest session's latest issue (`issue: null` without a session). Errors propagate. */
+  public getNewsletterGuestLatestIssue(): Observable<NewsletterGuestIssueResponse> {
+    return this.http.get<NewsletterGuestIssueResponse>('/public/api/newsletters/guest/latest').pipe(
+      take(1),
+      catchError((error) => {
+        console.error('[NewsletterService] Failed to load the newsletter guest session', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Signed-out shared link: the issue when the guest session covers it, else the foundation the email prompt names. */
+  public getNewsletterGuestSharedIssue(projectSlug: string, newsletterUid: string): Observable<NewsletterGuestIssueResponse> {
+    return this.http.get<NewsletterGuestIssueResponse>(`/public/api/newsletters/guest/${this.enc(projectSlug)}/${this.enc(newsletterUid)}`).pipe(
+      take(1),
+      catchError((error) => {
+        console.error('[NewsletterService] Failed to load the shared newsletter for a guest', error);
         return throwError(() => error);
       })
     );
@@ -205,6 +319,59 @@ export class NewsletterService {
     return this.http
       .post<NewsletterCancelScheduleResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/cancel-schedule`, {}, { headers })
       .pipe(take(1));
+  }
+
+  public createPublication(projectUid: string, payload: NewsletterPublicationRequest): Observable<NewsletterPublication> {
+    return this.http.post<NewsletterPublication>(this.publicationsUrl(projectUid), payload).pipe(take(1));
+  }
+
+  public listPublications(projectUid: string, pageToken?: string): Observable<NewsletterPublicationListResponse> {
+    const params = pageToken ? new HttpParams().set('page_token', pageToken) : undefined;
+    return this.http.get<NewsletterPublicationListResponse>(this.publicationsUrl(projectUid), { params }).pipe(take(1));
+  }
+
+  /** Every named publication in the project, following the service's pages. */
+  public listAllPublications(projectUid: string): Observable<NewsletterPublication[]> {
+    return this.listPublications(projectUid).pipe(
+      expand((page) => (page.next_page_token ? this.listPublications(projectUid, page.next_page_token) : EMPTY)),
+      take(NEWSLETTER_PUBLICATION_MAX_PAGES),
+      reduce((all: NewsletterPublication[], page) => [...all, ...(page.publications ?? [])], [])
+    );
+  }
+
+  public getPublication(projectUid: string, publicationUid: string): Observable<NewsletterPublication> {
+    return this.http.get<NewsletterPublication>(`${this.publicationsUrl(projectUid)}/${this.enc(publicationUid)}`).pipe(take(1));
+  }
+
+  public updatePublication(
+    projectUid: string,
+    publicationUid: string,
+    version: number,
+    payload: NewsletterPublicationRequest
+  ): Observable<NewsletterPublication> {
+    const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
+    return this.http.put<NewsletterPublication>(`${this.publicationsUrl(projectUid)}/${this.enc(publicationUid)}`, payload, { headers }).pipe(take(1));
+  }
+
+  public listEditions(projectUid: string, publicationUid: string, params: NewsletterListParams = {}): Observable<NewsletterListResponse> {
+    let httpParams = new HttpParams();
+    if (params.status) {
+      httpParams = httpParams.set('status', params.status);
+    }
+    if (params.page_token) {
+      httpParams = httpParams.set('page_token', params.page_token);
+    }
+    return this.http
+      .get<NewsletterListResponse>(`${this.publicationsUrl(projectUid)}/${this.enc(publicationUid)}/editions`, { params: httpParams })
+      .pipe(take(1));
+  }
+
+  public createEdition(projectUid: string, publicationUid: string, payload: Partial<CreateNewsletterRequest>): Observable<Newsletter> {
+    return this.http.post<Newsletter>(`${this.publicationsUrl(projectUid)}/${this.enc(publicationUid)}/editions`, payload).pipe(take(1));
+  }
+
+  private publicationsUrl(projectUid: string): string {
+    return `/api/projects/${this.enc(projectUid)}/newsletter-publications`;
   }
 
   private enc(value: string): string {

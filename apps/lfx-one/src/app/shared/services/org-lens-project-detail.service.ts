@@ -14,6 +14,7 @@ import type {
   OrgLensLeaderboardPage,
   OrgLensLeaderboardTimeRange,
   OrgLensTrendBlock,
+  OrgScopeFilter,
 } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, throwError } from 'rxjs';
 
@@ -51,8 +52,14 @@ export class OrgLensProjectDetailService {
   }
 
   /** B3/B4 — Technical + Ecosystem cards, with the viewing org's own tiers carried inline for the band chips. */
-  public getInfluenceBlock(orgUid: string, orgName: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Observable<OrgLensInfluenceBlock | null> {
-    return this.blockGet<OrgLensInfluenceBlock>(`${this.baseUrl(orgUid, projectSlug)}/influence`, { orgName, range });
+  public getInfluenceBlock(
+    orgUid: string,
+    orgName: string,
+    projectSlug: string,
+    range: OrgLensLeaderboardTimeRange,
+    orgScope: OrgScopeFilter
+  ): Observable<OrgLensInfluenceBlock | null> {
+    return this.blockGet<OrgLensInfluenceBlock>(`${this.baseUrl(orgUid, projectSlug)}/influence`, { orgName, range, orgScope });
   }
 
   /** B6 — Influence Trend series. Range-scoped: `all` returns the adaptive lifetime-bucketed series + `periods[]`. */
@@ -69,11 +76,12 @@ export class OrgLensProjectDetailService {
     metric: OrgLensLeaderboardMetric,
     page: number,
     pageSize: number,
-    search: string
+    search: string,
+    orgScope: OrgScopeFilter
   ): Observable<OrgLensLeaderboardPage | null> {
     return this.blockGet<OrgLensLeaderboardPage>(
       `${this.baseUrl(orgUid, projectSlug)}/leaderboard/technical`,
-      this.boardParams(orgName, range, metric, page, pageSize, search)
+      this.boardParams(orgName, range, metric, page, pageSize, search, orgScope)
     );
   }
 
@@ -86,11 +94,12 @@ export class OrgLensProjectDetailService {
     metric: OrgLensLeaderboardMetric,
     page: number,
     pageSize: number,
-    search: string
+    search: string,
+    orgScope: OrgScopeFilter
   ): Observable<OrgLensLeaderboardPage | null> {
     return this.blockGet<OrgLensLeaderboardPage>(
       `${this.baseUrl(orgUid, projectSlug)}/leaderboard/ecosystem`,
-      this.boardParams(orgName, range, metric, page, pageSize, search)
+      this.boardParams(orgName, range, metric, page, pageSize, search, orgScope)
     );
   }
 
@@ -104,10 +113,11 @@ export class OrgLensProjectDetailService {
     projectSlug: string,
     dimension: LeaderboardDimension,
     organizationId: string,
-    range: OrgLensLeaderboardTimeRange
+    range: OrgLensLeaderboardTimeRange,
+    orgScope: OrgScopeFilter
   ): Observable<OrgLeaderboardDetailBreakdown | null> {
     const url = `${this.baseUrl(orgUid, projectSlug)}/leaderboard/${dimension}/organizations/${encodeURIComponent(organizationId)}`;
-    return this.blockGet<OrgLeaderboardDetailBreakdown>(url, { range });
+    return this.blockGet<OrgLeaderboardDetailBreakdown>(url, { range, orgScope });
   }
 
   /** B5 — Card detail drawer definition (+ column headers) for one card; the roster rows come from getCardRoster. */
@@ -116,9 +126,10 @@ export class OrgLensProjectDetailService {
     orgName: string,
     projectSlug: string,
     cardKey: string,
-    range: OrgLensLeaderboardTimeRange
+    range: OrgLensLeaderboardTimeRange,
+    orgScope: OrgScopeFilter
   ): Observable<OrgLensCardDetailSection | null> {
-    return this.blockGet<OrgLensCardDetailSection>(`${this.baseUrl(orgUid, projectSlug)}/cards/${encodeURIComponent(cardKey)}`, { orgName, range });
+    return this.blockGet<OrgLensCardDetailSection>(`${this.baseUrl(orgUid, projectSlug)}/cards/${encodeURIComponent(cardKey)}`, { orgName, range, orgScope });
   }
 
   /** B5 — One server-paginated page of a card drawer's roster rows; fetched lazily on open / page change. */
@@ -129,11 +140,12 @@ export class OrgLensProjectDetailService {
     cardKey: string,
     range: OrgLensLeaderboardTimeRange,
     page: number,
-    pageSize: number
+    pageSize: number,
+    orgScope: OrgScopeFilter
   ): Observable<OrgLensCardRosterPage> {
     const url = `${this.baseUrl(orgUid, projectSlug)}/cards/${encodeURIComponent(cardKey)}/roster`;
     return this.http
-      .get<OrgLensCardRosterPage>(url, { params: { orgName, range, page: String(page), pageSize: String(pageSize) } })
+      .get<OrgLensCardRosterPage>(url, { params: { orgName, range, page: String(page), pageSize: String(pageSize), orgScope } })
       .pipe(catchError((err: HttpErrorResponse) => (err.status === 404 ? of({ rows: [], total: 0 }) : throwError(() => err))));
   }
 
@@ -144,9 +156,10 @@ export class OrgLensProjectDetailService {
     metric: OrgLensLeaderboardMetric,
     page: number,
     pageSize: number,
-    search: string
+    search: string,
+    orgScope: OrgScopeFilter
   ): Record<string, string> {
-    const params: Record<string, string> = { orgName, range, metric, page: String(page), pageSize: String(pageSize) };
+    const params: Record<string, string> = { orgName, range, metric, page: String(page), pageSize: String(pageSize), orgScope };
     const term = search.trim();
     if (term.length > 0) params['search'] = term;
     return params;

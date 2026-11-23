@@ -1,10 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,7 +17,6 @@ const SECOND = { occurrence_id: '2525245200', start_time: '2050-01-08T09:00:00.0
  */
 describe('MeetingDeleteTypeSelectionComponent', () => {
   let close: ReturnType<typeof vi.fn>;
-  let meetingsV2Enabled: boolean;
 
   async function mount(occurrences: MeetingOccurrence[] = [FIRST, SECOND], occurrence: MeetingOccurrence | null = FIRST) {
     const meeting = { id: 'meeting-1', title: 'Weekly sync', timezone: 'UTC', occurrences } as unknown as Meeting;
@@ -27,7 +24,6 @@ describe('MeetingDeleteTypeSelectionComponent', () => {
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: DynamicDialogConfig, useValue: { data: { meeting, occurrence } } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(meetingsV2Enabled) } },
       ],
     });
     TestBed.overrideComponent(MeetingDeleteTypeSelectionComponent, { set: { template: '', imports: [] } });
@@ -40,7 +36,6 @@ describe('MeetingDeleteTypeSelectionComponent', () => {
 
   beforeEach(() => {
     close = vi.fn();
-    meetingsV2Enabled = true;
   });
 
   it('opens on cancelling a single occurrence, preselected to the one clicked from', async () => {
@@ -80,30 +75,6 @@ describe('MeetingDeleteTypeSelectionComponent', () => {
     component.onContinue();
 
     expect(close).not.toHaveBeenCalled();
-  });
-
-  describe('with the meeting v2 flag off', () => {
-    beforeEach(() => {
-      meetingsV2Enabled = false;
-    });
-
-    it('opens with nothing selected and will not continue until a type is chosen', async () => {
-      const component = await mount();
-
-      component.onContinue();
-
-      expect(component.deleteForm.get('deleteType')?.value).toBeNull();
-      expect(close).not.toHaveBeenCalled();
-    });
-
-    it('cancels without naming an occurrence, so the caller uses the one it opened on', async () => {
-      const component = await mount();
-      component.selectType('occurrence');
-
-      component.onContinue();
-
-      expect(close).toHaveBeenCalledWith({ deleteType: 'occurrence' });
-    });
   });
 
   it('preselects the occurrence it was opened on even when its id is in milliseconds', async () => {

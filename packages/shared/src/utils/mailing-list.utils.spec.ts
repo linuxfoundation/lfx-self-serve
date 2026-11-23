@@ -3,8 +3,11 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { MailingListSyncMode } from '../enums/mailing-list.enum';
 import { MAILING_LIST_NAME_PATTERN } from '../constants/mailing-list.constants';
-import { normalizeServicePrefix } from './mailing-list.utils';
+import { GroupsIOMailingList } from '../interfaces/mailing-list.interface';
+import { getMailingListCommitteeSync, getMailingListGroupLinks, normalizeServicePrefix } from './mailing-list.utils';
 
 describe('normalizeServicePrefix', () => {
   it.each([
@@ -42,6 +45,55 @@ describe('normalizeServicePrefix', () => {
   });
 });
 
+describe('getMailingListCommitteeSync', () => {
+  const committeeUid = 'committee-1';
+  const otherCommitteeUid = 'committee-2';
+
+  it('resolves sync_mode and filters from the matching committees[] entry, not top-level fields', () => {
+    const list: Pick<GroupsIOMailingList, 'committees'> = {
+      committees: [
+        {
+          uid: committeeUid,
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
+    };
+
+    expect(getMailingListCommitteeSync(list, committeeUid)).toEqual({
+      syncMode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committeeFilters: [CommitteeMemberVotingStatus.VOTING_REP],
+      committeeRoleFilters: ['Chair'],
+    });
+  });
+
+  it('returns empty defaults when the list is linked to a different committee', () => {
+    const list: Pick<GroupsIOMailingList, 'committees'> = {
+      committees: [
+        {
+          uid: otherCommitteeUid,
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+        },
+      ],
+    };
+
+    expect(getMailingListCommitteeSync(list, committeeUid)).toEqual({ syncMode: undefined, committeeFilters: [], committeeRoleFilters: [] });
+  });
+
+  it.each([[null], [undefined], [{ committees: [] }], [{ committees: undefined }]])('returns empty defaults for %j', (list) => {
+    expect(getMailingListCommitteeSync(list, committeeUid)).toEqual({ syncMode: undefined, committeeFilters: [], committeeRoleFilters: [] });
+  });
+
+  it.each([[null], [undefined], [''], ['' as const]])('returns empty defaults when committeeUid is %j', (uid) => {
+    const list: Pick<GroupsIOMailingList, 'committees'> = {
+      committees: [{ uid: committeeUid, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
+    };
+    expect(getMailingListCommitteeSync(list, uid)).toEqual({ syncMode: undefined, committeeFilters: [], committeeRoleFilters: [] });
+  });
+});
+
 describe('MAILING_LIST_NAME_PATTERN', () => {
   it.each(['dev', 'a1', 'Ab-c1', 'my-list', 'x1-TSC-private'])('accepts %j', (name) => {
     expect(MAILING_LIST_NAME_PATTERN.test(name)).toBe(true);
@@ -49,5 +101,28 @@ describe('MAILING_LIST_NAME_PATTERN', () => {
 
   it.each(['a--b', '-a', 'a-', 'a_b', 'a.b', 'a b', ''])('rejects %j', (name) => {
     expect(MAILING_LIST_NAME_PATTERN.test(name)).toBe(false);
+  });
+});
+
+describe('getMailingListGroupLinks', () => {
+  const committees = [{ uid: 'group-1', name: ' Technical Steering Committee ' }, { uid: 'group-2', name: 'Security Working Group' }, { uid: 'group-3' }];
+
+  it('builds a trimmed name and a group-details link for each linked group', () => {
+    const links = getMailingListGroupLinks({ committees, is_foundation: false });
+
+    expect(links.map((link) => link.name)).toEqual(['Technical Steering Committee', 'Security Working Group', null]);
+    expect(links.map((link) => link.commands?.at(-1))).toEqual(['group-1', 'group-2', 'group-3']);
+  });
+
+  it('keeps only the first few groups when a limit is given', () => {
+    expect(getMailingListGroupLinks({ committees, is_foundation: false }, 2).map((link) => link.uid)).toEqual(['group-1', 'group-2']);
+  });
+
+  it('keeps a group with no uid as plain text instead of dropping it', () => {
+    expect(getMailingListGroupLinks({ committees: [{ uid: '  ', name: 'Orphan Group' }] })).toEqual([{ uid: '  ', name: 'Orphan Group', commands: null }]);
+  });
+
+  it('returns nothing for a list with no linked groups', () => {
+    expect(getMailingListGroupLinks({})).toEqual([]);
   });
 });

@@ -19,7 +19,9 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY,
   COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
+  COMMITTEE_ENGAGEMENT_MIN_INVITES,
   COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS,
+  COMMITTEE_INVITE_EXPIRY_TICK_MS,
   COMMITTEE_LABEL,
   NO_VOTING_STATUS_LABEL,
 } from '@lfx-one/shared/constants';
@@ -52,7 +54,9 @@ import {
   countVotingReps,
   formatCommitteeEngagementFreshness,
   formatCommitteeEngagementMeetings,
+  formatInviteExpiry,
   isCommitteeEngagementRowAtRisk,
+  isInviteExpired,
   isLfStaffNonVotingSeat,
   isVotingRep,
   resolveCommitteeMemberPermission,
@@ -78,6 +82,7 @@ import {
   startWith,
   take,
   takeUntil,
+  takeWhile,
   timer,
 } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
@@ -126,6 +131,8 @@ export class CommitteeMembersComponent implements OnInit {
   public committee = input.required<Committee | null>();
   public members = input.required<CommitteeMember[]>();
   public membersLoading = input<boolean>(true);
+  public readonly membersError = input(false);
+  public readonly membersReady = input(false);
   public invites = input<CommitteeInvite[]>([]);
   public invitesLoading = input<boolean>(false);
   public applications = input<CommitteeJoinApplication[]>([]);
@@ -151,6 +158,7 @@ export class CommitteeMembersComponent implements OnInit {
   public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
 
   public readonly refresh = output<void>();
+  public readonly retryMembers = output<void>();
   public readonly engagementWindowChange = output<CommitteeEngagementWindow>();
 
   // Simple writable signals
@@ -158,6 +166,7 @@ export class CommitteeMembersComponent implements OnInit {
   public selectedInvite = signal<CommitteeInvite | null>(null);
   public isDeleting = signal<boolean>(false);
   public revokingInviteUid = signal<string | null>(null);
+  public resendingInviteUid = signal<string | null>(null);
   public processingApplicationUid = signal<string | null>(null);
   public readonly importSnapshotsLoading = signal(false);
   // linkedSignal: resets to 'all' when the Pending tab becomes invisible (all invites revoked /
@@ -199,6 +208,22 @@ export class CommitteeMembersComponent implements OnInit {
   // `writer from project`). No separate inherited check is needed here — a foundation-level
   // manager's `writer` flag is already true (LFXV2-2059).
   public readonly canManageMembers = computed(() => canManageCommitteeMembers(this.committee()));
+
+  /** Wall clock re-read every minute, so an invitation that expires while the tab is open is re-evaluated. */
+  private readonly now = toSignal(timer(COMMITTEE_INVITE_EXPIRY_TICK_MS, COMMITTEE_INVITE_EXPIRY_TICK_MS).pipe(map(() => new Date())), {
+    initialValue: new Date(),
+  });
+  /** Expiry state per invite uid, computed once per change instead of by template method calls. */
+  public readonly inviteExpiryByUid = computed(() => {
+    const now = this.now();
+    return new Map(
+      this.invites().map((invite) => {
+        const expired = isInviteExpired(invite.expires_at, now);
+        const label = formatInviteExpiry(invite.expires_at);
+        return [invite.uid, { expired, label, text: label ? `${expired ? 'Expired' : 'Expires'} ${label}` : 'No expiration' }] as const;
+      })
+    );
+  });
   public readonly joinMode = computed(() => this.committee()?.join_mode as JoinMode | undefined);
   public readonly showPendingInvites = computed(() => this.canManageMembers() && (this.invitesLoading() || this.invites().length > 0));
   public readonly tabOptions = computed<FilterPillOption[]>(() => {
@@ -367,6 +392,9 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   public openAddMemberDialog(): void {
+    if (!this.membersReady() || this.membersLoading() || this.membersError() || !this.canManageMembers()) {
+      return;
+    }
     // Snapshot member count before opening — used by the poll to detect when the
     // query-service index has caught up with the write (indexing lag).
     const countBeforeAdd = this.members().length;
@@ -399,7 +427,15 @@ export class CommitteeMembersComponent implements OnInit {
    */
   public openImportMembersDialog(): void {
     const committee = this.committee();
-    if (!committee?.uid || !this.canManageMembers() || this.membersLoading() || this.invitesLoading() || this.importSnapshotsLoading()) {
+    if (
+      !committee?.uid ||
+      !this.canManageMembers() ||
+      !this.membersReady() ||
+      this.membersError() ||
+      this.membersLoading() ||
+      this.invitesLoading() ||
+      this.importSnapshotsLoading()
+    ) {
       return;
     }
     const committeeUid = committee.uid;
@@ -562,9 +598,42 @@ export class CommitteeMembersComponent implements OnInit {
     });
   }
 
+  /**
+   * Re-issues an expired invitation. A create with only the email reinstates the stored invite
+   * (fresh expiry and email) and keeps its role and organization, so nothing else is sent.
+   */
+  public resendInvite(invite: CommitteeInvite): void {
+    const committee = this.committee();
+    if (!committee?.uid || this.resendingInviteUid() || this.revokingInviteUid()) return;
+
+    this.resendingInviteUid.set(invite.uid);
+    this.committeeService
+      .createCommitteeInvite(committee.uid, { invitee_email: invite.invitee_email })
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.resendingInviteUid.set(null);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Invitation Sent',
+            detail: `A new invitation has been sent to ${invite.invitee_email}.`,
+          });
+          this.pollUntilInviteRenewed(committee.uid, invite.uid);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.resendingInviteUid.set(null);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Resend',
+            detail: getHttpErrorDetail(err, 'Failed to resend the invitation. Please try again.'),
+          });
+        },
+      });
+  }
+
   public revokeInvite(invite: CommitteeInvite): void {
     const committee = this.committee();
-    if (!committee?.uid || this.revokingInviteUid()) return;
+    if (!committee?.uid || this.revokingInviteUid() || this.resendingInviteUid()) return;
 
     this.confirmationService.confirm({
       message: `Revoke the pending invitation for ${invite.invitee_email}?`,
@@ -726,13 +795,23 @@ export class CommitteeMembersComponent implements OnInit {
       data,
     });
     dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MemberImportDialogResult | undefined) => {
+      // Confirm additions even if the page moved to another group; the toast names the imported group.
+      if (result && result.added > 0) {
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Members Added',
+          detail: `${result.added} ${result.added === 1 ? 'member' : 'members'} added to ${data.committee.name}. New members may take a moment to appear.`,
+          life: 6000,
+        });
+      }
       if (!result || this.committee()?.uid !== committeeUid) {
         return;
       }
       if (result.added > 0) {
         this.refreshMembers();
-        this.pollUntilMemberAdded(countBeforeImport, result.added);
-      } else if (result.conflicts > 0) {
+        // A reopened run's additions may already be in countBeforeImport; its own baseline never counts them twice.
+        this.pollUntilMemberAdded(result.baselineMemberCount ?? countBeforeImport, result.added);
+      } else if (result.conflicts > 0 || result.uncertain) {
         this.refreshMembers();
       }
     });
@@ -808,6 +887,42 @@ export class CommitteeMembersComponent implements OnInit {
         },
         complete: () => {
           if (!pollSucceeded) {
+            this.refreshMembers();
+          }
+        },
+      });
+  }
+
+  /**
+   * Watches the invite list until the resent invite is no longer expired, absorbing query-service
+   * indexing lag, then refreshes the roster. Falls back to a refresh when the poll gives up.
+   */
+  private pollUntilInviteRenewed(committeeUid: string, inviteUid: string): void {
+    // The page is reused across groups, so stop and skip the refresh once another group is showing.
+    const isActiveGroup = (): boolean => this.committee()?.uid === committeeUid;
+    if (!isActiveGroup()) return;
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        takeWhile(isActiveGroup),
+        exhaustMap(() => this.committeeService.getCommitteeInvites(committeeUid).pipe(catchError(() => of(null as CommitteeInvite[] | null)))),
+        take(6),
+        filter((invites): invites is CommitteeInvite[] => {
+          const renewed = Array.isArray(invites) ? invites.find((i) => i.uid === inviteUid) : undefined;
+          return !!renewed && renewed.status === 'pending' && !isInviteExpired(renewed.expires_at);
+        }),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          if (isActiveGroup()) this.refreshMembers();
+        },
+        complete: () => {
+          if (!pollSucceeded && isActiveGroup()) {
             this.refreshMembers();
           }
         },
@@ -992,7 +1107,7 @@ export class CommitteeMembersComponent implements OnInit {
         }
       });
 
-      const options: { label: string; value: string | null }[] = [{ label: 'All Organizations', value: null }];
+      const options: { label: string; value: string | null }[] = [{ label: 'All Companies', value: null }];
       Array.from(orgSet)
         .sort()
         .forEach((org) => {
@@ -1133,6 +1248,9 @@ export class CommitteeMembersComponent implements OnInit {
     if (isLfStaffNonVotingSeat({ role: row.role, votingStatus: row.voting_status })) {
       return 'LF Staff seat — excluded from engagement metrics; attendance expectations do not apply';
     }
+    if (row.classification === 'New') {
+      return `New member — scored once invited to ${COMMITTEE_ENGAGEMENT_MIN_INVITES} meetings`;
+    }
     if (row.role === CommitteeMemberRole.CHAIR || row.role === CommitteeMemberRole.VICE_CHAIR || row.role === CommitteeMemberRole.LF_STAFF) {
       return `${row.role} — attended ${row.attended} of ${row.invited} invited meetings`;
     }
@@ -1180,12 +1298,25 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   private initializeInviteActionMenuItems(invite?: CommitteeInvite): MenuItem[] {
+    const resendItem: MenuItem[] =
+      invite && isInviteExpired(invite.expires_at)
+        ? [
+            {
+              label: 'Resend invitation',
+              icon: 'fa-light fa-paper-plane',
+              disabled: !!this.resendingInviteUid() || !!this.revokingInviteUid(),
+              command: () => this.resendInvite(invite),
+            },
+          ]
+        : [];
+
     return [
+      ...resendItem,
       {
         label: 'Revoke invitation',
         icon: 'fa-light fa-ban',
         styleClass: 'text-red-500',
-        disabled: !!this.revokingInviteUid(),
+        disabled: !!this.revokingInviteUid() || !!this.resendingInviteUid(),
         command: () => {
           const target = invite ?? this.selectedInvite();
           if (target) {

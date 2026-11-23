@@ -14,7 +14,6 @@ import { catchError, combineLatest, distinctUntilChanged, filter, forkJoin, of, 
 
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { DisplayValuePipe } from '@pipes/display-value.pipe';
-import { InitialsPipe } from '@pipes/initials.pipe';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
@@ -27,17 +26,7 @@ import { OrgProfileEditComponent } from './org-profile-edit.component';
 @Component({
   selector: 'lfx-org-profile',
   standalone: true,
-  imports: [
-    DatePipe,
-    SkeletonModule,
-    ButtonModule,
-    ToastModule,
-    TooltipModule,
-    OrgProfileEditComponent,
-    OrgLensEmptyStateComponent,
-    DisplayValuePipe,
-    InitialsPipe,
-  ],
+  imports: [DatePipe, SkeletonModule, ButtonModule, ToastModule, TooltipModule, OrgProfileEditComponent, OrgLensEmptyStateComponent, DisplayValuePipe],
   providers: [MessageService],
   templateUrl: './org-profile.component.html',
 })
@@ -94,7 +83,7 @@ export class OrgProfileComponent {
     this.messageService.add({
       severity: 'success',
       summary: 'Profile updated',
-      detail: 'Your organization profile has been saved.',
+      detail: 'Your company profile has been saved.',
       life: 3000,
     });
   }

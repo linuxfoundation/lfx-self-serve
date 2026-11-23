@@ -14,6 +14,7 @@ export interface IntercomBootOptions {
   email?: string;
   created_at?: number;
   intercom_user_jwt?: string;
+  hide_default_launcher?: boolean;
   [key: string]: unknown;
 }
 
@@ -24,6 +25,8 @@ export type IntercomSettings = Partial<IntercomBootOptions>;
 export interface IntercomFunction {
   (command: 'boot', options: IntercomBootOptions): void;
   (command: 'show'): void;
+  /** Opens the Messenger on a new conversation, optionally pre-filling the composer with editable text. */
+  (command: 'showNewMessage', prePopulatedContent?: string): void;
   (command: 'shutdown'): void;
   (command: 'update', settings: IntercomSettings): void;
   (command: 'reattach_activator'): void;

@@ -1,0 +1,70 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="members-breakdown">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      variant="compact"
+      icon="fa-light fa-triangle-exclamation"
+      title="Membership by tier unavailable"
+      subtitle="We could not load membership by tier for this foundation. Refresh the page to try again."
+      data-testid="members-breakdown-error" />
+  } @else if (loading()) {
+    <p-skeleton height="26rem" borderRadius="0.5rem" data-testid="members-breakdown-loading" aria-hidden="true" />
+  } @else if (!empty()) {
+    <!-- Only the table scrolls sideways, below its columns' least width. -->
+    <div class="min-w-0 overflow-x-auto" data-testid="members-breakdown-table">
+      <div class="flex flex-col" role="table" aria-label="Members per tier by year" [style.min-width.px]="tableMinWidthPx()">
+        <!-- The design's 32px header row. -->
+        <div class="grid min-h-[32px] bg-gray-50 shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-200)]" [style.grid-template-columns]="gridColumns()" role="row">
+          <span
+            class="flex items-center whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
+            role="columnheader"
+            [attr.aria-sort]="sorting.headers()['tier'].ariaSort">
+            <lfx-health-metrics-th
+              label="Tier"
+              [sort]="sorting.headers()['tier'].state"
+              (sorted)="sorting.toggle('tier')"
+              data-testid="members-breakdown-sort-tier" />
+          </span>
+          @for (column of yearHeaders(); track column.year) {
+            <!-- Each year column is wide enough for its label and arrow; the clip only guards a label longer than the design's. -->
+            <span
+              class="flex min-w-0 items-center justify-end overflow-hidden whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
+              role="columnheader"
+              [attr.aria-sort]="column.header.ariaSort">
+              <lfx-health-metrics-th
+                class="min-w-0"
+                [label]="column.label"
+                [sort]="column.header.state"
+                (sorted)="sorting.toggle(column.sortKey)"
+                [attr.data-testid]="'members-breakdown-sort-' + column.year" />
+            </span>
+          }
+        </div>
+        @for (row of tableRows(); track row.key) {
+          <div
+            class="grid"
+            [class]="row.rowClass"
+            [style.grid-template-columns]="gridColumns()"
+            role="row"
+            [attr.data-testid]="'members-breakdown-row-' + row.key">
+            <span class="flex min-w-0 items-center gap-[8px] whitespace-nowrap px-[10px] py-[11px] leading-[18px]" [class]="row.labelClass" role="rowheader">
+              @if (row.icon; as icon) {
+                <lfx-health-metrics-tier-icon [tier]="icon" />
+              }
+              <span class="truncate" [attr.title]="row.label">{{ row.label }}</span>
+            </span>
+            @for (cell of row.cells; track $index) {
+              <!-- A figure too wide for a narrow column ends in an ellipsis, as the design clips it. -->
+              <span [class]="cell.cellClass" role="cell"
+                ><span class="min-w-0 truncate">{{ cell.label }}</span></span
+              >
+            }
+          </div>
+        }
+      </div>
+    </div>
+  }
+</div>

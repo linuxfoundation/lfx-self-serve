@@ -4,7 +4,7 @@
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-roi-page">
   <lfx-page-header title="ROI Metrics" titleTestId="org-roi-title" data-testid="org-roi-header">
     <span pageHeaderDescription data-testid="org-roi-subtitle">
-      A modelled view of what your organization invested in open source and what came back.
+      A modelled view of what your company invested in open source and what came back.
       @if (windowLabel()) {
         <span data-testid="org-roi-window">Covering {{ windowLabel() }}.</span>
       }
@@ -17,9 +17,9 @@
         type="button"
         (click)="drawerVisible.set(true)"
         class="inline-flex items-center gap-2 self-start rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 sm:self-auto"
-        data-testid="org-roi-assumptions-trigger">
+        data-testid="org-roi-settings-trigger">
         <i class="fa-light fa-sliders" aria-hidden="true"></i>
-        Model assumptions
+        Model settings
       </button>
     }
   </lfx-page-header>
@@ -44,7 +44,7 @@
       </div>
     </section>
   } @else if (!hasCompany()) {
-    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view ROI metrics." data-testid="org-roi-no-company-empty-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select a company to view ROI metrics." data-testid="org-roi-no-company-empty-state" />
   } @else if (!hasAnalyticsId()) {
     <lfx-empty-state
       icon="fa-light fa-triangle-exclamation"
@@ -80,6 +80,8 @@
   } @else {
     <lfx-org-roi-kpi-cards [summary]="summary()" />
 
+    <lfx-org-roi-model-overview />
+
     <lfx-org-roi-annual-trend [method]="method()" />
   }
 
@@ -105,6 +107,6 @@
        success branch it would not exist on the empty state — the trigger would set `visible`
        and nothing would open, which is the state the method control has to rescue. -->
   @if (canChooseMethod()) {
-    <lfx-org-roi-assumptions-drawer [(visible)]="drawerVisible" [method]="method()" (methodChange)="setMethod($event)" />
+    <lfx-org-roi-settings-drawer [(visible)]="drawerVisible" [method]="method()" (methodChange)="setMethod($event)" />
   }
 </div>

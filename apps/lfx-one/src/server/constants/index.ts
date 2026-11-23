@@ -15,3 +15,4 @@ export * from './registrant.constants';
 export * from './rewards.constants';
 export * from './vote.constants';
 export * from './weekly-brief.constants';
+export * from './campaign-multi.constants';

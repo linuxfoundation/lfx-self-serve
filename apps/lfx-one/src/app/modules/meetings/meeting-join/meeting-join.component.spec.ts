@@ -5,11 +5,12 @@ import { Clipboard } from '@angular/cdk/clipboard';
 import { HttpClient, HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState, WritableSignal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { environment } from '@environments/environment';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   Meeting,
@@ -26,11 +27,13 @@ import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/me
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
+import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
+import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
-import { FeatureFlagService } from '@services/feature-flag.service';
+import { MAX_MEETING_DURATION, MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
+import { getTimezoneAbbreviation, getUserTimezone } from '@lfx-one/shared/utils';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -51,7 +54,6 @@ describe('MeetingJoinComponent', () => {
   const MEETING_JOIN_STATE_KEY = makeStateKey<MeetingJoinPageState>('meetingJoinState');
 
   let getPublicMeeting: ReturnType<typeof vi.fn>;
-  let meetingsV2Enabled: ReturnType<typeof signal<boolean>>;
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let getMyMeetingRegistrants: ReturnType<typeof vi.fn>;
   let getPastMeetingSummary: ReturnType<typeof vi.fn>;
@@ -144,14 +146,12 @@ describe('MeetingJoinComponent', () => {
     getMeetingRsvpForCurrentUser = vi.fn().mockReturnValue(of(null));
     removedIds = signal<ReadonlySet<string>>(new Set());
     toastAdd = vi.fn();
-    meetingsV2Enabled = signal(false);
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         {
           provide: ActivatedRoute,
           useValue: {
@@ -167,7 +167,7 @@ describe('MeetingJoinComponent', () => {
             },
           },
         },
-        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: Router, useValue: { navigate: vi.fn(), getCurrentNavigation: vi.fn(() => null) } },
         {
           provide: MeetingService,
           useValue: {
@@ -182,7 +182,8 @@ describe('MeetingJoinComponent', () => {
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             attachmentChanges: signal(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
-            clearRemovedRegistration: vi.fn(),
+            clearRemovedRegistration: vi.fn((id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id)))),
+            rememberRemovedRegistrants: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser,
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
@@ -237,6 +238,80 @@ describe('MeetingJoinComponent', () => {
     });
   });
 
+  it.each([false, true])('restores invitation controls after drawer self-add, previously removed: %s', async (previouslyRemoved) => {
+    if (previouslyRemoved) removedIds.set(new Set([MEETING_ID]));
+    const component = await createComponent();
+    expect(component.effectivelyInvited()).toBe(false);
+    const fetchesBefore = getPublicMeeting.mock.calls.length;
+
+    component.onSelfAdded(MEETING_ID);
+    // The page-data refresh uses the same real debounce timer as route changes.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.effectivelyInvited()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.canResendInvite()).toBe(true);
+    expect(removedIds().has(MEETING_ID)).toBe(false);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).toHaveBeenCalledWith(MEETING_ID);
+    expect(TestBed.inject(UserService).refreshUserMeetings).toHaveBeenCalledExactlyOnceWith(false);
+    expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(fetchesBefore);
+    expect(component.additionalRegistrantsCount()).toBe(0);
+  });
+
+  it('ignores a self-add event from a previously viewed meeting', async () => {
+    const component = await createComponent();
+    const fetchesBefore = getPublicMeeting.mock.calls.length;
+    component.onSelfAdded('another-meeting');
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(false);
+    expect(TestBed.inject(MeetingService).clearRemovedRegistration).not.toHaveBeenCalled();
+    expect(TestBed.inject(UserService).refreshUserMeetings).not.toHaveBeenCalled();
+    expect(getPublicMeeting).toHaveBeenCalledTimes(fetchesBefore);
+  });
+
+  it.each([false, true])('reconciles drawer self-row deletion, another registration remains: %s', async (remaining) => {
+    const component = await createComponent();
+    component.onSelfAdded(MEETING_ID);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+    const result = { meeting_id: MEETING_ID, removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: remaining ? ['self-survivor'] : [] };
+    component.onSelfRemoved(result);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.effectivelyInvited()).toBe(remaining);
+    expect(component.canLeaveMeeting()).toBe(remaining);
+    expect(component.canResendInvite()).toBe(remaining);
+    expect(removedIds().has(MEETING_ID)).toBe(!remaining);
+    expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).toHaveBeenCalledWith(MEETING_ID, expect.any(String), result);
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+  });
+
+  it('ignores a self-row deletion belonging to another meeting', async () => {
+    const component = await createComponent();
+    component.onSelfRemoved({ meeting_id: 'another-meeting', removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: [] });
+    expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).not.toHaveBeenCalled();
+  });
+
+  it('does not restore a surviving date-scoped RSVP when a recurring date is unresolved after drawer deletion', async () => {
+    getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting({ recurrence: { type: 2, repeat_interval: 1 } }), project: buildProject() }));
+    const component = await createComponent();
+    const scoped = {
+      id: 'synthetic-survivor-rsvp',
+      meeting_id: MEETING_ID,
+      registrant_id: 'self-survivor',
+      response_type: 'accepted',
+      scope: 'single',
+      occurrence_id: '2525245200',
+      created_at: '2026-01-01T00:00:00Z',
+    } as MeetingRsvp;
+    vi.mocked(TestBed.inject(UserService).confirmedMeetingRsvps).mockReturnValue([scoped]);
+    component.onSelfRemoved({ meeting_id: MEETING_ID, removed_registrant_ids: ['self-deleted'], remaining_registrant_ids: ['self-survivor'] });
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.currentUserRsvp()).toBeNull();
+    expect(component.effectivelyInvited()).toBe(true);
+  });
+
   it.each([
     ['composite route', '1-1700000000000'],
     ['upcoming lookup fallback', MEETING_ID],
@@ -274,6 +349,21 @@ describe('MeetingJoinComponent', () => {
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
     expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
     expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+  });
+
+  it('marks a failed roster as unconfirmed until a later fetch succeeds', async () => {
+    getMyMeetingRegistrants.mockReturnValue(throwError(() => new Error('roster fetch failed')));
+    const component = await createComponent();
+    const failed = () => (component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed();
+
+    expect(failed()).toBe(true);
+    expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
+
+    getMyMeetingRegistrants.mockReturnValue(of([]));
+    component.onRegistrantsRefreshRequested(0);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(failed()).toBe(false);
   });
 
   // The BFF returns no roster to an invitee when the organizer hides attendees, so the page must not
@@ -315,6 +405,34 @@ describe('MeetingJoinComponent', () => {
       expect(page.querySelector('[data-testid="total-invitees"]')?.textContent).toContain('7 invited');
     });
 
+    it('makes the invited count a button that opens the guest drawer when the viewer can see the guests (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: true }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).toBe('BUTTON');
+      count.click();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(true);
+    });
+
+    it('leaves the invited count as plain text when the guest list is hidden from the viewer (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false, registrant_count: 7 }), project: buildProject() })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).not.toBe('BUTTON');
+    });
+
     it('fetches and offers the guest list when the meeting shares its attendees', async () => {
       const page = await renderInvitee(true);
 
@@ -327,6 +445,92 @@ describe('MeetingJoinComponent', () => {
 
       expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
       expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
+    });
+  });
+
+  describe('support launcher overlay state (#4865)', () => {
+    // These tests open the real PrimeNG drawer, whose template needs the animation providers.
+    beforeEach(() => TestBed.configureTestingModule({ providers: [provideNoopAnimations()] }));
+
+    const renderWithRoster = async (): Promise<ComponentFixture<MeetingJoinComponent>> => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: true }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture;
+    };
+    const drawer = (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.debugElement.query(By.css('[data-testid="meeting-registrants-drawer"]'));
+
+    const settle = (): Promise<void> => TestBed.inject(ApplicationRef).whenStable();
+
+    it('registers the guests drawer as open when it opens', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      expect(overlayState.anyOpen()).toBe(true);
+    });
+
+    it.each([
+      ['the header close button', (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.componentInstance.onDrawerHide()],
+      [
+        'PrimeNG closing it (Esc or mask click)',
+        (fixture: ComponentFixture<MeetingJoinComponent>) => drawer(fixture).triggerEventHandler('visibleChange', false),
+      ],
+      ['a programmatic close', (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.componentInstance.showRegistrants.set(false)],
+    ])('clears the registration when closed via %s, without relying on onHide', async (_label, close) => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      close(fixture);
+      await settle();
+
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('clears the registration when the page is destroyed with the drawer still open, so navigation never strands the launcher hidden', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+      fixture.destroy();
+
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('closes the guests drawer and releases the launcher when the route moves in place to another meeting (#4857)', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(true);
+
+      paramMap$.next(convertToParamMap({ id: 'another-meeting-id' }));
+      await settle();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(false);
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('gives the guests drawer a full-height class on mobile only, leaving the desktop width chain untouched (#4857)', async () => {
+      const fixture = await renderWithRoster();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      const panel = document.querySelector('.p-drawer') as HTMLElement | null;
+      expect(panel).not.toBeNull();
+      expect(panel?.classList.contains('max-sm:!h-[100dvh]')).toBe(true);
+      expect(panel?.classList.contains('xl:w-[45%]')).toBe(true);
+      expect(panel?.classList.contains('h-[100dvh]')).toBe(false);
     });
   });
 
@@ -415,6 +619,7 @@ describe('MeetingJoinComponent', () => {
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
     expect(component.additionalRegistrantsCount()).toBe(2);
     expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
+    expect((component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed()).toBe(true);
 
     // A follow-up refetch that actually observes growth is the only way to prove the pad above
     // isn't just a leftover value the failure path left untouched — it must still be able to
@@ -424,6 +629,7 @@ describe('MeetingJoinComponent', () => {
 
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(11);
     expect(component.additionalRegistrantsCount()).toBe(1);
+    expect((component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed()).toBe(false);
   });
 
   it("falls back to an empty roster instead of leaking a previous occurrence's roster when the refetch for a newly-selected occurrence fails", async () => {
@@ -590,17 +796,13 @@ describe('MeetingJoinComponent', () => {
       expect(component.canManageOccurrence()).toBe(false);
     });
 
-    it.each([
-      [false, MAX_CUSTOM_DURATION],
-      [true, MAX_MEETING_DURATION],
-    ])('caps the occurrence dialog by the meeting v2 flag (on: %s)', async (enabled, cap) => {
-      meetingsV2Enabled.set(enabled);
+    it('caps the occurrence dialog at the composer maximum duration', async () => {
       useRecurring();
       const { component, open } = await mountWithDialog();
 
       component.rescheduleCurrentOccurrence();
 
-      expect(open.mock.calls[0][1]?.data).toEqual(expect.objectContaining({ maxDuration: cap }));
+      expect(open.mock.calls[0][1]?.data).toEqual(expect.objectContaining({ maxDuration: MAX_MEETING_DURATION }));
     });
 
     it('moves the page to the new start and re-reads the series after a reschedule', async () => {
@@ -867,30 +1069,33 @@ describe('MeetingJoinComponent', () => {
       expect(seeded?.meetingLoadFailed).toBe(false);
     });
 
-    // Bot review follow-up on PR #2046 (copilot-pull-request-reviewer, cursor): the terminal-error
-    // branch wasn't seeded to `TransferState`, so hydration reintroduced the exact blank-flash bug
-    // this PR fixes — the client started `meetingLoadFailed` at `false` and tore down the
-    // SSR-rendered error view in favor of the skeleton.
-    it('persists the terminal-error branch to TransferState on the server on a non-navigating fetch failure', async () => {
+    // #5907: the server no longer renders a terminal error. It still seeds the failure to
+    // `TransferState` (so the browser knows the server could not load it), but renders the
+    // skeleton, and the browser's own fetch decides between the meeting and the error. Both sides
+    // paint the skeleton first, so hydration still never tears down the server DOM (GH-2041).
+    it('persists the failure seed on the server on a non-navigating fetch failure, but renders the skeleton instead of the error', async () => {
       TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
       getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
 
-      await createComponent();
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
       await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
 
       const transferState = TestBed.inject(TransferState);
       const seeded = transferState.get(MEETING_JOIN_STATE_KEY, null);
       expect(seeded?.meeting).toBeNull();
       expect(seeded?.meetingLoadFailed).toBe(true);
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
+      expect((fixture.componentInstance as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
     });
 
-    it('paints the error branch synchronously from a seeded terminal-error transfer state, with no skeleton flash, and holds it through the hydration refetch', async () => {
+    it('paints the skeleton from a seeded server failure, holds it through the hydration refetch, then shows the error when the refetch fails too', async () => {
       // Held open (not `throwError`, which settles synchronously on subscribe) so there is an
-      // observable in-flight window between the first paint and the refetch settling — otherwise
-      // the eager-clear-then-re-set both happen in one synchronous tick and the post-hydration
-      // assertions below would pass even if the eager-clear fix (GH-2041) were reverted
-      // (dealako review on #2046).
+      // observable in-flight window between the first paint and the refetch settling (dealako
+      // review on #2046).
       const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
       getPublicMeeting.mockReturnValue(refetch$);
 
@@ -908,72 +1113,62 @@ describe('MeetingJoinComponent', () => {
       const fixture = TestBed.createComponent(MeetingJoinComponent);
       const component = fixture.componentInstance;
 
-      // Assert before any stabilization — this is exactly the race the bots flagged: the seed must
-      // be applied before the first CD pass, or the skeleton renders instead of the error view.
-      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
-
+      // The first paint matches the server's skeleton, so a load that may still succeed never flashes the error (#5907).
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
       fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
 
-      // The refetch is still in flight here — the error view must hold, not flash to the skeleton,
-      // while the debounced pipeline is pending.
-      fixture.detectChanges();
-      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
-
-      // Now settle the refetch with the same terminal failure the seed recorded.
-      refetch$.error({ status: 500 });
-      await TestBed.inject(ApplicationRef).whenStable();
-
-      // Re-assert post-hydration: the debounced pipeline re-entering must not have cleared
-      // `meetingLoadFailed` before the refetch settled, nor fallen through to a stale/absent
-      // `meeting()` and rendered the skeleton.
-      fixture.detectChanges();
-      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
-    });
-
-    // Bot review follow-up on PR #2046 (cursor, copilot-pull-request-reviewer): a seeded
-    // terminal-error state never initialized `meetingRouteId`, so the first debounced hydration
-    // emission compared the real route id against the signal's initial `null`, read that as a
-    // navigation, and eagerly cleared `meetingLoadFailed` while the matching refetch was still in
-    // flight — flashing the skeleton until the refetch failed again.
-    it('holds the error branch, without an intermediate skeleton flash, through a real debounce flush of the matching hydration refetch', async () => {
-      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
-      getPublicMeeting.mockReturnValue(refetch$);
-
-      const transferState = TestBed.inject(TransferState);
-      transferState.set(MEETING_JOIN_STATE_KEY, {
-        meeting: null,
-        loadedViaPastMeetingId: false,
-        pastMeetingFullAccess: false,
-        liveMeetingFullAccess: false,
-        liveMeetingCanJoin: false,
-        meetingLoadFailed: true,
-      });
-
-      await TestBed.compileComponents();
-      const fixture = TestBed.createComponent(MeetingJoinComponent);
-      const component = fixture.componentInstance;
-
-      // Flush the debounced pipeline's first emission with a real macrotask tick, not just
-      // `whenStable()` — this is the exact race the bots flagged.
+      // The refetch is still in flight after the debounced pipeline runs — the skeleton holds.
       await new Promise((resolve) => setTimeout(resolve, 0));
       fixture.detectChanges();
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
 
-      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
-
+      // Only the browser's own (non-transient) failure shows the error.
       refetch$.error({ status: 500 });
       await TestBed.inject(ApplicationRef).whenStable();
       fixture.detectChanges();
 
       expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+    });
+
+    // #5907: the reported flash — the server could not load the meeting, but the browser's refetch
+    // succeeds. The page must go straight from the skeleton to the meeting, with no error in between.
+    it('goes from the skeleton straight to the meeting when the hydration refetch after a seeded server failure succeeds', async () => {
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(refetch$);
+
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: null,
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
+        meetingLoadFailed: true,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      refetch$.next({ meeting: buildMeeting(), project: buildProject() });
+      refetch$.complete();
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
+      expect(component.meeting()?.id).toBe(MEETING_ID);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
     });
 
@@ -1221,6 +1416,16 @@ describe('MeetingJoinComponent', () => {
       expect(confirm.mock.calls[0][0].message).toContain("it won't invite you to this meeting again");
     });
 
+    it('escapes the title, since PrimeNG renders the message as HTML', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true, title: 'TSC <EU/APAC> & sync' }));
+      const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+      const confirm = vi.spyOn(confirmation, 'confirm').mockReturnValue(confirmation);
+
+      fixture.componentInstance.confirmLeaveMeeting();
+
+      expect(confirm.mock.calls[0][0].message).toContain('"TSC &lt;EU/APAC&gt; &amp; sync"');
+    });
+
     it('offers it to an organizer who is also registered, and says they stay an organizer', async () => {
       const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
       const confirmation = fixture.debugElement.injector.get(ConfirmationService);
@@ -1298,15 +1503,39 @@ describe('MeetingJoinComponent', () => {
       const RESEND_BUTTON = '[data-testid="resend-invite-button"]';
       const RESEND_ORGANIZER_BUTTON = '[data-testid="resend-invite-organizer-button"]';
 
-      it('offers the action to a signed-in invitee and resends to their own registration when clicked', async () => {
+      /** Takes over the dialog the component's own `ConfirmationService` would open; accepts it only when asked to. */
+      const answerResendConfirmation = (fixture: Awaited<ReturnType<typeof createFixture>>, accept: boolean) => {
+        const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+        return vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+          if (accept) options.accept?.();
+          return confirmation;
+        });
+      };
+
+      it('offers the action to a signed-in invitee and resends to their own registration once confirmed', async () => {
         const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
         const button = fixture.nativeElement.querySelector(RESEND_BUTTON);
+        const confirm = answerResendConfirmation(fixture, true);
 
         expect(button).not.toBeNull();
-        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.confirmResendInvite();
 
+        expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Resend Your Invitation', acceptLabel: 'Resend', rejectLabel: 'Cancel' }));
+        expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
         expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
         expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('sends nothing when the viewer cancels the confirmation from the page button', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        const confirm = answerResendConfirmation(fixture, false);
+
+        fixture.debugElement.query(By.css(RESEND_BUTTON)).triggerEventHandler('onClick', new MouseEvent('click'));
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+        expect(toastAdd).not.toHaveBeenCalled();
       });
 
       it('resends for the occurrence the page is showing, so the matching registration is chosen', async () => {
@@ -1320,7 +1549,8 @@ describe('MeetingJoinComponent', () => {
         );
 
         expect(fixture.componentInstance.currentOccurrence()?.occurrence_id).toBe('occ-next');
-        fixture.componentInstance.resendInvite();
+        answerResendConfirmation(fixture, true);
+        fixture.componentInstance.confirmResendInvite();
 
         expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, 'occ-next');
       });
@@ -1351,10 +1581,13 @@ describe('MeetingJoinComponent', () => {
         const pending$ = new Subject<{ message: string }>();
         resendMyMeetingInvitation.mockReturnValue(pending$);
         const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        const confirm = answerResendConfirmation(fixture, true);
 
-        fixture.componentInstance.resendInvite();
-        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.confirmResendInvite();
+        fixture.componentInstance.confirmResendInvite();
 
+        // The second click opens no second dialog while the first send is in flight.
+        expect(confirm).toHaveBeenCalledTimes(1);
         expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
         expect(fixture.componentInstance.resendingInvite()).toBe(true);
         pending$.next({ message: 'ok' });
@@ -1369,9 +1602,10 @@ describe('MeetingJoinComponent', () => {
           )
           .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN', error: 'upstream detail' } })));
         const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        answerResendConfirmation(fixture, true);
 
-        fixture.componentInstance.resendInvite();
-        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.confirmResendInvite();
+        fixture.componentInstance.confirmResendInvite();
 
         expect(toastAdd).toHaveBeenNthCalledWith(
           1,
@@ -1881,6 +2115,468 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
       expect(getPublicMeetingJoinUrl).not.toHaveBeenCalled();
       expect(fixture.componentInstance.fetchedJoinUrl()).toBeUndefined();
+    });
+  });
+
+  // #4859 Session B: mobile polish on the meeting detail page.
+  describe('mobile polish (#4860, #4861, #4863)', () => {
+    const PAST_START_TIME = '2020-01-01T00:00:00.000Z';
+
+    const renderPage = async (overrides: Partial<Meeting> = {}): Promise<HTMLElement> => {
+      getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting(overrides), project: buildProject() }));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('hides the hero logo below md and keeps it on desktop (#4860)', async () => {
+      const page = await renderPage();
+
+      const hero = page.querySelector('[data-testid="meeting-hero-logo"]');
+      expect(hero).not.toBeNull();
+      expect(hero?.classList.contains('hidden')).toBe(true);
+      expect(hero?.classList.contains('md:flex')).toBe(true);
+    });
+
+    it('renders no AI Summary chip for a future meeting even when summaries are enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: true, start_time: FUTURE_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).toBeNull();
+    });
+
+    it('still renders the AI Summary chip for a past meeting with summaries enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: true, start_time: PAST_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).not.toBeNull();
+    });
+
+    it('renders no AI Summary chip for a past meeting without summaries enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: false, start_time: PAST_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).toBeNull();
+    });
+
+    describe('compact meta summary (#4861)', () => {
+      const LONG_NAME = 'Maximilian Alexander Featherstonehaugh-Montgomery';
+
+      it('keeps the desktop pills and hides them below md', async () => {
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        const desktopRow = page.querySelector('[data-testid="meeting-meta-desktop"]');
+        const mobile = page.querySelector('[data-testid="meeting-meta-mobile"]');
+        expect(desktopRow?.classList.contains('hidden')).toBe(true);
+        expect(desktopRow?.classList.contains('md:flex')).toBe(true);
+        expect(mobile?.classList.contains('md:hidden')).toBe(true);
+      });
+
+      it('shows the viewer timezone abbreviation next to the time', async () => {
+        const page = await renderPage();
+
+        const abbreviation = page.querySelector('[data-testid="meeting-meta-mobile-timezone"]');
+        expect(abbreviation?.textContent?.trim()).toBe(getTimezoneAbbreviation(FUTURE_START_TIME, getUserTimezone()));
+      });
+
+      it('names the scheduled zone as visible text when it differs from the viewer zone', async () => {
+        const scheduledZone = getUserTimezone() === 'Asia/Tokyo' ? 'America/New_York' : 'Asia/Tokyo';
+        const page = await renderPage({ timezone: scheduledZone });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-scheduled-zone"]')?.textContent).toContain(`Scheduled in ${scheduledZone}`);
+      });
+
+      it('omits the scheduled zone line when it matches the viewer zone', async () => {
+        const page = await renderPage({ timezone: getUserTimezone() });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-scheduled-zone"]')).toBeNull();
+      });
+
+      it('still shows foundation and project when the guest projection has no start_time', async () => {
+        const page = await renderPage({ start_time: undefined as unknown as string });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-context"]')?.textContent).toContain('Test Project');
+      });
+
+      it('shows foundation and project on one line', async () => {
+        const page = await renderPage();
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-context"]')?.textContent).toContain('Test Project');
+      });
+
+      it('shows the full organizer name without truncating it', async () => {
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        const organizer = page.querySelector('[data-testid="meeting-meta-mobile-organizer"]');
+        expect(organizer?.textContent).toContain(`Organized by ${LONG_NAME}`);
+        expect(organizer?.querySelector('.truncate')).toBeNull();
+        expect(organizer?.classList.contains('truncate')).toBe(false);
+      });
+
+      it('falls back to Linux Foundation when the meeting was created by a service account', async () => {
+        const page = await renderPage({ owner: { username: 'zoom.webhooks', email: 'zoom.webhooks@example.com' } });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-organizer"]')?.textContent).toContain('Organized by Linux Foundation');
+      });
+
+      it('does not show the organizer to unauthenticated viewers', async () => {
+        authenticated.set(false);
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-organizer"]')).toBeNull();
+      });
+    });
+  });
+  describe('sticky actions bar (#4862)', () => {
+    // The guests-drawer test opens the real PrimeNG drawer, whose template needs the animation providers.
+    beforeEach(() => TestBed.configureTestingModule({ providers: [provideNoopAnimations()] }));
+
+    const settle = (): Promise<void> => TestBed.inject(ApplicationRef).whenStable();
+    const bar = (fixture: ComponentFixture<MeetingJoinComponent>) =>
+      fixture.nativeElement.querySelector('[data-testid="meeting-join-sticky-bar"]') as HTMLElement | null;
+    const part = (fixture: ComponentFixture<MeetingJoinComponent>, id: string) =>
+      fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+
+    const render = async (
+      overrides: Partial<Meeting> = {},
+      access: { full_access: boolean } = { full_access: true }
+    ): Promise<ComponentFixture<MeetingJoinComponent>> => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, title: 'Board Sync', ...overrides }),
+          project: buildProject(),
+          ...access,
+          can_join: false,
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await settle();
+      return fixture;
+    };
+
+    it('shows Resend Invite first and a disabled Join with the unlock time to an invitee of a future meeting', async () => {
+      const fixture = await render();
+
+      expect(bar(fixture)).not.toBeNull();
+      const resend = part(fixture, 'sticky-resend-invite') as HTMLElement;
+      const join = part(fixture, 'sticky-join') as HTMLElement;
+      expect(resend).not.toBeNull();
+      expect(resend.textContent).toContain('Resend Invite');
+      expect(resend.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(join.textContent).toContain('Join opens');
+      expect(join.querySelector('button')?.disabled ?? join.hasAttribute('disabled')).toBe(true);
+      expect(part(fixture, 'sticky-subscribe-calendar')).toBeNull();
+    });
+
+    it('is phone chrome: hidden from sm up', async () => {
+      const fixture = await render();
+
+      expect(bar(fixture)?.classList.contains('sm:hidden')).toBe(true);
+    });
+
+    describe('primary action', () => {
+      /** Takes over the dialog the page's own `ConfirmationService` would open; accepts it only when asked to. */
+      const answerResendConfirmation = (fixture: ComponentFixture<MeetingJoinComponent>, accept: boolean) => {
+        const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+        return vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+          if (accept) options.accept?.();
+          return confirmation;
+        });
+      };
+
+      it("reuses the page's own confirmed self-resend (same dialog, same toast), for the occurrence shown", async () => {
+        const fixture = await render();
+        const confirm = answerResendConfirmation(fixture, true);
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+        await settle();
+
+        expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Resend Your Invitation' }));
+        expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
+        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('sends nothing when the viewer cancels the confirmation from the bar', async () => {
+        const fixture = await render();
+        const confirm = answerResendConfirmation(fixture, false);
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+        await settle();
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+        expect(toastAdd).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['an invitee', { organizer: false, invited: true }, 'resend-invite-button'],
+        ['an invited organizer', { organizer: true, invited: true }, 'resend-invite-organizer-button'],
+      ])("hides the page's own Resend Invite below sm for %s, since the bar carries it", async (_label, overrides, testId) => {
+        const fixture = await render(overrides);
+
+        const inline = part(fixture, testId);
+        expect(inline).not.toBeNull();
+        expect(inline?.classList.contains('max-sm:hidden')).toBe(true);
+        expect(part(fixture, 'sticky-resend-invite')).not.toBeNull();
+      });
+
+      it("keeps the page's own Resend Invite visible when there is no bar (a password-only guest)", async () => {
+        const fixture = await render({ organizer: false, invited: true }, { full_access: false });
+
+        expect(part(fixture, 'sticky-resend-invite')).toBeNull();
+        const inline = part(fixture, 'resend-invite-button');
+        expect(inline?.classList.contains('max-sm:hidden') ?? false).toBe(false);
+      });
+
+      it('shows the same in-flight state as the page button while the resend is pending', async () => {
+        resendMyMeetingInvitation.mockReturnValue(new Subject());
+        const fixture = await render();
+        answerResendConfirmation(fixture, true);
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+        await settle();
+
+        expect(fixture.componentInstance.resendingInvite()).toBe(true);
+        expect(part(fixture, 'sticky-resend-invite')?.querySelector('button')?.disabled).toBe(true);
+      });
+
+      it('offers a non-registrant Subscribe, which opens the iCal subscribe dialog for the project feed (no link, no new tab)', async () => {
+        const fixture = await render({ invited: false, organizer: false });
+        const open = vi
+          .spyOn(fixture.debugElement.injector.get(DialogService), 'open')
+          .mockReturnValue({ onClose: new Subject() } as unknown as DynamicDialogRef);
+
+        const subscribe = part(fixture, 'sticky-subscribe-calendar') as HTMLElement;
+        expect(part(fixture, 'sticky-resend-invite')).toBeNull();
+        expect(subscribe.textContent).toContain('Subscribe to calendar');
+        expect(subscribe.querySelector('a')).toBeNull();
+        expect(subscribe.getAttribute('target')).toBeNull();
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-subscribe-calendar"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+
+        expect(open).toHaveBeenCalledTimes(1);
+        expect(open).toHaveBeenCalledWith(
+          IcalSubscribeDialogComponent,
+          expect.objectContaining({ data: { feedUrl: `${environment.urls.home}/public/api/projects/project-1/calendar.ics`, name: 'Test Project' } })
+        );
+      });
+
+      it('offers Subscribe for a restricted public meeting too, since the project feed lists it', async () => {
+        const fixture = await render({ invited: false, organizer: false, restricted: true });
+
+        expect(part(fixture, 'sticky-subscribe-calendar')).not.toBeNull();
+      });
+
+      it('offers no calendar action when the meeting is not in the project feed (private) and the viewer is not invited', async () => {
+        const fixture = await render({ invited: false, organizer: false, visibility: MeetingVisibility.PRIVATE });
+
+        expect(bar(fixture)).not.toBeNull();
+        expect(part(fixture, 'sticky-resend-invite')).toBeNull();
+        expect(part(fixture, 'sticky-subscribe-calendar')).toBeNull();
+        expect(part(fixture, 'sticky-join')).not.toBeNull();
+      });
+
+      it('never offers a calendar file or a Google Calendar link', async () => {
+        const fixture = await render();
+
+        expect(bar(fixture)?.innerHTML).not.toMatch(/calendar\.google\.com|\.ics|download/i);
+      });
+    });
+
+    it.each([
+      ['an anonymous viewer', () => authenticated.set(false), { full_access: true }],
+      ['a password-only guest without full access', () => undefined, { full_access: false }],
+    ])('renders no bar for %s', async (_label, arrange, access) => {
+      arrange();
+
+      const fixture = await render({}, access);
+
+      expect(bar(fixture)).toBeNull();
+    });
+
+    it('renders no bar once the meeting has ended', async () => {
+      const fixture = await render({ start_time: '2020-01-01T00:00:00.000Z' });
+
+      expect(bar(fixture)).toBeNull();
+    });
+
+    it('keeps the bar, with Join no longer waiting for an unlock time, while the meeting is in progress', async () => {
+      const fixture = await render({ start_time: new Date(Date.now() - 5 * 60_000).toISOString() });
+
+      expect(bar(fixture)).not.toBeNull();
+      expect(part(fixture, 'sticky-resend-invite')).not.toBeNull();
+      expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+      expect(part(fixture, 'sticky-join')?.textContent).not.toContain('Join opens');
+    });
+
+    it('does not leave the bar spinning when the join URL cannot be resolved (the inline error explains why)', async () => {
+      getPublicMeetingJoinUrl.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { message: 'Not on the guest list' } })));
+      const fixture = await render({ start_time: new Date(Date.now() - 5 * 60_000).toISOString() });
+
+      const join = part(fixture, 'sticky-join');
+      expect(join?.querySelector('button')?.disabled).toBe(true);
+      expect(join?.querySelector('[class*="spin"]')).toBeNull();
+    });
+
+    it('hides the inline Join button on phones while the bar offers it, so there is one Join', async () => {
+      const fixture = await render({ start_time: new Date(Date.now() - 5 * 60_000).toISOString() });
+
+      const inline = fixture.nativeElement.querySelector(
+        '[data-testid="join-meeting-button-loading"], [data-testid="join-meeting-button-immediate"]'
+      ) as HTMLElement;
+      expect(inline.closest('div')?.classList.contains('max-sm:hidden')).toBe(true);
+    });
+
+    it('keeps the support launcher hidden while the materials drawer is open, and releases it on close', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await render();
+
+      fixture.componentInstance.materialsDrawerVisible.set(true);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(true);
+      expect(bar(fixture)).toBeNull();
+
+      fixture.componentInstance.materialsDrawerVisible.set(false);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('keeps a header Support entry that does not depend on the launcher while the bar is showing (#4922)', async () => {
+      const fixture = await render();
+
+      expect(bar(fixture)).not.toBeNull();
+      expect(part(fixture, 'header-support-button')).not.toBeNull();
+      expect(part(fixture, 'mobile-menu-toggle')).toBeNull();
+    });
+
+    it('yields to the guests drawer and returns when it closes', async () => {
+      const fixture = await render();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+      expect(bar(fixture)).toBeNull();
+
+      fixture.componentInstance.showRegistrants.set(false);
+      await settle();
+      expect(bar(fixture)).not.toBeNull();
+    });
+
+    describe('Join at T-10 without a reload', () => {
+      // Only the clock is faked: the page's data pipeline uses RxJS schedulers, which would stall under a faked setInterval.
+      beforeEach(() => vi.useFakeTimers({ toFake: ['Date'] }));
+      afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+      });
+
+      const T0 = new Date('2030-06-01T10:00:00Z');
+      const renderEleven = () => {
+        vi.setSystemTime(T0);
+        return render({ start_time: '2030-06-01T10:11:00Z', early_join_time_minutes: 10 });
+      };
+      const advance = (ms: number) => vi.setSystemTime(new Date(Date.now() + ms));
+
+      it('enables Join once the early-join window opens, driven by the interval tick alone', async () => {
+        const intervals: { callback: () => void; delay: number | undefined }[] = [];
+        const realSetInterval = globalThis.setInterval;
+        vi.spyOn(globalThis, 'setInterval').mockImplementation(((callback: () => void, delay?: number) => {
+          intervals.push({ callback, delay });
+          return realSetInterval(callback, delay);
+        }) as typeof setInterval);
+        const fixture = await renderEleven();
+        const tick = intervals.find((i) => i.delay === MEETING_CLOCK_TICK_MS)?.callback;
+        expect(tick).toBeDefined();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+        expect(part(fixture, 'sticky-join')?.textContent).toContain('Join opens');
+
+        advance(30_000);
+        tick?.();
+        await settle();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+
+        advance(40_000);
+        tick?.();
+        await settle();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+        expect(part(fixture, 'sticky-join')?.textContent).not.toContain('Join opens');
+      });
+
+      it('only enables Join at T-10 and never opens Zoom on its own for a page that loaded before the window', async () => {
+        getPublicMeetingJoinUrl.mockReturnValue(of({ link: 'https://zoom.us/j/1234567890' }));
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        const fixture = await renderEleven();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+
+        advance(2 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        await settle();
+        // Let the effects that feed the auto-join stream run, so a regression would have had its chance to open Zoom.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await settle();
+
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+        expect(fixture.componentInstance.fetchedJoinUrl()).toContain('https://zoom.us/j/1234567890');
+        expect(part(fixture, 'sticky-join')?.querySelector('a')?.getAttribute('href')).toContain('https://zoom.us/j/1234567890');
+        expect(open).not.toHaveBeenCalled();
+      });
+
+      it('still opens Zoom on its own when the window was already open at load', async () => {
+        getPublicMeetingJoinUrl.mockReturnValue(of({ link: 'https://zoom.us/j/1234567890' }));
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        vi.setSystemTime(T0);
+
+        await render({ start_time: '2030-06-01T10:05:00Z', early_join_time_minutes: 10 });
+
+        expect(open).toHaveBeenCalledTimes(1);
+      });
+
+      it('catches up when the tab regains focus (mobile browsers freeze background timers)', async () => {
+        const fixture = await renderEleven();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+
+        advance(2 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        await settle();
+
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+      });
+
+      it('flips the page to ended without moving to the next occurrence or refetching the RSVP and roster', async () => {
+        vi.setSystemTime(new Date('2030-06-01T10:00:00Z'));
+        const fixture = await render({
+          start_time: '2030-06-01T10:00:00Z',
+          duration: 30,
+          occurrences: [
+            { occurrence_id: 'a', start_time: '2030-06-01T10:00:00Z', duration: 30 },
+            { occurrence_id: 'b', start_time: '2030-06-08T10:00:00Z', duration: 30 },
+          ] as Meeting['occurrences'],
+        });
+        const component = fixture.componentInstance;
+        expect(component.currentOccurrence()?.occurrence_id).toBe('a');
+        const rsvpFetches = getMeetingRsvpForCurrentUser.mock.calls.length;
+        const rosterFetches = getMyMeetingRegistrants.mock.calls.length;
+
+        advance(2 * 60 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        await settle();
+
+        expect(component.currentOccurrence()?.occurrence_id).toBe('a');
+        expect(bar(fixture)).toBeNull();
+        expect(getMeetingRsvpForCurrentUser.mock.calls.length).toBe(rsvpFetches);
+        expect(getMyMeetingRegistrants.mock.calls.length).toBe(rosterFetches);
+      });
+
+      it('stops ticking and listening when the page is destroyed', async () => {
+        const clearSpy = vi.spyOn(globalThis, 'clearInterval');
+        const fixture = await renderEleven();
+
+        fixture.destroy();
+
+        expect(clearSpy).toHaveBeenCalled();
+        advance(2 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+      });
     });
   });
 });

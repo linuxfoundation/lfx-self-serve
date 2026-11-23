@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { argsToTemplate, type Meta, type StoryObj } from '@storybook/angular';
+import { argsToTemplate, type Meta, moduleMetadata, type StoryObj } from '@storybook/angular';
 
+import { UiButtonComponent } from '../button/button.component';
 import { UiSpinnerComponent } from './spinner.component';
 
 const meta: Meta<UiSpinnerComponent> = {
@@ -24,7 +25,8 @@ export const WithStatusLine: Story = {
   }),
 };
 export const InsideButton: Story = {
+  decorators: [moduleMetadata({ imports: [UiButtonComponent] })],
   render: () => ({
-    template: `<button type="button" disabled aria-busy="true" class="inline-flex h-ui-medium items-center gap-2 rounded-ui-xs bg-ui-neutral-100 px-3 text-button-14 text-ui-neutral-500"><lfx-ui-spinner [size]="16" tone="current" label="Loading" /><span>Deploying</span></button>`,
+    template: `<lfx-ui-button size="large" variant="secondary" [loading]="true">Deploying</lfx-ui-button>`,
   }),
 };

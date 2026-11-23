@@ -298,13 +298,13 @@ describe('UiMultiSelectComponent', () => {
     expect(panel()).toBeNull();
   });
 
-  it('closes on Tab and Shift+Tab with focus back on the trigger, so the browser moves on from there', async () => {
+  it('closes on Tab and Shift+Tab with focus back on the trigger; Tab moves on from there, Shift+Tab stops there', async () => {
     for (const shiftKey of [false, true]) {
       await open();
       const group = panel();
       const event = await press('Tab', { shiftKey });
 
-      expect(event.defaultPrevented).toBe(false);
+      expect(event.defaultPrevented).toBe(shiftKey);
       // The pane is still in the page when the browser moves focus, so its controls must already be out of the tab order.
       expect(group?.inert).toBe(true);
       expect(panel()).toBeNull();
@@ -499,6 +499,7 @@ describe('UiMultiSelectComponent', () => {
   });
 
   it('is out of the tab order and ignores the pointer when disabled, and closes if disabled while open', async () => {
+    expect(trigger().className).toContain('edge-control-hover');
     await open();
     await set('disabled', true);
     expect(panel()).toBeNull();
@@ -513,6 +514,7 @@ describe('UiMultiSelectComponent', () => {
 
     expect((trigger() as HTMLButtonElement).disabled).toBe(true);
     expect(panel()).toBeNull();
+    expect(trigger().className).not.toContain('edge-control-hover');
   });
 
   it('gives each instance its own ids', () => {

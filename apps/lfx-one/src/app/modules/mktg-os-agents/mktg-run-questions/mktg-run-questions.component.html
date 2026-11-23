@@ -105,13 +105,15 @@
           }
         </div>
         @if (isLast()) {
-          <lfx-button
-            label="Send answers and write the draft"
-            icon="fa-light fa-paper-plane"
-            [loading]="busy()"
-            [disabled]="busy()"
-            data-testid="mktg-run-questions-send"
-            (onClick)="onNext()" />
+          @if (!locked()) {
+            <lfx-button
+              label="Send answers and write the draft"
+              icon="fa-light fa-paper-plane"
+              [loading]="busy()"
+              [disabled]="busy()"
+              data-testid="mktg-run-questions-send"
+              (onClick)="onNext()" />
+          }
         } @else {
           <lfx-button label="Continue" icon="fa-light fa-arrow-right" iconPos="right" data-testid="mktg-run-questions-next" (onClick)="onNext()" />
         }

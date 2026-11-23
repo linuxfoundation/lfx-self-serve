@@ -322,7 +322,7 @@ export class OrgLensAccessComponent {
     this.confirmationService.confirm({
       key: this.removeConfirmKey,
       header: 'Remove access',
-      message: `Remove Org Lens access for ${user.name}? This revokes their access to this organization.`,
+      message: `Remove Company Lens access for ${user.name}? This revokes their access to this company.`,
       acceptLabel: 'Remove',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -349,7 +349,7 @@ export class OrgLensAccessComponent {
           this.messageService.add({
             severity: 'success',
             summary: 'Access removed',
-            detail: `${user.name} no longer has Org Lens access.`,
+            detail: `${user.name} no longer has Company Lens access.`,
             life: 3000,
           });
         },
@@ -380,7 +380,7 @@ export class OrgLensAccessComponent {
       isLastAdmin,
       editDisabledBase: user.isPending,
       editTooltip: user.isPending ? 'Edit is available once the invite is accepted.' : 'Edit access',
-      removeTooltip: isLastAdmin ? 'Organization must keep at least one Admin. Promote another Admin first.' : 'Remove access',
+      removeTooltip: isLastAdmin ? 'Company must keep at least one Admin. Promote another Admin first.' : 'Remove access',
     };
   }
 

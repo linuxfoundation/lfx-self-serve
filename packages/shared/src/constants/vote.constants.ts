@@ -4,9 +4,12 @@
 import { PollType, VoteVoterStatus } from '../enums/poll.enum';
 import type {
   VoteCommentAnonymityReason,
+  VoteMethodOption,
   VoteDetailTab,
   VoteDetailTabOption,
   VoteParticipationStatusFilter,
+  VoteSummaryOutcomeDisplay,
+  VoteSummaryRecipientOutcome,
   VoteVoterStatusFilter,
 } from '../interfaces/poll.interface';
 
@@ -18,12 +21,6 @@ export const MY_VOTES_STATS_WINDOW_DAYS = VOTES_STATS_WINDOW_DAYS;
 
 /** Sentinel thrown by `submitMyResponse` when the user has no pre-allocated vote_response row. */
 export const INVITATION_NOT_FOUND = 'INVITATION_NOT_FOUND';
-
-/** Page size for the paginated comment-response lists in the vote comment results. */
-export const VOTE_COMMENT_RESULTS_PAGE_SIZE = 25;
-
-/** Page-size options for the comment-results paginator in the vote comment results. Includes the default page size. */
-export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
 
 /** Notice above text-only comment results, keyed by why the comments carry no names (#4330). */
 export const VOTE_COMMENT_ANONYMOUS_NOTICES: Record<VoteCommentAnonymityReason, string> = {
@@ -94,8 +91,32 @@ export const VOTE_REMINDER_PRECHECK_FAILED = 'VOTE_REMINDER_PRECHECK_FAILED';
 /** The on-demand close summary (#3662) refuses a vote that has not ended yet with this state-conflict code. */
 export const VOTE_SUMMARY_NOT_ENDED = 'VOTE_SUMMARY_NOT_ENDED';
 
-/** The on-demand close summary (#3662) failed to send to every recipient; none were emailed. */
+/** The on-demand close summary (#3662) was confirmed not sent to any recipient: every attempt was rejected, none was uncertain. */
 export const VOTE_SUMMARY_SEND_FAILED = 'VOTE_SUMMARY_SEND_FAILED';
+
+/** Client wait budget for a summary POST; expiry is unconfirmed, not proof that server-side sending stopped. */
+export const VOTE_SUMMARY_SEND_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Legacy toast lifetime hint (ms) returned by the notice helper; the persistent results dialog ignores it. */
+export const VOTE_SUMMARY_NOTICE_LIFE_MS = 8000;
+
+/** Pre-send checks failed before any summary email was attempted; nothing was sent and retrying cannot duplicate this attempt. */
+export const VOTE_SUMMARY_PRECHECK_FAILED = 'VOTE_SUMMARY_PRECHECK_FAILED';
+
+/** Tag label, severity and meaning for each per-voter summary send outcome (#4830). */
+export const VOTE_SUMMARY_OUTCOME_DISPLAY: Readonly<Record<VoteSummaryRecipientOutcome, VoteSummaryOutcomeDisplay>> = {
+  sent: { label: 'Sent', severity: 'success', description: 'The email service confirmed the send. Inbox delivery and opens are not tracked.' },
+  failed: { label: 'Not sent', severity: 'danger', description: 'The email was not sent.' },
+  skipped: { label: 'Missing email', severity: 'secondary', description: 'No email address on file, so nothing could be sent.' },
+  uncertain: {
+    label: 'Unconfirmed',
+    severity: 'warn',
+    description: "LFX couldn't confirm this send. The email may already have arrived, so sending again could create duplicates.",
+  },
+};
+
+/** Display order of the summary results groups (#4830). */
+export const VOTE_SUMMARY_OUTCOME_ORDER: readonly VoteSummaryRecipientOutcome[] = ['sent', 'failed', 'skipped', 'uncertain'];
 
 /** Code-point cap on the vote title in the mailing-list reminder draft (#3658), so a long title can't crowd the body. */
 export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_CHARS = 120;
@@ -105,6 +126,18 @@ export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
 
 /** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
 export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
+
+/** Active manager results: non-overlapping visible-tab reads, with capped retry backoff (#4769). */
+export const VOTE_DETAIL_RESULTS_POLL_OPTIONS = {
+  intervalMs: 5000,
+  backoffBaseMs: 5000,
+  backoffMaxMs: 30000,
+  // Votes keeps its fixed 5/10/20/30 s retry cadence, as the presenter does; Marketing OS readers take the jittered default.
+  jitter: false,
+} as const;
+
+/** Detail managers: total final-results reads after closure, including held payloads and failed attempts. */
+export const VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS = 12;
 
 /** Vote detail page (#3913) tab shown when `?tab=` is absent or invalid; omitted from the URL. */
 export const VOTE_DETAIL_DEFAULT_TAB: VoteDetailTab = 'overview';
@@ -160,10 +193,13 @@ export const VOTE_VOTER_MAX_CHOICE_CHIPS = 2;
 /** `voters_choice` value the results' abstain row links with — it selects the Abstained status pill, not a choice. */
 export const VOTE_VOTERS_ABSTAINED_CHOICE_KEY = 'status:abstained';
 
-/** Action keys on the vote detail page's clickable summary cards (#4447): Voters tab, Comments tab and the reminder dialog. */
-export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMENTS: 'comments', NOT_VOTED: 'not-voted' } as const;
+/** Action keys emitted by the vote detail summary cards and their buttons (#4447, #4770): Voters tab and Comments tab. */
+export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMENTS: 'comments' } as const;
 
-/** Display label per voting method — read by the vote detail page's header. A missing `poll_type` reads as {@link PollType.GENERIC}. */
+/** Caption color for the vote detail summary tiles — darker than the grid's default `text-gray-400` to meet text contrast. */
+export const VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS = 'text-gray-600';
+
+/** Display label per voting method — read by the Vote details card. A missing `poll_type` reads as {@link PollType.GENERIC}. */
 export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.GENERIC]: 'Plurality vote',
   [PollType.MAJORITY]: 'Majority vote',
@@ -171,6 +207,27 @@ export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.INSTANT_RUNOFF_VOTE]: 'Instant runoff vote',
   [PollType.MEEK_STV]: 'Meek STV',
 };
+
+/** Voting methods offered when creating a vote (#2921) — read by the Create Vote dropdown and the form's Voting Method select. */
+export const VOTE_METHOD_OPTIONS: VoteMethodOption[] = [
+  {
+    label: 'Plurality',
+    value: PollType.GENERIC,
+    icon: 'fa-light fa-check-to-slot',
+    description: 'Voters pick from the options; the option with the most votes wins.',
+  },
+  {
+    label: 'Condorcet IRV',
+    value: PollType.CONDORCET_IRV,
+    icon: 'fa-light fa-list-ol',
+    description: 'Voters rank the options. The winner beats every other option head-to-head; if none does, instant-runoff elimination decides.',
+    // Enable only after #5969 results support is deployed and verified.
+    disabled: true,
+  },
+];
+
+/** Fewest eligible voters a Condorcet IRV vote can be opened with — matches PCC's `minMembersValidator`. */
+export const VOTE_CONDORCET_MIN_ELIGIBLE_VOTERS = 3;
 
 /** Admin Mode ballot policy (#4331): only active impersonation is restricted, never an admin acting as themselves. */
 export const VOTE_IMPERSONATION_READ_ONLY_NOTICE = 'Ballots are read-only while impersonating another user. You cannot cast or change their vote.';
@@ -229,6 +286,15 @@ export const VOTE_LINK_NOT_AWAITING_RESPONSE = 'not awaiting response';
 /** Upstream 400 message (lowercased substring) when an update hits a ballot with no response yet: switch to first submission. */
 export const VOTE_LINK_NOT_RESPONDED = 'not responded';
 
+/** Upstream 409 message (lowercased substring) when a ballot update hits a vote that makes submitted ballots final (#4723). */
+export const VOTE_CHANGE_NOT_ALLOWED = 'does not allow changing a submitted vote';
+
+/** Pre-submit notice on every first-submit surface when the vote makes submitted ballots final (#4723). */
+export const VOTE_BALLOT_FINAL_NOTICE = "Once you submit, your vote can't be changed.";
+
+/** Shown in place of a change action once a ballot on a vote that disallows changes is submitted (#4723). */
+export const VOTE_BALLOT_FINAL_STATE = "Your vote is final and can't be changed.";
+
 /** Close-vote confirmation (presenter and votes-table row menu): one copy so the two entry points never drift. */
 export const VOTE_CLOSE_CONFIRMATION = {
   header: 'Close vote',
@@ -236,5 +302,16 @@ export const VOTE_CLOSE_CONFIRMATION = {
   acceptLabel: 'Close vote',
   rejectLabel: 'Cancel',
   acceptButtonStyleClass: 'p-button-danger p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;
+
+/** Last-voter confirmation (#4726) on every first-submit surface: one copy so the cast drawer, inline ballot and vote link never drift. */
+export const VOTE_LAST_VOTER_CONFIRMATION = {
+  header: 'Submitting will end this vote',
+  message: "You're the last member to respond, so submitting now ends the vote. You won't be able to change your choices, comments, or abstention afterward.",
+  acceptLabel: 'Submit and end vote',
+  rejectLabel: 'Go back',
+  defaultFocus: 'reject',
+  acceptButtonStyleClass: 'p-button-sm',
   rejectButtonStyleClass: 'p-button-outlined p-button-sm',
 } as const;

@@ -31,6 +31,7 @@ const router = Router();
 const adminController = new MentorshipAdminController();
 
 router.get('/programs', (req, res, next) => adminController.getPrograms(req, res, next));
+router.get('/projects/:projectUid/programs', (req, res, next) => adminController.getProjectPrograms(req, res, next));
 router.get('/programs/:programId', (req, res, next) => adminController.getProgram(req, res, next));
 router.get('/programs/:programId/enroll-template', (req, res, next) => adminController.getEnrollTemplate(req, res, next));
 router.get('/programs/:programId/mentees', (req, res, next) => adminController.getProgramMentees(req, res, next));

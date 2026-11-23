@@ -2,30 +2,31 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  OrgInvolvementCertifiedEmployeesMonthlyResponse,
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
   OrgFoundationCoverageResponse,
   OrgInvolvementMaintainersMonthlyResponse,
   OrgMaintainerRolesCountRow,
   OrgMaintainerRolesMonthlyRow,
-  OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_SCOPE,
   DEFAULT_ORG_TEAM_MEMBERS,
   ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN,
   ORG_CONTRIBUTORS_MONTHLY_VIEW,
+  ORG_EVENT_ATTENDANCE_METRIC_COLUMNS,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_MAINTAINER_ROLES_MONTHLY_EXCLUDING_COLUMN,
   ORG_OVERVIEW_MAINTAINER_ROLES_RANGE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import type { OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
+import type { OrgEventAttendanceMonthlyRow, OrgScopeFilter, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
 
 import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { orgScopeColumn, orgScopeRowPredicate, resolveOrgScope } from '../helpers/org-scope.helper';
 import { orgTeamMembersPredicate, orgTeamMembersQueryOptions, readWithOrgTeamMembersFallback } from '../helpers/org-team-members.helper';
 import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -44,35 +45,6 @@ interface FoundationCoverageRow {
 interface ContributorsMonthlyRow {
   MONTH_START_DATE: Date;
   UNIQUE_CONTRIBUTORS: number;
-}
-
-interface EventAttendanceMonthlyRow {
-  ACCOUNT_ID: string;
-  ACCOUNT_NAME: string;
-  MONTH_START_DATE: Date;
-  REGISTRATION_COUNT: number;
-  ATTENDED_COUNT: number;
-  SPEAKER_COUNT: number;
-  TOTAL_REGISTRATIONS: number;
-  TOTAL_ATTENDED: number;
-  TOTAL_SPEAKERS: number;
-}
-
-interface CertifiedEmployeesMonthlyRow {
-  ACCOUNT_ID: string;
-  MONTH_START_DATE: Date;
-  MONTHLY_CERTIFICATIONS: number;
-  MONTHLY_CERTIFIED_EMPLOYEES: number;
-  TOTAL_CERTIFICATIONS: number;
-  TOTAL_CERTIFIED_EMPLOYEES: number;
-}
-
-interface TrainingEnrollmentRow {
-  ACCOUNT_ID: string;
-  ENROLLMENT_DATE: string;
-  DAILY_COUNT: number;
-  CUMULATIVE_COUNT: number;
-  TOTAL_ENROLLMENTS: number;
 }
 
 /** Cross-foundation organization involvement analytics against the org_* platinum tables (account-level). */
@@ -98,7 +70,15 @@ export class OrgInvolvementService {
     );
   }
 
+  /**
+   * The Overview's Active Contributors card, always at the default organization scope (lfx-self-serve-ops#1219): the
+   * Overview has no scope picker, so it counts the account's Insights organization, or every related organization for an
+   * account without one ({@link resolveOrgScope}'s fallback).
+   */
   public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
+    // `:{scope}` (lfx-self-serve-ops#1219): the effective organization scope, so an account without an Insights org
+    // shares its `all` entry.
+    const scope = await resolveOrgScope(this.snowflakeService, accountId, DEFAULT_ORG_SCOPE);
     // `contributors:v5`: the trend reads lf-dbt's ORG_CONTRIBUTORS_MONTHLY, now every project with team members left out
     // (lf-dbt#3149). (`v4`: the headline counts all projects over the last 2 years, the Org Lens default view
     // (lfx-self-serve#4694), and leaves out CDP team members as the People -> Contributors default does
@@ -108,10 +88,10 @@ export class OrgInvolvementService {
     let degraded = false;
     return withOrgCache(
       accountId,
-      'contributors:v5',
+      `contributors:v5:${scope}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
-        const fetched = await this.fetchContributorsMonthly(accountId);
+        const fetched = await this.fetchContributorsMonthly(accountId, scope);
         degraded = fetched.trendMissing || fetched.teamMembersUnavailable;
         return fetched.response;
       },
@@ -144,29 +124,11 @@ export class OrgInvolvementService {
   public async getEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     return withOrgCache(
       accountId,
-      'events',
+      // `v5` (lfx-self-serve#5315): the response no longer carries `servedAttribution` (the Overview is always Employee match);
+      // a `v4` entry holds the old shape.
+      'events:v5',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchEventAttendanceMonthly(accountId),
-      OrgInvolvementService.hasAccountId
-    );
-  }
-
-  public async getCertifiedEmployeesMonthly(accountId: string): Promise<OrgInvolvementCertifiedEmployeesMonthlyResponse> {
-    return withOrgCache(
-      accountId,
-      'certs',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchCertifiedEmployeesMonthly(accountId),
-      OrgInvolvementService.hasAccountId
-    );
-  }
-
-  public async getTrainingEnrollments(accountId: string): Promise<OrgTrainingEnrollmentsResponse> {
-    return withOrgCache(
-      accountId,
-      'training',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchTrainingEnrollments(accountId),
       OrgInvolvementService.hasAccountId
     );
   }
@@ -216,8 +178,11 @@ export class OrgInvolvementService {
    * team members.
    */
   private async fetchContributorsMonthly(
-    accountId: string
+    accountId: string,
+    scope: OrgScopeFilter
   ): Promise<{ response: OrgInvolvementContributorsMonthlyResponse; trendMissing: boolean; teamMembersUnavailable: boolean }> {
+    // Under `insights` (lfx-self-serve-ops#1219) the headline keeps only rows with Insights-scoped code and the trend
+    // reads the views' insights_ twins; under `all` both reads are unchanged.
     const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
       SELECT COUNT(DISTINCT person_key) AS ACTIVE_CONTRIBUTORS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
@@ -225,10 +190,13 @@ export class OrgInvolvementService {
         ${orgContributorsActivityPredicate(ORG_LENS_DEFAULT_TIME_RANGE)}
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
         ${orgTeamMembersPredicate(teamMembers)}
+        ${orgScopeRowPredicate(scope, 'INSIGHTS_DAILY_CODE_ACTIVITIES')}
     `;
+    const uniqueColumn = orgScopeColumn(scope, 'UNIQUE_CONTRIBUTORS');
+    const excludingColumn = orgScopeColumn(scope, ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN);
     // Under `exclude` the trend reads the view's count without team members, aliased to the inclusive column's name.
     const trendQuery = (teamMembers: OrgTeamMembersFilter): string => `
-      SELECT MONTH_START_DATE, ${teamMembers === 'exclude' ? `${ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN} AS ` : ''}UNIQUE_CONTRIBUTORS
+      SELECT MONTH_START_DATE, ${teamMembers === 'exclude' ? excludingColumn : uniqueColumn}${scope === 'all' && teamMembers !== 'exclude' ? '' : ' AS UNIQUE_CONTRIBUTORS'}
       FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_VIEW}
       WHERE ACCOUNT_ID = ?
       ORDER BY MONTH_START_DATE ASC
@@ -245,14 +213,14 @@ export class OrgInvolvementService {
           this.snowflakeService
             .execute<ContributorsMonthlyRow>(trendQuery(teamMembers), [accountId], {
               expectMissingObject: ORG_CONTRIBUTORS_MONTHLY_VIEW,
-              ...orgTeamMembersQueryOptions(teamMembers, ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN),
+              ...orgTeamMembersQueryOptions(teamMembers, excludingColumn),
             })
             .then((result) => result.rows)
             .catch((error: unknown) => {
               if (isMissingObjectError(error, ORG_CONTRIBUTORS_MONTHLY_VIEW)) return null;
               throw error;
             }),
-        ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN
+        excludingColumn
       ),
     ]);
 
@@ -330,24 +298,24 @@ export class OrgInvolvementService {
     };
   }
 
+  /**
+   * Overview Event Attendees / Event Speakers: pinned to the defaults (Employee match, registered or attended, 2 years). dbt
+   * computes every number; this reads the default attribution's columns (`ATTENDEES_ALL_VERIFIED` for attendees: people who
+   * registered or attended). The headline is the distinct-people total, not the sum of the monthly points.
+   */
   private async fetchEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     const query = `
       SELECT
         ACCOUNT_ID,
         ACCOUNT_NAME,
         MONTH_START_DATE,
-        REGISTRATION_COUNT,
-        ATTENDED_COUNT,
-        SPEAKER_COUNT,
-        TOTAL_REGISTRATIONS,
-        TOTAL_ATTENDED,
-        TOTAL_SPEAKERS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_ATTENDANCE_MONTHLY
+        ${ORG_EVENT_ATTENDANCE_METRIC_COLUMNS.join(',\n        ')}
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_MONTHLY
       WHERE ACCOUNT_ID = ?
       ORDER BY MONTH_START_DATE ASC
     `;
 
-    const result = await this.snowflakeService.execute<EventAttendanceMonthlyRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<OrgEventAttendanceMonthlyRow>(query, [accountId]);
 
     if (result.rows.length === 0) {
       return {
@@ -366,70 +334,11 @@ export class OrgInvolvementService {
     return {
       accountId: firstRow.ACCOUNT_ID,
       accountName: firstRow.ACCOUNT_NAME,
-      totalAttended: firstRow.TOTAL_ATTENDED || 0,
-      totalSpeakers: firstRow.TOTAL_SPEAKERS || 0,
-      attendeesMonthlyData: result.rows.map((row) => row.ATTENDED_COUNT || 0),
-      speakersMonthlyData: result.rows.map((row) => row.SPEAKER_COUNT || 0),
+      totalAttended: firstRow.TOTAL_ATTENDEES_ALL_VERIFIED || 0,
+      totalSpeakers: firstRow.TOTAL_SPEAKERS_VERIFIED || 0,
+      attendeesMonthlyData: result.rows.map((row) => row.ATTENDEES_ALL_VERIFIED || 0),
+      speakersMonthlyData: result.rows.map((row) => row.SPEAKERS_VERIFIED || 0),
       monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
-    };
-  }
-
-  private async fetchCertifiedEmployeesMonthly(accountId: string): Promise<OrgInvolvementCertifiedEmployeesMonthlyResponse> {
-    const query = `
-      SELECT
-        ACCOUNT_ID,
-        MONTH_START_DATE,
-        MONTHLY_CERTIFICATIONS,
-        MONTHLY_CERTIFIED_EMPLOYEES,
-        TOTAL_CERTIFICATIONS,
-        TOTAL_CERTIFIED_EMPLOYEES
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CERTIFIED_EMPLOYEES_MONTHLY
-      WHERE ACCOUNT_ID = ?
-      ORDER BY MONTH_START_DATE ASC
-    `;
-
-    const result = await this.snowflakeService.execute<CertifiedEmployeesMonthlyRow>(query, [accountId]);
-
-    if (result.rows.length === 0) {
-      return { accountId, totalCertifications: 0, totalCertifiedEmployees: 0, monthlyData: [], monthlyLabels: [] };
-    }
-
-    const firstRow = result.rows[0];
-
-    return {
-      accountId: firstRow.ACCOUNT_ID,
-      totalCertifications: firstRow.TOTAL_CERTIFICATIONS || 0,
-      totalCertifiedEmployees: firstRow.TOTAL_CERTIFIED_EMPLOYEES || 0,
-      monthlyData: result.rows.map((row) => row.MONTHLY_CERTIFICATIONS || 0),
-      monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
-    };
-  }
-
-  private async fetchTrainingEnrollments(accountId: string): Promise<OrgTrainingEnrollmentsResponse> {
-    const query = `
-      SELECT
-        ACCOUNT_ID,
-        ENROLLMENT_DATE,
-        DAILY_COUNT,
-        CUMULATIVE_COUNT,
-        TOTAL_ENROLLMENTS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_ENROLLMENTS
-      WHERE ACCOUNT_ID = ?
-      ORDER BY ENROLLMENT_DATE ASC
-    `;
-
-    const result = await this.snowflakeService.execute<TrainingEnrollmentRow>(query, [accountId]);
-
-    const totalEnrollments = result.rows.length > 0 ? result.rows[result.rows.length - 1].TOTAL_ENROLLMENTS || 0 : 0;
-
-    return {
-      accountId,
-      totalEnrollments,
-      dailyData: result.rows.map((row) => ({
-        date: row.ENROLLMENT_DATE,
-        count: row.DAILY_COUNT,
-        cumulativeCount: row.CUMULATIVE_COUNT,
-      })),
     };
   }
 }

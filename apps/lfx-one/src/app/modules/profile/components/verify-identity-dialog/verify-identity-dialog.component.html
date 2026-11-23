@@ -56,7 +56,9 @@
         <p class="text-sm text-red-600" role="alert" data-testid="verify-email-error">{{ verificationError() }}</p>
       }
     } @else {
-      <p class="text-xs text-slate-600">{{ verificationSentMessage }}</p>
+      <p class="text-xs text-slate-600">
+        Check <strong>{{ identity.identifier }}</strong> for a 6-digit verification code. {{ verificationInstructions }}
+      </p>
       <div class="flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <label class="text-sm font-semibold text-slate-900">Verification code</label>
@@ -91,8 +93,16 @@
         @if (verificationError()) {
           <p class="text-center text-sm text-red-600" role="alert" data-testid="verify-email-error">
             @if (showSupportLink()) {
-              This email is already linked to an LFX account. If you believe this is an error,
-              <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
+              You’ve verified this email address, but it’s already linked to an LFX account.
+              <button
+                type="button"
+                lfxOpenIntercom
+                [intercomMessage]="linkedSupportMessage"
+                class="font-medium underline"
+                data-testid="verify-linked-support-button">
+                Contact support
+              </button>
+              for help with next steps.
             } @else {
               {{ verificationError() }}
             }

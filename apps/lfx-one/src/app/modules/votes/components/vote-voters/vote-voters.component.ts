@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -53,10 +53,9 @@ import { VoteService } from '@services/vote.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, startWith, Subject, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
 import { VoteBallotDialogComponent } from '../vote-ballot-dialog/vote-ballot-dialog.component';
-import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
 
 /**
  * Voters tab of the vote detail page (#3914): every invited voter with their status and current ballot, for vote managers on
@@ -89,10 +88,11 @@ export class VoteVotersComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
   private readonly dialogService = inject(DialogService);
-  private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
   public readonly vote = input.required<Vote>();
+  /** Bumped by the page after a reminder is sent so the current voter statuses reload. */
+  public readonly refreshTick = input<number>(0);
   /** Resolved prompts from results, used when the vote detail omits its prompt metadata. */
   public readonly commentPrompts = input<PollCommentPrompt[]>([]);
   /** `voters_choice` from the URL — a `<question_id>:<choice_id>` key, or the abstain row's status key. */
@@ -152,12 +152,6 @@ export class VoteVotersComponent {
     return status === VOTE_VOTERS_ALL_STATUS_FILTER ? rows : rows.filter((row) => row.status === status);
   });
   protected readonly statusCounts: Signal<VoteVoterStatusCounts> = computed(() => countVoteVotersByStatus(this.matchingRows()));
-  /** Reminder eligibility counts every invitee, whatever the filters show. */
-  protected readonly notVotedTotal: Signal<number> = computed(() =>
-    this.participationOnly()
-      ? countVoteParticipationByStatus(this.participationRows()).pending
-      : countVoteVotersByStatus(this.rows())[VoteVoterStatus.NOT_VOTED]
-  );
   protected readonly statusOptions: Signal<FilterPillOption[]> = this.initStatusOptions();
   protected readonly choiceOptions: Signal<VoteVoterChoiceFilterOption[]> = computed(() => buildVoteVoterChoiceFilterOptions(this.vote()));
   /** Participation-only rows (#3916), in the server's name order. */
@@ -214,23 +208,6 @@ export class VoteVotersComponent {
     this.tableFirst.set(0);
   }
 
-  /** Same dialog the votes table opens; a send closes it with `true`, after which the statuses are reloaded. */
-  protected openReminder(): void {
-    this.dialogService
-      .open(VoteReminderDialogComponent, {
-        header: 'Send vote reminder',
-        width: 'min(960px, 96vw)',
-        modal: true,
-        closable: true,
-        draggable: false,
-        data: { vote: this.vote() },
-      })
-      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe((sent) => {
-        if (sent === true) this.refresh();
-      });
-  }
-
   /** Opens a voter's ballot. Next and previous step through the table's current order, skipping voters with no ballot. */
   protected openBallot(uid: string): void {
     let ballots = this.filteredRows().filter((row) => row.hasBallot);
@@ -270,12 +247,13 @@ export class VoteVotersComponent {
     );
   }
 
-  /** Reloads on a new vote and on every refresh; `switchMap` drops a load a newer one replaced. */
+  /** Reloads on a new vote and on manual or page-triggered refreshes; `switchMap` drops a load a newer one replaced. */
   private initVoters(): Signal<VoteVoter[] | VoteParticipationVoter[]> {
     const voteUid = computed(() => this.vote().uid);
+    const key = computed(() => ({ uid: voteUid(), tick: this.refreshTick() }));
     return toSignal(
-      combineLatest([toObservable(voteUid), this.refresh$.pipe(startWith(undefined))]).pipe(
-        switchMap(([uid]) => {
+      combineLatest([toObservable(key), this.refresh$.pipe(startWith(undefined))]).pipe(
+        switchMap(([{ uid }]) => {
           this.loading.set(true);
           this.loadError.set(false);
           return this.voteService.getVoteVoters(uid).pipe(

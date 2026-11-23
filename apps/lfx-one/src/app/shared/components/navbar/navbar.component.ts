@@ -7,7 +7,6 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
-import { CreateArtifactDialogComponent } from '@components/create-artifact-dialog/create-artifact-dialog.component';
 import { ImpersonationDialogComponent } from '@components/impersonation-dialog/impersonation-dialog.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
@@ -23,10 +22,10 @@ import {
   NAVBAR_NO_ACCESS_GHOST_ITEMS,
   NAVBAR_PEEK_CLOSE_DELAY_MS,
   NAVBAR_PEEK_MORPH_MS,
-  NAVBAR_PEEK_OPEN_DELAY_MS,
   NAVBAR_PEEK_RECHECK_DELAY_MS,
   NAVBAR_ROLE_PREPOSITIONS,
   NAVBAR_ROLE_STYLES,
+  NAVBAR_THEME_OPTIONS,
   BOARD_SCOPED_PERSONAS,
   PERSONA_OPTIONS,
   PERSONA_PRIORITY,
@@ -41,23 +40,28 @@ import {
   NavbarRoleMark,
   NavbarRoleProject,
   NavbarTabIndicator,
+  NavbarTheme,
   NavTooltipItem,
   NavTooltipPlacement,
   SidebarMenuItem,
 } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl, isDocsPath, toTitleCase } from '@lfx-one/shared/utils';
+import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
+import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
+import { NavbarThemeService } from '@services/navbar-theme.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
+import { DialogService } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { filter, pairwise } from 'rxjs';
 
@@ -94,6 +98,8 @@ import { NavMenuBase } from './nav-menu-base.directive';
     NavTooltipDirective,
     OpenIntercomDirective,
     ScrollShadowDirective,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
   ],
   providers: [DialogService],
   templateUrl: './navbar.component.html',
@@ -103,19 +109,21 @@ import { NavMenuBase } from './nav-menu-base.directive';
     '[class.lfxn-host--dock]': '!mobile()',
     '[class.is-collapsed]': 'railVisible()',
     '[class.is-overlay]': '!mobile() && collapse.overlay()',
-    '[class.is-narrow]': '!mobile() && collapse.narrow()',
-    '[class.is-pinned]': '!mobile() && collapse.peekPinned()',
     '[class.is-animated]': '!mobile() && collapse.animated()',
+    // The light sidebar theme is desktop-only: the mobile drawer always stays dark.
+    '[class.is-light]': '!mobile() && sidebarTheme.light()',
   },
 })
 export class NavbarComponent extends NavMenuBase {
   private readonly dialogService = inject(DialogService);
+  private readonly createArtifactDialog = inject(CreateArtifactDialogService);
   private readonly changelogService = inject(ChangelogService);
   private readonly sidebarNavService = inject(SidebarNavService);
   private readonly appService = inject(AppService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   protected readonly createPermissionService = inject(CreatePermissionService);
   protected readonly collapse = inject(NavbarCollapseService);
+  protected readonly sidebarTheme = inject(NavbarThemeService);
   private readonly injector = inject(Injector);
 
   /** Whether the host layout shifts the navbar down to clear the impersonation banner (main layout only). */
@@ -140,6 +148,8 @@ export class NavbarComponent extends NavMenuBase {
 
   protected readonly user = this.userService.user;
   protected readonly userInitials = this.userService.userInitials;
+  /** The LFID shown in the account menu: the effective user's, so the impersonation target's while impersonating. */
+  protected readonly lfid: Signal<string | null> = computed(() => stripAuthPrefixOrNull(this.userService.viewerUsername()));
   // Hide the role marks when the user is a root-writer — executive-director is spoofed, not naturally detected.
   protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
 
@@ -232,6 +242,9 @@ export class NavbarComponent extends NavMenuBase {
   // ── Me card ──────────────────────────────────────────────────────────────────────────────────
   protected readonly roleMarks: Signal<NavbarRoleMark[]> = this.initRoleMarks();
 
+  // ── Sidebar theme ────────────────────────────────────────────────────────────────────────────
+  protected readonly sidebarThemeOptions = NAVBAR_THEME_OPTIONS;
+
   // ── Rail actions ─────────────────────────────────────────────────────────────────────────────
   protected readonly canImpersonate = this.userService.canImpersonate;
   protected readonly isImpersonating = this.userService.impersonating;
@@ -284,13 +297,16 @@ export class NavbarComponent extends NavMenuBase {
   // ── Collapse / peek (desktop only) ───────────────────────────────────────────────────────────
   /** The panel shows as the slim rail. */
   protected readonly railVisible: Signal<boolean> = computed(() => !this.mobile() && this.collapse.visualCollapsed());
-  /** Docked to the rail (even while peeking): the footer actions then also live in the account menu. */
-  protected readonly railDocked: Signal<boolean> = computed(() => !this.mobile() && this.collapse.effectiveCollapsed());
+  /**
+   * The sidebar toggle shows on desktop, except over a narrow viewport's peek: the panel can't dock open there, so there is
+   * nothing to keep open. That peek closes as the pointer leaves, on an outside click, or on Escape.
+   */
+  protected readonly showSidebarToggle: Signal<boolean> = computed(() => !this.mobile() && (!this.collapse.narrow() || this.railVisible()));
   /** Rail tooltips open beside the trigger; the open panel's below it. */
   protected readonly headTooltipPlacement: Signal<NavTooltipPlacement> = computed(() => (this.railVisible() ? 'right' : 'bottom'));
-  /** A peek on a wide viewport docks open on click; otherwise the toggle opens or closes the sidebar. */
+  /** The rail's toggle shows the sidebar over the page; from a peek it docks open; otherwise it closes the sidebar. */
   protected readonly toggleLabel: Signal<string> = computed(() => {
-    if (this.railVisible()) return 'Open sidebar';
+    if (this.railVisible()) return 'Show sidebar';
     return this.collapse.peek() ? 'Keep sidebar open' : 'Close sidebar';
   });
   /** A menu or panel opened from the navbar is up: a peek must not close under it. */
@@ -298,7 +314,6 @@ export class NavbarComponent extends NavMenuBase {
     () => this.brandMenuOpen() || this.createMenuOpen() || this.userMenuOpen() || this.selectorPanelOpen()
   );
   private readonly panelEl = viewChild<ElementRef<HTMLElement>>('panel');
-  private peekOpenTimer: ReturnType<typeof setTimeout> | null = null;
   private peekCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private morphSettleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Last pointer position seen while peeking; null until the pointer moves (keyboard use never closes a peek). */
@@ -321,15 +336,15 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   /**
-   * The sidebar toggle: dock open or closed on wide viewports. On narrow ones it pins a peek — from the rail, or the hover
-   * peek the pointer just opened on its way to the click — and closes a pinned one. A keyboard press (no click count)
-   * keeps focus in the navbar; a pointer click drops it.
+   * The sidebar toggle. On the rail it peeks the panel open over the page, closing once the pointer leaves it — pinned on a
+   * touch device, which has no pointer to leave, so an outside tap closes it instead. From an open panel it docks open or
+   * closed; a narrow viewport's peek has no toggle ({@link showSidebarToggle}). A keyboard press (no click count) keeps focus
+   * in the navbar; a pointer click drops it.
    */
   protected onToggleClick(event: MouseEvent): void {
-    this.clearPeekOpenTimer();
     const focus: NavbarMorphFocus = event.detail === 0 ? 'keyboard' : 'pointer';
-    if (this.collapse.narrow()) {
-      this.morph(() => (this.collapse.peekPinned() ? this.collapse.closePeek() : this.collapse.openPeek(true)), focus);
+    if (this.railVisible()) {
+      this.morph(() => this.collapse.openPeek(this.collapse.touch()), focus);
       return;
     }
     if (this.collapse.peek()) {
@@ -338,20 +353,6 @@ export class NavbarComponent extends NavMenuBase {
       return;
     }
     this.morph(() => this.collapse.setCollapsed(!this.collapse.collapsed()), focus);
-  }
-
-  /** Hovering the rail's toggle peeks the panel open — the only hover that does, so a collapse click never reopens it. */
-  protected onToggleEnter(): void {
-    if (!this.railVisible() || this.collapse.touch()) return;
-    this.clearPeekOpenTimer();
-    this.peekOpenTimer = setTimeout(() => {
-      this.peekOpenTimer = null;
-      if (this.railVisible()) this.morph(() => this.collapse.openPeek());
-    }, NAVBAR_PEEK_OPEN_DELAY_MS);
-  }
-
-  protected onToggleLeave(): void {
-    this.clearPeekOpenTimer();
   }
 
   /** Jump from a role chip to that project's or foundation's overview (the deep-link route the lens guards resolve). */
@@ -401,6 +402,11 @@ export class NavbarComponent extends NavMenuBase {
     this.router.navigate(['/profile/settings']);
   }
 
+  /** The account menu's sidebar theme switch: applies and remembers the choice. The menu stays open. */
+  protected onSidebarThemeChange(theme: string | null): void {
+    if (theme === 'dark' || theme === 'light') this.sidebarTheme.setTheme(theme satisfies NavbarTheme);
+  }
+
   protected openImpersonationDialog(): void {
     this.userMenu()?.hide();
     this.closePeekForDialog();
@@ -416,19 +422,7 @@ export class NavbarComponent extends NavMenuBase {
   protected openCreateDialog(artifact: CreatableArtifactConfig): void {
     this.createMenu()?.hide();
     this.closePeekForDialog();
-    const dialogRef = this.dialogService.open(CreateArtifactDialogComponent, {
-      // No PrimeNG header — the dialog body renders its own "Create <Type>" header.
-      showHeader: false,
-      width: '480px',
-      contentStyle: { padding: '1.5rem' },
-      modal: true,
-      draggable: false,
-      resizable: false,
-      dismissableMask: true,
-      data: { type: artifact.type },
-    }) as DynamicDialogRef;
-
-    nameDynamicDialog(this.dialogService, dialogRef, CreateArtifactDialogComponent.headingId);
+    this.createArtifactDialog.open(artifact.type);
   }
 
   protected retryMenu(): void {
@@ -453,7 +447,7 @@ export class NavbarComponent extends NavMenuBase {
       return;
     }
     this.lensService.commitMenuLens();
-    void this.router.navigate(this.orgLensNavigation.orgLensLink('overview'));
+    void this.router.navigate(this.orgLensNavigation.orgLensLink(this.orgLensNavigation.orgLensHomePage()));
   }
 
   protected openChangelogDrawer(): void {
@@ -496,15 +490,16 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   /**
-   * Desktop only: restores the stored preference, then keeps a peek honest — it closes once the pointer has left the
-   * panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after an outside click or
-   * focus leaving it when pinned, on Escape, or on a navigation from it (from a hover peek, only once the pointer is off
-   * it) — but never while a menu or panel opened from it is still up.
+   * Desktop only: restores the stored preference on a reload, then keeps a peek honest — it closes once the pointer has
+   * left the panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after any outside
+   * click, when focus leaves a pinned peek, on Escape, or on a navigation from it (from an unpinned peek, only once the
+   * pointer is off it) — but never while a menu or panel opened from it is still up.
    */
   private initCollapse(): void {
     afterNextRender(() => {
       if (this.mobile()) return;
       this.collapse.init();
+      this.sidebarTheme.init();
       const doc = this.elementRef.nativeElement.ownerDocument;
       const panel = this.panelEl()?.nativeElement;
 
@@ -521,8 +516,10 @@ export class NavbarComponent extends NavMenuBase {
         this.pointerOnTooltip = false;
         if (this.collapse.peek() && !this.collapse.peekPinned()) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
       };
+      // A press outside closes any peek, pinned or not: one opened from the keyboard has no pointer position to leave from,
+      // and a narrow viewport's peek has no toggle to close it with.
       const onDown = (event: MouseEvent): void => {
-        if (!this.collapse.peekPinned() || this.navbarMenuOpen()) return;
+        if (!this.collapse.peek() || this.navbarMenuOpen()) return;
         const target = event.target instanceof Element ? event.target : null;
         if (target && (panel?.contains(target) || target.closest('.lfxn-tooltip'))) return;
         this.morph(() => this.collapse.closePeek());
@@ -534,7 +531,7 @@ export class NavbarComponent extends NavMenuBase {
         this.morph(() => this.collapse.closePeek(), 'keyboard');
       };
       // Tabbing out of a pinned peek must not leave the overlay over the page content that now holds focus.
-      // A hover peek that keyboard focus was holding open re-checks the pointer once focus leaves it.
+      // An unpinned peek that keyboard focus was holding open re-checks the pointer once focus leaves it.
       const onFocusOut = (event: FocusEvent): void => {
         const next = event.relatedTarget instanceof Element ? event.relatedTarget : null;
         if (!this.collapse.peek() || this.navbarMenuOpen()) return;
@@ -559,15 +556,14 @@ export class NavbarComponent extends NavMenuBase {
     });
 
     this.destroyRef.onDestroy(() => {
-      this.clearPeekOpenTimer();
       this.clearPeekCloseTimer();
       if (this.morphSettleTimer) clearTimeout(this.morphSettleTimer);
     });
 
     // A pick from a peek navigates under it: close it, so the overlay doesn't cover the page just opened — a pinned peek
-    // or a hover peek (keyboard focus on the picked link holds one open, see peekInUse). A hover peek the pointer is still
-    // over stays open, though — a lens tab or a link picked with the pointer — and closes once the pointer leaves, like any
-    // hover peek. As with the mobile drawer, only a navigation the viewer made counts — a page rewriting its own address in
+    // or an unpinned one (keyboard focus on the picked link holds one open, see peekInUse). An unpinned peek the pointer is
+    // still over stays open, though — a lens tab or a link picked with the pointer — and closes once the pointer leaves, like
+    // any unpinned peek. As with the mobile drawer, only a navigation the viewer made counts — a page rewriting its own address in
     // place (`replaceUrl`, e.g. Org Lens writing in the default organization) would snap a just-opened peek shut;
     // back/forward still closes it. Focus on the link the rail now hides moves to the toggle (the railVisible subscription
     // below). Desktop only: the mobile drawer's navbar stays mounted once opened but never tracks the pointer, so it would
@@ -584,7 +580,7 @@ export class NavbarComponent extends NavMenuBase {
       )
       .subscribe(() => this.morph(() => this.collapse.closePeek(), 'none'));
 
-    // A menu or panel opened from a hover peek just closed: give the pointer a moment, then close if it is outside.
+    // A menu or panel opened from an unpinned peek just closed: give the pointer a moment, then close if it is outside.
     toObservable(this.navbarMenuOpen)
       .pipe(
         pairwise(),
@@ -818,11 +814,6 @@ export class NavbarComponent extends NavMenuBase {
     if (!(active instanceof HTMLElement) || !host.contains(active)) return;
     if (active.closest('.lfxn__brand, .lfxn__head-actions > *, .lfxn__user')) return;
     host.querySelector<HTMLElement>('[data-flip="side"]')?.focus();
-  }
-
-  private clearPeekOpenTimer(): void {
-    if (this.peekOpenTimer) clearTimeout(this.peekOpenTimer);
-    this.peekOpenTimer = null;
   }
 
   private clearPeekCloseTimer(): void {

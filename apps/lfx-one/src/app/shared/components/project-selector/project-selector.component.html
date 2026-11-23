@@ -22,7 +22,12 @@
       <span class="lfxn__context-text">
         <span class="lfxn__context-name" [lfxNavTooltip]="displayName()" [lfxNavTooltipOnlyIfTruncated]="true">{{ displayName() }}</span>
         @if (selectedRoleLabel()) {
-          <span class="lfxn__role" [style.--lfxn-role-ink]="navbarRoleStyle().ink" [attr.aria-label]="'Role: ' + selectedRoleLabel()">
+          <span
+            class="lfxn__role"
+            [style.--lfxn-role-ink]="navbarRoleStyle().ink"
+            [style.--lfxn-role-ink-light]="navbarRoleStyle().inkLight"
+            [style.--lfxn-role-fill-light]="navbarRoleStyle().fillLight"
+            [attr.aria-label]="'Role: ' + selectedRoleLabel()">
             <i [ngClass]="navbarRoleStyle().icon" aria-hidden="true"></i>{{ selectedRoleLabel() }}
           </span>
         } @else {
@@ -174,15 +179,17 @@
               [attr.aria-hidden]="!displayItem.isSelected"></i>
           </button>
 
-          <button
-            type="button"
-            class="shrink-0 flex items-center justify-center size-5"
-            (click)="toggleFavorite($event, displayItem.item.uid)"
-            [attr.data-testid]="'favorite-toggle-' + displayItem.item.slug"
-            [attr.aria-pressed]="displayItem.isFavorited"
-            [attr.aria-label]="displayItem.isFavorited ? 'Remove from favorites' : 'Add to favorites'">
-            <i [ngClass]="displayItem.isFavorited ? 'fa-solid fa-star text-amber-400' : 'fa-light fa-star text-gray-300'" aria-hidden="true"></i>
-          </button>
+          @if (favoritesAvailable()) {
+            <button
+              type="button"
+              class="shrink-0 flex items-center justify-center size-5"
+              (click)="toggleFavorite($event, displayItem.item.uid)"
+              [attr.data-testid]="'favorite-toggle-' + displayItem.item.slug"
+              [attr.aria-pressed]="displayItem.isFavorited"
+              [attr.aria-label]="displayItem.isFavorited ? 'Remove from favorites' : 'Add to favorites'">
+              <i [ngClass]="displayItem.isFavorited ? 'fa-solid fa-star text-amber-400' : 'fa-light fa-star text-gray-300'" aria-hidden="true"></i>
+            </button>
+          }
         </div>
       } @empty {
         @if (!loading()) {

@@ -3,7 +3,7 @@
 
 import { Injectable, afterNextRender } from '@angular/core';
 import { PreloadingStrategy, Route } from '@angular/router';
-import { Observable, of, timer } from 'rxjs';
+import { catchError, Observable, of, timer } from 'rxjs';
 import { mergeMap } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
@@ -57,8 +57,15 @@ export class CustomPreloadingStrategy implements PreloadingStrategy {
       }
 
       // For fast/unknown connections, preload after configured delay
-      const delay = route.data['preloadDelay'] || 2000; // Default 2 second delay
-      return timer(delay).pipe(mergeMap(() => load()));
+      const delay = route.data['preloadDelay'] ?? 2000; // Default 2 second delay
+      return timer(delay).pipe(
+        mergeMap(() => load()),
+        catchError((error: unknown) => {
+          // A background failure must not reload the active page or terminate future preloads.
+          console.error('Route preloading failed', error);
+          return of(null);
+        })
+      );
     }
 
     return of(null);

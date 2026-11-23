@@ -3,7 +3,7 @@
 
 import type { Observable } from 'rxjs';
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
-import type { MktgRunActivity, MktgRunAnswer, MktgRunQuestion } from './mktg-run.interface';
+import type { MktgRunActivity, MktgRunAnswer, MktgRunKeptDraft, MktgRunQuestion } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
 import type { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '../constants/mktg-run.constants';
 
@@ -121,6 +121,8 @@ export interface MktgRunAnsweredNotice {
   runId: string;
   questionsId: string;
   message: string;
+  /** The block this browser was answering, with its typed draft, kept read-only under the notice wherever it shows. */
+  kept?: MktgRunKeptDraft;
 }
 
 /** Answers scoped to the opaque public run id in the route. */
@@ -275,5 +277,10 @@ export interface MktgDocumentRunCoverage {
 
 /** The Documents transport's retry body, scoped by its document/run route; no generation is started. */
 export interface MktgRetryDocumentRunRequest {
+  project: string;
+}
+
+/** The Documents transport's dismiss body: closes a failed run as discarded, never touching a document or revision. */
+export interface MktgDismissDocumentRunRequest {
   project: string;
 }

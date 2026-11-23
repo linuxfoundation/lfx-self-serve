@@ -25,6 +25,8 @@ export interface AeoGeoEnvelope {
   intake: { completed_at: string; mode: 'form' };
   generated_at: string;
   agent: { identifier?: string; agent_version: string; prompt_manifest_sha256: string };
+  /** Plan-2 quality ledger (reads, coverage) written by aeo-geo ≥ 2.1.0; stored with the run, never rendered. */
+  quality?: unknown;
 }
 
 /** Validated report presentation read from a stored revision's sidecar. */

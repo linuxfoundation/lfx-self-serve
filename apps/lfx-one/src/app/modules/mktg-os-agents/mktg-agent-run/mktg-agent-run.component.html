@@ -39,7 +39,7 @@
         [runId]="publicRunId()"
         [refreshKey]="publicRefreshKey()"
         [runPage]="true"
-        [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || !!publicWaitingText() || (!!errorText() && !navigation())"
+        [headless]="progressHeadless()"
         [watchQuestions]="phase() === 'questions'"
         [errorText]="errorText()"
         [retainedAnswersNotice]="answeredNotice()"
@@ -284,7 +284,7 @@
                 data-testid="mktg-agent-run-form">
                 <div>
                   <h2 class="font-display font-light text-xl text-gray-900" data-testid="mktg-agent-run-form-title">{{ formTitle() }}</h2>
-                  <p class="mt-1 text-sm leading-relaxed text-gray-500">{{ intake.intro }}</p>
+                  <p class="mt-1 text-sm leading-relaxed text-gray-500" data-testid="mktg-agent-run-form-intro">{{ intake.intro }}</p>
                 </div>
 
                 <!-- One field block per intake field — single-sourced via template outlet. -->
@@ -561,7 +561,8 @@
                   [projectName]="projectName()"
                   [previousAnswers]="lastAnswers()"
                   [busy]="answersSending()"
-                  (answered)="onAnswerQuestions($event)" />
+                  (answered)="onAnswerQuestions($event)"
+                  (draftChanged)="onQuestionDraft($event)" />
               </div>
             }
           }

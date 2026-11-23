@@ -8,6 +8,22 @@ import { DATA_LOAD_TIMEOUT } from './helpers/mktg-os-assets.helper';
 
 test.describe('Marketing OS Sources structure', () => {
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+  test('a refused ZIP surfaces through the logo picker’s error contract, with no list item', async ({ page }) => {
+    const sources = await setupFreshSources(page);
+    await sources.open();
+    await page.getByTestId('mktg-run-sources-edit').getByRole('button').click();
+    await expect(page.getByTestId('mktg-intake-logo-files')).toBeVisible();
+    await page
+      .getByTestId('mktg-intake-logo-files-upload')
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles({ name: 'package.zip', mimeType: 'application/zip', buffer: Buffer.alloc(151 * 1024, 0) });
+    const error = page.getByTestId('mktg-intake-logo-files-error');
+    await expect(error).toBeVisible();
+    await expect(error).toHaveAttribute('role', 'alert');
+    await expect(page.getByTestId('mktg-intake-logo-files-list')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-intake-logo-files-pending')).toHaveCount(0);
+  });
   for (const width of [1440, 1280, 390]) {
     test(`${width}px: Sources belongs to the form with no second edit-inputs path during live work`, async ({ page }) => {
       const sources = await setupFreshSources(page);

@@ -97,6 +97,11 @@
                     [attr.data-testid]="'project-applications-open-' + application.uid">
                     {{ application.displayName }}
                   </button>
+                  @if (isStaff() && application.target_parent_uid && startedFromNames()[application.target_parent_uid]; as foundationName) {
+                    <div class="text-xs text-gray-500 break-words" [attr.data-testid]="'project-applications-started-from-' + application.uid">
+                      {{ startedFromLabel }}: {{ foundationName }}
+                    </div>
+                  }
                 </td>
                 @if (isStaff()) {
                   <td class="text-sm" [attr.data-testid]="'project-applications-submitter-' + application.uid">

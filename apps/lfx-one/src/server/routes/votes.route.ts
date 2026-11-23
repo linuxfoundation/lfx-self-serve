@@ -11,6 +11,12 @@ const router = Router();
 
 const voteController = new VoteController();
 
+// Summary responses contain voter identities, including partial/failed send details (#4830).
+router.use(['/:uid/summary-recipients', '/:uid/summary'], (_req, res, next) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  next();
+});
+
 // GET /votes - get all votes
 router.get('/', (req, res, next) => voteController.getVotes(req, res, next));
 
@@ -34,7 +40,14 @@ router.post('/responses', blockDuringImpersonation, (req, res, next) => voteCont
 // GET /votes/:uid/my-response - current user's pre-allocated vote_response (Me lens cast drawer)
 router.get('/:uid/my-response', (req, res, next) => voteController.getMyVoteResponse(req, res, next));
 
-// GET /votes/:uid/my-ballot - current user's submitted ballot (read-only Review and "Your ballot", #4331)
+// GET /votes/:uid/my-response/would-end-vote - whether the caller's first submission would end the vote (#4726)
+router.get('/:uid/my-response/would-end-vote', (req, res, next) => voteController.getMyWouldEndVote(req, res, next));
+
+// PUT /votes/:uid/my-response - change the current user's own submitted ballot (#4723). The ballot is resolved from the
+// caller's own row server-side; blocked in Admin Mode like the first submission.
+router.put('/:uid/my-response', blockDuringImpersonation, (req, res, next) => voteController.updateMyVoteResponse(req, res, next));
+
+// GET /votes/:uid/my-ballot - own submitted ballot for Me-lens Review (editable when allowed) and "Your ballot" (#4331, #4723)
 router.get('/:uid/my-ballot', (req, res, next) => voteController.getMyVoteBallot(req, res, next));
 
 // GET /votes/:uid/results - get vote results
@@ -42,6 +55,9 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 
 // GET /votes/:uid/reminder-recipients - eligible voters who have not voted yet (vote#writer only)
 router.get('/:uid/reminder-recipients', (req, res, next) => voteController.getVoteReminderRecipients(req, res, next));
+
+// GET /votes/:uid/summary-recipients - summary recipient preview (vote#writer only, ended votes)
+router.get('/:uid/summary-recipients', (req, res, next) => voteController.getVoteSummaryPreview(req, res, next));
 
 // GET /votes/:uid/voters - invited voters with their current ballot, or participation only on pseudo-anonymous votes (vote#writer only)
 router.get('/:uid/voters', (req, res, next) => voteController.getVoteVoters(req, res, next));

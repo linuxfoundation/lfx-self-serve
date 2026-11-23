@@ -23,7 +23,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { UI_TOAST_PANE_CLASS } from '@lfx-one/shared/constants';
-import { UiPopoverContext, UiPopoverPadding } from '@lfx-one/shared/interfaces';
+import { UiPopoverAlign, UiPopoverContext, UiPopoverPadding } from '@lfx-one/shared/interfaces';
 import { fromEvent, take, takeUntil } from 'rxjs';
 
 import { UiPopoverPanelComponent } from './popover-panel.component';
@@ -40,12 +40,14 @@ import { UiPopoverPanelComponent } from './popover-panel.component';
  *
  * The panel uses the Menu material (16px radius, `shadow-menu`) with 16px of padding; `lfxUiPopoverPadding="none"` removes it for content that
  * runs edge to edge. It is as wide as its content, or `lfxUiPopoverWidth` px. The host gets `aria-haspopup="dialog"`, `aria-expanded` and `aria-controls`; the panel is a `role="dialog"` named by
- * `lfxUiPopoverLabel`, or by the host when none is given. It opens below the host, start-aligned, then above it, then end-aligned, and follows
+ * `lfxUiPopoverLabel`, or by the host when none is given. It opens below the host, start-aligned, then above it, then end-aligned
+ * (`lfxUiPopoverAlign="end"` tries the end-aligned pair first, for a host at the end of a row; `center` tries centered first), and follows
  * its host inside scrollable containers that carry `cdkScrollable`.
  *
  * Focus moves to the first tabbable element in the panel, or to the panel itself. Escape or a click outside closes it. Escape always returns focus
  * to the host; an outside click does too, unless the click already focused something else. Tab past the last field closes it and continues from the
- * host, and Shift+Tab before the first field closes it onto the host. A click inside a select list, menu, modal or drawer opened from the panel
+ * host, and Shift+Tab before the first field closes it onto the host. Shift+Tab from a select search field, multi-select list or menu opened from
+ * the panel stops on its trigger, even on the first field; the multi-select list and the menu close, the select list stays open. A click inside a select list, menu, modal or drawer opened from the panel
  * does not close it, and Escape closes that overlay first. A click on a toast does not close it either. It is not a focus trap: for a choice that must be answered first, use a modal.
  *
  * Two-way `[(lfxUiPopoverOpen)]` reads or sets whether it is open. The template receives `close`, and `#pop="lfxUiPopover"` exposes `close()` and `toggle()`.
@@ -72,6 +74,8 @@ export class UiPopoverDirective {
   public readonly width = input<number | null>(null, { alias: 'lfxUiPopoverWidth' });
   /** `none` removes the panel's 16px padding for content that runs edge to edge. */
   public readonly padding = input<UiPopoverPadding>('default', { alias: 'lfxUiPopoverPadding' });
+  /** `end` lines the panel up with the host's end edge first, so it opens toward the start side; `center` centers it under the host. */
+  public readonly align = input<UiPopoverAlign>('start', { alias: 'lfxUiPopoverAlign' });
   /** Whether the panel is open. Supports two-way binding with `[(lfxUiPopoverOpen)]`. */
   public readonly open = model<boolean>(false, { alias: 'lfxUiPopoverOpen' });
   /* eslint-enable @angular-eslint/no-input-rename */
@@ -158,7 +162,20 @@ export class UiPopoverDirective {
     fromEvent<KeyboardEvent>(this.panelElement() as HTMLElement, 'keydown')
       .pipe(takeUntil(overlayRef.detachments()))
       .subscribe((event) => {
-        if (event.key === 'Tab' && !event.isComposing && event.keyCode !== 229 && !event.ctrlKey && !event.altKey && !event.metaKey) this.onTab(event);
+        if (this.isTab(event)) this.onTab(event, event.target as HTMLElement);
+      });
+    // A list opened from the panel (select search, multi-select, menu) hands focus back to its trigger here before the browser moves it.
+    fromEvent<KeyboardEvent>(this.document, 'keydown')
+      .pipe(takeUntil(overlayRef.detachments()))
+      .subscribe((event) => {
+        const panelElement = this.panelElement();
+        const target = event.target as Node;
+        const active = this.document.activeElement as HTMLElement | null;
+        if (!this.isTab(event) || event.defaultPrevented || !panelElement || panelElement.contains(target) || this.host.contains(target)) return;
+        if (!active || !panelElement.contains(active)) return;
+        // Backward, the list's trigger is where focus stops, as in Select and MultiSelect.
+        if (event.shiftKey) event.preventDefault();
+        else this.onTab(event, active);
       });
     // Backstop for a Tab that leaves the panel without `onTab` catching it.
     fromEvent<FocusEvent>(this.panelElement() as HTMLElement, 'focusout')
@@ -226,9 +243,8 @@ export class UiPopoverDirective {
   }
 
   // The panel is last in the body, so Tab out of it would land nowhere: hand focus to the host first.
-  private onTab(event: KeyboardEvent): void {
+  private onTab(event: KeyboardEvent, target: HTMLElement): void {
     const panelElement = this.panelElement();
-    const target = event.target as HTMLElement;
     // A key from the host or a nested list is not ours.
     if (!panelElement?.contains(target)) return;
     this.tabbed = true;
@@ -242,6 +258,10 @@ export class UiPopoverDirective {
     if (event.shiftKey) event.preventDefault();
     this.open.set(false);
     this.detach(false);
+  }
+
+  private isTab(event: KeyboardEvent): boolean {
+    return event.key === 'Tab' && !event.isComposing && event.keyCode !== 229 && !event.ctrlKey && !event.altKey && !event.metaKey;
   }
 
   // Disabled controls are skipped, and a radio group is one stop: its checked radio, or the first.
@@ -290,12 +310,13 @@ export class UiPopoverDirective {
   }
 
   private positions(): ConnectedPosition[] {
-    // Below the host, start-aligned, then above it, then the same two from the end edge.
-    return [
-      { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
-      { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
-      { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top', offsetY: 4 },
-      { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom', offsetY: -4 },
+    // Below the host, then above it, from the aligned edge first; center falls back to start, then end.
+    const pair = (x: 'start' | 'center' | 'end'): ConnectedPosition[] => [
+      { originX: x, originY: 'bottom', overlayX: x, overlayY: 'top', offsetY: 4 },
+      { originX: x, originY: 'top', overlayX: x, overlayY: 'bottom', offsetY: -4 },
     ];
+    const align = this.align();
+    if (align === 'center') return [...pair('center'), ...pair('start'), ...pair('end')];
+    return align === 'end' ? [...pair('end'), ...pair('start')] : [...pair('start'), ...pair('end')];
   }
 }

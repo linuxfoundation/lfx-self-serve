@@ -1,13 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, PLATFORM_ID, signal } from '@angular/core';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
-import { ChartComponent } from '@components/chart/chart.component';
-import { lfxColors } from '@lfx-one/shared/constants';
-import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
@@ -15,21 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EventsRegistrationsGrowthComponent } from './events-registrations-growth.component';
 
-import type { ChartData } from 'chart.js';
-import type {
-  HealthMetricsEventsRegistrationsGrowth,
-  HealthMetricsEventsRegistrationsGrowthYear,
-  HealthMetricsEventsSectionKey,
-} from '@lfx-one/shared/interfaces';
-
-/** Chart.js needs a canvas jsdom does not have; the stub only records the datasets it is handed. */
-@Component({ selector: 'lfx-chart', template: '<div data-testid="chart-stub"></div>' })
-class ChartStubComponent {
-  public readonly type = input<string>('');
-  public readonly data = input<ChartData<'bar'> | null>(null);
-  public readonly options = input<unknown>({});
-  public readonly height = input<string>('');
-}
+import type { HealthMetricsEventsRegistrationsGrowth, HealthMetricsEventsRegistrationsGrowthYear } from '@lfx-one/shared/interfaces';
 
 function year(overrides: Partial<HealthMetricsEventsRegistrationsGrowthYear> = {}): HealthMetricsEventsRegistrationsGrowthYear {
   return {
@@ -70,7 +52,6 @@ describe('EventsRegistrationsGrowthComponent', () => {
   let getEventsRegistrationsGrowth: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
-  let picked: HealthMetricsEventsSectionKey[];
 
   async function render(payload: HealthMetricsEventsRegistrationsGrowth | Error = growth(), platform = 'browser'): Promise<void> {
     getEventsRegistrationsGrowth = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -83,14 +64,11 @@ describe('EventsRegistrationsGrowthComponent', () => {
         { provide: AnalyticsService, useValue: { getEventsRegistrationsGrowth } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
       ],
-    })
-      .overrideComponent(EventsRegistrationsGrowthComponent, { remove: { imports: [ChartComponent] }, add: { imports: [ChartStubComponent] } })
-      .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(EventsRegistrationsGrowthComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
-    fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
     await settle();
   }
 
@@ -108,16 +86,10 @@ describe('EventsRegistrationsGrowthComponent', () => {
     return query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
   }
 
-  function chartData(): ChartData<'bar'> {
-    const chart = fixture.debugElement.query(By.directive(ChartStubComponent)).componentInstance as ChartStubComponent;
-    return chart.data() as ChartData<'bar'>;
-  }
-
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
-    picked = [];
   });
 
   it('reads the foundation once and settles once the years land', async () => {
@@ -129,104 +101,61 @@ describe('EventsRegistrationsGrowthComponent', () => {
     expect(query('events-registrations-growth-loading')).toBeNull();
   });
 
-  it('lists every year from the first to the last, oldest first, with the registration counts', async () => {
+  it('draws a stacked column per year from the first to the last, with its total and a legend', async () => {
     await render();
 
-    const rows = [...fixture.nativeElement.querySelectorAll('[data-testid^="events-registrations-growth-row-"]')] as HTMLElement[];
-    expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual(
-      [2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026].map((y) => `events-registrations-growth-row-${y}`)
-    );
-    expect(text('events-registrations-growth-year-count')).toBe('8 years');
-    expect(text('events-registrations-growth-count-label')).toBe('total registrations');
-    expect(text('events-registrations-growth-total-2020')).toBe('5,000');
-    expect(text('events-registrations-growth-in-person-2020')).toBe('1,000');
-    expect(text('events-registrations-growth-virtual-2020')).toBe('4,000');
+    const columns = [...fixture.nativeElement.querySelectorAll('[data-testid^="events-registrations-growth-chart-column-"]')] as HTMLElement[];
+    expect(columns.map((column) => column.getAttribute('data-testid')?.split('-').at(-1))).toEqual([
+      '2019',
+      '2020',
+      '2021',
+      '2022',
+      '2023',
+      '2024',
+      '2025',
+      '2026',
+    ]);
+    expect(text('events-registrations-growth-chart-total-2020')).toBe('5K');
+    expect(query('events-registrations-growth-chart-total-2021')).toBeNull();
+    expect([...(query('events-registrations-growth-chart-legend')?.children ?? [])].map((item) => item.textContent?.trim())).toEqual(['In-person', 'Virtual']);
+    expect(query('events-registrations-growth-table')).toBeNull();
   });
 
-  it('dashes a zero virtual count and every figure of a year with no events', async () => {
+  it('marks the partial year under its label and names each column with its popup rows', async () => {
     await render();
 
-    expect(text('events-registrations-growth-virtual-2019')).toBe('—');
-    expect(text('events-registrations-growth-total-2021')).toBe('—');
-    expect(text('events-registrations-growth-in-person-2021')).toBe('—');
+    expect(text('events-registrations-growth-chart-x')).toContain('2026partial');
+    expect(query('events-registrations-growth-chart-column-2020')?.getAttribute('aria-label')).toBe('2020, In-person 1,000, Virtual 4,000, Total 5,000');
+    expect(query('events-registrations-growth-chart-column-2021')?.getAttribute('aria-label')).toBe('2021 · no events recorded');
   });
 
-  it('labels each year cell with the year alone, partial and gap years included', async () => {
+  it('draws attendees when the header switch picks them', async () => {
     await render();
 
-    expect(query('events-registrations-growth-row-2021')?.querySelector('td')?.textContent?.trim()).toBe('2021');
-    expect(query('events-registrations-growth-row-2026')?.querySelector('td')?.textContent?.trim()).toBe('2026');
-  });
-
-  it('switches the table and chart to attendees from the toggle', async () => {
-    await render();
-
-    (query('filter-pill-attendees') as HTMLButtonElement).click();
+    fixture.componentRef.setInput('metric', 'attendees');
     await settle();
 
-    expect(text('events-registrations-growth-count-label')).toBe('total attendees');
-    expect(text('events-registrations-growth-total-2020')).toBe('3,000');
-    expect(text('events-registrations-growth-virtual-2020')).toBe('2,200');
-    expect(chartData().datasets[0].data[1]).toBe(3000);
+    expect(query('events-registrations-growth-chart-column-2020')?.getAttribute('aria-label')).toBe('2020, In-person 800, Virtual 2,200, Total 3,000');
     expect(getEventsRegistrationsGrowth).toHaveBeenCalledTimes(1);
-  });
-
-  it('notes the partial year in the footnote, linking to the forecast mid-sentence', async () => {
-    await render();
-
-    expect(text('events-registrations-growth-footnote')).toContain(
-      'The current year is partial — it sits against complete years, so it will always look short until December. Use the registration forecast → to compare like with like.'
-    );
-
-    (query('events-registrations-growth-forecast-link') as HTMLButtonElement).click();
-
-    expect(picked).toEqual(['forecast']);
-  });
-
-  it('leaves out the footnote when every year is complete', async () => {
-    await render({ years: [year(), year({ year: 2022 })] });
-
-    expect(query('events-registrations-growth-footnote')).toBeNull();
-  });
-
-  it('explains the pandemic peak in the selected metric only when a pandemic year was mostly virtual', async () => {
-    await render();
-    expect(text('events-registrations-growth-pandemic-note')).toContain('2020–21 registrations were mostly virtual');
-
-    (query('filter-pill-attendees') as HTMLButtonElement).click();
-    await settle();
-    expect(text('events-registrations-growth-pandemic-note')).toContain('2020–21 attendees were mostly virtual');
-
-    TestBed.resetTestingModule();
-    lifecycle = [];
-    await render({ years: [year({ year: 2019 }), year({ year: 2021 }), year({ year: 2022 })] });
-    expect(query('events-registrations-growth-pandemic-note')).toBeNull();
-  });
-
-  it('draws Total, In-person and Virtual, leaving a gap year empty and the partial year lighter', async () => {
-    await render();
-    const data = chartData();
-
-    expect(data.labels).toEqual(['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026']);
-    expect(data.datasets.map((dataset) => dataset.label)).toEqual(['Total', 'In-person', 'Virtual']);
-    expect(data.datasets[0].data[2]).toBeNull();
-    const colors = data.datasets[0].backgroundColor as string[];
-    expect(colors[0]).toBe(lfxColors.blue[500]);
-    expect(colors[7]).toBe(hexToRgba(lfxColors.blue[500], 0.4));
   });
 
   it('shows the error state when the read fails, and still settles', async () => {
     await render(new Error('boom'));
 
     expect(query('events-registrations-growth-error')).not.toBeNull();
-    expect(query('events-registrations-growth-table')).toBeNull();
+    expect(query('events-registrations-growth-chart')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
-  it('shows the empty state for a foundation with no years', async () => {
+  it('settles empty with no chart for a foundation with no years, so the shell shows its empty state', async () => {
+    const verdicts: boolean[] = [];
+    getEventsRegistrationsGrowth = vi.fn();
     await render({ years: [] });
+    fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
+    selectedFoundation.set({ slug: 'beta' });
+    await settle();
 
-    expect(query('events-registrations-growth-empty')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
     expect(query('events-registrations-growth-chart')).toBeNull();
   });
 
@@ -256,7 +185,7 @@ describe('EventsRegistrationsGrowthComponent', () => {
     expect(getEventsRegistrationsGrowth).toHaveBeenLastCalledWith({ foundationSlug: 'beta' });
     expect(lifecycle).toEqual(['reading', 'settled', 'reading', 'settled']);
     expect(query('events-registrations-growth-error')).toBeNull();
-    expect(query('events-registrations-growth-table')).not.toBeNull();
+    expect(query('events-registrations-growth-chart')).not.toBeNull();
   });
 
   it('renders the skeleton on the server without reading', async () => {

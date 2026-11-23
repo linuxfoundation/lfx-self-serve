@@ -192,6 +192,33 @@ describe('PersonaDetectionService', () => {
     });
   });
 
+  describe('checkProjectGlobalMarketingOpsStrict', () => {
+    it('checks `global_marketing_ops` on the named project itself, never ROOT', async () => {
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: 'uid-project', slug: 'some-project', exists: true });
+      checkSingleAccess.mockResolvedValueOnce(false);
+
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, 'some-project')).resolves.toBe(false);
+      expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-project', access: 'global_marketing_ops' });
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('answers no for a blank or unknown slug without an access check', async () => {
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, '')).resolves.toBe(false);
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: '', slug: 'ghost', exists: false });
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, 'ghost')).resolves.toBe(false);
+      expect(checkSingleAccess).not.toHaveBeenCalled();
+    });
+
+    it('throws, rather than answering no, when the slug lookup or the access check fails', async () => {
+      getProjectIdBySlug.mockRejectedValueOnce(new Error('nats unavailable'));
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, 'slug-a')).rejects.toThrow('nats unavailable');
+
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: 'uid-b', slug: 'slug-b', exists: true });
+      checkSingleAccess.mockRejectedValueOnce(new Error('fga unavailable'));
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, 'slug-b')).rejects.toThrow('fga unavailable');
+    });
+  });
+
   describe('checkRootMarketingAuditor', () => {
     it('checks ROOT `marketing_auditor`', async () => {
       resolvesRootUid();

@@ -25,8 +25,8 @@ import { CommitteeMembersManagerComponent } from '../components/committee-member
 // must select the COMMITTEE's project/tier (not the cookie-restored last-visited project), the
 // by-uid fallback must apply when enrichment withholds project_slug, the write-access leg must
 // stay provisionally true while pending so it cannot evict a guard-admitted user mid-edit, and
-// step navigation must merge query params so ?project= survives. Mirrors the meeting-manage
-// harness (constructor context-sync streams only — no detectChanges, no template rendering).
+// step navigation must merge query params so ?project= survives. The harness drives the
+// constructor context-sync streams only — no detectChanges, no template rendering.
 describe('CommitteeManageComponent', () => {
   const COMMITTEE_UID = 'committee-uid-1';
   const PROJECT_UID = 'project-uid-1';
@@ -318,6 +318,52 @@ describe('CommitteeManageComponent', () => {
       personaLoaded.set(true);
       await TestBed.inject(ApplicationRef).whenStable();
       expect(fixture.componentInstance.form.get('category')?.value).toBe('Working Group');
+    });
+  });
+
+  describe('display name on rename', () => {
+    let updateCommittee: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      updateCommittee = vi.fn().mockReturnValue(of(enrichedCommittee()));
+      TestBed.overrideProvider(CommitteeService, {
+        useValue: { getCommittee, updateCommittee },
+      });
+      TestBed.overrideComponent(CommitteeManageComponent, { set: { template: '' } });
+    });
+
+    describe.each(['onSubmit', 'onSubmitAll'] as const)('%s', (submit) => {
+      it.each([
+        { label: 'publishing and renaming', public: false, displayName: 'Original Group', want: 'Renamed Group' },
+        { label: 'renaming an already public group', public: true, displayName: 'Original Group', want: 'Renamed Group' },
+        { label: 'preserving a distinct alias', public: false, displayName: 'Public Alias', want: 'Public Alias' },
+        { label: 'preserving an edited display name', public: false, displayName: 'Original Group', editedDisplayName: 'Edited Alias', want: 'Edited Alias' },
+        {
+          label: 'replacing a distinct alias explicitly',
+          public: true,
+          displayName: 'Public Alias',
+          editedDisplayName: 'Original Group',
+          want: 'Original Group',
+        },
+        { label: 'falling back from an empty display name', public: false, displayName: '', want: 'Renamed Group' },
+        { label: 'falling back from an omitted display name', public: false, displayName: undefined, want: 'Renamed Group' },
+      ])('$label', async ({ public: isPublic, displayName, editedDisplayName, want }) => {
+        getCommittee.mockReturnValue(of({ ...enrichedCommittee(), name: 'Original Group', display_name: displayName, public: isPublic }));
+        const fixture = await createComponent();
+        const component = fixture.componentInstance;
+        vi.spyOn(component, 'memberSaveDisabled').mockReturnValue(false);
+        component.form.patchValue({ name: 'Renamed Group', public: true });
+        if (editedDisplayName !== undefined) {
+          component.form.get('display_name')?.setValue(editedDisplayName);
+        }
+
+        component[submit]();
+
+        expect(updateCommittee).toHaveBeenCalledExactlyOnceWith(
+          COMMITTEE_UID,
+          expect.objectContaining({ name: 'Renamed Group', display_name: want, public: true, calendar: { public: true } })
+        );
+      });
     });
   });
 

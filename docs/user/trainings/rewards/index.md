@@ -4,7 +4,7 @@ description: View your reward points, claim incentives, and redeem coupons for L
 audience: [all]
 product_area: Trainings
 tags: [trainings, rewards, coupons, points, certifications]
-last_updated: 2026-08-19
+last_updated: 2026-11-05
 intercom_collection: Trainings
 ---
 
@@ -20,7 +20,7 @@ The **Rewards** tab shows the reward points, incentives, and coupons you have ea
 
 ### Total reward points
 
-The top of the tab shows your **Total Reward Points** and a progress bar toward your next reward. You earn points on eligible Linux Foundation training and certification purchases. If a program year applies, the tab also shows when it ends.
+The top of the tab shows your **Total Reward Points** and a progress bar toward your next reward. You earn points on eligible Linux Foundation training and certification purchases. If a program year applies, the tab also shows when it ends. Select **View transactions** in the bottom-right corner of the card to open your purchase history on the **Transactions** tab (`/profile/transactions`).
 
 > **Note:** Points are earned based on your training and certification purchases and take some time to appear after a purchase. For details on how points are earned and how long they last, see the [Rewards FAQ](https://training.linuxfoundation.org/tux-rewards/).
 
@@ -45,6 +45,11 @@ If you do not have any redeemable coupons yet, the column shows an empty state w
 ## Use a coupon code
 
 Copy the coupon code from the card, then paste it into the coupon field at checkout on the Linux Foundation training platform to apply the discount.
+
+## Get help with rewards and coupons
+
+- **Tux Rewards** points, incentives, and coupons on this tab — for example, points that haven't appeared or a Tux Rewards coupon you can't claim or redeem — contact LFX support.
+- **Other exam vouchers** — vouchers bought in a bundle or on their own, vouchers received through a program or partner (such as Kubestronaut or CARE), and voucher validity or extensions — contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). See [Get Help with Training and Certifications](../training-support/).
 
 ## Related
 

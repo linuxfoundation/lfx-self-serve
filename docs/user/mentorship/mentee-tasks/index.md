@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, tasks, status, file-upload, prerequisites]
 last_generated: 2026-10-26
-last_updated: 2026-10-30
+last_updated: 2026-11-10
 intercom_collection: Mentorship
 ---
 
@@ -32,6 +32,8 @@ You set a task's status yourself from the status menu on its row, but only certa
 
 A mentor or Program Admin may also move a task on their side; your view refreshes to match. Once your mentor marks a task complete, it still shows as **Submitted** to you, and the status menu locks: "Completed tasks can only be changed by your mentor."
 
+If your mentor requests changes on a submitted task, it goes back to **To Do**. Once you are accepted into the program, you are also emailed your mentor's reason. The reason appears only in that email, not on the task. Make the changes, then start and submit the task again.
+
 ## Steps
 
 1. Open [app.lfx.dev/mentorship/mentee/tasks](https://app.lfx.dev/mentorship/mentee/tasks).
@@ -55,10 +57,12 @@ Until you upload, **Submitted** stays disabled and the row shows:
 
 Afterwards:
 
-| You want to          | You can, while                                                         |
-| -------------------- | ---------------------------------------------------------------------- |
-| **Replace** the file | Your mentor has not completed the task and the due date has not passed |
-| **Remove** the file  | The task is not submitted yet and the due date has not passed          |
+| You want to           | You can, while                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| **View** the file     | Always — a PDF or plain-text file opens in a new tab; DOC and DOCX download instead |
+| **Download** the file | Always                                                                              |
+| **Replace** the file  | Your mentor has not completed the task and the due date has not passed              |
+| **Remove** the file   | The task is not submitted yet and the due date has not passed                       |
 
 Because the upload submits the task, **Remove** disappears straight after it. To take a submission back, move the task to **In Progress** first, then remove or replace the file.
 

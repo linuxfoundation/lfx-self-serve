@@ -66,6 +66,12 @@ export interface CredlyApiResponse {
   };
 }
 
+/** Result of fetching every badge page for one email; `failed` marks an incomplete lookup. */
+export interface CredlyEmailFetchResult {
+  entries: CredlyBadgeEntry[];
+  failed: boolean;
+}
+
 /** Cached Credly badge payload used by server-side in-memory cache. */
 export interface CredlyCachedBadges {
   badges: Badge[];

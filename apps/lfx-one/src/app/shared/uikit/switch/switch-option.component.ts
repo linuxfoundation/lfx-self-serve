@@ -58,17 +58,17 @@ export class UiSwitchOptionComponent {
   private initSegmentClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem: 14px root. Segment radius is the track radius minus its padding (9, 7 and 6px: no ui-* utility); padding and gap are library steps.
-      // leading-[20px]: the library keeps a 20px line at every size.
+      // leading-[20px]: the library keeps a 20px line at every size. Options are weight 400; the checked one is 500.
       // forced-colors:transition-none keeps a half-faded label off screen when the colours swap.
       const base =
         'inline-flex items-center whitespace-nowrap transition-[color,background-color] duration-ui-base ease-ui-standard motion-reduce:transition-none forced-colors:transition-none peer-focus-visible:shadow-focus forced-colors:peer-focus-visible:outline forced-colors:peer-focus-visible:outline-2 forced-colors:peer-focus-visible:outline-offset-2 forced-colors:peer-focus-visible:outline-[color:CanvasText]';
       const sizes = {
-        tiny: 'gap-[4px] rounded-[6px] px-[8px] button-12 leading-[20px]',
-        small: 'gap-[6px] rounded-[7px] px-[8px] label-13 font-medium leading-[20px]',
-        medium: 'gap-[6px] rounded-[9px] px-[12px] button-14',
+        tiny: 'gap-[4px] rounded-[6px] px-[8px] label-12 leading-[20px]',
+        small: 'gap-[6px] rounded-[7px] px-[8px] label-13 leading-[20px]',
+        medium: 'gap-[6px] rounded-[9px] px-[12px] label-14',
       };
       // The checked segment is raised; in the dark theme it is neutral-200 because background-100 is the track's neighbour there.
-      const fill = this.isChecked() ? "bg-ui-background-100 shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200" : '';
+      const fill = this.isChecked() ? "bg-ui-background-100 font-medium shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200" : '';
       let ink = 'cursor-pointer text-ui-neutral-600 hover:text-ui-neutral-900';
       if (this.isDisabled()) ink = 'cursor-not-allowed text-ui-neutral-400';
       else if (this.isChecked()) ink = 'cursor-pointer text-ui-neutral-900';

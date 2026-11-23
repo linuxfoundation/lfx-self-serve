@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, ParamMap, provideRouter } from '@angular/router';
@@ -16,10 +17,20 @@ describe('MentorInviteComponent', () => {
 
   let fixture: ComponentFixture<MentorInviteComponent>;
   let respondToMentorInvite: ReturnType<typeof vi.fn>;
+  let hasMentorProfile: ReturnType<typeof vi.fn>;
 
-  const build = (options: { link?: string | null; respond?: Observable<void>; queryParamMap?: Observable<ParamMap> } = {}): void => {
-    const { link = token, respond = of(undefined), queryParamMap = of(convertToParamMap(link === null ? {} : { token: link })) } = options;
+  const build = (
+    options: { link?: string | null; respond?: Observable<void>; queryParamMap?: Observable<ParamMap>; hasProfile?: boolean; platform?: string } = {}
+  ): void => {
+    const {
+      link = token,
+      respond = of(undefined),
+      queryParamMap = of(convertToParamMap(link === null ? {} : { token: link })),
+      hasProfile = true,
+      platform = 'browser',
+    } = options;
     respondToMentorInvite = vi.fn(() => respond);
+    hasMentorProfile = vi.fn(() => of({ hasProfile }));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -27,8 +38,9 @@ describe('MentorInviteComponent', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        { provide: MentorshipMentorService, useValue: { respondToMentorInvite } },
+        { provide: MentorshipMentorService, useValue: { respondToMentorInvite, hasMentorProfile } },
         { provide: ActivatedRoute, useValue: { queryParamMap } },
+        { provide: PLATFORM_ID, useValue: platform },
       ],
     });
 
@@ -48,6 +60,30 @@ describe('MentorInviteComponent', () => {
 
     expect(byTestId('mentorship-mentor-invite-title')?.textContent).toContain("You've been invited to mentor");
     expect(respondToMentorInvite).not.toHaveBeenCalled();
+  });
+
+  it('points someone with no mentor profile to create one, without blocking the answer', () => {
+    build({ hasProfile: false });
+
+    const hint = byTestId('mentorship-mentor-invite-profile-hint');
+    expect(hint?.textContent).toContain("You don't have a mentor profile yet.");
+    expect(hint?.querySelector('a')?.getAttribute('href')).toBe('/mentorship/mentor');
+
+    click('mentorship-mentor-invite-accept-button');
+    expect(respondToMentorInvite).toHaveBeenCalledWith(token, 'accept');
+  });
+
+  it('neither reads the profile nor hints on the server, whose read goes out without the session cookie', () => {
+    build({ hasProfile: false, platform: 'server' });
+
+    expect(hasMentorProfile).not.toHaveBeenCalled();
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
+  });
+
+  it('shows no profile hint to someone who has a mentor profile', () => {
+    build();
+
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
   });
 
   it.each([

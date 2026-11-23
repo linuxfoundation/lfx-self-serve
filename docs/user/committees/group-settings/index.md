@@ -4,7 +4,7 @@ description: How managers change a group's name, type, join mode, visibility, ma
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, settings, join-mode, mailing-lists, delete]
-last_updated: 2026-10-28
+last_updated: 2026-11-16
 intercom_collection: Committees
 ---
 
@@ -52,7 +52,7 @@ Members are automatically subscribed to a group's associated mailing lists when 
 2. In the **Associated Mailing Lists** dialog, search for the lists to link, and select **Save**.
 3. To unlink a list, select the **x** beside it.
 
-Each list shows its name, **Public** or **Private**, type, address, and subscriber count. Mailing list changes save as soon as you confirm them; you don't need **Save Changes**. A note on the card explains that removing someone from the group also removes them from the mailing list when the list is private.
+Each list shows its name, **Public** or **Private**, type, address, and subscriber count. Mailing list changes save as soon as you confirm them; you don't need **Save Changes**. Linking or unlinking a list requires Manage access to that list. Lists you can see but can't change appear greyed out in the dialog, and **+ Add List** is disabled if you can't change any of them. Ask a project manager to link the list for you. **Create New List** in the dialog needs Manage access on the project; without it you see a permission message and stay on the Settings tab. A note on the card explains that removing someone from the group also removes them from the mailing list when the list is private.
 
 Mailing lists are added from this tab after the group exists; the create wizard doesn't include them.
 
@@ -72,9 +72,9 @@ Toggle each feature, then **Save Changes**:
 - **Enable Audit**: tracks and logs group activity for compliance.
 - **Make Group Public**: makes the group visible to all users.
 - **Enable SSO Group**: syncs membership with a Single Sign-On provider.
-- **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board and restricted meetings never share their guest list.
+- **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board meetings never share their guest list.
 
-With **Business Email Required** or **Enable Voting** on, members who join must give an organization name and website.
+With **Business Email Required** or **Enable Voting** on, members who join must give a company name and website.
 
 ## Delete a group
 

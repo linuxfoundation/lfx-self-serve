@@ -9,9 +9,9 @@ import { HealthMetricsL2SubNavComponent } from './health-metrics-l2-sub-nav.comp
 import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 const ITEMS: HealthMetricsL2SubNavItem[] = [
-  { key: 'participation', label: 'Meeting participation', count: null, note: '' },
-  { key: 'committees', label: 'Group attendance', count: 12, note: '2 dormant' },
-  { key: 'orgs', label: 'Organization participation', count: 40, note: '' },
+  { key: 'participation', label: 'Meeting participation', note: '' },
+  { key: 'committees', label: 'Group attendance', note: '2 dormant' },
+  { key: 'orgs', label: 'Organization participation', note: '' },
 ];
 
 describe('HealthMetricsL2SubNavComponent', () => {
@@ -65,15 +65,10 @@ describe('HealthMetricsL2SubNavComponent', () => {
     expect(inactiveLabel.firstElementChild?.className).toContain('font-normal');
   });
 
-  it('shows a count as an outlined pill and a note as a warning icon with a tooltip, only where the item has them', () => {
-    const count = host.querySelector('[data-testid="engagement-sub-nav-committees-count"]') as HTMLElement;
+  it('shows a note as a warning icon with a tooltip, only where the item has one', () => {
     const note = host.querySelector('[data-testid="engagement-sub-nav-committees-note"]') as HTMLElement;
     const tooltip = note.querySelector('[role="tooltip"]') as HTMLElement;
 
-    expect(count.textContent?.trim()).toBe('12');
-    expect(count.className).toContain('border-gray-200');
-    // A null count is an unresolved total, not a zero — the badge is omitted entirely.
-    expect(host.querySelector('[data-testid="engagement-sub-nav-participation-count"]')).toBeNull();
     expect(note.querySelector('.fa-circle-exclamation')).not.toBeNull();
     expect(tooltip.textContent?.trim()).toBe('2 dormant');
     expect(item('committees').getAttribute('aria-describedby')).toBe(tooltip.id);
@@ -86,16 +81,14 @@ describe('HealthMetricsL2SubNavComponent', () => {
     expect(host.style.top).toBe('');
   });
 
-  // jsdom applies no container query, so the rail shows and the nav reads as collapsed unless a test hides it.
-  it('keeps focus on the picked item on the wide layout, where there is no panel to shut', () => {
-    (host.querySelector('.hmn-rail') as HTMLElement).style.display = 'none';
+  it('shuts the panel and lets go of focus after a keyboard pick', () => {
     item('orgs').focus();
 
     item('orgs').click();
     fixture.detectChanges();
 
-    expect(host.classList).not.toContain('hmn-closed');
-    expect(document.activeElement).toBe(item('orgs'));
+    expect(host.classList).toContain('hmn-closed');
+    expect(document.activeElement).not.toBe(item('orgs'));
   });
 
   it('emits the picked section rather than scrolling itself, then shuts the panel until the pointer leaves', () => {
@@ -110,6 +103,25 @@ describe('HealthMetricsL2SubNavComponent', () => {
 
     host.dispatchEvent(new MouseEvent('mouseleave'));
     fixture.detectChanges();
+    expect(host.classList).not.toContain('hmn-closed');
+  });
+
+  it('reopens on the next hover after a keyboard pick made with the pointer elsewhere', () => {
+    item('orgs').focus();
+    item('orgs').click();
+    fixture.detectChanges();
+    expect(host.classList).toContain('hmn-closed');
+
+    host.dispatchEvent(new MouseEvent('mouseenter'));
+    fixture.detectChanges();
+
+    expect(host.classList).not.toContain('hmn-closed');
+  });
+
+  it('leaves Escape alone while the panel is neither hovered nor focused', () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
     expect(host.classList).not.toContain('hmn-closed');
   });
 

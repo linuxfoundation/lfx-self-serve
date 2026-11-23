@@ -73,3 +73,10 @@ export interface OrgLensRoiProjectWarehouseRow {
 export interface OrgLensRoiProjectDetailWarehouseRow extends OrgLensRoiProjectWarehouseRow {
   CATALOG_ROWS: number;
 }
+
+/** Platinum `ORG_LENS_ROI_VALUE_DECOMPOSITION` row (lf-dbt#3163), one per value driver category. */
+export interface OrgLensRoiValueDriversWarehouseRow {
+  CATEGORY: string;
+  N_PROJECTS: number;
+  PCT_DEVIATION_FROM_TYPICAL_MARKUP: number;
+}

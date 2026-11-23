@@ -4,12 +4,14 @@
 import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, ElementRef, inject, input, model, output, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { PROJECT_APPLICATION_FROM_FOUNDATION_COPY } from '@lfx-one/shared/constants';
 import type {
+  Project,
   ProjectApplicationAcceptChoice,
   ProjectApplication,
   ProjectApplicationAcceptDialogData,
@@ -36,7 +38,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService } from 'primeng/dynamicdialog';
 import type { DrawerPassThroughOptions } from 'primeng/types/drawer';
-import { combineLatest, distinctUntilChanged, filter, finalize, map, Observable, pairwise, take } from 'rxjs';
+import { combineLatest, distinctUntilChanged, filter, finalize, map, Observable, of, pairwise, switchMap, take } from 'rxjs';
 
 import { ProjectApplicationAcceptDialogComponent } from '../project-application-accept-dialog/project-application-accept-dialog.component';
 import { ProjectApplicationFormComponent } from '../project-application-form/project-application-form.component';
@@ -85,6 +87,9 @@ export class ProjectApplicationDrawerComponent {
   /** A write found the application already gone (404); carries its UID so the list drops it. */
   public readonly gone = output<string>();
 
+  // === Template constants ===
+  protected readonly startedFromLabel = PROJECT_APPLICATION_FROM_FOUNDATION_COPY.startedFrom;
+
   // === View queries ===
   private readonly titleRef = viewChild<ElementRef<HTMLElement>>('titleRef');
 
@@ -110,6 +115,11 @@ export class ProjectApplicationDrawerComponent {
   protected readonly statusCallout: Signal<ProjectApplicationStatusCallout | null> = computed(() =>
     getProjectApplicationStatusCallout(this.application()?.state, this.mode())
   );
+  /**
+   * The foundation the applicant started from (#5187), for the formation team only: `null` when the proposal carries no
+   * hint or the project cannot be read, in which case nothing is shown and Accept has nothing to prefill.
+   */
+  protected readonly startedFrom: Signal<Project | null> = this.initStartedFrom();
   /** The submitter's email as a `mailto:` link target — shown to the formation team only. */
   protected readonly submitterEmailLink: Signal<ProjectApplicationAnswerLink | null> = this.initSubmitterEmailLink();
   /** "Updated" only adds information once it falls on a different day from the submission. */
@@ -222,6 +232,7 @@ export class ProjectApplicationDrawerComponent {
     const recordedSlug = application.application.project_slug;
     const data: ProjectApplicationAcceptDialogData = {
       projectName: this.projectName(),
+      ...(this.startedFrom() && { suggestedParent: this.startedFrom() as Project }),
       ...(typeof recordedSlug === 'string' && recordedSlug && { projectSlug: recordedSlug }),
     };
     const ref = this.dialogService.open(ProjectApplicationAcceptDialogComponent, {
@@ -243,6 +254,24 @@ export class ProjectApplicationDrawerComponent {
     return computed(() => {
       const application = this.application();
       return application ? isProjectApplicationOpen(application) : false;
+    });
+  }
+
+  private initStartedFrom(): Signal<Project | null> {
+    const targetParentUid = computed(() => (this.isStaff() ? (this.application()?.target_parent_uid ?? null) : null));
+    // The drawer is reused across proposals, so a lookup is tagged with the hint it answered. A result is exposed only
+    // while it still matches the current proposal's hint: until the next lookup lands, the previous proposal's foundation
+    // must neither show nor reach the accept dialog as a prefill.
+    const resolved = toSignal(
+      toObservable(targetParentUid).pipe(
+        distinctUntilChanged(),
+        switchMap((uid) => (uid ? this.projectApplicationService.getStartedFrom(uid).pipe(map((project) => ({ uid, project }))) : of(null)))
+      ),
+      { initialValue: null }
+    );
+    return computed(() => {
+      const answer = resolved();
+      return answer && answer.uid === targetParentUid() ? answer.project : null;
     });
   }
 

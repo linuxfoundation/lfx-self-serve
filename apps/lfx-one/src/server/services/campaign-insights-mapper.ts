@@ -21,6 +21,7 @@ import type {
   RedditKeywordMetricsResponse,
   RedditKeywordTotals,
 } from '@lfx-one/shared/interfaces';
+import { googleAdsCampaignUrl } from '@lfx-one/shared/utils/campaign.utils';
 
 // ---------------------------------------------------------------------------
 // campaign-service → UI conversion for the Google Ads and Microsoft Advertising insight reads
@@ -102,18 +103,6 @@ function percentFromFraction(fraction: number): number {
 }
 
 /**
- * Build the Google Ads deep link for a campaign.
- *
- * The same link the legacy path builds, with the id percent-encoded. Campaign ids are numeric,
- * so the rendered URL is identical in practice and the cutover does not change where the "open
- * in Google Ads" affordance points; the encoding is belt-and-braces for an id that reaches here
- * from an upstream response rather than from a literal.
- */
-function buildGoogleAdsUrl(campaignId: string): string {
-  return campaignId ? `https://ads.google.com/aw/campaigns?campaignId=${encodeURIComponent(campaignId)}` : '';
-}
-
-/**
  * One keyword row in the UI's units, with no platform deep link. Shared by the Google and the
  * Microsoft reads, whose rows have the same wire shape and the same units (micro-units, CTR as a
  * fraction), so the conversion cannot drift between the two tables.
@@ -146,7 +135,7 @@ function toKeywordRowMetrics(row: CampaignServiceKeywordRow): MicrosoftKeywordMe
 }
 
 function toKeywordMetrics(row: CampaignServiceKeywordRow): KeywordMetrics {
-  return { ...toKeywordRowMetrics(row), googleAdsUrl: buildGoogleAdsUrl(row.campaign_id) };
+  return { ...toKeywordRowMetrics(row), googleAdsUrl: googleAdsCampaignUrl(row.campaign_id) };
 }
 
 /**

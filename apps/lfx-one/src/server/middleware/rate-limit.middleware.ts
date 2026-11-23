@@ -5,9 +5,15 @@ import {
   EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS,
   EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX,
   EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX,
+  IMPERSONATION_SEARCH_RATE_LIMIT_MAX,
+  IMPERSONATION_SEARCH_RATE_LIMIT_WINDOW_MS,
+  NEWSLETTER_GUEST_RATE_LIMIT_MAX,
+  NEWSLETTER_GUEST_RATE_LIMIT_WINDOW_MS,
   NEWSLETTER_INVITE_COUNTED_LOCALS_KEY,
   NEWSLETTER_INVITE_RATE_LIMIT_MAX,
   NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS,
+  NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX,
+  NEWSLETTER_TEST_SEND_RATE_LIMIT_WINDOW_MS,
   SELF_RESEND_INVITE_RATE_LIMIT_MAX,
   SELF_RESEND_INVITE_RATE_LIMIT_WINDOW_MS,
 } from '@lfx-one/shared/constants';
@@ -104,6 +110,21 @@ export const voteWriteRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for survey follow-up writes (#4340).
+ *
+ * Applied per-route to `POST /api/surveys/:uid/reminders` and `POST /api/surveys/:uid/resync`.
+ * Each call emails survey recipients, and this cap is the only guard against repeat sends.
+ * Same shape and per-pod caveat as `voteWriteRateLimiter`.
+ */
+export const surveyWriteRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 10, // limit each user to 10 survey writes per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
  * Rate limiter for newsletter coworker invites (#3483).
  *
  * Applied per-route to `POST /api/newsletters/foundations/:foundationUid/invites`, which sends a
@@ -123,6 +144,26 @@ export const newsletterInviteRateLimiter = rateLimit({
   // unmetered oracle. The controller marks those refusals on `res.locals`.
   skipFailedRequests: true,
   requestWasSuccessful: (_req, res) => res.statusCode < 400 || res.locals[NEWSLETTER_INVITE_COUNTED_LOCALS_KEY] === true,
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
+ * Rate limiter for newsletter test sends (#4358 F1).
+ *
+ * Applied per-route to `POST /api/projects/:projectUid/newsletters/test-send`, which emails a full
+ * newsletter from the LF sending domain. The controller only allows the caller's own address; this
+ * caps how often. Keyed on the authenticated user, with the /56-masked IP key as the anonymous
+ * fallback. Per-pod MemoryStore like the limiters above. Every attempt counts, including failed
+ * ones: a refund on failure would also refund a client that drops the connection while the email
+ * is still sent, and a bad payload is already caught by the form.
+ */
+export const newsletterTestSendRateLimiter = rateLimit({
+  windowMs: NEWSLETTER_TEST_SEND_RATE_LIMIT_WINDOW_MS,
+  max: NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: "You've sent the maximum number of test emails for now. Try again later.", code: 'RATE_LIMITED' },
   keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
 });
 
@@ -186,6 +227,26 @@ export const emailSendCodeTargetRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for the impersonation picker's user search (`POST /api/impersonate/users/search`).
+ *
+ * Each call is an Auth0 user search behind auth-service, whose rate limit is shared with login and profile
+ * flows, and it returns other people's names and verified emails, so a script or a stolen session could otherwise
+ * page through the directory at the global 500/min/IP pace. Keyed on the authenticated admin's `sub`: while
+ * impersonating, `req.oidc.user` is still the real admin, so one admin cannot widen the budget by switching
+ * target. The /56-masked IP key is only the unauthenticated fallback. Per-pod MemoryStore like the limiters
+ * above, so the effective ceiling is `limit × pods`.
+ */
+export const impersonationSearchRateLimiter = rateLimit({
+  windowMs: IMPERSONATION_SEARCH_RATE_LIMIT_WINDOW_MS,
+  max: IMPERSONATION_SEARCH_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many searches. Please wait a moment and try again.', code: 'RATE_LIMITED' },
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
  * Stricter rate limiter for authentication endpoints.
  *
  * Applied to /login, /passwordless/*, and /social/* routes
@@ -196,4 +257,19 @@ export const authRateLimiter = rateLimit({
   max: 20, // limit each IP to 20 auth requests per window
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+/**
+ * Rate limiter for signed-out newsletter guest writes (#5235): the invite inspect/accept and the
+ * shared-link email check. These run the member-domain check and may send a confirmation email, so
+ * they are metered per (/56-masked) IP on top of the public API limiter. Per-pod MemoryStore.
+ */
+export const newsletterGuestRateLimiter = rateLimit({
+  windowMs: NEWSLETTER_GUEST_RATE_LIMIT_WINDOW_MS,
+  max: NEWSLETTER_GUEST_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.', code: 'RATE_LIMITED' },
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? ''),
 });

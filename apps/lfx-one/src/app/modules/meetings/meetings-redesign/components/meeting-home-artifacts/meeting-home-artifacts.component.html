@@ -1,0 +1,31 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (recordingUrl() || hasSummary()) {
+  <div class="flex flex-none items-center gap-[6px]" data-testid="meetings-home-row-artifacts">
+    @if (recordingUrl(); as recordingUrl) {
+      <lfx-ui-split-button
+        label="Recording"
+        variant="secondary"
+        size="small"
+        icon="fa-light fa-circle-play"
+        secondaryIcon="fa-light fa-link"
+        secondaryTooltip="Copy recording link"
+        (triggered)="openRecording(recordingUrl)"
+        (secondaryTriggered)="copyRecordingLink(recordingUrl)"
+        data-testid="meetings-home-row-recording" />
+    }
+    @if (hasSummary()) {
+      <lfx-ui-button
+        [variant]="summaryPending() ? 'secondary-accent' : 'secondary'"
+        size="small"
+        [icon]="summaryPending() ? '' : 'fa-light fa-sparkles'"
+        [loading]="loadingSummary()"
+        (click)="openSummary()"
+        data-testid="meetings-home-row-summary">
+        {{ summaryPending() ? 'Review summary' : 'AI Summary' }}
+      </lfx-ui-button>
+    }
+  </div>
+}

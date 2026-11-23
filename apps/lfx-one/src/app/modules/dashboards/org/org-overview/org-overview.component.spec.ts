@@ -3,7 +3,7 @@
 
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import type { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
@@ -91,5 +91,21 @@ describe('OrgOverviewComponent page gate', () => {
     expect(has('org-overview-header')).toBe(false);
     expect(fixture.nativeElement.textContent).not.toContain('Acme Motors');
     expect(has('organization-involvement-placeholder')).toBe(false);
+  });
+
+  // lfx-self-serve-ops#1219: the Overview always counts the default organization scope, so its address never names one.
+  it('drops ?orgScope= from its address, keeping the other params, and leaves an address without it alone', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/?orgScope=all&keep=1');
+    await render();
+    await fixture.whenStable();
+
+    expect(router.url).toBe('/?keep=1');
+
+    const navigate = vi.spyOn(router, 'navigate');
+    await router.navigateByUrl('/?keep=2');
+    await fixture.whenStable();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(router.url).toBe('/?keep=2');
   });
 });

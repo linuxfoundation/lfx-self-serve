@@ -1,0 +1,101 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (print()) {
+  <!--
+    The print sheet's variant, the board's proportions on the sheet's own Iconography page: table and table-cell boxes
+    only. Inside the sheet's paginated table, Chromium fragments a grid or flex item's contents away from its box (QA
+    round 1: empty tiles on one page, their icons on the next). The tiles: a fixed 2 × 4 table, each tile 110 px tall
+    with a hairline border, 10 px radius, the 32 px icon above an 11 px label, 12 px gaps; then, 14 px below, the strip:
+    a 110 px dark table whose eight equal cells spread the 30 px icons across its full width, 30 px in from the edges.
+  -->
+  <!-- Equal columns: each cell carries half the 12 px gap on both sides, and the table bleeds 6 px past the edges to keep the outer tiles flush. -->
+  <!-- The portrait book's page (`portrait`) draws the mock's tiles instead: 164 × 150, 16 px gaps, the 36 px icon 12 px above its label. -->
+  <div
+    class="table table-fixed border-separate border-spacing-0"
+    [class]="portrait() ? '-mx-[8px] w-[calc(100%+16px)]' : '-mx-[6px] w-[calc(100%+12px)]'"
+    data-testid="brand-kit-icon-tiles">
+    @for (row of tileRows; track $index; let lastRow = $last) {
+      <div class="table-row">
+        @for (icon of row; track icon.id) {
+          <div
+            class="table-cell align-top"
+            [class]="portrait() ? 'px-[8px]' : 'px-[6px]'"
+            [class.pb-[12px]]="!lastRow && !portrait()"
+            [class.pb-[16px]]="!lastRow && portrait()">
+            <div
+              class="table w-full border-separate border-spacing-0 rounded-[10px] border border-gray-200"
+              [class.h-[110px]]="!portrait()"
+              [class.h-[150px]]="portrait()"
+              [style.color]="colours().tileInk"
+              [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
+              <div class="table-cell text-center align-middle">
+                <lfx-mktg-brand-kit-icon [icon]="icon" [size]="tileIconSize()" />
+                <span class="block text-[11px] leading-[1.4] text-gray-500" [class.mt-[10px]]="!portrait()" [class.mt-[12px]]="portrait()">{{
+                  icon.label
+                }}</span>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+  <div
+    class="table w-full table-fixed border-separate border-spacing-0 rounded-[10px] [print-color-adjust:exact]"
+    [class]="portrait() ? 'mt-[36px] h-[120px] px-[24px]' : 'mt-[14px] h-[110px] px-[30px]'"
+    [style.background-color]="colours().stripGround"
+    role="img"
+    [attr.aria-label]="stripLabel"
+    data-testid="brand-kit-icon-strip">
+    <div class="table-row">
+      @for (item of strip(); track item.icon.id) {
+        <span
+          class="table-cell text-center align-middle"
+          [style.color]="item.ink"
+          [attr.data-highlight]="item.highlight ? 'true' : null"
+          [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
+          <lfx-mktg-brand-kit-icon [icon]="item.icon" [size]="stripIconSize()" />
+        </span>
+      }
+    </div>
+  </div>
+} @else {
+  <!--
+    The web card: the board's 4 × 2 tiles (book.js L91: gap 12 px, height 110 px, radius 10 px, icon 32 px, label 11 px,
+    10 px between them), two to a row under the sm breakpoint so a label never breaks mid-word in a narrow card.
+  -->
+  <ul class="grid grid-cols-2 gap-[12px] sm:grid-cols-4" data-testid="brand-kit-icon-tiles">
+    @for (icon of icons; track icon.id) {
+      <li
+        class="flex h-[110px] flex-col items-center justify-center gap-[10px] rounded-[10px] border border-gray-200"
+        [style.color]="colours().tileInk"
+        [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
+        <lfx-mktg-brand-kit-icon [icon]="icon" [size]="tileIconSize()" />
+        <span class="text-[11px] leading-[1.4] text-gray-500">{{ icon.label }}</span>
+      </li>
+    }
+  </ul>
+  <!--
+    The strip: the eight icons on the kit's dark, white, the third in the highlight. The board's 30 px icons and fixed
+    26 px gap are for its 624 px card; in the half-width card (a 334 px strip at 1440) and the 390 card the eight are
+    24 px, spread evenly (space-between) with an 8 px minimum gap inside 12 px of padding: one row of eight from a
+    272 px strip up (the host is the container queried), and 4 + 4 below that, never 7 + 1 or 5 + 3.
+  -->
+  <div
+    class="mt-[14px] grid min-h-[110px] grid-cols-[repeat(4,max-content)] content-center items-center justify-between gap-x-2 gap-y-3 rounded-[10px] px-3 py-4 [print-color-adjust:exact] @[272px]:grid-cols-[repeat(8,max-content)]"
+    [style.background-color]="colours().stripGround"
+    role="img"
+    [attr.aria-label]="stripLabel"
+    data-testid="brand-kit-icon-strip">
+    @for (item of strip(); track item.icon.id) {
+      <span
+        class="flex"
+        [style.color]="item.ink"
+        [attr.data-highlight]="item.highlight ? 'true' : null"
+        [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
+        <lfx-mktg-brand-kit-icon [icon]="item.icon" [size]="stripIconSize()" />
+      </span>
+    }
+  </div>
+}

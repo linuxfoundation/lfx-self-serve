@@ -57,8 +57,8 @@ export const FORMATION_INVITE_DUPLICATE_MESSAGE = 'This person is already on the
  * items, since View cannot act on them. Values mirror `AddUserToProjectRequest['role']`.
  */
 export const FORMATION_INVITE_ROLE_OPTIONS = [
-  { value: 'view', label: 'View', description: 'Can see the checklist and the items assigned to them.' },
-  { value: 'manage', label: 'Manage', description: 'Can also assign items and edit the checklist.' },
+  { value: 'view', label: 'View', description: 'Can see the formation items and the ones assigned to them.' },
+  { value: 'manage', label: 'Manage', description: 'Can also assign and edit formation items.' },
 ] as const;
 
 /**

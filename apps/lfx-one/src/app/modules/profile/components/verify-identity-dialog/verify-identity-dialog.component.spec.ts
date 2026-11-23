@@ -16,6 +16,7 @@ import {
   EMAIL_RESEND_SUPPORT_TITLE,
 } from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
+import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -41,7 +42,7 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
     icon: 'fa-light fa-envelope',
     state: 'unverified',
   } as unknown as ConnectedIdentityFull;
-  const conflictCopy = 'This email is already linked to an LFX account. If you believe this is an error, contact support.';
+  const conflictCopy = EMAIL_ALREADY_LINKED_MESSAGE;
   let fixture: ComponentFixture<VerifyIdentityDialogComponent>;
 
   function setup(
@@ -254,17 +255,32 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
     expect(sendError?.querySelector('[lfxOpenIntercom]')).toBeNull();
   });
 
-  it('opens the support messenger from the error-local support button', async () => {
+  it('opens a support chat pre-filled with the identity address from the error-local support button (#5511)', async () => {
     const { component, close, add, openMessenger, root } = setup(deliveries[0].respond(EMAIL_ALREADY_LINKED_MESSAGE));
     TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
 
     component.onVerifyOtp();
     await fixture.whenStable();
-    (emailError(root)?.querySelector('[lfxOpenIntercom]') as HTMLButtonElement | null)?.click();
+    const supportButton = emailError(root)?.querySelector('[data-testid="verify-linked-support-button"]') as HTMLButtonElement | null;
+    expect(supportButton).not.toBeNull();
+    supportButton?.click();
 
-    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function));
+    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage(identity.identifier));
     expect(add).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
+  });
+
+  it('offers no pre-filled support button for a generic verification failure (#5511)', async () => {
+    const { component, root } = setup(() =>
+      throwError(
+        () => new HttpErrorResponse({ status: 400, error: { success: false, error: 'verification_failed', message: 'Verification failed. Please try again.' } })
+      )
+    );
+
+    component.onVerifyOtp();
+    await fixture.whenStable();
+
+    expect(root.querySelector('[data-testid="verify-linked-support-button"]')).toBeNull();
   });
 
   it('hands off to profile authorization without closing or showing an error', () => {
@@ -434,8 +450,13 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
       expect(openMessenger).toHaveBeenLastCalledWith('test-app-id', expect.any(Function));
     });
 
-    it('words the code hint without promising a code or naming the address status', () => {
+    it('explains inbox ownership and the separate linking check without naming the address status (#5793)', () => {
       const { root } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      expect(normalizedText(root)).toContain(
+        'Check owned@example.test for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.'
+      );
+      expect(normalizedText(root)).not.toContain('If this address can be added');
+      expect(normalizedText(root)).not.toContain('already linked');
 
       const hint = normalizedText(root.querySelector('[data-testid="verify-otp-hint"]'));
       expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);

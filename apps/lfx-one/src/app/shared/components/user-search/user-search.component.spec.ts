@@ -451,6 +451,19 @@ describe('UserSearchComponent', () => {
     });
   });
 
+  describe('required', () => {
+    it('puts aria-required on the native input only when opted in', async () => {
+      await render();
+      await fixture.whenStable();
+      expect(query()?.hasAttribute('aria-required')).toBe(false);
+
+      fixture.componentRef.setInput('required', true);
+      await fixture.whenStable();
+
+      expect(query()?.getAttribute('aria-required')).toBe('true');
+    });
+  });
+
   describe('readonly + showClear interaction', () => {
     it('suppresses the clear icon when readonly, even if showClear is true', async () => {
       await render({ readonly: true, showClear: true });

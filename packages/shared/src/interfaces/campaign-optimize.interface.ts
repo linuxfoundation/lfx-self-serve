@@ -987,6 +987,16 @@ export interface CampaignLiveCounters {
   ctrPct: number;
   /** The window the counters cover, as campaign-service reports it, in words. */
   windowLabel: string;
+  /**
+   * The Conversions counter (lfx-v2-campaign-service#175): the total when `conversions_status` is
+   * `reported`, otherwise the reason there is none ("Not reported by LinkedIn", "Incomplete data for
+   * this window", "No conversions in this window") — never a 0 or a blank standing in for one. `null`
+   * hides the counter: the email channel, and a read with no status from a campaign-service older
+   * than that release, which keeps the counters exactly as they were.
+   */
+  conversions: string | null;
+  /** Whether `conversions` is a measured total (shown as a number) rather than a reason. */
+  conversionsReported: boolean;
 }
 
 /**

@@ -43,8 +43,25 @@ describe('MentorshipService program review', () => {
     created_on: '2026-09-01T00:00:00Z',
     updated_on: '2026-09-01T00:00:00Z',
   };
+  const programPath = `/mentorship/v1/programs/${programId}`;
+  const catalogPath = `${programPath}/catalog`;
+  const submitterPath = `${programPath}/submitter`;
+  const upstreamSubmitter = { lfid: 'janedoe', name: 'Jane Doe', email: 'jane.doe@example.org', avatar_url: 'https://avatars.example/jane.png' };
+  const submitter = { name: 'Jane Doe', email: 'jane.doe@example.org', avatarUrl: 'https://avatars.example/jane.png' };
+  const notFound = (): MicroserviceError => new MicroserviceError('Program not found', 404, 'NOT_FOUND');
   let service: InstanceType<typeof MentorshipService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  /** Answers each read by its path, since the submitter is read alongside the program; a route set to an Error rejects. */
+  const routeReads = (routes: Record<string, unknown>): void => {
+    proxyRequest.mockImplementation(async (_req, _service, path: string) => {
+      const route = routes[path];
+      if (route === undefined) throw new Error(`unexpected path ${path}`);
+      if (route instanceof Error) throw route;
+      return route as never;
+    });
+  };
+  const calledPaths = (): string[] => proxyRequest.mock.calls.map(([, , path]) => path);
 
   beforeEach(() => {
     proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
@@ -55,13 +72,149 @@ describe('MentorshipService program review', () => {
     proxyRequest.mockRestore();
   });
 
-  it('reads the program from the mentorship service and returns only the review fields', async () => {
-    proxyRequest.mockResolvedValue(upstreamProgram);
+  it('reads the program from the catalog and returns only the review fields', async () => {
+    routeReads({
+      [submitterPath]: upstreamSubmitter,
+      [catalogPath]: {
+        ...upstreamProgram,
+        project_name: 'Test Foundation',
+        description: '<p>Learn the codebase.</p>',
+        logo_url: 'https://logo.example/test.png',
+        repo_link: 'github.com/test-org/test-repo',
+        code_of_conduct: 'https://test-org.example/coc',
+        cii_project_id: ' 1234 ',
+        skills: ['go', ' ', 'kubernetes '],
+        terms: [{ id: 'term-1' }],
+        mentors: [{ id: 'mentor-1' }],
+      },
+    });
 
     const review = await service.getProgramReview(buildReq(), programId);
 
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}`, 'GET');
-    expect(review).toEqual({ id: programId, name: 'Test Program', status: 'pending' });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', catalogPath, 'GET');
+    expect(review).toEqual({
+      id: programId,
+      name: 'Test Program',
+      status: 'pending',
+      projectName: 'Test Foundation',
+      description: '<p>Learn the codebase.</p>',
+      logoUrl: 'https://logo.example/test.png',
+      repoUrl: 'https://github.com/test-org/test-repo',
+      codeOfConductUrl: 'https://test-org.example/coc',
+      ciiProjectId: '1234',
+      skills: ['go', 'kubernetes'],
+      createdOn: '2026-09-01T00:00:00Z',
+      submitter,
+      hasDetails: true,
+    });
+  });
+
+  it('drops unsafe links, a non-numeric CII id and missing fields', async () => {
+    routeReads({
+      [submitterPath]: notFound(),
+      [catalogPath]: {
+        ...upstreamProgram,
+        description: '  ',
+        repo_link: 'javascript:alert(1)',
+        code_of_conduct: '',
+        cii_project_id: 'abc',
+        skills: null,
+      },
+    });
+
+    const review = await service.getProgramReview(buildReq(), programId);
+
+    expect(review).toEqual({
+      id: programId,
+      name: 'Test Program',
+      status: 'pending',
+      projectName: null,
+      description: null,
+      logoUrl: null,
+      repoUrl: null,
+      codeOfConductUrl: null,
+      ciiProjectId: null,
+      skills: [],
+      createdOn: '2026-09-01T00:00:00Z',
+      submitter: null,
+      hasDetails: true,
+    });
+  });
+
+  it('reads the status of a program the catalog does not serve, without its details', async () => {
+    routeReads({
+      [submitterPath]: upstreamSubmitter,
+      [catalogPath]: notFound(),
+      [programPath]: { ...upstreamProgram, status: 'rejected', project_name: 'Test Foundation', description: 'not forwarded' },
+    });
+
+    const review = await service.getProgramReview(buildReq(), programId);
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', catalogPath, 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', programPath, 'GET');
+    expect(review).toEqual({
+      id: programId,
+      name: 'Test Program',
+      status: 'rejected',
+      projectName: 'Test Foundation',
+      description: null,
+      logoUrl: null,
+      repoUrl: null,
+      codeOfConductUrl: null,
+      ciiProjectId: null,
+      skills: [],
+      createdOn: '2026-09-01T00:00:00Z',
+      submitter,
+      hasDetails: false,
+    });
+  });
+
+  it('lets a 404 through when the program does not exist at all', async () => {
+    const missing = notFound();
+    routeReads({ [submitterPath]: notFound(), [catalogPath]: notFound(), [programPath]: missing });
+
+    await expect(service.getProgramReview(buildReq(), programId)).rejects.toBe(missing);
+    expect(calledPaths()).toContain(programPath);
+  });
+
+  it('does not fall back on a catalog error other than 404', async () => {
+    const forbidden = new MicroserviceError('Forbidden', 403, 'FORBIDDEN');
+    routeReads({ [submitterPath]: new MicroserviceError('Forbidden', 403, 'FORBIDDEN'), [catalogPath]: forbidden });
+
+    await expect(service.getProgramReview(buildReq(), programId)).rejects.toBe(forbidden);
+    expect(calledPaths()).not.toContain(programPath);
+  });
+
+  it('shows the program without its submitter when the submitter read fails', async () => {
+    routeReads({ [submitterPath]: new MicroserviceError('Upstream unavailable', 503, 'SERVICE_UNAVAILABLE'), [catalogPath]: upstreamProgram });
+
+    const review = await service.getProgramReview(buildReq(), programId);
+
+    expect(review.submitter).toBeNull();
+    expect(review.createdOn).toBe('2026-09-01T00:00:00Z');
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'mentorship_get_program_review',
+      expect.stringContaining('submitter'),
+      expect.objectContaining({ programId, status: 503 })
+    );
+  });
+
+  it.each([401, 403, 404])('logs a %i on the submitter read at debug, since a caller can trigger it', async (statusCode) => {
+    vi.mocked(logger.warning).mockClear();
+    vi.mocked(logger.debug).mockClear();
+    routeReads({ [submitterPath]: new MicroserviceError('Submitter read refused', statusCode, 'UPSTREAM'), [catalogPath]: upstreamProgram });
+
+    const review = await service.getProgramReview(buildReq(), programId);
+
+    expect(review.submitter).toBeNull();
+    expect(logger.warning).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.anything(),
+      'mentorship_get_program_review',
+      expect.stringContaining('submitter'),
+      expect.objectContaining({ programId, status: statusCode })
+    );
   });
 
   it.each([
@@ -210,6 +363,21 @@ describe('MentorshipService LF project search', () => {
 
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/query/resources', 'GET', {
       type: 'project',
+      name: 'alp',
+      sort: 'best_match',
+      page_size: 5,
+    });
+  });
+
+  it('lists only the direct sub-projects of a parent, searched the same way', async () => {
+    const parentUid = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+    proxyRequest.mockResolvedValue(page([project('uid-1', 'Alpha')]));
+
+    await service.getLfProjects(buildReq(), { search: 'alp', limit: 5, parentUid });
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'project',
+      parent: `project:${parentUid}`,
       name: 'alp',
       sort: 'best_match',
       page_size: 5,
@@ -521,7 +689,7 @@ describe('MentorshipService LFX profile sync', () => {
         profile_links: { githubProfileLink: 'https://github.com/test-user' },
       }
     );
-    expect(listIdentitiesSafe).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+    expect(listIdentitiesSafe).toHaveBeenCalledWith(expect.anything());
   });
 
   it('copies the GitHub link alone when nothing else resolves', async () => {

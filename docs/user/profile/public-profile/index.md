@@ -4,7 +4,7 @@ description: What your public LFX profile page shows to visitors, its URL, and h
 audience: [all]
 product_area: Profile
 tags: [profile, public-profile, visibility, contributions]
-last_updated: 2026-08-12
+last_updated: 2026-11-10
 intercom_collection: Profile
 ---
 
@@ -34,6 +34,8 @@ Which sections appear depends on your [public profile settings](../public-profil
 - **Trainings** — training programs you have enrolled in or completed.
 
 You control each of these sections individually. If you turn a section off, or have no data for it, it does not appear.
+
+The page footer also has a **Manage cookie preferences** link for visitors. If another website shows the profile inside a frame, that link doesn't appear and LFX collects no analytics there.
 
 ## When your profile is private
 

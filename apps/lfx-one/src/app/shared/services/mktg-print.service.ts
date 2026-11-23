@@ -16,8 +16,12 @@ import {
   MKTG_PRINT_FONT_WEIGHTS,
   MKTG_PRINT_FRAME_LINGER_MS,
   MKTG_PRINT_FRAME_PAPER_IN,
+  MKTG_PORTRAIT_PAGE_NAME,
+  MKTG_PORTRAIT_PRINT_CLASS,
+  MKTG_PRINT_PAGE_MARGINS_CLASS,
   MKTG_PRINT_PAGE_SETUPS,
 } from '@lfx-one/shared/constants';
+import { mktgPrintIsWebKit } from '@lfx-one/shared/utils';
 
 /**
  * Download PDF for a Marketing OS document: the browser's print dialog ("Save
@@ -45,9 +49,14 @@ import {
  * breaks; Chromium paginates against the page box either way. A fixed box adds
  * no scrollable overflow and `pointer-events: none` lets clicks through, so
  * the page under it is unchanged while the dialog is open. The frame's head
- * also gets one unnamed `@page` rule with the surface's named page setup
+ * also gets one unnamed `@page` rule with the surface's page setup
  * (`MKTG_PRINT_PAGE_SETUPS`): WebKit's support for named pages is doubtful,
  * and on default margins a cover sized to the page area spills a blank sheet.
+ * The portrait setup is the engine's: no margin, and the documents' own room
+ * repeated per page by their table head and foot groups, so no browser header
+ * or footer reaches the PDF; in WebKit, which prints a table's head and foot
+ * once (bug 17205), the margins the pages had before, with that room
+ * collapsed under `MKTG_PRINT_PAGE_MARGINS_CLASS` on the frame's body.
  *
  * The brand's typeface is loaded before the dialog opens, in the page (ahead
  * of the click) and again in the frame, and only after its Google Fonts
@@ -87,8 +96,14 @@ export class MktgPrintService {
     return preparation;
   }
 
-  /** Called in the click task; creates the frame immediately, then prints once its own loader is idle. */
-  public printNow(bodyClass: string): void {
+  /**
+   * Called in the click task; creates the frame immediately, then prints once its own loader is idle.
+   * `title` names the PDF the browser saves: it titles the frame's document (WebKit names the file
+   * from the printed frame's title) and, while the dialog is open, the tab's (Chromium's print preview
+   * names the file from the top-level `document.title`). The tab's own title comes back when the
+   * print is over; without a `title` the page's own title stands everywhere.
+   */
+  public printNow(bodyClass: string, title?: string): void {
     const request = ++this.request;
     if (!isPlatformBrowser(this.platformId) || !this.document.defaultView) return;
     this.cleanupFrame?.();
@@ -111,9 +126,19 @@ export class MktgPrintService {
     // Never switch the app to print media: its shell rules could hide the iframe itself.
     let fallback: ReturnType<typeof setTimeout> | undefined;
     let focused: HTMLElement | null = null;
+    // The tab's title before the print named it; null until the swap, and again once restored.
+    let previousTitle: string | null = null;
     const cleanup = () => {
       clearTimeout(fallback);
       view.removeEventListener('afterprint', cleanup);
+      // Restore the tab's title exactly once, and only while it is still the one the print set: the
+      // app may have retitled the page meanwhile (a navigation while the dialog was open), and that
+      // title is not ours to undo. Every cleanup path comes through here: afterprint, the linger
+      // timer, a superseding print and clear().
+      if (previousTitle !== null) {
+        if (this.document.title === title) this.document.title = previousTitle;
+        previousTitle = null;
+      }
       // Removing a focused frame drops focus on the body. Return it to the control that opened the
       // dialog, but only while focus is still in the frame or nowhere: cleanup also runs from the
       // iOS linger timer, a superseding print and clear(), when the user may be in another field.
@@ -140,8 +165,15 @@ export class MktgPrintService {
     doc.documentElement.style.cssText = this.document.documentElement.style.cssText;
     doc.body.className = this.document.body.className;
     doc.body.classList.add(bodyClass);
+    // The engine, read once per print from the app window (the same-origin frame shares it): WebKit prints a
+    // table's head and foot once, so there the pages print on their margins and the documents' room collapses.
+    // A document holding fixed portrait frames prints with no page margin in every engine (a frame is the whole
+    // sheet), so its flowing parts keep their own room instead of the page's.
+    const frames = this.hasPortraitFrames(roots);
+    const pageMargins = !frames && mktgPrintIsWebKit(this.document.defaultView.navigator.userAgent);
+    if (pageMargins) doc.body.classList.add(MKTG_PRINT_PAGE_MARGINS_CLASS);
     doc.body.style.cssText = this.document.body.style.cssText;
-    doc.title = this.document.title;
+    doc.title = title ?? this.document.title;
     const base = doc.createElement('base');
     base.href = this.document.baseURI;
     doc.head.appendChild(base);
@@ -154,10 +186,20 @@ export class MktgPrintService {
     });
     // The surface's page setup as the frame's unnamed @page rule, chosen as mktg-family-print.scss
     // chooses the named page: the brand kit's legacy book is landscape, every portrait document
-    // (the kit's portrait print included) is on the framework's margins. Last in the head, after
+    // (the kit's portrait print included) is on the framework's setup. Last in the head, after
     // the cloned sheets; in Chrome the matched named rule still outranks it with the same values.
+    // On the page margins (WebKit) the portrait setup also restates the named framework page, after
+    // the cloned sheets, so an engine that did honour named pages could not print the margin-less
+    // setup; the book's landscape setup is never written into the framework's page.
+    // A document of portrait frames (MKTG_PORTRAIT_PRINT_CLASS) names its own page on every frame, the print's one
+    // named page (nothing else in a print names one), so the setup is written as that named rule too.
     const setup = doc.createElement('style');
-    setup.textContent = `@page { ${this.pageSetup(bodyClass, roots)} }`;
+    const pageSetup = this.pageSetup(bodyClass, roots, pageMargins);
+    const restatesFramework = pageSetup === MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];
+    let named = '';
+    if (restatesFramework) named = `\n@page mktg-framework { ${pageSetup} }`;
+    if (pageSetup === MKTG_PRINT_PAGE_SETUPS['mktg-portrait']) named = `\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${pageSetup} }`;
+    setup.textContent = `@page { ${pageSetup} }${named}`;
     doc.head.appendChild(setup);
     // Only the three existing print-only wrappers, selected by their shared constants.
     // Keep Angular's scoping attributes; never clone the interactive app shell or its scripts/streams.
@@ -186,6 +228,11 @@ export class MktgPrintService {
       // iOS may omit afterprint: keep the frame through its asynchronous preview, then reclaim it;
       // clear() and the next print remove it at once without relying on that event.
       fallback = setTimeout(cleanup, MKTG_PRINT_FRAME_LINGER_MS);
+      // Chromium's Save as PDF names the file from the tab's title, not the printed frame's.
+      if (title !== undefined) {
+        previousTitle = this.document.title;
+        this.document.title = title;
+      }
       view.print();
     });
   }
@@ -225,11 +272,24 @@ export class MktgPrintService {
     return wrapper ? Array.from(this.document.querySelectorAll<HTMLElement>(`.${wrapper}`)) : [];
   }
 
-  /** The named page the stylesheets give this print, by the same test: only the kit's legacy book is landscape. */
-  private pageSetup(bodyClass: string, roots: HTMLElement[]): string {
+  /**
+   * The page setup this print gets, by the stylesheets' test (only the kit's legacy book is landscape),
+   * and the engine's: the portrait pages print with no margin, or on their margins where the
+   * documents' per-page room cannot repeat (`pageMargins`: WebKit).
+   */
+  private pageSetup(bodyClass: string, roots: HTMLElement[], pageMargins: boolean): string {
+    // Fixed US Letter frames (the portrait grammar) are the whole sheet in both engines: no margin, whatever the engine
+    // repeats, and never the page margins.
+    if (this.hasPortraitFrames(roots)) return MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
     const portrait = roots.some((root) => root.classList.contains(BRAND_KIT_PORTRAIT_PRINT_CLASS) || root.querySelector(`.${BRAND_KIT_PORTRAIT_PRINT_CLASS}`));
     const book = bodyClass === BRAND_KIT_PRINT_BODY_CLASS && !portrait;
-    return book ? MKTG_PRINT_PAGE_SETUPS['brand-kit'] : MKTG_PRINT_PAGE_SETUPS['mktg-framework'];
+    if (book) return MKTG_PRINT_PAGE_SETUPS['brand-kit'];
+    return pageMargins ? MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'] : MKTG_PRINT_PAGE_SETUPS['mktg-framework'];
+  }
+
+  /** Whether a print root is, or holds, a document of portrait frames (`MKTG_PORTRAIT_PRINT_CLASS`). */
+  private hasPortraitFrames(roots: HTMLElement[]): boolean {
+    return roots.some((root) => root.classList.contains(MKTG_PORTRAIT_PRINT_CLASS) || root.querySelector(`.${MKTG_PORTRAIT_PRINT_CLASS}`) !== null);
   }
 
   /** Inline handlers would be the frame's only script; the clone carries none. */

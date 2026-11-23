@@ -65,6 +65,7 @@ export const ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS = [
   'seatsCount',
   'boardSeatsCount',
   'committeeSeatsCount',
+  'keyContactRoles',
   'commitsCount',
   'mergedCommitsCount',
   'codeActivitiesCount',

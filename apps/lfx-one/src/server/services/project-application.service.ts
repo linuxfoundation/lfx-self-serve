@@ -23,6 +23,7 @@ import { buildCreateProjectRequest, normalizeProjectApplicationDoc, normalizeUps
 import { Request } from 'express';
 
 import { AuthorizationError, ConflictError, InvalidRequestError, isMicroserviceError, PreconditionFailedError, ResourceNotFoundError } from '../errors';
+import { checkLfStaffMembership } from '../helpers/formation-team.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -72,6 +73,11 @@ export class ProjectApplicationService {
   /** Whether the caller is on the formation team — gates the queue tab and staff-only actions in the UI. Fails closed. */
   public async isFormationTeamMember(req: Request): Promise<boolean> {
     return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+  }
+
+  /** Whether the caller is LF staff (`team:lf-staff`) — lets staff who are not on the formation team see the read-only Pipeline tab (#5544). Fails closed. */
+  public async isLfStaffMember(req: Request): Promise<boolean> {
+    return checkLfStaffMembership(this.accessCheckService, req);
   }
 
   /**

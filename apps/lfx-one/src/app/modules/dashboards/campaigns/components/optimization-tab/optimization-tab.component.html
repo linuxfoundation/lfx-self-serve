@@ -253,6 +253,25 @@
                 <div class="flex min-w-0 flex-col gap-0.5">
                   <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
                   <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                  <!-- What tells this campaign apart from the brief's others on its platform; "—" when the index does not record it (#4983). -->
+                  <dl class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-labels-' + row.campaign.id">
+                    <div class="flex gap-1">
+                      <dt>Channel:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-channel-' + row.campaign.id">{{ row.labels.channel }}</dd>
+                    </div>
+                    <div class="flex gap-1">
+                      <dt>Stage:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-stage-' + row.campaign.id">{{ row.labels.stage }}</dd>
+                    </div>
+                    <div class="flex gap-1">
+                      <dt>Tactic:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-tactic-' + row.campaign.id">{{ row.labels.tactic }}</dd>
+                    </div>
+                    <div class="flex gap-1">
+                      <dt>Created:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-created-' + row.campaign.id">{{ row.labels.created }}</dd>
+                    </div>
+                  </dl>
                   @if (row.biddingSummary) {
                     <span class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-bidding-' + row.campaign.id">{{ row.biddingSummary }}</span>
                   }

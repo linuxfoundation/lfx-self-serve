@@ -4,7 +4,7 @@ description: Frequently asked questions about LFX events.
 audience: [all]
 product_area: Events
 tags: [events, faq, attendance]
-last_updated: 2026-10-27
+last_updated: 2026-11-20
 intercom_collection: Events
 ---
 
@@ -55,4 +55,4 @@ Open the **Past** tab on the Events page, find the event, and select **Download 
 
 ## Who do I contact about a specific event?
 
-Contact the event organizer listed on the event detail page, or reach out to LFX support.
+Contact the event team using the contact information on the event's website. For invoices, including VAT-compliant invoices and billing name or address changes, use the request link printed on the invoice receipt PDF from your registration confirmation email, or contact the event team. LFX Self Serve can't change event registrations or invoices.

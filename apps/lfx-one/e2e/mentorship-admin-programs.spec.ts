@@ -3,7 +3,7 @@
 
 /**
  * Admin programs list — the real list, status badges, search, the status filter, load more, the failed-load state and Retry
- * (linuxfoundation/lfx-mentorship#232), and the "Logo missing" hint with its "Add logo" upload (linuxfoundation/lfx-mentorship#261).
+ * (linuxfoundation/lfx-mentorship#232), the In Progress and Upcoming statuses (#426), and the "Logo missing" hint with its "Add logo" upload (#261).
  *
  * The page reads `/api/mentorship/admin/programs`, which the BFF serves from upstream `GET /me/programs`.
  * Each test stubs that read via `page.route` with a synthetic payload, so the suite never
@@ -54,7 +54,7 @@ const program = (id: string, name: string, status: MentorshipProgram['status']):
 
 const POPULATED: MentorshipProgramsResponse = {
   data: [
-    program(OPEN_ID, 'Test Program Open', 'open'),
+    program(OPEN_ID, 'Test Program Open', 'accepting'),
     program(PENDING_ID, 'Test Program Pending', 'pending-review'),
     program(REJECTED_ID, 'Test Program Rejected', 'rejected'),
     program(HIDDEN_ID, 'Test Program Hidden', 'hidden'),
@@ -87,7 +87,7 @@ test.describe('Admin programs list — real programs', () => {
     await expect(page.getByTestId(`mentorship-program-card-${PENDING_ID}`)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
     const badge = (id: string) => page.getByTestId(`mentorship-program-card-${id}`).getByTestId('mentorship-program-card-status');
-    await expect(badge(OPEN_ID)).toHaveText('Open');
+    await expect(badge(OPEN_ID)).toHaveText('Accepting');
     await expect(badge(PENDING_ID)).toHaveText('Pending Review');
     await expect(badge(REJECTED_ID)).toHaveText('Rejected');
     await expect(badge(HIDDEN_ID)).toHaveText('Hidden');
@@ -145,6 +145,39 @@ test.describe('Admin programs list — search, status filter and load more', () 
   });
 });
 
+// The published statuses split from Open (linuxfoundation/lfx-mentorship#426), as their cards and the filter name them.
+test.describe('Admin programs list — In Progress and Upcoming', () => {
+  const IN_PROGRESS_ID = '75555555-5555-4555-8555-555555555555';
+  const UPCOMING_ID = '76666666-6666-4666-8666-666666666666';
+  const SPLIT: MentorshipProgramsResponse = {
+    data: [program(IN_PROGRESS_ID, 'Test Program Running', 'in-progress'), program(UPCOMING_ID, 'Test Program Soon', 'upcoming')],
+    total: 2,
+  };
+
+  test('labels each card with its status, and the filter offers both', async ({ page }) => {
+    const statuses: (string | null)[] = [];
+    await page.route(PROGRAMS_ROUTE, (route) => {
+      const status = new URL(route.request().url()).searchParams.get('status');
+      statuses.push(status);
+      return fulfillJson(route, status === 'upcoming' ? { data: [SPLIT.data[1]], total: 1 } : SPLIT);
+    });
+    await openMentorPage(page, ADMIN_URL);
+
+    const badge = (id: string) => page.getByTestId(`mentorship-program-card-${id}`).getByTestId('mentorship-program-card-status');
+    await expect(badge(IN_PROGRESS_ID)).toHaveText('In Progress', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(badge(UPCOMING_ID)).toHaveText('Upcoming');
+
+    await page.getByTestId('mentorship-programs-status-filter').locator('.p-select').first().click();
+    await expect(page.getByRole('option', { name: 'In Progress', exact: true })).toBeVisible();
+    await page.getByRole('option', { name: 'Upcoming', exact: true }).click();
+
+    await expect(page.getByTestId(`mentorship-program-card-${UPCOMING_ID}`)).toBeVisible();
+    await expect(page.getByTestId(`mentorship-program-card-${IN_PROGRESS_ID}`)).toHaveCount(0);
+    await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(1);
+    expect(statuses).toContain('upcoming');
+  });
+});
+
 test.describe('Admin programs list — failed load', () => {
   test('shows an inline error with Retry, and lists the programs once Retry succeeds', async ({ page }) => {
     let failing = true;
@@ -175,7 +208,7 @@ test.describe('Admin programs list — logo missing', () => {
   const rows = (pendingLogoAdded = false): MentorshipProgramsResponse => ({
     data: [
       { ...program(PENDING_NO_LOGO_ID, 'Acme Rocket Mentorship', 'pending-review'), logoMissing: !pendingLogoAdded },
-      { ...program(PUBLISHED_NO_LOGO_ID, 'Acme Orbit Mentorship', 'open'), logoMissing: true },
+      { ...program(PUBLISHED_NO_LOGO_ID, 'Acme Orbit Mentorship', 'accepting'), logoMissing: true },
       { ...program(PENDING_WITH_LOGO_ID, 'Acme Lander Mentorship', 'pending-review'), logoMissing: false },
       { ...program(REJECTED_NO_LOGO_ID, 'Acme Probe Mentorship', 'rejected'), logoMissing: false },
     ],

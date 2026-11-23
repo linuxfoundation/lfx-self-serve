@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="events-at-a-glance">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="events-at-a-glance">
   @if (status() === 'failed') {
     <lfx-empty-state
       variant="compact"
@@ -13,77 +13,65 @@
   } @else if (status() === 'loading') {
     <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="events-at-a-glance-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    <span class="text-[13px] text-gray-500" data-testid="events-at-a-glance-control">{{ view().controlLabel }}</span>
+    <lfx-health-metrics-metrics-row [items]="view().metrics" testId="events-at-a-glance-metrics" />
 
-    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-at-a-glance-hero">
-      <div class="flex flex-col gap-2" data-testid="events-at-a-glance-headline">
-        <div class="flex items-baseline gap-2">
-          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-at-a-glance-headline-value">{{
-            view().headline.value
-          }}</span>
-          @if (view().headline.delta !== null) {
-            <span
-              class="text-[13px] font-medium tabular-nums"
-              [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
-              [class.text-red-600]="view().headline.deltaDirection === 'down'"
-              [class.text-gray-400]="view().headline.deltaDirection === 'neutral'"
-              data-testid="events-at-a-glance-headline-delta">
-              {{ view().headline.delta }}
-            </span>
-          }
-        </div>
-        <span class="text-[12px] text-gray-500">{{ view().headline.label }}</span>
-      </div>
+    <!-- The design's 560px minimum; a narrower card scrolls the table sideways. -->
+    <lfx-table
+      styleClass="hm-table"
+      [rowHover]="false"
+      [value]="rows()"
+      [paginator]="false"
+      [tableStyle]="{ 'min-width': '560px' }"
+      data-testid="events-at-a-glance-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col" [attr.aria-sort]="sorting.headers().metric.ariaSort">
+            <lfx-health-metrics-th
+              label="Metric"
+              [sort]="sorting.headers().metric.state"
+              (sorted)="sorting.toggle('metric')"
+              data-testid="events-at-a-glance-sort-metric" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().period.ariaSort" data-testid="events-at-a-glance-period-heading">
+            <lfx-health-metrics-th
+              [label]="view().periodHeading"
+              [sort]="sorting.headers().period.state"
+              (sorted)="sorting.toggle('period')"
+              data-testid="events-at-a-glance-sort-period" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().comparison.ariaSort" data-testid="events-at-a-glance-comparison-heading">
+            <lfx-health-metrics-th
+              [label]="view().comparisonHeading"
+              [sort]="sorting.headers().comparison.state"
+              (sorted)="sorting.toggle('comparison')"
+              data-testid="events-at-a-glance-sort-comparison" />
+          </th>
+          <th scope="col" class="text-right" [attr.aria-sort]="sorting.headers().change.ariaSort">
+            <lfx-health-metrics-th
+              label="Change"
+              [sort]="sorting.headers().change.state"
+              (sorted)="sorting.toggle('change')"
+              data-testid="events-at-a-glance-sort-change" />
+          </th>
+        </tr>
+      </ng-template>
 
-      <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-at-a-glance-side">
-        @for (stat of view().side; track stat.key) {
-          <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-at-a-glance-side-' + stat.key">
-            <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
-            <dd class="flex items-baseline gap-1.5 text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900">
-              <span [attr.data-testid]="'events-at-a-glance-side-' + stat.key + '-value'">{{ stat.value }}</span>
-              @if (stat.delta !== null) {
-                <span
-                  class="text-[12px] font-medium"
-                  [class.text-emerald-600]="stat.deltaDirection === 'up'"
-                  [class.text-red-600]="stat.deltaDirection === 'down'"
-                  [class.text-gray-400]="stat.deltaDirection === 'neutral'"
-                  [attr.data-testid]="'events-at-a-glance-side-' + stat.key + '-delta'">
-                  {{ stat.delta }}
-                </span>
-              }
-            </dd>
-          </div>
-        }
-      </dl>
-    </div>
-
-    <div class="flex flex-wrap items-baseline justify-between gap-2" data-testid="events-at-a-glance-tiles-heading">
-      <span class="text-[13px] font-semibold text-gray-900">Headline metrics</span>
-      <span class="text-[12px] text-gray-400" data-testid="events-at-a-glance-baseline">{{ view().baselineLabel }}</span>
-    </div>
-
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="events-at-a-glance-tiles">
-      @for (tile of view().tiles; track tile.key) {
-        <!-- Unboxed, label first, as the design's metric tiles; they open nothing, so no hover. -->
-        <div class="flex flex-col gap-1" [attr.data-testid]="'events-at-a-glance-tile-' + tile.key">
-          <span class="text-[12px] text-gray-900">{{ tile.label }}</span>
-          <div class="flex items-baseline gap-1.5 text-[18px] font-medium tabular-nums text-gray-900">
-            <span [attr.data-testid]="'events-at-a-glance-tile-' + tile.key + '-value'">{{ tile.value }}</span>
-            @if (tile.delta !== null) {
-              <span
-                class="text-[12px] font-medium"
-                [class.text-emerald-600]="tile.deltaDirection === 'up'"
-                [class.text-red-600]="tile.deltaDirection === 'down'"
-                [class.text-gray-400]="tile.deltaDirection === 'neutral'"
-                [attr.data-testid]="'events-at-a-glance-tile-' + tile.key + '-delta'">
-                {{ tile.delta }}
-              </span>
+      <ng-template #body let-row>
+        <tr [attr.data-testid]="'events-at-a-glance-row-' + row.key">
+          <td><lfx-health-metrics-cell [text]="row.label" /></td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.value" /></td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.comparison" /></td>
+          <td>
+            @if (row.change; as change) {
+              <div class="flex justify-end">
+                <lfx-ui-badge [tone]="row.changeTone" [attr.data-testid]="'events-at-a-glance-row-' + row.key + '-change'">{{ change }}</lfx-ui-badge>
+              </div>
+            } @else {
+              <lfx-health-metrics-cell class="items-end" text="—" />
             }
-          </div>
-        </div>
-      }
-    </div>
-
-    <lfx-health-metrics-footnote [parts]="footnote" data-testid="events-at-a-glance-footnote" />
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
   }
 </div>

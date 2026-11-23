@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -18,10 +19,11 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { VOTE_CLOSE_CONFIRMATION, VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
+import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
+  GroupLinkState,
   GroupsIOMailingList,
   MyVotesQuickFilter,
   Vote,
@@ -53,7 +55,9 @@ import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { VoteSummarySendService } from '@services/vote-summary-send.service';
 import { VoteService } from '@services/vote.service';
+import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -63,6 +67,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, finalize, map, start
 
 import { VoteMailingListReminderDialogComponent } from '../vote-mailing-list-reminder-dialog/vote-mailing-list-reminder-dialog.component';
 import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
+import { VoteSummaryDialogComponent } from '../vote-summary-dialog/vote-summary-dialog.component';
 
 @Component({
   selector: 'lfx-votes-table',
@@ -86,6 +91,8 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
     ConfirmDialogModule,
     EmptyStateComponent,
     NgTemplateOutlet,
+    UiSpinnerComponent,
+    RouterLink,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -97,12 +104,15 @@ export class VotesTableComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
+  private readonly summarySendService = inject(VoteSummarySendService);
   private readonly clipboardShare = inject(ClipboardShareService);
   private readonly dialogService = inject(DialogService);
   private readonly mailingListService = inject(MailingListService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
+  /** Announces a summary send starting and settling; the row indicator's spinner is aria-hidden so this is the only channel. */
+  private readonly liveAnnouncer = inject(LiveAnnouncer);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
@@ -134,6 +144,8 @@ export class VotesTableComponent {
   // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
   // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
+  // Group links carry state so the group page returns to this list instead of Groups, and restores the Me lens when that is where the user was.
+  public readonly isMeLens = input<boolean>(false);
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
   public readonly scopeActive = input<boolean>(false);
@@ -174,13 +186,23 @@ export class VotesTableComponent {
 
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
-  protected readonly isSendingSummary = signal(false);
   /** Items for the shared row "More" (⋮) menu, rebuilt for the clicked row before it opens. */
   protected readonly rowActionMenuItems = signal<MenuItem[]>([]);
   protected readonly rowActionMenuVoteUid = signal<string | null>(null);
   protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
   private readonly isResolvingMailingList = signal(false);
+  /** Session-owned sends drive row progress, including when a manager returns after navigation (#4830, #4831). */
+  protected readonly sendingSummaryUids = computed<ReadonlySet<string>>(
+    () =>
+      new Set(
+        this.votes()
+          .filter((vote) => this.summarySendService.getAttempt(vote.uid)?.status === 'sending')
+          .map((vote) => vote.uid)
+      )
+  );
+  /** Messages not yet written by LiveAnnouncer; a burst must retain every vote's lifecycle update. */
+  private pendingSummaryAnnouncements: readonly string[] = [];
   /**
    * Overlays a just-closed vote onto its row as `ended`, for the same reason as `extendedDeadlines`: the index refetch can
    * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
@@ -197,6 +219,7 @@ export class VotesTableComponent {
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
+  protected readonly groupLinkState: Signal<GroupLinkState> = this.initGroupLinkState();
   // Phone layout (cards) below the sm breakpoint; false through the first render so it matches the SSR table, then swaps.
   protected readonly isMobile: Signal<boolean> = injectIsMobileViewport();
   // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
@@ -226,6 +249,25 @@ export class VotesTableComponent {
   // === Constructor ===
   public constructor() {
     this.initFormSubscriptions();
+    let previousSending: ReadonlySet<string> = new Set();
+    toObservable(this.sendingSummaryUids)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((sending) => {
+        for (const vote of this.votes()) {
+          if (sending.has(vote.uid) && !previousSending.has(vote.uid)) {
+            this.announceSummaryState(`Sending the summary for "${vote.name}"…`);
+          } else if (previousSending.has(vote.uid) && !sending.has(vote.uid) && this.summarySendService.getAttempt(vote.uid)) {
+            this.announceSummaryState(`The summary send for "${vote.name}" has finished. Open Send summary to review the result.`);
+          }
+        }
+        const menuUid = this.rowActionMenuVoteUid();
+        if (menuUid && sending.has(menuUid) !== previousSending.has(menuUid)) {
+          this.rowActionMenuItems.update((items) =>
+            items.map((item) => (item.id === `send-summary-${menuUid}` ? { ...item, ...this.summarySendMenuState(sending.has(menuUid)) } : item))
+          );
+        }
+        previousSending = sending;
+      });
     effect(() => {
       if (!this.showDraftTab() && this.statusTab() === PollStatus.DISABLED) {
         untracked(() => this.statusTab.set('all'));
@@ -331,11 +373,11 @@ export class VotesTableComponent {
     }
     // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
     if (vote.writer === true && vote.status === PollStatus.ENDED) {
+      // A pending send can be reopened for inspection; the session service prevents a duplicate request (#4830, #4831).
       items.push({
-        label: 'Send summary',
-        icon: 'fa-light fa-chart-simple',
-        disabled: this.isSendingSummary(),
-        tooltipOptions: { tooltipLabel: 'Sends the results summary to every invited voter', tooltipPosition: 'left' },
+        id: `send-summary-${vote.uid}`,
+        ...this.summarySendMenuState(this.sendingSummaryUids().has(vote.uid)),
+        tooltipOptions: { tooltipLabel: 'Review recipients and send the results summary', tooltipPosition: 'left' },
         command: () => this.onSendSummary(vote),
       });
     }
@@ -450,41 +492,15 @@ export class VotesTableComponent {
     });
   }
 
-  /** Sends the on-demand close summary to every invited voter, once confirmed (#3662). On demand only — never scheduled. */
+  /** Opens the summary dialog to review recipients, send the close summary and see each voter's outcome (#3662, #4830). On demand only — never scheduled. */
   protected onSendSummary(vote: VoteTableRow): void {
-    this.confirmationService.confirm({
-      message: `Send the results summary for "${vote.name}" to every invited voter? This cannot be undone.`,
+    this.dialogService.open(VoteSummaryDialogComponent, {
       header: 'Send summary',
-      acceptLabel: 'Send',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-info p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => {
-        this.isSendingSummary.set(true);
-        this.voteService
-          .sendVoteSummary(vote.uid)
-          .pipe(
-            take(1),
-            finalize(() => this.isSendingSummary.set(false))
-          )
-          .subscribe({
-            next: (result) => {
-              const detail =
-                result.failed_count > 0
-                  ? `Summary sent to ${result.recipient_count} voter(s); ${result.failed_count} failed.`
-                  : `Summary sent to ${result.recipient_count} voter(s).`;
-              this.messageService.add({ severity: result.failed_count > 0 ? 'warn' : 'success', summary: 'Summary sent', detail });
-            },
-            error: (error: unknown) => {
-              const isNotEnded = error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === VOTE_SUMMARY_NOT_ENDED;
-              this.messageService.add({
-                severity: 'error',
-                summary: "Couldn't send summary",
-                detail: isNotEnded ? 'This vote has not closed yet.' : "We couldn't send the summary. Please try again.",
-              });
-            },
-          });
-      },
+      width: 'min(960px, 96vw)',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { vote },
     });
   }
 
@@ -548,6 +564,10 @@ export class VotesTableComponent {
   }
 
   // === Private Initializers ===
+  private initGroupLinkState(): Signal<GroupLinkState> {
+    return computed(() => ({ backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: this.isMeLens() }));
+  }
+
   private initStatusTabOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
       const base: FilterPillOption[] = [
@@ -757,6 +777,22 @@ export class VotesTableComponent {
     }
   }
 
+  /** CDK coalesces calls before its live-region write; carry every pending message into that write. */
+  private announceSummaryState(message: string): void {
+    const pending = [...this.pendingSummaryAnnouncements, message];
+    this.pendingSummaryAnnouncements = pending;
+    void this.liveAnnouncer.announce(pending.join(' '), 'polite').then(() => {
+      if (this.pendingSummaryAnnouncements === pending) this.pendingSummaryAnnouncements = [];
+    });
+  }
+
+  private summarySendMenuState(sending: boolean): Pick<MenuItem, 'label' | 'icon'> {
+    return {
+      label: sending ? 'Sending summary…' : 'Send summary',
+      icon: sending ? 'fa-light fa-spinner-third motion-safe:animate-spin' : 'fa-light fa-chart-simple',
+    };
+  }
+
   private showNoMailingListToast(): void {
     this.messageService.add({
       severity: 'info',
@@ -783,9 +819,17 @@ export class VotesTableComponent {
     if (vote.project_slug) editQueryParams['project'] = vote.project_slug;
     if (vote.committee_uid) editQueryParams['committee_uid'] = vote.committee_uid;
 
+    // The committee tab already sits on this group's page, so a link back to it would be a no-op.
+    const viewedCommitteeUid = this.editQueryParamsFallback()['committee_uid'];
+    const groupUid = vote.committee_uid?.trim();
+    const showGroupLink = !!groupUid && groupUid !== viewedCommitteeUid;
+
     return {
       ...vote,
       endedEarlyTooltip,
+      groupName: vote.committee_name?.trim() || null,
+      groupCommands: showGroupLink ? (getEntityCommands('groups', groupUid, vote.is_foundation) ?? ['/groups', groupUid]) : null,
+      groupQueryParams: vote.project_slug ? { project: vote.project_slug } : null,
       participation: computeVoteRowParticipation(vote, this.voteService.isAwaitingInvitationCount(vote.uid)),
       editCommands,
       editQueryParams,
