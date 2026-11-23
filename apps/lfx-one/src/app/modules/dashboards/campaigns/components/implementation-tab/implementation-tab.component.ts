@@ -69,9 +69,6 @@ import {
   META_CHAR_LIMITS,
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
-  META_DSA_NAME_MAX_LENGTH,
-  META_DSA_TERRITORIES,
-  META_NUMERIC_ID_PATTERN,
   canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
@@ -88,8 +85,6 @@ import {
   META_OBJECTIVE_LABELS,
   META_PLACEMENT_LABELS,
   META_SELECTABLE_PLACEMENTS,
-  META_INELIGIBLE_COUNTRIES,
-  normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_EMAIL_CHANNEL_LABEL,
@@ -398,11 +393,13 @@ import {
   campaignBiddingPayload,
   campaignFlightDays,
   campaignLabelColumns,
+  compactMetaAdOptions,
+  compactMetaAudienceTargeting,
   defaultCampaignBiddingDraft,
   defaultCampaignEndDate,
-  googleSeededFlight,
   describeCampaignDispatchFailure,
   googleAdditionalSearchAdsRefusal,
+  googleAdGroupDemographicExclusionsRefusal,
   googleAdsCampaignUrl,
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -422,28 +419,27 @@ import {
   googleCreativeFieldWidth,
   googleCreativeImageDrift,
   googleCreativeImageFit,
+  googleCreativeImageRequirement,
   googleCreativeOptionMessage,
-  googleDemandGenVideoCreativeRefusal,
   googleDemandGenAdGroupsRefusal,
+  googleDemandGenAdsRefusal,
   googleDemandGenAudiencesRefusal,
   googleDemandGenDemographicsLeftOut,
   googleDemandGenDemographicsRefusal,
-  googleDemographicValuesAsOffered,
-  googleDisplayAudiencesRefusal,
-  googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
-  googleExcludedPlacementsRefusal,
-  googleDisplayAdGroupsRefusal,
-  googleCreativeImageRequirement,
+  googleDemandGenVideoCreativeRefusal,
+  googleDemographicValuesAsOffered,
   googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
-  googleExcludedAgeRangesRefusal,
-  googleAdGroupDemographicExclusionsRefusal,
+  googleDisplayAdGroupsRefusal,
+  googleDisplayAudiencesRefusal,
   googleDisplayDemographicsCarried,
   googleDisplayDemographicsRefusal,
+  googleExcludedAgeRangesRefusal,
   googleExcludedGendersRefusal,
-  googleObservedDemographicsRefusal,
   googleExcludedGeoListRefusal,
+  googleExcludedPlacementsRefusal,
+  googleObservedDemographicsRefusal,
   googlePerformanceMaxAudienceSignalRefusal,
   googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
@@ -454,6 +450,7 @@ import {
   googleScheduleAdjustmentStrategiesOn,
   googleSearchAdCopyWidthRefusal,
   googleSearchAdPathsRefusal,
+  googleSeededFlight,
   googleStrategyTakesScheduleAdjustments,
   googleSuggestedNegativeKeywordsText,
   googleUnpickedUserLists,
@@ -465,6 +462,35 @@ import {
   linkedInCreativeTextLength,
   linkedInTargetingAfterRemovals,
   linkedInVariantTextError,
+  metaAcceptedGeos,
+  metaAdOptionApplies,
+  metaAdOptionLabel,
+  metaAdOptionsRefusal,
+  metaAudienceTargetingRefusal,
+  metaBasicsRefusal,
+  metaBriefSeed,
+  metaCallToActionAllowedWithLeadForm,
+  metaCreateRefusal,
+  metaDsaCountries,
+  metaDsaFieldError,
+  metaEffectiveGeoTargets,
+  metaGeoIsIneligible,
+  metaHasPlacement,
+  metaInstagramDsaFields,
+  metaInstagramUserIdError,
+  metaLeadFormDraftRefusal,
+  metaLeadFormForObjective,
+  metaLeadFormRestore,
+  metaObjectiveAfterFoundationSwitch,
+  metaObjectiveChoices,
+  metaObjectiveIsUnavailable,
+  metaPixelField,
+  metaPixelValid,
+  metaPlacementIsSelectable,
+  metaPlacementOverrides,
+  metaRequiresPixel,
+  metaTargetingNamesCustomAudiences,
+  metaUsesInstagram,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
   roundUsdToCentsLikeGo,
@@ -472,19 +498,6 @@ import {
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
   twitterTweetTextError,
-  compactMetaAudienceTargeting,
-  metaAudienceTargetingRefusal,
-  metaTargetingNamesCustomAudiences,
-  compactMetaAdOptions,
-  metaAdOptionApplies,
-  metaAdOptionLabel,
-  metaAdOptionsRefusal,
-  metaCallToActionAllowedWithLeadForm,
-  metaLeadFormDraftRefusal,
-  metaLeadFormForObjective,
-  metaLeadFormRestore,
-  metaObjectiveAfterFoundationSwitch,
-  metaObjectiveChoices,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
@@ -1268,7 +1281,7 @@ export class ImplementationTabComponent implements OnInit {
    *
    * Read from {@link metaObjectiveOptions}, so `leads` counts as available exactly when it is offered.
    */
-  protected readonly metaObjectiveIsUnavailable = computed(() => !this.metaObjectiveOptions().includes(this.metaObjective()));
+  protected readonly metaObjectiveIsUnavailable = computed(() => metaObjectiveIsUnavailable(this.metaObjectiveOptions(), this.metaObjective()));
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
@@ -2545,12 +2558,7 @@ export class ImplementationTabComponent implements OnInit {
    * Empty is a real answer, not a bug: it means nothing usable was supplied, and `canSubmit`
    * blocks on it rather than letting the server pick a country on the operator's behalf.
    */
-  protected readonly metaEffectiveGeoTargets = computed<string[]>(() => {
-    const chips = normalizeGeoTargets(this.metaGeoTargets());
-    const eligibleChips = chips.filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
-    if (eligibleChips.length > 0) return eligibleChips;
-    return normalizeGeoTargets([this.countryCodeValue()]).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
-  });
+  protected readonly metaEffectiveGeoTargets = computed<string[]>(() => metaEffectiveGeoTargets(this.metaGeoTargets(), this.countryCodeValue()));
 
   /**
    * The geo list a Google create would ACTUALLY send — one value for the preview and for `submit()`,
@@ -3350,7 +3358,7 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /** Whether the pixel field applies at all — only `conversions` carries a promoted pixel object. */
-  protected readonly metaRequiresPixel = computed(() => this.metaObjective() === 'conversions');
+  protected readonly metaRequiresPixel = computed(() => metaRequiresPixel(this.metaObjective()));
 
   /**
    * Whether at least one SELECTABLE placement is on.
@@ -3361,36 +3369,26 @@ export class ImplementationTabComponent implements OnInit {
    * emptiness check is even reached — so counting it would let the UI pass a config the service
    * fails twice over.
    */
-  protected readonly metaHasPlacement = computed(() => {
-    const placements = this.metaPlacements();
-    return this.metaSelectablePlacements.some((key) => placements[key]);
-  });
+  protected readonly metaHasPlacement = computed(() => metaHasPlacement(this.metaPlacements()));
 
   /**
    * Whether the ad set runs on Instagram — Instagram Feed, Stories or Reels, the three placements
    * campaign-service maps to Instagram positions (`meta.UsesInstagram`). Only then is the Instagram
    * account id sent, and only then does Meta need it to publish.
    */
-  protected readonly metaUsesInstagram = computed(() => {
-    const placements = this.metaPlacements();
-    return placements.instagramFeed || placements.stories || placements.reels;
-  });
+  protected readonly metaUsesInstagram = computed(() => metaUsesInstagram(this.metaPlacements()));
 
   /** The targeted countries that make Meta require the EU DSA disclosures, in request order. */
-  protected readonly metaDsaCountries = computed<string[]>(() => this.metaEffectiveGeoTargets().filter((c) => META_DSA_TERRITORIES.has(c)));
+  protected readonly metaDsaCountries = computed<string[]>(() => metaDsaCountries(this.metaEffectiveGeoTargets()));
 
   /**
    * Why the Instagram account id cannot be sent, or `null`. Required only when the capability is on
    * AND an Instagram placement is enabled — Meta creates the ad without it but will not publish it.
    * Numeric, as campaign-service's `numericIDRE` requires; trimmed first because upstream trims.
    */
-  protected readonly metaInstagramUserIdError = computed<string | null>(() => {
-    if (!this.metaInstagramDsaAvailable() || !this.metaUsesInstagram()) return null;
-    const id = this.metaInstagramDsaDraft().instagramUserId.trim();
-    if (id === '') return 'An Instagram account ID is required for the Instagram placements. Enter it, or turn off Instagram Feed, Stories and Reels.';
-    if (!META_NUMERIC_ID_PATTERN.test(id)) return 'The Instagram account ID must be numeric.';
-    return null;
-  });
+  protected readonly metaInstagramUserIdError = computed<string | null>(() =>
+    metaInstagramUserIdError(this.metaInstagramDsaAvailable(), this.metaUsesInstagram(), this.metaInstagramDsaDraft().instagramUserId)
+  );
 
   /**
    * The targeting the create would carry, before defaults are dropped: the draft exactly as the child
@@ -3445,9 +3443,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaAdOptionsBlock: Signal<CampaignBiddingCapabilityBlock | null> = this.initMetaAdOptionsBlock();
 
   /** Why the DSA beneficiary cannot be sent, or `null` — see `metaDsaFieldError`. */
-  protected readonly metaDsaBeneficiaryError = computed<string | null>(() => this.metaDsaFieldError('dsaBeneficiary'));
+  protected readonly metaDsaBeneficiaryError = computed<string | null>(() => {
+    const draft = this.metaInstagramDsaDraft();
+    return metaDsaFieldError(this.metaInstagramDsaAvailable(), draft.dsaBeneficiary, draft.dsaPayor, this.metaDsaCountries());
+  });
   /** Why the DSA payor cannot be sent, or `null` — see `metaDsaFieldError`. */
-  protected readonly metaDsaPayorError = computed<string | null>(() => this.metaDsaFieldError('dsaPayor'));
+  protected readonly metaDsaPayorError = computed<string | null>(() => {
+    const draft = this.metaInstagramDsaDraft();
+    return metaDsaFieldError(this.metaInstagramDsaAvailable(), draft.dsaPayor, draft.dsaBeneficiary, this.metaDsaCountries());
+  });
 
   /**
    * The three keys `submit` adds to `metaConfig`, or none. Off: nothing, so the create is exactly
@@ -3455,17 +3459,9 @@ export class ImplementationTabComponent implements OnInit {
    * for an Instagram placement, and the disclosures only as a pair — `canSubmit` has already blocked
    * a one-sided or an EU-without-both state, so a lone value is never sent.
    */
-  protected readonly metaInstagramDsaFields = computed<Pick<MetaCampaignCreateRequest, 'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor'>>(() => {
-    if (!this.metaInstagramDsaAvailable()) return {};
-    const draft = this.metaInstagramDsaDraft();
-    const instagramUserId = draft.instagramUserId.trim();
-    const dsaBeneficiary = draft.dsaBeneficiary.trim();
-    const dsaPayor = draft.dsaPayor.trim();
-    return {
-      ...(this.metaUsesInstagram() && instagramUserId !== '' ? { instagramUserId } : {}),
-      ...(dsaBeneficiary !== '' && dsaPayor !== '' ? { dsaBeneficiary, dsaPayor } : {}),
-    };
-  });
+  protected readonly metaInstagramDsaFields = computed<Pick<MetaCampaignCreateRequest, 'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor'>>(() =>
+    metaInstagramDsaFields(this.metaInstagramDsaAvailable(), this.metaUsesInstagram(), this.metaInstagramDsaDraft())
+  );
 
   /**
    * The placement entries that DIFFER from `META_DEFAULT_PLACEMENTS`, which is all the payload
@@ -3476,14 +3472,7 @@ export class ImplementationTabComponent implements OnInit {
    * `true`, so the difference filter drops it — the payload cannot carry the one value the
    * service rejects outright.
    */
-  protected readonly metaPlacementOverrides = computed<Partial<MetaPlacement>>(() => {
-    const placements = this.metaPlacements();
-    const overrides: Partial<MetaPlacement> = {};
-    for (const key of Object.keys(placements) as (keyof MetaPlacement)[]) {
-      if (placements[key] !== META_DEFAULT_PLACEMENTS[key]) overrides[key] = placements[key];
-    }
-    return overrides;
-  });
+  protected readonly metaPlacementOverrides = computed<Partial<MetaPlacement>>(() => metaPlacementOverrides(this.metaPlacements()));
 
   /**
    * Whether the pixel id is acceptable for the CURRENT objective.
@@ -3496,11 +3485,7 @@ export class ImplementationTabComponent implements OnInit {
    * hear it. Trimmed first because upstream trims before both checks, so `' '` must read as
    * empty here too rather than passing a truthiness test locally and being refused there.
    */
-  protected readonly metaPixelValid = computed(() => {
-    if (!this.metaRequiresPixel()) return true;
-    const trimmed = this.metaPixelId().trim();
-    return trimmed !== '' && META_NUMERIC_ID_PATTERN.test(trimmed);
-  });
+  protected readonly metaPixelValid = computed(() => metaPixelValid(this.metaObjective(), this.metaPixelId()));
   protected readonly selectedLinkedInAccount = computed(() => {
     const accounts = this.linkedInAccounts();
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
@@ -3970,11 +3955,10 @@ export class ImplementationTabComponent implements OnInit {
     // create then sends no account and goes to the default, as it did before account selection.
     if (linkedInSelected && this.linkedInAccountSelectionAvailable() && this.linkedInCreateAccount().status === 'loading')
       return 'LinkedIn Ads: the ad account is still loading.';
-    if (metaSelected && this.metaBudgetUsd() < 1) return 'Meta Ads: set a budget of at least $1.';
-    // No usable geo at all: every chip ineligible (or none) AND no usable countryCode. The request
-    // would otherwise carry nothing and let the server default to US — spending on a country the
-    // operator neither chose nor saw.
-    if (metaSelected && this.metaEffectiveGeoTargets().length === 0) return 'Meta Ads: add a location, or a country code.';
+    // Budget, then no usable geo at all (which would let the server default to US). Reddit's budget
+    // and geo come next, before the rest of the Meta form, so the Meta checks are split in two.
+    const metaBasics = metaSelected ? metaBasicsRefusal(this.metaBudgetUsd(), this.metaEffectiveGeoTargets()) : null;
+    if (metaBasics !== null) return metaBasics;
     // Reddit's client rejects a non-positive budget at dispatch (client.go: "invalid budget:
     // must be a positive number"), and because creation is async that surfaces as a dead job
     // rather than an error on the request. Refuse locally instead.
@@ -3994,19 +3978,22 @@ export class ImplementationTabComponent implements OnInit {
     if (redditSelected && this.redditVideoGoalError() !== null) return 'Reddit Ads: fix the Video Views goal.';
     // Video Views without a post would build an image-post ad or no ad — never a video view.
     if (redditSelected && this.redditVideoPostError() !== null) return 'Reddit Ads: Video Views needs a video post.';
-    if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim()))
-      return 'Meta Ads: give at least one ad both primary text and a headline.';
-    if (metaSelected && !this.metaHasPlacement()) return 'Meta Ads: choose at least one placement.';
-    if (metaSelected && !this.metaPixelValid()) return 'Meta Ads: fix the pixel.';
-    // The Instagram id and EU DSA disclosures (behind `metaInstagramDsaAvailable`; each error is
-    // `null` while it is off). campaign-service refuses the same EU and one-sided states with a 400.
-    if (metaSelected && (this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError()))
-      return 'Meta Ads: fix the Instagram account or the EU disclosure fields.';
-    if (metaSelected && this.metaAudienceTargetingBlock() !== null) return `Meta Ads: ${this.metaAudienceTargetingBlock()?.message}`;
-    if (metaSelected && this.metaAudienceTargetingError() !== null) return `Meta Ads: ${this.metaAudienceTargetingError()}`;
-    if (metaSelected && this.metaAdOptionsBlock() !== null) return `Meta Ads: ${this.metaAdOptionsBlock()?.message}`;
-    if (metaSelected && this.metaAdOptionsError() !== null) return `Meta Ads: ${this.metaAdOptionsError()}`;
-    if (metaSelected && this.metaLeadFormError() !== null) return `Meta Ads: ${this.metaLeadFormError()}`;
+    // The rest of the Meta form, in order. The Instagram id and EU DSA errors are `null` while
+    // `metaInstagramDsaAvailable` is off; campaign-service refuses the same states with a 400.
+    const metaRefusal = metaSelected
+      ? metaCreateRefusal({
+          variants: this.metaVariants(),
+          hasPlacement: this.metaHasPlacement(),
+          pixelValid: this.metaPixelValid(),
+          instagramDsaInvalid: !!(this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError()),
+          audienceTargetingBlock: this.metaAudienceTargetingBlock()?.message ?? null,
+          audienceTargetingError: this.metaAudienceTargetingError(),
+          adOptionsBlock: this.metaAdOptionsBlock()?.message ?? null,
+          adOptionsError: this.metaAdOptionsError(),
+          leadFormError: this.metaLeadFormError(),
+        })
+      : null;
+    if (metaRefusal !== null) return metaRefusal;
 
     // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
     // than a refusal, which is why they are caught here — the operator would otherwise learn at
@@ -5668,7 +5655,7 @@ export class ImplementationTabComponent implements OnInit {
    * that toggle disabled, but a disabled input is a presentation guarantee, not a state one.
    */
   protected onMetaPlacementChange(key: keyof MetaPlacement, event: Event): void {
-    if (!this.metaSelectablePlacements.includes(key)) return;
+    if (!metaPlacementIsSelectable(key)) return;
     const enabled = (event.target as HTMLInputElement).checked;
     this.metaPlacements.update((placements) => ({ ...placements, [key]: enabled }));
     this.emitDraft();
@@ -5727,7 +5714,7 @@ export class ImplementationTabComponent implements OnInit {
    * `validateGeoTargets` call the same helper, so a `us` from the brief and a typed `US` collapse
    * to one chip and one wire entry no matter which door they came through.
    *
-   * Shape, ISO ASSIGNMENT and Meta ELIGIBILITY are all settled here, via `acceptedMetaGeos`.
+   * Shape, ISO ASSIGNMENT and Meta ELIGIBILITY are all settled here, via `metaAcceptedGeos`.
    * Eligibility is checked at every door rather than only at this one: a chip the operator can
    * SEE must be a chip the request will BUY. `metaEffectiveGeoTargets` filters ineligible codes
    * out of the dispatch, so a code displayed but not dispatched is precisely the display/dispatch
@@ -5742,8 +5729,8 @@ export class ImplementationTabComponent implements OnInit {
     // will not target them — and on the legacy path that rejection lands at the ad set, after the
     // campaign POST. Same list the server and the Go client check, so the answer cannot depend on
     // which path runs.
-    if (META_INELIGIBLE_COUNTRIES.has(code.trim().toUpperCase())) return;
-    this.metaGeoTargets.update((targets) => this.acceptedMetaGeos([...targets, code]));
+    if (metaGeoIsIneligible(code)) return;
+    this.metaGeoTargets.update((targets) => metaAcceptedGeos([...targets, code]));
     this.emitDraft();
   }
 
@@ -6777,7 +6764,7 @@ export class ImplementationTabComponent implements OnInit {
               // a page id or nothing at all, so an id left in the box from an earlier selection
               // would be a field the service ignores — and one a reader of the payload would
               // reasonably take as meaningful. Trimmed to match the upstream trim.
-              ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
+              ...metaPixelField(this.metaObjective(), this.metaPixelId()),
               ...this.metaInstagramDsaFields(),
               // Defaults dropped; nothing at all when the targeting asks for nothing (#5905).
               ...this.metaTargetingField(),
@@ -7218,24 +7205,6 @@ export class ImplementationTabComponent implements OnInit {
    * class of bug the parent's `(project, event)` ownership keys exist to prevent. On a mismatch
    * the draft is ignored and the brief's own copy stands.
    */
-  /**
-   * Normalise a geo list AND drop what Meta cannot target — the single owner of that pair.
-   *
-   * Every path that WRITES `metaGeoTargets` routes through here: the chip add, the brief seed and
-   * the draft restore. Previously only the chip add checked eligibility, so a brief recommending
-   * `IR` — or a draft carrying one — rendered a chip that `metaEffectiveGeoTargets` then filtered
-   * out of the request. The empty-state warning is gated on `metaGeoTargets().length === 0`, so a
-   * surviving ineligible chip suppressed it, and `canSubmit` passed on the `countryCode` fallback:
-   * the operator read `IR` on screen and bought a US campaign.
-   *
-   * Eligibility belongs on the WRITE rather than only on the read so the two cannot disagree.
-   * `metaEffectiveGeoTargets` keeps its own filter regardless — it is the boundary `submit()`
-   * reads, and a guard there costs nothing.
-   */
-  private acceptedMetaGeos(codes: readonly string[]): string[] {
-    return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
-  }
-
   /**
    * The label of the first `campaignForm` control that fails its validators, for the reason Create is
    * disabled when the form is invalid (#5491). Walks the controls in declaration order, which is
@@ -8920,7 +8889,7 @@ export class ImplementationTabComponent implements OnInit {
       this.metaLeadFormId.set(leadFormRestore.leadFormId);
     }
     if (draft.metaGeoTargets !== undefined) {
-      this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));
+      this.metaGeoTargets.set(metaAcceptedGeos(draft.metaGeoTargets));
     }
     if (draft.metaBudgetUsd !== undefined) {
       this.metaBudgetUsd.set(draft.metaBudgetUsd);
@@ -9768,22 +9737,10 @@ export class ImplementationTabComponent implements OnInit {
       this.redditGeoTargets.set(brief.redditCopy.recommendedGeos);
     }
 
-    const metaCopy = brief.structuredCopy?.['meta_ads'] as Record<string, unknown> | undefined;
-    if (metaCopy) {
-      const rawVariants = metaCopy['variants'];
-      const variants = Array.isArray(rawVariants) ? (rawVariants as { primary_text?: string; headline?: string; description?: string }[]) : [];
-      this.metaVariants.set(
-        variants.map((v) => ({
-          primaryText: v.primary_text ?? '',
-          headline: v.headline ?? '',
-          description: v.description,
-        }))
-      );
-      const rawGeos = metaCopy['recommended_geos'];
-      this.metaGeoTargets.set(this.acceptedMetaGeos(Array.isArray(rawGeos) ? (rawGeos as string[]) : []));
-    } else if (brief.metaCopy) {
-      this.metaVariants.set(brief.metaCopy.variants);
-      this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
+    const metaSeed = metaBriefSeed(brief);
+    if (metaSeed) {
+      this.metaVariants.set(metaSeed.variants);
+      this.metaGeoTargets.set(metaSeed.geoTargets);
     }
 
     // A stored brief can lack the list; every reader maps or filters it (#4848).
@@ -14342,30 +14299,6 @@ export class ImplementationTabComponent implements OnInit {
     // review). The emit cannot loop: `applyDraft` runs only while `seeding`, which the group's
     // draft subscription honours.
     if (Object.keys(patch).length > 0) this.metaInstagramDsaForm.patchValue(patch);
-  }
-
-  /**
-   * Why one EU DSA disclosure cannot be sent, or `null` while the capability is off. Mirrors
-   * campaign-service's `CheckPublishIdentity`: at most `META_DSA_NAME_MAX_LENGTH` characters
-   * (counted as code points, as Go counts runes — which is why the inputs carry no native
-   * `maxlength`: the browser counts UTF-16 units and would cut a valid astral-plane name short), no C0/C1 control, Unicode line/paragraph separator
-   * or bidi control (its `isLineBreakingOrControl`), and present whenever the
-   * other one is OR an EU country is targeted. Trimmed first, as upstream trims.
-   */
-  private metaDsaFieldError(field: 'dsaBeneficiary' | 'dsaPayor'): string | null {
-    if (!this.metaInstagramDsaAvailable()) return null;
-    const draft = this.metaInstagramDsaDraft();
-    const value = draft[field].trim();
-    const other = (field === 'dsaBeneficiary' ? draft.dsaPayor : draft.dsaBeneficiary).trim();
-    if ([...value].length > META_DSA_NAME_MAX_LENGTH) return `Enter at most ${META_DSA_NAME_MAX_LENGTH} characters.`;
-    // eslint-disable-next-line no-control-regex -- matching control characters is the point.
-    if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value))
-      return 'Enter the name on one line, without tabs, line breaks or invisible formatting characters.';
-    if (value !== '') return null;
-    const eu = this.metaDsaCountries();
-    if (eu.length > 0) return `Required when targeting the EU/EEA (${eu.join(', ')}).`;
-    if (other !== '') return 'Enter both the beneficiary and the payor, or neither.';
-    return null;
   }
 
   /**

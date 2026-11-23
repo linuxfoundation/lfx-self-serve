@@ -160,6 +160,7 @@ export * from './campaign-google-user-lists.utils';
 export * from './campaign-meta-audience-targeting.utils';
 export * from './campaign-meta-ad-options.utils';
 export * from './campaign-meta-lead-form.utils';
+export * from './campaign-meta-form.utils';
 export * from './campaign-google-criteria.utils';
 export * from './campaign-google-demographics.utils';
 export * from './campaign-google-search-ads.utils';
