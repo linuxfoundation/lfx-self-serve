@@ -233,6 +233,11 @@ async function resolveOrgLensRead(
   // Last resort, and only for a caller PROVEN to hold nothing: the roster loaded in full and the authorizer said no,
   // so no existing path could have admitted them. A roll-up check passes `roster`; a roll-up never admits the employee
   // view, so it is not even asked. Off by default until every page story has redacted its endpoint.
+  // An unread staff check leaves "not staff" unproven: retriable 503 (as `resolveReduced` answers), never a 403 for an eligible employee.
+  if (!roster && staffCheckFailed && isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+    throw unavailable(undefined);
+  }
+
   // One rule for who enters, shared with the selector and the slug resolver: no grants and not staff.
   if (!roster && isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView) && !isStaff && !staffCheckFailed && grantedOrgCount === 0) {
     let verdict: Awaited<ReturnType<OrgEmployeeViewService['resolve']>>;

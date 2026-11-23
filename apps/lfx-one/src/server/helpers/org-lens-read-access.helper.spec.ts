@@ -96,12 +96,19 @@ describe('assertOrgLensRead: employee-view qualification', () => {
   it.each([
     ['a caller who holds a grant on another company', { resolved: new Map([['0016100000OTHERAAA1', { roleSource: 'direct-writer' }]]) }],
     ['LF staff', { isStaff: true }],
-    ['a caller whose staff check failed', { staffCheck: 'failed' }],
   ])('does not try the employee view for %s', async (_label, over) => {
     mocks.getAccessAwareOrgs.mockResolvedValue(roster(over));
     mocks.resolveEmployeeView.mockResolvedValue(eligible);
 
     await expect(assertOrgLensRead(req(), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 403 });
+    expect(mocks.resolveEmployeeView).not.toHaveBeenCalled();
+  });
+
+  it('answers a retriable 503, not a 403, when the staff check failed and the employee view is on', async () => {
+    mocks.getAccessAwareOrgs.mockResolvedValue(roster({ staffCheck: 'failed' }));
+    mocks.resolveEmployeeView.mockResolvedValue(eligible);
+
+    await expect(assertOrgLensRead(req(), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
     expect(mocks.resolveEmployeeView).not.toHaveBeenCalled();
   });
 
