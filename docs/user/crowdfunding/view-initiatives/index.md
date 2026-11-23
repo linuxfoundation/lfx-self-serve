@@ -4,7 +4,7 @@ description: How to view and filter your crowdfunding initiatives by status in L
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, view, status, list]
-last_updated: 2026-11-06
+last_updated: 2026-11-23
 intercom_collection: Crowdfunding
 ---
 
@@ -47,7 +47,7 @@ See [Lens-scoped Initiatives](../lens-initiatives/) for who can see these pages.
 
 ## Before you begin
 
-- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your LF account.
 - You do not need an existing initiative to use this page. To start one, use **New Initiative** to open the separate [LFX Crowdfunding product](https://crowdfunding.linuxfoundation.org) in a new tab.
 
 ## Steps

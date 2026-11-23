@@ -4,7 +4,7 @@ description: How to view your donation history, stats, and recurring donations i
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, view, history, recurring, one-time, anonymous]
-last_updated: 2026-11-10
+last_updated: 2026-11-23
 intercom_collection: Crowdfunding
 ---
 
@@ -68,7 +68,7 @@ You can browse the catalog without having made a previous donation. Choose an in
 
 ## Before you begin
 
-- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
+- Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your LF account.
 - No previous donation is required to open this page or use **Explore Initiatives**. Your stats and history reflect your contributions once you have donated.
 
 ## Steps
