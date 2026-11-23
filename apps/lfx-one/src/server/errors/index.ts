@@ -3,6 +3,7 @@
 
 export { BaseApiError } from './base.error';
 export { AuthenticationError, AuthorizationError } from './authentication.error';
+export { ContentUnavailableError } from './content-unavailable.error';
 export { MicroserviceError } from './microservice.error';
 export { ServiceValidationError, ResourceNotFoundError, ConflictError, InvalidRequestError, PreconditionFailedError } from './service-validation.error';
 
