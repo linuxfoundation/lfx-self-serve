@@ -196,3 +196,4 @@ export * from './uikit.constants';
 export * from './social-share.constants';
 export * from './org-training-view.constants';
 export * from './formation-pipeline.constants';
+export * from './share-kit.constants';
