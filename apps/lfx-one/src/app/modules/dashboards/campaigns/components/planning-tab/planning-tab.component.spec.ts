@@ -56,8 +56,21 @@ describe('PlanningTabComponent brief read-back', () => {
   let campaignService: { loadBrief: Mock };
   let projectContextService: ProjectContextService;
 
-  // Debounce is 500ms; add 50ms slack for timer jitter (consistent with newsletter.component.spec.ts)
+  // Debounce is 500ms; advanced on virtual time, so the 50ms margin costs nothing.
   const BRIEF_LOOKUP_DEBOUNCE_WAIT_MS = 550;
+
+  // The lookup debounce runs on virtual time (#5980): RxJS `debounceTime` schedules through
+  // `setInterval` and reads `Date`, so only those are faked. Angular's `setTimeout`-based
+  // scheduler stays real, so `whenStable()` behaves exactly as before.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+  });
+
+  afterEach(() => {
+    fixture?.destroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
 
   // Required input for the component
   const programTypeConfig: CampaignProgramTypeOption = {
@@ -92,7 +105,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // Trigger the input handler (protected method accessed via cast).
     component.onUrlInput();
     // Wait for debounce
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
   }
 
@@ -190,7 +203,7 @@ describe('PlanningTabComponent brief read-back', () => {
     fixture.componentRef.setInput('deliveryType', 'survey');
     fixture.componentRef.setInput('emailStage', 'Survey Promo');
     fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     // The same link is the survey's TITLE to the survey lookup, not `viewform`.
@@ -207,7 +220,7 @@ describe('PlanningTabComponent brief read-back', () => {
     const component = fixture.componentInstance as unknown as { briefForm: { controls: { sourceText: { setValue(v: string): void } } } };
 
     component.briefForm.controls.sourceText.setValue('Developer Survey 2027');
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     expect(campaignService.loadBrief).toHaveBeenLastCalledWith('developer-survey-2027', 'foundation-a', 'survey', 'Survey Promo');
@@ -884,7 +897,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // Cancel / New Brief. It discards the GENERATED brief; it says nothing about the stored one,
     // which is still there and still the user's.
     (fixture.componentInstance as unknown as { reset(): void }).reset();
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     // Clearing it stranded the offer permanently rather than hiding it: `onUrlChange` issues a
@@ -995,7 +1008,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // (slug, foundation) pair by 500ms. Waiting it out is what separates "cleared immediately"
     // from "cleared and never looked again" — without this the assertion below reads the call
     // made under the PREVIOUS foundation and passes for the wrong reason.
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     // The new lookup should still fire under the new foundation.
@@ -1061,7 +1074,7 @@ describe('PlanningTabComponent brief read-back', () => {
       )
     );
     await switchFoundation(foundationB);
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b', 'paid-marketing', '');
@@ -1106,7 +1119,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // The eager clear fired, so the offer is gone right now...
     expect(savedBrief()).toBeNull();
 
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     // ...and must come back, because the original slug has to be looked up again.
@@ -1248,7 +1261,7 @@ describe('PlanningTabComponent brief read-back', () => {
     );
     fixture.componentRef.setInput('savedBriefRefreshToken', 1);
     fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     expect(campaignService.loadBrief).toHaveBeenCalledTimes(2);
@@ -1273,7 +1286,7 @@ describe('PlanningTabComponent brief read-back', () => {
     );
     fixture.componentRef.setInput('savedBriefRefreshToken', 7);
     fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     const restored: { readAt: number }[] = [];
@@ -1298,7 +1311,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     fixture.componentRef.setInput('savedBriefRefreshToken', 0);
     fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     expect(campaignService.loadBrief).toHaveBeenCalledTimes(1);
@@ -1313,7 +1326,7 @@ describe('PlanningTabComponent brief read-back', () => {
   it('does not look anything up when the token bumps before a url is entered', async () => {
     fixture.componentRef.setInput('savedBriefRefreshToken', 1);
     fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await vi.advanceTimersByTimeAsync(BRIEF_LOOKUP_DEBOUNCE_WAIT_MS);
     await fixture.whenStable();
 
     expect(campaignService.loadBrief).not.toHaveBeenCalled();
@@ -1387,6 +1400,19 @@ describe('PlanningTabComponent editing an existing brief', () => {
   const internals = (): EditInternals => fixture.componentInstance as unknown as EditInternals;
   const el = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
 
+  // The lookup debounce runs on virtual time (#5980): RxJS `debounceTime` schedules through
+  // `setInterval` and reads `Date`, so only those are faked. Angular's `setTimeout`-based
+  // scheduler stays real, so `whenStable()` behaves exactly as before.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+  });
+
+  afterEach(() => {
+    fixture?.destroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [PlanningTabComponent],
@@ -1419,7 +1445,7 @@ describe('PlanningTabComponent editing an existing brief', () => {
     loadBrief.mockReturnValue(of({ status: 'loaded', brief: storedBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }));
     internals().briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
     internals().onUrlInput();
-    await new Promise((resolve) => setTimeout(resolve, 550));
+    await vi.advanceTimersByTimeAsync(550);
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -1792,7 +1818,7 @@ describe('PlanningTabComponent editing an existing brief', () => {
     loadBrief.mockReturnValue(of({ status: 'loaded', brief: storedBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }));
     internals().briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
     internals().onUrlInput();
-    await new Promise((resolve) => setTimeout(resolve, 550));
+    await vi.advanceTimersByTimeAsync(550);
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -1858,6 +1884,19 @@ describe('PlanningTabComponent delivery-type mode', () => {
     fixture.detectChanges();
     await fixture.whenStable();
   }
+
+  // The lookup debounce runs on virtual time (#5980): RxJS `debounceTime` schedules through
+  // `setInterval` and reads `Date`, so only those are faked. Angular's `setTimeout`-based
+  // scheduler stays real, so `whenStable()` behaves exactly as before.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+  });
+
+  afterEach(() => {
+    fixture?.destroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -1926,7 +1965,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
     fixture.detectChanges();
     component.onUrlInput();
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await vi.advanceTimersByTimeAsync(600);
     await fixture.whenStable();
 
     expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'CFP Launch');
@@ -1951,7 +1990,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
       'the previous stage Restore offer survived into the debounce window'
     ).toBeNull();
 
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await vi.advanceTimersByTimeAsync(600);
     await fixture.whenStable();
 
     expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'Final Countdown');
@@ -2020,7 +2059,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
     fixture.detectChanges();
     component.onUrlInput();
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await vi.advanceTimersByTimeAsync(600);
     await fixture.whenStable();
 
     expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'Registration Push');
@@ -2035,7 +2074,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
     fixture.detectChanges();
     component.onUrlInput();
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await vi.advanceTimersByTimeAsync(600);
     await fixture.whenStable();
 
     expect(loadBrief).toHaveBeenCalled();
