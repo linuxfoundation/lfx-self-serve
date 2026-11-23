@@ -14,12 +14,34 @@ export const ORG_LENS_EMPLOYEE_VIEW: OrgLensViewMode = 'employee';
 export const ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE = 'EMPLOYEE_VIEW_FORBIDDEN';
 
 /**
- * The `/api/orgs/:orgUid/lens/*` paths (relative to the `/lens` mount) an all-employee caller may reach.
- * Anything not listed is refused by default, so a newly added lens route can never return names or
- * emails to an employee by accident. A page that is approved for the employee view adds its own entry
- * (and applies `redactForEmployeeView` in its handler).
+ * The `/api/orgs/:orgUid/lens/*` paths (relative to the `/lens` mount) an all-employee caller may reach, one slot per page story
+ * of epic #5845. Anything not listed is refused by default, so a newly added lens route can never return names or emails to an
+ * employee by accident. A page approved for the employee view fills ONLY its own slot (and applies `redactForEmployeeView` in its
+ * handlers). The slots are kept one per line, with a comment line between them, so the page branches merge without conflicts.
  */
-export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS: readonly RegExp[] = [/^\/(read-check|edit-check)\/?$/];
+export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<string, readonly RegExp[]>> = {
+  // The gate itself: the page asks "may I view this company?".
+  access: [/^\/(read-check|edit-check)\/?$/],
+  // Shared shell data several pages read (company scope, no people).
+  shared: [/^\/org-scope\/?$/],
+  // overview
+  overview: [],
+  // projects
+  projects: [],
+  // project-detail
+  'project-detail': [],
+  // contributions
+  contributions: [],
+  // events
+  events: [],
+  // training
+  training: [],
+  // meetings
+  meetings: [],
+};
+
+/** Every approved path across all pages. */
+export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS: readonly RegExp[] = Object.values(ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE).flat();
 
 /** User-safe 403 message for the all employee view. Says "company": copy-terminology rule, epic #5060. */
 export const ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE = 'This part of the company view is not available to all employees.';
