@@ -16,13 +16,20 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import {
   INVITATION_NOT_FOUND,
+  VOTE_BALLOT_ENDED_STATE,
   VOTE_BALLOT_FINAL_NOTICE,
   VOTE_BALLOT_FINAL_STATE,
+  VOTE_BALLOT_NOT_FOUND,
+  VOTE_BALLOT_REMOVED_STATE,
   VOTE_CHANGE_NOT_ALLOWED,
   VOTE_COMMENT_RESPONSE_MAX_LENGTH,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
   VOTE_LAST_VOTER_CONFIRMATION,
+  VOTE_RATE_LIMITED_MESSAGE,
+  VOTE_UPSTREAM_ENDED,
+  VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES,
+  VOTE_VOTER_REMOVED_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
   CommentResponseFormData,
@@ -132,6 +139,8 @@ export class VoteCastDrawerComponent {
 
   // === Outputs ===
   public readonly voteSubmitted = output<string>();
+  // Emitted when an update is rejected because the vote ended, the voter was removed, or the ballot wasn't found (#5964).
+  public readonly ballotUnavailable = output<string>();
 
   // === Forms ===
   public readonly form = new FormGroup({});
@@ -759,6 +768,10 @@ export class VoteCastDrawerComponent {
           this.visible.set(false);
         },
         error: (err: unknown) => {
+          if (err instanceof HttpErrorResponse && err.status === 429) {
+            this.messageService.add({ severity: 'warn', summary: 'Too many requests', detail: VOTE_RATE_LIMITED_MESSAGE, life: 5000 });
+            return;
+          }
           const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
           this.messageService.add({
             severity: 'error',
@@ -798,12 +811,42 @@ export class VoteCastDrawerComponent {
           this.visible.set(false);
         },
         error: (err: unknown) => {
-          const body = err instanceof HttpErrorResponse ? (err.error as { error?: unknown } | null) : null;
+          const body = err instanceof HttpErrorResponse ? (err.error as { error?: unknown; code?: unknown } | null) : null;
           const message = typeof body?.error === 'string' ? body.error.toLowerCase() : '';
-          if (err instanceof HttpErrorResponse && err.status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
+          const status = err instanceof HttpErrorResponse ? err.status : undefined;
+          if (status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
             this.messageService.add({ severity: 'warn', summary: "This vote doesn't allow changes", detail: VOTE_BALLOT_FINAL_STATE, life: 5000 });
             this.changeBlockedFor.update((ids) => new Set(ids).add(voteUid));
             this.visible.set(false);
+            return;
+          }
+          // #5964: an ended vote or a removed voter can never be updated, so block further edits; a ballot that
+          // isn't found may come back, so it only closes. All three refresh the host's list.
+          if (status === 400 && message.includes(VOTE_UPSTREAM_ENDED)) {
+            this.messageService.add({ severity: 'warn', summary: 'This vote has ended', detail: VOTE_BALLOT_ENDED_STATE, life: 5000 });
+            this.changeBlockedFor.update((ids) => new Set(ids).add(voteUid));
+            this.visible.set(false);
+            this.ballotUnavailable.emit(voteUid);
+            return;
+          }
+          if (
+            (status === 404 && body?.code === VOTE_VOTER_REMOVED_ERROR_CODE) ||
+            (status === 400 && VOTE_UPSTREAM_UPDATE_REMOVAL_MESSAGES.some((fragment) => message.includes(fragment)))
+          ) {
+            this.messageService.add({ severity: 'warn', summary: "You're no longer a voter", detail: VOTE_BALLOT_REMOVED_STATE, life: 5000 });
+            this.changeBlockedFor.update((ids) => new Set(ids).add(voteUid));
+            this.visible.set(false);
+            this.ballotUnavailable.emit(voteUid);
+            return;
+          }
+          if (status === 404) {
+            this.messageService.add({ severity: 'error', summary: 'Unable to update vote', detail: VOTE_BALLOT_NOT_FOUND, life: 5000 });
+            this.visible.set(false);
+            this.ballotUnavailable.emit(voteUid);
+            return;
+          }
+          if (status === 429) {
+            this.messageService.add({ severity: 'warn', summary: 'Too many requests', detail: VOTE_RATE_LIMITED_MESSAGE, life: 5000 });
             return;
           }
           this.messageService.add({

@@ -34,6 +34,7 @@ class StubVoteCastDrawerComponent {
   public readonly changeMode = input<boolean>(false);
   public readonly visible = model<boolean>(false);
   public readonly voteSubmitted = output<string>();
+  public readonly ballotUnavailable = output<string>();
 }
 
 const NOW = Date.parse('2026-01-10T12:00:00Z');
@@ -1220,6 +1221,20 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(element('votes-load-error')).toBeNull();
       expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).toBe('Voted');
       expect(element('votes-cast-soon')?.textContent).toContain('Review');
+    });
+
+    it('refreshes the list without marking the vote voted when an update is rejected (#5964)', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      const callsBefore = getMyVotes.mock.calls.length;
+
+      drawer()!.ballotUnavailable.emit('soon');
+      await settle();
+
+      expect(getMyVotes).toHaveBeenCalledTimes(callsBefore + 1);
+      expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).not.toBe('Voted');
+      expect(element('votes-cast-soon')?.textContent?.trim()).toBe('Vote');
+      expect(dashboard['submittedVoteIds']().has('soon')).toBe(false);
     });
 
     it('marks the emitted vote UID, never another selected ballot, and retains multiple submissions', async () => {
