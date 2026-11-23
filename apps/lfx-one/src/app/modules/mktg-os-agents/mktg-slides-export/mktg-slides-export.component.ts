@@ -161,7 +161,8 @@ export class MktgSlidesExportComponent {
       (this.lookupPending() && !this.historyWaitExpired()) ||
       this.phase() !== 'idle' ||
       this.last() !== null ||
-      (this.lookupFailed() && (!this.lookupTarget() || this.historyWaitExpired()))
+      // A settled lookup with no deck stays hidden through a failed re-read: Export is still usable and nothing is inserted.
+      (this.lookupFailed() && !this.lookupSettled() && (!this.lookupTarget() || this.historyWaitExpired()))
   );
 
   private historyWaitTimer: ReturnType<typeof setTimeout> | null = null;

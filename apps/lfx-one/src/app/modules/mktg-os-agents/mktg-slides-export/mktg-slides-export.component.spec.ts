@@ -320,6 +320,23 @@ describe('MktgSlidesExportComponent', () => {
     expect(exporter.canExport()).toBe(true);
   });
 
+  it('stays hidden when a wake re-read of a settled lookup with no deck fails: nothing is inserted and Export stays available', async () => {
+    await setup();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    expect(exporter.visible()).toBe(false);
+    service.last.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+
+    expect(service.last).toHaveBeenCalledTimes(2);
+    expect(exporter.visible()).toBe(false);
+    expect(query('mktg-slides-export-panel')).toBeNull();
+    expect(query('mktg-slides-export-lookup-failed')).toBeNull();
+    expect(exporter.canExport()).toBe(true);
+    vi.useRealTimers();
+  });
+
   it('retains the loaded deck and approved-current status after a failed notification refresh, keeping Export enabled', async () => {
     lastResponse = { last: record({ revisionNumber: 1 }), latestRevision: { id: `000003-${'b'.repeat(64)}`, number: 3, contentSha256: 'b'.repeat(64) } };
     await setup();

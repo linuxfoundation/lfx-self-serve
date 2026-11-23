@@ -1033,4 +1033,33 @@ describe('Member360RunComponent', () => {
     await fixture.whenStable();
     expect(documents.listDocuments).toHaveBeenCalledTimes(reads);
   });
+  it.each([401, 403])('latches a refused owned-run read (%s): the access state, and the roster does not restore the run to read it again', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+    run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(fixture.componentInstance['serverDenied']()).toBe(true);
+    expect(run.questions).toHaveBeenCalledTimes(1);
+    const reads = documents.listDocuments.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(documents.listDocuments).toHaveBeenCalledTimes(reads);
+    expect(run.questions).toHaveBeenCalledTimes(1);
+  });
+  it.each([400, 404])('does not restore an owned run whose read failed for good (%s), though the roster still lists it', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: progress().runs }));
+    run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await render();
+    expect(run.questions).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['serverDenied']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(2 * MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(run.questions).toHaveBeenCalledTimes(1);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+  });
 });

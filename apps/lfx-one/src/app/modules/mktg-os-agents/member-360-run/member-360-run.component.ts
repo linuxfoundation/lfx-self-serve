@@ -126,6 +126,8 @@ export class Member360RunComponent {
   private readonly confirmedScope = signal('');
   private readonly checkedHistoryScope = signal('');
   private readonly deniedScope = signal('');
+  /** [scope, runId]: an owned run whose read was refused or not found; the roster does not restore it again in this scope. */
+  private refusedRun: [string, string] = ['', ''];
   /** [scope, message, kind]: the screen-state line; `retrying` is the poller's transient retry, `status` a self-updating wait, `error` a final failure. */
   private readonly loadingIssue = signal<[string, string, 'error' | 'retrying' | 'status']>(['', '', 'error']);
   private readonly accepted = signal<[string, MktgPendingGeneration | null]>(['', null]);
@@ -439,8 +441,14 @@ export class Member360RunComponent {
 
   /** The filtered server roster chooses a run; local proof can only enrich that choice. */
   private restoreServerRun(key: string, project: string, user: string, response: MktgDocumentsResponse): void {
+    // A run whose own read was refused stays out for the scope: restoring it would send the refused read again, in a loop.
+    const refused = this.refusedRun[0] === key ? this.refusedRun[1] : '';
     const active = response.runs?.find(
-      (row) => row.project === project && row.agentKey === 'member-360' && (row.state === 'writing' || row.state === 'questions' || row.state === 'storing')
+      (row) =>
+        row.project === project &&
+        row.agentKey === 'member-360' &&
+        row.runId !== refused &&
+        (row.state === 'writing' || row.state === 'questions' || row.state === 'storing')
     );
     const previous = this.ownedRun();
     const pending = this.pending();
@@ -503,6 +511,7 @@ export class Member360RunComponent {
             this.confirmedScope.set('');
             this.checkedHistoryScope.set('');
             this.deniedScope.set('');
+            this.refusedRun = ['', ''];
             this.loadingIssue.set(['', '', 'error']);
             this.retrying.set(false);
             this.historyRetrying.set(false);
@@ -556,7 +565,7 @@ export class Member360RunComponent {
                   }
                   this.restoreServerRun(key, project, user, response);
                   this.checkedHistoryScope.set(key);
-                  this.deniedScope.set('');
+                  // The denial latch is left alone: only a scope change clears it, never a read that was already in flight.
                   this.historyError.set('');
                 }
               }),
@@ -728,10 +737,16 @@ export class Member360RunComponent {
                 // must not be cleared, or hidden, by the connection line.
                 if (!transient) this.error.set('The run could not be checked. No new run is started.');
                 if (event.error instanceof HttpErrorResponse && [400, 401, 403, 404].includes(event.error.status)) {
+                  // Latch before the attempt is cleared: the roster may still list this run, and restoring it would repeat
+                  // the refused read with no backoff. A 401/403 also latches the scope (the plain access state), and the
+                  // roster is not read again with the same credentials.
+                  this.refusedRun = [key, runId];
+                  const denied = event.error.status === 401 || event.error.status === 403;
+                  if (denied) this.deniedScope.set(key);
                   this.confirmedScope.set('');
                   this.checkedHistoryScope.set('');
                   this.forgetAttempt(pending);
-                  this.historyRetry.update((value) => value + 1);
+                  if (!denied) this.historyRetry.update((value) => value + 1);
                 }
                 return;
               }
