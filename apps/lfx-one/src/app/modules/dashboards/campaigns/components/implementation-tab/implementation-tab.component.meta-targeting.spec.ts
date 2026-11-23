@@ -369,22 +369,19 @@ describe('ImplementationTabComponent meta ad image', () => {
   });
 
   // Unanswered (`null`) is the stricter wiring case; the full null/false/true matrix is `metaImageCapabilities` in the helper spec.
-  it.each([['unanswered', null]])(
-    'renders no image controls while the Meta creative capability is %s, and sends the variants unchanged',
-    async (_label, creative) => {
-      const f = (await mount(creative, true)).fixture;
+  it('renders no image controls while the Meta creative capability is unanswered, and sends the variants unchanged', async () => {
+    const f = (await mount(null, true)).fixture;
 
-      expect(q(f, 'implementation-meta-image-url')).toBeNull();
-      expect(q(f, 'implementation-meta-image-file')).toBeNull();
-      expect(submitVariants(f)).toEqual([
-        { primaryText: 'First primary', headline: 'First headline' },
-        { primaryText: 'Second primary', headline: 'Second headline', description: 'Second description' },
-      ]);
-    }
-  );
+    expect(q(f, 'implementation-meta-image-url')).toBeNull();
+    expect(q(f, 'implementation-meta-image-file')).toBeNull();
+    expect(submitVariants(f)).toEqual([
+      { primaryText: 'First primary', headline: 'First headline' },
+      { primaryText: 'Second primary', headline: 'Second headline', description: 'Second description' },
+    ]);
+  });
 
-  it.each([['unanswered', null]])('offers the image URL but no upload while the upload capability is %s', async (_label, upload) => {
-    const f = (await mount(true, upload)).fixture;
+  it('offers the image URL but no upload while the upload capability is unanswered', async () => {
+    const f = (await mount(true, null)).fixture;
 
     expect(q(f, 'implementation-meta-image-url')).not.toBeNull();
     expect(q(f, 'implementation-meta-image-file')).toBeNull();
@@ -496,28 +493,25 @@ describe('ImplementationTabComponent meta ad image', () => {
   });
 
   // Wiring for the withheld URL on an unanswered capability; the `unsupported`, `pending` and `unsaved` kinds are rows in `metaImageAssetBlock`'s helper table.
-  it.each([['unanswered, with the read failed', null, 'failed', 'failed']] as const)(
-    'blocks Create for a restored image URL while the image capability is %s, rather than dropping it',
-    async (_label, creative, read, kind) => {
-      const first = await mount(true, false);
-      typeImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
-      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
-      first.fixture.destroy();
+  it('blocks Create for a restored image URL while the image capability is unanswered and its read failed, rather than dropping it', async () => {
+    const first = await mount(true, false);
+    typeImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+    first.fixture.destroy();
 
-      const f = (await mount(creative, false, draft)).fixture;
-      f.componentRef.setInput('createCapabilityRead', read);
-      fillForm(f);
+    const f = (await mount(null, false, draft)).fixture;
+    f.componentRef.setInput('createCapabilityRead', 'failed');
+    fillForm(f);
 
-      expect(q(f, 'implementation-meta-image-url')).toBeNull();
-      expect(q(f, `implementation-meta-image-asset-block-${kind}`)).not.toBeNull();
-      expect(at(f).canSubmit()).toBe(false);
+    expect(q(f, 'implementation-meta-image-url')).toBeNull();
+    expect(q(f, 'implementation-meta-image-asset-block-failed')).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
 
-      (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
-      f.detectChanges();
-      expect(at(f).canSubmit()).toBe(true);
-      expect(submitVariants(f).some((v) => 'imageUrl' in v)).toBe(false);
-    }
-  );
+    (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(at(f).canSubmit()).toBe(true);
+    expect(submitVariants(f).some((v) => 'imageUrl' in v)).toBe(false);
+  });
 });
 
 /**
