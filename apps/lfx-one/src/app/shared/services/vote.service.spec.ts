@@ -716,6 +716,58 @@ describe('VoteService', () => {
       expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
     });
 
+    it.each([404, 409])('invalidates cached detail before notifying hosts of definitive cancellation state (%s)', (status) => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+      http.get.mockReturnValue(of(active));
+      service.fetchVote('new-vote').subscribe();
+      expect(http.get).toHaveBeenCalledTimes(1);
+      const failure = new HttpErrorResponse({ status, error: { code: VOTE_DELETE_ENDED } });
+      http.delete.mockReturnValue(throwError(() => failure));
+      const next = vi.fn();
+      const detailError = vi.fn();
+      service.voteCancellationCompleted$.subscribe(() => {
+        http.get.mockReturnValue(status === 404 ? throwError(() => new HttpErrorResponse({ status: 404 })) : of({ ...active, status: PollStatus.ENDED }));
+        service.fetchVote('new-vote').subscribe({ next, error: detailError });
+      });
+      const cancelError = vi.fn();
+      service.cancelVote('new-vote').subscribe({ error: cancelError });
+
+      expect(cancelError).toHaveBeenCalledWith(failure);
+      expect(http.get).toHaveBeenCalledTimes(2);
+      if (status === 404) {
+        expect(next).not.toHaveBeenCalled();
+        expect(detailError).toHaveBeenCalledWith(expect.objectContaining({ status: 404 }));
+      } else {
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: PollStatus.ENDED }));
+        expect(detailError).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each([403, 409, 500])('keeps cached detail after an unrelated cancellation failure (%s)', (status) => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+      http.get.mockReturnValue(of(active));
+      service.fetchVote('new-vote').subscribe();
+      http.delete.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: { code: 'OTHER_ERROR' } })));
+      service.cancelVote('new-vote').subscribe({ error: vi.fn() });
+      http.get.mockReturnValue(of({ ...active, status: PollStatus.ENDED }));
+      const read = vi.fn();
+      service.fetchVote('new-vote').subscribe(read);
+      expect(http.get).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenCalledWith(active);
+    });
+
+    it('invalidates cached detail when a local confirmation already knows the vote ended', () => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+      http.get.mockReturnValue(of(active));
+      service.fetchVote('new-vote').subscribe();
+      service.markVoteEnded('new-vote');
+      http.get.mockReturnValue(of({ ...active, status: PollStatus.ENDED }));
+      const read = vi.fn();
+      service.fetchVote('new-vote').subscribe(read);
+      expect(http.get).toHaveBeenCalledTimes(2);
+      expect(read).toHaveBeenCalledWith(expect.objectContaining({ status: PollStatus.ENDED }));
+    });
+
     it.each([false, true])('preserves confirmed-ended state through stale ACTIVE refreshes (recent carrier: %s)', (recent) => {
       const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 });
       if (recent) {

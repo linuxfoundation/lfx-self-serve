@@ -334,6 +334,7 @@ export class VoteService {
 
   /** Records confirmed ended state until the index agrees, independently of the optimistic carriers' TTLs. */
   public markVoteEnded(voteUid: string): void {
+    this.voteDetailCache.delete(voteUid);
     this.confirmedEndedVotes.add(voteUid);
     this.updateRecentlyCreatedVoteStatus(voteUid, PollStatus.ENDED);
     // An ENDED carrier inserted into an empty page is still local, not evidence that the index has caught up.
@@ -355,6 +356,7 @@ export class VoteService {
             if (!(error instanceof HttpErrorResponse)) return;
             const code = (error.error as { code?: unknown } | null)?.code;
             if (error.status === 404) {
+              this.voteDetailCache.delete(voteUid);
               this.confirmedEndedVotes.delete(voteUid);
               this.evictRecentlyCreatedVote(voteUid);
               this.evictRecentlyOpenedVote(voteUid);
