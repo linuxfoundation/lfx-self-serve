@@ -40,8 +40,9 @@ export const ACCOUNT_ROUTES: Routes = [
         title: 'Identities',
         loadComponent: () => import('../profile/identities/profile-identities.component').then((m) => m.ProfileIdentitiesComponent),
       },
-      // Linux.com email still sits at the foot of Identities, which feeds it the verified addresses, until #6075.
-      { path: 'linux-email', redirectTo: 'identities' },
+      // Linux.com email still sits at the foot of Identities, which feeds it the verified addresses, until #6075. A function
+      // redirect, so a Flow C return keeps its query.
+      { path: 'linux-email', redirectTo: ({ queryParams }) => inject(Router).createUrlTree(['/account/identities'], { queryParams }) },
       {
         path: 'individual-enrollment',
         title: 'Individual Enrollment',

@@ -1029,7 +1029,12 @@ describe('AccountSettingsComponent — linked email support callout (#5511)', ()
 });
 
 describe('AccountSettingsComponent — one section per Account & Settings page (#6067)', () => {
+  let getUserEmails: ReturnType<typeof vi.fn>;
+  let getDeveloperTokenInfo: ReturnType<typeof vi.fn>;
+
   async function render(data: Record<string, unknown>): Promise<HTMLElement> {
+    getUserEmails = vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] }));
+    getDeveloperTokenInfo = vi.fn(() => of({ token: '' }));
     TestBed.configureTestingModule({
       imports: [AccountSettingsComponent],
       providers: [
@@ -1039,9 +1044,9 @@ describe('AccountSettingsComponent — one section per Account & Settings page (
           provide: UserService,
           useValue: {
             impersonating: signal(false),
-            getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+            getUserEmails,
             getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
-            getDeveloperTokenInfo: vi.fn(() => of({ token: '' })),
+            getDeveloperTokenInfo,
           },
         },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
@@ -1068,5 +1073,21 @@ describe('AccountSettingsComponent — one section per Account & Settings page (
 
     expect(shown(root)).toEqual(['section-password']);
     expect(root.querySelector('[data-testid="section-password"]')?.classList.contains('border-t')).toBe(false);
+  });
+
+  it("loads only its own section's data on a single-section page", async () => {
+    await render({ embedded: true, section: 'password' });
+    expect(getUserEmails).not.toHaveBeenCalled();
+    expect(getDeveloperTokenInfo).not.toHaveBeenCalled();
+
+    TestBed.resetTestingModule();
+    await render({ embedded: true, section: 'developer-settings' });
+    expect(getUserEmails).not.toHaveBeenCalled();
+    expect(getDeveloperTokenInfo).toHaveBeenCalledTimes(1);
+
+    TestBed.resetTestingModule();
+    await render({ embedded: true, section: 'email-settings' });
+    expect(getUserEmails).toHaveBeenCalledTimes(1);
+    expect(getDeveloperTokenInfo).not.toHaveBeenCalled();
   });
 });

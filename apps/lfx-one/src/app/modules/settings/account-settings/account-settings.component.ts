@@ -285,7 +285,8 @@ export class AccountSettingsComponent {
     // Skip the developer-token fetch while impersonating — the server suppresses it (403) so the
     // impersonator can't read the target's live bearer token. Clear the loading flag so the UI
     // shows the read-only state instead of an indefinite spinner.
-    if (this.impersonating()) {
+    // A single-section page other than Developer settings never shows the token, so it skips the fetch too.
+    if (this.impersonating() || !this.showsSection(ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS)) {
       this.loadingToken.set(false);
     } else {
       this.loadDeveloperToken();
@@ -735,6 +736,10 @@ export class AccountSettingsComponent {
    * selection — long enough to delete the newly chosen invite address and orphan the preference.
    */
   private initEmailState(): Signal<EmailSettingsState> {
+    // Only Email settings shows these; Password and Developer settings on their own pages skip the fetch.
+    if (!this.showsSection(ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS)) {
+      return signal<EmailSettingsState>({ emails: null, invite: null, inviteLoadFailed: false });
+    }
     return toSignal(
       this.emailRefresh.pipe(
         switchMap((): Observable<EmailSettingsState> => {
@@ -816,6 +821,11 @@ export class AccountSettingsComponent {
       return 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.';
     }
     return null;
+  }
+
+  // True when the page shows this section: always on the combined page, and on a single-section page for its own.
+  private showsSection(section: AccountSettingsSection): boolean {
+    return this.section === null || this.section === section;
   }
 
   private loadDeveloperToken(): void {

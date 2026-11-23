@@ -37,4 +37,14 @@ describe('ACCOUNT_ROUTES', () => {
     expect(run('email-settings')).toBe(true);
     expect(run(null)).toBe(true);
   });
+
+  it('opens Identities for Linux.com email, keeping a Flow C query', () => {
+    const route = children.find((child) => child.path === 'linux-email')!;
+    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    const tree = TestBed.runInInjectionContext(() =>
+      (route.redirectTo as (data: { queryParams: Record<string, string> }) => UrlTree)({ queryParams: { success: 'profile_token_obtained' } })
+    );
+
+    expect(TestBed.inject(Router).serializeUrl(tree)).toBe('/account/identities?success=profile_token_obtained');
+  });
 });
