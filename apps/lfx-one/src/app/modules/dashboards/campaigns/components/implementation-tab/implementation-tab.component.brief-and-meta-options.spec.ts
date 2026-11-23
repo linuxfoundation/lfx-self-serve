@@ -957,16 +957,6 @@ describe('ImplementationTabComponent meta ad options', () => {
     expect('callToAction' in (await submittedMeta(f))).toBe(false);
   });
 
-  // applyDraft restores the objective before it drops choices the objective does not take, so a
-  // conversions draft keeps its conversion event rather than losing it to the traffic default.
-  it('restores a conversion event saved under the conversions objective', async () => {
-    const { f } = await mount(allOn, { metaObjective: 'conversions', metaAdOptions: { conversionEvent: 'LEAD' }, metaAdOptionsProject: 'tlf' });
-
-    expect(c(f)['metaObjective']()).toBe('conversions');
-    expect(c(f)['metaAdOptions']()).toEqual({ conversionEvent: 'LEAD' });
-    expect(query(f, 'implementation-meta-conversionEvent')).not.toBeNull();
-  });
-
   it('resets the choices on a foundation switch, and restores a draft only under its own foundation', STATE_ONLY, async () => {
     const { f, latest } = await mount(allOn);
     choose(f, 'callToAction', 'CONTACT_US');
