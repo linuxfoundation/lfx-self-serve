@@ -5,6 +5,7 @@ import { HttpClient, HttpErrorResponse, HttpHeaders, HttpResponse } from '@angul
 import { TestBed } from '@angular/core/testing';
 import {
   RECENTLY_OPENED_VOTE_TTL_MS,
+  VOTE_DELETE_ENDED,
   VOTE_CREATE_COMPLETED_AT_HEADER,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
@@ -654,6 +655,81 @@ describe('VoteService', () => {
       const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { closingOnly: true, nowMs });
 
       expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+  });
+
+  describe('cancelVote lifecycle', () => {
+    it('keeps the write and duplicate guard after the initiating observer unsubscribes', () => {
+      const pending = new Subject<void>();
+      http.delete.mockReturnValue(pending);
+      const completed = vi.fn();
+      service.voteCancellationCompleted$.subscribe(completed);
+      const observer = service.cancelVote('new-vote').subscribe();
+      observer.unsubscribe();
+      service.cancelVote('new-vote').subscribe();
+      expect(http.delete).toHaveBeenCalledTimes(1);
+      expect(service.cancellingVoteUids().has('new-vote')).toBe(true);
+
+      pending.next();
+      pending.complete();
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(service.cancellingVoteUids().has('new-vote')).toBe(false);
+    });
+
+    it.each([404, 409, 500])('reconciles only stale-state cancellation errors before notifying hosts (%s)', (status) => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, true);
+      service.markVoteOpened('new-vote');
+      const failure = new HttpErrorResponse({ status, error: { code: VOTE_DELETE_ENDED } });
+      http.delete.mockReturnValue(throwError(() => failure));
+      const errors = vi.fn();
+      const activeAtRefresh: Vote[][] = [];
+      service.voteCancellationCompleted$.subscribe(() => activeAtRefresh.push(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })));
+      service.cancelVote('new-vote').subscribe({ error: errors });
+      expect(errors).toHaveBeenCalledWith(failure);
+      expect(service.cancellingVoteUids().has('new-vote')).toBe(false);
+      if (status === 500) {
+        expect(activeAtRefresh).toEqual([]);
+        expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
+      } else {
+        expect(activeAtRefresh).toEqual([[]]);
+        expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      }
+      if (status === 409) {
+        expect(service.mergeRecentlyCreatedVotes([])).toEqual([expect.objectContaining({ uid: 'new-vote', status: PollStatus.ENDED })]);
+        expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ENDED })).toHaveLength(1);
+        expect(service.mergeRecentlyOpenedVotes([created])[0].status).toBe(PollStatus.ENDED);
+      }
+      if (status === 404) {
+        expect(service.mergeRecentlyCreatedVotes([])).toEqual([]);
+        expect(service.getLiveRecentlyOpenedVotes().has('new-vote')).toBe(false);
+      }
+    });
+
+    it('leaves carriers and hosts untouched for an unrelated 409', () => {
+      service.markVoteCreated(buildVote({ uid: 'new-vote' }), true);
+      http.delete.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'OTHER_CONFLICT' } })));
+      const completed = vi.fn();
+      service.voteCancellationCompleted$.subscribe(completed);
+      service.cancelVote('new-vote').subscribe({ error: vi.fn() });
+      expect(completed).not.toHaveBeenCalled();
+      expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
+    });
+
+    it('records ended state without restarting either carrier TTL', () => {
+      vi.useFakeTimers();
+      try {
+        service.markVoteCreated(buildVote({ uid: 'new-vote' }), true);
+        service.markVoteOpened('new-vote');
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS - 1);
+        service.markVoteEnded('new-vote');
+        expect(service.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ENDED })).toHaveLength(1);
+        vi.advanceTimersByTime(2);
+        expect(service.mergeRecentlyCreatedVotes([])).toEqual([]);
+        expect(service.getLiveRecentlyOpenedVotes().size).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

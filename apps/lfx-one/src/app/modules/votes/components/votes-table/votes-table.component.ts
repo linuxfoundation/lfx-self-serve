@@ -211,8 +211,8 @@ export class VotesTableComponent {
    * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
    */
   private readonly closingUids = signal<Set<string>>(new Set());
-  /** Votes with a cancel (delete) request in flight, so a repeated confirm cannot queue a duplicate (#5968). */
-  private readonly cancellingUids = signal<Set<string>>(new Set());
+  /** Service-owned pending IDs survive destroying and recreating this table (#5968). */
+  private readonly cancellingUids = this.voteService.cancellingVoteUids;
   private readonly closedVotes = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
   /**
    * Overlays a just-extended deadline onto its row (GH-3661) — `extendVote()`'s success response lands
@@ -588,12 +588,16 @@ export class VotesTableComponent {
       accept: () => {
         // Duplicate in-flight accepts stay silent, even if the row has since ended.
         if (this.cancellingUids().has(uid)) return;
-        const row = this.displayedVotes().find((r) => r.uid === uid);
-        if (row?.status === PollStatus.ENDED) {
+        // Status filters can hide a newly ended row; inspect current input and the confirmed Close overlay first.
+        const current = this.votes().find((r) => r.uid === uid);
+        const status = this.closedVotes().get(uid)?.status ?? current?.status;
+        if (current && status === PollStatus.ENDED) {
+          this.voteService.markVoteEnded(uid);
           this.messageService.add({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE, life: 8000 });
           this.refresh.emit();
           return;
         }
+        const row = this.displayedVotes().find((r) => r.uid === uid);
         if (row?.status !== PollStatus.ACTIVE) return;
         this.cancelVote(uid);
       },
@@ -750,34 +754,17 @@ export class VotesTableComponent {
       });
   }
 
-  /**
-   * Deletes an open vote (#5968). Success, an "already ended" conflict and an "already removed" 404 refresh the host list so
-   * the row disappears or shows its ended state; any other failure leaves the row as it was.
-   */
+  /** The service owns the write, duplicate guard and host refresh; this view presents its outcome. */
   private cancelVote(uid: string): void {
-    this.cancellingUids.update((ids) => new Set(ids).add(uid));
     this.voteService
-      .deleteVote(uid)
-      .pipe(
-        take(1),
-        finalize(() =>
-          this.cancellingUids.update((ids) => {
-            const next = new Set(ids);
-            next.delete(uid);
-            return next;
-          })
-        )
-      )
+      .cancelVote(uid)
+      .pipe(take(1))
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Vote cancelled' });
-          this.refresh.emit();
         },
         error: (error: unknown) => {
-          // A missing just-created vote must not be synthesized back into the refreshed management list.
-          if (error instanceof HttpErrorResponse && error.status === 404) this.voteService.evictRecentlyCreatedVote(uid);
           this.messageService.add(this.cancelErrorToast(error));
-          if (this.isCancelStateError(error)) this.refresh.emit();
         },
       });
   }
@@ -794,13 +781,6 @@ export class VotesTableComponent {
       return { severity: 'info', summary: 'Vote already removed', detail: 'This vote no longer exists. The list has been refreshed.' };
     }
     return { severity: 'error', summary: 'Unable to cancel the vote', detail: serverMessage ?? "We couldn't cancel the vote. Please try again.", life: 8000 };
-  }
-
-  /** A cancel that failed because the vote ended or was already removed: the displayed row is stale, so the list refreshes. */
-  private isCancelStateError(error: unknown): boolean {
-    if (!(error instanceof HttpErrorResponse)) return false;
-    const code = (error.error as { code?: unknown } | null)?.code;
-    return error.status === 404 || (error.status === 409 && code === VOTE_DELETE_ENDED);
   }
 
   /** The upstream message when the BFF passed one through (409 not started, 400 past its end time), else a plain fallback. */

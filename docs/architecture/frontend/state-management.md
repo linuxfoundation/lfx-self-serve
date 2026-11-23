@@ -49,6 +49,12 @@ export class DataService {
 - **Simplicity**: Easier to understand than RxJS for simple state
 - **Debugging**: Clear state flow and mutations
 
+### Vote cancellation lifetime
+
+`VoteService.cancelVote()` owns pending vote IDs and a non-ref-counted write subscription. Destroying the initiating table or switching group tabs cannot abort an initiated cancellation or reset its duplicate in-flight guard. The surviving Project/Foundation Votes dashboard and group page subscribe to `voteCancellationCompleted$` with their own destruction scopes; success, cancellation 404 and `409 VOTE_DELETE_ENDED` refresh those hosts. The table keeps confirmation and toast presentation. Draft deletion uses the existing `deleteVote()` flow unchanged.
+
+Before an ended-state refresh, `markVoteEnded()` reconciles the recently-created and recently-opened carriers without restarting their TTLs. The cancellation-only 404 path evicts both carriers. A locally confirmed ended row is checked against unfiltered inputs and Close overrides, so the group Active filter cannot hide its explanation. These guards are in-memory concurrency control, not cross-tab or server-side idempotency.
+
 ### Vote summary send lifetime
 
 `VoteSummarySendService` owns each initiated summary POST independently of its dialog. It retains the reviewed preview and the pending, successful, or failed attempt per vote in memory. **Hide while sending** closes only the view: the host's `onClose` event cannot dismiss a pending attempt, so reopening observes the same request without another preview or POST and other table actions remain usable. Successful detailed results and ambiguous errors remain inspectable until explicit dismissal through the footer **Close** or header **X**. The host's `onClose` event clears settled attempts; destroying the view during navigation does not. Clear pre-send rejections are dismissed after the dialog reports them, permitting a new attempt. The dialog observes a per-vote computed attempt through `toObservable` with `takeUntilDestroyed`, so another vote's map updates do not repeat result transitions or move focus.

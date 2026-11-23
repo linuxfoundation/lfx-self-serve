@@ -67,6 +67,7 @@ describe('VotesDashboardComponent personal summary', () => {
   let canWrite: WritableSignal<boolean>;
   let getMyVotes: ReturnType<typeof vi.fn>;
   let hasVotesAwaitingInvitationCount: ReturnType<typeof vi.fn>;
+  let cancellationCompleted: Subject<void>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
   const tabPills = () =>
@@ -95,6 +96,7 @@ describe('VotesDashboardComponent personal summary', () => {
     canWrite = signal(false);
     getMyVotes = vi.fn(() => of({ votes: feed, complete: true }));
     hasVotesAwaitingInvitationCount = vi.fn(() => false);
+    cancellationCompleted = new Subject<void>();
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
       providers: [
@@ -104,6 +106,8 @@ describe('VotesDashboardComponent personal summary', () => {
         {
           provide: VoteService,
           useValue: {
+            cancellingVoteUids: signal(new Set<string>()),
+            voteCancellationCompleted$: cancellationCompleted,
             getMyVotes,
             mergeRecentlyOpenedVotes: (votes: Vote[]) => votes,
             mergeRecentlyCreatedVotes: (votes: Vote[]) => votes,
@@ -154,6 +158,16 @@ describe('VotesDashboardComponent personal summary', () => {
     await settle();
     table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
   }
+
+  it.each<Lens>(['project', 'foundation', 'me'])('refreshes cancellation completion only on management hosts (%s)', async (lens) => {
+    if (lens !== 'me') await management(lens);
+    const refresh = vi.spyOn(dashboard as unknown as { refreshVotes: () => void }, 'refreshVotes');
+    cancellationCompleted.next();
+    expect(refresh).toHaveBeenCalledTimes(lens === 'me' ? 0 : 1);
+    fixture.destroy();
+    cancellationCompleted.next();
+    expect(refresh).toHaveBeenCalledTimes(lens === 'me' ? 0 : 1);
+  });
 
   it.each<Lens>(['project', 'foundation'])('enables participation progress in the %s lens', async (lens) => {
     await management(lens);

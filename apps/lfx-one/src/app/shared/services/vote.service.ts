@@ -10,6 +10,7 @@ import {
   VOTE_BALLOT_READ_RETRY_DELAY_MS,
   VOTE_CREATE_COMPLETED_AT_HEADER,
   VOTE_DETAIL_CACHE_TTL_MS,
+  VOTE_DELETE_ENDED,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
@@ -49,7 +50,7 @@ import {
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import { computeVoteRowParticipation, isVoteClosingSoon } from '@lfx-one/shared/utils';
-import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
+import { catchError, defer, EMPTY, finalize, map, Observable, of, retry, shareReplay, Subject, switchMap, take, tap, throwError, timer } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -64,6 +65,11 @@ export class VoteService {
   // (GH-4078), so a later stale Draft row is overlaid with it (e.g. Ended) instead of being reopened as Active.
   private readonly recentlyOpenedConfirmedStatus = new Map<string, PollStatus>();
   private readonly recentlyCreatedVotes: WritableSignal<Map<string, { vote: Vote; markedAt: number }>> = signal(new Map());
+  private readonly cancellingVotes = signal<ReadonlySet<string>>(new Set());
+  private readonly voteCancellationCompleted = new Subject<void>();
+  public readonly cancellingVoteUids = this.cancellingVotes.asReadonly();
+  /** Surviving management hosts refresh even when the initiating table has been destroyed. */
+  public readonly voteCancellationCompleted$ = this.voteCancellationCompleted.asObservable();
 
   /**
    * Single active speculative-create slot (GH-2826) — service-owned, not component-owned, so
@@ -320,6 +326,48 @@ export class VoteService {
         this.evictRecentlyCreatedVote(voteUid);
       })
     );
+  }
+
+  /** Records confirmed ended state in both optimistic carriers without extending their original TTLs. */
+  public markVoteEnded(voteUid: string): void {
+    this.updateRecentlyCreatedVoteStatus(voteUid, PollStatus.ENDED);
+    if (this.recentlyOpenedVotes().has(voteUid)) this.recentlyOpenedConfirmedStatus.set(voteUid, PollStatus.ENDED);
+  }
+
+  /** Cancellation-only lifecycle: pending guards and completion outlive a table or group tab. */
+  public cancelVote(voteUid: string): Observable<void> {
+    return defer(() => {
+      if (this.cancellingVotes().has(voteUid)) return EMPTY;
+      this.cancellingVotes.update((ids) => new Set(ids).add(voteUid));
+      return this.deleteVote(voteUid).pipe(
+        take(1),
+        tap({
+          next: () => this.voteCancellationCompleted.next(),
+          error: (error: unknown) => {
+            if (!(error instanceof HttpErrorResponse)) return;
+            const code = (error.error as { code?: unknown } | null)?.code;
+            if (error.status === 404) {
+              this.evictRecentlyCreatedVote(voteUid);
+              this.evictRecentlyOpenedVote(voteUid);
+            } else if (error.status === 409 && code === VOTE_DELETE_ENDED) {
+              this.markVoteEnded(voteUid);
+            } else {
+              return;
+            }
+            this.voteCancellationCompleted.next();
+          },
+        }),
+        finalize(() =>
+          this.cancellingVotes.update((ids) => {
+            const next = new Set(ids);
+            next.delete(voteUid);
+            return next;
+          })
+        ),
+        // Once sent, the write and its host notification survive view unsubscription.
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    });
   }
 
   /**

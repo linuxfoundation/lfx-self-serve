@@ -189,6 +189,10 @@ export class VotesDashboardComponent {
   });
 
   public constructor() {
+    this.voteService.voteCancellationCompleted$.pipe(takeUntilDestroyed()).subscribe(() => {
+      if (this.isManagementVotesLens()) this.refreshVotes();
+    });
+
     toObservable(this.castDrawerVisible)
       .pipe(
         filter((visible) => !visible),

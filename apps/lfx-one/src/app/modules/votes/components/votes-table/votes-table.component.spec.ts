@@ -1997,6 +1997,7 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     }).compileComponents();
     voteService = TestBed.inject(VoteService);
     vi.spyOn(voteService, 'deleteVote').mockImplementation(deleteVote);
+    voteService.voteCancellationCompleted$.subscribe(() => refreshed());
     fixture = TestBed.createComponent(VotesTableComponent);
     table = fixture.componentInstance;
     table.refresh.subscribe(() => refreshed());
@@ -2103,7 +2104,7 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     const evict = vi.spyOn(voteService, 'evictRecentlyCreatedVote');
     expect(voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE })).toHaveLength(1);
     let votesAtRefresh: Vote[] | undefined;
-    table.refresh.subscribe(() => {
+    voteService.voteCancellationCompleted$.subscribe(() => {
       votesAtRefresh = voteService.mergeRecentlyCreatedVotes([], { projectUid: 'synthetic-project', statusFilter: PollStatus.ACTIVE });
     });
     deleteVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Not found' } })));
@@ -2162,6 +2163,58 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     expect(deleteVote).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
     expect(refreshed).not.toHaveBeenCalled();
+  });
+
+  it.each(['input', 'close override'])('explains an ended vote hidden by Active using the %s, reconciling its carriers', async (source) => {
+    fixture.componentRef.setInput('statusTab', PollStatus.ACTIVE);
+    voteService.markVoteCreated(vote('active', { writer: true }), true);
+    voteService.markVoteOpened('active');
+    await settle();
+    const accept = await acceptCancel();
+    if (source === 'input') {
+      fixture.componentRef.setInput(
+        'votes',
+        ROWS.map((row) => (row.uid === 'active' ? { ...row, status: PollStatus.ENDED } : row))
+      );
+    } else {
+      table['closedVotes'].set(new Map([['active', { status: PollStatus.ENDED }]]));
+    }
+    fixture.detectChanges();
+    expect(table['displayedVotes']().some((row) => row.uid === 'active')).toBe(false);
+    accept();
+
+    expect(deleteVote).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Vote already ended' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(voteService.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+    expect(voteService.mergeRecentlyCreatedVotes([], { statusFilter: PollStatus.ENDED })).toEqual([
+      expect.objectContaining({ uid: 'active', status: PollStatus.ENDED }),
+    ]);
+    expect(voteService.mergeRecentlyOpenedVotes([vote('active', { status: PollStatus.DISABLED })])[0].status).toBe(PollStatus.ENDED);
+  });
+
+  it('retains the pending guard and notifies the surviving host after the table is destroyed and rebuilt', async () => {
+    const pending = new Subject<void>();
+    deleteVote.mockReturnValue(pending);
+    (await acceptCancel())();
+    fixture.destroy();
+
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('canCancelVotes', true);
+    fixture.detectChanges();
+    await settle();
+    expect((await cancelItem('active'))!.disabled).toBe(true);
+    const rebuiltConfirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    table['onCancelVote'](ROWS[0]);
+    rebuiltConfirm.mock.calls[0][0].accept!();
+    expect(deleteVote).toHaveBeenCalledTimes(1);
+
+    pending.next();
+    pending.complete();
+    expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(voteService.cancellingVoteUids().has('active')).toBe(false);
   });
 });
 
