@@ -186,11 +186,14 @@ export class MailingListSyncSettingsComponent {
       // can be reused across navigation) would suppress syncing the toggle to the newly-displayed
       // list's actual persisted state (#4899 review).
       if (untracked(this.saving) && untracked(this.savingUid) === ml.uid) return;
-      // Read the resolved committee's own sync_mode, not ml's top-level field — a mailing list can
-      // be linked to more than one committee with independent sync_mode values (see `committee`
-      // above), so the top-level field can disagree with the committee this instance is actually
-      // showing/operating on (greptile-apps, cursor, copilot, lfx-one bot, #6038 review).
-      const syncMode = this.committee()?.sync_mode;
+      // Prefer the committee-scoped sync_mode over ml's top-level field — a mailing list can be
+      // linked to more than one committee with independent sync_mode values (see `committee` above),
+      // so the top-level field can disagree with the committee this instance is actually
+      // showing/operating on (greptile-apps, cursor, copilot, lfx-one bot, #6038 review round 1). But
+      // save() below only ever patches the top-level field, never the matching committees[] entry, so
+      // right after a successful save the nested value is stale — fall back to it only when the
+      // just-saved top-level value isn't present (cursor/copilot/lfx-one bot, #6038 review round 2).
+      const syncMode = this.currentSyncMode(ml);
       this.syncOn.set(!!syncMode && syncMode !== MailingListSyncMode.MANUAL);
     });
 
@@ -204,9 +207,9 @@ export class MailingListSyncSettingsComponent {
       // previously-displayed list must not block syncing the selector to the newly-displayed list's
       // actual persisted state (#4899 review).
       if (untracked(this.saving) && untracked(this.savingUid) === ml.uid) return;
-      // Read the resolved committee's own sync_mode, not ml's top-level field — see the syncOn
-      // effect above for why (greptile-apps, cursor, copilot, lfx-one bot, #6038 review).
-      const syncMode = this.committee()?.sync_mode;
+      // Same just-saved-value-first resolution as the syncOn effect above — see its comment for why
+      // (greptile-apps, cursor, copilot, lfx-one bot, #6038 review rounds 1 and 2).
+      const syncMode = this.currentSyncMode(ml);
       // Falls back to the default direction, not just "leave the selector alone", when the
       // newly-displayed list has no active auto sync (MANUAL or unset) — otherwise navigating from a
       // list with one direction configured to a list with none left the selector showing the
@@ -301,9 +304,11 @@ export class MailingListSyncSettingsComponent {
           // rollback for a now-hidden list must not clobber the newly-displayed list's own state
           // with `ml`'s stale persisted mode (#4899 review).
           if (this.mailingList().uid === ml.uid) {
-            // Same committee-scoped sync_mode as the constructor effects above, not ml's top-level
-            // field (greptile-apps, cursor, copilot, lfx-one bot, #6038 review).
-            const persistedSyncMode = this.committee()?.sync_mode;
+            // Same just-saved-value-first resolution as the constructor effects above — a prior
+            // save on this same list could have succeeded even though this one failed, so `ml`'s own
+            // top-level sync_mode (if present) is still the freshest known-persisted value
+            // (greptile-apps, cursor, copilot, lfx-one bot, #6038 review rounds 1 and 2).
+            const persistedSyncMode = this.currentSyncMode(ml);
             this.syncOn.set(!!persistedSyncMode && persistedSyncMode !== MailingListSyncMode.MANUAL);
             const persisted =
               persistedSyncMode && persistedSyncMode !== MailingListSyncMode.MANUAL ? persistedSyncMode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
@@ -333,6 +338,18 @@ export class MailingListSyncSettingsComponent {
           this.updated.emit({ ...ml, sync_mode: syncMode });
         }
       });
+  }
+
+  // Resolves which sync_mode to treat as "currently persisted" for this list/committee pairing.
+  // save() below only ever patches ml's top-level sync_mode (never the matching committees[] entry),
+  // so right after a successful save that top-level value is the freshest known-persisted state and
+  // the committee-scoped field is stale; once a subsequent full refetch replaces `ml` with
+  // server-enriched data, the top-level field is gone again and the committee-scoped field is
+  // current (cursor/copilot/lfx-one bot, #6038 review round 2 — toggle/direction snapped back to the
+  // pre-save state after a successful save because the effects and rollback read only the
+  // committee-scoped field).
+  private currentSyncMode(ml: GroupsIOMailingList): MailingListSyncMode | undefined {
+    return ml.sync_mode ?? this.committee()?.sync_mode;
   }
 
   // `PUT /api/mailing-lists/:id` replaces the full resource (see buildMlUpdatePayload in

@@ -260,6 +260,32 @@ describe('MailingListSyncSettingsComponent', () => {
     expect(emitted[0]?.sync_mode).toBe(MailingListSyncMode.MANUAL);
   });
 
+  it('keeps the toggle on after a successful save even though the emitted object carries a stale committees[] entry (#6038 review)', async () => {
+    // The standalone mailing-list page feeds `updated`'s emission straight back in as the next
+    // `mailingList` input (take(1), so the constructor effects re-run against it). save() only ever
+    // patches the top-level sync_mode — never the matching committees[] entry — so this emission has
+    // a fresh top-level sync_mode alongside a stale (pre-save, MANUAL) committees[] entry. Reading
+    // only the committee-scoped field here would snap the toggle back off despite the successful
+    // save (cursor High-severity, copilot, lfx-one bot findings on PR #6038 round 2).
+    await render(baseList);
+    const emitted: GroupsIOMailingList[] = [];
+    fixture.componentInstance.updated.subscribe((v) => emitted.push(v));
+
+    fixture.componentInstance['onToggleChange'](true);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance['syncOn']()).toBe(true);
+    const roundTripped = emitted[0];
+    expect(roundTripped?.committees?.[0]?.sync_mode).not.toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+
+    fixture.componentRef.setInput('mailingList', roundTripped);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance['syncOn']()).toBe(true);
+    expect(fixture.componentInstance['form'].controls.direction.value).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+  });
+
   it('reverts the toggle to the persisted state when a sync-settings save fails', async () => {
     await render(baseList, { updateResult: 'error' });
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
