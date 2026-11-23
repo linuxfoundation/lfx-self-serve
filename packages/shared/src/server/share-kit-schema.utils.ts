@@ -1,0 +1,116 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Validates share kit content files (`apps/lfx-one/content/events/<eventSlug>/share-kit.json`, #6058).
+// Content owners edit these files by PR, so every field is checked here: plain text only, https links,
+// and no keys beyond the schema (a typo'd or unexpected key fails instead of being silently ignored).
+import { z } from 'zod';
+
+import { SHARE_KIT_LOCAL_ASSET_PREFIX, SHARE_KIT_SLUG_PATTERN } from '../constants/share-kit.constants';
+import { ShareKitContent, ShareKitValidationResult } from '../interfaces/share-kit.interface';
+
+const MARKUP_PATTERN = /<[a-z!/?][^>]*>/i;
+
+/** Plain text: trimmed, non-empty, no HTML tags. */
+const plainText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .refine((value) => !MARKUP_PATTERN.test(value), 'must be plain text, not HTML');
+
+const httpsUrl = z
+  .string()
+  .url()
+  .refine((value) => value.startsWith('https://'), 'must start with https://');
+
+/** Graphics may also live in the app's public folder, under `/share-kits/<eventSlug>/`. */
+const imageUrl = z.union([
+  httpsUrl,
+  z
+    .string()
+    .regex(
+      /^\/share-kits\/[a-z0-9-]+\/[A-Za-z0-9._-]+\.(png|jpe?g|webp|gif|svg)$/,
+      `must be https or a path under ${SHARE_KIT_LOCAL_ASSET_PREFIX}<eventSlug>/`
+    ),
+]);
+
+const isoDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
+  .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), 'must be a real date');
+
+const slug = z.string().regex(SHARE_KIT_SLUG_PATTERN, 'must be lowercase letters, digits and hyphens');
+
+const postSchema = z
+  .object({
+    id: slug,
+    title: plainText(80),
+    text: z.object({ linkedin: plainText(2800), x: plainText(240), bluesky: plainText(260) }).strict(),
+  })
+  .strict();
+
+const graphicSchema = z
+  .object({
+    label: plainText(80),
+    url: imageUrl,
+    alt: plainText(300),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  })
+  .strict();
+
+export const shareKitContentSchema = z
+  .object({
+    eventSlug: slug,
+    foundationSlug: slug,
+    foundationName: plainText(120),
+    title: plainText(120),
+    tagline: plainText(300),
+    startDate: isoDay,
+    endDate: isoDay,
+    venue: plainText(120),
+    city: plainText(120),
+    eventUrl: httpsUrl,
+    registration: z.object({ url: httpsUrl, priceLabel: plainText(40), earlyBirdUntil: isoDay.optional() }).strict(),
+    posts: z.array(postSchema).min(1).max(12),
+    newsletterBlurb: z.object({ text: plainText(1200), url: httpsUrl }).strict(),
+    graphics: z.array(graphicSchema).max(12),
+    cfp: z
+      .object({
+        url: httpsUrl,
+        closesOn: isoDay,
+        heading: plainText(120),
+        body: plainText(600),
+        invitation: plainText(240),
+        guide: z
+          .object({ title: plainText(120), description: plainText(300), url: httpsUrl })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    ogImage: z
+      .object({ url: imageUrl, alt: plainText(300) })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine((content) => content.endDate >= content.startDate, { message: 'endDate must not be before startDate', path: ['endDate'] })
+  .refine((content) => new Set(content.posts.map((post) => post.id)).size === content.posts.length, {
+    message: 'post ids must be unique',
+    path: ['posts'],
+  });
+
+/** Validates raw share kit content. `expectedSlug` is the folder name, which must match `eventSlug`. */
+export function validateShareKitContent(raw: unknown, expectedSlug?: string): ShareKitValidationResult {
+  const parsed = shareKitContentSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, problems: parsed.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`) };
+  }
+  if (expectedSlug !== undefined && parsed.data.eventSlug !== expectedSlug) {
+    return { ok: false, problems: [`eventSlug: "${parsed.data.eventSlug}" must match its folder name "${expectedSlug}"`] };
+  }
+  return { ok: true, content: parsed.data as ShareKitContent, problems: [] };
+}
