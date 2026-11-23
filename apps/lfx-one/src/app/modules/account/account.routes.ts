@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { inject } from '@angular/core';
-import { CanActivateFn, Router, Routes } from '@angular/router';
+import { CanActivateFn, Route, Router, Routes } from '@angular/router';
 import { ACCOUNT_SETTINGS_SECTIONS } from '@lfx-one/shared/constants';
 import { accountPathForProfileTab } from '@lfx-one/shared/utils';
+
+import { accountUnsavedChangesGuard } from '../../shared/guards/account-unsaved-changes.guard';
 
 const loadAccountSettings = () => import('../settings/account-settings/account-settings.component').then((m) => m.AccountSettingsComponent);
 
@@ -17,6 +19,10 @@ const settingsSectionFragmentGuard: CanActivateFn = (route) => {
   return target && !target.endsWith(`/${route.routeConfig?.path}`) ? inject(Router).createUrlTree([target], { queryParams: route.queryParams }) : true;
 };
 
+/** Every page asks before it is left with unsaved changes; a page with none goes straight through (#6070). */
+const withUnsavedChangesGuard = (routes: Route[]): Route[] =>
+  routes.map((route) => (route.loadComponent ? { ...route, canDeactivate: [...(route.canDeactivate ?? []), accountUnsavedChangesGuard] } : route));
+
 /**
  * Account & Settings (#6067), behind the profile redesign flag. Each page reuses the Profile & Account hub tab it
  * replaces until its own redesign lands; the three settings pages share the settings page, one section each.
@@ -25,7 +31,7 @@ export const ACCOUNT_ROUTES: Routes = [
   {
     path: '',
     loadComponent: () => import('@app/layouts/account-layout/account-layout.component').then((m) => m.AccountLayoutComponent),
-    children: [
+    children: withUnsavedChangesGuard([
       // The landing page arrives with #6069.
       { path: '', redirectTo: 'work-history', pathMatch: 'full' },
       // Personal information is still the hub's Edit profile drawer until #6072.
@@ -79,6 +85,6 @@ export const ACCOUNT_ROUTES: Routes = [
         data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS },
         loadComponent: loadAccountSettings,
       },
-    ],
+    ]),
   },
 ];

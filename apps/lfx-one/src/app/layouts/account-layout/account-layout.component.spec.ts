@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { PROFILE_AUTH_ERROR_MESSAGES } from '@lfx-one/shared/constants';
+import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -19,6 +20,12 @@ describe('AccountLayoutComponent', () => {
   let impersonating: ReturnType<typeof signal<boolean>>;
   let add: ReturnType<typeof vi.fn>;
   let queryParams: Record<string, string>;
+  let unsaved: {
+    dirty: ReturnType<typeof signal<boolean>>;
+    saving: ReturnType<typeof signal<boolean>>;
+    save: ReturnType<typeof vi.fn>;
+    revert: ReturnType<typeof vi.fn>;
+  };
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
@@ -33,6 +40,7 @@ describe('AccountLayoutComponent', () => {
         { provide: UserService, useValue: { impersonating, user: signal(null) } },
         { provide: NavbarCollapseService, useValue: { railAtAnyWidth: signal(true) } },
         { provide: MessageService, useValue: { add, messageObserver: of(), clearObserver: of() } },
+        { provide: AccountUnsavedChangesService, useValue: unsaved },
       ],
     });
     fixture = TestBed.createComponent(AccountLayoutComponent);
@@ -49,6 +57,77 @@ describe('AccountLayoutComponent', () => {
     impersonating = signal(false);
     add = vi.fn();
     queryParams = {};
+    unsaved = { dirty: signal(false), saving: signal(false), save: vi.fn(), revert: vi.fn() };
+  });
+
+  it('shows the save bar only while the page has unsaved changes', async () => {
+    await setup();
+    expect(query('account-layout-save-bar')).toBeNull();
+
+    unsaved.dirty.set(true);
+    fixture.detectChanges();
+
+    expect(query('account-layout-save-bar')).not.toBeNull();
+    (query('account-layout-save')?.querySelector('button') as HTMLButtonElement).click();
+    expect(unsaved.save).toHaveBeenCalled();
+    (query('account-layout-revert')?.querySelector('button') as HTMLButtonElement).click();
+    expect(unsaved.revert).toHaveBeenCalled();
+  });
+
+  it('hides the save bar while impersonating, when editing is disabled', async () => {
+    impersonating.set(true);
+    unsaved.dirty.set(true);
+    await setup();
+
+    expect(query('account-layout-save-bar')).toBeNull();
+  });
+
+  it('moves the nav down when the header grows, such as a description wrapping beside the save bar', async () => {
+    let resized: () => void = () => undefined;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        public constructor(callback: () => void) {
+          resized = callback;
+        }
+        public observe(): void {}
+        public disconnect(): void {}
+      }
+    );
+    await setup();
+    const header = query('account-layout-header')!;
+    const navTop = () => (query('account-layout-nav')?.firstElementChild as HTMLElement).style.top;
+
+    Object.defineProperty(header, 'offsetHeight', { value: 140, configurable: true });
+    resized();
+    fixture.detectChanges();
+
+    expect(navTop()).toBe('160px');
+    vi.unstubAllGlobals();
+  });
+
+  it('moves focus to the heading when Save or Revert clears the changes and the bar goes', async () => {
+    await setup();
+    document.body.appendChild(fixture.nativeElement);
+    unsaved.dirty.set(true);
+    fixture.detectChanges();
+
+    (query('account-layout-revert')?.querySelector('button') as HTMLButtonElement).focus();
+    unsaved.dirty.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(query('account-layout-title'));
+    fixture.nativeElement.remove();
+  });
+
+  it('holds Revert while a save is running', async () => {
+    await setup();
+    unsaved.dirty.set(true);
+    unsaved.saving.set(true);
+    fixture.detectChanges();
+
+    expect((query('account-layout-revert')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('shows the Account & Settings title and description', async () => {

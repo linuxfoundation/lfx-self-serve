@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, ElementRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
   ACCOUNT_SETTINGS_DESCRIPTION,
@@ -13,10 +14,12 @@ import {
   NAVBAR_MOBILE_TOP_BAR_MEDIA_QUERY,
 } from '@lfx-one/shared/constants';
 import { AccountSettingsNavGroup } from '@lfx-one/shared/interfaces';
+import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { LinkedEmailSupportToastComponent } from '@components/linked-email-support-toast/linked-email-support-toast.component';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
 import { UserService } from '@services/user.service';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 
 /**
@@ -25,7 +28,7 @@ import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
  */
 @Component({
   selector: 'lfx-account-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, LinkedEmailSupportToastComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, LinkedEmailSupportToastComponent, UiButtonComponent],
   providers: [ProfileAuthReturnService],
   templateUrl: './account-layout.component.html',
   // Negative margins cancel main-layout's page padding, so the white page and its sticky header run edge to edge.
@@ -37,12 +40,21 @@ export class AccountLayoutComponent {
   private readonly authReturn = inject(ProfileAuthReturnService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly belowLg = injectIsMobileViewport(NAVBAR_MOBILE_TOP_BAR_MEDIA_QUERY);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
+  private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
 
   protected readonly title = ACCOUNT_SETTINGS_TITLE;
   protected readonly description = ACCOUNT_SETTINGS_DESCRIPTION;
   protected readonly navGroups: AccountSettingsNavGroup[] = ACCOUNT_SETTINGS_NAV;
   protected readonly impersonating = this.userService.impersonating;
+  /** The shown page's unsaved changes, for the header save bar. */
+  protected readonly unsavedChanges = inject(AccountUnsavedChangesService);
+  /** Hidden while impersonating, when editing is disabled. */
+  protected readonly showSaveBar = computed(() => this.unsavedChanges.dirty() && !this.impersonating());
+  /** Whether keyboard focus is on a save bar button, so it can be moved before the bar goes away. */
+  protected saveBarHasFocus = false;
 
   /** Shows the fade under the header once the page has scrolled. */
   protected readonly scrolled = signal(false);
@@ -58,10 +70,30 @@ export class AccountLayoutComponent {
     // A profile save stashed before a Flow C redirect is only written by the hub's edit drawer, which returns to the hub,
     // so nothing here shows it; the save itself still lands.
     this.authReturn.listen(() => undefined);
+    // Save or Revert clears the changes and the bar goes with the button that had focus; focus moves to the heading rather
+    // than falling back to the page body.
+    toObservable(this.showSaveBar)
+      .pipe(takeUntilDestroyed())
+      .subscribe((shown) => {
+        if (shown || !this.saveBarHasFocus) return;
+        this.saveBarHasFocus = false;
+        afterNextRender(() => this.heading()?.nativeElement.focus(), { injector: this.injector });
+      });
     afterNextRender(() => {
       this.measureHeader();
       this.onScroll();
+      // The header grows when its description wraps, such as beside the save bar, so the nav's offset follows its size.
+      const header = this.header()?.nativeElement;
+      if (header && typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(() => this.measureHeader());
+        observer.observe(header);
+        this.destroyRef.onDestroy(() => observer.disconnect());
+      }
     });
+  }
+
+  protected onSaveBarFocusOut(event: FocusEvent): void {
+    this.saveBarHasFocus = event.currentTarget instanceof Element && event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget);
   }
 
   protected onScroll(): void {
