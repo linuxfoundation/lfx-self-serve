@@ -19,7 +19,7 @@ const meta: Meta<UiChipComponent> = {
     size: { control: 'select', options: ['sm', 'md'] },
   },
   decorators: [moduleMetadata({ imports: [UiChipComponent, UiChipGroupComponent, UiButtonComponent] })],
-  args: { label: 'Project: CNCF', tone: 'accent', variant: 'subtle', size: 'sm', dismissible: true },
+  args: { label: 'Project: CNCF', prefix: '', tone: 'accent', variant: 'subtle', size: 'sm', dismissible: true },
   render: (args) => ({ props: args, template: `<lfx-ui-chip ${argsToTemplate(args)} />` }),
 };
 export default meta;
@@ -31,6 +31,8 @@ export const Default: Story = {};
 export const Medium: Story = { args: { size: 'md' } };
 /** A read-only chip with the same look and no ×. A chip that is never removable is a plain `lfx-ui-badge`. */
 export const NotDismissible: Story = { args: { dismissible: false } };
+/** A filter key in regular weight before the medium-weight value. The × is named "Remove Project: Kubernetes". */
+export const WithPrefix: Story = { args: { prefix: 'Project:', label: 'Kubernetes' } };
 export const Outline: Story = { args: { variant: 'outline', label: 'v2.4.0' } };
 export const Tones: Story = {
   render: () => ({
@@ -81,7 +83,7 @@ export const AppliedFilters: Story = {
     },
     template: `
       <div class="flex flex-col gap-[16px]">
-        <lfx-ui-button #filtersButton variant="secondary" size="small" (click)="reset()">Filters (click to reset)</lfx-ui-button>
+        <lfx-ui-button #filtersButton variant="secondary" (click)="reset()">Filters (click to reset)</lfx-ui-button>
         @if (filters().length) {
           <lfx-ui-chip-group ariaLabel="Applied filters" [fallbackFocus]="filtersButton">
             @for (filter of filters(); track filter) {

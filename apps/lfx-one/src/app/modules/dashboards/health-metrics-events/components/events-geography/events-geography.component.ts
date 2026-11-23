@@ -12,17 +12,19 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
+import { HealthMetricsWorldMapComponent } from '../../../components/health-metrics-world-map/health-metrics-world-map.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { HealthMetricsEventsGeography, HealthMetricsEventsGeographyQuery, HealthMetricsEventsGeographyView } from '@lfx-one/shared/interfaces';
 
 /**
- * `#geo` — countries represented against the prior period, and the top countries by registrations.
+ * `#geo` — the metrics row, registrations by country on the world map, and the top countries beside it.
  * One read carries all four periods, so a period change re-projects it.
  */
 @Component({
   selector: 'lfx-events-geography',
-  imports: [EmptyStateComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsMetricsRowComponent, HealthMetricsWorldMapComponent, Skeleton],
   templateUrl: './events-geography.component.html',
 })
 export class EventsGeographyComponent {
@@ -35,8 +37,6 @@ export class EventsGeographyComponent {
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
-  /** The sub-nav badge: countries in the selected period, `null` while loading, failed or unmeasured. */
-  public readonly countChange = output<number | null>();
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
@@ -50,7 +50,6 @@ export class EventsGeographyComponent {
   );
   /** Nothing measured for the foundation or the period; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
-  private readonly count: Signal<number | null> = computed(() => (this.loading() || this.loadFailed() ? null : this.view().countries));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -60,9 +59,6 @@ export class EventsGeographyComponent {
         .subscribe(() => {
           if (!this.loadFailed() && !this.loading()) this.settled.emit(isEmptyView(this.view()));
         });
-      toObservable(this.count)
-        .pipe(distinctUntilChanged(), takeUntilDestroyed())
-        .subscribe((count) => this.countChange.emit(count));
     }
   }
 

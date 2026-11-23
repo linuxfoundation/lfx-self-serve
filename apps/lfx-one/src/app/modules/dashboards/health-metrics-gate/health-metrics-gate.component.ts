@@ -1,23 +1,33 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
 import { NavigationCancel, NavigationEnd, NavigationError, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { SelectComponent } from '@components/select/select.component';
-import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
+import { AppFooterComponent } from '@components/app-footer/app-footer.component';
+import {
+  HEALTH_METRICS_BASE_PATH,
+  HEALTH_METRICS_HEADER_COMPACT_AFTER_PX,
+  HEALTH_METRICS_HEADER_COMPACT_SHRINK_PX,
+  HEALTH_METRICS_OVERVIEW_ENABLED_FLAG,
+  HEALTH_METRICS_TABS,
+} from '@lfx-one/shared/constants';
 import { buildHealthMetricsYtdRangeLabel } from '@lfx-one/shared/utils';
+import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { UserService } from '@services/user.service';
-import { filter } from 'rxjs';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
+import { EMPTY, filter, fromEvent, Observable, switchMap } from 'rxjs';
 
+import { HealthMetricsTruncationTipDirective } from '../components/health-metrics-truncation-tip/health-metrics-truncation-tip.directive';
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 
 import type { IsActiveMatchOptions } from '@angular/router';
-import type { HealthMetricsRange, HealthMetricsTab, HealthMetricsTabKey, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsTab, HealthMetricsTabKey } from '@lfx-one/shared/interfaces';
 
 /**
  * Route target for `foundation/health-metrics`. Renders the legacy page by default (server and
@@ -29,7 +39,7 @@ import type { HealthMetricsRange, HealthMetricsTab, HealthMetricsTabKey, HealthM
  * `HealthMetricsComponent` mounts server-side, its data fetches run to completion there (SSR waits
  * for them before serializing), and the legacy page stays rendered on the client until the flag
  * resolves post-hydration — only then does the swap happen. A `CanMatchFn` awaiting flag
- * readiness (the `org-lens-cla-m3-enabled.guard.ts` pattern) would skip that duplicate legacy render, but
+ * readiness (the `org-lens-flag.guard.ts` pattern) would skip that duplicate legacy render, but
  * it would hold the whole route's client-side render until the provider reports for the ~100% of
  * users the flag is still off for — a worse trade while this page is dark-launched to a small
  * cohort; remove this gate rather than ramping the flag to 100% through it.
@@ -48,7 +58,18 @@ import type { HealthMetricsRange, HealthMetricsTab, HealthMetricsTabKey, HealthM
  */
 @Component({
   selector: 'lfx-health-metrics-gate',
-  imports: [NgClass, RouterLink, RouterLinkActive, RouterOutlet, HealthMetricsComponent, SelectComponent],
+  imports: [
+    RouterLink,
+    RouterLinkActive,
+    RouterOutlet,
+    AppFooterComponent,
+    HealthMetricsComponent,
+    HealthMetricsTruncationTipDirective,
+    UiOptionComponent,
+    UiSelectComponent,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
+  ],
   providers: [HealthMetricsChromeService],
   templateUrl: './health-metrics-gate.component.html',
   styleUrl: './health-metrics-gate.component.scss',
@@ -58,18 +79,16 @@ export class HealthMetricsGateComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly router = inject(Router);
+  private readonly appService = inject(AppService);
   protected readonly chrome = inject(HealthMetricsChromeService);
-  protected readonly userService = inject(UserService);
 
   protected readonly basePath = HEALTH_METRICS_BASE_PATH;
   protected readonly tabs: readonly HealthMetricsTab[] = HEALTH_METRICS_TABS;
   protected readonly ytdRangeLabel = buildHealthMetricsYtdRangeLabel(new Date());
-  protected readonly periodOptions = [...this.chrome.periods];
-  protected readonly tabOptions = [...HEALTH_METRICS_TABS];
-  /** The narrow header's dropdown, kept in step with the pill through the shared period. */
-  protected readonly periodForm = new FormGroup({ range: new FormControl<HealthMetricsRange>(this.chrome.selectedRange(), { nonNullable: true }) });
-  /** The narrowest header's tab dropdown, kept on the routed tab. */
-  protected readonly tabForm = new FormGroup({ tab: new FormControl<HealthMetricsTabKey>(this.activeTabKey(this.router.url), { nonNullable: true }) });
+  /** The narrowest header's view dropdown, kept on the routed tab. */
+  protected readonly selectedTab = signal<string | null>(this.activeTabKey(this.router.url));
+  /** The header's scrolled state: compact once the page scrolls, back to default at the top. */
+  protected readonly compact = signal(false);
 
   // queryParams must be `ignored` rather than the `{ exact: true }` shorthand's `exact` — the tab
   // links carry no query params of their own while the URL always carries `foundationSlug`.
@@ -79,14 +98,19 @@ export class HealthMetricsGateComponent {
   protected readonly pageHeader = viewChild<ElementRef<HTMLElement>>('pageHeader');
 
   private headerObserved = false;
+  /** The tab the router last landed on, so a new tab can reset the header; the dropdown changes ahead of it. */
+  private routedTab: HealthMetricsTabKey = this.activeTabKey(this.router.url);
   private readonly hydrated = signal(false);
   private readonly rawOverviewEnabled = this.featureFlagService.getBooleanFlag(HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, false);
 
   protected readonly overviewEnabled = computed(() => this.hydrated() && this.rawOverviewEnabled());
 
   public constructor() {
-    afterNextRender(() => this.hydrated.set(true));
-    this.initPeriodSelect();
+    afterNextRender(() => {
+      this.hydrated.set(true);
+      this.observeScroll();
+    });
+    this.initFooter();
     this.initTabSelect();
     // The header only exists inside the enabled branch, so it appears a render after `hydrated`
     // latches — watching the viewChild signal picks it up whenever that happens.
@@ -95,35 +119,63 @@ export class HealthMetricsGateComponent {
       .subscribe((header) => this.observeHeaderHeight(header?.nativeElement));
   }
 
-  protected setPeriod(period: HealthMetricsYearOption): void {
-    this.chrome.setPeriod(period);
+  /** Sets the shared period from the switch or its dropdown; both only offer the page's periods. */
+  protected setPeriod(range: string | null): void {
+    const period = this.chrome.periods.find((option) => option.range === range);
+    if (period) this.chrome.setPeriod(period);
   }
 
-  private initPeriodSelect(): void {
-    const control = this.periodForm.controls.range;
-    effect(() => {
-      const range = this.chrome.selectedRange();
-      if (control.value !== range) control.setValue(range, { emitEvent: false });
-    });
-    control.valueChanges.pipe(takeUntilDestroyed()).subscribe((range) => {
-      const period = this.chrome.periods.find((option) => option.range === range);
-      if (period) this.chrome.setPeriod(period);
-    });
+  protected openTab(key: string | null): void {
+    const tab = this.tabs.find((candidate) => candidate.key === key);
+    if (tab) void this.router.navigate(tab.route ? [this.basePath, tab.route] : [this.basePath], { queryParamsHandling: 'preserve' });
+  }
+
+  /** The redesigned page renders the app footer itself, at its own gutters; the legacy page keeps the layout's. */
+  private initFooter(): void {
+    // `claimFooter` returns its release, which runs as the teardown when the flag turns off or the page goes.
+    toObservable(this.overviewEnabled)
+      .pipe(
+        switchMap((enabled) => (enabled ? new Observable<never>(() => this.appService.claimFooter()) : EMPTY)),
+        takeUntilDestroyed()
+      )
+      .subscribe();
   }
 
   private initTabSelect(): void {
-    const control = this.tabForm.controls.tab;
     this.router.events
       .pipe(
         // A cancelled or failed navigation leaves the route where it was, so the dropdown goes back with it.
         filter((event) => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
         takeUntilDestroyed()
       )
-      .subscribe(() => control.setValue(this.activeTabKey(this.router.url), { emitEvent: false }));
-    control.valueChanges.pipe(takeUntilDestroyed()).subscribe((key) => {
-      const tab = this.tabs.find((candidate) => candidate.key === key);
-      if (tab) void this.router.navigate(tab.route ? [this.basePath, tab.route] : [this.basePath], { queryParamsHandling: 'preserve' });
-    });
+      .subscribe(() => {
+        const tab = this.activeTabKey(this.router.url);
+        // A new tab opens at the top with the default header.
+        if (tab !== this.routedTab) this.compact.set(false);
+        this.routedTab = tab;
+        this.selectedTab.set(tab);
+      });
+  }
+
+  /** Runs in the browser only, from `afterNextRender`; the page itself scrolls, so the window is the source. */
+  private observeScroll(): void {
+    fromEvent(window, 'scroll', { passive: true })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.updateCompact());
+  }
+
+  /** Compacts past a small scroll and expands only back at the top, so a position near the top cannot bounce. */
+  private updateCompact(): void {
+    const top = window.scrollY;
+    if (this.compact()) {
+      if (top <= 0) this.compact.set(false);
+      return;
+    }
+    // Compacting shortens the page, so it waits for enough room to stay scrolled after it.
+    const room = document.documentElement.scrollHeight - window.innerHeight;
+    if (top > HEALTH_METRICS_HEADER_COMPACT_AFTER_PX && room > HEALTH_METRICS_HEADER_COMPACT_SHRINK_PX + HEALTH_METRICS_HEADER_COMPACT_AFTER_PX) {
+      this.compact.set(true);
+    }
   }
 
   /** The tab a URL routes to: the segment after the base path, or the Overview. */

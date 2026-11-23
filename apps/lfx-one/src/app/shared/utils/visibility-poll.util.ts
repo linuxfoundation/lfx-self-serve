@@ -14,7 +14,7 @@ export function pollBackoffDelayMs(failures: number, baseMs: number, maxMs: numb
  * @description Polls immediately, then every `intervalMs` while `document.visibilityState === 'visible'`. A hidden tab
  * cancels the pending timer and any in-flight request; the next `visible` event fetches immediately and restarts the
  * loop (including after `shouldContinue` stopped it — that is how a reopened vote is noticed). Window focus also
- * re-reads immediately while visible. Failures never end the
+ * re-reads while visible (optionally coalescing adjacent wake events). Initial reads and hidden cancellation are immediate. Failures never end the
  * stream: they emit an `error` event and retry on capped exponential backoff, so recovery needs no reload.
  * The fetch callback receives `false` on open/visible/focus and `true` on scheduled polls/retries;
  * callers that do not distinguish discovery from bounded polling can keep a no-argument callback.
@@ -27,13 +27,14 @@ export function createVisibilityPoll<T>(
   fetch: (poll: boolean) => Observable<T>,
   options: VisibilityPollOptions<T>
 ): Observable<VisibilityPollEvent<T>> {
-  const { intervalMs, backoffBaseMs, backoffMaxMs, shouldContinue = () => true } = options;
+  const { intervalMs, backoffBaseMs, backoffMaxMs, wakeDebounceMs = 0, shouldContinue = () => true } = options;
 
   const visibility = fromEvent(doc, 'visibilitychange');
   const wake = doc.defaultView ? merge(visibility, fromEvent(doc.defaultView, 'focus')) : visibility;
   const visible$ = wake.pipe(
-    startWith(null),
-    map(() => doc.visibilityState === 'visible')
+    map(() => doc.visibilityState === 'visible'),
+    switchMap((visible) => (!visible || !wakeDebounceMs ? of(visible) : timer(wakeDebounceMs).pipe(map(() => true)))),
+    startWith(doc.visibilityState === 'visible')
   );
 
   const loop = (): Observable<VisibilityPollEvent<T>> => {

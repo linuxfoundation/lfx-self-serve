@@ -7,53 +7,66 @@
       <h2 class="text-base font-semibold text-gray-900">Vote details</h2>
       <dl class="flex flex-col divide-y divide-gray-100 text-sm">
         <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-created">
-          <dt class="text-gray-500">Created</dt>
-          <dd class="text-right font-medium text-gray-900">{{ createdText() }}</dd>
+          <dt class="shrink-0 text-gray-500">Created</dt>
+          <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ createdText() }}</dd>
         </div>
-        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-comments">
-          <dt class="text-gray-500">Comments</dt>
-          <dd class="text-right font-medium text-gray-900">{{ commentsText() }}</dd>
+        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-group">
+          <dt class="shrink-0 text-gray-500">Group</dt>
+          <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ vote().committee_name || 'Unknown group' }}</dd>
         </div>
+        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-method">
+          <dt class="shrink-0 text-gray-500">Voting method</dt>
+          <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ methodLabel() }}</dd>
+        </div>
+        @if (closeDateText()) {
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-close-date">
+            <dt class="shrink-0 text-gray-500">Close date</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">
+              <span
+                [pTooltip]="closeTime() | longTimezone: viewerTimezone"
+                tooltipPosition="top"
+                tooltipEvent="both"
+                tabindex="0"
+                role="note"
+                [attr.aria-label]="closeDateText() + ' (' + (closeTime() | longTimezone: viewerTimezone) + ')'"
+                >{{ closeDateText() }}</span
+              >
+            </dd>
+          </div>
+          @if (timeRemainingText(); as remaining) {
+            <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-time-remaining">
+              <dt class="shrink-0 text-gray-500">Time remaining</dt>
+              <dd class="min-w-0 break-words text-right font-medium {{ remaining | dueDateLabelColor }}">{{ remaining }}</dd>
+            </div>
+          }
+        }
+        @if (endedEarlyNote(); as endedEarly) {
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-ended-early">
+            <dt class="shrink-0 text-gray-500">Ended early</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ endedEarly }}</dd>
+          </div>
+        }
+        @if (invitedText(); as invited) {
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-invited">
+            <dt class="shrink-0 text-gray-500">Voters</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ invited }}</dd>
+          </div>
+        }
+        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-vote-questions">
+          <dt class="shrink-0 text-gray-500">Vote questions</dt>
+          <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ voteQuestionCount() ?? '—' }}</dd>
+        </div>
+        @if (commentsEnabled()) {
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-comments">
+            <dt class="shrink-0 text-gray-500">Comments</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">Active</dd>
+          </div>
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-comment-prompts">
+            <dt class="shrink-0 text-gray-500">Comment prompts</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ resolvedCommentPromptCount() }}</dd>
+          </div>
+        }
       </dl>
-    </div>
-  </lfx-card>
-
-  <lfx-card data-testid="vote-detail-facts-visibility">
-    <div class="flex flex-col gap-3">
-      <div class="flex items-center gap-2">
-        <i class="fa-light fa-lock text-gray-500" aria-hidden="true"></i>
-        <h2 class="text-base font-semibold text-gray-900">Visibility at a glance</h2>
-      </div>
-      <p class="text-sm text-gray-600" data-testid="vote-detail-facts-visibility-summary">{{ visibilityHeadline() }}</p>
-      <div class="relative w-fit">
-        <lfx-button
-          label="More about visibility"
-          [text]="true"
-          size="small"
-          (onClick)="toggleVisibilityRules($event, visibilityPopover)"
-          [ariaExpanded]="visibilityOpen()"
-          ariaHaspopup="dialog"
-          ariaControls="vote-detail-facts-visibility-rules"
-          data-testid="vote-detail-facts-visibility-more" />
-        <p-popover
-          #visibilityPopover
-          ariaLabel="Visibility rules"
-          [style]="{ width: '320px' }"
-          (onShow)="visibilityOpen.set(true)"
-          (onHide)="visibilityOpen.set(false)"
-          data-testid="vote-detail-facts-visibility-popover">
-          <ul
-            id="vote-detail-facts-visibility-rules"
-            class="flex flex-col gap-2 text-sm text-gray-600"
-            tabindex="-1"
-            autofocus
-            (keydown.escape)="closeVisibilityRules(visibilityPopover)">
-            @for (rule of visibilityRules(); track rule) {
-              <li data-testid="vote-detail-facts-visibility-rule">{{ rule }}</li>
-            }
-          </ul>
-        </p-popover>
-      </div>
     </div>
   </lfx-card>
 </div>

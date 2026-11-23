@@ -24,6 +24,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  */
 
 const getAccessAwareOrgs = vi.fn();
+const getRollUpSet = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
@@ -41,6 +42,7 @@ vi.mock('../services/access-check.service', () => ({
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+    public getRollUpSet = getRollUpSet;
   },
 }));
 vi.mock('../services/microservice-proxy.service', () => ({
@@ -56,7 +58,7 @@ vi.mock('../helpers/org-lens-edit-access.helper', () => ({ resolveOrgLensEdit })
 // omitted it would make the middleware call `undefined(req)` and 500 every test in this file.
 // Toggled via `impersonatingStub` so the impersonation-blocked scenario can flip it per test.
 let impersonatingStub = false;
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra', isImpersonating: () => impersonatingStub }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'jdoe', isImpersonating: () => impersonatingStub }));
 // The ROI LF-staff gate (in every environment) asks `lf-staff#member`; each case sets the answer it needs.
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkLFStaff: () => checkLFStaff() } }));
 vi.mock('../services/logger.service', () => ({
@@ -190,12 +192,27 @@ describe('orgs router — Org Lens read gate', () => {
   });
 });
 
+describe('orgs router — GET /me/roll-up-set (#4126)', () => {
+  it('serves the roll-up set from its own handler, not the canonical-record catch-all', async () => {
+    const rollUpSet = { families: [], degraded: false, lookupOutcome: 'ok' };
+    getRollUpSet.mockResolvedValue(rollUpSet);
+
+    const res = await fetch(`${baseUrl}/api/orgs/me/roll-up-set?refresh=1`);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(rollUpSet);
+    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'jdoe', true, null);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+});
+
 describe('orgs router — ROI Metrics LF-staff gate', () => {
   const ROI_PATHS = [
     '/lens/roi/summary',
     '/lens/roi/coverage',
     '/lens/roi/annual',
     '/lens/roi/investment-breakdown',
+    '/lens/roi/value-drivers',
     '/lens/roi/projects',
     '/lens/roi/projects/synthetic-project/annual',
     '/lens/roi/projects/synthetic-project',
@@ -300,17 +317,17 @@ describe('orgs router — POST /uid/:uid/logo', () => {
   it('parses an allowed content type as a raw buffer and proxies it', async () => {
     proxyRequestWithResponse.mockResolvedValue({ data: rawOrg, status: 200, statusText: 'OK', headers: { etag: 'W/"etag-1"' } });
     proxyRequest.mockResolvedValue(rawOrg);
-    const body = Buffer.from('fake-png-bytes');
+    const body = Buffer.from('fake-svg-bytes');
 
     const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
       method: 'POST',
-      headers: { 'Content-Type': 'image/png' },
+      headers: { 'Content-Type': 'image/svg+xml' },
       body,
     });
 
     expect(res.status).toBe(200);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/b2b_orgs/${UID}/logo`, 'POST', undefined, expect.any(Buffer), {
-      'Content-Type': 'image/png',
+      'Content-Type': 'image/svg+xml',
       'If-Match': 'W/"etag-1"',
     });
   });
@@ -329,6 +346,17 @@ describe('orgs router — POST /uid/:uid/logo', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 
+  it.each(['image/png', 'image/jpeg'])('rejects %s with a 400 now that logos are SVG-only', async (contentType) => {
+    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body: Buffer.from('raster-bytes'),
+    });
+
+    expect(res.status).toBe(400);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
   it('converts an oversized body to 413 rather than a generic 500', async () => {
     // MAX_ORG_LOGO_SIZE_BYTES is enforced by express.raw({ limit }); one byte over it must trip
     // handleLogoUploadParseError's entity.too.large branch.
@@ -337,7 +365,7 @@ describe('orgs router — POST /uid/:uid/logo', () => {
 
     const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
       method: 'POST',
-      headers: { 'Content-Type': 'image/png' },
+      headers: { 'Content-Type': 'image/svg+xml' },
       body: oversized,
     });
 
@@ -356,8 +384,8 @@ describe('orgs router — POST /uid/:uid/logo', () => {
 
     const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
       method: 'POST',
-      headers: { 'Content-Type': 'image/png' },
-      body: Buffer.from('fake-png-bytes'),
+      headers: { 'Content-Type': 'image/svg+xml' },
+      body: Buffer.from('fake-svg-bytes'),
     });
 
     expect(res.status).toBe(403);

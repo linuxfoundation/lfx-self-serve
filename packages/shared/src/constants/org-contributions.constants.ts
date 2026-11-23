@@ -11,7 +11,7 @@ import type {
 } from '../interfaces';
 import { DEFAULT_ORG_COMMIT_FILTERS, ORG_CODE_METRIC_LABEL } from './org-commit-filters.constants';
 import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
-import { DEFAULT_ORG_TEAM_MEMBERS } from './org-people.constants';
+import { DEFAULT_ORG_SCOPE, DEFAULT_ORG_TEAM_MEMBERS } from './org-people.constants';
 
 // Org Lens → Code Contributions page (LFXV2-1894). Range set shared with the People tabs (org-lens-time-range.constants).
 
@@ -54,6 +54,7 @@ export const EMPTY_ORG_CONTRIBUTIONS_QUERY: OrgContributionsQuery = {
   projects: [],
   employees: [],
   teamMembers: DEFAULT_ORG_TEAM_MEMBERS,
+  orgScope: DEFAULT_ORG_SCOPE,
   sort: 'commits',
   dir: -1,
   commitSort: 'date',

@@ -4,13 +4,17 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 
-import { Component, computed, DestroyRef, effect, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, Injector, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  NEWSLETTER_AUDIENCE_POLL_MAX,
+  NEWSLETTER_AUDIENCE_POLL_MS,
   NEWSLETTER_COMMITTEE_CATEGORY,
+  NEWSLETTER_ENHANCED_EDITOR_DEFAULT,
+  NEWSLETTER_ENHANCED_EDITOR_FLAG,
   NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS,
   NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES,
   NEWSLETTER_STEP_TITLES,
@@ -21,12 +25,16 @@ import {
   CreateNewsletterRequest,
   GenerateNewsletterResponse,
   Newsletter,
+  NewsletterLayout,
   NewsletterAudienceEmailAdd,
   NewsletterCancelScheduleResult,
   NewsletterManageViewMode,
+  NewsletterPublication,
   NewsletterScheduleResult,
   NewsletterScheduleWindowError,
   NewsletterSendResult,
+  NewsletterAudience,
+  NewsletterAudienceNotReadyStatus,
   ProjectContext,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -36,12 +44,16 @@ import {
   formatRelativeTime,
   formatTo12HourInTimezone,
   getTimezoneUtcOffsetString,
+  getNewsletterPublicationErrorMessage,
   getUserTimezone,
+  isNewsletterBlocksEnabled,
+  isNewsletterLiveSendLocked,
   isValidEmail,
   stripHtml,
 } from '@lfx-one/shared/utils';
 import { newsletterScheduleWindowValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -59,23 +71,30 @@ import {
   combineLatest,
   concatMap,
   debounceTime,
+  defer,
   distinctUntilChanged,
   EMPTY,
   filter,
   finalize,
   interval,
+  last,
   map,
   merge,
+  Observable,
   of,
   Subject,
+  pairwise,
+  repeat,
   switchMap,
   take,
+  takeWhile,
   tap,
 } from 'rxjs';
 
 import { NewsletterAudienceStepComponent } from '../components/newsletter-audience-step/newsletter-audience-step.component';
 import { NewsletterContentStepComponent } from '../components/newsletter-content-step/newsletter-content-step.component';
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
+import { NewsletterPublicationPickerComponent } from '../components/newsletter-publication-picker/newsletter-publication-picker.component';
 import { NewsletterReviewComponent } from '../components/newsletter-review/newsletter-review.component';
 import { NewsletterSendStepComponent } from '../components/newsletter-send-step/newsletter-send-step.component';
 
@@ -92,6 +111,7 @@ import { NewsletterSendStepComponent } from '../components/newsletter-send-step/
     NewsletterContentStepComponent,
     NewsletterSendStepComponent,
     NewsletterPreviewDrawerComponent,
+    NewsletterPublicationPickerComponent,
     NewsletterReviewComponent,
   ],
   providers: [ConfirmationService],
@@ -109,6 +129,7 @@ export class NewsletterManageComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -124,6 +145,10 @@ export class NewsletterManageComponent {
     {
       committeeUids: new FormControl<string[]>([], { nonNullable: true }),
       subject: new FormControl<string>('', { nonNullable: true }),
+      // body_layout is the authored source of truth (from the block composer).
+      // body_html is derived server-side (render-on-write) and synced back on save
+      // so the preview drawer and test-send use the authoritative MJML render.
+      bodyLayout: new FormControl<NewsletterLayout | null>(null),
       bodyHtml: new FormControl<string>('', { nonNullable: true }),
       sendMode: new FormControl<'now' | 'schedule'>('now', { nonNullable: true }),
       scheduleDate: new FormControl<Date | null>(null),
@@ -182,7 +207,95 @@ export class NewsletterManageComponent {
   public readonly displayName: Signal<string> = computed(() => this.activeContext()?.name ?? '');
   private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
   public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
+  private readonly enhancedEditorEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(
+    NEWSLETTER_ENHANCED_EDITOR_FLAG,
+    NEWSLETTER_ENHANCED_EDITOR_DEFAULT
+  );
+  // The block composer + its template library are gated to the pilot projects
+  // (see NEWSLETTER_BLOCKS_PROJECT_SLUGS) and the feature flag for NEW authoring;
+  // everyone else uses the basic editor only.
+  //
+  // A draft that ALREADY carries a body_layout is always editable in the composer
+  // regardless of the gate — otherwise the basic editor would edit body_html
+  // while the still-present layout stays authoritative upstream, silently
+  // discarding those edits. Layouts are only ever created in the pilot, so this
+  // never exposes blocks authoring to a non-pilot project.
+  //
+  // For a NEW draft the pilot slug comes from the AMBIENT context, so only trust
+  // it when the ambient context IS the newsletter's owning project. The edit
+  // route may carry a `:projectUid` that differs from the active lens (that's why
+  // projectUid() prefers routeProjectUid); if they differ we can't confirm the
+  // owner is a pilot, so we withhold blocks rather than offer them for a
+  // potentially non-pilot newsletter.
+  public readonly blocksEnabled: Signal<boolean> = computed(() => {
+    const route = this.routeProjectUid();
+    const ctx = this.activeContext();
+    return isNewsletterBlocksEnabled({
+      hasLayout: this.bodyLayoutValue() !== null,
+      flagEnabled: this.enhancedEditorEnabled(),
+      contextIsOwner: !route || route === ctx?.uid,
+      projectSlug: ctx?.slug,
+    });
+  });
   public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0);
+
+  // === Publications (#4349) ===
+  // Publications need the block composer: an edition of a publication with a template set has to
+  // be a layout, so they follow the same flag and pilot-project gate. With the flag off the picker
+  // is hidden and create requests are unchanged; an opened edition still shows its publication's
+  // sender details and template set, because the service applies them either way.
+  public readonly publicationsEnabled: Signal<boolean> = computed(() => this.enhancedEditorEnabled() && this.blocksEnabled());
+  // The publication chosen in the create flow. Null means a one-off newsletter (an implicit publication).
+  protected readonly selectedPublication = signal<NewsletterPublication | null>(null);
+  // The publication of a loaded draft. Read whatever the flag says, because the service applies its
+  // sender details and template set to every edition.
+  private readonly draftPublicationUid = signal<string | null>(null);
+  private readonly draftPublication = signal<NewsletterPublication | null>(null);
+  private readonly draftPublicationPending = signal<boolean>(false);
+  private readonly draftPublicationReadFailed = signal<boolean>(false);
+  // True when the opened edition was saved without a layout. The service lets such an edition stay
+  // Basic after its publication gains a template set, though any layout it saves must use that set.
+  private readonly draftSavedAsBasic = signal<boolean>(false);
+  // Basic stays available only while that edition still has no layout. Once it has blocks, clearing
+  // the layout would be refused.
+  public readonly basicAllowed: Signal<boolean> = computed(() => this.draftSavedAsBasic() && this.bodyLayoutValue() === null);
+  // A Basic edition whose publication is loading or unreadable has an unknown template set, so it
+  // stays on Basic until the set is known.
+  public readonly blocksSwitchBlocked: Signal<boolean> = computed(
+    () => this.bodyLayoutValue() === null && (this.draftPublicationPending() || this.draftPublicationReadFailed())
+  );
+  // The audience a publication filled in, so switching publication replaces it rather than keeping it.
+  private readonly audienceFromPublication = signal<string[] | null>(null);
+  // Carries a publication just created or edited from the form back to the create flow, via ?publication=.
+  protected readonly preselectPublicationUid = signal<string | null>(this.route.snapshot.queryParamMap.get('publication'));
+  // A picked publication only exists with the flag on (the picker is hidden otherwise); an opened
+  // edition's publication applies with the flag off too.
+  public readonly activePublication: Signal<NewsletterPublication | null> = computed(() => {
+    const publication = this.selectedPublication() ?? this.draftPublication();
+    return publication && !publication.implicit ? publication : null;
+  });
+  // The first save of a new draft is in flight. Its request already names a publication, so the
+  // picker is frozen until the draft exists and can no longer be moved.
+  public readonly creatingDraft: Signal<boolean> = computed(() => this.savingDraft() && !this.isEditMode());
+  public readonly publicationLocked: Signal<boolean> = computed(() => this.isEditMode() || this.creatingDraft());
+  public readonly showPublicationPicker: Signal<boolean> = computed(
+    () => this.publicationsEnabled() && (!this.isEditMode() || this.activePublication() !== null)
+  );
+  // Opening the publication form leaves this page. A new draft loses anything typed, and a saved
+  // one loses edits the autosave has not sent yet.
+  // isDirty leaves out the schedule, so a send time the autosave has not sent yet is checked here.
+  public readonly publicationFormLosesWork: Signal<boolean> = computed(() =>
+    this.isEditMode()
+      ? this.isDirty() || this.lastSavedSnapshot()?.scheduledAt !== this.scheduleAtIso()
+      : this.audienceFilled() || this.subjectFilled() || this.bodyFilled()
+  );
+  // While an edition's publication is still loading, or when it cannot be read, the edition stays on
+  // its own template set rather than unlocking an editor the service would refuse to save.
+  public readonly lockedTemplateKey: Signal<string | null> = computed(() => {
+    const publicationKey = this.activePublication()?.template_key;
+    if (publicationKey) return publicationKey;
+    return this.draftPublicationPending() || this.draftPublicationReadFailed() ? (this.bodyLayoutValue()?.template_key ?? null) : null;
+  });
 
   // === Auth-derived ===
   public readonly edName: Signal<string> = computed(() => {
@@ -190,6 +303,14 @@ export class NewsletterManageComponent {
     return user?.name || user?.given_name || user?.nickname || 'Executive Director';
   });
   public readonly edEmail: Signal<string> = computed(() => this.userService.user()?.email ?? '');
+  // What the review and send cards show. A publication's sender name and reply-to replace the sender's at send.
+  public readonly senderName: Signal<string> = computed(() => this.activePublication()?.from_name || this.edName());
+  // When an edition's publication cannot be read its reply-to is unknown, so none is shown rather than the sender's own.
+  public readonly replyToEmail: Signal<string> = computed(() => {
+    const publication = this.activePublication();
+    if (publication?.reply_to_email) return publication.reply_to_email;
+    return this.draftPublicationReadFailed() ? '' : this.edEmail();
+  });
 
   // === Form mirrors ===
   // Public: the audience step consumes this directly rather than re-deriving its own
@@ -197,7 +318,9 @@ export class NewsletterManageComponent {
   // (see populateFormFromDraft) would otherwise leave a child-owned signal stale forever.
   public readonly committeeUidsValue = signal<string[]>([]);
   private readonly subjectValue = signal<string>('');
-  private readonly bodyValue = signal<string>('');
+  private readonly bodyLayoutValue = signal<NewsletterLayout | null>(null);
+  // Server-rendered body_html, synced back after each save (render-on-write).
+  private readonly bodyHtmlValue = signal<string>('');
   public readonly sendModeValue = signal<'now' | 'schedule'>('now');
   public readonly scheduleDateValue = signal<Date | null>(null);
   public readonly scheduleTimeValue = signal<string>('');
@@ -270,9 +393,19 @@ export class NewsletterManageComponent {
   });
 
   // === Save dedup ===
-  // scheduledAt included so a schedule-only edit (picker changed, nothing else)
-  // isn't deduped as "nothing to save" by snapshotMatchesLastSaved.
-  private readonly lastSavedSnapshot = signal<{ subject: string; bodyHtml: string; committeeUids: string[]; scheduledAt: string | null } | null>(null);
+  // bodyHtml is tracked alongside body_layout so the simple editor (which
+  // authors body_html directly) autosaves. In blocks mode body_html is
+  // server-derived, so the snapshot's bodyHtml is always taken from the SAVE
+  // RESPONSE — the rendered value — which is what the form then holds; comparing
+  // against it never loops. scheduledAt is included so a schedule-only edit
+  // (picker changed, nothing else) isn't deduped as "nothing to save".
+  private readonly lastSavedSnapshot = signal<{
+    subject: string;
+    bodyHtml: string;
+    bodyLayout: string;
+    committeeUids: string[];
+    scheduledAt: string | null;
+  } | null>(null);
   private readonly saveTrigger$ = new Subject<boolean>();
 
   // === Recipient summary ===
@@ -284,7 +417,23 @@ export class NewsletterManageComponent {
   // pipeline (rather than each firing its own independent subscription)
   // cancels the stale in-flight request instead of letting it race the
   // normalized one and clobber the displayed count.
-  private readonly recipientCountTrigger$ = new Subject<string[]>();
+  private readonly recipientCountTrigger$ = new Subject<{ uids: string[]; refresh: boolean }>();
+  // The draft's audience snapshot (#4352). A send reads the recipients from it, so Send and Schedule wait until
+  // it is ready for the committees on screen. Null until a saved draft's committees have been resolved.
+  protected readonly audience = signal<NewsletterAudience | null>(null);
+  // Committees an email was added to since their snapshot was last rebuilt. Their next resolve asks for a
+  // rebuild, even when the add finished while another group was selected or the earlier rebuild was cancelled.
+  private readonly audienceRebuildNeeded = new Set<string>();
+  // The requested_at of each running read this page has seen. The service hands back a running read instead of
+  // starting a new one, so a rebuild that gets one of these back may not include the latest add.
+  private readonly seenAudienceReads = new Set<string>();
+  // Set when a rebuild request is cancelled before it answers. The service may still have started a read for
+  // it, and the next rebuild could get that read back without knowing it predates its add.
+  private rebuildRequestAbandoned = false;
+  // The resolve pipeline stops when the author leaves, but an email add can still finish afterwards.
+  private pageDestroyed = false;
+  // The last resolve request failed, so nothing is preparing the recipient list until the page resolves again.
+  private readonly audienceRequestFailed = signal(false);
 
   // === Audience email adds ===
   // Owned here (not by the audience step) because the stepper destroys the step
@@ -314,8 +463,65 @@ export class NewsletterManageComponent {
 
   // === Validation gates ===
   public readonly subjectFilled = computed(() => (this.subjectValue() ?? '').trim().length > 0);
-  public readonly bodyFilled = computed(() => stripHtml(this.bodyValue() ?? '').length > 0);
+  // Content exists as either composed blocks (new drafts) or raw body_html
+  // (drafts authored before the composer landed) — either keeps a draft sendable.
+  public readonly bodyFilled = computed(() => {
+    const layout = this.bodyLayoutValue();
+    // A present layout is authoritative upstream (any layout object wins over
+    // body_html), so it counts as content only when it actually has blocks — an
+    // empty layout must never read as filled (it would persist a wrapper-only
+    // email). Fall back to body_html only when there's no layout (simple
+    // editor); strip markup so an empty rich-text placeholder isn't "content".
+    if (layout) return (layout.blocks?.length ?? 0) > 0;
+    return stripHtml(this.bodyHtmlValue()).trim().length > 0;
+  });
+  // Saveable content, distinct from bodyFilled: a PRESENT layout counts even
+  // with zero blocks, because clearing the canvas is a deliberate edit the user
+  // must be able to persist (otherwise an emptied draft silently reverts to its
+  // old content on reload). Send gates still use bodyFilled, so an empty layout
+  // can be saved but not sent. A null layout falls back to body_html content.
+  public readonly bodyPersistable = computed(() => {
+    if (this.bodyLayoutValue()) return true;
+    if (stripHtml(this.bodyHtmlValue()).trim().length > 0) return true;
+    // Switching Blocks -> Basic clears the layout to null AND the body to empty,
+    // which the two checks above would treat as nothing to save. But on an
+    // EXISTING draft that clear is a deliberate change: without persisting it the
+    // stored body_layout reloads and silently undoes the switch. So an existing
+    // draft that differs from its saved state stays persistable even when empty;
+    // a brand-new draft with no content does not (nothing to autosave yet). The
+    // Blocks direction avoids this by seeding an empty non-null layout; this is
+    // the mirror for the Basic direction.
+    return this.isEditMode() && this.isDirty();
+  });
   public readonly audienceFilled = computed(() => (this.committeeUidsValue() ?? []).length > 0);
+  // body_html is server-derived, so it only reflects the canvas once a save has
+  // completed and synced it back. bodyRendered/isDirty gate the surfaces that
+  // consume body_html (preview, test-send, send) so none acts on stale or empty
+  // HTML — e.g. a test email must never go out with an unrendered body.
+  private readonly bodyRendered = computed(() => this.bodyHtmlValue().trim().length > 0);
+  // Canonicalized serialization of the current layout, memoized so the full
+  // recursive key-sort + JSON.stringify runs once per layout change rather than
+  // on every isDirty recomputation. isDirty feeds canSend/canSchedule/
+  // canSendTest/canPreview and re-runs on every keystroke (subject/body edits),
+  // so without this memo the whole body_layout was re-canonicalized per keystroke.
+  private readonly bodyLayoutSerialized = computed(() => this.serializeLayout(this.bodyLayoutValue()));
+  private readonly isDirty = computed(() => this.computeIsDirty());
+  // Blocks mode: body_html is server-derived, valid only after a save syncs the
+  // render → require a clean snapshot. Simple mode: body_html is authored live in
+  // the form (and both the preview drawer and test-send read that control
+  // directly), so it's usable immediately without waiting for autosave.
+  // Keyed on layout PRESENCE, not block count: a present layout (even after every
+  // block is removed, leaving an empty blocks array) is still blocks mode, where
+  // body_html is server-derived and must be re-synced. Simple mode sets the
+  // layout to null. Keying on block count would wrongly treat a just-emptied
+  // blocks draft as simple and skip the dirty check, showing stale preview HTML.
+  private readonly isBlocksMode = computed(() => this.bodyLayoutValue() !== null);
+  // Blocks-mode body_html is a complete email document (template wrapper + head
+  // styles), so the preview renders it in a sandboxed iframe rather than the
+  // frontend chrome. Simple-mode body_html is an authored fragment.
+  protected readonly previewIsFullDocument = computed(() => this.isBlocksMode());
+  private readonly bodyUsable = computed(() => this.bodyRendered() && (!this.isBlocksMode() || !this.isDirty()));
+  public readonly canPreview = computed(() => this.bodyUsable());
   // Gates Send on eligibility having actually resolved — while committees are
   // still loading (or the fetch failed), eligibleCommitteeUids() is null and
   // initAudienceNormalization() deliberately skips pruning, so a stale/legacy
@@ -330,12 +536,43 @@ export class NewsletterManageComponent {
     if (!committeeUid) return false;
     return this.audienceEmailAdds().some((e) => e.committeeUid === committeeUid && e.status === 'pending');
   });
+  // The editor-only release sends tests only, so a real send or schedule is locked for a layout draft.
+  public readonly liveSendLocked = computed(() => isNewsletterLiveSendLocked(this.isBlocksMode()));
+  // A saved draft sends from its audience snapshot, so it has to be ready for the committees on screen.
+  // A draft with no id yet can't be sent anyway: runSend refuses it and asks the author to save first.
+  public readonly audienceReady = computed(() => {
+    if (!this.newsletterId()) return true;
+    const audience = this.audience();
+    return audience?.status === 'ready' && this.uidsEqual([...audience.committee_uids].sort(), [...this.committeeUidsValue()].sort());
+  });
+  // A saved draft whose snapshot isn't ready yet, so the Send step explains why Send and Schedule are waiting.
+  // A failed snapshot or a failed request shows its own error instead.
+  protected readonly audiencePreparing = computed(
+    () =>
+      !!this.newsletterId() &&
+      this.newsletterStatus() === 'draft' &&
+      this.audienceFilled() &&
+      !this.audienceReady() &&
+      this.audience()?.status !== 'failed' &&
+      !this.audienceRequestFailed()
+  );
+  // The Recipients list reads the snapshot once it is ready, so it shows exactly who the send will reach and
+  // doesn't depend on the live committee read. Until then it reads the committees live, as before.
+  protected readonly recipientsNewsletterUid = computed(() => (this.audience()?.status === 'ready' && this.audienceReady() ? this.newsletterId() : null));
   public readonly canSend = computed(
     () =>
+      !this.liveSendLocked() &&
+      this.audienceReady() &&
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&
+      this.bodyRendered() &&
+      // Also require actual content, not just a non-empty body_html: bodyRendered
+      // is a trim() check, so a markup-only simple draft (e.g. an empty rich-text
+      // "<p></p>") passes it; bodyFilled strips markup so a visually-empty body
+      // can't be sent.
       this.bodyFilled() &&
+      !this.isDirty() &&
       this.hasContext() &&
       !this.submitting() &&
       !this.resolvingSend() &&
@@ -345,17 +582,31 @@ export class NewsletterManageComponent {
       !this.isScheduleReadOnly()
   );
   public readonly canSendTest = computed(
-    () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending() && !this.isScheduleReadOnly()
+    () =>
+      this.subjectFilled() &&
+      this.bodyUsable() &&
+      this.bodyFilled() &&
+      this.hasContext() &&
+      this.edEmail().length > 0 &&
+      !this.testSending() &&
+      !this.isScheduleReadOnly()
   );
-  // Same gates as canSend, plus a valid armable time. scheduleWindowError() covers
+  // Same gates as canSend (including the block-composer bodyRendered/!isDirty gates
+  // so a scheduled send can't arm on stale, unrendered server-derived body_html —
+  // runSchedule also forces a save+render via ensureSaved$, so this is the UI-side
+  // half of that guarantee), plus a valid armable time. scheduleWindowError() covers
   // 'tooSoon'/'tooFar' directly; 'past' is handled separately by an effect that resets
   // sendMode to 'now' (see initSchedulePastGuard), so it should never surface here.
   public readonly canSchedule = computed(
     () =>
+      !this.liveSendLocked() &&
+      this.audienceReady() &&
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&
+      this.bodyRendered() &&
       this.bodyFilled() &&
+      !this.isDirty() &&
       this.hasContext() &&
       !this.submitting() &&
       !this.resolvingSend() &&
@@ -375,7 +626,10 @@ export class NewsletterManageComponent {
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&
-      this.bodyFilled() &&
+      // bodyPersistable (not bodyFilled): an emptied blocks canvas is a
+      // deliberate edit that must remain saveable so the cleared layout reaches
+      // the server rather than reverting on reload.
+      this.bodyPersistable() &&
       this.edEmail().length > 0 &&
       !this.savingDraft() &&
       !this.scheduling() &&
@@ -401,10 +655,40 @@ export class NewsletterManageComponent {
     this.initSaveChannel();
     this.initAutosave();
     this.initRecipientCount();
+    this.initAudienceOnReturnToDraft();
+    this.destroyRef.onDestroy(() => (this.pageDestroyed = true));
     this.initAudienceNormalization();
     this.initScheduleClock();
     this.initSchedulePastGuard();
     this.initScheduleFieldLock();
+    this.initDraftPublication();
+    this.initPublicationGateClose();
+  }
+
+  /**
+   * The picker has already confirmed any content loss. An edition on a template set has to use that
+   * set, so a body from another set (or the basic editor) is cleared rather than failing with a 400
+   * on the next save. An empty audience takes the publication's default, and an audience a previous
+   * publication filled in is replaced.
+   */
+  protected onPublicationChange(publication: NewsletterPublication | null): void {
+    // A change confirmed after the first save started would leave the draft under one publication
+    // and the page showing another.
+    if (this.publicationLocked()) return;
+    this.preselectPublicationUid.set(null);
+    const templateKey = publication?.template_key;
+    if (templateKey && this.form.controls.bodyLayout.value?.template_key !== templateKey) {
+      this.form.patchValue({ bodyLayout: null, bodyHtml: '' });
+    }
+    const current = this.form.controls.committeeUids.value;
+    const filled = this.audienceFromPublication();
+    const untouched = current.length === 0 || (filled !== null && filled.length === current.length && filled.every((uid, i) => uid === current[i]));
+    if (untouched) {
+      const next = [...(publication?.committee_uids ?? [])];
+      this.form.controls.committeeUids.setValue(next);
+      this.audienceFromPublication.set(next.length > 0 ? next : null);
+    }
+    this.selectedPublication.set(publication);
   }
 
   protected goToStep(step: number | undefined): void {
@@ -478,7 +762,50 @@ export class NewsletterManageComponent {
   }
 
   protected onSaveAsDraft(): void {
-    if (!this.canSaveDraft()) return;
+    if (!this.canSaveDraft()) {
+      // A background autosave is in flight (canSaveDraft gates on !savingDraft).
+      // saveDraft snapshots the form when it RUNS, so that in-flight save may not
+      // include the user's latest edits. Rather than drop the click — and rely on
+      // the debounced autosave, which is lost if the user navigates away first —
+      // QUEUE a manual save on the same concatMap channel: it runs after the
+      // in-flight save and captures the current form state. manualSaving already
+      // true means a manual save is already queued, so just acknowledge it.
+      if (this.savingDraft()) {
+        // Only QUEUE a manual save when a PLAIN autosave is in flight. During a
+        // send or schedule, savingDraft() is also true — runSend/runSchedule call
+        // saveDraft(true) OFF the concatMap channel (see ensureSaved$) — so
+        // queueing a PUT then would bump the newsletter's version mid-send and
+        // reopen the LFXV2-2604 duplicate-send race the autosave filter guards
+        // against with these same conditions. In that window (or when a manual
+        // save is already queued) just acknowledge the click instead.
+        const busyWithSendOrSchedule = this.submitting() || this.resolvingSend() || this.scheduling() || this.isScheduleReadOnly();
+        if (this.manualSaving() || busyWithSendOrSchedule) {
+          this.messageService.add({ severity: 'info', summary: 'Saving…', detail: 'Your draft is already being saved.' });
+          return;
+        }
+        const missing = this.missingDraftRequirements();
+        if (missing.length > 0) {
+          this.messageService.add({
+            severity: 'warn',
+            summary: "Can't save draft yet",
+            detail: `Add ${this.formatMissing(missing)} before saving your draft.`,
+          });
+          return;
+        }
+        this.manualSaving.set(true);
+        this.saveTrigger$.next(true);
+        return;
+      }
+      const missing = this.missingDraftRequirements();
+      if (missing.length > 0) {
+        this.messageService.add({
+          severity: 'warn',
+          summary: "Can't save draft yet",
+          detail: `Add ${this.formatMissing(missing)} before saving your draft.`,
+        });
+      }
+      return;
+    }
     this.manualSaving.set(true);
     this.saveTrigger$.next(true);
   }
@@ -487,6 +814,12 @@ export class NewsletterManageComponent {
     this.previewDrawerVisible.set(true);
   }
 
+  /**
+   * Apply an AI-generated newsletter to the form (simple-editor path). The
+   * content step already confirmed any overwrite; keep the current subject when
+   * the model returned none. Editing body_html marks the draft dirty via the
+   * body_html snapshot axis, so the next autosave persists it.
+   */
   protected onGenerated(result: GenerateNewsletterResponse): void {
     this.form.patchValue({
       subject: result.subject ?? this.form.controls.subject.value,
@@ -502,6 +835,17 @@ export class NewsletterManageComponent {
         subject: this.form.controls.subject.value,
         body_html: this.form.controls.bodyHtml.value,
         to_email: this.edEmail(),
+        // body_layout is the SOLE layout-send trigger: when present, the service
+        // recompiles the test email from it with the unsubscribe/compliance footer
+        // suppressed (so the test email carries no dangling empty "Unsubscribe"
+        // row) instead of wrapping body_html the legacy way. Null for simple
+        // drafts. The deprecated is_layout flag is ignored upstream, so we no
+        // longer send it.
+        body_layout: this.bodyLayoutValue(),
+        // The reply-to address the layout recompile binds into the "To reply,
+        // email …" row and the email's reply-to — without it a layout test email
+        // loses both, unlike the real send.
+        ed_reply_email: this.edEmail(),
       })
       .pipe(
         take(1),
@@ -603,6 +947,8 @@ export class NewsletterManageComponent {
     this.audienceEmailAdds.update((entries) => [...entries.filter((e) => !(e.committeeUid === committeeUid && e.email === email)), entry]);
 
     if (entry.status === 'invalid') return;
+    // The draft's project, captured now: once the author leaves, projectUid() can follow a different project.
+    const projectUid = this.projectUid();
 
     // Intentionally NOT takeUntilDestroyed: HttpClient aborts the request on
     // unsubscribe, which would silently cancel in-flight adds if the user left
@@ -611,11 +957,14 @@ export class NewsletterManageComponent {
     this.committeeService.createCommitteeMember(committeeUid, { email }, { skipNotification: true }).subscribe({
       next: () => {
         this.updateAudienceEmailAdd(committeeUid, email, { status: 'added' });
-        // Refresh the recipient pill only if this group is still the selected
-        // audience — an add resolving after a group switch must not clobber
-        // the new group's count.
-        if (this.committeeUidsValue()[0] === committeeUid) {
-          this.fetchRecipientCountFor(this.committeeUidsValue());
+        // The group's snapshot doesn't have this email yet, so its next resolve rebuilds it, even when this
+        // add finishes after a group switch. Only a selected group is resolved now, so an add resolving after
+        // a switch doesn't replace the new group's count.
+        this.audienceRebuildNeeded.add(committeeUid);
+        if (this.pageDestroyed) {
+          this.rebuildAudienceAfterLeaving(projectUid, committeeUid);
+        } else if (this.committeeUidsValue().includes(committeeUid)) {
+          this.fetchRecipientCountFor(this.committeeUidsValue(), true);
         }
       },
       error: (err: HttpErrorResponse) => {
@@ -626,6 +975,25 @@ export class NewsletterManageComponent {
         }
       },
     });
+  }
+
+  /** The still-missing requirements that block a draft save, for user feedback. */
+  private missingDraftRequirements(): string[] {
+    const missing: string[] = [];
+    if (!this.audienceFilled()) missing.push('an audience');
+    if (!this.subjectFilled()) missing.push('a subject');
+    // bodyPersistable, matching canSaveDraft: an emptied block layout is
+    // saveable, so the warning must not claim content is missing when only
+    // another field (e.g. audience) is.
+    if (!this.bodyPersistable()) missing.push('some newsletter content');
+    if (this.edEmail().length === 0) missing.push('a reply-to email');
+    return missing;
+  }
+
+  /** Join a list into readable prose: "a", "a and b", or "a, b, and c". */
+  private formatMissing(items: string[]): string {
+    if (items.length === 1) return items[0];
+    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
   }
 
   private goToList(tab?: 'draft' | 'scheduled' | 'sent'): void {
@@ -651,7 +1019,12 @@ export class NewsletterManageComponent {
   private initFormMirrors(): void {
     this.form.controls.committeeUids.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.committeeUidsValue.set(v ?? []));
     this.form.controls.subject.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.subjectValue.set(v ?? ''));
-    this.form.controls.bodyHtml.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.bodyValue.set(v ?? ''));
+    this.form.controls.bodyLayout.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.bodyLayoutValue.set(v ?? null));
+    // Mirror body_html too, so the simple editor's live typing registers as
+    // content (bodyFilled) and dirtiness. Server-derived writes use
+    // setValue(emitEvent:false) and set bodyHtmlValue directly, so they don't
+    // double-fire this and never re-trigger autosave.
+    this.form.controls.bodyHtml.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.bodyHtmlValue.set(v ?? ''));
     this.form.controls.sendMode.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.sendModeValue.set(v ?? 'now'));
     this.form.controls.scheduleDate.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.scheduleDateValue.set(v ?? null));
     this.form.controls.scheduleTime.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.scheduleTimeValue.set(v ?? ''));
@@ -743,30 +1116,92 @@ export class NewsletterManageComponent {
       });
   }
 
-  private initRecipientCount(): void {
-    merge(this.form.controls.committeeUids.valueChanges.pipe(debounceTime(300), distinctUntilChanged(this.uidsEqual)), this.recipientCountTrigger$)
+  /**
+   * A newsletter that becomes a draft again, e.g. after its schedule is cancelled, needs its audience
+   * resolved: the schedule deleted the snapshot's members, and its committees haven't changed, so nothing else
+   * re-triggers the read. A newsletter's first status (on load or create) is skipped, as the save that sets it
+   * resolves the audience itself.
+   */
+  private initAudienceOnReturnToDraft(): void {
+    toObservable(this.newsletterStatus)
       .pipe(
-        switchMap((uids) => this.fetchRecipientCount$(uids ?? [])),
+        pairwise(),
+        filter(([was, now]) => was !== null && was !== 'draft' && now === 'draft'),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.fetchRecipientCountFor(this.committeeUidsValue()));
+  }
+
+  private initRecipientCount(): void {
+    merge(
+      this.form.controls.committeeUids.valueChanges.pipe(
+        debounceTime(300),
+        distinctUntilChanged(this.uidsEqual),
+        map((uids) => ({ uids: uids ?? [], refresh: false }))
+      ),
+      this.recipientCountTrigger$
+    )
+      .pipe(
+        switchMap(({ uids, refresh }) => this.fetchRecipientCount$(uids ?? [], refresh)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe();
   }
 
-  private fetchRecipientCountFor(uids: string[]): void {
-    this.recipientCountTrigger$.next(uids);
+  /** refresh rebuilds a ready snapshot, e.g. after an email was added to the group. */
+  private fetchRecipientCountFor(uids: string[], refresh = false): void {
+    this.recipientCountTrigger$.next({ uids, refresh });
+  }
+
+  /**
+   * An add that finishes after the author left the page starts the rebuild itself. The page's resolve pipeline
+   * has stopped, and the next visit would otherwise reuse a snapshot without this email.
+   *
+   * The service hands back a read that is already running rather than start another, and that read may have
+   * started before this add. So when the first request gets a running read back, this waits for it to end and
+   * asks once more, which starts a read that includes the add.
+   */
+  private rebuildAudienceAfterLeaving(projectUid: string, committeeUid: string): void {
+    const id = this.newsletterId();
+    const saved = this.lastSavedSnapshot()?.committeeUids ?? [];
+    if (!id || this.newsletterStatus() !== 'draft' || !saved.includes(committeeUid)) return;
+    const rebuild = () => this.newsletterService.resolveAudience(projectUid, id, { committee_uids: saved, refresh: true });
+    // Intentionally not takeUntilDestroyed: the page is already gone, and each request completes on its own.
+    rebuild()
+      .pipe(
+        switchMap((audience) =>
+          audience.status !== 'processing'
+            ? EMPTY
+            : defer(() => this.newsletterService.getAudience(projectUid, id)).pipe(
+                repeat({ count: NEWSLETTER_AUDIENCE_POLL_MAX, delay: NEWSLETTER_AUDIENCE_POLL_MS }),
+                takeWhile((polled) => polled.status === 'processing', true),
+                last(),
+                switchMap((polled) => (polled.status === 'processing' ? EMPTY : rebuild()))
+              )
+        )
+      )
+      .subscribe({ error: () => undefined });
   }
 
   private updateAudienceEmailAdd(committeeUid: string, email: string, patch: Partial<NewsletterAudienceEmailAdd>): void {
     this.audienceEmailAdds.update((entries) => entries.map((e) => (e.committeeUid === committeeUid && e.email === email ? { ...e, ...patch } : e)));
   }
 
-  private fetchRecipientCount$(uids: string[]) {
+  private fetchRecipientCount$(uids: string[], refresh = false) {
     if (!uids || uids.length === 0) {
       this.recipientCount.set(0);
+      this.audience.set(null);
       return EMPTY;
     }
     if (!this.hasContext()) {
       return EMPTY;
+    }
+    // A saved draft's committees go through its audience snapshot, which the send reads. A selection not
+    // saved yet (or a scheduled newsletter) keeps the live count as a preview; the autosave that follows
+    // re-triggers this for the saved committees (see recordSavedSnapshot).
+    const id = this.newsletterId();
+    if (id && this.newsletterStatus() === 'draft' && this.uidsEqual(uids, this.lastSavedSnapshot()?.committeeUids)) {
+      return this.resolveAudience$(id, uids, refresh);
     }
     this.recipientCountLoading.set(true);
     return this.newsletterService.getRecipientCount(this.projectUid(), { committee_uids: uids }).pipe(
@@ -790,6 +1225,119 @@ export class NewsletterManageComponent {
       }),
       catchError(() => EMPTY)
     );
+  }
+
+  /**
+   * Starts (or reuses) the draft's audience snapshot and polls until the background read finishes, for up to
+   * NEWSLETTER_AUDIENCE_POLL_MAX status checks. The count comes from the snapshot, and Send waits on
+   * audienceReady. A long committee can take a while, so the spinner stays up while it is processing.
+   *
+   * The service returns a read that is already running rather than start another, and that read can be for
+   * other committees or can predate an add. Either way, once it ends this resolves again rather than accept it.
+   */
+  private resolveAudience$(id: string, uids: string[], refresh: boolean): Observable<NewsletterAudience> {
+    const projectUid = this.projectUid();
+    const rebuild = refresh || uids.some((uid) => this.audienceRebuildNeeded.has(uid));
+    // Send and Schedule wait from now until this resolve answers, so neither can use a snapshot it replaces.
+    this.audience.set(null);
+    this.audienceRequestFailed.set(false);
+    this.recipientCountLoading.set(true);
+    let lastStatus: NewsletterAudience['status'] | null = null;
+    let reusedRead = false;
+    let answered = false;
+    return this.newsletterService.resolveAudience(projectUid, id, { committee_uids: uids, refresh: rebuild }).pipe(
+      tap(() => (answered = true)),
+      finalize(() => {
+        if (rebuild && !answered) this.rebuildRequestAbandoned = true;
+      }),
+      switchMap((audience) => {
+        if (audience.status !== 'processing') return of(audience);
+        // A read this page saw running before asking for a rebuild, or one an abandoned rebuild request may have
+        // started, began before the latest add.
+        reusedRead = rebuild && (this.seenAudienceReads.has(audience.requested_at) || this.rebuildRequestAbandoned);
+        if (rebuild) this.rebuildRequestAbandoned = false;
+        this.seenAudienceReads.add(audience.requested_at);
+        // One status check at a time: the next starts NEWSLETTER_AUDIENCE_POLL_MS after the last answer,
+        // so a slow response is never cancelled, and the cap counts checks rather than answers.
+        return defer(() => this.newsletterService.getAudience(projectUid, id)).pipe(
+          repeat({ count: NEWSLETTER_AUDIENCE_POLL_MAX, delay: NEWSLETTER_AUDIENCE_POLL_MS }),
+          takeWhile((polled) => polled.status === 'processing', true)
+        );
+      }),
+      tap({
+        next: (audience) => {
+          lastStatus = audience.status;
+        },
+        complete: () => {
+          if (lastStatus === 'processing' && this.uidsEqual(uids, this.committeeUidsValue())) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Still preparing the recipient list',
+              detail: 'This group is taking a while. Reload the page in a few minutes to check again.',
+              life: 8000,
+            });
+          }
+        },
+      }),
+      switchMap((audience) => {
+        if (audience.status === 'processing') return of(audience);
+        const otherCommittees = !this.uidsEqual([...audience.committee_uids].sort(), [...uids].sort());
+        if (reusedRead || otherCommittees) return this.resolveAudience$(id, uids, rebuild);
+        if (rebuild && audience.status === 'ready') uids.forEach((uid) => this.audienceRebuildNeeded.delete(uid));
+        return of(audience);
+      }),
+      tap((audience) => {
+        // Ignore a result for a selection that changed while the read ran.
+        if (!this.uidsEqual(uids, this.committeeUidsValue())) return;
+        this.audience.set(audience);
+        if (audience.status === 'ready') {
+          this.recipientCount.set(audience.recipient_count);
+        } else if (audience.status === 'failed') {
+          this.recipientCount.set(null);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Could not build the recipient list',
+            detail: audience.error ? `${audience.error}. Change the group or try again.` : 'Change the group or try again.',
+            life: 8000,
+          });
+        }
+      }),
+      finalize(() => this.recipientCountLoading.set(false)),
+      catchError(() => {
+        if (this.uidsEqual(uids, this.committeeUidsValue())) {
+          this.audience.set(null);
+          this.audienceRequestFailed.set(true);
+          this.recipientCount.set(null);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Could not build the recipient list',
+            detail: 'Sending waits until the recipient list is ready. Reload the page to try again.',
+            life: 8000,
+          });
+        }
+        return EMPTY;
+      })
+    );
+  }
+
+  /** A send or schedule refused because the snapshot isn't ready: rebuild it and tell the author. */
+  private handleAudienceNotReady(err: HttpErrorResponse): boolean {
+    if (err?.status !== 409 || err?.error?.upstreamCode !== 'audience_not_ready') return false;
+    const status = err.error?.audienceStatus as NewsletterAudienceNotReadyStatus | undefined;
+    this.audience.set(null);
+    // A POST starts the read when there is none, rebuilds a failed or stale one, and reports one already
+    // running, so the same call covers every reason; only the message differs.
+    this.fetchRecipientCountFor(this.committeeUidsValue());
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Preparing the recipient list',
+      detail:
+        status === 'processing'
+          ? 'The recipient list is still being prepared. Try again once the count shows.'
+          : 'The recipient list was not ready or the group changed. It is being rebuilt, so try again once the count shows.',
+      life: 8000,
+    });
+    return true;
   }
 
   private initCommittees(): Signal<Committee[]> {
@@ -835,6 +1383,10 @@ export class NewsletterManageComponent {
       const filtered = current.filter((uid) => eligible.has(uid));
       const narrowed = filtered.length > 1 ? filtered.slice(0, 1) : filtered;
       if (narrowed.length !== current.length || narrowed.some((uid, i) => uid !== current[i])) {
+        // An audience a publication filled in stays the publication's after this automatic narrowing,
+        // so a later publication change still replaces it.
+        const filled = untracked(() => this.audienceFromPublication());
+        if (filled !== null && this.uidsEqual(filled, current)) this.audienceFromPublication.set(narrowed.length > 0 ? narrowed : null);
         this.form.controls.committeeUids.setValue(narrowed);
       }
     });
@@ -931,6 +1483,7 @@ export class NewsletterManageComponent {
    * latter, inviting the duplicate delivery in LFXV2-2604.
    */
   private handleSendError(err: HttpErrorResponse, id: string): void {
+    if (this.handleAudienceNotReady(err)) return;
     this.resolvingSend.set(true);
     this.newsletterService
       .getNewsletter(this.projectUid(), id)
@@ -1064,6 +1617,7 @@ export class NewsletterManageComponent {
    * simpler than a send race, so it gets its own message rather than a refetch.
    */
   private handleScheduleError(err: HttpErrorResponse, id: string): void {
+    if (this.handleAudienceNotReady(err)) return;
     const upstreamCode = err?.error?.upstreamCode;
     // A 503 alone no longer identifies "scheduling is switched off here". The BFF now raises 503
     // for its own TRANSPORT failures too (a lost connection is an unconfirmed outcome, not proof
@@ -1393,12 +1947,39 @@ export class NewsletterManageComponent {
       });
   }
 
+  // Loads the publication of an opened edition to learn its template set and sender details. This is
+  // a read, so it runs with the flag off too: the service applies both to the edition either way. A
+  // failed read hides the picker and keeps the edition on its own template set (see lockedTemplateKey).
+  private initDraftPublication(): void {
+    toObservable(this.draftPublicationUid)
+      .pipe(
+        switchMap((uid) => {
+          this.draftPublicationReadFailed.set(false);
+          this.draftPublicationPending.set(!!uid);
+          if (!uid) return of(null);
+          return this.newsletterService.getPublication(this.projectUid(), uid).pipe(
+            catchError((error: unknown) => {
+              console.error('[NewsletterManage] Failed to load the draft publication', error);
+              this.draftPublicationReadFailed.set(true);
+              return of(null);
+            }),
+            finalize(() => this.draftPublicationPending.set(false))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((publication) => this.draftPublication.set(publication));
+  }
+
   private populateFormFromDraft(draft: Newsletter): void {
     this.version.set(draft.version);
     this.newsletterStatus.set(draft.status);
     const committeeUids = draft.committee_uids ?? [];
     const subject = draft.subject ?? '';
     const bodyHtml = draft.body_html ?? '';
+    const bodyLayout = draft.body_layout ?? null;
+    this.draftPublicationUid.set(draft.publication_uid ?? null);
+    this.draftSavedAsBasic.set(bodyLayout === null);
 
     // scheduled_at hydration mirrors populateFormWithMeetingData in
     // the meeting composer form service: convert the saved UTC instant into the
@@ -1416,15 +1997,26 @@ export class NewsletterManageComponent {
       sendMode = 'schedule';
     }
 
-    this.form.patchValue({ committeeUids, subject, bodyHtml, sendMode, scheduleDate, scheduleTime, scheduleTimezone }, { emitEvent: false });
+    this.form.patchValue({ committeeUids, subject, bodyLayout, bodyHtml, sendMode, scheduleDate, scheduleTime, scheduleTimezone }, { emitEvent: false });
     this.committeeUidsValue.set(committeeUids);
     this.subjectValue.set(subject);
-    this.bodyValue.set(bodyHtml);
+    this.bodyLayoutValue.set(bodyLayout);
+    this.bodyHtmlValue.set(bodyHtml);
     this.sendModeValue.set(sendMode);
     this.scheduleDateValue.set(scheduleDate);
     this.scheduleTimeValue.set(scheduleTime);
     this.scheduleTimezoneValue.set(scheduleTimezone);
-    this.fetchRecipientCountFor(committeeUids);
+    // A freshly loaded draft matches the server, so seed the saved snapshot —
+    // otherwise isDirty would read true on reopen and gate preview/send off until
+    // the first autosave.
+    this.recordSavedSnapshot({
+      subject,
+      bodyHtml,
+      bodyLayout: this.serializeLayout(bodyLayout),
+      committeeUids,
+      scheduledAt: draft.scheduled_at ? new Date(draft.scheduled_at).toISOString() : null,
+    });
+    // recordSavedSnapshot fetches the count (or resolves the audience) for these committees.
   }
 
   private initSaveChannel(): void {
@@ -1469,9 +2061,75 @@ export class NewsletterManageComponent {
     return (
       saved.subject === this.form.controls.subject.value &&
       saved.bodyHtml === this.form.controls.bodyHtml.value &&
+      saved.bodyLayout === this.serializeLayout(this.form.controls.bodyLayout.value) &&
       this.uidsEqual(saved.committeeUids, this.form.controls.committeeUids.value) &&
       saved.scheduledAt === this.scheduleAtIso()
     );
+  }
+
+  // Reactive dirty check for the gate computeds: compares the mirrored form state
+  // against the last saved snapshot. Distinct from snapshotMatchesLastSaved, which
+  // reads form.controls directly for the imperative save path.
+  private computeIsDirty(): boolean {
+    const saved = this.lastSavedSnapshot();
+    if (!saved) return true;
+    return !(
+      saved.subject === this.subjectValue() &&
+      saved.bodyHtml === this.bodyHtmlValue() &&
+      saved.bodyLayout === this.bodyLayoutSerialized() &&
+      this.uidsEqual(saved.committeeUids, this.committeeUidsValue())
+    );
+  }
+
+  // body_html is server-derived, so dedup on the authored body_layout instead —
+  // otherwise composer edits (which don't touch body_html until save) never save.
+  // Canonicalized (sorted keys) so a content-equal layout serializes identically
+  // regardless of key order: the composer and the server may order keys
+  // differently, and isDirty/dedup compare across that boundary on reopen.
+  private serializeLayout(layout: NewsletterLayout | null): string {
+    return JSON.stringify(this.canonicalizeValue(layout ?? null));
+  }
+
+  // Recursively sort object keys so serialization is order-independent. Array
+  // order is preserved — block ordering is meaningful.
+  private canonicalizeValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.canonicalizeValue(entry));
+    }
+    if (value !== null && typeof value === 'object') {
+      return Object.keys(value as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = this.canonicalizeValue((value as Record<string, unknown>)[key]);
+          return acc;
+        }, {});
+    }
+    return value;
+  }
+
+  // Keep body_html in sync with the server-rendered output so the preview drawer
+  // and test-send use the authoritative MJML render derived from body_layout.
+  // ONLY in blocks mode is body_html server-derived; in the simple editor it is
+  // user-authored and the save response just echoes the request-time value, so
+  // overwriting would revert any keystrokes typed during the in-flight save (and
+  // the emitEvent:false suppression would drop the delta rather than re-queue
+  // it). Detect blocks mode by a rendered layout and skip the overwrite for
+  // simple-mode saves; a mid-flight edit then stays in the control and the next
+  // autosave persists it.
+  private syncDerivedBodyHtml(draft: Newsletter): void {
+    // Layout PRESENCE (even an emptied `blocks: []`) means blocks mode, where
+    // body_html is server-derived — a just-cleared canvas must still sync its
+    // (wrapper-only) render, or the form keeps the stale HTML and the draft stays
+    // dirty with preview disabled until reload. Non-empty-blocks was too narrow.
+    const renderedFromLayout = draft.body_layout != null;
+    if (!renderedFromLayout) return;
+    // If the author switched to the simple editor while this blocks save was in
+    // flight, the form's layout is now null — don't overwrite the freshly cleared
+    // (or re-authored) body_html with the stale layout render.
+    if (this.bodyLayoutValue() === null) return;
+    const bodyHtml = draft.body_html ?? '';
+    this.form.controls.bodyHtml.setValue(bodyHtml, { emitEvent: false });
+    this.bodyHtmlValue.set(bodyHtml);
   }
 
   private uidsEqual(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
@@ -1486,7 +2144,9 @@ export class NewsletterManageComponent {
   }
 
   private hasAnythingToSave(): boolean {
-    return this.audienceFilled() && this.audienceNormalized() && this.subjectFilled() && this.bodyFilled();
+    // bodyPersistable (not bodyFilled): an emptied blocks canvas must autosave,
+    // otherwise the cleared layout never reaches the server and reverts on reload.
+    return this.audienceFilled() && this.audienceNormalized() && this.subjectFilled() && this.bodyPersistable();
   }
 
   private saveDraft(isManual = false) {
@@ -1513,13 +2173,19 @@ export class NewsletterManageComponent {
     const basePayload = {
       subject: this.form.controls.subject.value,
       body_html: this.form.controls.bodyHtml.value,
+      // Tri-state contract: send the current value verbatim. A non-null layout
+      // sets it; an explicit `null` (e.g. after switching a blocks draft to the
+      // simple editor) CLEARS the stored layout so the newly authored body_html
+      // becomes authoritative. Coercing null→undefined would omit the field,
+      // which the service reads as "preserve", leaving the stale layout in place.
+      body_layout: this.form.controls.bodyLayout.value,
       committee_uids: this.form.controls.committeeUids.value,
       ed_reply_email: this.edEmail(),
       scheduled_at: this.scheduleAtIso(),
     };
     const snapshotKey = {
       subject: basePayload.subject,
-      bodyHtml: basePayload.body_html,
+      bodyLayout: this.serializeLayout(this.form.controls.bodyLayout.value),
       committeeUids: [...basePayload.committee_uids],
       scheduledAt: basePayload.scheduled_at,
     };
@@ -1531,8 +2197,12 @@ export class NewsletterManageComponent {
         finalize(clearSavingFlags),
         map((draft) => {
           this.version.set(draft.version);
+          this.syncDerivedBodyHtml(draft);
           this.savedAt.set(new Date());
-          this.recordSavedSnapshot(snapshotKey);
+          // bodyHtml from the SERVER response (in blocks mode the rendered value
+          // the form now holds), so the post-save state compares equal and
+          // doesn't immediately re-trigger.
+          this.recordSavedSnapshot({ ...snapshotKey, bodyHtml: draft.body_html ?? '' });
           if (isManual) this.notifyDraftSaved();
           return draft;
         }),
@@ -1540,15 +2210,25 @@ export class NewsletterManageComponent {
       );
     }
 
-    const create: CreateNewsletterRequest = basePayload;
+    // publication_uid is added only for a publication picked with the flag on, so with the flag
+    // off the request is exactly what it was before publications existed.
+    // A publication from another project is never sent: the picker clears it on a project switch.
+    const requestedPublication = this.selectedPublication();
+    const publicationUid = this.publicationsEnabled() && requestedPublication?.project_uid === projectUid ? requestedPublication.id : undefined;
+    const create: CreateNewsletterRequest = publicationUid ? { ...basePayload, publication_uid: publicationUid } : basePayload;
     return this.newsletterService.createNewsletter(projectUid, create).pipe(
       take(1),
       finalize(clearSavingFlags),
       map((draft) => {
+        // Keep the page on the publication the draft was created under.
+        const savedUnder = draft.publication_uid ?? publicationUid;
+        this.selectedPublication.set(publicationUid && savedUnder === publicationUid ? requestedPublication : null);
         this.newsletterId.set(draft.id);
+        this.newsletterStatus.set(draft.status ?? 'draft');
         this.version.set(draft.version);
+        this.syncDerivedBodyHtml(draft);
         this.savedAt.set(new Date());
-        this.recordSavedSnapshot(snapshotKey);
+        this.recordSavedSnapshot({ ...snapshotKey, bodyHtml: draft.body_html ?? '' });
         this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { step: this.internalStep() },
@@ -1562,13 +2242,49 @@ export class NewsletterManageComponent {
     );
   }
 
-  private recordSavedSnapshot(payload: { subject: string; bodyHtml: string; committeeUids: string[]; scheduledAt: string | null }): void {
+  private recordSavedSnapshot(payload: { subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[]; scheduledAt: string | null }): void {
+    const committeesChanged = !this.uidsEqual(this.lastSavedSnapshot()?.committeeUids, payload.committeeUids);
     this.lastSavedSnapshot.set({
       subject: payload.subject,
       bodyHtml: payload.bodyHtml,
+      bodyLayout: payload.bodyLayout,
       committeeUids: [...payload.committeeUids],
       scheduledAt: payload.scheduledAt,
     });
+    // The draft's audience snapshot is built from its saved committees, so resolve it once they are saved.
+    if (committeesChanged && this.newsletterId()) {
+      this.fetchRecipientCountFor(payload.committeeUids);
+    }
+  }
+
+  /**
+   * When the enhanced-editor flag turns off before a new draft is created, a save would quietly make
+   * a one-off newsletter. Clear the picked publication and tell the author instead. Only the flag is
+   * watched: a project switch also closes the gate, but the picker already clears the selection then.
+   * The check waits while a first save is in flight, because that request already names the
+   * publication, and runs again when it settles, so a failed save is still caught. A flag that has
+   * never been on is skipped, so a slow flag load does not clear a ?publication= preselect. Repo
+   * convention forbids effect() for imperative side effects (see initSchedulePastGuard), so the
+   * signal is bridged to an observable.
+   */
+  private initPublicationGateClose(): void {
+    const flagWasOn = signal(false);
+    toObservable(this.enhancedEditorEnabled)
+      .pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => flagWasOn.set(true));
+    const gateClosedOnSelection = computed(
+      () => flagWasOn() && !this.enhancedEditorEnabled() && !this.isEditMode() && !this.creatingDraft() && this.selectedPublication() !== null
+    );
+    toObservable(gateClosedOnSelection)
+      .pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.selectedPublication.set(null);
+        this.messageService.add({
+          severity: 'warn',
+          summary: 'Publications unavailable',
+          detail: 'Publications are turned off, so this draft will be saved as a one-off newsletter.',
+        });
+      });
   }
 
   private notifyDraftSaved(): void {
@@ -1577,6 +2293,12 @@ export class NewsletterManageComponent {
       summary: 'Draft saved',
       detail: 'Your newsletter draft was saved.',
     });
+  }
+
+  /** A clear message for the 400s a publication's rules produce, or null for any other failure. */
+  private publicationSaveError(err: HttpErrorResponse): string | null {
+    if (err?.status !== 400) return null;
+    return getNewsletterPublicationErrorMessage(extractErrorMessage(err, ''));
   }
 
   private handleSaveError(err: HttpErrorResponse, isManual: boolean) {
@@ -1591,7 +2313,7 @@ export class NewsletterManageComponent {
       this.messageService.add({
         severity: 'error',
         summary: isManual ? 'Save failed' : 'Autosave failed',
-        detail: err?.error?.message || err?.message || 'Could not save draft. Your changes are unsaved.',
+        detail: this.publicationSaveError(err) ?? (err?.error?.message || err?.message || 'Could not save draft. Your changes are unsaved.'),
         life: 8000,
       });
     }

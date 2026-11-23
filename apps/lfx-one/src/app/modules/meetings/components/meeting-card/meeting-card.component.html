@@ -139,13 +139,39 @@
       }
     </div>
 
+    <!-- Owning project, when the meeting rolls up from a sub-project -->
+    @if (subProjectName(); as projectName) {
+      <div class="flex items-start gap-1.5 mb-2 min-w-0 text-xs text-gray-600" data-testid="meeting-project">
+        <i class="fa-light fa-folder-tree text-gray-400 shrink-0 mt-0.5" aria-hidden="true"></i>
+        <span class="sr-only">Project:</span>
+        <span class="min-w-0 break-words" data-testid="meeting-project-name">{{ projectName }}</span>
+      </div>
+    }
+
     <!-- Associated Group(s) -->
-    @if (groupNames().length > 0) {
-      @let groups = groupNames().join(', ');
-      <div class="flex items-center gap-1.5 mb-2 min-w-0 text-xs text-gray-600" data-testid="meeting-groups">
-        <i class="fa-light fa-people-group text-gray-400 shrink-0" aria-hidden="true"></i>
-        <span class="sr-only">{{ groupNames().length === 1 ? 'Group' : 'Groups' }}:</span>
-        <span class="truncate" [pTooltip]="groups" tooltipPosition="top" data-testid="meeting-groups-names">{{ groups }}</span>
+    @if (groupLinks().length > 0) {
+      <div class="flex items-start gap-1.5 mb-2 min-w-0 text-xs text-gray-600" data-testid="meeting-groups">
+        <i class="fa-light fa-people-group text-gray-400 shrink-0 mt-0.5" aria-hidden="true"></i>
+        <span class="sr-only">{{ groupLinks().length === 1 ? 'Group' : 'Groups' }}:</span>
+        <span class="min-w-0 break-words" data-testid="meeting-groups-names">
+          @for (group of groupLinks(); track $index; let last = $last) {
+            @if (group.commands) {
+              <a
+                [routerLink]="group.commands"
+                [queryParams]="groupQueryParams()"
+                [state]="groupLinkState() ?? undefined"
+                class="text-blue-600 hover:text-blue-800 hover:underline"
+                [attr.data-testid]="'meeting-group-link-' + group.uid"
+                >{{ group.name }}</a
+              >
+            } @else {
+              <span [attr.data-testid]="'meeting-group-text-' + group.uid">{{ group.name }}</span>
+            }
+            @if (!last) {
+              <span aria-hidden="true">, </span>
+            }
+          }
+        </span>
       </div>
     }
 
@@ -381,7 +407,11 @@
               [pastMeeting]="pastMeeting()"
               [showAddButton]="!pastMeeting()"
               [showAttendeePreview]="true"
-              [additionalRegistrantsCount]="additionalRegistrantsCount()"
+              [initialRegistrants]="drawerRegistrants()"
+              [confirmedRegistrants]="confirmedSelfRegistrants()"
+              [confirmedRemovedRegistrantIds]="confirmedRemovedRegistrantIds()"
+              [confirmedCountAdjustment]="confirmedSelfCountDelta()"
+              [additionalRegistrantsCount]="drawerRegistrants() ? 0 : additionalRegistrantsCount()"
               (addClicked)="onInvitePeople()"
               (viewAllClicked)="showRegistrants.set(true)">
             </lfx-meeting-rsvp-details>
@@ -510,7 +540,7 @@
           }
         </div>
         <!-- Viewer's own actions, side by side like Guests / See Meeting Details; a lone button fills the row -->
-        @if (canResendInvite() || canLeaveMeeting()) {
+        @if (canResendInvite() || canLeaveMeeting() || canAddMyself()) {
           <div class="flex gap-2 mt-2" data-testid="own-invite-actions">
             @if (canResendInvite()) {
               <lfx-button
@@ -522,7 +552,7 @@
                 severity="secondary"
                 data-testid="resend-invite-button"
                 [loading]="resendingInvite()"
-                (onClick)="resendInvite()">
+                (onClick)="confirmResendInvite()">
               </lfx-button>
             }
             @if (canLeaveMeeting()) {
@@ -538,7 +568,25 @@
                 (onClick)="confirmLeaveMeeting()">
               </lfx-button>
             }
+            @if (canAddMyself()) {
+              <lfx-button
+                class="w-full"
+                styleClass="w-full"
+                icon="fa-light fa-user-plus"
+                label="Add Myself"
+                size="small"
+                severity="secondary"
+                data-testid="add-myself-button"
+                [loading]="selfInvitePending()"
+                (onClick)="addMyself()">
+              </lfx-button>
+            }
           </div>
+          @if (selfIdentityPending()) {
+            <p class="text-xs text-gray-500 mt-2" role="status" data-testid="self-invite-syncing">
+              Your invitation is saved. If Remove Myself is not ready yet, try again shortly.
+            </p>
+          }
         }
       </div>
     </div>
@@ -581,8 +629,16 @@
           [showAddRegistrant]="!pastMeeting()"
           [openAddFormOnShow]="openRegistrantsOnAddForm()"
           [occurrence]="occurrence()"
+          [selfInvited]="isRegisteredAttendee()"
+          [selfInvitePending]="addingMyself()"
+          [confirmedRegistrants]="confirmedSelfRegistrants()"
+          [confirmedRemovedRegistrantIds]="confirmedRemovedRegistrantIds()"
+          [confirmedCountAdjustment]="confirmedSelfCountDelta()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
+          (registrantsChange)="drawerRegistrants.set($event)"
+          (selfAdded)="onSelfAdded($event.meeting_id, $event)"
+          (selfRemoved)="onSelfRemoved($event)"
           (resolvedHostsChange)="drawerHosts.set($event)">
         </lfx-meeting-registrants-display>
       </p-drawer>

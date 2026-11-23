@@ -49,7 +49,7 @@ vi.mock('./user.service', () => ({
 vi.mock('../utils/auth-helper', () => ({ getEffectiveSub: flows.subject, isImpersonating: flows.impersonating }));
 vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() } }));
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
-import { MktgDocumentAuthorService } from './mktg-document-author.service';
+import { MktgDocumentAuthorService, resetMktgDocumentAuthorNamesForTests } from './mktg-document-author.service';
 import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
 import { guardFoundationMessageText } from '@lfx-one/shared/utils/foundation-message.utils';
 import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -85,6 +85,7 @@ describe('private field comment store', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     objects.clear();
+    resetMktgDocumentAuthorNamesForTests();
     flows.history.mockResolvedValue(null);
     flows.subject.mockReturnValue('opaque-user-one');
     flows.impersonating.mockReturnValue(false);
@@ -242,7 +243,23 @@ describe('private field comment store', () => {
     expect(flows.user).not.toHaveBeenCalled();
   });
 
-  it('memoizes names per request and isolates directory failures in a new request', async () => {
+  it('memoizes names per request and shows no name for a directory failure with no earlier success', async () => {
+    const store = service();
+    const error = new MicroserviceError('Unavailable', 503, 'UNAVAILABLE');
+    flows.user.mockRejectedValue(error);
+    await store.add(req, project, type, 'living', request());
+    await store.add(req, project, type, 'living', request({ clientRequestId: 'request-two' }));
+    expect(flows.user).toHaveBeenCalledTimes(1);
+    expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'mktg_document_comment_author', 'Comment author lookup unavailable', { err: error });
+    flows.user.mockClear();
+    const nextReq = {} as Request;
+    const response = await store.list(nextReq, project, type, 'living', revisionId);
+    expect(flows.user).toHaveBeenCalledTimes(1);
+    expect(response.threads.map((entry) => entry.author)).toEqual([{ name: null }, { name: null }]);
+    expect(JSON.stringify(response)).not.toContain('opaque-user-one');
+  });
+
+  it('serves the last known name when the directory fails after an earlier success, in a new request', async () => {
     const store = service();
     await store.add(req, project, type, 'living', request());
     await store.add(req, project, type, 'living', request({ clientRequestId: 'request-two' }));
@@ -253,9 +270,12 @@ describe('private field comment store', () => {
     const nextReq = {} as Request;
     const response = await store.list(nextReq, project, type, 'living', revisionId);
     expect(flows.user).toHaveBeenCalledTimes(1);
-    expect(response.threads.map((entry) => entry.author)).toEqual([{ name: null }, { name: null }]);
+    expect(response.threads.map((entry) => entry.author)).toEqual([{ name: 'Project writer' }, { name: 'Project writer' }]);
     expect(JSON.stringify(response)).not.toContain('opaque-user-one');
-    expect(logger.warning).toHaveBeenCalledExactlyOnceWith(nextReq, 'mktg_document_comment_author', 'Comment author lookup unavailable', { err: error });
+    expect(logger.warning).toHaveBeenCalledExactlyOnceWith(nextReq, 'mktg_document_comment_author', 'Author lookup failed — showing the last known name', {
+      err: error,
+      served_stale: true,
+    });
   });
 
   it.each(['missing-etag', 'wrong-scope', 'invalid-json', 'invalid-thread'])('does not overwrite corrupt comments (%s)', async (failure) => {

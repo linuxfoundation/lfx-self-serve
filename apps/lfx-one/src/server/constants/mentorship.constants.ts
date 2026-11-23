@@ -6,6 +6,7 @@ import {
   MentorshipAdminMentorStatus,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
+  MentorshipMentorProgramStatus,
   MentorshipMentorStatus,
   MentorshipProgramStatus,
   MentorshipUpstreamApplicationStatus,
@@ -19,6 +20,24 @@ import {
 
 /** Upstream path that creates (or refreshes) the signed-in user's local mentorship record with a PUT, and reads it with a GET. */
 export const MENTORSHIP_BOOTSTRAP_PATH = '/mentorship/v1/me';
+
+/**
+ * `req.appSession` key holding a random id for the current login, set by `afterCallback` in `server.ts` on every login and never
+ * written afterwards. The mentorship refresh marker is keyed by it, so each login refreshes the mentorship record once.
+ */
+export const MENTORSHIP_SESSION_LOGIN_ID_KEY = 'mentorshipLoginId';
+
+/**
+ * How long a refresh claim blocks another refresh for the same login: long enough to cover an in-flight `PUT /me` (the API
+ * client's 30s timeout), and the backoff before a failed refresh is tried again.
+ */
+export const MENTORSHIP_USER_SYNC_RETRY_MS = 60_000;
+
+/** How long a completed refresh is remembered: express-openid-connect's default absolute session duration, 7 days. */
+export const MENTORSHIP_USER_SYNC_DONE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/** Most logins the per-replica fallback remembers while Valkey is unavailable; the oldest is dropped first. */
+export const MENTORSHIP_USER_SYNC_MEMORY_MAX_ENTRIES = 10_000;
 
 /**
  * The `error` the mentorship service returns with a 401 when the signed-in user has no local
@@ -43,6 +62,14 @@ export const MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH = `${MENTORSHIP_BOOTSTRAP_PA
 
 /** Upstream path for the programs the signed-in user administers, with their program-wide counts and `admin_status`. */
 export const MENTORSHIP_ME_PROGRAMS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/programs`;
+
+/**
+ * Upstream projects root. `/{projectUid}/programs` lists every program of the project in any status, with the same rows,
+ * order and filters as {@link MENTORSHIP_ME_PROGRAMS_PATH}, and with `include_subprojects=true` its sub-projects' programs
+ * too (lfx-mentorship#415). The gateway checks `mentorship_program_creator` on the project: its writers, or its mentorship
+ * program admins (lfx-mentorship#398).
+ */
+export const MENTORSHIP_PROJECTS_PATH = '/mentorship/v1/projects';
 
 /** Upstream path for the published programs the signed-in user is an active mentor of, with their status and program-wide counts. */
 export const MENTORSHIP_ME_MENTOR_PROGRAMS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/mentor-programs`;
@@ -88,6 +115,12 @@ export const MENTORSHIP_TASK_FILE_RANGE_PATTERN = /^bytes=(\d{1,15}-\d{0,15}|-\d
  * applications at `.../applications`; each needs the program's UUID, since the gateway denies a slug.
  */
 export const MENTORSHIP_PROGRAMS_PATH = '/mentorship/v1/programs';
+
+/**
+ * Statuses of the program submitter read that are expected rather than a fault, so they are logged at debug: 404 (no
+ * submitter) and 401/403 (a caller who may open the page but not read its submitter).
+ */
+export const MENTORSHIP_PROGRAM_SUBMITTER_EXPECTED_STATUSES: readonly number[] = [401, 403, 404];
 
 /** Upstream public mentor profiles; `/{userId}` is one mentor's programs, mentees and counts, keyed by local user id. */
 export const MENTORSHIP_MENTORS_PATH = '/mentorship/v1/mentors';
@@ -151,9 +184,9 @@ export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM: Readonly<Record<
 export const MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'hold', 'accepted'];
 
 /**
- * How a program's own status reads on its page when the program is not published. A published program reads
- * `open` or `completed` from its terms. The header route has no `admin_status`, so the BFF maps the status itself;
- * any other value reads as pending review and is flagged as unknown.
+ * How a program's own status reads on its page when the program is not published. A published program reads its
+ * status from its terms (`mentorshipPublishedProgramStatus`). The header route has no `admin_status`, so the BFF maps
+ * the status itself; any other value reads as pending review and is flagged as unknown.
  */
 export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string, MentorshipProgramStatus>> = {
   pending: 'pending-review',
@@ -161,11 +194,21 @@ export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string
   hidden: 'hidden',
 };
 
+/**
+ * How upstream groups a published program by its terms, as the BFF shows it: the published values of the admin list's
+ * `admin_status` and the mentor list's `status`.
+ */
+export const MENTORSHIP_PUBLISHED_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string, MentorshipMentorProgramStatus>> = {
+  accepting: 'accepting',
+  in_progress: 'in-progress',
+  upcoming: 'upcoming',
+  completed: 'completed',
+};
+
 /** Upstream `admin_status` of an administered program, as the BFF shows it. Upstream groups the program status with its terms. */
 export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string, MentorshipProgramStatus>> = {
-  open: 'open',
+  ...MENTORSHIP_PUBLISHED_PROGRAM_STATUS_BY_UPSTREAM,
   pending_review: 'pending-review',
-  completed: 'completed',
   rejected: 'rejected',
   hidden: 'hidden',
 };

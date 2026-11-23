@@ -34,6 +34,8 @@ export class InitiativeDetailHeaderComponent {
   public readonly activeTab = input.required<string>();
   /** Show the creator-only Edit attribution action (lfx-crowdfunding#342); the page decides lens, owner, status and flag. */
   public readonly canEditAttribution = input(false);
+  /** Show who created the initiative; the lens pages set it (lfx-crowdfunding#452). */
+  public readonly showCreator = input(false);
   public readonly tabChange = output<string>();
   public readonly settingsClick = output<void>();
   public readonly editAttributionClick = output<void>();
@@ -78,7 +80,7 @@ export class InitiativeDetailHeaderComponent {
     return type ? CROWDFUNDING_ATTRIBUTION_TYPE_ICONS[type] : '';
   });
   protected readonly attributionTooltip = computed(() => {
-    const entity = this.initiative().attribution?.type === 'project' ? 'project' : 'organization';
+    const entity = this.initiative().attribution?.type === 'project' ? 'project' : 'company';
     return `This initiative is run on behalf of this ${entity}. Donors see it on the public initiative page.`;
   });
   protected readonly publicPageUrl = computed(() => `${environment.urls.crowdfunding.replace(/\/+$/, '')}/initiatives/${this.initiative().slug}`);

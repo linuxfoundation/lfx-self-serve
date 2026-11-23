@@ -1,0 +1,29 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]" data-testid="family-print-faq-intro">{{ intro() }}</p>
+<div class="fpq-grid" [lfxPpRect]="[column[0], layout.top, column[1]]" data-testid="family-print-faq-grid">
+  @for (entries of shown(); track $index) {
+    <div class="fpq-column" data-testid="family-print-faq-column">
+      @for (shown of entries; track shown.key) {
+        @if (shown.heading) {
+          <h2 class="pp-lab pp-lab--dark fpq-heading" data-testid="family-print-faq-group">
+            {{ shown.heading }}
+            @if (shown.continued) {
+              <span class="fpq-heading__continued" data-testid="family-print-faq-continued">{{ labels.faqContinued }}</span>
+            }
+          </h2>
+        }
+        <article class="fpq-entry" data-testid="family-print-faq-entry">
+          <h3 class="fpq-entry__question">{{ shown.entry.question }}</h3>
+          <p class="fpq-entry__answer">{{ shown.entry.answer }}</p>
+          @if (shown.source) {
+            <p class="fpq-entry__source">
+              <span class="pp-chip">{{ shown.source }}</span>
+            </p>
+          }
+        </article>
+      }
+    </div>
+  }
+</div>

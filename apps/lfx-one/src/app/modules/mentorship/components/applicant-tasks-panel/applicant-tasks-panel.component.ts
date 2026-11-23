@@ -12,6 +12,7 @@ import {
   MENTORSHIP_APPLICANT_TASKS_HIDE_PREREQUISITE_LABEL,
   MENTORSHIP_TASK_EDIT_ACTION_ICON,
   MENTORSHIP_TASK_EDIT_ACTION_LABEL,
+  MENTORSHIP_TASK_FILE_VIEW_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipTaskUpdate, MentorshipApplicantTask, MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus } from '@lfx-one/shared/interfaces';
 import { buildMentorshipTaskUpdate, filterMentorshipApplicantTasks } from '@lfx-one/shared/utils';
@@ -28,7 +29,7 @@ type TaskStatusForm = FormGroup<{ status: FormControl<MentorshipApplicantTaskSta
  * The Edit dialog and the status select save through the BFF route both pages share: the saved task goes to
  * `taskSaved`, which patches the caller's list, and a failed save puts the select back and toasts why. The caller is a
  * callback rather than an output because collapsing the row destroys this panel while a save is still in flight, and
- * Angular drops an output emitted after destroy. Download saves the mentee's submission file.
+ * Angular drops an output emitted after destroy. Download saves the mentee's submission file; View opens it in a new tab.
  */
 @Component({
   selector: 'lfx-mentorship-applicant-tasks-panel',
@@ -55,6 +56,7 @@ export class ApplicantTasksPanelComponent {
   protected readonly hidePrerequisiteLabel = MENTORSHIP_APPLICANT_TASKS_HIDE_PREREQUISITE_LABEL;
   protected readonly editActionLabel = MENTORSHIP_TASK_EDIT_ACTION_LABEL;
   protected readonly editActionIcon = MENTORSHIP_TASK_EDIT_ACTION_ICON;
+  protected readonly viewActionLabel = MENTORSHIP_TASK_FILE_VIEW_LABEL;
   protected readonly statusOptions = MENTORSHIP_APPLICANT_TASK_STATUS_OPTIONS;
 
   /** Ids of the tasks with a save in flight; their select and Edit are disabled until it settles. */
@@ -83,6 +85,10 @@ export class ApplicantTasksPanelComponent {
 
   protected onDownloadTask(task: MentorshipApplicantTaskRow): void {
     this.taskFile.download(task.id);
+  }
+
+  protected onViewTask(task: MentorshipApplicantTaskRow): void {
+    this.taskFile.view(task.id);
   }
 
   /** Opens the shared task-form dialog in edit mode and saves what it changed. */

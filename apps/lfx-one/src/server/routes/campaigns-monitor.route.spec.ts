@@ -10,9 +10,22 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } from '@lfx-one/shared/constants';
 
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { MicroserviceError } from '../errors';
 
-const { readMonitor, checkRootWriter, checkRootCampaignManager, getPersonas, checkProjectWriter, checkSingleAccess, getProjectIdBySlug } = vi.hoisted(() => ({
+const {
+  readMonitor,
+  getConnection,
+  getGoogleAdsAccountMonitor,
+  checkRootWriter,
+  checkRootCampaignManager,
+  getPersonas,
+  checkProjectWriter,
+  checkSingleAccess,
+  getProjectIdBySlug,
+} = vi.hoisted(() => ({
   readMonitor: vi.fn(),
+  getConnection: vi.fn(),
+  getGoogleAdsAccountMonitor: vi.fn(),
   checkRootWriter: vi.fn(),
   checkRootCampaignManager: vi.fn(),
   getPersonas: vi.fn(),
@@ -34,7 +47,13 @@ vi.mock('../services/project.service', () => ({
     public getProjectIdBySlug = getProjectIdBySlug;
   },
 }));
-vi.mock('../services/campaign-service.service', () => ({ CampaignServiceClient: class {} }));
+vi.mock('../services/campaign-service.service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/campaign-service.service')>()),
+  CampaignServiceClient: class {
+    public getConnection = getConnection;
+    public getGoogleAdsAccountMonitor = getGoogleAdsAccountMonitor;
+  },
+}));
 vi.mock('../services/campaign-proxy.service', () => ({ CampaignProxyService: class {} }));
 vi.mock('../services/campaign-metrics.service', () => ({
   CampaignMetricsService: class {
@@ -118,7 +137,7 @@ describe('Google monitor through the real route, authorization middleware and co
     expect(readMonitor).not.toHaveBeenCalled();
   });
 
-  it('refuses a project-only campaign manager with the shared-account restriction', async () => {
+  it('refuses a project-only campaign manager the legacy account-wide arm with the shared-account restriction', async () => {
     checkSingleAccess.mockResolvedValue(true);
 
     const response = await fetch(`${baseUrl}/monitor?project=acme-foundation`);
@@ -157,5 +176,82 @@ describe('Google monitor through the real route, authorization middleware and co
     expect(response.status).toBe(403);
     expect(checkRootCampaignManager).not.toHaveBeenCalled();
     expect(readMonitor).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #4837: with the monitor cutover on, the Google monitor reads only the project's own campaigns through
+ * campaign-service, which answers the project's `campaign_manager` holders. The BFF adds no root gate on
+ * that arm; a caller campaign-service refuses gets a non-retryable 403 naming the role.
+ */
+describe('Google monitor campaign-service arm through the real route, authorization middleware and controller', () => {
+  const ACCOUNT = '1234567890';
+
+  beforeEach(() => {
+    vi.stubEnv(ServerFeatureFlag.CampaignServiceMonitor, 'true');
+    getConnection.mockResolvedValue({ account_id: ACCOUNT, label: 'Acme Google Ads' });
+    getGoogleAdsAccountMonitor.mockResolvedValue({
+      account_id: ACCOUNT,
+      days: 30,
+      campaigns: [],
+      action_items: [],
+      totals: { spend: 0, impressions: 0, clicks: 0, campaign_count: 0 },
+    });
+  });
+
+  const roleRefusal = () => MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'denied' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p');
+
+  it('serves a non-root project campaign manager the project data', async () => {
+    checkSingleAccess.mockResolvedValue(true);
+
+    const response = await fetch(`${baseUrl}/monitor?project=acme-foundation`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ campaigns: [], dateRange: { mode: 'last_30_days' } });
+    expect(checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'project', id: 'acme-foundation-uid', access: 'campaign_manager' });
+    expect(getGoogleAdsAccountMonitor).toHaveBeenCalledWith(expect.anything(), 'acme-foundation', ACCOUNT, 30);
+    expect(readMonitor).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('answers a ROOT caller without the project role (writer: %s) with the non-retryable 403 naming the role', async (writer) => {
+    checkRootWriter.mockResolvedValue(writer);
+    checkRootCampaignManager.mockResolvedValue(!writer);
+    getConnection.mockRejectedValue(roleRefusal());
+
+    const response = await fetch(`${baseUrl}/monitor?project=acme-foundation`);
+
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body['code']).not.toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(body['error']).toBe(
+      "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project."
+    );
+    expect(getGoogleAdsAccountMonitor).not.toHaveBeenCalled();
+    expect(readMonitor).not.toHaveBeenCalled();
+  });
+
+  it('refuses a caller with no role at the guard, naming the role, reading nothing', async () => {
+    const response = await fetch(`${baseUrl}/monitor?project=acme-foundation`);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'MARKETING_ACCESS_REQUIRED', error: 'campaign_manager access required for this resource' });
+    expect(getConnection).not.toHaveBeenCalled();
+    expect(getGoogleAdsAccountMonitor).not.toHaveBeenCalled();
+  });
+
+  it('serves an in-scope executive director with marketing FGA off (the flag-off ED baseline), without a root gate', async () => {
+    vi.stubEnv(ServerFeatureFlag.MarketingOpsFga, 'false');
+    getPersonas.mockResolvedValue({
+      personas: ['executive-director'],
+      personaProjects: { 'executive-director': [{ projectSlug: 'acme-foundation' }] },
+      isRootWriter: false,
+      isLFStaff: false,
+    });
+
+    const response = await fetch(`${baseUrl}/monitor?project=acme-foundation`);
+
+    expect(response.status).toBe(200);
+    expect(getGoogleAdsAccountMonitor).toHaveBeenCalledTimes(1);
+    expect(checkRootWriter).not.toHaveBeenCalled();
   });
 });

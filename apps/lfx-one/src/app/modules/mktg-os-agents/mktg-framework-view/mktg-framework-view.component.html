@@ -149,7 +149,8 @@
             </div>
 
             <!-- Goal columns: a scrolling table below its least width (one reading width per goal, FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM), so the columns never squeeze below reading width however many goals the plan has -->
-            <div class="overflow-x-auto">
+            <!-- `relative`: the field comments' sr-only live regions take the scroll container as their containing block, so they stay inside its clip at narrow widths (#4885). -->
+            <div class="relative overflow-x-auto">
               <table class="w-full table-fixed border-collapse text-sm" [style.min-width.rem]="goalsTableMinWidthRem()" data-testid="mktg-framework-view-goals">
                 <thead>
                   <tr class="bg-gray-50 text-left">
@@ -332,7 +333,7 @@
                 }
               </ul>
             } @else {
-              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-sources-failed-empty">Every source was read.</p>
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-sources-failed-empty">{{ noSourceFailedNote }}</p>
             }
           </div>
           <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
@@ -343,6 +344,9 @@
                   <li>{{ gap }}</li>
                 }
               </ul>
+              @if (acceptedGapsNote(); as accepted) {
+                <p class="text-xs text-gray-500" data-testid="mktg-framework-view-gaps-accepted">{{ accepted }}</p>
+              }
             } @else {
               <p class="text-xs text-gray-500" data-testid="mktg-framework-view-gaps-empty">The sources left no gap.</p>
             }

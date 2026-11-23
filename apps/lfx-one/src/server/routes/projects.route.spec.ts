@@ -6,7 +6,8 @@ import type { NextFunction, Request, Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { gate, getProjectBySlug, getSummary, getList, getOrgLensLinks, exportCsv } = vi.hoisted(() => ({
+const { roleGate, gate, getProjectBySlug, getSummary, getList, getOrgLensLinks, exportCsv } = vi.hoisted(() => ({
+  roleGate: vi.fn(),
   gate: vi.fn(),
   getProjectBySlug: vi.fn((_req: unknown, res: Response) => res.json({ handler: 'project' })),
   getSummary: vi.fn((_req: unknown, res: Response) => res.json({ handler: 'summary' })),
@@ -27,6 +28,9 @@ vi.mock('../controllers/project-participating-orgs.controller', () => ({
     public getOrgLensLinks = getOrgLensLinks;
     public export = exportCsv;
   },
+}));
+vi.mock('../middleware/require-dashboard-access.middleware', () => ({
+  requireExecutiveOrLFStaff: roleGate,
 }));
 vi.mock('../middleware/require-project-participating-orgs-access.middleware', () => ({
   requireProjectParticipatingOrgsAccess: gate,
@@ -56,7 +60,24 @@ const PATHS = [
 ] as const;
 
 describe('participating-orgs routes', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    roleGate.mockImplementation((_req: Request, _res: Response, next: NextFunction) => next());
+  });
+
+  it.each(PATHS)('%s is denied by the role gate before the viewer gate runs', async (path) => {
+    roleGate.mockImplementation((_req: Request, res: Response) => res.status(403).json({ denied: true }));
+
+    const response = await fetch(`${baseUrl}/api/projects${path}`);
+
+    expect(response.status).toBe(403);
+    expect(roleGate).toHaveBeenCalledOnce();
+    expect(gate).not.toHaveBeenCalled();
+    expect(getSummary).not.toHaveBeenCalled();
+    expect(getList).not.toHaveBeenCalled();
+    expect(getOrgLensLinks).not.toHaveBeenCalled();
+    expect(exportCsv).not.toHaveBeenCalled();
+  });
 
   it.each(PATHS)('%s never reaches its handler when the gate denies', async (path) => {
     gate.mockImplementation((_req: Request, res: Response) => res.status(403).json({ denied: true }));

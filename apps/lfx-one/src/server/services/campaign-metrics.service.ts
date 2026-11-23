@@ -15,6 +15,7 @@ import type {
   PacingLabel,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
+import { googleAdsCampaignUrl } from '@lfx-one/shared/utils/campaign.utils';
 import type { Request } from 'express';
 
 import { gaqlSearch } from './campaign-proxy.service';
@@ -178,10 +179,6 @@ function normalizeCampaignStatus(raw: unknown): CampaignMetrics['status'] {
   return VALID_CAMPAIGN_STATUSES.has(status) ? status : 'unknown';
 }
 
-function buildGoogleAdsUrl(campaignId: string): string {
-  return campaignId ? `https://ads.google.com/aw/campaigns?campaignId=${campaignId}` : '';
-}
-
 function computeTotalBudget(budgetDay: number, days: number): number {
   return budgetDay * days;
 }
@@ -236,7 +233,7 @@ function parseCampaignMetrics(row: unknown, days: number, rangeStart: string, ra
     pacingPct,
     pacingLabel,
     campaignId,
-    googleAdsUrl: buildGoogleAdsUrl(campaignId),
+    googleAdsUrl: googleAdsCampaignUrl(campaignId),
   };
 }
 
@@ -407,7 +404,7 @@ function parseKeywordRow(row: unknown): KeywordMetrics {
     criterionId: String(extractNested(r, 'ad_group_criterion.criterion_id') || ''),
     campaign: (extractNested(r, 'campaign.name') as string) || '',
     campaignId,
-    googleAdsUrl: buildGoogleAdsUrl(campaignId),
+    googleAdsUrl: googleAdsCampaignUrl(campaignId),
     impressions: Number(extractNested(r, 'metrics.impressions') || 0),
     clicks,
     ctr: Number(extractNested(r, 'metrics.ctr') || 0) * 100,

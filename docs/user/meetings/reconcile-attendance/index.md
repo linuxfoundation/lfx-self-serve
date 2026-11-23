@@ -4,7 +4,7 @@ description: How organizers match the people in a meeting's Zoom attendance reco
 audience: [all]
 product_area: Meetings
 tags: [meetings, past meetings, attendance, reconcile, participants, organizer, zoom]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 
@@ -43,7 +43,7 @@ The panel groups results into three tabs. Each tab name shows how many attendees
 - **Unmatched**: no good match was found.
 - **Auto-matched**: matches that were applied automatically. These are listed so you can check them. No actions are offered here.
 
-Each row shows the attendee's Zoom name, how confident the match is, and how it was found: **deterministic** (an exact email or username match) or **ai**. If there's a suggestion, the row shows it as **Suggested** with the person's name, email, and organization. In **Auto-matched**, it shows **Matched** instead.
+Each row shows the attendee's Zoom name, how confident the match is, and how it was found: **deterministic** (an exact email or username match) or **ai**. If there's a suggestion, the row shows it as **Suggested** with the person's name, email, and company. In **Auto-matched**, it shows **Matched** instead.
 
 ## Review a result
 

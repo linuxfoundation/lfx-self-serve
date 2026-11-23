@@ -8,7 +8,13 @@ import {
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_DOCUMENT_COMMENT_ID_REGEX,
 } from '@lfx-one/shared/constants';
-import { MktgDocumentType, MktgRestoreRevisionRequest, MktgRestoreRevisionResponse, MktgRetryDocumentRunRequest } from '@lfx-one/shared/interfaces';
+import {
+  MktgDismissDocumentRunRequest,
+  MktgDocumentType,
+  MktgRestoreRevisionRequest,
+  MktgRestoreRevisionResponse,
+  MktgRetryDocumentRunRequest,
+} from '@lfx-one/shared/interfaces';
 import { findMktgDocumentType, readMktgRedraftRequest } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -309,6 +315,31 @@ export class MktgDocumentsController {
         });
       logger.success(req, operation, startTime, { project });
       res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Close a failed run so it leaves Started runs for everyone; no document or revision changes, and the 204 has no body. */
+  public async dismissRun(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_run_dismiss';
+    const body = (req.body ?? {}) as Partial<MktgDismissDocumentRunRequest>;
+    const params = this.readDocumentParams(req, body.project, operation);
+    if (params instanceof Error) {
+      next(params);
+      return;
+    }
+    const runId = req.params['runId'];
+    if (typeof runId !== 'string' || !MKTG_STARTED_RUN_ID_REGEX.test(runId)) {
+      next(this.invalidField(req, operation, 'runId', 'runId must name a recorded run'));
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, {});
+    try {
+      const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      await this.documentRuns.dismiss(req, project, params.type.agentKey, params.documentId, runId);
+      logger.success(req, operation, startTime, { project });
+      res.status(204).end();
     } catch (error) {
       next(error);
     }

@@ -12,7 +12,7 @@ import { UserService } from '../services/user.service';
 import { orgLensLfStaffOnlyGuard } from './org-lens-lf-staff-only.guard';
 
 // The redirect must stay in the organization the address names (spec 050): this CanMatch runs before
-// `orgPathParamGuard` adopts the segment, so an absolute `/org/overview` would land on the cookie organization.
+// `orgPathParamGuard` adopts the segment, so an absolute `/company/overview` would land on the cookie organization.
 describe('orgLensLfStaffOnlyGuard', () => {
   const route: Route = { path: 'roi' };
   const segments: UrlSegment[] = [];
@@ -48,24 +48,24 @@ describe('orgLensLfStaffOnlyGuard', () => {
   it('admits LF staff', async () => {
     isLFStaff.set(true);
 
-    expect(await verdictFor('/org/acme-inc/roi')).toBe(true);
+    expect(await verdictFor('/company/acme-inc/roi')).toBe(true);
   });
 
   it('decides only after the personas lookup resolves', async () => {
     refreshEnrichedPersonas.mockImplementation(() => of(null).pipe(tap(() => isLFStaff.set(true))));
 
-    expect(await verdictFor('/org/acme-inc/roi')).toBe(true);
+    expect(await verdictFor('/company/acme-inc/roi')).toBe(true);
   });
 
   it('sends a non-staff caller to the overview of the address they named', async () => {
-    expect(await verdictFor('/org/acme-inc/roi')).toBe('/org/acme-inc/overview');
-    expect(await verdictFor('/org/roi')).toBe('/org/overview');
+    expect(await verdictFor('/company/acme-inc/roi')).toBe('/company/acme-inc/overview');
+    expect(await verdictFor('/company/roi')).toBe('/company/overview');
   });
 
   it('sends a session acting as another user to the overview, even when that user is LF staff', async () => {
     isLFStaff.set(true);
     impersonating.set(true);
 
-    expect(await verdictFor('/org/acme-inc/roi')).toBe('/org/acme-inc/overview');
+    expect(await verdictFor('/company/acme-inc/roi')).toBe('/company/acme-inc/overview');
   });
 });

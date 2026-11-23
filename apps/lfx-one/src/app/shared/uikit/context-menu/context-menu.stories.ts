@@ -55,7 +55,7 @@ export const MirrorsTheMoreMenu: Story = {
       <div class="edge flex h-ui-row w-[320px] items-center gap-[8px] rounded-ui-md bg-ui-background-100 pl-[16px] pr-[4px] label-14 text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none"
         tabindex="0" [lfxUiContextMenu]="menu">
         Kubernetes
-        <lfx-ui-button class="ml-auto" variant="tertiary" size="small" iconOnly icon="fa-light fa-ellipsis" ariaLabel="More actions" [menu]="menu" />
+        <lfx-ui-button class="ml-auto" variant="tertiary" iconOnly icon="fa-light fa-ellipsis" ariaLabel="More actions" [menu]="menu" />
       </div>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions">

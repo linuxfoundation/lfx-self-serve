@@ -50,6 +50,16 @@ describe('UiInputComponent', () => {
     expect(field().getAttribute('aria-label')).toBeNull();
   });
 
+  it('marks a required field with a red asterisk that screen readers skip', async () => {
+    const mark = (): HTMLElement | null => host.querySelector('[data-testid="ui-input-required"]');
+    expect(mark()).toBeNull();
+
+    await set('required', true);
+
+    expect(mark()?.textContent).toBe(' *');
+    expect(mark()?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('uses ariaLabel when there is no visible label', async () => {
     await set('label', '');
     await set('ariaLabel', 'Search projects');
@@ -64,6 +74,13 @@ describe('UiInputComponent', () => {
     await fixture.whenStable();
 
     expect(fixture.componentInstance.value()).toBe('linux');
+  });
+
+  it('locks the value without disabling the field when readonly', async () => {
+    await set('readonly', true);
+
+    expect(field().readOnly).toBe(true);
+    expect(field().disabled).toBe(false);
   });
 
   it('describes the field with the hint', async () => {
@@ -120,6 +137,14 @@ describe('UiInputComponent', () => {
     await set('autocomplete', 'email');
 
     expect(field().getAttribute('autocomplete')).toBe('email');
+  });
+
+  it('caps the field at a max length only when one is set', async () => {
+    expect(field().hasAttribute('maxlength')).toBe(false);
+
+    await set('maxlength', 100);
+
+    expect(field().maxLength).toBe(100);
   });
 
   it('zeroes the input padding next to an unstyled affix only', async () => {
@@ -195,11 +220,11 @@ describe('UiInputComponent', () => {
   });
 
   it('drops the hover ring when disabled', async () => {
-    expect(wrapper().className).toContain('edge-hover');
+    expect(wrapper().className).toContain('edge-control-hover');
 
     await set('disabled', true);
 
-    expect(wrapper().className).not.toContain('edge-hover');
+    expect(wrapper().className).not.toContain('edge-control-hover');
   });
 
   it('projects an lfxUiInputAction control into the wrapper after the field', async () => {

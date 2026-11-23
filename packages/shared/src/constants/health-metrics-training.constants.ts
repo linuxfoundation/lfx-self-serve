@@ -1,15 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { lfxColors } from './colors.constants';
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
+import type { HealthMetricsColumnChartSeries } from '../interfaces/health-metrics-column-chart.interface';
 import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
 import type {
   HealthMetricsTrainingCourses,
+  HealthMetricsTrainingCoursesSortKey,
+  HealthMetricsTrainingCoursesType,
   HealthMetricsTrainingCoursesTypeOption,
   HealthMetricsTrainingEnrollment,
+  HealthMetricsTrainingEnrollmentGoals,
   HealthMetricsTrainingEnrollmentMetric,
   HealthMetricsTrainingEnrollmentMetricOption,
   HealthMetricsTrainingEnrollmentPeriod,
+  HealthMetricsTrainingEnrollmentSegment,
   HealthMetricsTrainingQueryParams,
   HealthMetricsTrainingSectionKey,
 } from '../interfaces/health-metrics-training.interface';
@@ -24,28 +31,16 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     empty: { icon: 'fa-light fa-graduation-cap', source: HEALTH_METRICS_L2_EMPTY_SOURCES.courses },
     label: 'Enrollment & revenue',
     heading: 'Enrollment & revenue',
-    description: 'Training is the third revenue stream and the widest top-of-funnel the foundation has — most enrollments are people who are not members yet.',
-    footnote: [
-      {
-        text: 'Certification exams and free eLearning are counted separately on purpose — one is revenue, the other is reach, and averaging them tells you neither.',
-      },
-    ],
-    footnoteCaution: false,
-    headingBadge: 'Provisional',
+    description: 'Course enrollments and the revenue they bring in.',
+    provisional: true,
   },
   {
     key: 'courses',
     empty: { icon: 'fa-light fa-graduation-cap', source: HEALTH_METRICS_L2_EMPTY_SOURCES.courses },
     label: 'Courses',
     heading: 'Courses',
-    description: 'Individual courses and certifications by enrollment. Free courses show no revenue — that is reach, not a gap.',
-    footnote: [
-      {
-        text: 'Enrollment counts come from LF Education. Revenue is provisional and excludes corporate training agreements, which are tracked per member organization.',
-      },
-    ],
-    footnoteCaution: false,
-    headingBadge: 'Provisional',
+    description: 'Which courses and certifications people take most.',
+    provisional: true,
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
@@ -77,6 +72,14 @@ export const HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED: HealthMetrics
   byType: [],
 };
 
+/** A year with no goal set for either measure. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET: HealthMetricsTrainingEnrollmentGoals = {
+  enrollments: null,
+  revenueUsd: null,
+  enrollmentsProgress: null,
+  revenueProgress: null,
+};
+
 /** The empty read: shown while loading, after a failure, and for a foundation without an `All` row. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainingEnrollment = {
   measured: false,
@@ -87,10 +90,15 @@ export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainin
     COMPLETED_YEAR_3: HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED,
   },
   trend: [],
-  goals: { enrollments: null, revenueUsd: null, enrollmentsProgressYtd: null, revenueProgressYtd: null },
+  goals: {
+    YTD: HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET,
+    COMPLETED_YEAR: HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET,
+    COMPLETED_YEAR_2: HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET,
+    COMPLETED_YEAR_3: HEALTH_METRICS_TRAINING_ENROLLMENT_GOALS_UNSET,
+  },
 };
 
-/** The toggle above the by-type list. */
+/** The header switch; Enrollments is the default, and the pick is local, not in the URL. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS: readonly HealthMetricsTrainingEnrollmentMetricOption[] = [
   { id: 'enrollments', label: 'Enrollments' },
   { id: 'revenue', label: 'Revenue' },
@@ -105,30 +113,78 @@ export const HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS: Readonly<Record<strin
   Bundle: 'Bundles',
 };
 
+/**
+ * The chart's segments, bottom to top, in the design's colours and with the delivery types' own labels. Other collects every
+ * other type: eLearning and edX in Enrollments, eLearning and Bundle in Revenue, where edX's never-captured revenue is left out.
+ */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_SEGMENTS: readonly HealthMetricsTrainingEnrollmentSegment[] = [
+  {
+    key: 'certification',
+    label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['Certification Exam'],
+    color: lfxColors.blue[500],
+    deliveryType: 'Certification Exam',
+  },
+  { key: 'microcourse', label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['MicroCourse'], color: lfxColors.blue[900], deliveryType: 'MicroCourse' },
+  { key: 'instructorLed', label: HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS['Instructor Led'], color: lfxColors.violet[500], deliveryType: 'Instructor Led' },
+  { key: 'other', label: 'Other', color: lfxColors.gray[300], deliveryType: null },
+];
+
+/** A neutral, total-only bar for a year whose revenue total is known but not split by type; shown only when a year needs it. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNSPLIT_SERIES: HealthMetricsColumnChartSeries = {
+  key: 'unsplit',
+  label: 'Not split by type',
+  color: lfxColors.gray[200],
+};
+
+/** The design's 220px plot and 44px columns. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_HEIGHT_PX = 220;
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_CHART_BAR_WIDTH_PX = 44;
+
 /** Types left out of revenue by type: edX revenue is never captured, so its zero is coverage, not free training. */
 export const HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES: readonly string[] = ['edX'];
 
-/** Years the enrollment trend draws, ending with the current one; the view now goes back to 2016. */
+/** Years the chart draws, ending with the current one; the view now goes back to 2016. */
 export const HEALTH_METRICS_TRAINING_TREND_YEARS = 6;
 
 /** Read-failed / no-foundation value: no rows and no scope total, so nothing reads as zero courses. */
-export const HEALTH_METRICS_TRAINING_COURSES_UNMEASURED: HealthMetricsTrainingCourses = { rows: [], totalRecords: 0, scopeTotal: null };
+export const HEALTH_METRICS_TRAINING_COURSES_UNMEASURED: HealthMetricsTrainingCourses = { rows: [], totalRecords: 0, scopeTotal: null, activeTotal: null };
 
-/** The type pills over the courses table; the first is the default. */
+/** The Course type select in the card header; the first is the default. */
 export const HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS: readonly HealthMetricsTrainingCoursesTypeOption[] = [
-  { id: 'all', label: 'All' },
-  { id: 'certifications', label: 'Certifications' },
+  { id: 'all', label: 'All types' },
+  { id: 'certification', label: 'Certification' },
   { id: 'elearning', label: 'eLearning' },
+  { id: 'instructor-led', label: 'Instructor-led' },
 ];
 
-/** The LF Education delivery type each narrowing pill keeps. */
-export const HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES = {
-  certifications: 'Certification Exam',
-  elearning: 'E-Learning',
-} as const;
+/** The LF Education delivery types each cut keeps; eLearning takes every self-paced type. */
+export const HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES: Readonly<Record<Exclude<HealthMetricsTrainingCoursesType, 'all'>, readonly string[]>> = {
+  certification: ['Certification Exam'],
+  elearning: ['E-Learning', 'MicroCourse', 'edX'],
+  'instructor-led': ['Instructor Led'],
+};
 
-/** Rows per page; the server caps a request at `HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE`. */
-export const HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE = 25;
+/** Older links' `trnType` values and the cut each now means. */
+export const HEALTH_METRICS_TRAINING_COURSES_LEGACY_TYPES: Readonly<Record<string, HealthMetricsTrainingCoursesType>> = {
+  certifications: 'certification',
+};
+
+/** The Courses table's sortable columns. */
+export const HEALTH_METRICS_TRAINING_COURSES_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsTrainingCoursesSortKey>[] = [
+  { key: 'course', kind: 'text' },
+  { key: 'type', kind: 'text' },
+  { key: 'enrollments', kind: 'number' },
+  { key: 'revenue', kind: 'number' },
+];
+
+/** Courses opens on the view's rank: most enrollments in the period first. */
+export const HEALTH_METRICS_TRAINING_COURSES_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsTrainingCoursesSortKey> = {
+  key: 'enrollments',
+  direction: 'desc',
+};
+
+/** Rows per page, with the numbered pager; the server caps a request at `HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE`. */
+export const HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE = 10;
 
 export const HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE = 100;
 
@@ -143,7 +199,7 @@ export const HEALTH_METRICS_TRAINING_QUERY_PARAMS = {
   coursesPage: 'trnPage',
 } as const satisfies Record<string, keyof HealthMetricsTrainingQueryParams>;
 
-/** A course's type pill names one course, so it reads singular where the by-type list reads plural. */
+/** A course's type badge names one course, so it reads singular where the chart reads plural. */
 export const HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS: Readonly<Record<string, string>> = {
   'E-Learning': 'eLearning',
   'Certification Exam': 'Certification',
@@ -151,11 +207,20 @@ export const HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS: Readonly<Record<string,
   MicroCourse: 'Microcourse',
 };
 
-/** Type pills — applied via `[class]`, so they are safelisted in Tailwind. Certifications stand out from the rest. */
+/** Type badges — applied via `[class]`, so they are safelisted in Tailwind. Certifications stand out from the rest. */
 export const HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES = {
   certification: 'bg-blue-50 text-blue-700',
   other: 'bg-gray-100 text-gray-600',
 } as const;
 
+/** Each type badge's icon; any other type, Microcourse and edX among them, takes eLearning's. */
+export const HEALTH_METRICS_TRAINING_COURSE_TYPE_ICONS: Readonly<Record<string, string>> = {
+  'Certification Exam': 'fa-light fa-award',
+  'Instructor Led': 'fa-light fa-chalkboard-user',
+  'E-Learning': 'fa-light fa-laptop',
+};
+
+export const HEALTH_METRICS_TRAINING_COURSE_DEFAULT_TYPE_ICON = 'fa-light fa-laptop';
+
 /** Shown in place of revenue for a free course: reach, not a gap. */
-export const HEALTH_METRICS_TRAINING_COURSE_FREE_LABEL = 'free';
+export const HEALTH_METRICS_TRAINING_COURSE_FREE_LABEL = 'Free';

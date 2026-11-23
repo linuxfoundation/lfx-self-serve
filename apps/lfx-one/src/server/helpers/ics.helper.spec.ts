@@ -12,7 +12,7 @@ vi.mock('@lfx-one/shared/utils', () => ({
   addMinutesToDate: vi.fn((iso: string) => ({ toISOString: () => iso })),
 }));
 
-import { buildVCalendar, buildVEvent, ICS_UID_DOMAIN } from './ics.helper';
+import { buildVCalendar, buildVEvent, escapeICSText, ICS_UID_DOMAIN } from './ics.helper';
 
 describe('buildVCalendar', () => {
   it('omits X-WR-CALNAME when no calname is provided', () => {
@@ -41,6 +41,20 @@ describe('buildVCalendar', () => {
     expect(calnameStart).toBeGreaterThanOrEqual(0);
     // Folded continuation lines are prefixed with a single space.
     expect(rawLines[calnameStart + 1].startsWith(' ')).toBe(true);
+  });
+});
+
+describe('escapeICSText', () => {
+  it('escapes backslash, semicolon, comma and newlines (RFC 5545 section 3.3.11)', () => {
+    expect(escapeICSText('A, B; C\\D\r\nE')).toBe(String.raw`A\, B\; C\\D\nE`);
+  });
+
+  it('drops control characters other than TAB, CR and LF so a value cannot carry them into the feed', () => {
+    expect(escapeICSText('A\u0000B\u0007C\u007fD\tE')).toBe('ABCD\tE');
+  });
+
+  it('treats a missing value as empty', () => {
+    expect(escapeICSText(undefined as unknown as string)).toBe('');
   });
 });
 

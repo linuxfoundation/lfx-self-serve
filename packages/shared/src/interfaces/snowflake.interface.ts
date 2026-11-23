@@ -35,9 +35,10 @@ export interface SnowflakeQueryOptions {
    * circuit breaker, though the query still rejects so the caller can degrade gracefully. Prefer the object's name —
    * only that object is then exempt, so a missing CORE table in the same statement keeps its normal failure handling.
    * The name matches the object Snowflake blames, either exactly or as the last segment of its qualified name, and an
-   * error that names no object never matches. `true` exempts any missing object in the statement.
+   * error that names no object never matches. A list exempts an error blaming any one of its objects, and no other.
+   * `true` exempts any missing object in the statement.
    */
-  expectMissingObject?: boolean | string;
+  expectMissingObject?: boolean | string | readonly string[];
 
   /**
    * Identifier(s) that may be absent during a coordinated schema rollout. An error blaming one of them is not counted

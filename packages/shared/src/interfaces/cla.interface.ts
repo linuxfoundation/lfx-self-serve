@@ -367,7 +367,7 @@ export type SignIdentityVariant = 'github' | 'gerrit' | 'github-or-gerrit';
 
 /**
  * Which route a selected CLA Group takes. Every route but one opens the sign identity step;
- * GitLab is the exception, because Self Serve holds no verifiable GitLab identity to offer.
+ * GitLab is the exception: account linking is supported, but its CLA signing handoff is not.
  */
 export type ClaSignRoute = SignIdentityVariant | 'gitlab-unsupported';
 

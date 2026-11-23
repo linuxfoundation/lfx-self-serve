@@ -9,11 +9,13 @@ import {
   CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
+  DonationAnonymityResult,
   DonationStats,
   InitiativeDetail,
   InitiativesResponse,
   InitiativesScope,
   MyDonationsResponse,
+  OrgDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
   RecurringDonation,
@@ -27,10 +29,12 @@ import {
   CROWDFUNDING_ATTRIBUTION_NAME_MAX_CHARS,
   DEFAULT_CROWDFUNDING_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
+import { isUuid } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
   BackendAnnouncement,
+  BackendAnonymityResponse,
   BackendAttribution,
   BackendBeneficiaryInput,
   BackendCrowdfundingResponse,
@@ -38,6 +42,8 @@ import {
   BackendGoalInput,
   BackendInitiative,
   BackendMyTransactionListResponse,
+  BackendOrgDonationListResponse,
+  BackendSlugToUid,
   BackendSponsorshipTierInput,
   BackendSubscription,
   BackendTransactionList,
@@ -52,6 +58,7 @@ import {
   mapToInitiativeBase,
   mapToInitiativeDetail,
   mapMyTransactionToMyDonation,
+  mapOrgDonation,
   mapSubscriptionToRecurringDonation,
   mapToTransaction,
   mapPaymentMethodWire,
@@ -220,10 +227,21 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
+    // The gateway takes only a UUID on /manage (linuxfoundation/lfx-crowdfunding#363), so resolve the route slug first.
+    // slug-to-uid's 404 is the not-found signal.
+    const id = isUuid(slug)
+      ? slug
+      : (await cfFetchNullable<BackendSlugToUid>(req, 'resolveInitiativeSlug', `/crowdfunding/initiatives/slug-to-uid/${encodeURIComponent(slug)}`))?.uid;
+    if (!id) {
+      // Any signed-in user can reach this with a made-up slug, so DEBUG, not WARN.
+      logger.debug(req, 'cf_get_initiative_by_slug', 'No initiative has this slug', { slug });
+      return null;
+    }
+
     // /manage returns the full payload in any status to the creator or a writer on the attributed entity; requires the user's bearer token.
-    // Non-writers are denied at the gateway with 403 (rethrown). An unresolvable slug fails the gateway's slug resolver,
-    // which surfaces as 502 (rethrown, not null) — tracked in linuxfoundation/lfx-crowdfunding#363. 404 → null only if the gateway is bypassed
-    const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/initiatives/${encodeURIComponent(slug)}/manage`);
+    // Everyone else gets 403 from the gateway (rethrown), including for a UUID that doesn't exist: the gateway intentionally
+    // doesn't distinguish "doesn't exist" from "not a writer". 404 → null only if the gateway is bypassed.
+    const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/initiatives/${encodeURIComponent(id)}/manage`);
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
       return null;
@@ -306,6 +324,22 @@ export class CrowdfundingService {
     return { data: raw.data.map(mapMyTransactionToMyDonation), total: raw.total_count, pageSize: raw.limit, offset: raw.offset };
   }
 
+  /** Donations matched to an organization (#415). CF's gateway rule requires auditor on the b2b_org and returns 403 otherwise. */
+  public async getOrgDonations(req: Request, orgUid: string, pageSize?: number, offset?: number): Promise<OrgDonationsResponse> {
+    const startTime = logger.startOperation(req, 'cf_get_org_donations', { orgUid, pageSize, offset });
+
+    const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
+    const off = offset ?? 0;
+    const raw = await cfFetch<BackendOrgDonationListResponse>(
+      req,
+      'getOrgDonations',
+      `/crowdfunding/organizations/${encodeURIComponent(orgUid)}/donations?limit=${limit}&offset=${off}`
+    );
+
+    logger.success(req, 'cf_get_org_donations', startTime, { total: raw.meta.total });
+    return { data: raw.data.map(mapOrgDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
+  }
+
   public async getRecurringDonationById(req: Request, subscriptionId: string): Promise<RecurringDonation | null> {
     const startTime = logger.startOperation(req, 'cf_get_recurring_donation_by_id', { subscriptionId });
 
@@ -327,6 +361,36 @@ export class CrowdfundingService {
     const startTime = logger.startOperation(req, 'cf_cancel_subscription', { subscriptionId });
     await cfFetch<void>(req, 'cancelSubscription', `/crowdfunding/me/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: 'DELETE', noBody: true });
     logger.success(req, 'cf_cancel_subscription', startTime, { subscriptionId });
+  }
+
+  /**
+   * Hides or shows the caller's name on one of their one-time donations (lfx-crowdfunding#466). `donationId` is the
+   * CF donation id from a `/me/transactions` row; CF returns 404 when the donation isn't the caller's.
+   */
+  public async updateMyDonationAnonymity(req: Request, donationId: string, anonymous: boolean): Promise<DonationAnonymityResult> {
+    const startTime = logger.startOperation(req, 'cf_update_my_donation_anonymity', { donationId, anonymous });
+    const raw = await cfFetch<BackendAnonymityResponse>(req, 'updateMyDonationAnonymity', `/crowdfunding/me/donations/${encodeURIComponent(donationId)}`, {
+      method: 'PATCH',
+      body: { anonymous },
+    });
+    logger.success(req, 'cf_update_my_donation_anonymity', startTime, { donationId, anonymous: raw.anonymous });
+    return { id: raw.id, anonymous: raw.anonymous === true };
+  }
+
+  /**
+   * Hides or shows the caller's name on every charge of one of their recurring donations (lfx-crowdfunding#466).
+   * CF returns 404 when the subscription isn't the caller's.
+   */
+  public async updateMySubscriptionAnonymity(req: Request, subscriptionId: string, anonymous: boolean): Promise<DonationAnonymityResult> {
+    const startTime = logger.startOperation(req, 'cf_update_my_subscription_anonymity', { subscriptionId, anonymous });
+    const raw = await cfFetch<BackendAnonymityResponse>(
+      req,
+      'updateMySubscriptionAnonymity',
+      `/crowdfunding/me/subscriptions/${encodeURIComponent(subscriptionId)}`,
+      { method: 'PATCH', body: { anonymous } }
+    );
+    logger.success(req, 'cf_update_my_subscription_anonymity', startTime, { subscriptionId, anonymous: raw.anonymous });
+    return { id: raw.id, anonymous: raw.anonymous === true };
   }
 
   public async updateInitiative(req: Request, id: string, input: UpdateInitiativeInput): Promise<InitiativeDetail> {
@@ -375,7 +439,7 @@ export class CrowdfundingService {
     ]);
     // An empty list would read as "no affiliations", so a failed roster lookup is an error, not a default.
     if (orgs.upstreamFailed) {
-      throw new MicroserviceError('Organization role grants lookup failed', 502, 'UPSTREAM_ERROR', {
+      throw new MicroserviceError('Company role grants lookup failed', 502, 'UPSTREAM_ERROR', {
         operation: 'cf_get_attribution_options',
         service: 'org-role-grants',
       });

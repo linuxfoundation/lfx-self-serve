@@ -18,6 +18,7 @@ import {
   FORMATION_ENTITY_TYPE_LABELS,
   FORMATION_QUEUE_PAGE_SIZE,
   FORMATION_QUEUE_PAGE_SIZE_OPTIONS,
+  FORMATION_QUEUE_COPY,
   FORMATION_QUEUE_SUB_STAGES,
   FORMATION_SUB_STAGE_LABELS,
 } from '@lfx-one/shared/constants';
@@ -68,6 +69,8 @@ type FormationSortableField = 'readiness' | 'announcement_date';
 export class FormationsTableComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
+
+  protected readonly queueCopy = FORMATION_QUEUE_COPY;
 
   public readonly rows = input.required<FormationQueueRow[]>();
   /** The server's pre-filter counts — the pill labels read their "(N)" off these, never off `rows`, which the active pill has already narrowed. */

@@ -1,10 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,14 +18,12 @@ const MEETING = { id: 'meeting-1', title: 'Weekly sync', timezone: 'UTC', occurr
  */
 describe('RecurringMeetingEditOptionsComponent', () => {
   let close: ReturnType<typeof vi.fn>;
-  let meetingsV2Enabled: boolean;
 
   async function mount(occurrence: MeetingOccurrence | null = SECOND): Promise<RecurringMeetingEditOptionsComponent> {
     TestBed.configureTestingModule({
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: DynamicDialogConfig, useValue: { data: { meeting: MEETING, occurrence } } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(meetingsV2Enabled) } },
       ],
     });
     TestBed.overrideComponent(RecurringMeetingEditOptionsComponent, { set: { template: '', imports: [] } });
@@ -40,7 +36,6 @@ describe('RecurringMeetingEditOptionsComponent', () => {
 
   beforeEach(() => {
     close = vi.fn();
-    meetingsV2Enabled = true;
   });
 
   it('opens on a single occurrence, preselected to the one clicked from', async () => {
@@ -83,25 +78,6 @@ describe('RecurringMeetingEditOptionsComponent', () => {
     component.onCancel();
 
     expect(close).toHaveBeenCalledWith({ scope: 'occurrence', proceed: false });
-  });
-
-  it('edits the occurrence it was opened on while the meeting v2 flag is off', async () => {
-    meetingsV2Enabled = false;
-    const component = await mount();
-
-    component.onConfirm();
-
-    expect(close).toHaveBeenCalledWith({ scope: 'occurrence', proceed: true, occurrenceId: SECOND.occurrence_id });
-  });
-
-  it('keeps the occurrence it was opened on with the flag off, even when the picker would not list it', async () => {
-    meetingsV2Enabled = false;
-    const ended = { occurrence_id: '946717200', start_time: '2000-01-01T09:00:00.000Z', duration: 30 } as MeetingOccurrence;
-    const component = await mount(ended);
-
-    component.onConfirm();
-
-    expect(close).toHaveBeenCalledWith({ scope: 'occurrence', proceed: true, occurrenceId: ended.occurrence_id });
   });
 
   it('preselects the occurrence it was opened on even when its id is in milliseconds', async () => {

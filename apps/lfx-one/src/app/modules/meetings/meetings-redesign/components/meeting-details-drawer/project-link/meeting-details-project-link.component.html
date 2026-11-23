@@ -1,0 +1,39 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. The small line truncates with a tooltip; the default one wraps. -->
+@let small = size() === 'small';
+@if (project().url; as url) {
+  <a
+    class="group/eyebrow inline-flex min-w-0 max-w-full items-center text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+    [class]="small ? 'gap-[6px] whitespace-nowrap text-[12px] leading-[16px]' : 'gap-[8px] text-[14px] leading-[20px]'"
+    [href]="url"
+    [attr.aria-label]="project().label"
+    [lfxUiTooltip]="project().name"
+    [lfxUiTooltipDisabled]="!small"
+    (click)="onClick($event, url)"
+    data-testid="meeting-details-project">
+    <lfx-meeting-project-logo [class]="small ? '!h-[14px] !w-[14px]' : '!h-[20px] !w-[20px]'" [src]="project().logo" />
+    <span
+      class="min-w-0 underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
+      [class]="small ? 'truncate' : 'break-words'"
+      >{{ project().name }}</span
+    >
+    <i
+      class="fa-light fa-arrow-up-right flex-none text-[10px] opacity-0 transition-opacity duration-150 group-hover/eyebrow:opacity-100 group-focus-visible/eyebrow:opacity-100 motion-reduce:transition-none"
+      aria-hidden="true"></i>
+  </a>
+} @else {
+  <span
+    class="inline-flex min-w-0 max-w-full items-center text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+    [class]="small ? 'gap-[6px] whitespace-nowrap text-[12px] leading-[16px]' : 'gap-[8px] text-[14px] leading-[20px]'"
+    [attr.role]="small ? 'img' : null"
+    [attr.tabindex]="small ? 0 : null"
+    [attr.aria-label]="small ? project().name : null"
+    [lfxUiTooltip]="project().name"
+    [lfxUiTooltipDisabled]="!small"
+    data-testid="meeting-details-project">
+    <lfx-meeting-project-logo [class]="small ? '!h-[14px] !w-[14px]' : '!h-[20px] !w-[20px]'" [src]="project().logo" />
+    <span class="min-w-0" [class]="small ? 'truncate' : 'break-words'">{{ project().name }}</span>
+  </span>
+}

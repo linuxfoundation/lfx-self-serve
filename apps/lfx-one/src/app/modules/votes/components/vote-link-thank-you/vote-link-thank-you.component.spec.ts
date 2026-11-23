@@ -29,4 +29,21 @@ describe('VoteLinkThankYouComponent (#4753)', () => {
     expect(byId('vote-link-lfx-mark')).not.toBeNull();
     expect(byId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
   });
+
+  it('says the vote can be changed from the same link by default (#4723)', () => {
+    fixture.componentRef.setInput('endTime', '2099-01-01T00:00:00Z');
+    fixture.detectChanges();
+
+    expect(byId('vote-link-thank-you-deadline')?.textContent).toContain('You can change your vote until then from the same link.');
+    expect(byId('vote-link-thank-you-deadline')?.textContent).not.toContain('Your vote is final.');
+  });
+
+  it('says the vote is final when changes are not allowed (#4723)', () => {
+    fixture.componentRef.setInput('endTime', '2099-01-01T00:00:00Z');
+    fixture.componentRef.setInput('canChange', false);
+    fixture.detectChanges();
+
+    expect(byId('vote-link-thank-you-deadline')?.textContent).toContain('Your vote is final.');
+    expect(byId('vote-link-thank-you-deadline')?.textContent).not.toContain('You can change your vote');
+  });
 });

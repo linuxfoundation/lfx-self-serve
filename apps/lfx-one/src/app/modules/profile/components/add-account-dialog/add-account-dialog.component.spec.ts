@@ -4,7 +4,12 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
+import { environment } from '@environments/environment';
+import { environment as devEnvironment } from '@environments/environment.dev';
+import { environment as productionEnvironment } from '@environments/environment.prod';
+import { environment as stagingEnvironment } from '@environments/environment.staging';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
@@ -18,10 +23,12 @@ import {
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
+import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { Tooltip } from 'primeng/tooltip';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,7 +44,7 @@ import { AddAccountDialogComponent } from './add-account-dialog.component';
  */
 describe('AddAccountDialogComponent — email verification outcome (#4253, #4328)', () => {
   const email = 'owned@example.test';
-  const conflictCopy = 'This email is already linked to an LFX account. If you believe this is an error, contact support.';
+  const conflictCopy = EMAIL_ALREADY_LINKED_MESSAGE;
   let fixture: ComponentFixture<AddAccountDialogComponent>;
 
   function setup(
@@ -228,17 +235,32 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
     expect(otpError(root)).toBeNull();
   });
 
-  it('opens the support messenger from the error-local support button', async () => {
+  it('opens a support chat pre-filled with the verified address from the error-local support button (#5511)', async () => {
     const { component, close, add, openMessenger, root } = setup(deliveries[0].respond(EMAIL_ALREADY_LINKED_MESSAGE));
     TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
 
     component.onVerify();
     await fixture.whenStable();
-    (otpError(root)?.querySelector('[lfxOpenIntercom]') as HTMLButtonElement | null)?.click();
+    const supportButton = otpError(root)?.querySelector('[data-testid="add-account-linked-support-button"]') as HTMLButtonElement | null;
+    expect(supportButton).not.toBeNull();
+    supportButton?.click();
 
-    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function));
+    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage(email));
     expect(add).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
+  });
+
+  it('offers no pre-filled support button for a wrong or expired code (#5511)', async () => {
+    const { component, root } = setup(() =>
+      throwError(
+        () => new HttpErrorResponse({ status: 400, error: { success: false, error: 'verification_failed', message: 'Verification failed. Please try again.' } })
+      )
+    );
+
+    component.onVerify();
+    await fixture.whenStable();
+
+    expect(root.querySelector('[data-testid="add-account-linked-support-button"]')).toBeNull();
   });
 
   it('shows a wrong or expired code as a retryable error without the support link', () => {
@@ -477,7 +499,7 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
       expect(openMessenger).toHaveBeenLastCalledWith('test-app-id', expect.any(Function));
     });
 
-    it('words the complete email step conditionally before and after a generic successful send', () => {
+    it('distinguishes inbox ownership from account linking before and after a generic successful send (#5793)', () => {
       const response$ = new Subject<SendEmailVerificationResponse>();
       const { component, root } = setup(
         () => of<VerifyAndLinkEmailResponse>({ success: true }),
@@ -485,9 +507,10 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
       );
 
       expect(component.codeSent()).toBe(false);
-      expect(normalizedText(root)).toContain("Enter your email address. If it can be added to your account, we'll send you a verification code.");
-      expect(normalizedText(root)).toContain('Codes are sent only to addresses that can be added to your account.');
-      expect(normalizedText(root)).not.toContain("You'll receive a verification code");
+      expect(normalizedText(root)).toContain('Enter your email address to confirm you own it before we check whether it can be linked to your account.');
+      expect(normalizedText(root)).toContain('Verifying your email doesn’t guarantee it can be linked to your account.');
+      expect(normalizedText(root)).not.toContain('automatically link');
+      expect(normalizedText(root)).not.toContain('already linked');
 
       response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
       response$.complete();
@@ -495,12 +518,157 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
 
       expect(component.codeSent()).toBe(true);
       expect(root.querySelector('[data-testid="add-account-otp"]')).not.toBeNull();
-      expect(normalizedText(root)).toContain(EMAIL_VERIFICATION_SENT_MESSAGE);
-      expect(normalizedText(root)).not.toContain("Enter your email address. If it can be added to your account, we'll send you a verification code.");
-      expect(normalizedText(root)).not.toContain("Enter your email address and we'll send you a verification code.");
+      expect(normalizedText(root)).toContain(
+        'Check owned@example.test for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.'
+      );
+      expect(normalizedText(root)).not.toContain('Enter your email address to confirm you own it');
+      expect(normalizedText(root)).not.toContain('already linked');
       const hint = normalizedText(root.querySelector('[data-testid="add-account-otp-hint"]'));
       expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
       expect(hint).not.toContain('already linked');
     });
+  });
+});
+
+/**
+ * Guards #4042/#4190: dev can link GitLab; staging and production retain Coming soon.
+ */
+describe.each([
+  { name: 'dev', config: devEnvironment, expectedDisabled: false },
+  { name: 'staging', config: stagingEnvironment, expectedDisabled: true },
+  { name: 'production', config: productionEnvironment, expectedDisabled: true },
+])('AddAccountDialogComponent — provider list ($name)', ({ config, expectedDisabled }) => {
+  let fixture: ComponentFixture<AddAccountDialogComponent>;
+  const originalProduction = environment.production;
+
+  function setup(data: Record<string, unknown> = { existingProviders: [] }) {
+    environment.production = config.production;
+    TestBed.configureTestingModule({
+      imports: [AddAccountDialogComponent],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
+        { provide: DynamicDialogConfig, useValue: { data } },
+        { provide: UserService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(AddAccountDialogComponent);
+    return fixture.componentInstance;
+  }
+
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    environment.production = originalProduction;
+  });
+
+  it('lists GitLab with its icon and excludes LF ID', () => {
+    const component = setup();
+
+    expect(component.providers.find((provider) => provider.id === 'gitlab')).toEqual(expect.objectContaining({ name: 'GitLab', icon: 'fa-brands fa-gitlab' }));
+    expect(component.providers.some((provider) => provider.id === 'lfid')).toBe(false);
+  });
+
+  if (!expectedDisabled) {
+    it.each(['/profile/identities', '/profile/clas'])('enables GitLab and starts social linking with return path %s', async (returnTo) => {
+      setup();
+      await fixture.whenStable();
+      const root = fixture.nativeElement as HTMLElement;
+      const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
+      const location = { pathname: returnTo, search: '?ignored=true', hash: '#ignored', href: '' };
+
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(false);
+      expect(button?.textContent).toContain('Continue with GitLab');
+      expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')).toBeNull();
+      expect(root.querySelector('[data-testid="provider-action-hint-gitlab"]')).toBeNull();
+
+      // Run the real click handler, replacing only the navigation sink so OAuth cannot leave jsdom.
+      vi.stubGlobal(
+        'window',
+        new Proxy(window, {
+          get: (target, property) => {
+            if (property === 'location') return location;
+            const value = Reflect.get(target, property);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        })
+      );
+      try {
+        button?.click();
+
+        expect(location.href).toBe(`/api/profile/identities/social/connect?provider=gitlab&returnTo=${encodeURIComponent(returnTo)}`);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+  } else {
+    it('disables the GitLab button and does not start linking when clicked', async () => {
+      const component = setup();
+      await fixture.whenStable();
+      const selectProvider = vi.spyOn(component, 'onSelectProvider');
+      const root = fixture.nativeElement as HTMLElement;
+      const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
+
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(true);
+      button?.click();
+      root.querySelector<HTMLElement>('[data-testid="provider-action-hint-gitlab"]')?.click();
+
+      expect(selectProvider).not.toHaveBeenCalled();
+      expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')?.textContent).toBe('Coming soon');
+    });
+
+    it.each([
+      { showEvent: 'focus', hideEvent: 'blur' },
+      { showEvent: 'mouseenter', hideEvent: 'mouseleave' },
+    ])('shows the GitLab tooltip on $showEvent and hides it on $hideEvent', async ({ showEvent, hideEvent }) => {
+      setup();
+      await fixture.whenStable();
+      const hint = fixture.debugElement.query(By.css('[data-testid="provider-action-hint-gitlab"]'));
+      const target = hint.nativeElement as HTMLElement;
+
+      expect(target.getAttribute('tabindex')).toBe('0');
+      expect(target.getAttribute('aria-label')).toBe('GitLab account linking: Coming soon');
+      expect(target.querySelector('.p-component')).toBeNull();
+      expect(hint.injector.get(Tooltip).tooltipEvent).toBe('both');
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+
+      // Dispatch to the actual focus/hover target, not directly to the directive's show method.
+      target.dispatchEvent(new Event(showEvent));
+      const tooltip = document.body.querySelector<HTMLElement>('[role="tooltip"]');
+      expect(tooltip?.textContent).toBe('Coming soon');
+      expect(tooltip?.style.display).toBe('inline-block');
+
+      target.dispatchEvent(new Event(hideEvent));
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    });
+  }
+
+  it('keeps the existing providers enabled and the email flow usable', async () => {
+    const component = setup();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+
+    for (const provider of ['github', 'linkedin', 'google', 'email']) {
+      const button = root.querySelector<HTMLButtonElement>(`[data-testid="provider-action-${provider}"] button`);
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(false);
+      expect(root.querySelector(`[data-testid="provider-action-hint-${provider}"]`)).toBeNull();
+    }
+
+    root.querySelector<HTMLButtonElement>('[data-testid="provider-action-email"] button')?.click();
+    await fixture.whenStable();
+
+    expect(component.step()).toBe('connect');
+    expect(root.querySelector('[data-testid="add-account-email"]')).not.toBeNull();
+  });
+
+  it('leaves GitLab out when the caller restricts the providers', () => {
+    const component = setup({ existingProviders: [], allowedProviders: ['github', 'linkedin'] });
+
+    expect(component.providers.map((provider) => provider.id)).toEqual(['github', 'linkedin']);
   });
 });

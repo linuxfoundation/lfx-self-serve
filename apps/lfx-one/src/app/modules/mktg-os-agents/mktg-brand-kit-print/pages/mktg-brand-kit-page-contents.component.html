@@ -1,0 +1,53 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <div [lfxPpRect]="[x, 148, w]" class="kp-contents-list" [class.kp-contents-list--columns]="layout().columns === 2" data-testid="brand-kit-contents-list">
+    @for (entry of entries(); track entry.id) {
+      <!-- The page number once, in the right column (the editor's ruling; the mock numbered the left index too). -->
+      <div class="kp-contents-row" [attr.data-page-ref]="entry.id" data-testid="brand-kit-contents-row">
+        <span>{{ entry.title }}</span>
+        <span class="kp-contents-page">{{ entry.number }}</span>
+      </div>
+    }
+  </div>
+  <!-- The two lower blocks are as tall as their content (the editor's ruling: no empty foot under At a glance). -->
+  <div [lfxPpRect]="[x, layout().blocksTop, 340]">
+    <div class="pp-lab pp-lab--dark">What this kit is built from</div>
+    <div class="kp-text" data-testid="brand-kit-contents-built-from">{{ builtFrom() }}</div>
+    @if (sourcesPage(); as sources) {
+      <div class="kp-note">The full list, with what failed or is missing, is on page {{ sources }}.</div>
+    }
+  </div>
+  <div [lfxPpRect]="[x + 364, layout().blocksTop, 340]">
+    <div class="kp-glance" data-testid="brand-kit-contents-glance">
+      <div class="pp-lab">At a glance</div>
+      <div class="kp-glance-logo"><lfx-mktg-brand-kit-artwork [view]="v" [height]="28" /></div>
+      <div class="kp-glance-dots">
+        @for (color of v.palette; track color.hex) {
+          <span class="kp-glance-dot">
+            <span class="kp-glance-dot-swatch" [style.background]="color.hex"></span>
+            <span>{{ color.name }}</span>
+          </span>
+        }
+      </div>
+      <div class="kp-glance-family">
+        {{ v.type.family }}
+        @if (v.type.weights.length) {
+          <span class="kp-glance-weights">· weights {{ weights() }}</span>
+        }
+      </div>
+      @if (approvalLine()) {
+        <div class="kp-glance-meta" data-testid="brand-kit-contents-approval">{{ approvalLine() }}</div>
+      }
+    </div>
+  </div>
+</lfx-mktg-portrait-page>

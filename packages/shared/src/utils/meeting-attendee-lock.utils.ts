@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
+import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
 import { MeetingType } from '../enums';
 import type { Meeting, ShowMeetingAttendeesLockOptions } from '../interfaces';
 
@@ -73,15 +73,20 @@ export function getShowMeetingAttendeesLockedNote(
  * A missing field reads as `false`, not as "no decision": the upstream serializer omits the flag
  * when it is false, so absence is how a stored-off meeting arrives.
  *
- * A locked meeting has no decision to report either way. Its saved value was forced off on write,
- * or predates the rule and still says `true` while hydration shows the toggle off — neither is
- * something the organizer chose, and honouring the `true` when they later switch the meeting to an
- * unlocked type would share a guest list they were last shown as private.
+ * A meeting locked under the lock in `options` has no decision to report. A Board meeting's saved
+ * value was forced off on write, or predates the rule and still says `true` while hydration shows
+ * the toggle off — neither is something the organizer chose, and honouring the `true` when they
+ * later switch the meeting to an unlocked type would share a guest list they were last shown as
+ * private.
+ *
+ * `options` picks the lock to read through. The meeting composer passes `COMPOSER_ATTENDEE_LOCK`,
+ * so a restricted meeting reports the organizer's stored choice and only Board reads as undecided.
  */
 export function getSavedAttendeeVisibility(
-  meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined
+  meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined,
+  options: ShowMeetingAttendeesLockOptions = {}
 ): boolean | null {
-  if (!meeting || isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted)) {
+  if (!meeting || isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted, options)) {
     return null;
   }
   return meeting.show_meeting_attendees ?? false;
@@ -89,10 +94,12 @@ export function getSavedAttendeeVisibility(
 
 /**
  * Whether the meeting's guest list may be shown to invitees who are not organizers.
- * @description Reads the stored flag through the lock, so a legacy Board or restricted meeting
- * still carrying `show_meeting_attendees: true` stays private. The BFF roster gate and the card
- * and join-page gates share this predicate so they cannot disagree about who sees the list.
+ * @description Reads the stored flag through the composer lock (`allowRestricted`), the same rule
+ * the BFF enforces on write: a restricted (invite-only) meeting shares its list when the organizer
+ * opted in, and a Board meeting stays private even if a legacy row still carries `true`. The BFF
+ * roster gate and the card and join-page gates share this predicate so they cannot disagree about
+ * who sees the list.
  */
 export function isMeetingAttendeeListShared(meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined): boolean {
-  return getSavedAttendeeVisibility(meeting) === true;
+  return getSavedAttendeeVisibility(meeting, COMPOSER_ATTENDEE_LOCK) === true;
 }

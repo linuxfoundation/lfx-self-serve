@@ -35,6 +35,9 @@ export * from './session-store.interface';
 // Object store (S3 or file-backed) interfaces
 export * from './object-store.interface';
 
+// Browser dist readiness (/readyz) interfaces
+export * from './browser-assets.interface';
+
 // Auth-state (Flow C CSRF nonce) interfaces
 export * from './auth-state.interface';
 
@@ -50,6 +53,7 @@ export * from './permissions.interface';
 
 // Meeting interfaces
 export * from './meeting.interface';
+export * from './meeting-list.interface';
 
 // Calendar interfaces
 export * from './calendar.interface';
@@ -209,6 +213,12 @@ export * from './health-metrics-events.interface';
 // Health Metrics Level 2 tab shell interfaces
 export * from './health-metrics-l2.interface';
 
+// Health Metrics shared line chart
+export * from './health-metrics-bar-chart.interface';
+export * from './health-metrics-column-chart.interface';
+export * from './health-metrics-world-map.interface';
+export * from './health-metrics-line-chart.interface';
+
 // Health Metrics Members page interfaces
 export * from './health-metrics-members.interface';
 
@@ -220,6 +230,9 @@ export * from './health-metrics-overview.interface';
 
 // Health Metrics Training page interfaces
 export * from './health-metrics-training.interface';
+
+// Health Metrics shared table cells
+export * from './health-metrics-table.interface';
 
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
@@ -267,6 +280,7 @@ export * from './mktg-document-comments.interface';
 export * from './mktg-document-redraft.interface';
 export * from './mktg-document-run.interface';
 export * from './mktg-print.interface';
+export * from './mktg-portrait-print.interface';
 export * from './mktg-run.interface';
 export * from './mktg-slides-export.interface';
 
@@ -320,14 +334,18 @@ export * from './org-contributions.interface';
 export * from './org-contributions.internal.interface';
 
 // Project Lens — Participating Organizations (#2091)
+export * from './foundation-participating-orgs.interface';
+export * from './foundation-participating-orgs.internal.interface';
 export * from './project-participating-orgs.interface';
 export * from './project-participating-orgs.internal.interface';
 
 // Org Events interfaces
 export * from './org-events.interface';
+export * from './org-events-filters.interface';
 
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';
+export * from './org-memberships.internal.interface';
 
 // Newsletter interfaces
 export * from './newsletter.interface';
@@ -404,6 +422,8 @@ export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
 export * from './boilerplates.interface';
+export * from './brand-kit-icons.interface';
+export * from './brand-kit-portrait.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
@@ -451,7 +471,11 @@ export * from './mktg-breadcrumb.interface';
 export * from './linkedin-post.interface';
 export * from './member-360.interface';
 export * from './mktg-family-export.interface';
+export * from './mktg-family-print.interface';
 export * from './aeo-geo.interface';
 export * from './mktg-last-intake.interface';
 export * from './mktg-project-roles.interface';
 export * from './uikit.interface';
+export * from './social-share.interface';
+export * from './org-training-view.interface';
+export * from './formation-pipeline.interface';

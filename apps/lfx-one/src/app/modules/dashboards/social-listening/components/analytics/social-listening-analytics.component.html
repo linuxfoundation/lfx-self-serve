@@ -35,29 +35,32 @@
             </div>
             <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
             @if (overTimeTable(); as overTimeTableData) {
-              <table class="sr-only" data-testid="social-listening-analytics-over-time-table">
-                <caption>
-                  Mentions over time by project
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Period</th>
-                    @for (series of overTimeTableData.series; track series.label) {
-                      <th scope="col">{{ series.label }}</th>
-                    }
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (period of overTimeTableData.periods; track period; let i = $index) {
+              <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+              <div class="sr-only">
+                <table data-testid="social-listening-analytics-over-time-table">
+                  <caption>
+                    Mentions over time by project
+                  </caption>
+                  <thead>
                     <tr>
-                      <th scope="row">{{ period }}</th>
+                      <th scope="col">Period</th>
                       @for (series of overTimeTableData.series; track series.label) {
-                        <td>{{ series.values[i] }}</td>
+                        <th scope="col">{{ series.label }}</th>
                       }
                     </tr>
-                  }
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    @for (period of overTimeTableData.periods; track period; let i = $index) {
+                      <tr>
+                        <th scope="row">{{ period }}</th>
+                        @for (series of overTimeTableData.series; track series.label) {
+                          <td>{{ series.values[i] }}</td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
             }
           } @else {
             <lfx-empty-state

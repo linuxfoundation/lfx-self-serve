@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { FilterOption } from '../interfaces';
-import type { OrgEventsResponse, OrgEventsTabConfig, OrgEventsTabId } from '../interfaces/org-events.interface';
+import type { OrgEventsPageCopy, OrgEventsResponse, OrgEventsTabConfig, OrgEventsTabId } from '../interfaces/org-events.interface';
 import { DEFAULT_EVENTS_PAGE_SIZE } from './events.constants';
 
 /** Org Events page tabs in visible order (`upcoming` is the default). */
@@ -18,7 +18,12 @@ export const DEFAULT_ORG_EVENTS_TAB_ID: OrgEventsTabId = 'upcoming';
 export const VALID_ORG_EVENTS_TAB_IDS: ReadonlySet<OrgEventsTabId> = new Set(ORG_EVENTS_TABS.map((t) => t.id));
 
 /** Empty response sentinel for the Org Events list. */
-export const EMPTY_ORG_EVENTS_RESPONSE: OrgEventsResponse = { data: [], total: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE, offset: 0 };
+export const EMPTY_ORG_EVENTS_RESPONSE: OrgEventsResponse = {
+  data: [],
+  total: 0,
+  pageSize: DEFAULT_EVENTS_PAGE_SIZE,
+  offset: 0,
+};
 
 /** Status filter options for the Org Events filter bar. */
 export const ORG_EVENTS_STATUS_OPTIONS: FilterOption[] = [
@@ -31,3 +36,25 @@ export const ORG_EVENTS_STATUS_OPTIONS: FilterOption[] = [
 
 /** Valid org event status values for server-side validation. */
 export const VALID_ORG_EVENT_STATUS_VALUES: ReadonlySet<string> = new Set(['registered', 'speaker-submitted', 'speaker-accepted', 'event-sponsor']);
+
+export const ORG_EVENTS_PAGE_COPY: OrgEventsPageCopy = {
+  description: "Your company's event footprint across LF events.",
+  upcomingEmpty: 'No upcoming events were found for your company.',
+  pastEmpty: 'No past events were found for your company.',
+  attendeesOwner: 'My Company',
+  loadError: "Something went wrong reading your company's events.",
+};
+
+export const ORG_EVENTS_ROLL_UP_PAGE_COPY: OrgEventsPageCopy = {
+  description: "Your companies' event footprint across LF events.",
+  upcomingEmpty: 'No upcoming events were found for your companies.',
+  pastEmpty: 'No past events were found for your companies.',
+  attendeesOwner: 'My Company',
+  loadError: "Something went wrong reading your companies' events.",
+};
+
+export const ORG_EVENTS_ALL_COMPANIES_LABEL = 'All Companies';
+
+export const ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE = 'Some companies in this family are not included because you do not have access to them.';
+
+export const ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE = "This family's companies could not all be loaded, so these figures may be incomplete.";

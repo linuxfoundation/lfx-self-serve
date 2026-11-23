@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { buildBrandKitBookView, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MktgBrandKitPrintComponent } from './mktg-brand-kit-print.component';
 
 async function setup() {
@@ -23,279 +24,200 @@ async function setup() {
   return { kit, view, brand, fixture, root, print };
 }
 
-it('prints five native portrait chapters with branded heads, real SVG logo assets and no landscape plates', async () => {
-  const { root, view, print } = await setup();
-  expect(Array.from(root.querySelectorAll('h2')).map((heading) => heading.textContent?.trim())).toEqual([
-    '1 Logo system',
-    '2 Colour',
-    '3 Typography',
-    '4 Visual',
-    '5 Voice in brief',
-  ]);
-  expect(root.querySelectorAll('.kit-chapter')).toHaveLength(5);
-  const heads = root.querySelectorAll('[data-testid="mktg-print-running-head"]');
-  expect(heads).toHaveLength(5);
-  heads.forEach((head) => {
-    expect(head.textContent).toContain('Synthetic project Brand kit');
-    expect(head.textContent).not.toContain('Project One');
-    expect(head.textContent).not.toContain('02');
-  });
-  expect(root.textContent).not.toContain('V3.0');
-  expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V3.0');
-  expect(root.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
-  expect(root.querySelectorAll('lfx-mktg-print-chapter-header')).toHaveLength(5);
-  root.querySelectorAll<HTMLElement>('lfx-mktg-print-chapter-header').forEach((header) => {
-    expect(header.style.getPropertyValue('--mfp-chapter-accent')).toBe(view.accent);
-  });
-  expect(root.querySelector('[data-testid="kit-print-lockups"] img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
-  expect(root.querySelectorAll('.lfx-brand-kit-book, .lfx-brand-kit-page, canvas, iframe')).toHaveLength(0);
-  expect(print.ensureFontStylesheet).toHaveBeenCalledWith(view.fontUrl);
-});
+// The synthetic kit has no symbol file or crop, so its plan has no symbol page: sixteen frames.
+const FRAMES = [
+  'cover',
+  'contents',
+  'logo-system',
+  'logo-colorways',
+  'logo-clear-space',
+  'logo-partnership',
+  'logo-watchouts',
+  'color-palette',
+  'color-contrast',
+  'type',
+  'visual-iconography',
+  'visual-imagery',
+  'usage',
+  'voice',
+  'sources',
+  'back-cover',
+];
+const SECTIONS = [
+  'Cover',
+  'Contents',
+  '01 Logo',
+  '01 Logo',
+  '01 Logo',
+  '01 Logo',
+  '01 Logo',
+  '02 Color',
+  '02 Color',
+  '03 Type',
+  '04 Visual',
+  '04 Visual',
+  '05 Usage',
+  '06 Voice',
+  '07 Sources',
+  'Back cover',
+];
 
-it('renders all chapter data as text and keeps source type metrics beside portrait-sized specimens', async () => {
-  const { root, kit, brand } = await setup();
-  expect(root.textContent).toContain('Screen: 32 px · Print: 10 mm · Symbol: 16 px');
-  for (const text of [kit.chapters.logo.clear_space, kit.chapters.logo.symbol, ...kit.chapters.logo.partnership, ...kit.chapters.logo.watchouts]) {
-    expect(root.querySelector('[data-testid="kit-print-logo"]')?.textContent).toContain(text);
-  }
-  expect(root.querySelectorAll('[data-testid="kit-print-colorways"] tbody tr')).toHaveLength(kit.chapters.logo.colorways.length);
-  expect(root.querySelectorAll('[data-testid="kit-print-colorways"] tbody img')).toHaveLength(kit.chapters.logo.colorways.length);
-  expect(root.querySelector('[data-testid="kit-print-partnership"]')?.textContent).toContain('Partnership lockups');
-  expect(root.querySelector('[data-testid="kit-print-watchouts"]')?.textContent).toContain('Watch-outs');
-  kit.chapters.color.palette.forEach((entry) => expect(root.querySelector('[data-testid="kit-print-palette"]')?.textContent).toContain(entry.hex));
-  expect(root.querySelector('[data-testid="kit-print-contrast"]')?.textContent).toContain('8.3:1');
-  const specimens = root.querySelectorAll<HTMLElement>('.kit-specimen');
-  expect(specimens).toHaveLength(kit.chapters.type.scale.length);
-  expect(specimens[0].style.fontSize).toBe('32pt');
-  expect(root.querySelector('[data-testid="kit-print-type"]')?.textContent).toContain('500 · 64/72 px');
-  expect(root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]')?.style.getPropertyValue('--mfp-font')).toBe(brand.fontStack);
-  expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(kit.chapters.visual.icons.recommended);
-  expect(root.querySelectorAll('[data-testid="kit-print-usage"]')).toHaveLength(kit.chapters.usage.examples.length);
-  expect(root.querySelector('[data-testid="kit-print-voice"]')?.textContent).toContain(kit.chapters.voice.umbrella);
-  kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));
-});
+/** A colour as jsdom normalises it on an element's inline style. */
+function colour(value: string): string {
+  const probe = document.createElement('span');
+  probe.style.color = value;
+  return probe.style.color;
+}
 
-it('compacts the logo chapter for Letter while keeping each tail block whole', async () => {
-  const { root } = await setup();
-  const partnership = root.querySelector<HTMLElement>('[data-testid="kit-print-partnership"]');
-  const watchouts = root.querySelector<HTMLElement>('[data-testid="kit-print-watchouts"]');
-  if (!partnership || !watchouts) throw new Error('Missing synthetic logo tail blocks');
-  expect(partnership.tagName).toBe('TR');
-  expect(watchouts.tagName).toBe('TR');
-  expect(partnership.nextElementSibling).toBe(watchouts);
-  for (const block of [partnership, watchouts]) {
-    expect(getComputedStyle(block).breakInside).toBe('avoid');
-    const list = block.querySelector('ul');
-    if (!list) throw new Error('Missing synthetic tail list');
-    expect(getComputedStyle(list).columnCount).toBe(block === watchouts ? '3' : '2');
-  }
-  const lockup = root.querySelector<HTMLElement>('[data-testid="kit-print-lockups"] .kit-logo');
-  const colourway = root.querySelector<HTMLElement>('.kit-colourway img');
-  const cell = root.querySelector<HTMLElement>('[data-testid="kit-print-logo"] > tbody > tr > td');
-  if (!lockup || !colourway || !cell) throw new Error('Missing synthetic compact logo structure');
-  for (const [image, mm] of [
-    [lockup, 16],
-    [colourway, 6],
-  ] as const) {
-    const value = getComputedStyle(image).maxHeight;
-    const px = value.endsWith('mm') ? (Number.parseFloat(value) * 96) / 25.4 : Number.parseFloat(value);
-    expect(px).toBeCloseTo((mm * 96) / 25.4, 3);
-  }
-  expect(Number.parseFloat(getComputedStyle(cell).paddingBottom)).toBeLessThan(10);
-  expect(root.querySelector('.kit-rule-grid')).toBeNull();
-});
-
-it('keeps up to twelve contrast rows whole and longer fragments in groups of at least three', async () => {
-  const { root, view, fixture } = await setup();
-  const row = view.contrast[0];
-  if (!row) throw new Error('Missing synthetic contrast row');
-  fixture.componentRef.setInput('view', {
-    ...view,
-    contrast: Array.from({ length: 11 }, (_, index) => ({ ...row, foreground: `Synthetic foreground ${index}` })),
+describe('the portrait book', () => {
+  it('prints the planned frames in the mock’s order on the portrait root, each named for QA, and nothing else', async () => {
+    const { root, view, print } = await setup();
+    // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(root).display).toBe('block');
+    const book = root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]');
+    expect(book?.classList.contains('lfx-mktg-portrait')).toBe(true);
+    expect(book?.getAttribute('data-revision')).toBe('V3.0');
+    const frames = Array.from(book?.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]') ?? []);
+    expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(FRAMES);
+    expect(frames.map((frame) => frame.getAttribute('data-page'))).toEqual(FRAMES.map((_, index) => String(index + 1)));
+    expect(frames.map((frame) => frame.getAttribute('data-section'))).toEqual(SECTIONS);
+    // The band on each chapter's first page only; the running head's right text is the document's name; the footer is the project line.
+    const bands = frames.map((frame) => frame.querySelector('[data-testid="mktg-portrait-page-band"]') !== null);
+    expect(FRAMES.filter((_, index) => bands[index])).toEqual(['logo-system', 'color-palette', 'type', 'visual-iconography', 'usage', 'voice', 'sources']);
+    frames.slice(1, -1).forEach((frame) => {
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toBe('Synthetic project brand kit');
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-foot"]')?.textContent).toContain('Synthetic project · a Linux Foundation project');
+      expect(frame.textContent).not.toMatch(/\[[^\]]+\]/);
+    });
+    // The version is on the cover and the back cover only (the ruling's two places): not on the contents page, never in a
+    // running head. The Sources page names the approved revision in its accepted box, which is the approval's own line.
+    frames.slice(1, -2).forEach((frame) => expect(frame.textContent).not.toContain('V3.0'));
+    expect(frames[1].querySelector('[data-testid="brand-kit-contents-version"]')).toBeNull();
+    expect(frames[15].querySelector('[data-testid="mktg-portrait-back-cover-version"]')?.textContent).toBe('V3.0 · October 2026');
+    frames.forEach((frame) => expect(frame.style.getPropertyValue('--pp-dark')).toBe(view.dark));
+    // No head or footer on the cover and the back cover; no flowing chapter, no legacy plate.
+    expect(frames[0].querySelector('[data-testid="mktg-portrait-page-head"]')).toBeNull();
+    expect(frames[15].querySelector('[data-testid="mktg-portrait-page-foot"]')).toBeNull();
+    expect(root.querySelectorAll('.kit-chapter, .lfx-brand-kit-book, .lfx-brand-kit-page, canvas, iframe')).toHaveLength(0);
+    expect(root.querySelector('[data-testid="mktg-print-running-head"]')).toBeNull();
+    expect(print.ensureFontStylesheet).toHaveBeenCalledWith(view.fontUrl);
   });
-  await fixture.whenStable();
-  const table = root.querySelector<HTMLElement>('[data-testid="kit-print-contrast"]');
-  const block = root.querySelector<HTMLElement>('.kit-contrast-block');
-  const intro = root.querySelector<HTMLElement>('.kit-contrast-intro');
-  const header = table?.querySelector('thead');
-  if (!table || !block || !intro || !header) throw new Error('Missing synthetic contrast pagination structure');
-  expect(block.closest('[data-testid="kit-print-colour"]')).not.toBeNull();
-  expect(getComputedStyle(block).breakInside).toBe('avoid');
-  expect(getComputedStyle(table).breakInside).toBe('avoid');
-  expect(getComputedStyle(block).breakBefore).toBe('auto');
-  expect(getComputedStyle(intro).breakAfter).toBe('avoid');
-  expect(getComputedStyle(header).display).toBe('table-header-group');
-  expect(getComputedStyle(header).breakAfter).toBe('avoid');
-  expect(table.querySelectorAll(':scope > tbody > tr')).toHaveLength(11);
-  table.querySelectorAll(':scope > tbody > tr').forEach((row) => expect(getComputedStyle(row).breakInside).toBe('avoid'));
-  for (const count of [10, 12, 13, 14, 15, 16, 17]) {
+
+  it('opens on the cover with the version and date on the strip and closes on the back cover with the brand line, the host, the version and the notice', async () => {
+    const { root, view, fixture } = await setup();
+    const frames = root.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
+    const cover = frames[0];
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-title"]')?.textContent).toBe('Brand Kit');
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-lede"]')?.textContent).toContain(
+      'Open standards for one computing. Logos, color, type and usage'
+    );
+    // A brand line that already ends a sentence ("Build together!") takes no second stop.
+    fixture.componentRef.setInput('view', { ...view, voice: { ...view.voice, line: 'Build together!' } });
+    await fixture.whenStable();
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-lede"]')?.textContent).toContain('Build together! Logos, color, type and usage');
+    fixture.componentRef.setInput('view', view);
+    await fixture.whenStable();
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-strip"]')?.textContent).toContain('one.example.org · V3.0 · October 2026');
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-logo"]')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    const back = frames[15];
+    expect(back.classList.contains('pp-page--dark')).toBe(true);
+    expect(back.querySelector('[data-testid="mktg-portrait-back-cover-logo"]')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    expect(back.querySelector('[data-testid="mktg-portrait-back-cover-line"]')?.textContent).toBe(view.voice.line);
+    expect(back.querySelector('[data-testid="mktg-portrait-back-cover-url"]')?.textContent).toBe('one.example.org');
+    expect(back.querySelector('[data-testid="mktg-portrait-back-cover-version"]')?.textContent).toBe('V3.0 · October 2026');
+    expect(back.querySelector('[data-testid="mktg-portrait-back-cover-notice"]')?.textContent).toBe(view.backCoverNotice);
+    // The contents page lists the plan's content pages (3 to the Sources page at 15); the back cover is not listed.
+    expect(frames[1].querySelectorAll('.kp-contents-row')).toHaveLength(13);
+    expect(frames[1].querySelector('[data-testid="brand-kit-contents-approval"]')).toBeNull();
+  });
+
+  it('inside the family takes the book: no cover, contents or back cover, pages numbered from the book, the family’s head and foot, no band', async () => {
+    const { root, fixture } = await setup();
+    const book: MktgPortraitBook = { inFamily: true, headRight: 'Synthetic project positioning & brand', footLeft: 'Synthetic family foot', firstPage: 17 };
+    fixture.componentRef.setInput('book', book);
+    fixture.componentRef.setInput('number', '2');
+    await fixture.whenStable();
+    const frames = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]'));
+    expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(FRAMES.slice(2, -1));
+    expect(frames.map((frame) => frame.getAttribute('data-page'))).toEqual(Array.from({ length: 13 }, (_, index) => String(17 + index)));
+    expect(frames[0].getAttribute('data-section')).toBe('Brand kit · Logo');
+    expect(frames[5].getAttribute('data-section')).toBe('Brand kit · Color');
+    expect(frames[12].getAttribute('data-section')).toBe('Brand kit · Sources');
+    frames.forEach((frame) => {
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-band"]')).toBeNull();
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toBe('Synthetic project positioning & brand');
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-foot"]')?.textContent).toContain('Synthetic family foot');
+    });
+    expect(frames[0].querySelector('[data-testid="mktg-portrait-page-number"]')?.textContent).toBe('17');
+    expect(root.querySelector('[data-testid="mktg-portrait-cover-title"]')).toBeNull();
+    expect(root.querySelector('.pp-page--dark')).toBeNull();
+  });
+
+  it('with the family’s document number and no book yet, prints inside the family: no cover, the family’s name in the head', async () => {
+    const { root, fixture } = await setup();
+    fixture.componentRef.setInput('number', '2');
+    await fixture.whenStable();
+    const frames = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]'));
+    expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(FRAMES.slice(2, -1));
+    expect(frames[0].getAttribute('data-page')).toBe('1');
+    expect(frames[0].querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toBe('Synthetic project positioning & brand');
+    expect(root.textContent).not.toContain('V3.0');
+  });
+
+  it('prints the approval on the contents page and in the Sources page’s accepted box from the approval it is given', async () => {
+    const { root, fixture } = await setup();
+    expect(root.querySelector('[data-testid="brand-kit-sources-accepted"]')).toBeNull();
+    fixture.componentRef.setInput('approval', { approvedAt: '2026-11-06T10:00:00Z', approvedBy: { name: 'Synthetic Approver' } });
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="brand-kit-contents-approval"]')?.textContent).toBe('Approved 6 Nov 2026 by Synthetic Approver');
+    expect(root.querySelector('[data-testid="brand-kit-sources-accepted"]')?.textContent).toContain(
+      'Accepted when V3.0 was approved. Approved 6 Nov 2026 by Synthetic Approver.'
+    );
+  });
+
+  it('omits the logo slots a kit lacks: no empty tile, no apology, the Logo chapter one page saying no files were uploaded', async () => {
+    const { root, view, brand, fixture } = await setup();
     fixture.componentRef.setInput('view', {
       ...view,
-      contrast: Array.from({ length: count }, (_, index) => ({ ...row, foreground: `Synthetic foreground ${index}` })),
+      logos: { primary: null, stacked: null, symbol: null, reversed: null },
+      symbol: null,
+      colorways: view.colorways.map((row) => ({ ...row, logo: null })),
     });
+    fixture.componentRef.setInput('brand', { ...brand, logoOnDark: null, logoOnLight: null });
     await fixture.whenStable();
-    expect(getComputedStyle(block).breakInside).toBe(count <= 12 ? 'avoid' : 'auto');
-    expect(getComputedStyle(table).breakInside).toBe(count <= 12 ? 'avoid' : 'auto');
-    expect(table.querySelectorAll(':scope > tbody > tr')).toHaveLength(count);
-    for (const group of table.querySelectorAll(':scope > tbody')) {
-      expect(getComputedStyle(group).breakInside).toBe('avoid');
-      expect(group.children.length).toBeGreaterThanOrEqual(3);
-      if (count > 12) expect(group.children.length).toBeLessThanOrEqual(5);
-    }
-  }
-});
+    const frames = Array.from(root.querySelectorAll('[data-testid="lfx-mktg-portrait-page"]'));
+    expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(FRAMES.filter((id) => !id.startsWith('logo-') || id === 'logo-system'));
+    // The contents page lists exactly the content frames after it (not the back cover), numbered as the footers are: the
+    // count follows the file.
+    const rows = Array.from(root.querySelectorAll('.kp-contents-row'));
+    expect(rows).toHaveLength(frames.length - 3);
+    expect(frames.slice(2).map((frame) => frame.getAttribute('data-page'))).toEqual(frames.slice(2).map((_, index) => String(index + 3)));
+    expect(root.querySelector('[data-testid="brand-kit-logo-system-none"]')?.textContent).toBe('No logo files uploaded yet');
+    expect(root.querySelector('[data-testid="brand-kit-logo-system-files"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-portrait-cover-logo"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-portrait-back-cover-logo"]')).toBeNull();
+    expect(root.querySelector('[data-testid="lfx-mktg-portrait-page"] img')).toBeNull();
+    expect(root.textContent).not.toContain('SVG supplied');
+    expect(root.textContent).not.toMatch(/\[[^\]]+\]/);
+  });
 
-it('prints materially repeated typography descriptions once while preserving a distinct font note', async () => {
-  const { root, view, fixture } = await setup();
-  const summary = 'Instrument Sans is the typeface example.org sets on headings, body and buttons (self-hosted via next/font).';
-  const descriptionParagraphs = () =>
-    Array.from(root.querySelectorAll('[data-testid="kit-print-type"] p')).map((p) => p.textContent?.replace(/\s+/g, ' ').trim());
-  for (const note of [
-    summary,
-    ' INSTRUMENT SANS is the typeface example.org sets on headings,\nbody and buttons — self hosted via next font! ',
-    `${summary} The site uses the supplied font files.`,
-    summary.slice(0, -1),
-    summary.replace('via next/font', 'using bundled files'),
-    'Instrument Sans is the typeface example.org sets on headings, body and buttons (self-hosted via next/font); sourced from the site CSS.',
-  ]) {
-    fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary, note } });
+  it('sets the social card by the one accent-moment rule: a white card under an accent rule when nothing reads on the accent, text on the accent when something does; never a logo on the accent', async () => {
+    const { root, view, fixture } = await setup();
+    const social = () => root.querySelector<HTMLElement>('.kp-usage-frame--social');
+    // The fixture's orange: white reads 2.8:1 on it and Charcoal 2.9:1, both failing AA as its own matrix grades them,
+    // so no text goes on the accent: a white card, the kit's dark, the accent as the top rule, the lockup as on any white.
+    expect(social()?.style.background).toBe(colour('#FFFFFF'));
+    expect(social()?.style.color).toBe(colour(view.dark));
+    expect(social()?.classList.contains('kp-usage-frame--social-rule')).toBe(true);
+    expect(social()?.querySelector('img')).not.toBeNull();
+    expect(social()?.querySelector('[data-testid="brand-kit-usage-social-note"]')).toBeNull();
+    // A navy accent white reads on (10.3:1): text in white on the accent, and no lockup there.
+    fixture.componentRef.setInput('view', { ...view, accent: '#1F4E79' });
     await fixture.whenStable();
-    expect(descriptionParagraphs().filter((text) => text?.startsWith('Instrument Sans') || text?.startsWith('INSTRUMENT SANS'))).toEqual([summary]);
-  }
-  // Containment must work in either direction, without treating an empty intro as a match.
-  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary: `${summary} Extra source detail.`, note: summary } });
-  await fixture.whenStable();
-  expect(descriptionParagraphs()).not.toContain(summary);
-  const distinct = 'Instrument Sans: use the supplied fallback stack for documents without embedded fonts.';
-  for (const intro of [summary, '']) {
-    fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary: intro, note: distinct } });
-    await fixture.whenStable();
-    expect(descriptionParagraphs()).toContain(distinct);
-  }
-});
-
-it('replaces stylesheet asset URLs with a human host source and retains supplied human source labels', async () => {
-  const { root, view, fixture } = await setup();
-  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, source: 'https://style.example.org/_next/static/chunks/font-abcd.css?v=1' } });
-  await fixture.whenStable();
-  const type = root.querySelector('[data-testid="kit-print-type"]');
-  expect(type?.textContent).toContain('Source: style.example.org site CSS');
-  expect(type?.textContent).not.toContain('https://');
-  expect(type?.textContent).not.toContain('_next');
-  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, source: 'Project design team' } });
-  await fixture.whenStable();
-  expect(type?.textContent).toContain('Source: Project design team');
-});
-
-it('labels umbrella message and brand line and separates the small framework-source note', async () => {
-  const { root, view } = await setup();
-  const voice = root.querySelector('[data-testid="kit-print-voice"]');
-  const eyebrows = voice?.querySelectorAll<HTMLElement>('.kit-eyebrow');
-  expect(Array.from(eyebrows ?? []).map((p) => p.textContent)).toEqual(['Umbrella message', 'Brand line']);
-  eyebrows?.forEach((p) => expect(getComputedStyle(p).textTransform).toBe('uppercase'));
-  expect(voice?.querySelector('h3')?.textContent).toBe(view.voice.umbrella);
-  expect(voice?.querySelector('.kit-eyebrow:nth-of-type(2)')?.nextElementSibling?.textContent).toBe(view.voice.line);
-  expect(voice?.querySelector('.kit-voice-source')?.textContent).toBe('From the messaging framework');
-  expect(voice?.textContent).toContain(view.voice.note);
-});
-
-it('omits missing logo slots and colourway samples without empty boxes or apology text', async () => {
-  const { root, view, brand, fixture } = await setup();
-  fixture.componentRef.setInput('view', {
-    ...view,
-    logos: { primary: null, stacked: null, symbol: null, reversed: null },
-    symbol: null,
-    colorways: view.colorways.map((row) => ({ ...row, logo: null })),
+    expect(social()?.style.background).toBe(colour('#1F4E79'));
+    expect(social()?.style.color).toBe(colour('white'));
+    expect(social()?.classList.contains('kp-usage-frame--social-rule')).toBe(false);
+    expect(social()?.querySelector('img')).toBeNull();
+    expect(social()?.querySelector('[data-testid="brand-kit-usage-social-note"]')?.textContent).toBe('No logo on the accent');
   });
-  fixture.componentRef.setInput('brand', { ...brand, logoOnDark: null, logoOnLight: null });
-  await fixture.whenStable();
-  expect(root.querySelector('[data-testid="kit-print-lockups"]')).toBeNull();
-  expect(root.querySelector('[data-testid="kit-print-colorways"]')).toBeNull();
-  expect(root.querySelector('.kit-colourway')).toBeNull();
-  expect(root.textContent).not.toContain('SVG supplied');
-});
-
-it('renders two-up usage samples with ground, logo and the current server-supplied brand line', async () => {
-  const { root, view, brand, fixture } = await setup();
-  expect(root.querySelectorAll('.kit-usage-grid')).toHaveLength(2);
-  const frames = root.querySelectorAll<HTMLElement>('.kit-usage-frame');
-  expect(frames).toHaveLength(4);
-  frames.forEach((frame) => {
-    expect(frame.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
-    expect(frame.textContent).toContain(view.voice.line);
-  });
-  const expected = document.createElement('span');
-  expected.style.backgroundColor = brand.dark;
-  expect(frames[0].style.backgroundColor).toBe(expected.style.backgroundColor);
-  expect(frames[2].getAttribute('data-layout')).toBe('report');
-  expect(frames[2].style.backgroundColor).toBe('white');
-  fixture.componentRef.setInput('view', { ...view, projectName: 'Updated synthetic project', voice: { ...view.voice, line: 'Updated approved line' } });
-  await fixture.whenStable();
-  expect(root.querySelector('.kit-chapter > thead')?.textContent).toContain('Synthetic project Brand kit');
-  expect(root.querySelector('.kit-chapter > thead')?.textContent).not.toContain('Updated synthetic project');
-  expect(root.querySelector('.kit-usage-frame')?.textContent).toContain('Updated approved line');
-  fixture.componentRef.setInput('projectName', 'Updated project context');
-  await fixture.whenStable();
-  expect(root.querySelector('.kit-chapter > thead')?.textContent).toContain('Updated project context Brand kit');
-});
-
-it('keeps captioned pairs indivisible with explicit frame heights and the intro inside the first pair', async () => {
-  const { root } = await setup();
-  const pairs = root.querySelectorAll<HTMLElement>('[data-testid="kit-print-usage-pair"]');
-  expect(pairs).toHaveLength(2);
-  expect(pairs[0].querySelector('.kit-usage-intro')?.textContent).toContain('Graphic elements and usage');
-  expect(pairs[1].querySelector('.kit-usage-intro')).toBeNull();
-  pairs.forEach((pair) => {
-    expect(pair.closest('tr')?.classList.contains('kit-usage-pair-row')).toBe(true);
-    expect(getComputedStyle(pair).breakInside).toBe('avoid');
-    expect(getComputedStyle(pair).breakBefore).toBe('auto');
-    expect(pair.querySelectorAll('figcaption')).toHaveLength(2);
-    pair.querySelectorAll<HTMLElement>('.kit-usage-frame').forEach((frame) => {
-      const styles = getComputedStyle(frame);
-      const millimetres = frame.getAttribute('data-layout') === 'report' ? 44 : 36;
-      const expectedPixels = (millimetres * 96) / 25.4;
-      // Computed CSS resolves physical units to px; normalize either valid form.
-      for (const value of [styles.height, styles.minHeight, styles.maxHeight]) {
-        expect(value).toMatch(/(?:mm|px)$/);
-        const pixels = value.endsWith('mm') ? (Number.parseFloat(value) * 96) / 25.4 : Number.parseFloat(value);
-        expect(pixels).toBeCloseTo(expectedPixels, 3);
-      }
-      expect(styles.aspectRatio).not.toContain('/');
-    });
-  });
-});
-
-it('contains logos and brand lines inside padded frame boxes without clipping at the edge', async () => {
-  const { root } = await setup();
-  root.querySelectorAll<HTMLElement>('.kit-usage-frame').forEach((frame) => {
-    const inner = frame.querySelector<HTMLElement>('.kit-usage-inner');
-    if (!inner) throw new Error('Missing synthetic padded usage box');
-    expect(inner.querySelector('img')).not.toBeNull();
-    expect(inner.querySelector('p')).not.toBeNull();
-    const styles = getComputedStyle(inner);
-    const mm = frame.getAttribute('data-layout') === 'report' ? 3 : 2.5;
-    expect(getComputedStyle(frame).position).toBe('relative');
-    expect(getComputedStyle(frame).overflow).toBe('hidden');
-    expect(getComputedStyle(frame).breakInside).toBe('avoid');
-    expect(styles.position).toBe('absolute');
-    const inset = styles.inset;
-    const px = inset.endsWith('mm') ? (Number.parseFloat(inset) * 96) / 25.4 : Number.parseFloat(inset);
-    expect(px).toBeCloseTo((mm * 96) / 25.4, 3);
-    const logo = inner.querySelector('img');
-    if (!logo) throw new Error('Missing synthetic usage logo');
-    expect(getComputedStyle(logo).objectFit).toBe('contain');
-    expect(getComputedStyle(logo).maxWidth).toBe('100%');
-    inner.querySelectorAll('img, p').forEach((child) => {
-      expect(getComputedStyle(child).position).toBe('absolute');
-      expect(child.closest('.kit-usage-frame')).toBe(frame);
-    });
-  });
-});
-
-it('keeps usage prose when a supplied kit has no examples', async () => {
-  const { root, view, fixture } = await setup();
-  fixture.componentRef.setInput('view', { ...view, usageTiles: [], usage: { ...view.usage, examples: [] } });
-  await fixture.whenStable();
-  expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(view.usage.summary);
-  expect(root.querySelector('[data-testid="kit-print-usage-pair"]')).toBeNull();
 });

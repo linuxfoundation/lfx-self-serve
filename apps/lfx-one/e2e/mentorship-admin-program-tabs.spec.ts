@@ -105,6 +105,13 @@ test.describe('Admin program detail — header and tabs', () => {
     await expect(page.getByTestId('mentorship-program-detail-tab-terms')).toHaveText(/Terms\s*2/);
   });
 
+  test('shows the created date and the program admin who submitted the program', async ({ page }) => {
+    const meta = page.getByTestId('mentorship-program-detail-header').getByTestId('mentorship-program-meta');
+    await expect(meta.getByTestId('mentorship-program-meta-date')).toContainText('Jun 1, 2026', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(meta.getByTestId('mentorship-program-meta-admin-name')).toHaveText('Test Admin');
+    await expect(meta.getByTestId('mentorship-program-meta-admin-email')).toHaveAttribute('href', 'mailto:test.admin@example.org');
+  });
+
   test('opens on Current Mentees with the first page of rows, splitting pending into Applied and Tasks Completed', async ({ page }) => {
     await expect(page.locator('[data-testid^="mentorship-current-mentee-row-"]')).toHaveCount(10);
     await expect(page.getByTestId(`mentorship-current-mentee-row-${FIRST_ID}`)).toContainText('Test Applicant 01');
@@ -115,13 +122,13 @@ test.describe('Admin program detail — header and tabs', () => {
   test('offers the row actions that fit each status', async ({ page }) => {
     const pendingActions = page.getByTestId(`mentorship-current-mentee-actions-${FIRST_ID}`);
     await pendingActions.click({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-    await expect(page.getByRole('menuitem')).toHaveText(['Accept', 'Decline', 'Withdraw']);
+    await expect(page.getByRole('menuitem')).toHaveText(['Contact Mentee', 'Accept', 'Decline', 'Withdraw']);
     // The trigger toggles its popup, so a second click closes it before the next row's opens.
     await pendingActions.click();
     await expect(page.getByRole('menuitem')).toHaveCount(0);
 
     await page.getByTestId(`mentorship-current-mentee-actions-${adminApplicationId(3)}`).click();
-    await expect(page.getByRole('menuitem')).toHaveText(['Create task', 'Graduate', 'Decline', 'Withdraw']);
+    await expect(page.getByRole('menuitem')).toHaveText(['Create task', 'Contact Mentee', 'Graduate', 'Decline', 'Withdraw']);
   });
 
   test('names the statuses the table shows in the status filter, and lists only the open terms', async ({ page }) => {

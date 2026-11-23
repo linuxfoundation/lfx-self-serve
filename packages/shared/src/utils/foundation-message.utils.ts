@@ -930,14 +930,29 @@ export function isFoundationMessageReport(value: unknown): value is FoundationMe
 
 /** The run's asset out of a validated envelope: what the run page shows and the stored version keeps. */
 export function foundationMessageAsset(envelope: FoundationMessageEnvelope): MktgFrameworkAsset {
-  return { kind: 'messaging-framework', content: envelope.content, report: envelope.report, checks: envelope.checks, mode: envelope.mode };
+  return {
+    kind: 'messaging-framework',
+    content: envelope.content,
+    report: envelope.report,
+    checks: envelope.checks,
+    mode: envelope.mode,
+    dateRead: foundationMessageDateRead(envelope.inputs_record),
+  };
+}
+
+/** The day the run read its sources, out of its inputs record: a `YYYY-MM-DD` `date_read`, null when absent or not a date. */
+export function foundationMessageDateRead(inputsRecord: unknown): string | null {
+  if (!isObject(inputsRecord)) return null;
+  const dateRead = inputsRecord['date_read'];
+  return typeof dateRead === 'string' && FOUNDATION_MESSAGE_ISO_DATE_REGEX.test(dateRead) ? dateRead : null;
 }
 
 /**
  * The run's asset out of a stored revision: the JSON text as the content and
  * the sidecar's report, checks and mode; null when the text is not a
- * framework. A sidecar without a report (never written by this BFF, but a
- * hand-copied record could lack one) reads as an empty report.
+ * framework. A sidecar without a valid report (never written by this BFF,
+ * but a hand-copied record could lack one) gives `report: null`: no empty
+ * report is made up, so the print and the view say nothing the record did not.
  */
 export function foundationMessageAssetOfRevision(text: string, sidecar: Record<string, unknown> | null): MktgFrameworkAsset | null {
   const content = readFoundationMessageContent(text);
@@ -950,7 +965,8 @@ export function foundationMessageAssetOfRevision(text: string, sidecar: Record<s
   return {
     kind: 'messaging-framework',
     content,
-    report: isFoundationMessageReport(report) ? report : { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+    dateRead: foundationMessageDateRead(sidecar?.['inputs_record']),
+    report: isFoundationMessageReport(report) ? report : null,
     checks:
       isObject(checks) && Array.isArray(checks['findings'])
         ? { findings: checks['findings'].filter((finding): finding is string => typeof finding === 'string') }

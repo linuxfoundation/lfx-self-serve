@@ -19,7 +19,7 @@ export type CommitteeEngagementDataSource = 'mock' | 'live';
  * Alternate Voting Rep is NOT covered by this override — see `isLfStaffNonVotingSeat` in
  * `committee-engagement-classifier.utils.ts`.
  */
-export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Inactive' | 'Emeritus' | 'LF Staff';
+export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Inactive' | 'New' | 'Emeritus' | 'LF Staff';
 
 /**
  * Classification inputs beyond the raw counts: `votingStatus` (`'Emeritus'` short-circuits to a
@@ -128,7 +128,7 @@ export interface CommitteeEngagementResponse {
    * counts and classifies `Inactive` — except a roster member with a real `Emeritus` voting status
    * (still classifies `Emeritus`) or `role: 'LF Staff'` + non-voting `voting_status` (still
    * classifies `LF Staff`) — both are seat-type facts independent of whether any engagement data
-   * exists. The tenure-grace `High` exception does NOT apply when `data_available` is `false`: with
+   * exists. The tenure-grace `New` exception does NOT apply when `data_available` is `false`: with
    * no usable data for the whole committee, there's no engagement data to correlate tenure against,
    * so `summary`'s computed fields (`attendance_rate`, `active_count`, `at_risk_count`) are all `0`
    * — `total_count`/`eligible_count` still reflect the roster, since both are roster-known

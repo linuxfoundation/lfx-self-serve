@@ -43,6 +43,8 @@ export class NewsletterAudienceStepComponent {
   public readonly committeeUidsValue = input<string[]>([]);
   public readonly recipientCount = input<number | null>(null);
   public readonly recipientCountLoading = input<boolean>(false);
+  // The draft whose ready audience snapshot the Recipients list reads (#4352). Null reads the committees live.
+  public readonly recipientsNewsletterUid = input<string | null>(null);
   // Per-email add state is owned by the host (this panel is destroyed on step
   // navigation, so in-flight adds and their statuses must outlive it).
   public readonly emailAdds = input<NewsletterAudienceEmailAdd[]>([]);
@@ -147,7 +149,10 @@ export class NewsletterAudienceStepComponent {
     this.recipientsLoading.set(true);
     this.recipientsError.set(null);
     this.newsletterService
-      .getRecipients(projectUid, { committee_uids: uids })
+      .getRecipients(projectUid, {
+        committee_uids: uids,
+        ...(this.recipientsNewsletterUid() ? { newsletter_uid: this.recipientsNewsletterUid() as string } : {}),
+      })
       .pipe(
         take(1),
         finalize(() => this.recipientsLoading.set(false))

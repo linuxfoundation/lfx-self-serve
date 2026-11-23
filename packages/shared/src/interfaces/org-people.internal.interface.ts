@@ -7,6 +7,7 @@
 // Merge-only data never leaves the server: `toWireRow` strips it before the
 // response is cached or sent, and the cache validator rejects any entry carrying it.
 
+import type { ContributorPersonProjectRow } from './org-people-contributors.interface';
 import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow, OrgEmploymentFilter } from './org-people.interface';
 
 /**
@@ -52,18 +53,44 @@ export interface OrgPeopleAllRow {
   SEATS_COUNT: number;
   BOARD_SEATS_COUNT: number;
   COMMITTEE_SEATS_COUNT: number;
-  /** Authored commits (any branch) in the range and project scope; the unranged roster's code count. */
-  COMMITS_COUNT: number;
-  /** Authored commits merged to the main branch; the unranged roster repeats its COMMITS_COUNT. */
-  MERGED_COMMITS_COUNT: number;
-  /** Code-contribution activities; the unranged roster repeats its COMMITS_COUNT. */
-  CODE_ACTIVITIES_COUNT: number;
+  /**
+   * Authored commits (any branch); the unranged roster's code count. Absent on a ranged read: All Employees counts a
+   * range's code live from the People → Contributors rows (lfx-self-serve#4735).
+   */
+  COMMITS_COUNT?: number;
+  /** Authored commits merged to the main branch; the unranged roster repeats its COMMITS_COUNT. Absent on a ranged read. */
+  MERGED_COMMITS_COUNT?: number;
+  /** Code-contribution activities; the unranged roster repeats its COMMITS_COUNT. Absent on a ranged read. */
+  CODE_ACTIVITIES_COUNT?: number;
   EVENTS_COUNT: number;
   COURSES_COUNT: number;
 }
 
-/** Roster row including the raw `ENGAGED_FOUNDATION_IDS` column (a Snowflake ARRAY may arrive as a JSON string or a parsed array). */
+/**
+ * Roster row including the raw `ENGAGED_FOUNDATION_IDS` column (a Snowflake ARRAY may arrive as a JSON string or a parsed
+ * array). A ranged read fills it from `NON_CODE_ENGAGED_FOUNDATION_IDS`, the code foundations being live (lfx-self-serve#4735).
+ */
 export type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null };
+
+/** Who an off-roster person is — a former employee's ORG_PEOPLE_ALL_RANGES row or an ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS row; no counts. */
+export type OrgPeopleIdentityRow = Pick<OrgPeopleAllRow, 'PERSON_KEY' | 'LFID' | 'LF_USERNAME' | 'CDP_MEMBER_ID' | 'NAME' | 'PHOTO'>;
+
+/** One person's code in a range, project scope and organization scope, summed over their People → Contributors project rows (lfx-self-serve#4735). */
+export interface OrgPersonLiveCode {
+  /** Their first project row, whose identity columns stand in when no roster or unclassified row names them. */
+  identity: ContributorPersonProjectRow;
+  commitsCount: number;
+  mergedCommitsCount: number;
+  codeActivitiesCount: number;
+  /** Foundations of the projects they have code in, sorted. */
+  foundationIds: string[];
+}
+
+/** The live code of a range, project scope and organization scope, per person key, with the labels of its foundations. */
+export interface OrgPeopleLiveCode {
+  people: Map<string, OrgPersonLiveCode>;
+  foundationNames: Map<string, string>;
+}
 
 /** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` pair powering the All Foundations dropdown. */
 export interface OrgPeopleFoundationOptionRow {
@@ -77,18 +104,43 @@ export interface OrgAllEmployeesRaw {
   foundationRaw: OrgPeopleFoundationOptionRow[];
 }
 
-/** Answer of the keyed former-employee check; `failed` answers are never cached. */
-export interface OrgFormerEmployeeCheck {
-  isFormer: boolean;
-  failed: boolean;
-}
-
-/** One row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS`. */
+/**
+ * One address row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS` or `ORG_PEOPLE_EXTENDED_COMPANY_EMAILS`. `ADDRESS_SOURCE`
+ * is `current` for the current-people view and the extended view's own `lf_account` / `key_contact_record`.
+ */
 export interface OrgPersonCompanyEmailRow {
   EMAIL: string | null;
   /** Snowflake BOOLEAN arrives as a boolean; a 0/1 column is accepted too so the flag survives either shape. */
   IS_PRIMARY: boolean | number | null;
+  ADDRESS_SOURCE: string | null;
 }
+
+/**
+ * One row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAIL_KEYS`: what the drawer's lookup answers for one identity at the
+ * account. KEY_TYPE `person_key` (a roster person key holding an address), `lf_username` (the username's lookup finds an
+ * address) or `lf_username_none` (the username names exactly one roster person, who holds no address).
+ */
+export interface OrgPeopleCompanyEmailKeyRow {
+  KEY_TYPE: string | null;
+  KEY_VALUE: string | null;
+}
+
+/** The account's company-email keys, as cached for the All Employees Company email filter. */
+export interface OrgCompanyEmailKeys {
+  /** PERSON_KEY values (as stored) holding at least one address. */
+  personKeys: string[];
+  /** LOWER(TRIM(LF_USERNAME)) values whose drawer lookup finds at least one address. */
+  usernames: string[];
+  /** LOWER(TRIM(LF_USERNAME)) values naming exactly one roster person, who holds no address ("none on file"). */
+  noneUsernames: string[];
+}
+
+/**
+ * What the drawer's username lookup answers for LF usernames the company-email keys do not cover (live-only All Employees
+ * rows off the warehouse roster): `usernames` name an LF account holding a qualifying address at the account,
+ * `noneUsernames` one holding none. A username the warehouse does not know is in neither.
+ */
+export type OrgLfUsernameCompanyEmailStatuses = Pick<OrgCompanyEmailKeys, 'usernames' | 'noneUsernames'>;
 
 /** A person's employment at the account — current or former; the Employment filter's `all` is not a classification. */
 export type OrgPersonEmployment = Exclude<OrgEmploymentFilter, 'all'>;
@@ -107,3 +159,11 @@ export interface OrgPersonEmploymentRow {
  * the per-row field names (`people-employment:v2`). Someone in neither list has no roster row.
  */
 export type OrgPersonEmploymentKeys = Record<OrgPersonEmployment, string[]>;
+
+/** The organization-scope columns of the account's `ORG_LENS_ACCOUNT_CONTEXT` row — one per account (lfx-self-serve-ops#1219). */
+export interface OrgLensOrgScopeRow {
+  CDEV_ORG_ID: string | null;
+  CDEV_ORG_NAME: string | null;
+  RELATED_ORG_COUNT: number | null;
+  HAS_INSIGHTS_ORG: boolean | null;
+}

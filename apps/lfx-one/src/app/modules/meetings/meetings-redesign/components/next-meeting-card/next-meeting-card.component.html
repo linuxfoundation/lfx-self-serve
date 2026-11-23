@@ -1,0 +1,171 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (loading()) {
+  <div
+    class="flex flex-col gap-[20px] rounded-ui-md bg-gradient-to-b from-blue-100 to-white to-75% p-[20px] shadow-small"
+    role="status"
+    aria-label="Loading next meeting"
+    data-testid="meetings-home-next-card-loading">
+    <lfx-ui-skeleton width="44px" height="46px" />
+    <div class="flex flex-col gap-[8px]">
+      <lfx-ui-skeleton width="40%" height="10px" />
+      <lfx-ui-skeleton width="80%" height="16px" />
+      <lfx-ui-skeleton width="50%" height="10px" />
+    </div>
+    <lfx-ui-skeleton height="32px" />
+  </div>
+} @else if (row(); as row) {
+  <div
+    class="flex min-w-0 cursor-pointer flex-col gap-[20px] rounded-ui-md bg-gradient-to-b from-blue-100 to-white to-75% p-[20px] shadow-small transition-shadow duration-150 hover:shadow-medium motion-reduce:transition-none"
+    (click)="open()"
+    data-testid="meetings-home-next-card">
+    <div class="flex min-w-0 items-start justify-between gap-[12px]">
+      <!-- Date tile with the visibility badges on its corner -->
+      <div class="relative flex h-[46px] w-[44px] flex-none flex-col rounded-[10px] border border-gray-200 bg-white" data-testid="meetings-home-next-card-date">
+        <span
+          class="-mx-px -mt-px flex h-[14px] flex-none items-center justify-center rounded-t-[10px] bg-blue-500 text-[9px] font-semibold uppercase leading-none tracking-[.08em] text-white"
+          >{{ row.startTime | date: 'MMM' }}</span
+        >
+        <span class="flex flex-auto items-center justify-center text-[18px] leading-none text-gray-900">{{ row.startTime | date: 'd' }}</span>
+        <!-- Restricted and Private together: two stacked 8px dots, no icons -->
+        @let stacked = visibilityBadges().length > 1;
+        <span class="absolute flex" [class]="stacked ? '-right-[7px] -top-[7px] flex-col gap-[2px]' : '-right-[11px] -top-[11px]'">
+          @for (badge of visibilityBadges(); track badge.kind) {
+            <span
+              role="img"
+              tabindex="0"
+              class="box-content inline-flex cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              [class]="visibilityBg[badge.kind] + (stacked ? ' h-[8px] w-[8px]' : ' h-[17px] w-[17px]')"
+              [attr.aria-label]="badge.title"
+              [lfxUiTooltip]="badge.description ?? ''"
+              [lfxUiTooltipTitle]="badge.title"
+              [attr.data-testid]="'meetings-home-next-card-visibility-' + badge.kind">
+              @if (!stacked) {
+                <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
+              }
+            </span>
+          }
+        </span>
+      </div>
+      <!-- Actions menu slot; its clicks never open the card -->
+      <span class="-mr-[6px] -mt-[4px] inline-flex flex-none empty:hidden" (click)="$event.stopPropagation()" data-testid="meetings-home-next-card-menu">
+        <ng-content select="[next-meeting-card-menu]" />
+      </span>
+    </div>
+
+    <div class="-mt-[8px] flex min-w-0 flex-col gap-[3px]">
+      @if (project(); as project) {
+        @if (project.url; as url) {
+          <a
+            class="group/eyebrow mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start text-label-12 text-gray-500 transition-colors duration-150 hover:text-gray-900 focus-visible:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 motion-reduce:transition-none"
+            [href]="url"
+            [attr.aria-label]="project.label"
+            (click)="onLinkClick($event, url, false)"
+            data-testid="meetings-home-next-card-project">
+            <lfx-meeting-project-logo [src]="project.logo" />
+            <span
+              class="min-w-0 underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
+              >{{ project.name }}</span
+            >
+            <i
+              class="fa-light fa-arrow-up-right -ml-[3px] flex-none translate-x-[-3px] translate-y-[2px] text-[10px] opacity-0 transition duration-150 group-hover/eyebrow:translate-x-0 group-hover/eyebrow:translate-y-0 group-hover/eyebrow:opacity-100 group-focus-visible/eyebrow:translate-x-0 group-focus-visible/eyebrow:translate-y-0 group-focus-visible/eyebrow:opacity-100 motion-reduce:transition-none"
+              aria-hidden="true"></i>
+          </a>
+        } @else {
+          <span
+            class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start text-label-12 text-gray-500"
+            data-testid="meetings-home-next-card-project">
+            <lfx-meeting-project-logo [src]="project.logo" />
+            <span class="min-w-0">{{ project.name }}</span>
+          </span>
+        }
+      }
+
+      <!-- Masked in Session Replay: the href carries the meeting password. -->
+      @if (link(); as link) {
+        <a
+          data-dd-privacy="mask"
+          class="line-clamp-2 text-[15px] font-semibold leading-[1.35] text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+          [href]="link.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          (click)="onTitleClick($event)"
+          data-testid="meetings-home-next-card-title"
+          >{{ row.title }}</a
+        >
+      }
+
+      <span class="truncate text-label-12 text-gray-500" data-testid="meetings-home-next-card-when">{{ when() }}</span>
+
+      @if (meetingType() || groups().length || recurrenceTooltip()) {
+        <span class="mt-[6px] flex flex-wrap items-center gap-[6px]">
+          @if (meetingType(); as type) {
+            <!-- Muted tag text per the design; the library outline badge uses neutral-900. -->
+            <lfx-ui-badge class="!text-gray-600" variant="outline" size="sm" data-testid="meetings-home-next-card-type">
+              <i slot="icon" [class]="type.icon" aria-hidden="true"></i>{{ type.label }}
+            </lfx-ui-badge>
+          }
+          @for (group of groups(); track group) {
+            <!-- A long group name truncates inside the card; the title keeps it whole. -->
+            <lfx-ui-badge class="max-w-full !text-gray-600" variant="outline" size="sm" [attr.title]="group" data-testid="meetings-home-next-card-group">
+              <i slot="icon" class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group }}</span>
+            </lfx-ui-badge>
+          }
+          @if (recurrenceTooltip(); as tooltip) {
+            <lfx-ui-badge
+              class="cursor-default !text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              variant="outline"
+              size="sm"
+              role="img"
+              tabindex="0"
+              aria-label="Recurring"
+              [lfxUiTooltip]="tooltip"
+              data-testid="meetings-home-next-card-recurring">
+              <i slot="icon" class="fa-light fa-arrows-repeat" aria-hidden="true"></i>Recurring
+            </lfx-ui-badge>
+          }
+        </span>
+      }
+    </div>
+
+    @if (attendance(); as attendance) {
+      <lfx-meeting-home-attendance class="mb-[14px] mt-[4px]" [attendance]="attendance" data-testid="meetings-home-next-card-attendance" />
+    }
+
+    <!-- Clicks on Join or the note under it never open the card -->
+    <div class="flex flex-col gap-[8px]" (click)="$event.stopPropagation()">
+      <lfx-ui-button icon="fa-light fa-video" fullWidth [disabled]="!joinable()" (click)="join()" data-testid="meetings-home-next-card-join">
+        Join Meeting
+      </lfx-ui-button>
+      @switch (joinState()) {
+        @case ('early') {
+          <span class="mt-[4px] text-balance text-center text-label-12 text-gray-500" data-testid="meetings-home-next-card-join-window"
+            >You may only join the meeting up to {{ earlyJoinMinutes() }} minutes before the start time</span
+          >
+        }
+        @case ('soon') {
+          @if (startsIn(); as startsIn) {
+            <span class="mt-[4px] flex items-center justify-center gap-[6px] text-label-12 text-gray-500" data-testid="meetings-home-next-card-starts-in">
+              <i class="fa-light fa-clock text-[12px]" aria-hidden="true"></i>{{ startsIn }}
+            </span>
+          }
+        }
+        @case ('live') {
+          <span class="mt-[4px] flex items-center justify-center gap-[6px] text-label-12 text-blue-600" data-testid="meetings-home-next-card-in-progress">
+            <span class="meeting-live-dot bg-blue-500" aria-hidden="true"></span>The meeting is in progress
+          </span>
+        }
+      }
+    </div>
+  </div>
+} @else {
+  <div class="rounded-ui-md bg-gradient-to-b from-blue-100 to-white to-75% shadow-small" data-testid="meetings-home-next-card-empty">
+    <lfx-ui-empty-state
+      size="small"
+      icon="fa-light fa-calendar-check"
+      heading="Your calendar is clear"
+      description="Your scheduled meetings will appear here." />
+  </div>
+}

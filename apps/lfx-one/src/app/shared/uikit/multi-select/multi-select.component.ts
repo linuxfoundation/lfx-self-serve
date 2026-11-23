@@ -51,8 +51,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * Keyboard: Enter, Space, Arrow Down or Arrow Up on the trigger opens the list and focuses the first picked row, or the first row that can be
  * picked. Arrow Up and Arrow Down move between rows, Home and End to the first and last, Arrow Right moves from a row's checkbox to its Only
  * button and Arrow Left back. Space toggles a checkbox, Enter toggles it or presses Only. Escape closes the list and returns focus to the
- * trigger; Tab closes it and moves on from the trigger. Nothing is picked or dropped by closing. Use it for filters and settings with a few known
- * values; for one value use the select, and for a long searchable list the combobox.
+ * trigger; Tab closes it and moves on from the trigger, and Shift+Tab closes it and stops on the trigger. Nothing is picked or dropped by
+ * closing. Use it for filters and settings with a few known values; for one value use the select, and for a long searchable list the combobox.
  */
 @Component({
   selector: 'lfx-ui-multi-select',
@@ -77,7 +77,7 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
   public readonly label = input<string>('');
   /** Accessible name when there is no visible `label`. */
   public readonly ariaLabel = input<string>('');
-  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair with a button of the same size. */
+  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `tiny`, `default` or `large` button. */
   public readonly size = input<UiInputSize>('medium');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
@@ -201,6 +201,8 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
         this.closePanel(true);
         break;
       case 'Tab': {
+        // Backward, the trigger is where focus stops, as in Select; forward, the browser moves on from it.
+        if (event.shiftKey) event.preventDefault();
         // The panel is still mounted when the browser moves focus, so keep it out of the tab order; focus then goes back to the trigger first.
         const group = this.panel();
         if (group) group.inert = true;
@@ -277,9 +279,9 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
     return computed(() => {
       // Library recipe (same as Input): 1px ring at rest, stronger ring plus a 4px halo when focused or open (accent).
       const interactive =
-        'cursor-pointer hover:edge-hover focus-visible:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] aria-expanded:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
+        'cursor-pointer hover:edge-control-hover focus-visible:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] aria-expanded:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
       // A disabled field keeps the resting ring only, so it does not look interactive on hover.
-      const ring = this.isDisabled() ? 'edge cursor-not-allowed' : `edge ${interactive}`;
+      const ring = this.isDisabled() ? 'edge-control cursor-not-allowed' : `edge-control ${interactive}`;
       const fill = this.isDisabled() ? 'bg-ui-neutral-50 text-ui-neutral-500' : 'bg-ui-background-100 text-ui-neutral-900';
       // forced-colors: shadows vanish, so a real border keeps the field visible and an outline marks focus.
       const border = this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:CanvasText]';

@@ -69,6 +69,58 @@ describe('SnowflakeService query deduplication', () => {
   });
 });
 
+describe('SnowflakeService read-only validation', () => {
+  const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
+
+  const serviceWithPool = (use: () => Promise<unknown>) => {
+    vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
+    const service = SnowflakeService.getInstance();
+    // The pool is private; the test supplies a stub so `execute` runs without a Snowflake connection.
+    const internals = service as unknown as { pool: unknown };
+    internals.pool = { use, borrowed: 0, available: 1, pending: 0, size: 1 };
+    return service;
+  };
+
+  afterEach(() => {
+    SnowflakeService.resetInstance();
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['a line comment', '-- why this is trimmed\nSELECT 1'],
+    ['stacked line comments before a CTE', '-- a\n-- b\nWITH x AS (SELECT 1) SELECT * FROM x'],
+    ['a block comment', '/* why */\nSELECT 1'],
+    ['a block comment before a line comment', '/* a */ -- b\nSELECT 1'],
+  ])('runs a query documented by %s above its SELECT', async (_label, sql) => {
+    const use = vi.fn(() => Promise.resolve({ rows: [], metadata: [] }));
+
+    await expect(serviceWithPool(use).execute(sql)).resolves.toEqual({ rows: [], metadata: [] });
+    expect(use).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a comment then a non-SELECT statement', '-- c\nSHOW TABLES', 'Only SELECT queries are allowed'],
+    ['only a comment', '-- just a comment', 'Only SELECT queries are allowed'],
+    ['a SELECT that exists only inside a comment', '-- SELECT 1\nSHOW TABLES', 'Only SELECT queries are allowed'],
+    ['a write behind a comment', '-- c\nDROP TABLE x', 'Write operations detected'],
+    ['a write keyword inside a leading block comment', '/* DROP TABLE x */ SELECT 1', 'Write operations detected'],
+    ['an unterminated block comment', '/* unterminated\nSELECT 1', 'Only SELECT queries are allowed'],
+  ])('still rejects %s', async (_label, sql, message) => {
+    const use = vi.fn(() => Promise.resolve({ rows: [], metadata: [] }));
+
+    await expect(serviceWithPool(use).execute(sql)).rejects.toThrow(message);
+    expect(use).not.toHaveBeenCalled();
+  });
+
+  it('names the span after the statement, not its leading comment', async () => {
+    const use = vi.fn(() => Promise.resolve({ rows: [], metadata: [] }));
+
+    await serviceWithPool(use).execute('-- why this is trimmed\nSELECT 1');
+
+    expect(tracer.startActiveSpan).toHaveBeenCalledWith('Snowflake SELECT', expect.anything(), expect.any(Function));
+  });
+});
+
 describe('SnowflakeService circuit breaker', () => {
   const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
   const poolQueueFull = () => Promise.reject(new Error('max waitingClients count exceeded'));
@@ -338,6 +390,29 @@ describe('SnowflakeService circuit breaker', () => {
       expect(service.getCircuitStats().consecutiveFailures).toBe(2);
     });
 
+    // The LF-account reads list their two views: a statement that also reads a core table must keep that table's faults.
+    it('keeps the circuit closed while a LISTED object is the missing one', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject('ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USERNAMES')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, {
+        expectMissingObject: ['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_LF_USER_COMPANY_EMAILS'],
+      });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_missing_object', 'ORG_PEOPLE_LF_USERNAMES');
+    });
+
+    it('still opens the circuit when an UNLISTED core object in the same statement is the missing one', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject('ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD, {
+        expectMissingObject: ['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_LF_USER_COMPANY_EMAILS'],
+      });
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+      expect(span.setAttribute).not.toHaveBeenCalledWith('snowflake.expected_missing_object', expect.anything());
+    });
+
     // Every other caller still passes `true`, so the broad exemption has to keep working as it did.
     it('still exempts any missing object when the caller passes true', async () => {
       const { service } = serviceWithPool(vi.fn(missingNamedObject('ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS')));
@@ -406,6 +481,118 @@ describe('SnowflakeService circuit breaker', () => {
 
       expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
     });
+  });
+});
+
+describe('SnowflakeService query timeout', () => {
+  const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
+  type Complete = (err: Error | undefined, stmt: unknown, rows: unknown[] | undefined) => void;
+
+  /**
+   * A pool (through the SDK's `createPool`, as the pool-creation tests stub it) whose connection's statement completes at
+   * once (`finishes`) or only once it is cancelled. `connectionReady` holds the connection back, as an exhausted pool does.
+   */
+  const serviceWithStatement = (finishes: boolean, connectionReady: Promise<void> = Promise.resolve(), releaseDelayMs = 0) => {
+    for (const name of ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_ROLE', 'SNOWFLAKE_DATABASE', 'SNOWFLAKE_WAREHOUSE', 'SNOWFLAKE_API_KEY']) {
+      vi.stubEnv(name, 'test-value');
+    }
+    vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
+    let complete: Complete | undefined;
+    const statement = {
+      // As the SDK does: a cancelled statement completes with an error, which releases the connection.
+      cancel: vi.fn((callback?: (err: Error | undefined) => void) => {
+        complete?.(new Error('SQL execution canceled'), statement, undefined);
+        callback?.(undefined);
+      }),
+      getColumns: () => [],
+      getQueryId: () => 'query-id',
+    };
+    const connection = {
+      execute: vi.fn((options: { complete: Complete }) => {
+        complete = options.complete;
+        if (finishes) options.complete(undefined, statement, [{ ONE: 1 }]);
+        return statement;
+      }),
+    };
+    // What the pool.use callback settled with: generic-pool releases the connection once it settles.
+    const released: Promise<unknown>[] = [];
+    const pool = {
+      use: async (fn: (c: typeof connection) => Promise<unknown>) => {
+        await connectionReady;
+        const settled = fn(connection);
+        released.push(settled.catch((error: unknown) => error));
+        const result = await settled;
+        // Settling pool.use can lag the statement's completion (generic-pool's release work).
+        if (releaseDelayMs) await new Promise((resolve) => setTimeout(resolve, releaseDelayMs));
+        return result;
+      },
+      borrowed: 1,
+      available: 0,
+      pending: 0,
+      size: 1,
+    };
+    vi.mocked(snowflakeSdk.createPool).mockReturnValue(pool as never);
+    return { service: SnowflakeService.getInstance(), statement, connection, released };
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+    SnowflakeService.resetInstance();
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it('releases a connection that arrives after the timeout without executing the statement', async () => {
+    vi.useFakeTimers();
+    // Held back until handed over, as an exhausted pool does (the spec lib predates Promise.withResolvers).
+    let handOver: () => void = () => undefined;
+    const connectionReady = new Promise<void>((resolve) => {
+      handOver = resolve;
+    });
+    const { service, connection, released } = serviceWithStatement(true, connectionReady);
+
+    const outcome = service.execute('SELECT 1', [], { timeout: 1_000 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('Snowflake query timed out after 1000ms') });
+
+    handOver();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(released).toHaveLength(1);
+    expect(await released[0]).toMatchObject({ message: 'Snowflake query timed out after 1000ms' });
+  });
+
+  it('cancels a statement still running when the timeout fires, rejecting with the timeout error', async () => {
+    vi.useFakeTimers();
+    const { service, statement } = serviceWithStatement(false);
+
+    const outcome = service.execute('SELECT 1', [], { timeout: 1_000 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(statement.cancel).toHaveBeenCalledTimes(1);
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('Snowflake query timed out after 1000ms') });
+  });
+
+  it('never cancels a statement that completed synchronously, even when the timeout fires before pool.use settles', async () => {
+    vi.useFakeTimers();
+    const { service, statement } = serviceWithStatement(true, Promise.resolve(), 2_000);
+
+    const outcome = service.execute('SELECT 1', [], { timeout: 1_000 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('Snowflake query timed out after 1000ms') });
+    expect(statement.cancel).not.toHaveBeenCalled();
+  });
+
+  it('never cancels a statement that completed in time', async () => {
+    vi.useFakeTimers();
+    const { service, statement } = serviceWithStatement(true);
+
+    await expect(service.execute('SELECT 1', [], { timeout: 1_000 })).resolves.toMatchObject({ rows: [{ ONE: 1 }] });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(statement.cancel).not.toHaveBeenCalled();
   });
 });
 

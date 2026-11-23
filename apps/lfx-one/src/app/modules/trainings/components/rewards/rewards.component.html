@@ -166,9 +166,18 @@
         </div>
       </div>
 
-      @if (programExpiryDate()) {
-        <p class="text-xs text-[#7e8694]" data-testid="rewards-program-expiry">Program year ends {{ programExpiryDate() | date: 'MMM d, y' }}</p>
-      }
+      <div class="flex flex-wrap items-center justify-between gap-2" data-testid="rewards-summary-footer">
+        @if (programExpiryDate()) {
+          <p class="text-xs text-[#7e8694]" data-testid="rewards-program-expiry">Program year ends {{ programExpiryDate() | date: 'MMM d, y' }}</p>
+        }
+        <a
+          routerLink="/profile/transactions"
+          class="ml-auto inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+          data-testid="rewards-view-transactions-link">
+          View transactions
+          <i class="fa-light fa-arrow-right text-2xs" aria-hidden="true"></i>
+        </a>
+      </div>
     </section>
 
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-4" data-testid="rewards-content">

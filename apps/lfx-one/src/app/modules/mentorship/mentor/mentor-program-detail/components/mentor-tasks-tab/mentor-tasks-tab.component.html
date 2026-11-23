@@ -68,6 +68,13 @@
             }
             @if (row.hasSubmission) {
               <lfx-button
+                [label]="viewSubmissionLabel"
+                severity="secondary"
+                [outlined]="true"
+                size="small"
+                (onClick)="onViewSubmission(row)"
+                [attr.data-testid]="'mentorship-mentor-task-view-submission-' + row.id" />
+              <lfx-button
                 [label]="openSubmissionLabel"
                 severity="secondary"
                 [outlined]="true"

@@ -4,7 +4,7 @@ description: How to view and manage your training enrollments in LFX Self Serve.
 audience: [all]
 product_area: Trainings
 tags: [trainings, enrollments, manage, status]
-last_updated: 2026-08-19
+last_updated: 2026-11-02
 intercom_collection: Trainings
 ---
 
@@ -24,10 +24,25 @@ Stats displayed at the top: **Certificates Earned**, **Enrolled Trainings**, **C
 Tabs:
 
 - **Certifications** — certifications you have earned
-- **Enrolled Trainings** — courses you are currently enrolled in
+- **Enrolled Trainings** — courses and certification exams you are enrolled in
 - **Rewards** — rewards associated with your learning activity
 
+The **Enrolled Trainings** stat counts both courses and certification exams.
+
 A **Useful links** section in the right sidebar provides links to the LF Training Portal, LF Education & Certification, and Certification Verification Tool.
+
+## Certification exams you have not passed yet
+
+A certification exam you are enrolled in appears on the **Enrolled Trainings** tab until you pass it:
+
+- While your enrollment is active, the exam is listed under **Ongoing Trainings** with a **Certification Exam** tag. Select **Go to Exam** to open it on the training platform.
+- After your enrollment expires, the exam is listed under **Expired Enrollments** with an **Expired** badge. Select **Enroll Again** to purchase it again.
+
+Once you pass, the exam moves to the **Certifications** tab.
+
+## Enrollment date
+
+Each enrollment shows the date you enrolled, when the training platform provides it.
 
 ## Resume or enroll in a training
 
@@ -36,6 +51,10 @@ Enrollment in new training courses is handled on the Linux Foundation training p
 ## Empty state
 
 If you have no training enrollments, the page shows a message indicating no trainings are available. To enroll in courses, visit [https://training.linuxfoundation.org](https://training.linuxfoundation.org).
+
+## Need help?
+
+LFX Self Serve shows your training in read-only view. For questions about a course, exam, voucher, refund, or invoice, see [Get Help with Training and Certifications](../training-support/).
 
 ## Related
 

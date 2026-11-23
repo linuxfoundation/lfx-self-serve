@@ -135,6 +135,16 @@ describe('UiSelectComponent', () => {
     expect(trigger().tabIndex).toBe(0);
   });
 
+  it('marks a required field with a red asterisk that screen readers skip', async () => {
+    const mark = (): HTMLElement | null => host.querySelector('[data-testid="ui-select-required"]');
+    expect(mark()).toBeNull();
+
+    await set('required', true);
+
+    expect(mark()?.textContent).toBe(' *');
+    expect(mark()?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('uses ariaLabel when there is no visible label', async () => {
     const bare = TestBed.createComponent(UiSelectComponent);
     bare.componentRef.setInput('ariaLabel', 'Foundation');
@@ -497,7 +507,7 @@ describe('UiSelectComponent', () => {
   });
 
   it('is out of the tab order, ignores the keyboard and the pointer, and drops the hover ring when disabled', async () => {
-    expect(trigger().className).toContain('edge-hover');
+    expect(trigger().className).toContain('edge-control-hover');
 
     await set('disabled', true);
     await press('ArrowDown');
@@ -505,7 +515,7 @@ describe('UiSelectComponent', () => {
 
     expect(trigger().tabIndex).toBe(-1);
     expect(trigger().getAttribute('aria-disabled')).toBe('true');
-    expect(trigger().className).not.toContain('edge-hover');
+    expect(trigger().className).not.toContain('edge-control-hover');
     expect(listbox()).toBeNull();
   });
 

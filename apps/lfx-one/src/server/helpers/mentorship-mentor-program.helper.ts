@@ -1,12 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_MENTOR_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorProgram,
   MentorshipMentorProgramApplicant,
   MentorshipMentorProgramLists,
-  MentorshipMentorProgramStatus,
   MentorshipProgramMentee,
   MentorshipUpstreamMentoredProgram,
   MentorshipUpstreamProgramApplicationRow,
@@ -14,27 +12,33 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 
-import { MENTORSHIP_MENTOR_PROGRAM_APPLICATION_STATUS_MAP, MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES } from '../constants';
+import {
+  MENTORSHIP_MENTOR_PROGRAM_APPLICATION_STATUS_MAP,
+  MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES,
+  MENTORSHIP_PUBLISHED_PROGRAM_STATUS_BY_UPSTREAM,
+} from '../constants';
 import { toIsoDate } from './date-format.helper';
 import { mapMentorshipProgramApplicationRow } from './mentorship-program-application.helper';
 
 /**
  * One My Programs card, from a row of upstream `GET /me/mentor-programs`, which settles the status and the
- * program-wide counts. A status this does not know reads as `open` with `unknownStatus` set, so the caller can log it.
+ * program-wide counts. A status this does not know reads as `in-progress` with `unknownStatus` set, so the caller can log it.
  * The slug falls back to the id.
  */
 export const mapMentorshipMentorProgram = (item: MentorshipUpstreamMentoredProgram): { program: MentorshipMentorProgram; unknownStatus: boolean } => {
-  const known = (MENTORSHIP_MENTOR_PROGRAM_STATUSES as readonly string[]).includes(item.status);
+  const status = Object.hasOwn(MENTORSHIP_PUBLISHED_PROGRAM_STATUS_BY_UPSTREAM, item.status)
+    ? MENTORSHIP_PUBLISHED_PROGRAM_STATUS_BY_UPSTREAM[item.status]
+    : undefined;
   const program: MentorshipMentorProgram = {
     id: item.id,
     slug: item.slug || item.id,
     name: item.name,
     projectName: item.project_name?.trim() ?? '',
-    status: known ? (item.status as MentorshipMentorProgramStatus) : 'open',
+    status: status ?? 'in-progress',
     stats: { mentees: item.stats.mentees, tasksToReview: item.stats.tasks_to_review, applicants: item.stats.applicants },
   };
   if (item.logo_url) program.logoUrl = item.logo_url;
-  return { program, unknownStatus: !known };
+  return { program, unknownStatus: status === undefined };
 };
 
 /**

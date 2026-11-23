@@ -15,7 +15,8 @@ import { expect, Page, test } from '@playwright/test';
 
 // Mirrors EMAIL_VERIFICATION_SENT_MESSAGE; the shared constants barrel reaches Angular code
 // that Playwright's plain Node loader cannot compile.
-const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your account, a verification code has been sent.';
+const EMAIL_VERIFICATION_SENT_MESSAGE =
+  'Check your email for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.';
 
 const IDENTITIES_ROUTE = '**/api/profile/identities';
 const SEND_CODE_ROUTE = '**/api/profile/identities/email/send-code';

@@ -3,8 +3,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, cacheValues } = vi.hoisted(() => ({
+const { execute, cacheValues, resolveOrgScope } = vi.hoisted(() => ({
   execute: vi.fn(),
+  resolveOrgScope: vi.fn(),
   cacheValues: new Map<string, string>(),
 }));
 
@@ -38,6 +39,11 @@ vi.mock('ioredis', () => ({
       /* No connection in this fixture. */
     }
   },
+}));
+// The scope served (lfx-self-serve-ops#1219): `all` unless a test grants the account an Insights organization.
+vi.mock('../helpers/org-scope.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../helpers/org-scope.helper')>()),
+  resolveOrgScope,
 }));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn() }));
 vi.mock('./logger.service', () => ({
@@ -142,7 +148,7 @@ function mockWarehouse(rows: object[] = CONTRIBUTOR_ROWS, roles: OrgContributorM
   });
 }
 
-const ROWS_KEY = (suffix: string): string => buildOrgCacheKey(ACCOUNT, `people-contributors:v5:${suffix}`)!;
+const ROWS_KEY = (suffix: string, orgScope = 'all'): string => buildOrgCacheKey(ACCOUNT, `people-contributors:v5:${suffix}:${orgScope}`)!;
 
 const isTeamMembersRead = (call: unknown[]): boolean => isTeamMembersSql(String(call[0]));
 
@@ -157,6 +163,8 @@ beforeEach(() => {
   cacheValues.clear();
   ValkeyService.resetInstance();
   mockWarehouse();
+  resolveOrgScope.mockReset();
+  resolveOrgScope.mockResolvedValue('all');
   service = new OrgPeopleContributorsService();
 });
 
@@ -784,5 +792,62 @@ describe('OrgPeopleContributorsService team members filter (lfx-self-serve#4685)
     expect(JSON.parse(cacheValues.get(TEAM_MEMBERS_KEY)!)).toEqual(['person-two']);
     expect(execute.mock.calls.filter(isTeamMembersRead)).toHaveLength(1);
     expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY')).toHaveLength(2);
+  });
+});
+
+// lfx-self-serve-ops#1219
+describe('OrgPeopleContributorsService organization scope', () => {
+  const contributorsSql = (): string => String(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY').at(-1)![0]);
+  const grantInsights = () => resolveOrgScope.mockImplementation(async (_snowflake: unknown, _account: string, scope: string) => scope);
+
+  it('resolves the requested scope, insights by default, before reading', async () => {
+    await service.getContributors(ACCOUNT, '365d', FILTERS);
+
+    expect(resolveOrgScope).toHaveBeenCalledWith(expect.anything(), ACCOUNT, 'insights');
+  });
+
+  it("reads today's columns and no gate under all, and when an insights request resolves to all", async () => {
+    await service.getContributors(ACCOUNT, '365d', FILTERS, 'all', 'exclude', 'insights');
+    const fallbackSql = contributorsSql();
+    cacheValues.clear();
+    await service.getContributors(ACCOUNT, '365d', FILTERS, 'all', 'exclude', 'all');
+
+    expect(contributorsSql()).toBe(fallbackSql);
+    expect(fallbackSql).toContain('SUM(daily_commits) AS commits');
+    expect(fallbackSql).toContain('SUM(daily_code_activities) AS code_activities');
+    expect(fallbackSql).not.toContain('insights');
+    expect(cacheValues.has(ROWS_KEY('365d:all'))).toBe(true);
+    expect(cacheValues.has(ROWS_KEY('365d:all', 'insights'))).toBe(false);
+  });
+
+  it.each([
+    ['all', 'insights_daily_commits', 'insights_daily_merged_commits'],
+    ['lf', 'insights_daily_scope_commits', 'insights_daily_scope_merged_commits'],
+  ] as const)(
+    'reads the INSIGHTS_DAILY_* columns and only rows with Insights-scoped code under insights (projectScope=%s)',
+    async (projectScope, commits, merged) => {
+      grantInsights();
+
+      await service.getContributors(ACCOUNT, '365d', { ...FILTERS, projectScope }, 'all', 'exclude', 'insights');
+
+      const sql = contributorsSql();
+      expect(sql).toContain(`SUM(${commits}) AS commits`);
+      expect(sql).toContain(`SUM(${merged}) AS merged_commits`);
+      expect(sql).toContain('SUM(insights_daily_code_activities) AS code_activities');
+      expect(sql).toContain('AND insights_daily_code_activities > 0');
+      expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY').at(-1)![1]).toEqual([ACCOUNT]);
+    }
+  );
+
+  it('caches each organization scope apart, leaving the roles entry shared', async () => {
+    grantInsights();
+
+    await service.getContributors(ACCOUNT, '365d', FILTERS, 'all', 'exclude', 'insights');
+    await service.getContributors(ACCOUNT, '365d', FILTERS, 'all', 'exclude', 'all');
+
+    expect(cacheValues.has(ROWS_KEY('365d:all', 'insights'))).toBe(true);
+    expect(cacheValues.has(ROWS_KEY('365d:all'))).toBe(true);
+    expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY')).toHaveLength(2);
+    expect(readsOf('ORG_MAINTAINER_ROLES')).toHaveLength(1);
   });
 });

@@ -10,8 +10,8 @@
  * the program-name check, the Linux Foundation project search) are stubbed with synthetic data, and the wizard
  * is reached by client-side navigation (`openMentorPage`) so the browser makes those calls and the stubs answer.
  *
- * The create and logo-upload submit flow, with its error mapping and partial-save banner, is covered by the
- * component spec: it needs every step filled in, and the logo route is never sent to a real bucket.
+ * The create and logo-upload submit flow, with its error mapping and partial-save banner, is covered by
+ * `mentorship-admin-enroll-create.spec.ts` (linuxfoundation/lfx-mentorship#378), with every write stubbed.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -63,7 +63,7 @@ test.describe('Admin enroll wizard — leaving', () => {
   });
 
   test('leaves an untouched wizard without asking', async ({ page }) => {
-    await page.getByTestId('mentorship-enroll-back-to-programs').click();
+    await page.getByTestId('mentorship-enroll-back-to-programs').getByRole('button').click();
 
     await expect(page).toHaveURL(/\/mentorship\/admin$/);
     await expect(page.locator('.p-confirmdialog')).toHaveCount(0);
@@ -72,7 +72,7 @@ test.describe('Admin enroll wizard — leaving', () => {
   test('asks before leaving once a program name is typed, and Stay keeps the wizard open', async ({ page }) => {
     await page.locator('#name').fill(PROGRAM_NAME);
 
-    await page.getByTestId('mentorship-enroll-back-to-programs').click();
+    await page.getByTestId('mentorship-enroll-back-to-programs').getByRole('button').click();
 
     const confirmation = page.locator('.p-confirmdialog');
     await expect(confirmation).toBeVisible();
@@ -85,7 +85,7 @@ test.describe('Admin enroll wizard — leaving', () => {
   test('leaves for My Programs once the admin accepts the prompt', async ({ page }) => {
     await page.locator('#name').fill(PROGRAM_NAME);
 
-    await page.getByTestId('mentorship-enroll-back').click();
+    await page.getByTestId('mentorship-enroll-back').getByRole('button').click();
     await page.locator('.p-confirmdialog').getByRole('button', { name: 'Yes, cancel', exact: true }).click();
 
     await expect(page).toHaveURL(/\/mentorship\/admin$/);
@@ -98,7 +98,7 @@ test.describe('Admin enroll wizard — leaving', () => {
     });
 
     await page.locator('#name').fill(PROGRAM_NAME);
-    await page.getByTestId('mentorship-enroll-next').click();
+    await page.getByTestId('mentorship-enroll-next').getByRole('button').click();
 
     expect(writes).toEqual([]);
   });
@@ -138,6 +138,8 @@ test.describe('Admin enroll wizard — import from an existing program', () => {
     await openWizard(page);
 
     await pickImportProgram(page);
+    // The import fills the form when its template arrives, so wait for it before typing over the name.
+    await expect(page.locator('#repositoryUrl')).toHaveValue(ENROLL_IMPORT_TEMPLATE.repositoryUrl);
     await page.locator('#name').fill(PROGRAM_NAME);
 
     await expect(page.locator('#name')).toHaveValue(PROGRAM_NAME);
@@ -154,6 +156,8 @@ test.describe('Admin enroll wizard — edit a program', () => {
     await stubEnrollWizardReads(page, fulfillJson);
     await stubEnrollEditReads(page, fulfillJson);
     nameChecked = page.waitForResponse(/\/api\/mentorship\/programs\/name-available/);
+    // A test that never awaits it must not fail when the page closes with the wait still open.
+    nameChecked.catch(() => undefined);
     await openMentorPage(page, EDIT_URL);
     await expect(page.getByTestId('mentorship-enroll-title')).toHaveText('Edit program', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
   });

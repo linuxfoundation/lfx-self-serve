@@ -13,6 +13,7 @@ import { Page, Route } from '@playwright/test';
 import { ADMIN_PROGRAM_ID, adminTermId } from './mentorship-admin-program.helper';
 
 const TERMS_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/terms*`;
+const TERM_WRITES_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/terms/**`;
 
 const baseTerm = (n: number, overrides: Partial<MentorshipProgramTermRow>): MentorshipProgramTermRow => ({
   id: adminTermId(n),
@@ -59,7 +60,8 @@ const fulfillJson = (route: Route, status: number, body: unknown) => route.fulfi
 
 /** Answers the terms read from `state.terms`, and each write with `writeStatus` (204 applies the change). */
 export async function stubTermActions(page: Page, state: TermStubState, writeStatus = 204): Promise<void> {
-  await page.route(TERMS_ROUTE, (route) => {
+  // A glob's `*` stops at `/`, so the writes (`/terms/:id/close`, `DELETE /terms/:id`) need their own `/**` pattern.
+  const handler = (route: Route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (request.method() === 'GET') {
@@ -75,5 +77,7 @@ export async function stubTermActions(page: Page, state: TermStubState, writeSta
       state.terms = state.terms.map((term) => (term.id === termId ? { ...term, status: action === 'close' ? 'closed' : 'open' } : term));
     }
     return route.fulfill({ status: 204 });
-  });
+  };
+  await page.route(TERMS_ROUTE, handler);
+  await page.route(TERM_WRITES_ROUTE, handler);
 }

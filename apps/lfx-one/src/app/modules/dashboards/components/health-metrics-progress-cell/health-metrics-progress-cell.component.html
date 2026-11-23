@@ -1,0 +1,13 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem: the design's 14px value, 12px goal and 6px bar. -->
+<span class="flex items-baseline justify-between gap-[8px]">
+  <span class="text-[14px] font-normal" [class]="valueClass()" data-testid="health-metrics-progress-value">{{ value() }}</span>
+  @if (goal()) {
+    <span class="whitespace-nowrap text-[12px] text-gray-600" data-testid="health-metrics-progress-goal">{{ goal() }}</span>
+  }
+</span>
+<span class="block h-[6px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+  <span class="block h-full rounded-full" [class]="fillClass()" [style.width.%]="width()" data-testid="health-metrics-progress-fill"></span>
+</span>

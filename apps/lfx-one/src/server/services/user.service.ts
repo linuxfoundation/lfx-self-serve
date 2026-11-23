@@ -5,6 +5,7 @@ import {
   LATEST_PAST_MEETINGS_FETCH_SIZE,
   LATEST_PAST_MEETINGS_RETURN_LIMIT,
   NATS_CONFIG,
+  PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY,
   PENDING_ACTION_BUTTON_ICON,
   PENDING_ACTION_SEVERITY,
   PROFILE_BIO_MAX_LENGTH,
@@ -29,6 +30,8 @@ import {
   MyFormationItemRow,
   PastMeeting,
   PastMeetingParticipant,
+  PastMeetingRecording,
+  PastMeetingSummary,
   PendingActionItem,
   PendingInvitation,
   ProfileVisibility,
@@ -53,21 +56,27 @@ import {
   buildInvitationActions,
   codePointLength,
   getCurrentOrNextOccurrence,
+  getLargestSessionShareUrl,
+  getPastMeetingSummaryContent,
   getSurveyDisplayStatus,
   hasMeetingEnded,
   isMeetingInviteResponsesEnabled,
+  isPastMeetingSummaryAwaitingApproval,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   parseToInt,
   resolveRsvpOccurrenceId,
   selectApplicableRsvp,
+  selectPrimaryPastMeetingSummary,
   votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { attachMeetingRsvpSummaries, attachPastMeetingAttendanceSummaries } from '../helpers/meeting-attendance.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { fetchCurrentUserSurveyResponses } from '../helpers/survey-response.helper';
@@ -271,7 +280,7 @@ export class UserService {
 
     // Validate organization if provided (basic length check)
     if (metadata?.organization && metadata.organization.length > 200) {
-      throw new Error('Organization name is too long');
+      throw new Error('Company name is too long');
     }
 
     // Validate job title if provided (basic length check)
@@ -475,9 +484,15 @@ export class UserService {
    *   meeting payload to the frontend, since the `invited: true` decoration in this mode is
    *   derived from the FGA tuple's existence (`filter_grants=direct`) and is NOT an
    *   authorization check — it is a data shape marker, not an access decision.
+   *   `includeAttendance` adds `rsvp_summary` to each listed date of the meetings the viewer organizes.
    * @returns Array of Meeting objects the user has some direct FGA grant on
    */
-  public async getUserMeetings(req: Request, projectUid?: string, foundationUid?: string, options?: { basic?: boolean }): Promise<Meeting[]> {
+  public async getUserMeetings(
+    req: Request,
+    projectUid?: string,
+    foundationUid?: string,
+    options?: { basic?: boolean; includeAttendance?: boolean }
+  ): Promise<Meeting[]> {
     // .catch — a foundation lookup failure degrades to an empty scope (caught by the empty-set
     // guard below), preventing a NATS/upstream blip from 500'ing the Me lens.
     const foundationProjectUids = foundationUid
@@ -532,58 +547,7 @@ export class UserService {
     // the pending-actions prerequisite queries. A successful empty lookup confirms null/[];
     // a failed lookup leaves both fields undefined. Unknown rows stay visible under All meetings
     // but do not enter response-specific filters unless the client retains a valid confirmed write.
-    const committeeMeetingIds = new Set<string>();
-    if (!options?.basic) {
-      const rawUsername = await getUsernameFromAuth(req);
-      const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-      const email = getEffectiveEmail(req) ?? '';
-
-      if ((email || username) && normalizedMeetings.length > 0) {
-        try {
-          const { userRsvps, activeRegistrants } = await this.fetchUserRsvpsAndRegistrants(req, email, username);
-          activeRegistrants.committeeMeetingIds.forEach((id) => committeeMeetingIds.add(id));
-
-          // Group all RSVPs per meeting so recurring series can be resolved against the
-          // occurrence the card is actually representing. Drop RSVPs whose `registrant_id` isn't
-          // in the active set; otherwise stale RSVPs from removed registrations would falsely
-          // mark meetings as "responded".
-          const rsvpsByMeeting = new Map<string, MeetingRsvp[]>();
-          for (const rsvp of userRsvps) {
-            if (!rsvp.meeting_id) continue;
-            if (!rsvp.registrant_id || !activeRegistrants.uids.has(rsvp.registrant_id)) continue;
-            const list = rsvpsByMeeting.get(rsvp.meeting_id);
-            if (list) list.push(rsvp);
-            else rsvpsByMeeting.set(rsvp.meeting_id, [rsvp]);
-          }
-
-          // Resolve each meeting's `my_rsvp` against its current/next occurrence via the shared
-          // resolver — same scope/precedence rules and seconds↔ms `occurrence_id` normalization
-          // used on the detail page. Non-recurring meetings resolve identically to before (no
-          // occurrence_id → single `all`-scoped row wins).
-          //
-          // Keep the newest series response when none applies to the current/next date.
-          // The dashboard checks scope before assigning a response filter; the pending-actions
-          // aggregation separately suppresses Set RSVP when any active-registrant response exists.
-          for (const meeting of normalizedMeetings) {
-            if (!meeting.id) continue;
-            meeting.my_registrant_ids = activeRegistrants.uidsByMeeting.get(meeting.id) ?? [];
-            const meetingRsvps = rsvpsByMeeting.get(meeting.id);
-            if (!meetingRsvps || meetingRsvps.length === 0) {
-              meeting.my_rsvp = null;
-              continue;
-            }
-            const occurrenceId = resolveRsvpOccurrenceId(meeting);
-            const candidates = meeting.recurrence && !occurrenceId ? meetingRsvps.filter((rsvp) => rsvp.scope === 'all') : meetingRsvps;
-            const applicable = selectApplicableRsvp(occurrenceId, candidates);
-            meeting.my_rsvp = applicable ?? selectApplicableRsvp(undefined, meetingRsvps);
-          }
-        } catch (error) {
-          logger.warning(req, 'get_user_meetings', 'RSVP enrichment failed, continuing without my_rsvp', {
-            err: error,
-          });
-        }
-      }
-    }
+    const committeeMeetingIds = options?.basic ? new Set<string>() : await this.attachViewerRsvps(req, normalizedMeetings, 'get_user_meetings');
 
     // Drop past meetings; recurring meetings survive if any occurrence is still active.
     // Basic mode powers pending-actions aggregation, where a completed meeting can't yield an
@@ -628,7 +592,11 @@ export class UserService {
       return sortedMeetings.map((m) => ({ ...m, invited: true }));
     }
 
-    const enriched = await this.meetingService.getMeetingProjectName(req, sortedMeetings);
+    const [withProjects, committeeNames] = await Promise.all([
+      this.meetingService.getMeetingProjectName(req, sortedMeetings),
+      this.meetingService.getCommitteeNameMap(req, sortedMeetings),
+    ]);
+    const enriched = this.withCommitteeNames(withProjects, committeeNames);
 
     // `invited: true` — every row has a direct host/participant FGA tuple by virtue of
     // `filter_grants=direct`, so the user is invited by definition. Data-shape marker, not an
@@ -637,7 +605,8 @@ export class UserService {
     // Remove confirmation, so a failed lookup just shows the generic text.
     const invited = enriched.map((m) => ({ ...m, invited: true, invited_via_committee: committeeMeetingIds.has(m.id) }));
 
-    return this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
+    const withAccess = await this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
+    return options?.includeAttendance ? attachMeetingRsvpSummaries(req, withAccess) : withAccess;
   }
 
   /**
@@ -651,9 +620,17 @@ export class UserService {
    * @param email - User's email address for participant lookup (attendance enrichment)
    * @param projectUid - Optional project UID to filter meetings by
    * @param foundationUid - Optional foundation UID to filter meetings by (OR across child projects)
+   * @param options - `includeArtifacts` adds `has_recording` / `recording_share_url` / `has_ai_summary` (batched recording and
+   *   summary index lookups); `includeAttendance` adds `attendance_summary` to the meetings the viewer organizes
    * @returns Array of PastMeeting objects the user has some direct FGA grant on
    */
-  public async getUserPastMeetings(req: Request, email: string, projectUid?: string, foundationUid?: string): Promise<PastMeeting[]> {
+  public async getUserPastMeetings(
+    req: Request,
+    email: string,
+    projectUid?: string,
+    foundationUid?: string,
+    options?: { includeArtifacts?: boolean; includeAttendance?: boolean }
+  ): Promise<PastMeeting[]> {
     logger.debug(req, 'get_user_past_meetings', 'Fetching user past meetings via filter_grants=direct', {
       has_project_filter: !!projectUid,
       has_foundation_filter: !!foundationUid,
@@ -754,13 +731,80 @@ export class UserService {
       this.applyUserAttendance(pastOnly, participants);
     }
 
-    const enriched = await this.meetingService.getMeetingProjectName(req, pastOnly);
+    // No ids means the artifact lookups issue no requests.
+    const pastMeetingIds = options?.includeArtifacts ? pastOnly.map((meeting) => meeting.id) : [];
+    const [withProjects, committeeNames, [recordingUrls, primarySummaries]] = await Promise.all([
+      this.meetingService.getMeetingProjectName(req, pastOnly),
+      this.meetingService.getCommitteeNameMap(req, pastOnly),
+      this.fetchPastMeetingArtifactMaps(req, 'get_user_past_meetings', pastMeetingIds),
+    ]);
+    const enriched = this.withCommitteeNames(withProjects, committeeNames);
 
     // Webhook-created past meetings carry a service-account created_by — join back to the live
     // v1_meeting index so the organizer chip resolves on Me-lens past cards.
     const withCreatedBy = await enrichMeetingsWithCreatedBy(req, enriched, (m) => m.meeting_id);
 
-    return this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
+    const accessed = await this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
+    const withAccess = options?.includeAttendance ? await attachPastMeetingAttendanceSummaries(req, accessed) : accessed;
+    if (options?.includeArtifacts) this.applyPastMeetingArtifacts(withAccess, recordingUrls, primarySummaries);
+    return withAccess;
+  }
+
+  /**
+   * Sets `my_rsvp`, `my_rsvps` and `my_registrant_ids` on each meeting from the viewer's active registrations.
+   * @description Each meeting's response is resolved against its current/next occurrence with the meeting page's
+   * scope rules, falling back to the newest series response. A successful empty lookup confirms null/[]; a failed
+   * lookup, or no viewer identity, leaves the fields undefined so the client treats the response as unknown.
+   * @returns The ids of meetings the viewer is registered to through a committee; empty when the lookup fails
+   */
+  public async attachViewerRsvps(req: Request, meetings: Meeting[], operation: string): Promise<Set<string>> {
+    const committeeMeetingIds = new Set<string>();
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
+    const email = getEffectiveEmail(req) ?? '';
+    if ((!email && !username) || meetings.length === 0) return committeeMeetingIds;
+
+    try {
+      const { userRsvps, activeRegistrants } = await this.fetchUserRsvpsAndRegistrants(req, email, username);
+      activeRegistrants.committeeMeetingIds.forEach((id) => committeeMeetingIds.add(id));
+
+      // RSVPs of removed registrations would otherwise mark meetings as answered.
+      const rsvpsByMeeting = new Map<string, MeetingRsvp[]>();
+      for (const rsvp of userRsvps) {
+        if (!rsvp.meeting_id || !rsvp.registrant_id || !activeRegistrants.uids.has(rsvp.registrant_id)) continue;
+        const list = rsvpsByMeeting.get(rsvp.meeting_id);
+        if (list) list.push(rsvp);
+        else rsvpsByMeeting.set(rsvp.meeting_id, [rsvp]);
+      }
+
+      for (const meeting of meetings) {
+        if (!meeting.id) continue;
+        meeting.my_registrant_ids = activeRegistrants.uidsByMeeting.get(meeting.id) ?? [];
+        const meetingRsvps = rsvpsByMeeting.get(meeting.id);
+        meeting.my_rsvps = meetingRsvps ?? [];
+        if (!meetingRsvps || meetingRsvps.length === 0) {
+          meeting.my_rsvp = null;
+          continue;
+        }
+        const occurrenceId = resolveRsvpOccurrenceId(meeting);
+        const candidates = meeting.recurrence && !occurrenceId ? meetingRsvps.filter((rsvp) => rsvp.scope === 'all') : meetingRsvps;
+        meeting.my_rsvp = selectApplicableRsvp(occurrenceId, candidates) ?? selectApplicableRsvp(undefined, meetingRsvps);
+      }
+    } catch (error) {
+      logger.warning(req, operation, 'RSVP enrichment failed, continuing without my_rsvp', { err: error });
+    }
+    return committeeMeetingIds;
+  }
+
+  /**
+   * Sets `has_recording`, `recording_share_url`, `has_ai_summary` and the organizer's summary approval fields on each
+   * past meeting, keyed by `meeting_and_occurrence_id`. A failed lookup leaves the fields undefined.
+   */
+  public async attachPastMeetingArtifacts(req: Request, meetings: PastMeeting[], operation: string): Promise<void> {
+    const ids = [...new Set(meetings.map((meeting) => meeting.meeting_and_occurrence_id).filter((id): id is string => !!id))];
+    if (ids.length === 0) return;
+    const [recordingUrls, primarySummaries] = await this.fetchPastMeetingArtifactMaps(req, operation, ids);
+    this.applyPastMeetingArtifacts(meetings, recordingUrls, primarySummaries);
   }
 
   /**
@@ -876,7 +920,11 @@ export class UserService {
       return [];
     }
 
-    const enriched = await this.meetingService.getMeetingProjectName(req, filtered);
+    const [withProjects, committeeNames] = await Promise.all([
+      this.meetingService.getMeetingProjectName(req, filtered),
+      this.meetingService.getCommitteeNameMap(req, filtered),
+    ]);
+    const enriched = this.withCommitteeNames(withProjects, committeeNames);
     // Webhook-created past meetings carry a service-account created_by — join back to the live
     // v1_meeting index so the organizer chip resolves on Me-lens latest-past cards.
     const withCreatedBy = await enrichMeetingsWithCreatedBy(req, enriched, (m) => m.meeting_id);
@@ -1224,6 +1272,113 @@ export class UserService {
         });
         return { participants: [] as PastMeetingParticipant[], loaded: false };
       });
+  }
+
+  /** Looks up the recording share URL and primary AI summary of each past meeting occurrence; no ids issues no requests. */
+  private fetchPastMeetingArtifactMaps(
+    req: Request,
+    operation: string,
+    pastMeetingIds: string[]
+  ): Promise<[Map<string, string | null>, Map<string, PastMeetingSummary | null>]> {
+    return Promise.all([
+      this.fetchPastMeetingArtifacts<PastMeetingRecording, string | null>(req, operation, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
+        getLargestSessionShareUrl(recording ?? null)
+      ),
+      // selectPrimaryPastMeetingSummary reads only `data` from each item.
+      this.fetchPastMeetingArtifacts<PastMeetingSummary, PastMeetingSummary | null>(req, operation, 'v1_past_meeting_summary', pastMeetingIds, (summaries) =>
+        selectPrimaryPastMeetingSummary(summaries.map((data) => ({ type: 'v1_past_meeting_summary', id: '', data })))
+      ),
+    ]);
+  }
+
+  /** Writes looked-up artifacts onto past meetings by `meeting_and_occurrence_id`; ids missing from a map stay undefined. */
+  private applyPastMeetingArtifacts(
+    meetings: PastMeeting[],
+    recordingUrls: Map<string, string | null>,
+    primarySummaries: Map<string, PastMeetingSummary | null>
+  ): void {
+    for (const meeting of meetings) {
+      const key = meeting.meeting_and_occurrence_id ?? meeting.id;
+      const recordingUrl = recordingUrls.get(key);
+      meeting.has_recording = recordingUrl === undefined ? undefined : recordingUrl !== null;
+      // Sent with the feed so the home page copies it within the click (Safari drops clipboard access after an await).
+      if (recordingUrl) meeting.recording_share_url = recordingUrl;
+      meeting.has_ai_summary = primarySummaries.has(key) ? getPastMeetingSummaryContent(meeting, primarySummaries.get(key)) !== null : undefined;
+      // Only an organizer gets a summary that awaits approval, so the flag never reaches an invitee.
+      const summary = meeting.has_ai_summary ? primarySummaries.get(key) : null;
+      if (summary) {
+        meeting.ai_summary_awaiting_approval = isPastMeetingSummaryAwaitingApproval(summary);
+        meeting.ai_summary_uid = summary.uid;
+      }
+    }
+  }
+
+  /** Maps past meeting ids to a value derived from their artifact rows via OR-tag batches; a failed batch's ids are omitted. */
+  private async fetchPastMeetingArtifacts<T, R>(
+    req: Request,
+    operation: string,
+    type: string,
+    pastMeetingIds: string[],
+    derive: (rows: T[]) => R
+  ): Promise<Map<string, R>> {
+    const values = new Map<string, R>();
+    const batches: string[][] = [];
+    for (let i = 0; i < pastMeetingIds.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(pastMeetingIds.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const fetchBatch = async (batch: string[]): Promise<void> => {
+      try {
+        const rows = await fetchAllQueryResources<T & { meeting_and_occurrence_id?: string }>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<T & { meeting_and_occurrence_id?: string }>>(
+              req,
+              'LFX_V2_SERVICE',
+              '/query/resources',
+              'GET',
+              {
+                type,
+                tags: batch.map((id) => `meeting_and_occurrence_id:${id}`),
+                page_size: QUERY_SERVICE_PAGE_SIZE,
+                ...(pageToken && { page_token: pageToken }),
+              }
+            ),
+          { failOnPartial: true }
+        );
+        const rowsById = new Map<string, T[]>();
+        for (const row of rows) {
+          if (!row.meeting_and_occurrence_id) continue;
+          const list = rowsById.get(row.meeting_and_occurrence_id);
+          if (list) list.push(row);
+          else rowsById.set(row.meeting_and_occurrence_id, [row]);
+        }
+        for (const id of batch) {
+          values.set(id, derive(rowsById.get(id) ?? []));
+        }
+      } catch (error) {
+        logger.warning(req, operation, 'Past meeting artifact lookup failed, leaving its fields unset', {
+          type,
+          batch_size: batch.length,
+          err: error,
+        });
+      }
+    };
+
+    for (let i = 0; i < batches.length; i += PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY) {
+      await Promise.all(batches.slice(i, i + PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY).map(fetchBatch));
+    }
+    return values;
+  }
+
+  /** Fills committee names, which the indexed feed lacks; a missed committee keeps its uid. */
+  private withCommitteeNames<T extends Meeting>(meetings: T[], names: Map<string, string>): T[] {
+    if (names.size === 0) return meetings;
+    return meetings.map((meeting) =>
+      meeting.committees?.length
+        ? { ...meeting, committees: meeting.committees.map((committee) => ({ ...committee, name: names.get(committee.uid) || committee.name })) }
+        : meeting
+    );
   }
 
   /**

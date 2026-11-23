@@ -131,9 +131,11 @@ export class SnowflakeService {
     // Generate query hash for deduplication
     const queryHash = this.lockManager.hashQuery(sqlText, binds, options);
 
-    const sqlOp = sqlText.trim().split(/\s+/)[0]?.toUpperCase() || 'QUERY';
+    // The statement without its leading comments: a commented query would otherwise be named `--` in traces.
+    const statement = this.stripLeadingComments(sqlText);
+    const sqlOp = statement.split(/\s+/)[0]?.toUpperCase() || 'QUERY';
     // Strip string literals from SQL for span attributes to avoid PII leaks
-    const sanitizedSql = sqlText.replace(/'[^']*'/g, '?').substring(0, 100);
+    const sanitizedSql = statement.replace(/'[^']*'/g, '?').substring(0, 100);
 
     // Lock first to deduplicate, then open span only for the executing query
     return this.lockManager.executeLocked(queryHash, async () => {
@@ -152,7 +154,7 @@ export class SnowflakeService {
         async (span) => {
           logger.debug(undefined, 'snowflake_query', 'Executing query', {
             query_hash: queryHash,
-            sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+            sql_preview: statement.substring(0, 100).replace(/\s+/g, ' ').trim(),
             bind_count: binds?.length || 0,
             circuit_state: this.circuitState,
           });
@@ -174,14 +176,31 @@ export class SnowflakeService {
             // complete callback so generic-pool holds the connection until the statement
             // finishes, keeping pool accounting (max, maxWaitingClients, acquireTimeout)
             // accurate for in-flight queries.
+            //
+            // A statement still running when the timeout fires is cancelled, so its complete
+            // callback fires with an error and the connection goes back to the pool instead of
+            // being held until Snowflake finishes. A timeout while still waiting for a pooled
+            // connection has no statement to cancel; `timedOut` makes the callback release that
+            // connection at once, without executing, when it finally arrives. A statement is kept
+            // for cancelling only while not `completed` (`complete` may fire synchronously, before
+            // `execute` returns), so a statement that finished is never cancelled.
+            let timedOut = false;
+            let runningStatement: Pick<RowStatement, 'cancel'> | undefined;
             const executePromise = pool.use(
               (connection: Connection) =>
                 new Promise<SnowflakeQueryResult<T>>((resolve, reject) => {
-                  connection.execute({
+                  if (timedOut) {
+                    reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`));
+                    return;
+                  }
+                  let completed = false;
+                  const statement = connection.execute({
                     sqlText,
                     binds: binds as any[],
                     fetchAsString: options?.fetchAsString,
                     complete: (err: SnowflakeError | undefined, stmt: RowStatement, rows: any[] | undefined) => {
+                      completed = true;
+                      runningStatement = undefined;
                       if (err) {
                         reject(err);
                       } else {
@@ -193,12 +212,19 @@ export class SnowflakeService {
                       }
                     },
                   });
+                  if (!completed) {
+                    runningStatement = statement;
+                  }
                 })
             );
 
             let timeoutHandle: ReturnType<typeof setTimeout>;
             const timeoutPromise = new Promise<never>((_, reject) => {
-              timeoutHandle = setTimeout(() => reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`)), queryTimeoutMs);
+              timeoutHandle = setTimeout(() => {
+                timedOut = true;
+                reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`));
+                this.cancelTimedOutStatement(runningStatement, queryHash, queryTimeoutMs);
+              }, queryTimeoutMs);
             });
 
             let result: SnowflakeQueryResult<T>;
@@ -231,10 +257,15 @@ export class SnowflakeService {
             // A caller that named an object exempts only that one: a missing CORE table in the same
             // statement is a genuine fault and must keep its error telemetry and breaker failure.
             const expectedObject = options?.expectMissingObject;
+            // A list exempts only an error blaming one of its objects, as a single name does.
+            const listedMissingObject =
+              typeof expectedObject === 'object' ? expectedObject.find((name) => SnowflakeService.isMissingObjectError(error, name)) : undefined;
             const expectedMissing =
               expectedObject !== undefined &&
               expectedObject !== false &&
-              SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined);
+              (typeof expectedObject === 'object'
+                ? listedMissingObject !== undefined
+                : SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined));
             const expectedIdentifier = [options?.expectInvalidIdentifier ?? []].flat().find((identifier) => isInvalidIdentifierError(error, identifier));
             const expectedInvalidIdentifier = expectedIdentifier !== undefined;
             const poolQueueFull = isPoolQueueFullError(error);
@@ -244,7 +275,7 @@ export class SnowflakeService {
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
               if (expectedMissing) {
-                span.setAttribute('snowflake.expected_missing_object', typeof expectedObject === 'string' ? expectedObject : true);
+                span.setAttribute('snowflake.expected_missing_object', typeof expectedObject === 'string' ? expectedObject : (listedMissingObject ?? true));
               }
               if (expectedInvalidIdentifier) {
                 span.setAttribute('snowflake.expected_invalid_identifier', expectedIdentifier);
@@ -561,6 +592,27 @@ export class SnowflakeService {
   }
 
   /**
+   * Cancel a statement that outlived its per-query timeout, so Snowflake stops it and its complete callback releases the
+   * pooled connection. Runs on the timer: a cancel failure is logged, never thrown. No statement (still waiting for a
+   * connection, or already complete) does nothing.
+   * @private
+   */
+  private cancelTimedOutStatement(statement: Pick<RowStatement, 'cancel'> | undefined, queryHash: string, timeoutMs: number): void {
+    if (!statement) {
+      return;
+    }
+    const warn = (err: unknown): void =>
+      logger.warning(undefined, 'snowflake_query', 'Failed to cancel a timed-out query', { query_hash: queryHash, timeout_ms: timeoutMs, err });
+    try {
+      statement.cancel((err) => {
+        if (err) warn(err);
+      });
+    } catch (error) {
+      warn(error);
+    }
+  }
+
+  /**
    * Throw immediately if the circuit is OPEN and the reset timeout hasn't elapsed.
    * Transitions OPEN → HALF_OPEN once the timeout passes, allowing one probe query.
    * @private
@@ -695,13 +747,24 @@ export class SnowflakeService {
       }
     }
 
-    // Ensure query starts with SELECT or WITH (for CTEs)
-    if (!/^\s*SELECT\b/i.test(normalizedSql) && !/^\s*WITH\b/i.test(normalizedSql)) {
+    // Ensure query starts with SELECT or WITH (for CTEs). Leading comments are skipped so a query can be documented
+    // above its SELECT; the write-operation scan above already covers the whole text, comments included.
+    const statementStart = this.stripLeadingComments(normalizedSql);
+    if (!/^SELECT\b/i.test(statementStart) && !/^WITH\b/i.test(statementStart)) {
       logger.warning(undefined, 'snowflake_validation', 'Blocked non-SELECT query (not starting with SELECT or WITH)', {
         sql_preview: normalizedSql.substring(0, 100),
       });
       throw new Error('Only SELECT queries are allowed');
     }
+  }
+
+  /**
+   * Drop the whitespace, `--` line comments and slash-star block comments that precede a statement. An unterminated
+   * block comment is left in place, so the caller's SELECT/WITH check still rejects it.
+   * @private
+   */
+  private stripLeadingComments(sql: string): string {
+    return sql.replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '');
   }
 
   /**

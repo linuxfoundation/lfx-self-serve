@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { PLATFORM_ID, type Provider } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
@@ -3709,7 +3710,8 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     ...over,
   });
 
-  beforeEach(async () => {
+  /** The module this suite renders in; `extraProviders` lets one spec render as a server would (#4983). */
+  async function setUp(extraProviders: Provider[] = []): Promise<void> {
     updateCampaignBid = vi.fn().mockReturnValue(of(bidResult()));
     updateCampaignBudget = vi
       .fn()
@@ -3720,6 +3722,7 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     await TestBed.configureTestingModule({
       imports: [OptimizationTabComponent],
       providers: [
+        ...extraProviders,
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: messageAdd } },
         ConfirmationService,
@@ -3755,6 +3758,10 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     fixture = TestBed.createComponent(OptimizationTabComponent);
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('briefId', 'b-1');
+  }
+
+  beforeEach(async () => {
+    await setUp();
   });
 
   function render(campaigns: CampaignIndexDoc[] | null): void {
@@ -3764,6 +3771,36 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
   }
 
   const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  /** #4983 ("ss-4"): the labels that tell a brief's campaigns on one platform apart, "—" when absent. */
+  it('shows each campaign\'s channel, stage, tactic and created date, and "—" for a legacy campaign', () => {
+    render([
+      doc({ id: 'g-2', platform: 'google-ads', variant: 'demand-gen', funnel_stage: 'top', tactic: 'prospecting', created_at: '2026-11-02T12:00:00Z' }),
+      doc({ id: 'm-1' }),
+    ]);
+
+    const labels = (id: string): string[] =>
+      ['channel', 'stage', 'tactic', 'created'].map((column) => q(`optimization-campaign-${column}-${id}`)?.textContent?.trim() ?? 'missing');
+    // The viewer's own calendar day, so the assertion holds in any CI time zone.
+    expect(labels('g-2')).toEqual([
+      'Demand Gen',
+      'Top of funnel',
+      'Prospecting',
+      new Date('2026-11-02T12:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+    ]);
+    expect(labels('m-1')).toEqual(['—', '—', '—', '—']);
+    const terms = [...(q('optimization-campaign-labels-g-2')?.querySelectorAll('dt') ?? [])].map((dt) => dt.textContent?.trim());
+    expect(terms).toEqual(['Channel:', 'Stage:', 'Tactic:', 'Created:']);
+  });
+
+  it("leaves the created date to the browser during a server render, so the server's day is never shown", async () => {
+    TestBed.resetTestingModule();
+    await setUp([{ provide: PLATFORM_ID, useValue: 'server' }]);
+    render([doc({ id: 'g-2', platform: 'google-ads', variant: 'default', created_at: '2026-11-02T12:00:00Z' })]);
+
+    expect(q('optimization-campaign-created-g-2')?.textContent?.trim()).toBe('—');
+    expect(q('optimization-campaign-channel-g-2')?.textContent?.trim()).toBe('Search');
+  });
 
   function bidForm(id = 'c-1'): CampaignBidFormComponent {
     const form = fixture.debugElement.queryAll(By.directive(CampaignBidFormComponent)).find((de) => de.componentInstance.campaignId() === id);

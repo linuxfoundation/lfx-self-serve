@@ -85,7 +85,7 @@
               <lfx-button
                 [label]="'Open ' + voteLabel.singular"
                 [loading]="submitting()"
-                [disabled]="confirmingOpenVote()"
+                [disabled]="confirmingOpenVote() || !meetsVoterMinimum()"
                 severity="info"
                 (onClick)="onSubmit()"
                 data-testid="vote-manage-submit-btn">
@@ -109,7 +109,13 @@
         <div class="p-6 md:p-8 min-h-[680px]">
           <p-step-panel [value]="1" data-testid="vote-manage-panel-1">
             <ng-template #content>
-              <lfx-vote-basics [form]="form()" [formValue]="formValue" [isEditMode]="isEditMode()" [committeeContext]="committeeContext()"> </lfx-vote-basics>
+              <lfx-vote-basics
+                [form]="form()"
+                [formValue]="formValue"
+                [isEditMode]="isEditMode()"
+                [committeeContext]="committeeContext()"
+                [eligibleVoterCountState]="eligibleVoterCountState()">
+              </lfx-vote-basics>
             </ng-template>
           </p-step-panel>
 

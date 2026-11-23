@@ -25,6 +25,10 @@ export const DEFAULT_ORG_PROJECTS_WORKSPACES: ReadonlyArray<OrgProjectsWorkspace
 
 export const DEFAULT_ALL_ACTIVITIES_PROJECT_LIMIT = 50;
 
+/** Tooltip on the Contributors column header (HTML): team members are left out by default (lfx-self-serve-ops#1246). */
+export const ORG_PROJECTS_CONTRIBUTORS_TOOLTIP =
+  'Our <strong>Contributors</strong> are our employees who have contributed code to this project. CDP team members are excluded by default; choose Include team members under More filters to count them.';
+
 /** Display labels for influence bands. */
 export const INFLUENCE_BAND_LABELS: Record<InfluenceBand, string> = {
   leading: 'Leading',

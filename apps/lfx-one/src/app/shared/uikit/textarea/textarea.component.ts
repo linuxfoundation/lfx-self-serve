@@ -52,7 +52,7 @@ export class UiTextareaComponent implements ControlValueAccessor {
   public readonly placeholder = input<string>('');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Marks the field as required for assistive technology. */
+  /** Marks the field as required for assistive technology and adds a red asterisk to the visible label. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native `maxlength`: the browser stops typing at this many characters. Leave unset for no limit, and say the limit in `hint`. */
   public readonly maxlength = input<number | null, unknown>(null, { transform: (v: unknown) => numberAttribute(v, -1) });
@@ -130,9 +130,9 @@ export class UiTextareaComponent implements ControlValueAccessor {
     return computed(() => {
       // Library recipe (same as Input): 1px ring at rest, stronger ring plus a 4px halo on focus (accent) or error (danger).
       const dangerHalo = 'shadow-[0_0_0_1px_theme(colors.ui.danger.700),0_0_0_4px_theme(colors.ui.danger.200)]';
-      const interactive = '[&:hover:not(:focus)]:edge-hover focus:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
+      const interactive = '[&:hover:not(:focus)]:edge-control-hover focus:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
       // A disabled field keeps the resting ring only, so it does not look interactive on hover.
-      const rest = this.isDisabled() ? 'edge' : `edge ${interactive}`;
+      const rest = this.isDisabled() ? 'edge-control' : `edge-control ${interactive}`;
       // Library keeps one danger look focused or not, so no focus variant on an invalid field.
       const ring = this.error() ? dangerHalo : rest;
       const fill = this.isDisabled() ? 'bg-ui-neutral-50 text-ui-neutral-500 cursor-not-allowed' : 'bg-ui-background-100 text-ui-neutral-900';

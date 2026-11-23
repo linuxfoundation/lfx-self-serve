@@ -12,6 +12,7 @@ import type {
   VoteVoterStatus,
 } from '../enums/poll.enum';
 import type { PaginatedResponse } from './api.interface';
+import type { TagSeverity } from './components.interface';
 import type { CommitteeReference } from './committee.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
 
@@ -273,6 +274,8 @@ export interface Vote {
   num_winners?: number;
   /** Whether to allow abstain option */
   allow_abstain?: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends; absent means allowed */
+  allow_vote_change?: boolean;
   /** Questions in this poll */
   poll_questions?: PollQuestion[];
   /** Optional comment prompts for voter feedback */
@@ -328,6 +331,12 @@ export interface VoteTableRow extends Vote {
   editCommands: string[];
   /** Per-row edit-link query params — `project` from the row's own project_slug, `committee_uid` from its committee. A table-level record can't express per-row projects (dashboard rows span projects). */
   editQueryParams: Record<string, string>;
+  /** Group name shown in the Group column; null when the vote has no named group. */
+  groupName: string | null;
+  /** Canonical group-details link commands from the vote's own project tier; null when there is no group uid, or the table is already showing that group. */
+  groupCommands: string[] | null;
+  /** `?project=` for the group link — present only when the vote carries a `project_slug`. */
+  groupQueryParams: { project: string } | null;
 }
 
 /** Vote shape as returned by the query service indexer; uses `vote_uid` (v2 PK) not `uid`. Normalize before passing downstream. */
@@ -641,6 +650,10 @@ export interface VoteLinkBallotState {
   vote_status: string;
   already_voted: boolean;
   voter_removed: boolean;
+  /** ITX's answer to whether this submitted ballot can still be changed; omitted when ITX omits it */
+  can_change_vote?: boolean;
+  /** Point-in-time: whether submitting this ballot now would end the vote (#4726); missing is treated as false */
+  would_end_vote?: boolean;
   abstained?: boolean;
   poll_answers?: IndexedPollAnswer[];
   comment_responses?: CommentResponseInput[];
@@ -661,6 +674,8 @@ export interface VoteLinkBallot {
   end_time: string;
   poll_type: string;
   allow_abstain?: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends; absent means allowed */
+  allow_vote_change?: boolean;
   pseudo_anonymity?: boolean;
   poll_questions: PollQuestion[];
   poll_comment_prompts?: PollCommentPrompt[];
@@ -699,16 +714,104 @@ export interface VoteSummaryRecipient {
   uid: string;
   /** Invitee's display name */
   user_name?: string;
+  /** Invitee's LFID username, used when the display name is unavailable */
+  username?: string;
   /** Invitee's email address */
   user_email?: string;
 }
 
 /** Response for POST /api/votes/:uid/summary (#3662) */
 export interface SendVoteSummaryResponse {
-  /** Number of distinct recipients the summary was sent to */
+  /** Number of distinct recipients the summary was confirmed sent to */
   recipient_count: number;
-  /** Number of recipients the send failed for (e.g. a rejected address) — a partial send is not an error */
+  /** Number of recipients whose send was confirmed not to have happened (e.g. a rejected address) — a partial send is not an error */
   failed_count: number;
+  /** Number of invited voters with no email address on file, so nothing could be sent to them */
+  skipped_count: number;
+  /** Number of recipients whose send outcome is unknown (the request failed or timed out), so the email may already have been delivered */
+  uncertain_count: number;
+  /**
+   * Per-voter outcome (#4830). One email goes to each unique address, so every voter sharing an
+   * address shares that address's outcome; voters with no email address are `skipped`.
+   */
+  recipients: VoteSummaryRecipientResult[];
+}
+
+/** Per-voter outcome of a vote summary send (#4830). */
+export type VoteSummaryRecipientOutcome = 'sent' | 'failed' | 'skipped' | 'uncertain';
+
+/** A summary recipient with the outcome of its address's send (#4830). */
+export interface VoteSummaryRecipientResult extends VoteSummaryRecipient {
+  /** Send outcome for this voter's email address */
+  outcome: VoteSummaryRecipientOutcome;
+}
+
+/** Summary recipients split by whether they can be emailed (#4830); shared by the preview and the send so both agree. */
+export interface VoteSummaryRecipientPartition {
+  /** Voters with an email address, in input order */
+  ready: VoteSummaryRecipient[];
+  /** Voters with no email address, in input order */
+  missingEmail: VoteSummaryRecipient[];
+  /** The first voter per lower-cased email address — one send each */
+  uniqueEmailRecipients: VoteSummaryRecipient[];
+  /** Number of ready voters whose lower-cased address is also used by another voter */
+  sharedEmailVoterCount: number;
+}
+
+/** Response for GET /api/votes/:uid/summary-recipients (#4830). Identity fields only. */
+export interface VoteSummaryPreviewResponse {
+  /** Voters who will receive the summary */
+  ready: VoteSummaryRecipient[];
+  /** Voters with no email address, who cannot receive the summary */
+  missing_email: VoteSummaryRecipient[];
+  /** Number of unique (case-insensitive) email addresses the summary will be sent to */
+  unique_email_count: number;
+  /** Number of ready voters whose address is also used by another voter */
+  shared_email_voter_count: number;
+}
+
+/** Tag label, severity and meaning shown for one summary send outcome (#4830). */
+export interface VoteSummaryOutcomeDisplay {
+  /** Tag label */
+  label: string;
+  /** Tag severity */
+  severity: TagSeverity;
+  /** What the outcome means for the voter */
+  description: string;
+}
+
+/** One outcome group in the send-summary results view (#4830). */
+export interface VoteSummaryResultGroup {
+  /** The shared outcome */
+  outcome: VoteSummaryRecipientOutcome;
+  /** How the outcome is labelled and explained */
+  display: VoteSummaryOutcomeDisplay;
+  /** Voters with this outcome */
+  recipients: VoteSummaryRecipientResult[];
+}
+
+/** In-memory summary attempt retained across in-app navigation for the effective user (#4830). */
+export interface VoteSummarySendAttempt {
+  /** The reviewed identities used when send-time recipient details are unavailable. */
+  preview: VoteSummaryPreviewResponse;
+  status: 'sending' | 'success' | 'error';
+  response?: SendVoteSummaryResponse;
+  error?: unknown;
+}
+
+/** Steps of the send-summary dialog (#4830). */
+export type VoteSummaryDialogPhase = 'review' | 'confirm' | 'sending' | 'results';
+
+/** How the client reports the outcome of a vote summary send (#4689). */
+export interface VoteSummarySendNotice {
+  /** Presentation severity; the persistent results dialog uses only the heading and detail */
+  severity: 'success' | 'info' | 'warn';
+  /** Results-summary heading */
+  summary: string;
+  /** Results-summary detail describing the known sent, skipped, failed and uncertain voter outcomes */
+  detail: string;
+  /** Legacy toast lifetime hint in milliseconds; ignored by the persistent results dialog */
+  life?: number;
 }
 
 /** Data the on-demand vote-close summary email (#3662) is rendered from. */
@@ -848,6 +951,8 @@ export interface VoteFormValue {
   committee: CommitteeReference | null;
   /** Eligible participants filter value */
   eligible_participants: string;
+  /** Voting method — chosen on create, locked once the vote exists */
+  poll_type: PollType;
   /** Vote close/end date */
   close_date: Date | null;
   /** Vote close time in 12-hour format (e.g. "11:59 PM") */
@@ -856,10 +961,57 @@ export interface VoteFormValue {
   timezone: string;
   /** Whether voters may abstain from voting */
   allow_abstain: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends */
+  allow_vote_change: boolean;
   /** Array of question form values */
   questions: QuestionFormValue[];
   /** Array of comment-prompt form values (optional, creator authoring only) */
   commentPrompts: CommentPromptFormValue[];
+}
+
+/**
+ * A voting method offered when creating a vote
+ * @description Shared by the Create Vote dropdown and the form's Voting Method select, so adding a
+ * method is one entry in `VOTE_METHOD_OPTIONS`.
+ */
+export interface VoteMethodOption {
+  /** Display label for the method (e.g. "Plurality") */
+  label: string;
+  /** Voting method sent as `poll_type` */
+  value: PollType;
+  /** Supporting copy explaining how the method picks a winner */
+  description: string;
+  /** Font Awesome icon classes for the method */
+  icon: string;
+  /** Unavailable for new votes; does not change existing votes or ballots. */
+  disabled?: boolean;
+}
+
+/**
+ * Extra per-row fields the Create Vote dropdown renders alongside the label and icon a PrimeNG
+ * `MenuItem` already carries.
+ * @description Mirrors `MeetingCreateMenuRow` — free of any PrimeNG import, intersected with
+ * `MenuItem` at the component boundary and read from the menu's `item` template.
+ */
+export interface VoteCreateMenuRow {
+  /** Supporting copy shown under the row's title */
+  description: string;
+  /** Tailwind classes for the row's icon tile — background plus icon colour */
+  tileClass: string;
+  /** `data-testid` for the row, since the template replaces PrimeNG's own item markup */
+  testId: string;
+}
+
+/**
+ * How many group members a Condorcet IRV vote would go to, as the create form knows it
+ * @description `idle` when the count doesn't apply (plurality, or no group chosen yet); `error` when
+ * the group's members couldn't be fetched, which never blocks the form since the backend accepts the vote.
+ */
+export interface VoteEligibleVoterCountState {
+  /** Where the count is in its fetch */
+  status: 'idle' | 'loading' | 'loaded' | 'error';
+  /** Eligible voter count once `loaded`, otherwise null */
+  count: number | null;
 }
 
 /**
@@ -1092,7 +1244,7 @@ export interface PollCommentResult {
 export interface CommentResponseView extends PollCommentResponse {
   /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
   paragraphs: string[];
-  /** Position in the rendered list — the prompt's full response list on the Comments tab, the preview list on the Overview. The Comments tab tracks text-only responses by it, a privacy-safe identity across pages; the Overview tracks by `previewKey`. */
+  /** Position in the rendered list — the prompt's response list on Comments or the Overview preview list. Text-only responses track by this privacy-safe identity; the Overview tracks by `previewKey`. */
   position: number;
   /** UI-only question text for answers flattened into the Overview preview. */
   promptText?: string;
@@ -1101,20 +1253,15 @@ export interface CommentResponseView extends PollCommentResponse {
 }
 
 /**
- * Results view model for one comment prompt's results page
- * @description PollCommentResult with `responses` decorated for display and sliced to the
- * current page; `totalResponses` and `first` keep the pre-slice count and page offset so the
- * paginator can render against the full list. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
+ * Results view model for one comment prompt's continuous response list
+ * @description PollCommentResult with all returned `responses` decorated for display.
+ * Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
  */
-export interface CommentResultPageView extends Omit<PollCommentResult, 'responses'> {
-  /** Page-sliced responses with display-ready paragraph splits */
+export interface CommentResultView extends Omit<PollCommentResult, 'responses'> {
+  /** All returned responses with display-ready paragraph splits */
   responses: CommentResponseView[];
-  /** Post-BFF-cap response count before pagination slicing; the pre-cap total lives in `total_responses` */
+  /** Post-BFF-cap response count; the pre-cap total lives in `total_responses` */
   totalResponses: number;
-  /** Offset of the first visible response within the full responses list */
-  first: number;
-  /** Current page size (responses per page) */
-  rows: number;
 }
 
 /**
@@ -1212,6 +1359,8 @@ export interface CreateVoteRequest {
   num_winners?: number;
   /** Whether to allow abstain option */
   allow_abstain?: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends; absent means allowed */
+  allow_vote_change?: boolean;
   /** Quorum percentage required for vote to be valid */
   quorum_percentage?: number;
   /** Winning threshold percentage required */
@@ -1274,6 +1423,19 @@ export interface CreateVoteResponseRequest {
 }
 
 /**
+ * Request body for changing the caller's own submitted ballot (PUT /api/votes/:uid/my-response, #4723)
+ * @description The BFF resolves the ballot from the caller's own row; the client never supplies a response uid.
+ */
+export interface UpdateMyVoteResponseRequest {
+  /** Whether the voter is abstaining */
+  abstain: boolean;
+  /** Voter's answers — required when not abstaining */
+  user_vote_content?: VoteAnswerInput[];
+  /** Voter's responses to optional comment prompts; replaces the stored comments */
+  comment_responses?: CommentResponseInput[];
+}
+
+/**
  * Upstream GET /vote_responses/{vote_response_uid} subset read by the BFF (#4331).
  * @description Read straight from the voting service, which (unlike the query-service index)
  * returns ballot content on pseudo-anonymous votes too. Never forwarded to the client as-is.
@@ -1293,6 +1455,10 @@ export interface VoteResponseDetail {
   comment_responses?: CommentResponseInput[];
   /** When the ballot was last submitted */
   vote_creation_time?: string;
+  /** ITX's answer to whether this ballot can still be changed; omitted when ITX omits it */
+  can_change_vote?: boolean;
+  /** Point-in-time: whether submitting this pending response now would end the vote (#4726); missing is treated as false */
+  would_end_vote?: boolean;
 }
 
 /**
@@ -1312,6 +1478,31 @@ export interface MyVoteBallot {
   comment_responses: CommentResponseInput[];
   /** When the ballot was last submitted */
   vote_creation_time?: string;
+  /** Whether this ballot can still be changed, passed through from ITX; omitted when ITX omits it */
+  can_change_vote?: boolean;
+}
+
+/**
+ * Returned by GET /api/votes/:uid/my-response/would-end-vote (#4726).
+ * @description Whether the caller's first submission would end the vote, read at submit time. Advisory and point-in-time.
+ */
+export interface MyVoteWouldEndVote {
+  /** True only when the caller's pending response is the last one outstanding */
+  would_end_vote: boolean;
+}
+
+/** Inputs to `canChangeSubmittedBallot` (#4723), shared by the vote-link page and the Me-lens Review drawer. */
+export interface VoteBallotChangeEligibility {
+  /** ITX's own answer when reported; it wins over the derived fallback */
+  canChangeVote?: boolean;
+  /** The vote's setting; absent means allowed */
+  allowVoteChange?: boolean;
+  /** The vote's raw status */
+  status?: string | null;
+  /** Whether the voter has a submitted ballot */
+  submitted: boolean;
+  /** Whether the voter has been removed from the vote */
+  voterRemoved: boolean;
 }
 
 /** Cast-drawer form values derived from a `MyVoteBallot` (#4331), keyed by question id / prompt id. */
@@ -1358,6 +1549,8 @@ export interface UpdateVoteRequest {
   num_winners?: number;
   /** Whether to allow abstain option */
   allow_abstain?: boolean;
+  /** Whether voters may change a submitted ballot until the vote ends; omitted keeps the stored value */
+  allow_vote_change?: boolean;
   /** Quorum percentage required for vote to be valid */
   quorum_percentage?: number;
   /** Winning threshold percentage required */

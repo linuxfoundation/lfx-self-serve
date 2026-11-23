@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="members-at-risk">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="members-at-risk">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -15,137 +15,82 @@
   } @else if (empty()) {
     <!-- The shell shows the section's empty state. -->
   } @else {
-    <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-at-risk-controls">
-      <lfx-filter-pills
-        variant="track"
-        [options]="filterOptions"
-        [selectedFilter]="bucket()"
-        (filterChange)="onBucketChange($event)"
-        data-testid="members-at-risk-pills" />
-      <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-at-risk-count">
-        @if (loading()) {
-          &mdash;
-        } @else {
-          {{ countLabel() }}
-        }
-      </span>
-    </div>
+    <lfx-health-metrics-metrics-row [items]="metrics()" testId="members-at-risk-metrics" />
 
-    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-at-risk-hero">
-      <div class="flex flex-col gap-2">
-        <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-red-600" data-testid="members-at-risk-outstanding">{{
-          summary().outstandingLabel
-        }}</span>
-        <span class="text-[12px] text-gray-500">Outstanding balance</span>
-      </div>
+    @if (!loading() && totalRecords() === 0) {
+      <p class="m-0 py-[24px] text-center text-[13px] text-gray-500" data-testid="members-at-risk-no-match">Nothing matches this view.</p>
+    } @else {
+      <!-- The design's 620px minimum; a narrower card scrolls the table sideways. -->
+      <lfx-table
+        styleClass="hm-table"
+        [rowHover]="false"
+        [value]="rowViews()"
+        [loading]="loading()"
+        [paginator]="false"
+        [tableStyle]="{ 'min-width': '620px' }"
+        data-testid="members-at-risk-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col" [attr.aria-sort]="sorting.headers().company.ariaSort">
+              <lfx-health-metrics-th
+                label="Company"
+                [sort]="sorting.headers().company.state"
+                (sorted)="sorting.toggle('company')"
+                data-testid="members-at-risk-sort-company" />
+            </th>
+            <th scope="col" class="w-[22%]" [attr.aria-sort]="sorting.headers().membership.ariaSort">
+              <lfx-health-metrics-th
+                label="Membership"
+                [sort]="sorting.headers().membership.state"
+                (sorted)="sorting.toggle('membership')"
+                data-testid="members-at-risk-sort-membership" />
+            </th>
+            <th scope="col" class="w-[16%] text-right" [attr.aria-sort]="sorting.headers().overdue.ariaSort">
+              <lfx-health-metrics-th
+                label="Overdue"
+                [sort]="sorting.headers().overdue.state"
+                (sorted)="sorting.toggle('overdue')"
+                data-testid="members-at-risk-sort-overdue" />
+            </th>
+            <!-- The design's 16px spacer between the amount and its age; it has no header, so it does not sort. -->
+            <td class="w-[16px]" aria-hidden="true"></td>
+            <th scope="col" class="w-[16%]" [attr.aria-sort]="sorting.headers().age.ariaSort">
+              <lfx-health-metrics-th label="Age" [sort]="sorting.headers().age.state" (sorted)="sorting.toggle('age')" data-testid="members-at-risk-sort-age" />
+            </th>
+          </tr>
+        </ng-template>
 
-      <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-at-risk-side">
-        <div class="flex flex-col gap-0.5">
-          <dt class="text-[12px] text-gray-500">High risk</dt>
-          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-at-risk-high">{{ summary().highRiskLabel }}</dd>
-        </div>
-        <div class="flex flex-col gap-0.5">
-          <dt class="text-[12px] text-gray-500">Medium risk</dt>
-          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-at-risk-medium">
-            {{ summary().mediumRiskLabel }}
-          </dd>
-        </div>
-        <div class="flex flex-col gap-0.5">
-          <dt class="text-[12px] text-gray-500">Members at risk</dt>
-          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-red-600" data-testid="members-at-risk-members">
-            {{ summary().memberCountLabel }}
-          </dd>
-        </div>
-      </dl>
-    </div>
+        <ng-template #body let-view>
+          <tr [attr.data-testid]="'members-at-risk-row-' + view.accountId">
+            <td>
+              <lfx-health-metrics-cell
+                [text]="view.name"
+                [lead]="{ kind: 'company', name: view.name, logoUrl: view.logoUrl }"
+                [description]="view.lastEngagedLabel"
+                [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-name'" />
+            </td>
+            <td>
+              <lfx-health-metrics-cell
+                textClass="text-gray-900"
+                [text]="view.membershipLabel"
+                [tier]="view.tier"
+                [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-membership'" />
+            </td>
+            <td>
+              <lfx-health-metrics-cell class="items-end" [text]="view.overdueLabel" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-overdue'" />
+            </td>
+            <td aria-hidden="true"></td>
+            <td>
+              <lfx-health-metrics-cell
+                [text]="view.ageLabel"
+                [dotClass]="view.ageDotClass"
+                [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-age'" />
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
 
-    @if (aging().length) {
-      <div class="flex flex-col gap-3" data-testid="members-at-risk-aging">
-        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Aging</h4>
-        <ul class="flex flex-col gap-2.5">
-          @for (bar of aging(); track bar.bucket) {
-            <li class="flex flex-col gap-1" [attr.data-testid]="'members-at-risk-aging-' + bar.bucket">
-              <div class="flex items-baseline justify-between gap-2 text-[13px]">
-                <span class="text-gray-700">{{ bar.label }}</span>
-                <span class="tabular-nums text-gray-900" [attr.data-testid]="'members-at-risk-aging-' + bar.bucket + '-value'">{{ bar.balanceLabel }}</span>
-              </div>
-              <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
-                <div class="h-full rounded-full" [class]="barClass" [style.width.%]="bar.widthPct"></div>
-              </div>
-            </li>
-          }
-        </ul>
-      </div>
+      <lfx-ui-pagination [total]="totalRecords()" [pageSize]="size" [(page)]="page" />
     }
-
-    <lfx-table
-      styleClass="hm-table"
-      [rowHover]="false"
-      [value]="rowViews()"
-      [loading]="loading()"
-      [lazy]="true"
-      [lazyLoadOnInit]="false"
-      [paginator]="totalRecords() > size"
-      [rows]="size"
-      [first]="first()"
-      [totalRecords]="totalRecords()"
-      [showCurrentPageReport]="true"
-      [showFirstLastIcon]="false"
-      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-      [scrollable]="true"
-      [tableStyle]="{ 'min-width': '640px' }"
-      (onPage)="onTablePage($event)"
-      data-testid="members-at-risk-table">
-      <ng-template #header>
-        <tr>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Tier</span></th>
-          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Overdue</span></th>
-          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Age</span></th>
-          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Last engaged</span></th>
-        </tr>
-      </ng-template>
-
-      <ng-template #body let-view>
-        <tr [attr.data-testid]="'members-at-risk-row-' + view.accountId">
-          <td>
-            <span class="text-[13px] font-semibold text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-name'">{{
-              view.accountName
-            }}</span>
-          </td>
-          <td>
-            <span
-              class="rounded-full px-2 py-0.5 text-[12px] font-medium"
-              [class]="tierPillClass"
-              [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-tier'"
-              >{{ view.tierLabel }}</span
-            >
-          </td>
-          <td class="text-right">
-            <span class="text-[13px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-overdue'">{{
-              view.overdueLabel
-            }}</span>
-          </td>
-          <td class="text-right">
-            <span class="text-[13px] tabular-nums text-red-600" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-age'">{{ view.ageLabel }}</span>
-          </td>
-          <td class="text-right">
-            <span class="text-[13px] tabular-nums text-amber-700" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-last-engaged'">{{
-              view.lastEngagedLabel
-            }}</span>
-          </td>
-        </tr>
-      </ng-template>
-
-      <ng-template #emptymessage>
-        <tr>
-          <td colspan="5" class="py-6 text-center text-[13px] text-gray-500" data-testid="members-at-risk-no-match">
-            @if (!loading()) {
-              No member is in this aging bucket.
-            }
-          </td>
-        </tr>
-      </ng-template>
-    </lfx-table>
   }
 </div>

@@ -7,7 +7,7 @@ import { UiButtonVariant } from '@lfx-one/shared/interfaces';
 import { UiButtonComponent } from '../button/button.component';
 
 /**
- * Reveals the rest of a long list or block in place: a small button between two rules, "Show 12 More" then "Show Less".
+ * Reveals the rest of a long list or block in place: a default-size button between two rules, "Show 12 More" then "Show Less".
  * The component only owns the button. The page owns the content: render the extra rows when `expanded` is true, give
  * their container the id passed as `controls`, and move focus to the first revealed row.
  */
@@ -47,13 +47,13 @@ export class UiShowMoreComponent {
     });
   }
 
-  // Library: a small secondary button; the borderless form drops to tertiary (as in the library preview).
+  // Library: a default-size secondary button; the borderless form drops to tertiary (as in the library preview).
   private initVariant(): Signal<UiButtonVariant> {
     return computed(() => (this.noBorder() ? 'tertiary' : 'secondary'));
   }
 
   private initButtonClasses(): Signal<string> {
-    // The library's 12px chevron flips when expanded. Exact px, not rem; `button>i` outranks the button's own 16px icon rule.
+    // The library's 12px chevron flips when expanded. Exact px, not rem; `button>i` outranks the button's own 14px icon rule.
     const base = '[&_button>i]:text-[12px] [&_button>i]:transition-transform [&_button>i]:duration-ui-base motion-reduce:[&_button>i]:transition-none';
     return computed(() => (this.expanded() ? `${base} [&_button>i]:rotate-180` : base));
   }

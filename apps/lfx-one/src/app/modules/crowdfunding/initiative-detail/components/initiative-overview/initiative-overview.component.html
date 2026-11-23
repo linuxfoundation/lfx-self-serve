@@ -10,7 +10,7 @@
     <!-- About card -->
     <lfx-card data-testid="about-card">
       <div class="text-sm font-bold text-gray-900 mb-4">About this Initiative</div>
-      <p class="text-sm text-gray-600 leading-relaxed mb-3">{{ initiative().description }}</p>
+      <div class="text-sm text-gray-600 leading-relaxed mb-3 prose prose-sm max-w-none" data-testid="about-description" [innerHTML]="descriptionHtml()"></div>
     </lfx-card>
   </div>
 

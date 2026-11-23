@@ -5,14 +5,24 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { HEALTH_METRICS_L2_RANGES, HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED } from '@lfx-one/shared/constants';
-import { buildHealthMetricsNonMembersConversionView } from '@lfx-one/shared/utils';
+import { TableComponent } from '@components/table/table.component';
+import {
+  HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_NON_MEMBERS_CONTRIBUTIONS_TIP,
+  HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
+  HEALTH_METRICS_NON_MEMBERS_WARMEST_DEFAULT_SORT,
+  HEALTH_METRICS_NON_MEMBERS_WARMEST_SORT_COLUMNS,
+} from '@lfx-one/shared/constants';
+import { buildHealthMetricsNonMembersConversionView, healthMetricsRowSortValue, sortHealthMetricsRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
-import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
@@ -20,15 +30,16 @@ import type {
   HealthMetricsNonMembersConversion,
   HealthMetricsNonMembersConversionQuery,
   HealthMetricsNonMembersConversionView,
+  HealthMetricsNonMembersWarmOrgRowView,
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#conversion` — the period's estimated pipeline and the warmest high-fit organizations behind it.
- * Opportunity framing only: no risk badges, and the rows are not links.
+ * `#conversion` — the period's estimated pipeline, high-fit and new counts, and its warmest companies. Opportunity
+ * framing only: no risk badges, and the rows are not links.
  */
 @Component({
   selector: 'lfx-non-members-conversion',
-  imports: [EmptyStateComponent, HealthMetricsFootnoteComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsMetricsRowComponent, HealthMetricsThComponent, Skeleton, TableComponent],
   templateUrl: './non-members-conversion.component.html',
 })
 export class NonMembersConversionComponent {
@@ -42,8 +53,13 @@ export class NonMembersConversionComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  protected readonly contributionsTip = HEALTH_METRICS_NON_MEMBERS_CONTRIBUTIONS_TIP;
+  /** One placeholder per metrics-row item while the figures load. */
+  protected readonly metricPlaceholders = ['pipeline', 'high-fit', 'new'];
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
+  /** No pager, so the rows sort in the browser; sorting reorders them and never changes which companies show. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_NON_MEMBERS_WARMEST_SORT_COLUMNS, HEALTH_METRICS_NON_MEMBERS_WARMEST_DEFAULT_SORT);
 
   protected readonly query: Signal<HealthMetricsNonMembersConversionQuery> = computed(() => ({
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
@@ -51,8 +67,11 @@ export class NonMembersConversionComponent {
   }));
   protected readonly response: Signal<HealthMetricsNonMembersConversion> = this.initResponse();
   protected readonly view: Signal<HealthMetricsNonMembersConversionView> = computed(() => buildHealthMetricsNonMembersConversionView(this.response()));
-  /** The period's conversion was never measured; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.view().measured);
+  protected readonly warmestRows: Signal<HealthMetricsNonMembersWarmOrgRowView[]> = computed(() =>
+    sortHealthMetricsRows(this.view().warmest, this.sorting.order(), healthMetricsRowSortValue)
+  );
+  /** No conversion row and no active company in the period; the tab's blank card or the shell's empty state applies. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.view().empty);
 
   private initResponse(): Signal<HealthMetricsNonMembersConversion> {
     if (!isPlatformBrowser(this.platformId)) {
@@ -83,7 +102,7 @@ export class NonMembersConversionComponent {
             tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit(!this.loadFailed() && !buildHealthMetricsNonMembersConversionView(response).measured);
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && buildHealthMetricsNonMembersConversionView(response).empty);
             })
           )
         )

@@ -10,12 +10,9 @@ import { ButtonComponent } from '@components/button/button.component';
 /**
  * Why a CLA group linked only to GitLab cannot be signed from here (#2002).
  *
- * The reason is an identity gap, not a configuration flag, and it is worth stating plainly
- * because "not supported" invites someone to go looking for the switch. GitLab signing
- * authenticates the contributor through GitLab OAuth at signing time and keys the EasyCLA user
- * record on the GitLab numeric id. Self Serve can neither obtain nor verify a GitLab identity
- * today, and the prepare endpoint checks any identity against what the platform says the caller
- * owns — so an unverified GitLab handle would be refused upstream even if this step offered one.
+ * GitLab account linking and verified display are supported in Profile → Identities.
+ * The CLA signing flow does not yet implement GitLab identity selection or the signing
+ * handoff; connecting an account alone does not make a GitLab-only group signable here.
  *
  * The block is structural: there is no continue action to disable, because a disabled control
  * implies a condition the contributor could satisfy, and there is none. It stops them inside

@@ -4,7 +4,7 @@
 import { DOCUMENT, isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { BOILERPLATES_MODE_LABELS, BOILERPLATES_VIEW_TABS } from '@lfx-one/shared/constants';
+import { BOILERPLATES_MODE_LABELS, BOILERPLATES_VIEW_TABS, MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE } from '@lfx-one/shared/constants';
 import {
   BoilerplatesLengthView,
   BoilerplatesViewTab,
@@ -13,7 +13,7 @@ import {
   MktgRevisionApproval,
   MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
-import { boilerplatesLengthRows, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
+import { boilerplatesLengthRows, describeMktgAcceptedGaps, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
@@ -68,6 +68,9 @@ export class MktgBoilerplatesViewComponent {
   protected readonly modeLabel = computed(() => (this.asset().mode === 'draft' ? '' : BOILERPLATES_MODE_LABELS[this.asset().mode]));
   protected readonly report = computed(() => this.asset().report);
   protected readonly findings = computed(() => this.asset().checks.findings);
+  protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
+  /** Under an approved revision's gaps: accepted at that approval, still open. */
+  protected readonly acceptedGapsNote = computed(() => describeMktgAcceptedGaps(this.report(), this.approval(), this.version()));
   protected readonly rows: Signal<BoilerplatesLengthView[]> = this.initRows();
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>

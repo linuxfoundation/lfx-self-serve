@@ -1,0 +1,24 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/docs/user/**"]
+    },
+    "build:development": {
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/docs/user/**"]
+    },
+    "build:production": {
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/docs/user/**"]
+    },
+    "build:staging": {
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/docs/user/**"]
+    },
+    "check-types": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/user/**"]
+    },
+    "test": {
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/docs/user/**"]
+    }
+  }
+}

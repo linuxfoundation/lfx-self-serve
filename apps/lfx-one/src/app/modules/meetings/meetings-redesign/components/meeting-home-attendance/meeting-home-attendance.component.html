@@ -1,0 +1,42 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<div class="flex flex-col gap-[6px]" data-testid="meetings-home-attendance">
+  <span class="whitespace-nowrap text-[12px] leading-[16px] text-gray-900" data-testid="meetings-home-attendance-label">{{ attendance().label }}</span>
+
+  <span
+    role="img"
+    class="flex h-[5px] overflow-hidden rounded-full bg-gray-200"
+    [attr.aria-label]="attendance().ariaLabel"
+    data-testid="meetings-home-attendance-bar">
+    @for (segment of attendance().segments; track segment.kind) {
+      <span class="h-full flex-none" [class]="segmentBg[segment.kind]" [style.width.%]="segment.percent"></span>
+    }
+  </span>
+
+  @if (variant() === 'card' && attendance().answers.length) {
+    <!-- The bar's label already speaks these counts. -->
+    <span
+      class="flex flex-wrap items-center gap-x-[12px] gap-y-[4px] text-[10px] leading-[14px] text-gray-500"
+      aria-hidden="true"
+      data-testid="meetings-home-attendance-legend">
+      @for (answer of attendance().answers; track answer.kind) {
+        <span class="inline-flex items-center gap-[5px] whitespace-nowrap">
+          <span class="h-[6px] w-[6px] rounded-full" [class]="segmentBg[answer.kind]"></span>{{ answer.label }} {{ answer.count }}
+        </span>
+      }
+      @if (attendance().noResponse !== null) {
+        <span class="inline-flex items-center gap-[5px] whitespace-nowrap" data-testid="meetings-home-attendance-legend-no-response">
+          <span class="h-[6px] w-[6px] rounded-full bg-gray-300"></span>No response {{ attendance().noResponse }}
+        </span>
+      }
+    </span>
+  }
+
+  @if (attendance().poor) {
+    <lfx-ui-note variant="warning" plain size="tiny" data-testid="meetings-home-attendance-poor"
+      ><span class="text-[10px] leading-[14px]">This meeting was poorly attended</span></lfx-ui-note
+    >
+  }
+</div>

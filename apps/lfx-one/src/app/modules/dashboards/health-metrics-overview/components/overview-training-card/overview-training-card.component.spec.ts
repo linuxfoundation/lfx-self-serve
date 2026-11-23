@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED, lfxColors } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -24,23 +25,29 @@ const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
     { deliveryType: 'Bundle', isListed: false, isListedRevenue: true, enrollments: 0, revenueUsd: 400000 },
   ],
 };
+const GOALS = { enrollments: 150000, revenueUsd: 5000000, enrollmentsProgress: null, revenueProgress: null };
 const ENROLLMENT: HealthMetricsTrainingEnrollment = {
   measured: true,
   periods: { YTD: PERIOD, COMPLETED_YEAR: PERIOD, COMPLETED_YEAR_2: PERIOD, COMPLETED_YEAR_3: PERIOD },
   trend: [],
-  goals: { enrollments: 150000, revenueUsd: 5000000, enrollmentsProgressYtd: null, revenueProgressYtd: null },
+  goals: {
+    YTD: GOALS,
+    COMPLETED_YEAR: { enrollments: 100000, revenueUsd: null, enrollmentsProgress: 1, revenueProgress: null },
+    COMPLETED_YEAR_2: HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED.goals.COMPLETED_YEAR_2,
+    COMPLETED_YEAR_3: HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED.goals.COMPLETED_YEAR_3,
+  },
 };
 
 describe('OverviewTrainingCardComponent', () => {
   let fixture: ComponentFixture<OverviewTrainingCardComponent>;
 
-  async function render(): Promise<void> {
+  async function render(enrollment: HealthMetricsTrainingEnrollment = ENROLLMENT): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [OverviewTrainingCardComponent],
       providers: [
         provideRouter([]),
         HealthMetricsChromeService,
-        { provide: AnalyticsService, useValue: { getTrainingEnrollment: vi.fn().mockReturnValue(of(ENROLLMENT)) } },
+        { provide: AnalyticsService, useValue: { getTrainingEnrollment: vi.fn().mockReturnValue(of(enrollment)) } },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
       ],
@@ -55,33 +62,58 @@ describe('OverviewTrainingCardComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
+  function option(metric: string): HTMLInputElement | null {
+    return query('overview-training-toggle')?.querySelector<HTMLInputElement>(`input[value="${metric}"]`) ?? null;
+  }
+
+  function arcStrokes(): string[] {
+    return [...(query('overview-training-arc')?.querySelectorAll('path') ?? [])].map(
+      (path) => `${path.getAttribute('stroke')}/${path.getAttribute('stroke-width')}`
+    );
+  }
+
   it('shows enrollments against the goal, by enrollment program', async () => {
     await render();
 
     expect(query('overview-training-total')?.textContent?.trim()).toBe('120K');
     expect(query('overview-training-goal')?.textContent?.trim()).toBe('80% of 150K goal');
+    expect(arcStrokes()).toEqual([`${lfxColors.gray[100]}/8`, `${lfxColors.blue[500]}/8`]);
     expect(query('overview-training-program-E-Learning')).not.toBeNull();
     expect(query('overview-training-program-Bundle')).toBeNull();
-    expect(query('overview-training-toggle-enrollments')?.getAttribute('aria-pressed')).toBe('true');
+    expect(query('overview-training-toggle')?.querySelector('[aria-label="Measure"]')).not.toBeNull();
+    expect(option('enrollments')?.checked).toBe(true);
   });
 
   it('switches to revenue, which adds Bundle', async () => {
     await render();
 
-    query('overview-training-toggle-revenue')?.click();
+    option('revenue')?.click();
     fixture.detectChanges();
 
     expect(query('overview-training-total')?.textContent?.trim()).toBe('$4M');
     expect(query('overview-training-program-Bundle')).not.toBeNull();
-    expect(query('overview-training-toggle-revenue')?.getAttribute('aria-pressed')).toBe('true');
+    expect(option('revenue')?.checked).toBe(true);
   });
 
-  it('drops the goal outside YTD', async () => {
+  it("reads a past year's own goal, and says none is set for a year without one", async () => {
     await render();
+    const chrome = TestBed.inject(HealthMetricsChromeService);
 
-    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    chrome.selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
+    expect(query('overview-training-goal')?.textContent?.trim()).toBe('100% of 100K goal');
 
-    expect(query('overview-training-goal')).toBeNull();
+    chrome.selectedRange.set('COMPLETED_YEAR_2');
+    fixture.detectChanges();
+    expect(query('overview-training-goal')?.textContent?.trim()).toBe('No goal set');
+    expect(arcStrokes()).toEqual([`${lfxColors.gray[200]}/8`, `${lfxColors.white}/6`]);
+  });
+
+  it('outlines the track and says no goal is set when YTD has none', async () => {
+    await render({ ...ENROLLMENT, goals: { ...ENROLLMENT.goals, YTD: { ...GOALS, enrollments: null } } });
+
+    expect(query('overview-training-goal')?.textContent?.trim()).toBe('No goal set');
+    expect(arcStrokes()).toEqual([`${lfxColors.gray[200]}/8`, `${lfxColors.white}/6`]);
+    expect(query('overview-training-arc')?.querySelector('svg')?.getAttribute('aria-label')).toBe('Enrollments 120K, no goal set');
   });
 });

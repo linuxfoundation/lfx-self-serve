@@ -1109,6 +1109,150 @@ describe('MktgDocumentRunService core', () => {
     expect(flows.interrupt).not.toHaveBeenCalled();
   });
 
+  describe('dismiss', () => {
+    const runId = hash(session);
+    const audits = (operation: string) => vi.mocked(logger.info).mock.calls.filter((call) => call[1] === operation);
+    async function failedRun(actor = req): Promise<void> {
+      await service.start(actor, project, types[0].agentKey, session);
+      stored().metadata['state'] = 'failed';
+    }
+
+    it('closes a failed run as discarded for everyone, touching only its run record, with a subjects-only audit', async () => {
+      const creator = writerRequest('synthetic-creator');
+      const dismisser = writerRequest('synthetic-dismisser');
+      await failedRun(creator);
+      await expect(service.dismiss(dismisser, project, types[0].agentKey, 'living', runId)).resolves.toBeUndefined();
+      expect(stored().metadata['state']).toBe('discarded');
+      expect(stored().metadata['closed-by']).toBe('synthetic-dismisser');
+      expect(stored().metadata['closed-at']).toBe('2026-10-19T12:00:00.000Z');
+      expect([...objects.keys()]).toEqual([key()]);
+      expect(await service.reconcile(req, project)).toEqual([]);
+      expect(await service.readProgress(req, project)).toEqual({ runs: [] });
+      expect(audits('mktg_run_discard')).toHaveLength(0);
+      expect(audits('mktg_run_dismiss_audit')).toEqual([
+        [
+          dismisser,
+          'mktg_run_dismiss_audit',
+          'Failed run dismissed from Started runs',
+          {
+            project,
+            runId,
+            documentId: 'living',
+            agentKey: types[0].agentKey,
+            discardedBySubject: 'synthetic-dismisser',
+            creatorSubject: 'synthetic-creator',
+            self: false,
+            at: '2026-10-19T12:00:00.000Z',
+          },
+        ],
+      ]);
+      expect(flows.interrupt).not.toHaveBeenCalled();
+      expect(flows.result).not.toHaveBeenCalled();
+    });
+
+    it('resolves a second dismiss without another write or audit', async () => {
+      await failedRun();
+      await service.dismiss(req, project, types[0].agentKey, 'living', runId);
+      const closed = JSON.stringify(stored());
+      flows.beforePut.mockClear();
+      await expect(service.dismiss(req, project, types[0].agentKey, 'living', runId)).resolves.toBeUndefined();
+      expect(JSON.stringify(stored())).toBe(closed);
+      expect(flows.beforePut).not.toHaveBeenCalled();
+      expect(audits('mktg_run_dismiss_audit')).toHaveLength(1);
+    });
+
+    it.each(['completed', 'superseded', 'discarded'] as const)('resolves without a write, audit or redraft settle on an already %s run', async (state) => {
+      await failedRun();
+      // A completed record names the revision it produced; the closed states carry their closure time.
+      Object.assign(
+        stored().metadata,
+        state === 'completed' ? { state, 'revision-id': `000002-${'b'.repeat(64)}` } : { state, 'closed-at': '2026-10-19T11:00:00.000Z' }
+      );
+      const before = JSON.stringify(stored());
+      await expect(service.dismiss(req, project, types[0].agentKey, 'living', runId)).resolves.toBeUndefined();
+      expect(JSON.stringify(stored())).toBe(before);
+      expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
+      expect(redraft.forSession).not.toHaveBeenCalled();
+      expect(redraft.settle).not.toHaveBeenCalled();
+    });
+
+    it.each(['writing', 'questions', 'storing'] as const)('refuses to dismiss a %s run with an opaque not-failed conflict', async (state) => {
+      await service.start(req, project, types[0].agentKey, session);
+      stored().metadata['state'] = state;
+      const before = JSON.stringify(stored());
+      const error = await service.dismiss(req, project, types[0].agentKey, 'living', runId).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).toMatchObject({ statusCode: 409, code: 'MKTG_RUN_NOT_FAILED' });
+      expect((error as ConflictError).details).toEqual({ runId });
+      expect(JSON.stringify(stored())).toBe(before);
+      expect(redraft.settle).not.toHaveBeenCalled();
+      expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
+    });
+
+    it('refuses when a retry lands between the read and the write, leaving the retried run writing', async () => {
+      await failedRun();
+      redraft.forSession.mockImplementationOnce(async () => {
+        Object.assign(stored().metadata, { state: 'writing', 'retry-at': '2026-10-19T12:00:00.001Z' });
+        stored().body = JSON.stringify({ ...JSON.parse(stored().body), state: 'writing', retryAt: '2026-10-19T12:00:00.001Z' });
+        return null;
+      });
+      await expect(service.dismiss(req, project, types[0].agentKey, 'living', runId)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'MKTG_RUN_NOT_FAILED',
+      });
+      expect(stored().metadata['state']).toBe('writing');
+      expect(stored().metadata).not.toHaveProperty('closed-by');
+      expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
+    });
+
+    it('answers 404 for another agent, document or unknown run and 400 for a malformed id, without writing', async () => {
+      await failedRun();
+      await expect(service.dismiss(req, project, 'member-360', 'living', runId)).rejects.toBeInstanceOf(ResourceNotFoundError);
+      await expect(service.dismiss(req, project, types[0].agentKey, 'other-document', runId)).rejects.toBeInstanceOf(ResourceNotFoundError);
+      await expect(service.dismiss(req, project, types[0].agentKey, 'living', hash('missing-session'))).rejects.toBeInstanceOf(ResourceNotFoundError);
+      await expect(service.dismiss(req, project, types[0].agentKey, 'living', '../bad')).rejects.toBeInstanceOf(ServiceValidationError);
+      expect(stored().metadata['state']).toBe('failed');
+      expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
+    });
+
+    it('lets another writer dismiss a creator’s failed Member 360 run through the conditional member write', async () => {
+      const creator = writerRequest('synthetic-creator-a');
+      const writer = writerRequest('synthetic-writer-b');
+      await service.startForOneOff(creator, 'member-360', project, session);
+      stored().metadata['state'] = 'failed';
+      await expect(service.dismiss(writer, project, 'member-360', `run-${runId.slice(0, 24)}`, runId)).resolves.toBeUndefined();
+      expect(stored().metadata['state']).toBe('discarded');
+      expect(stored().metadata['closed-by']).toBe('synthetic-writer-b');
+      expect(JSON.parse(stored().body)).toMatchObject({ creatorSubject: 'synthetic-creator-a', storageWriteId: expect.any(String) });
+      expect(audits('mktg_run_dismiss_audit')[0]?.[3]).toMatchObject({
+        discardedBySubject: 'synthetic-writer-b',
+        creatorSubject: 'synthetic-creator-a',
+        self: false,
+      });
+      expect(await service.readProgress(req, project)).toEqual({ runs: [] });
+    });
+
+    it('leaves a dismissed run closed when a retry follows', async () => {
+      await failedRun();
+      await service.dismiss(req, project, types[0].agentKey, 'living', runId);
+      await expect(service.retry(req, project, types[0].agentKey, 'living', runId)).resolves.toBeUndefined();
+      expect(stored().metadata['state']).toBe('discarded');
+      expect(await service.readProgress(req, project)).toEqual({ runs: [] });
+    });
+
+    it('settles a failed comment redraft as dismissed before closing its run', async () => {
+      await service.start(req, project, types[0].agentKey, session, 1, 'send-one');
+      stored().metadata['state'] = 'failed';
+      const context = { project, agentKey: types[0].agentKey, requestId: 'send-one' };
+      redraft.forSession.mockResolvedValueOnce(context);
+      await service.dismiss(req, project, types[0].agentKey, 'living', runId);
+      expect(redraft.forSession).toHaveBeenCalledWith(req, session);
+      expect(redraft.settle).toHaveBeenCalledWith(req, context, { status: 'failed', failureText: 'This run was dismissed.' });
+      expect(redraft.settle.mock.invocationCallOrder[0]).toBeLessThan(flows.beforePut.mock.invocationCallOrder[0]);
+      expect(stored().metadata['state']).toBe('discarded');
+    });
+  });
+
   it('finds an active run beyond the navigation discovery window', async () => {
     await service.start(req, project, types[0].agentKey, session);
     for (let i = 0; i < 129; i++)

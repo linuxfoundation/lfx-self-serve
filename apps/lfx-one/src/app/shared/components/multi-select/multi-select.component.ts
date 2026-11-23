@@ -27,6 +27,8 @@ export class MultiSelectComponent {
   /** Keep showing the placeholder in the trigger even with a selection — for consumers that list the selection themselves. */
   public readonly placeholderOnly = input<boolean>(false);
   public readonly showToggleAll = input<boolean>(true);
+  /** How the trigger lists the selection (PrimeNG `display`): comma-separated text (default) or removable chips. */
+  public readonly display = input<'comma' | 'chip'>('comma');
   /** Max simultaneous selections (PrimeNG `selectionLimit`) — undefined = unbounded. */
   public readonly selectionLimit = input<number | undefined>(undefined);
   public readonly appendTo = input<any>('body');

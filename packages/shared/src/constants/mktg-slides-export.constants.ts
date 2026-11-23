@@ -101,6 +101,56 @@ export const MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE = 'image/png';
 export const MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES = 1_048_576;
 /** Longest side the server draws the logo at, in pixels. */
 export const MKTG_SLIDES_EXPORT_LOGO_SIDE_PX = 1200;
+/** The side the server draws each iconography sample at, in pixels: a 24-unit line icon, placed small on a slide. */
+export const MKTG_SLIDES_EXPORT_ICON_SIDE_PX = 240;
+/**
+ * The bound on one logo render in its child process, in milliseconds: a
+ * render that has not answered by then is killed and the image is dropped.
+ * A logo at the drawing size renders in tens of milliseconds; the bound is
+ * for an input that never finishes.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_RENDER_TIMEOUT_MS = 10_000;
+/** The most a logo render's child may write back, in bytes: the largest PNG published, as base64, with room for its JSON line. */
+export const MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_OUTPUT_BYTES = 4 * 1_048_576;
+/**
+ * How many render children may be alive at once, server-wide: one export's
+ * own most (after the primary and the symbol, its other three variants draw
+ * at once), so a single export is never slowed, and exports that overlap
+ * queue their renders instead of each starting a child.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_CHILDREN = 3;
+
+/**
+ * The logo variants sent beside the primary, in the order the intake's head
+ * lines carry them (slides-export 1.1.2 reads them; 1.1.1 ignores lines it
+ * does not read): the symbol, the reversed (white) lockup, the one-colour
+ * (black) lockup and the reversed symbol.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_VARIANTS = ['symbol', 'reversed', 'one_color', 'symbol_reversed'] as const;
+
+/** The form field each variant's URL travels in (`MktgSlidesExportForm`). */
+export const MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS = {
+  symbol: 'logo_symbol_url',
+  reversed: 'logo_reversed_url',
+  one_color: 'logo_one_color_url',
+  symbol_reversed: 'logo_symbol_reversed_url',
+} as const;
+
+/**
+ * The form fields the kit's iconography samples travel in, as PNG URLs
+ * (`MktgSlidesExportForm`; slides-export 1.1.6 or later reads them, earlier
+ * versions ignore head lines they do not read): the eight icons in the
+ * tiles' ink (the kit's dark), the eight in white for a dark ground, and
+ * the one highlighted icon in the highlight colour. All three are sent, or
+ * none. One constant, so a rename agreed with the agent is one line here
+ * and the labels below.
+ */
+export const MKTG_SLIDES_EXPORT_ICON_FIELDS = { dark: 'icon_dark_urls', light: 'icon_light_urls', highlight: 'icon_highlight_url' } as const;
+
+/** The head line each icon field renders to, in the intake's order; the eight URLs of a set on one line, space-separated. */
+export const MKTG_SLIDES_EXPORT_ICON_FIELD_LABELS = { dark: 'ICON DARK URLS', light: 'ICON LIGHT URLS', highlight: 'ICON HIGHLIGHT URL' } as const;
+/** The separator between the URLs of one icon set on its head line: one space (a URL never holds one). */
+export const MKTG_SLIDES_EXPORT_ICON_URL_SEPARATOR = ' ';
 
 /**
  * A runtime error is a failed export only once it has settled: a session can

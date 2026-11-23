@@ -6,7 +6,6 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
-  CROWDFUNDING_ATTRIBUTION_STEP_FLAG,
   DOCUMENT_LABEL,
   FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
@@ -15,11 +14,18 @@ import {
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  MENTORSHIP_ENABLED_FLAG,
+  MENTORSHIP_FOUNDATION_PROGRAMS_PATH,
+  MENTORSHIP_PROJECT_PROGRAMS_PATH,
+  MENTORSHIP_PROJECT_PROGRAMS_TITLE,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_EASYCLA_PATH,
-  ORG_LENS_CLA_M3_ENABLED_FLAG,
+  CF_ORG_DONATIONS_FLAG,
+  ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_SCOPE_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_QUERY_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -66,12 +72,12 @@ export class SidebarNavService {
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
-  /** Dark-launch gate for the Project/Foundation lens Initiatives entry (#347), matching `crowdfundingAttributionEnabledGuard`. */
-  private readonly isCrowdfundingAttributionEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false);
   /** Pilot gate: decides whether the Newsletters links point at the embed or at LFX's own pages. */
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
-  /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
-  private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Org Lens Donations entry (#415), matching `cfOrgDonationsGuard`. */
+  private readonly isCfOrgDonationsEnabled = this.featureFlagService.getBooleanFlag(CF_ORG_DONATIONS_FLAG, false);
+  /** Dark-launch gate for the Projects and Foundation lens Mentorship Programs entries (lfx-mentorship#398); sidebar only. */
+  private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
   /**
@@ -118,6 +124,29 @@ export class SidebarNavService {
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
+
+  /**
+   * Mirrors the BFF gate for the project Participating companies page so the entry is hidden, not a dead end: LF staff,
+   * or an executive director with a scoped project that is the active project or its direct parent (the parent comes from the stored selection, else the fetched record for that same project). The BFF stays
+   * authoritative (it walks the full ancestry), so a deeper-nested project an ED directs is hidden here rather than shown.
+   */
+  private readonly canSeeParticipatingOrgs: Signal<boolean> = computed(() => {
+    if (this.personaService.isLFStaff()) return true;
+    if (this.personaService.currentPersona() !== 'executive-director') return false;
+    // The project slot, which is what the project-lens menu shows (a Projects preview reads the same slot). `menuContext()`
+    // follows the route's lens instead, so it can point at the foundation while the project items are still on screen.
+    const project = this.projectContextService.selectedProject();
+    if (!project) return false;
+    // The stored selection often carries no parent_uid; the fetched record does, but only trust it for this same project
+    // (it can describe the previous project, or the foundation under a preview, while a switch is in flight).
+    const fetched = this.projectContextService.menuProject();
+    const parentUid = project.parent_uid || (fetched && fetched.uid === project.uid ? fetched.parent_uid : undefined);
+    const scoped = this.personaService.personaProjects()['executive-director'] ?? [];
+    return scoped.some(
+      (scope) =>
+        scope.projectUid === project.uid || (!!parentUid && scope.projectUid === parentUid) || scope.projectSlug.toLowerCase() === project.slug.toLowerCase()
+    );
+  });
 
   /** In flight while the foundation-lens auditor/root-writer probe (`foundationAuditorBootstrap`) runs. */
   private readonly foundationAuditorProbePending = signal(false);
@@ -216,12 +245,17 @@ export class SidebarNavService {
         // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
         // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
-        // Initiatives (#347) is dark-launched and follows canWrite — CF lists a project's initiatives to its writers only.
-        const initiativesItems = this.isCrowdfundingAttributionEnabled() && this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem] : [];
+        // Initiatives (#347) follows canWrite — CF lists a project's initiatives to its writers only. So does Mentorship
+        // Programs (lfx-mentorship#398), right after it and dark-launched behind `mentorship-enabled`: the gateway lists a
+        // project's programs on `mentorship_program_creator`, which its writers hold.
+        const mentorshipItems = this.isMentorshipEnabled() ? [this.projectMentorshipProgramsNavItem] : [];
+        const writerItems = this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem, ...mentorshipItems] : [];
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
         const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
-        // Participating Organizations (#2091) is shown to every project-lens viewer — the BFF enforces project `viewer`.
-        const items = [...coreItems, this.projectParticipatingOrgsNavItem, ...initiativesItems, ...mktgOsItems, this.projectGovernanceSection];
+        // Participating companies (#2091) is shown only to callers the BFF will serve: LF staff, or an executive
+        // director whose scoped foundations cover the active project (see `canSeeParticipatingOrgs`).
+        const participatingOrgsItems = this.canSeeParticipatingOrgs() ? [this.projectParticipatingOrgsNavItem] : [];
+        const items = [...coreItems, ...participatingOrgsItems, ...writerItems, ...mktgOsItems, this.projectGovernanceSection];
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -243,17 +277,21 @@ export class SidebarNavService {
   private readonly showsOrgLfStaffOnlySection = computed(() => this.personaService.isLFStaff() && !this.userService.impersonating());
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
-    // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else (flag-gated in the service).
+    // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else.
     if (this.orgClaOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid)) return [this.orgEasyclaNavItem()];
     const base = this.orgLensItems();
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
-    // Initiatives (#348) is dark-launched and follows a direct writer grant on the selected organization — CF lists an
+    // EasyCLA is single-organization too: a corporate CLA belongs to one company, so its requests
+    // need a concrete organization and `/org/family-{id}/easycla` could only error (#4415, Copilot).
+    const items = this.accountContext.isRollUp() ? base : this.withEasyclaNavItem(base);
+    // Initiatives (#348) follows a direct writer grant on the selected organization — CF lists an
     // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
-    const initiativesItems =
-      this.isCrowdfundingAttributionEnabled() && this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '')
-        ? [this.orgInitiativesNavItem()]
-        : [];
-    const withInitiatives = this.placeAfterOrgProjects(items, initiativesItems);
+    const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
+    // Donations (#415) is dark-launched behind `cf-org-donations` and shown to every org viewer, like the other org
+    // pages: CF lists them to auditors, which the lens route already requires. The page shows a 403 state otherwise.
+    // Crowdfunding Donations is single-organization too: `/api/crowdfunding/org-donations` takes an
+    // `orgUid` its SFID validator refuses the sentinel for, so `/org/family-{id}/donations` only errors (#4415, Copilot).
+    const donationsItems = this.isCfOrgDonationsEnabled() && !this.accountContext.isRollUp() ? [this.orgDonationsNavItem()] : [];
+    const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
     return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
   });
@@ -578,9 +616,12 @@ export class SidebarNavService {
         }
       );
 
-      // CF lists a project's initiatives to its writers only (403 otherwise), so the entry follows canWrite (#347).
-      if (this.isCrowdfundingAttributionEnabled() && this.projectContextService.menuCanWrite()) {
+      // CF lists a project's initiatives to its writers only (403 otherwise), so the entry follows canWrite (#347). So does
+      // Mentorship Programs (lfx-mentorship#398), right after it and dark-launched behind `mentorship-enabled`: the gateway
+      // lists a foundation's programs on `mentorship_program_creator`, which its writers hold.
+      if (this.projectContextService.menuCanWrite()) {
         items.push(this.foundationInitiativesNavItem);
+        if (this.isMentorshipEnabled()) items.push(this.foundationMentorshipProgramsNavItem);
       }
 
       if (this.isMktgOsAgentsEnabled()) {
@@ -647,6 +688,14 @@ export class SidebarNavService {
             testId: 'sidebar-metrics-social-listening',
           },
         ];
+
+        // The page reads live PROJECT_PARTICIPATING_ORGS figures (#5697); its route and BFF admit only the foundation's executive director and LF staff.
+        metricsItems.push({
+          label: 'Participating companies',
+          icon: 'fa-light fa-building',
+          routerLink: '/foundation/participating-orgs',
+          testId: 'sidebar-metrics-participating-companies',
+        });
 
         items.push({
           label: 'Metrics',
@@ -787,9 +836,25 @@ export class SidebarNavService {
     testId: 'sidebar-project-initiatives',
   };
 
+  // --- Project / Foundation — Mentorship Programs (lfx-mentorship#398; every program of the lens project, for its admins) ---
+  private readonly projectMentorshipProgramsNavItem: SidebarMenuItem = {
+    label: MENTORSHIP_PROJECT_PROGRAMS_TITLE,
+    icon: 'fa-light fa-chalkboard-user',
+    routerLink: MENTORSHIP_PROJECT_PROGRAMS_PATH,
+    testId: 'sidebar-project-mentorship-programs',
+  };
+
+  /** The foundation's programs and its sub-projects'. */
+  private readonly foundationMentorshipProgramsNavItem: SidebarMenuItem = {
+    label: MENTORSHIP_PROJECT_PROGRAMS_TITLE,
+    icon: 'fa-light fa-chalkboard-user',
+    routerLink: MENTORSHIP_FOUNDATION_PROGRAMS_PATH,
+    testId: 'sidebar-foundation-mentorship-programs',
+  };
+
   // --- Project — Participating Organizations (#2091) ---
   private readonly projectParticipatingOrgsNavItem: SidebarMenuItem = {
-    label: 'Participating organizations',
+    label: 'Participating companies',
     icon: 'fa-light fa-building',
     routerLink: '/project/participating-orgs',
     testId: 'sidebar-project-participating-orgs',
@@ -896,6 +961,13 @@ export class SidebarNavService {
     testId: 'sidebar-org-initiatives',
   }));
 
+  private readonly orgDonationsNavItem: Signal<SidebarMenuItem> = computed(() => ({
+    label: 'Crowdfunding Donations',
+    icon: 'fa-light fa-hand-holding-heart',
+    routerLink: this.orgLensNavigation.orgLensPath('donations'),
+    testId: 'sidebar-org-donations',
+  }));
+
   private readonly orgEasyclaNavItem: Signal<SidebarMenuItem> = computed(() => ({
     label: 'EasyCLA',
     icon: 'fa-light fa-file-signature',
@@ -914,6 +986,10 @@ export class SidebarNavService {
   private readonly orgLensItems: Signal<SidebarMenuItem[]> = computed((): SidebarMenuItem[] => {
     const org = (page: string): string => this.orgLensNavigation.orgLensPath(page);
     return [
+      // The organization scope carries between the pages with a scope picker — Projects, People, Code Contributions, and
+      // Project Detail through Projects (lfx-self-serve-ops#1219) — so a pick of All related organizations survives the
+      // sidebar. The team members pick carries between the pages with a team members picker — Projects, People and Code
+      // Contributions (lfx-self-serve-ops#1246). The Dashboard always counts the defaults, so its link carries neither.
       {
         label: 'Dashboard',
         icon: 'fa-light fa-grid-2',
@@ -928,11 +1004,12 @@ export class SidebarNavService {
         label: 'Projects',
         icon: 'fa-light fa-folders',
         routerLink: org('projects'),
+        carryQueryParams: [ORG_SCOPE_QUERY_PARAM, ORG_TEAM_MEMBERS_QUERY_PARAM],
       },
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
       {
-        label: 'Organization Engagement',
+        label: 'Company Engagement',
         isSection: true,
         expanded: true,
         items: [
@@ -940,20 +1017,22 @@ export class SidebarNavService {
             label: 'People',
             icon: 'fa-light fa-people-group',
             routerLink: org('people'),
-            // The time range carries between People and Code Contributions (lfx-self-serve#4159); only the range,
-            // not page-specific params.
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
+            // The time range carries between People and Code Contributions (lfx-self-serve#4159). Count (lfx-self-serve#4598) also
+            // carries between People and Events, the only two pages that read it, so a pick is not reset by sidebar navigation;
+            // each page opts in on both ends.
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_EVENTS_PARTICIPATION_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM, ORG_TEAM_MEMBERS_QUERY_PARAM],
           },
           {
             label: 'Code Contributions',
             icon: 'fa-light fa-code',
             routerLink: org('contributions'),
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM, ORG_TEAM_MEMBERS_QUERY_PARAM],
           },
           {
             label: 'Events',
             icon: 'fa-light fa-ticket',
             routerLink: org('events'),
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_EVENTS_PARTICIPATION_QUERY_PARAM],
           },
           {
             label: 'Training & Certification',
@@ -964,13 +1043,23 @@ export class SidebarNavService {
           { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-between-lines', routerLink: org('groups') },
         ],
       },
-      // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it when M3 is on.
-      {
-        label: 'Organization Profile',
-        icon: 'fa-light fa-memo',
-        routerLink: org('profile'),
-        dividerBefore: true,
-      },
+      // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it.
+      //
+      // Profile is dropped in roll-up mode. It is single-org by definition (#4125) and will never
+      // gain a combined rendering, and `orgLensPath` prefixes every item with the selected segment
+      // — so the link read `/company/family-{id}/profile`, where the page asks for
+      // `/api/orgs/uid/family-{id}`, the SFID validator refuses the roll-up key and the caller lands on an error page (#4415, Copilot).
+      // `withEasyclaNavItem` already handles Profile being absent.
+      ...(this.accountContext.isRollUp()
+        ? []
+        : [
+            {
+              label: 'Company Profile',
+              icon: 'fa-light fa-memo',
+              routerLink: org('profile'),
+              dividerBefore: true,
+            },
+          ]),
     ];
   });
 

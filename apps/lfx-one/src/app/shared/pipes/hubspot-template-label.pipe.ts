@@ -16,13 +16,18 @@ import { formatHubSpotUpdatedAt } from '@lfx-one/shared/utils';
  * §4 allows only signal reads, computed values and pipes in templates, and the picker renders
  * up to 500 rows per change-detection pass. Taking the object also sidesteps the Angular
  * parse error that makes a piped value unusable inside a template ternary.
+ *
+ * `suggested` marks the event-derived recommendation, which is badged but never selected.
  */
 @Pipe({
   name: 'hubspotTemplateLabel',
 })
 export class HubSpotTemplateLabelPipe implements PipeTransform {
-  public transform(template: HubSpotMarketingEmail): string {
+  public transform(template: HubSpotMarketingEmail, suggested = false): string {
     const parts = [`Use template ${template.name || template.subject || template.id}`];
+    // The row's visible "Suggested" badge is hidden from the accessible name by this label, so the
+    // fact is carried here instead.
+    if (suggested) parts.push('suggested for this event');
     if (template.subject && template.name) parts.push(`subject ${template.subject}`);
     if (template.state) parts.push(template.state);
     const updated = formatHubSpotUpdatedAt(template.updatedAt);

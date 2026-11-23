@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { MAX_RECENT_IMPERSONATIONS, RECENT_IMPERSONATIONS_STORAGE_KEY } from '@lfx-one/shared/constants';
 import {
   ImpersonationStartRequest,
   ImpersonationStartResponse,
   ImpersonationStatusResponse,
+  ImpersonationSuggestion,
   ImpersonationTransition,
+  ImpersonationUserSearchResponse,
   RecentImpersonation,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, tap } from 'rxjs';
+import { catchError, map, Observable, of, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -42,6 +44,26 @@ export class ImpersonationService {
     return this.http
       .get<ImpersonationStatusResponse>('/api/impersonate/status')
       .pipe(catchError(() => of({ impersonating: false } as ImpersonationStatusResponse)));
+  }
+
+  /**
+   * People the picker can offer for the typed text: anyone with an LFID, found by username, email or name. The search
+   * runs as the signed-in admin, even while impersonating. A failed search degrades to no results rather than breaking
+   * the typeahead. The text goes in the request body, not the URL, so it stays out of request logs, browser analytics
+   * and traces.
+   */
+  public searchUsers(query: string): Observable<ImpersonationSuggestion[]> {
+    return this.http.post<ImpersonationUserSearchResponse>('/api/impersonate/users/search', { q: query }).pipe(
+      map((response) => response.results ?? []),
+      catchError((error: unknown) => {
+        // Status and code only: the console override ships what is logged to CloudWatch, and the error object
+        // carries the request, so it is never logged whole.
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        const code = error instanceof HttpErrorResponse ? error.error?.code : undefined;
+        console.error('Error searching users to impersonate:', { status, code });
+        return of([]);
+      })
+    );
   }
 
   public getRecentImpersonations(): RecentImpersonation[] {

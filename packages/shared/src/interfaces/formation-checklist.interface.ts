@@ -94,8 +94,11 @@ export interface FormationProgressSegment {
   colorClass: string;
 }
 
-/** `FormationChecklistSectionComponent`'s top-level view state. */
-export type FormationChecklistPageState = 'loading' | 'error' | 'no-template' | 'no-items' | 'ready';
+/**
+ * `FormationChecklistSectionComponent`'s top-level view state. `no-checklist` is a not-found read: the BFF masks 403 and 404 alike
+ * (a project with no formation record, or one the caller cannot read), so it is neutral and has no Retry; `error` is every other failure.
+ */
+export type FormationChecklistPageState = 'loading' | 'error' | 'no-checklist' | 'no-template' | 'no-items' | 'ready';
 
 /** One template section plus the checklist items bucketed under it — `FormationChecklistSectionComponent`'s render unit, built by `groupFormationItemsBySection`. */
 export interface FormationRenderedSection {

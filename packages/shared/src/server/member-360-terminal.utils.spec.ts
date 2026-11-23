@@ -95,4 +95,62 @@ describe('Member 360 terminal session facts', () => {
       )
     ).toEqual({ status: 'failed', reason: 'agent_stopped', message: 'Final answer, contact [contact redacted].' });
   });
+
+  // A crashed root, as Guild records it: the root task's status is ERROR on every root
+  // event (no parent_task key), tool tasks end DONE, an error is the last event, and
+  // there is no root runtime_done and no session object anywhere.
+  const now = Date.parse('2026-01-01T12:00:00.000Z');
+  const crashedRootPayloads = (lastErrorAgeMs: number, dated = true): string[] => {
+    const root = { entity_type: 'EntTaskAgent', parent_task_id: null, status: 'ERROR' };
+    const tool = { entity_type: 'EntTaskTool', parent_task_id: null, parent_task: {}, status: 'DONE' };
+    const at = (ageMs: number): { created_at?: string } => (dated ? { created_at: new Date(now - ageMs).toISOString() } : {});
+    const stream = { type: 'application/guild-response-stream', stream_id: 'opaque-stream-id', sequence: 1 };
+    return [
+      JSON.stringify({ type: 'runtime_start', task: tool, content: { type: 'progress' }, ...at(lastErrorAgeMs + 10_000) }),
+      JSON.stringify({
+        type: 'agent_notification_progress',
+        task: tool,
+        content: { type: 'text', data: 'private-tool-progress' },
+        ...at(lastErrorAgeMs + 9_000),
+      }),
+      JSON.stringify({ type: 'runtime_done', task: tool, content: {}, ...at(lastErrorAgeMs + 8_000) }),
+      JSON.stringify({ type: 'llm_start', task: root, content: null, ...at(lastErrorAgeMs + 1_000) }),
+      JSON.stringify({ type: 'llm_done', task: root, content: null, ...at(lastErrorAgeMs + 600) }),
+      JSON.stringify({ type: 'agent_notification_message', task: root, content: { ...stream, status: 'aborted', text: '' }, ...at(lastErrorAgeMs + 400) }),
+      JSON.stringify({
+        type: 'agent_notification_error',
+        task: root,
+        content: { type: 'text', data: 'private-internal-details' },
+        ...at(lastErrorAgeMs + 200),
+      }),
+      JSON.stringify({ type: 'runtime_error', task: root, content: 'private-internal-details', ...at(lastErrorAgeMs) }),
+    ];
+  };
+  it('fails a crashed root once its last error has settled, without echoing the error body', () => {
+    const result = member360TerminalResult(crashedRootPayloads(40_000), [], now);
+    expect(result).toEqual({ status: 'failed', reason: 'agent_stopped', message: 'The agent stopped before producing a result.' });
+    expect(JSON.stringify(result)).not.toContain('private');
+  });
+  it('keeps a crashed root pending while its last error is younger than the settle window', () => {
+    expect(member360TerminalResult(crashedRootPayloads(10_000), [], now)).toBeNull();
+  });
+  it('never fails a crashed root on undated errors', () => {
+    expect(member360TerminalResult(crashedRootPayloads(40_000, false), [], now)).toBeNull();
+  });
+  it('keeps a live run pending after an older recovered error', () => {
+    expect(
+      member360TerminalResult(
+        [
+          JSON.stringify({ type: 'runtime_error', content: { message: 'private-internal-details' }, created_at: new Date(now - 120_000).toISOString() }),
+          JSON.stringify({
+            type: 'llm_start',
+            task: { entity_type: 'EntTaskAgent', parent_task_id: null, status: 'RUNNING' },
+            created_at: new Date(now - 60_000).toISOString(),
+          }),
+        ],
+        [],
+        now
+      )
+    ).toBeNull();
+  });
 });

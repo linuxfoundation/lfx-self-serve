@@ -65,6 +65,9 @@ export const AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS = 15_000;
 export const PERSONAS_CACHE_TTL_MS = 15_000;
 
 export const ROOT_PROJECT_SLUG = 'ROOT';
+
+/** Most parents a project-ancestry climb follows (project → foundation → … → ROOT) before it gives up. */
+export const PROJECT_ANCESTRY_MAX_DEPTH = 6;
 export const ROOT_PROJECT_UID_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /**

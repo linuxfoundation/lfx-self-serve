@@ -54,6 +54,17 @@ describe('UiToggleComponent', () => {
     expect(inputOf().hasAttribute('aria-label')).toBe(false);
   });
 
+  it('puts the label before the control across a full-width row with labelPosition start', async () => {
+    fixture.componentRef.setInput('label', 'Organized by me');
+    fixture.componentRef.setInput('labelPosition', 'start');
+    await fixture.whenStable();
+
+    expect(inputOf().previousElementSibling?.getAttribute('data-testid')).toBe('ui-toggle-text');
+    expect(inputOf().nextElementSibling).toBeNull();
+    expect(host.className).toContain('w-full');
+    expect(host.querySelector('[data-testid="ui-toggle-label"]')?.className).toContain('justify-between');
+  });
+
   it('falls back to ariaLabel when there is no visible label', async () => {
     fixture.componentRef.setInput('ariaLabel', 'Maintenance mode');
     await fixture.whenStable();
