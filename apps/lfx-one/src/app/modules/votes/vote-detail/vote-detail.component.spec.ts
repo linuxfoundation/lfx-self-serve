@@ -656,9 +656,24 @@ describe('VoteDetailComponent', () => {
     projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
     voteService.fetchVote.mockReturnValue(of(makeVote({ allow_vote_change: true })));
     voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+    const ballot: MyVoteBallot = {
+      vote_response_uid: 'resp-1',
+      vote_uid: 'vote-1',
+      abstained: false,
+      poll_answers: [],
+      comment_responses: [],
+      can_change_vote: true,
+    };
+    voteService.getMyVoteBallot.mockReturnValue(of(ballot));
     const fixture = await setup('browser', [VoteDetailHeaderComponent]);
 
     expect(fixture.debugElement.query(By.directive(VoteDetailHeaderComponent))).not.toBeNull();
+    if (manager) {
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    } else {
+      expect(testId(fixture, 'vote-detail-my-ballot')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot-error')).toBeNull();
+    }
     // The drawer stays schema-stripped, so any [changeMode] binding lands in its properties and fails this test.
     const drawer = fixture.debugElement.query(By.css('lfx-vote-cast-drawer'));
     expect(drawer).not.toBeNull();
