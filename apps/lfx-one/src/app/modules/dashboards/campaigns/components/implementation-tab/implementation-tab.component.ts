@@ -8824,11 +8824,6 @@ export class ImplementationTabComponent implements OnInit {
       this.campaignForm.controls.googlePerformanceMaxAudienceSignal.setValue(draft.googlePerformanceMaxAudienceSignal, { emitEvent: false });
     }
 
-    // Restored only when PRESENT. A draft persisted before these fields shipped has none of them,
-    // and absence there means "this draft predates Meta fields" — the seeded values must stand.
-    // Writing `?? 'traffic'` instead would let an old draft silently downgrade a Conversions
-    // campaign. A present-but-empty `metaPixelId` is a real cleared value and is restored as one,
-    // which is exactly the distinction `undefined` preserves and `''` would destroy.
     // Each field only when the draft carries it; targeting, ad options and the lead form only under their own
     // foundation; the objective after the lead form rule. See `metaDraftRestore`.
     const metaRestore = metaDraftRestore(draft, this.metaObjective(), this.activeFoundationSlug());

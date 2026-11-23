@@ -149,8 +149,10 @@ describe('metaDraftRestore', () => {
   });
 
   it('fills targeting a draft saved before a field existed with the defaults, as a copy', () => {
-    // Persisted JSON from before the newer targeting fields: deliberately not a full `MetaAudienceTargetingDraft`.
-    const legacy = { ageMin: 30 } as MetaAudienceTargetingDraft;
+    // Persisted JSON from before the custom-audience fields existed.
+    const legacy: MetaAudienceTargetingDraft = { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 30 };
+    // @ts-expect-error -- an old draft lacks this required field
+    delete legacy.customAudiences;
     const saved = draft({ metaAudienceTargeting: legacy, metaAudienceTargetingProject: 'tlf' });
     expect(metaDraftRestore(saved, 'traffic', 'tlf').audienceTargeting).toEqual({ ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 30 });
     expect(metaDraftRestore(saved, 'traffic', 'tlf').audienceTargeting?.genders).not.toBe(DEFAULT_META_AUDIENCE_TARGETING.genders);
@@ -168,11 +170,13 @@ describe('metaInstagramDsaPatch', () => {
       { metaInstagramUserId: '1784', metaDsaPayor: '' },
       { instagramUserId: '1784', dsaPayor: '' },
     ],
-    // Persisted JSON: a non-string is never restored into a text control.
-    [{ metaDsaBeneficiary: 42 }, {}],
-  ])('%j patches %j', (saved, expected) => {
-    // Persisted JSON can carry the wrong type, so the cases include one the type would refuse.
-    expect(metaInstagramDsaPatch(saved as MetaDraftSnapshot)).toEqual(expected);
+  ] as [MetaDraftSnapshot, Record<string, string>][])('%j patches %j', (saved, expected) => {
+    expect(metaInstagramDsaPatch(saved)).toEqual(expected);
+  });
+
+  it('never restores a non-string into a text control', () => {
+    // @ts-expect-error -- persisted JSON can carry the wrong type
+    expect(metaInstagramDsaPatch({ metaDsaBeneficiary: 42 })).toEqual({});
   });
 });
 
