@@ -29,7 +29,12 @@ export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<strin
   // projects
   projects: [],
   // project-detail
-  'project-detail': [],
+  'project-detail': [
+    /^\/projects\/[^/]+\/(hero|influence|trend)\/?$/,
+    /^\/projects\/[^/]+\/leaderboard\/(technical|ecosystem)\/?$/,
+    /^\/projects\/[^/]+\/leaderboard\/technical\/organizations\/[^/]+\/?$/,
+    /^\/projects\/[^/]+\/cards\/[^/]+(\/roster)?\/?$/,
+  ],
   // contributions
   contributions: [],
   // events
