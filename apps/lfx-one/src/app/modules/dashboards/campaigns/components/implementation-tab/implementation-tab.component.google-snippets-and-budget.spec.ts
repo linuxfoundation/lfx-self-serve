@@ -15,9 +15,19 @@ import { CampaignService } from '@services/campaign.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { SEED_KEYWORD, configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  SEED_KEYWORD,
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The structured-snippet sub-form: the form-side twin of the BFF guard, one case per branch of
@@ -36,12 +46,12 @@ describe('ImplementationTabComponent google structured snippets', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it("trims the header and every value with Go's rules, and drops only the blank lines", () => {
+  it("trims the header and every value with Go's rules, and drops only the blank lines", STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     // 'alpha' is a case-folded repeat of 'Alpha' and is KEPT: upstream collapses repeats when it
@@ -58,7 +68,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
     ['fewer than the minimum distinct values', 'Brands', Array.from({ length: GOOGLE_ADS_MIN_SNIPPET_VALUES - 1 }, (_, i) => `Value ${i + 1}`)],
     ['three values of which two are the same, which renders as two', 'Brands', ['Go', 'go', 'Rust']],
     ['more than the maximum distinct values', 'Brands', Array.from({ length: GOOGLE_ADS_MAX_SNIPPET_VALUES + 1 }, (_, i) => `Value ${i + 1}`)],
-  ])('refuses %s and keeps the list empty', (_label, header, values) => {
+  ])('refuses %s and keeps the list empty', STATE_ONLY, (_label, header, values) => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleStructuredSnippet'](header, values)).toBe(false);
@@ -70,7 +80,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
    * bound BEFORE it collapses a case-folded repeat, so an over-long value that merely repeats an
    * earlier one still fails the create. Collapsing first here would send it.
    */
-  it('refuses an over-long value that merely repeats an earlier one', () => {
+  it('refuses an over-long value that merely repeats an earlier one', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const long = 'B'.repeat(GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES + 1);
 
@@ -82,7 +92,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
     ['a header of 25 EMOJI, which is 50 UTF-16 units', '🎉'.repeat(GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES), VALUES],
     ['a non-English header, which Google publishes per locale', 'Marcas', VALUES],
     ['exactly the maximum distinct values', 'Brands', Array.from({ length: GOOGLE_ADS_MAX_SNIPPET_VALUES }, (_, i) => `Value ${i + 1}`)],
-  ])('adds %s, because Google accepts it', (_label, header, values) => {
+  ])('adds %s, because Google accepts it', STATE_ONLY, (_label, header, values) => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleStructuredSnippet'](header, values)).toBe(true);
@@ -91,7 +101,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
   it.each([
     ['a trailing U+0085', 'Brands', 'brands'],
     ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
-  ])('refuses a repeated header hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+  ])('refuses a repeated header hidden by %s, on the add and in the live warning', STATE_ONLY, (_label, first, repeat) => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleStructuredSnippet'](first, VALUES);
 
@@ -101,7 +111,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
     expect(c['googleStructuredSnippets']()).toHaveLength(1);
   });
 
-  it('refuses an eleventh snippet once the campaign holds the maximum', () => {
+  it('refuses an eleventh snippet once the campaign holds the maximum', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     for (let i = 0; i < GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS; i++) c['addGoogleStructuredSnippet'](`Header ${i + 1}`, VALUES);
 
@@ -115,7 +125,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
    * typed a header and no values yet is mid-entry, not wrong. The add button withholds; the warning
    * only describes input that is present and unservable.
    */
-  it('stays silent about too few values while the values box is empty, but disables the add', () => {
+  it('stays silent about too few values while the values box is empty, but disables the add', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     c['googleStructuredSnippetDraft'].set({ header: 'Brands', values: '   \n\n' });
@@ -125,7 +135,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
     expect(c['googleStructuredSnippetAddDisabled']()).toBe(true);
   });
 
-  it('enables the add only once the draft is one Google would accept', () => {
+  it('enables the add only once the draft is one Google would accept', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     c['googleStructuredSnippetDraft'].set({ header: 'Brands', values: 'Alpha\nBeta' });
@@ -172,7 +182,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
     expect(find('implementation-google-snippet-values')?.getAttribute('aria-describedby')).toBe(valuesId);
   });
 
-  it('clears the sub-form only when the snippet was actually added', () => {
+  it('clears the sub-form only when the snippet was actually added', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     c['googleStructuredSnippetDraft'].set({ header: 'Brands', values: VALUES.join('\n') });
@@ -186,7 +196,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
     expect(c['googleStructuredSnippetDraft']().values).toBe(VALUES.join('\n'));
   });
 
-  it('removes a snippet by index', () => {
+  it('removes a snippet by index', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleStructuredSnippet']('First', VALUES);
     c['addGoogleStructuredSnippet']('Second', VALUES);
@@ -222,7 +232,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
   });
 
   /** Search only, and WITHHELD elsewhere rather than refused — exactly as the other two are. */
-  it('offers snippets on Search and withholds them on a non-Search channel', () => {
+  it('offers snippets on Search and withholds them on a non-Search channel', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleStructuredSnippet']('Brands', VALUES);
 
@@ -235,7 +245,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
     expect(c['googleStructuredSnippets']()).toHaveLength(1);
   });
 
-  it('omits the structuredSnippets key when nothing was added', () => {
+  it('omits the structuredSnippets key when nothing was added', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['googleStructuredSnippetsPayload']()).toEqual({});
@@ -245,7 +255,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
    * The payload copies `values` as its own array, not just the entry around it: a shallow spread of
    * the entry would hand the request the very array the chip list is still holding.
    */
-  it('does not share the payload values array with the live list', () => {
+  it('does not share the payload values array with the live list', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleStructuredSnippet']('Brands', VALUES);
 
@@ -294,7 +304,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
   it.each([
     ['Search', { includeSearch: true }, [{ header: 'Brands', values: VALUES }]],
     ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
-  ])('sends the snippets on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+  ])('sends the snippets on a submitted %s create only when the channel takes them', STATE_ONLY, async (_label, channel, expected) => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleStructuredSnippet']('Brands', VALUES);
@@ -310,7 +320,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
   });
 
   /** The ONLY thing that carries a typed snippet list between visits — nothing generates one. */
-  it('round-trips the snippets through a draft', () => {
+  it('round-trips the snippets through a draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -325,7 +335,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
   });
 
   /** `values` copied too, for the reason the entries are: it is an array INSIDE the entry. */
-  it('does not share the restored entries or their values with the draft', () => {
+  it('does not share the restored entries or their values with the draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const saved = [{ header: 'Brands', values: [...VALUES] }];
 
@@ -337,7 +347,7 @@ describe('ImplementationTabComponent google structured snippets', () => {
     expect(saved[0].values).toEqual(VALUES);
   });
 
-  it('leaves the list alone when the draft carries no snippets key', () => {
+  it('leaves the list alone when the draft carries no snippets key', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleStructuredSnippet']('Brands', VALUES);
 
@@ -358,7 +368,7 @@ describe('ImplementationTabComponent google daily budget', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
     c = fixture.componentInstance as unknown as Record<string, any>;
@@ -488,7 +498,7 @@ describe('ImplementationTabComponent google daily budget', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget"]')).toBeNull();
   });
 
-  it('sends the daily figure on screen, not the brief total', () => {
+  it('sends the daily figure on screen, not the brief total', STATE_ONLY, () => {
     const seeded = seedChannel(fixture, { includeSearch: true });
     seeded['campaignForm'].patchValue({ budgetUsd: 29.03 });
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: '' }) as never);

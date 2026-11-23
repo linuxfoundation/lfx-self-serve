@@ -8,9 +8,18 @@ import { CampaignService } from '@services/campaign.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Ad schedules and device bid adjustments (#4991). The panel's edits land in two tab signals; these
@@ -24,7 +33,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -48,6 +57,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
     ['demand-gen', { includeDemandGen: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
   ])(
     'builds the payload %s accepts, holds the rest, and holds Create on an adjustment its default strategy ignores',
+    STATE_ONLY,
     (_channel, patch, expected, heldByStrategy) => {
       const c = seedTargeting(patch);
 
@@ -63,7 +73,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
     }
   );
 
-  it('submits both lists on Search, copied rather than shared', async () => {
+  it('submits both lists on Search, copied rather than shared', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedTargeting({ includeSearch: true });
     expect(c['canSubmit']()).toBe(true);
@@ -77,7 +87,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
     expect((request['adSchedules'] as CampaignAdSchedule[])[0]).not.toBe(c['googleAdSchedules']()[0]);
   });
 
-  it('sends neither key when nothing was set', () => {
+  it('sends neither key when nothing was set', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['googleTargetingPayload']()).toEqual({});
@@ -161,7 +171,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS, { device: 'CONNECTED_TV', bidModifier: 0 }] });
     });
 
-    it('round-trips a TV screens exclusion through a draft', () => {
+    it('round-trips a TV screens exclusion through a draft', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeDemandGen: true });
       let emitted: CampaignImplementationDraft | undefined;
       fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -192,7 +202,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
   // #5094 review: an unresolved strategy skips only the strategy pass. The per-entry checks still run,
   // so an overlapping window holds Create rather than reaching the BFF's 400.
   describe('with no resolved strategy', () => {
-    it('still refuses an overlapping window', () => {
+    it('still refuses an overlapping window', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       Object.defineProperty(c, 'googleBiddingStrategy', { value: signal(null) });
       c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...MONDAY_EVENINGS, startHour: 20, bidModifier: undefined }]);
@@ -219,7 +229,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       ['search', { includeSearch: true }, 'target-roas', false],
       ['display', { includeDisplay: true }, '', false],
       ['display', { includeDisplay: true }, 'maximize-clicks', false],
-    ])('on %s (%o) under strategy "%s", offers Adjust bid only for Manual CPC', (_channel, patch, strategy, adjustable) => {
+    ])('on %s (%o) under strategy "%s", offers Adjust bid only for Manual CPC', STATE_ONLY, (_channel, patch, strategy, adjustable) => {
       const c = seedChannel(fixture, patch);
       c['campaignForm'].controls.googleBiddingStrategy.setValue(strategy);
       c['onGoogleDeviceBidModifiersChange']([MOBILE_UP]);
@@ -285,7 +295,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [MOBILE_UP, NO_TABLETS] });
     });
 
-    it('names every held device in one list, and on Display leaves Manual CPC out of the way back', () => {
+    it('names every held device in one list, and on Display leaves Manual CPC out of the way back', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['onGoogleDeviceBidModifiersChange']([MOBILE_UP, { device: 'DESKTOP', bidModifier: 0.8 }, { device: 'TABLET', bidModifier: 1 }]);
       c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
@@ -300,7 +310,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       expect(c['googleDeviceBidModifiersError']()).not.toContain('bid with Manual CPC');
     });
 
-    it('gives the channel as the Adjust bid reason on Performance Max, whatever the strategy', () => {
+    it('gives the channel as the Adjust bid reason on Performance Max, whatever the strategy', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includePerformanceMax: true });
       fixture.detectChanges();
       expect(c['googleBiddingStrategy']()).toBe('maximize-conversions');
@@ -309,7 +319,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       );
     });
 
-    it('still sends an Exclude under an automated strategy, on Search and on Display', () => {
+    it('still sends an Exclude under an automated strategy, on Search and on Display', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['campaignForm'].controls.googleBiddingStrategy.setValue('target-roas');
       c['onGoogleDeviceBidModifiersChange']([NO_TABLETS]);
@@ -335,7 +345,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-targeting-panel"]')).toBeNull();
   });
 
-  it('round-trips both lists through a draft and empties them for a new brief', () => {
+  it('round-trips both lists through a draft and empties them for a new brief', STATE_ONLY, () => {
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
     const c = seedTargeting({ includeSearch: true });
@@ -441,7 +451,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       expect(c['googleTargetingPayload']()).toEqual({ adSchedules: [UNADJUSTED, { ...UNADJUSTED, dayOfWeek: 'TUESDAY' }] });
     });
 
-    it('lets a held adjustment through again on a switch back to Manual CPC', () => {
+    it('lets a held adjustment through again on a switch back to Manual CPC', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...MONDAY_EVENINGS, dayOfWeek: 'TUESDAY' }]);
       c['campaignForm'].controls.googleBiddingStrategy.setValue('target-roas');
@@ -469,7 +479,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       expect(c['canSubmit']()).toBe(false);
     });
 
-    it('sends unadjusted windows under Smart Bidding with no notice', () => {
+    it('sends unadjusted windows under Smart Bidding with no notice', STATE_ONLY, () => {
       const c = seedChannel(fixture, { includeSearch: true });
       c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
       c['onGoogleAdSchedulesChange']([UNADJUSTED]);
@@ -524,7 +534,7 @@ describe('ImplementationTabComponent google device exclusions on performance max
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -539,7 +549,7 @@ describe('ImplementationTabComponent google device exclusions on performance max
     expect(find('implementation-google-devices-hint')?.textContent).toContain('Performance Max campaigns take a device only as an exclusion');
   });
 
-  it('sends three exclusions, TV screens among them, and a request without them is byte-identical to one built before', async () => {
+  it('sends three exclusions, TV screens among them, and a request without them is byte-identical to one built before', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = pmax();
     c['submit']();
@@ -618,7 +628,7 @@ describe('ImplementationTabComponent google device exclusions on performance max
     expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: excluded('TABLET', 'CONNECTED_TV') });
   });
 
-  it('round-trips the exclusions through emitDraft and restore', () => {
+  it('round-trips the exclusions through emitDraft and restore', STATE_ONLY, () => {
     const c = pmax();
     let draft: Record<string, any> | undefined;
     c['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
