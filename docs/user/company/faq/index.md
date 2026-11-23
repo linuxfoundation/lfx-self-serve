@@ -1,6 +1,6 @@
 ---
 title: Company FAQ
-description: Short answers about the Company lens — what the lens is and what you can do in it, how to switch companies, what the Company Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Company Profile page shows and who can edit it, where to see the company's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Company lens — what the lens is and what you can do in it, how to switch companies, what the Company Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Events page shows for a company family, what the Company Profile page shows and who can edit it, where to see the company's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Company
 tags:
@@ -16,6 +16,7 @@ tags:
     projects,
     workspaces,
     events,
+    company-family,
     training,
     meetings,
     groups,
@@ -31,7 +32,7 @@ tags:
     leaderboard,
     crowdfunding,
   ]
-last_updated: 2026-11-17
+last_updated: 2026-11-23
 intercom_collection: Company
 ---
 
@@ -78,6 +79,10 @@ Yes. The time range you pick on People or Code Contributions carries to the othe
 ## What does the Events page show?
 
 The Events page in the Company lens lists the foundation events where the selected company has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **Employee match** (a company email address on record, or an LF account that matches someone on the company roster), and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the company. Select an attendee or speaker count to open the people behind it. The page is under **Company Engagement** in the Company lens sidebar. See [Events page](../company-events/#events-page).
+
+## What does the Events page show for a company family?
+
+When you pick a company family in the company selector, listed as **All**, the family's name and **Companies** (for example, **All Acme Companies**), the Events page lists the events where any company in that family that you have access to has registrants, a submitted speaker or a sponsorship, with one row per event and company. Each row shows that company's own attendee, speaker and sponsor figures, and the tiles and tab counts count rows, so two companies at one event count as two. A **Company** filter narrows the page to one company, and **Show** is not offered. See [What does the Events page show for a company family?](../company-events/#what-does-the-events-page-show-for-a-company-family).
 
 ## What does the Training & Certification page show?
 
