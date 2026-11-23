@@ -1681,8 +1681,8 @@ export const META_BEHAVIOR_TARGETING_OFF_MESSAGE =
   'Meta behavior and job title targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta languages while language targeting is off on this deployment. */
 export const META_LOCALE_TARGETING_OFF_MESSAGE = 'Meta language targeting is not available on this deployment. Reload the page, then create again without it.';
-/** The 503 a Meta targeting search gets when Meta throttles it: campaign-service does not retry, so the caller should wait. */
-export const META_TARGETING_SEARCH_BUSY_MESSAGE = 'Meta is busy right now. Wait a few seconds, then search again.';
+/** The 503 a Meta targeting search gets when Meta or campaign-service cannot answer it (a throttle is not retried upstream). */
+export const META_TARGETING_SEARCH_BUSY_MESSAGE = "Meta targeting search isn't available right now. Wait a few seconds, then search again.";
 /**
  * The error `code` (HTTP 403) of a Meta lead form read, or a create naming a form, refused because the caller
  * does not hold `global_marketing_ops` on the project: a project without its own Meta connection uses the

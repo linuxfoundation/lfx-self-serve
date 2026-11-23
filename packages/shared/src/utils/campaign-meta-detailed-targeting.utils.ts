@@ -32,16 +32,22 @@ const ID_FIELDS = [
 /** The audience fields of the same block (#5905); setting any of them needs the audience flag. */
 const AUDIENCE_FIELDS = ['ageMin', 'ageMax', 'genders', 'customAudiences', 'excludedCustomAudiences', 'advantageAudience'] as const;
 
-/** Whether `raw` sets any detailed field (present and not null), so the audience flag is not needed for it alone. */
-export function metaTargetingHasDetailedFields(raw: unknown): boolean {
-  const record = metaConfigRecord(raw);
-  return [...ID_FIELDS.map(([key]) => key), 'locales'].some((key) => record?.[key] !== undefined && record?.[key] !== null);
+/** Whether a targeting field is set, as campaign-service reads it: a list only when non-empty, anything else when present and not null. */
+function isSet(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== undefined && value !== null;
 }
 
-/** Whether `raw` sets any of the six audience fields (present and not null). */
+/** Whether `raw` sets any detailed field, so the audience flag is not needed for it alone. */
+export function metaTargetingHasDetailedFields(raw: unknown): boolean {
+  const record = metaConfigRecord(raw);
+  return [...ID_FIELDS.map(([key]) => key), 'locales'].some((key) => isSet(record?.[key]));
+}
+
+/** Whether `raw` sets any of the six audience fields. */
 export function metaTargetingHasAudienceFields(raw: unknown): boolean {
   const record = metaConfigRecord(raw);
-  return AUDIENCE_FIELDS.some((key) => record?.[key] !== undefined && record?.[key] !== null);
+  return AUDIENCE_FIELDS.some((key) => isSet(record?.[key]));
 }
 
 /**
@@ -52,7 +58,7 @@ export function metaTargetingHasAudienceFields(raw: unknown): boolean {
  */
 export function metaTargetingFlagRefusal(raw: unknown, flags: MetaTargetingFlags): MetaConfigRefusal | null {
   const record = metaConfigRecord(raw);
-  const set = (key: string): boolean => record?.[key] !== undefined && record?.[key] !== null;
+  const set = (key: string): boolean => isSet(record?.[key]);
   if ((metaTargetingHasAudienceFields(raw) || !metaTargetingHasDetailedFields(raw)) && !flags.audience) {
     return { field: FIELD, message: META_AUDIENCE_TARGETING_OFF_MESSAGE };
   }
@@ -84,7 +90,7 @@ export function metaDetailedTargetingRefusal(raw: unknown): MetaConfigRefusal | 
   const locales = record?.['locales'];
   if (locales !== undefined && locales !== null) {
     const field = `${FIELD}.locales`;
-    if (!Array.isArray(locales) || locales.some((key) => typeof key !== 'number' || !Number.isInteger(key) || key <= 0)) {
+    if (!Array.isArray(locales) || locales.some((key) => typeof key !== 'number' || !Number.isSafeInteger(key) || key <= 0)) {
       return { field, message: 'Languages must be Meta language keys: whole numbers above zero.' };
     }
     if (new Set(locales).size > META_MAX_LOCALES) return { field, message: `Choose at most ${META_MAX_LOCALES} languages.` };
@@ -119,8 +125,10 @@ export function metaTargetingQueryRefusal(type: unknown, query: unknown): string
     return `The search type must be one of ${META_TARGETING_SEARCH_TYPES.join(', ')}.`;
   }
   const trimmed = typeof query === 'string' ? query.trim() : '';
+  // Counted in code points, as campaign-service counts runes: an emoji is one character, not two.
+  const length = [...trimmed].length;
   // eslint-disable-next-line no-control-regex -- matching control characters is the point.
-  if (trimmed.length < META_TARGETING_QUERY_MIN_LENGTH || trimmed.length > META_TARGETING_QUERY_MAX_LENGTH || /[\u0000-\u001f\u007f-\u009f]/.test(trimmed)) {
+  if (length < META_TARGETING_QUERY_MIN_LENGTH || length > META_TARGETING_QUERY_MAX_LENGTH || /[\u0000-\u001f\u007f-\u009f]/.test(trimmed)) {
     return `Search with ${META_TARGETING_QUERY_MIN_LENGTH}–${META_TARGETING_QUERY_MAX_LENGTH} characters, on one line.`;
   }
   return null;

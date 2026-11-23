@@ -172,13 +172,27 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
     expect(svcSearch).not.toHaveBeenCalled();
   });
 
-  it('answers a Meta throttle with a busy 503 the operator can act on', async () => {
+  it('answers an upstream 503 with a try-again 503 the operator can act on', async () => {
     svcSearch.mockRejectedValueOnce(new MicroserviceError('upstream throttled', 503, 'SERVICE_UNAVAILABLE', { operation: 'x', service: 'y' }));
 
     const res = await search('project=tlf&type=behavior&query=early');
 
     expect(res.status).toBe(503);
     expect(JSON.stringify(await res.json())).toContain(META_TARGETING_SEARCH_BUSY_MESSAGE);
+  });
+
+  it('leaves a failure to reach campaign-service as it is, rather than blaming Meta', async () => {
+    svcSearch.mockRejectedValueOnce(
+      new MicroserviceError('The request could not be completed. Please try again.', 503, 'NETWORK_ERROR', {
+        transportFailure: true,
+        originalError: new Error('fetch failed'),
+      })
+    );
+
+    const res = await search('project=tlf&type=interest&query=kubernetes');
+
+    expect(res.status).toBe(503);
+    expect(JSON.stringify(await res.json())).not.toContain(META_TARGETING_SEARCH_BUSY_MESSAGE);
   });
 
   it('fails an unreadable body with a 502 rather than an empty list', async () => {

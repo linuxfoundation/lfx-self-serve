@@ -4692,7 +4692,9 @@ export class CampaignController {
    * interests, behaviors or job titles matching `?query=`, through campaign-service's `search-meta-targeting-options`
    * (linuxfoundation/lfx-v2-campaign-service#612). 404 unless interests or behaviors can be sent. Meta taxonomy, so
    * `requireCampaignManager` is the gate, as upstream's. The kind and query are checked here first, so a bad one
-   * costs no upstream call; a Meta throttle (503, not retried upstream) answers a "busy, try again" 503.
+   * costs no upstream call. An upstream 503 (a Meta throttle or failure, which campaign-service does not retry)
+   * answers a "try again" 503 that keeps the original error; a failure to reach campaign-service at all is left
+   * as it is.
    */
   public async searchMetaTargetingOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'meta_targeting_search';
@@ -4760,12 +4762,13 @@ export class CampaignController {
       logger.success(req, operation, startTime, { count: result.options.length, type });
       res.json(result);
     } catch (error) {
-      if (error instanceof MicroserviceError && error.statusCode === 503) {
+      if (error instanceof MicroserviceError && error.statusCode === 503 && error.transportFailure !== true) {
         next(
-          new MicroserviceError(META_TARGETING_SEARCH_BUSY_MESSAGE, 503, 'META_TARGETING_SEARCH_BUSY', {
+          new MicroserviceError(META_TARGETING_SEARCH_BUSY_MESSAGE, 503, 'META_TARGETING_SEARCH_UNAVAILABLE', {
             operation,
             service: 'campaign_controller',
             clientMessage: META_TARGETING_SEARCH_BUSY_MESSAGE,
+            originalError: error,
           })
         );
         return;
