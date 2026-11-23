@@ -45,8 +45,8 @@ function question(overrides: Partial<CondorcetQuestionView> = {}): CondorcetQues
       { candidate: B, counts: [2, 3] },
     ],
     ballotPatterns: [
-      { count: 3, ranking: ['Candidate A', 'Candidate B'] },
-      { count: 2, ranking: ['Candidate B'] },
+      { key: 'a\u0000b', count: 3, ranking: ['Candidate A', 'Candidate B'] },
+      { key: 'b', count: 2, ranking: ['Candidate B'] },
     ],
     ...overrides,
   };
@@ -191,6 +191,31 @@ describe('VoteCondorcetResultsComponent', () => {
     const wrappers = Array.from(el.querySelectorAll('.overflow-x-auto'));
     expect(wrappers).toHaveLength(3);
     wrappers.forEach((wrapper) => expect(wrapper.classList).toContain('relative'));
+  });
+
+  it('bounds and wraps sticky candidate names instead of letting them cover the data columns', () => {
+    const el = render(question());
+    for (const id of ['vote-condorcet-pairwise', 'vote-condorcet-rank-summary']) {
+      const names = byTestId(el, id)?.querySelectorAll('tbody th[scope="row"] span') ?? [];
+      expect(names).toHaveLength(2);
+      names.forEach((name) => {
+        expect(name.classList).toContain('w-32');
+        expect(name.classList).toContain('break-words');
+        expect(name.classList).toContain('whitespace-normal');
+        expect(name.parentElement?.classList).not.toContain('whitespace-nowrap');
+      });
+    }
+  });
+
+  it('moves the same ballot row nodes when counts change their order', () => {
+    const initial = question();
+    const el = render(initial);
+    const before = Array.from(byTestId(el, 'vote-condorcet-ballots')?.querySelectorAll('tbody tr') ?? []);
+    render({ ...initial, ballotPatterns: [{ ...initial.ballotPatterns![1], count: 4 }, initial.ballotPatterns![0]] });
+    const after = Array.from(byTestId(el, 'vote-condorcet-ballots')?.querySelectorAll('tbody tr') ?? []);
+    expect(after[0]).toBe(before[1]);
+    expect(after[1]).toBe(before[0]);
+    expect(text(after[0].querySelector('th'))).toBe('4');
   });
 
   it('shows an empty note when no ranked ballots exist yet', () => {

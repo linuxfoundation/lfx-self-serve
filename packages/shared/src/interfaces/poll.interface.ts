@@ -1686,6 +1686,8 @@ export interface CondorcetRankSummaryRow {
 
 /** One distinct ballot ordering and how many ballots used it (#5969). */
 export interface CondorcetBallotPatternRow {
+  /** Stable identity from ordered choice IDs; unchanged when its count or display names change */
+  key: string;
   count: number;
   /** Candidate names, 1st choice first; partial ballots are shorter than the candidate list */
   ranking: string[];

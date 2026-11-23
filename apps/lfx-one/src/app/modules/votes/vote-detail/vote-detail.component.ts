@@ -844,8 +844,8 @@ export class VoteDetailComponent {
   }
 
   /**
-   * A manager of a named Condorcet vote reads the voters list once its results load, again whenever the results poll
-   * reports a different ballot count or the vote finalizes, and after a ballot from this page, so the Results tab's
+   * A manager of a named Condorcet vote reads the voters list on the Results tab once its results load, again whenever
+   * the results poll reports a different ballot count or the vote finalizes, and after a ballot from this page, so its
    * ballot orderings match its other tables. Pseudo-anonymous votes return participation-only rows, and voters can't
    * read ballots at all, so neither gets a key and the table gives way to a note (#5969). A draft has no ballots and
    * GET /api/votes/:uid/voters refuses it (409), so it skips the read, just as `showVotersTab` hides the Voters tab.
@@ -854,7 +854,16 @@ export class VoteDetailComponent {
     return computed(() => {
       const uid = this.vote()?.uid;
       const results = this.voteResults();
-      if (!uid || !results || !this.isCondorcetPoll() || this.audience() !== 'creator' || this.isPseudoAnonymous() || !this.showsResults()) return null;
+      if (
+        !uid ||
+        !results ||
+        !this.isCondorcetPoll() ||
+        this.audience() !== 'creator' ||
+        this.isPseudoAnonymous() ||
+        !this.showsResults() ||
+        this.activeTab() !== 'results'
+      )
+        return null;
       return { uid, tick: this.refreshTick(), votesCast: results.num_votes_cast, closed: this.isVoteClosed(), draft: !this.showVotersTab() };
     });
   }
@@ -875,7 +884,10 @@ export class VoteDetailComponent {
           if (key.draft) return of({ uid: key.uid, voters: [] });
           return this.voteService.getVoteVoters(key.uid).pipe(
             map((voters) => ({ uid: key.uid, voters: voters.filter((voter): voter is VoteVoter => 'uid' in voter) })),
-            catchError(() => of({ uid: key.uid, voters: last?.uid === key.uid ? last.voters : null }))
+            catchError((error) => {
+              console.error('Failed to load Condorcet ballots', { status: error?.status });
+              return of({ uid: key.uid, voters: last?.uid === key.uid ? last.voters : null });
+            })
           );
         }),
         tap((read) => {

@@ -271,7 +271,7 @@ function buildBallotPatterns(questionId: string, ballots: VoteVoter[], textById:
     if (existing) {
       existing.count++;
     } else {
-      patterns.set(key, { count: 1, ranking: ranked.map((choice) => textById.get(choice.choice_id) ?? choice.choice_text ?? choice.choice_id) });
+      patterns.set(key, { key, count: 1, ranking: ranked.map((choice) => textById.get(choice.choice_id) ?? choice.choice_text ?? choice.choice_id) });
     }
   }
   return [...patterns.values()].sort((a, b) => b.count - a.count);

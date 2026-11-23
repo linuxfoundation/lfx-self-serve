@@ -491,7 +491,7 @@ describe('VoteDetailComponent', () => {
       const question = condorcetQuestion(fixture).question();
       expect(question.outcome).toBe(CondorcetOutcome.CONDORCET_WINNER);
       expect(question.winnerNames).toEqual(['No']);
-      expect(question.ballotPatterns).toEqual([{ count: 2, ranking: ['No', 'Yes'] }]);
+      expect(question.ballotPatterns).toEqual([{ key: 'choice-no\u0000choice-yes', count: 2, ranking: ['No', 'Yes'] }]);
       expect(condorcetQuestion(fixture).isClosed()).toBe(true);
       expect(testId(fixture, 'vote-condorcet-outcome-message')?.textContent).toContain('No is the winner');
       expect(voteService.getVoteVoters).toHaveBeenCalledWith('vote-1');
@@ -502,6 +502,7 @@ describe('VoteDetailComponent', () => {
       await fixture.whenStable();
 
       expect(summary(fixture)).toBe('Winner: No');
+      expect(voteService.getVoteVoters).not.toHaveBeenCalled();
     });
 
     it('keeps the first-choice summary while the vote is open', async () => {
@@ -510,6 +511,25 @@ describe('VoteDetailComponent', () => {
       await fixture.whenStable();
 
       expect(summary(fixture)).toBe('Most first choices: Yes (2 voters)');
+    });
+
+    it('reads ballots only after opening Results, and re-reads when returning from Overview', async () => {
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+      expect(voteService.getVoteVoters).not.toHaveBeenCalled();
+
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      await fixture.whenStable();
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+
+      queryParamMap.next(convertToParamMap({ tab: 'overview' }));
+      await fixture.whenStable();
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      await fixture.whenStable();
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+      expect(condorcetQuestion(fixture).question().ballotPatterns).toHaveLength(1);
     });
 
     it.each([
@@ -530,6 +550,7 @@ describe('VoteDetailComponent', () => {
     });
 
     it('falls back to the unavailable note when the ballots read fails', async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       voteService.getVoteVoters.mockReturnValue(httpError(500));
       queryParamMap.next(convertToParamMap({ tab: 'results' }));
       const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
@@ -538,6 +559,7 @@ describe('VoteDetailComponent', () => {
       expect(condorcetQuestion(fixture).question().ballotPatterns).toBeNull();
       expect(condorcetQuestion(fixture).ballotsLoading()).toBe(false);
       expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).not.toBeNull();
+      expect(log).toHaveBeenCalledWith('Failed to load Condorcet ballots', { status: 500 });
     });
 
     it('shows the ballots as loading, not unavailable, while the read is in flight', async () => {
@@ -554,7 +576,7 @@ describe('VoteDetailComponent', () => {
       voters.next([namedBallot('ballot-1', ['choice-no', 'choice-yes'])]);
       fixture.detectChanges();
       expect(condorcetQuestion(fixture).ballotsLoading()).toBe(false);
-      expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ count: 1, ranking: ['No', 'Yes'] }]);
+      expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-no\u0000choice-yes', count: 1, ranking: ['No', 'Yes'] }]);
     });
 
     it('never reads ballots for a draft, which has none yet', async () => {
@@ -600,7 +622,7 @@ describe('VoteDetailComponent', () => {
       it('re-reads the ballots when the results poll reports more ballots, and again when the vote finalizes', async () => {
         const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
         expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
-        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ count: 1, ranking: ['No', 'Yes'] }]);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-no\u0000choice-yes', count: 1, ranking: ['No', 'Yes'] }]);
 
         // An unchanged tally never re-reads the ballots.
         await nextPoll(fixture);
@@ -612,8 +634,8 @@ describe('VoteDetailComponent', () => {
         await nextPoll(fixture);
         expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
         expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([
-          { count: 1, ranking: ['No', 'Yes'] },
-          { count: 1, ranking: ['Yes', 'No'] },
+          { key: 'choice-no\u0000choice-yes', count: 1, ranking: ['No', 'Yes'] },
+          { key: 'choice-yes\u0000choice-no', count: 1, ranking: ['Yes', 'No'] },
         ]);
         expect(condorcetQuestion(fixture).isClosed()).toBe(false);
 
@@ -624,8 +646,8 @@ describe('VoteDetailComponent', () => {
         expect(condorcetQuestion(fixture).isClosed()).toBe(true);
         expect(voteService.getVoteVoters).toHaveBeenCalledTimes(3);
         expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([
-          { count: 2, ranking: ['Yes', 'No'] },
-          { count: 1, ranking: ['No', 'Yes'] },
+          { key: 'choice-yes\u0000choice-no', count: 2, ranking: ['Yes', 'No'] },
+          { key: 'choice-no\u0000choice-yes', count: 1, ranking: ['No', 'Yes'] },
         ]);
       });
 
@@ -636,7 +658,7 @@ describe('VoteDetailComponent', () => {
         await nextPoll(fixture);
 
         expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
-        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ count: 1, ranking: ['No', 'Yes'] }]);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-no\u0000choice-yes', count: 1, ranking: ['No', 'Yes'] }]);
         expect(testId(fixture, 'vote-condorcet-ballots-unavailable')).toBeNull();
       });
 

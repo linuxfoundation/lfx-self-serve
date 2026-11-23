@@ -93,8 +93,8 @@
         <tbody>
           @for (row of q.pairwise; track row.candidate.choiceId) {
             <tr class="border-t border-gray-100">
-              <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900 whitespace-nowrap">
-                {{ row.candidate.choiceText }}
+              <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900">
+                <span class="block w-32 break-words whitespace-normal sm:w-40">{{ row.candidate.choiceText }}</span>
               </th>
               @for (cell of row.cells; track $index) {
                 <td class="px-3 py-2 whitespace-nowrap text-gray-700" [attr.data-result]="cell.result">
@@ -147,7 +147,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (pattern of patterns; track $index) {
+              @for (pattern of patterns; track pattern.key) {
                 <tr class="border-t border-gray-100">
                   <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900">{{ pattern.count }}</th>
                   @for (rank of q.ranks; track rank; let i = $index) {
@@ -190,8 +190,8 @@
         <tbody>
           @for (row of q.rankSummary; track row.candidate.choiceId) {
             <tr class="border-t border-gray-100">
-              <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900 whitespace-nowrap">
-                {{ row.candidate.choiceText }}
+              <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-gray-900">
+                <span class="block w-32 break-words whitespace-normal sm:w-40">{{ row.candidate.choiceText }}</span>
               </th>
               @for (count of row.counts; track $index) {
                 <td class="px-3 py-2 text-gray-700">{{ count }}</td>

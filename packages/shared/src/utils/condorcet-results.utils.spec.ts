@@ -318,8 +318,20 @@ describe('buildCondorcetQuestionViews', () => {
       { uid: '7', status: VoteVoterStatus.VOTED },
     ];
     expect(view(question(), ballots).ballotPatterns).toEqual([
-      { count: 2, ranking: ['Candidate B', 'Candidate A', 'Candidate C'] },
-      { count: 1, ranking: ['Candidate A', 'Candidate B'] },
+      { key: 'b\u0000a\u0000c', count: 2, ranking: ['Candidate B', 'Candidate A', 'Candidate C'] },
+      { key: 'a\u0000b', count: 1, ranking: ['Candidate A', 'Candidate B'] },
+    ]);
+  });
+
+  it('keeps ballot pattern keys stable when counts reorder them or candidate names change', () => {
+    const ballots = [ballot('1', ['b', 'a', 'c']), ballot('2', ['a', 'b'])];
+    const before = view(question(), ballots).ballotPatterns!;
+    const q = question();
+    q.question.choices = q.question.choices.map((choice) => ({ ...choice, choice_text: `Updated ${choice.choice_id}` }));
+    const after = view(q, [...ballots, ballot('3', ['a', 'b'])]).ballotPatterns!;
+    expect(after.map(({ key, count }) => ({ key, count }))).toEqual([
+      { key: before[1].key, count: 2 },
+      { key: before[0].key, count: 1 },
     ]);
   });
 
