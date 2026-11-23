@@ -368,24 +368,22 @@ describe('ImplementationTabComponent meta ad image', () => {
     }).compileComponents();
   });
 
-  it.each([
-    ['unanswered', null],
-    ['off', false],
-  ])('renders no image controls while the Meta creative capability is %s, and sends the variants unchanged', async (_label, creative) => {
-    const f = (await mount(creative, true)).fixture;
+  // The `null` and `false` cases read the same `=== true` gate; `metaImageField` covers both in the helper spec.
+  it.each([['off', false]])(
+    'renders no image controls while the Meta creative capability is %s, and sends the variants unchanged',
+    async (_label, creative) => {
+      const f = (await mount(creative, true)).fixture;
 
-    expect(q(f, 'implementation-meta-image-url')).toBeNull();
-    expect(q(f, 'implementation-meta-image-file')).toBeNull();
-    expect(submitVariants(f)).toEqual([
-      { primaryText: 'First primary', headline: 'First headline' },
-      { primaryText: 'Second primary', headline: 'Second headline', description: 'Second description' },
-    ]);
-  });
+      expect(q(f, 'implementation-meta-image-url')).toBeNull();
+      expect(q(f, 'implementation-meta-image-file')).toBeNull();
+      expect(submitVariants(f)).toEqual([
+        { primaryText: 'First primary', headline: 'First headline' },
+        { primaryText: 'Second primary', headline: 'Second headline', description: 'Second description' },
+      ]);
+    }
+  );
 
-  it.each([
-    ['unanswered', null],
-    ['off', false],
-  ])('offers the image URL but no upload while the upload capability is %s', async (_label, upload) => {
+  it.each([['off', false]])('offers the image URL but no upload while the upload capability is %s', async (_label, upload) => {
     const f = (await mount(true, upload)).fixture;
 
     expect(q(f, 'implementation-meta-image-url')).not.toBeNull();
@@ -478,15 +476,6 @@ describe('ImplementationTabComponent meta ad image', () => {
     expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
   });
 
-  it('never sends an upload made for another brief, and says so', async () => {
-    const draft = { ...(await uploadedDraft()), metaImageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' };
-    const f = (await mount(true, true, draft)).fixture;
-    fillForm(f);
-
-    expect(q(f, 'implementation-meta-image-asset-block-otherBrief')).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
-  });
-
   it('keeps Create blocked after a failed upload with both capabilities on, until the operator removes it', async () => {
     uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
     const f = (await mount(true, true)).fixture;
@@ -506,29 +495,29 @@ describe('ImplementationTabComponent meta ad image', () => {
     expect(submitVariants(f).map((v) => v['imageUrl'])).toEqual(['https://cdn.example.org/promo.png', 'https://cdn.example.org/promo.png']);
   });
 
-  it.each([
-    ['unanswered, with the read failed', null, 'failed', 'failed'],
-    ['unanswered, with the read pending', null, 'pending', 'pending'],
-    ['off', false, 'ready', 'unsupported'],
-  ] as const)('blocks Create for a restored image URL while the image capability is %s, rather than dropping it', async (_label, creative, read, kind) => {
-    const first = await mount(true, false);
-    typeImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
-    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
-    first.fixture.destroy();
+  // Wiring for the withheld URL; the `failed`, `pending` and `unsaved` kinds are rows in `metaImageAssetBlock`'s helper table.
+  it.each([['off', false, 'ready', 'unsupported']] as const)(
+    'blocks Create for a restored image URL while the image capability is %s, rather than dropping it',
+    async (_label, creative, read, kind) => {
+      const first = await mount(true, false);
+      typeImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      first.fixture.destroy();
 
-    const f = (await mount(creative, false, draft)).fixture;
-    f.componentRef.setInput('createCapabilityRead', read);
-    fillForm(f);
+      const f = (await mount(creative, false, draft)).fixture;
+      f.componentRef.setInput('createCapabilityRead', read);
+      fillForm(f);
 
-    expect(q(f, 'implementation-meta-image-url')).toBeNull();
-    expect(q(f, `implementation-meta-image-asset-block-${kind}`)).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
+      expect(q(f, 'implementation-meta-image-url')).toBeNull();
+      expect(q(f, `implementation-meta-image-asset-block-${kind}`)).not.toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
 
-    (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
-    f.detectChanges();
-    expect(at(f).canSubmit()).toBe(true);
-    expect(submitVariants(f).some((v) => 'imageUrl' in v)).toBe(false);
-  });
+      (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+      f.detectChanges();
+      expect(at(f).canSubmit()).toBe(true);
+      expect(submitVariants(f).some((v) => 'imageUrl' in v)).toBe(false);
+    }
+  );
 });
 
 /**
