@@ -487,8 +487,8 @@ rows leave the BFF, never coverage IDs/counts or private sessions. A real lookup
 failure adds `progressUnavailable` so clients can warn/retry even with no row;
 intentional window coverage alone never manufactures active work or endless retries.
 Window-skipped unfinished writing/storing snapshots are last-known, not fresh
-liveness: poll reads mark them unavailable, so the client's existing bounded
-availability budget stops automatic checks. Closed-history coverage is not flagged.
+liveness: poll reads mark them unavailable, so the client keeps checking on its
+capped jittered backoff (floored at its base interval) behind one connection-state line. Closed-history coverage is not flagged.
 Explicit detail navigation may pass `refreshRun` to refresh ONE scoped failed run;
 timer reads reject that selector. A stale/foreign selector or transient tracking
 error retains the stored document/known rows with an availability warning, never
@@ -497,16 +497,18 @@ is visible. Retry POSTs recheck the stored session, never submit Generate or mov
 the approved-current pointer. Overview polls cancel on project/effective-subject
 changes and destruction. Same-scope reloads and polls retain last loaded documents
 on transient errors; 401/403 clears inaccessible data. Consecutive unavailable
-reads back off to eight intervals and stop after the normal poll timeout, leaving
-a warning/manual refresh; healthy reads reset the budget. Questions-only rows do
-not start automatic polling. Unavailable tracking retains missing same-scope
+reads never stop: they retry on the capped jittered backoff (cap
+`MKTG_POLL_MAX_BACKOFF_MS`, floored at the base interval) behind the one
+connection-state line, with no manual refresh; a healthy read resets the backoff
+and clears the line. The overview polls whatever its rows' states, questions-only
+rows included. Unavailable tracking retains missing same-scope
 run rows and suppresses absence claims, without hiding a known stored-current badge.
 
 Document navigation keeps `?generation=` (single-use in-memory prepared intake)
 separate from `?run=` (durable selected run). Only a fresh prepared proof can
 submit Generate; restored intake needs explicit action. Metadata/body failures
-share one bounded read budget and manual refresh, without hiding an acknowledged
-current-pointer write. Structured views come from the document/intake registry;
+share that one capped backoff and connection-state line and are retried
+automatically, without hiding an acknowledged current-pointer write. Structured views come from the document/intake registry;
 malformed structured assets are unsupported, never Markdown fallback. ICP is unchanged.
 
 Persistence receipts carry the exact `document_location` with `agent_key`,

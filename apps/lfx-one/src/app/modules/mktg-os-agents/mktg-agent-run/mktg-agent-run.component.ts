@@ -26,6 +26,7 @@ import {
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_RUN_FAILURE_REASON,
@@ -285,6 +286,11 @@ export class MktgAgentRunComponent {
   private readonly priorDocumentCount = signal(0);
   private readonly priorLogoCount = signal(0);
   protected readonly errorText = signal('');
+  /** A waiting state of the public receiver (the produced revision is not confirmed yet): a quiet status line, not an error. */
+  protected readonly publicWaitingText = signal('');
+  /** The headless progress reader's retrying state while the run is checked: one quiet line, never the error box. */
+  protected readonly publicRetrying = signal(false);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly runFailed = signal(false);
   protected readonly navigation = signal<MktgRunNavigation | null>(null);
   protected readonly navigating = signal(false);
@@ -371,7 +377,12 @@ export class MktgAgentRunComponent {
   private readonly questionsLocked = signal(false);
   /** When the public progress reader renders nothing of its own; the kept block below it follows the same rule. */
   protected readonly progressHeadless = computed(
-    () => this.publicIdentityPending() || this.checkingRun() || this.phase() === 'questions' || (!!this.errorText() && !this.navigation())
+    () =>
+      this.publicIdentityPending() ||
+      this.checkingRun() ||
+      this.phase() === 'questions' ||
+      !!this.publicWaitingText() ||
+      (!!this.errorText() && !this.navigation())
   );
   /** The block kept read-only under the answered notice; the progress reader draws it, with the draft, from that notice. */
   private readonly keptQuestions = computed(() => {
@@ -783,10 +794,14 @@ export class MktgAgentRunComponent {
         this.receiptRecoveryRunId = runId;
         this.resumeAcceptedAttempt({ ...owned, state: 'writing', pendingQuestions: undefined }, projectUid);
       } else if ((!this.generationSub || this.generationSub.closed) && !this.navigation()?.revisionId) {
-        this.errorText.set('The produced revision is not confirmed yet. Refresh this run before opening its saved output.');
+        // The plain waiting state (not an error, no instruction to refresh). Only a retired run, a final read error, a
+        // context reset or a new start clears this line; a continuous read that lets it leave on its own is follow-up work
+        // (#5058). The document link below is the way on.
+        this.publicWaitingText.set('The produced revision is not confirmed yet.');
       }
       return;
     }
+    this.publicWaitingText.set('');
     const completed = this.publicProgressView()?.selectedRun() ?? this.completedRun;
     const produced =
       !failed &&
@@ -832,15 +847,18 @@ export class MktgAgentRunComponent {
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
     const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
     const owned = (pending?.attempt?.runId ?? pending?.pendingQuestions?.attempt.runId) === this.publicRunId() ? pending : null;
-    // A partial read whose row still waits on the block this browser holds confirms it; any other partial read keeps the last state.
+    // A partial read whose row still waits on the block this browser holds confirms it; any other partial read keeps the last
+    // state — and a partial FIRST read is still a check in progress: the quiet line, not the error box (the reader retries it).
     if (cycle.detail.progressUnavailable && !(owned?.pendingQuestions && mktgRunHoldsQuestions(run, owned.pendingQuestions.questionsId))) {
-      if (this.checkingRun()) this.onPublicReadError();
+      if (this.checkingRun()) this.publicRetrying.set(true);
       return;
     }
+    this.publicRetrying.set(false);
     this.checkingRun.set(false);
     if (this.publicReadFailed) {
       this.publicReadFailed = false;
       this.errorText.set('');
+      this.publicWaitingText.set('');
     }
     if (
       run?.state === 'completed' &&
@@ -864,6 +882,7 @@ export class MktgAgentRunComponent {
       this.clearQuestions();
       this.phase.set('running');
       this.errorText.set('');
+      this.publicWaitingText.set('');
       if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
       return;
     }
@@ -949,6 +968,9 @@ export class MktgAgentRunComponent {
 
   protected onPublicReadError(error?: HttpErrorResponse): void {
     this.checkingRun.set(false);
+    this.publicRetrying.set(false);
+    // The error box carries its own document link: the waiting line (and its link) goes.
+    this.publicWaitingText.set('');
     this.publicReadFailed = true;
     this.clearQuestions();
     this.phase.set('running');
@@ -2054,6 +2076,7 @@ export class MktgAgentRunComponent {
     this.recheckingAttempt.set(false);
     this.runFailed.set(false);
     this.errorText.set('');
+    this.publicWaitingText.set('');
     this.fromLfxApplied.set({});
     this.lfxMissing.set({});
     this.fromPriorRunApplied.set({});
@@ -2311,6 +2334,7 @@ export class MktgAgentRunComponent {
 
     this.runFailed.set(false);
     this.errorText.set('');
+    this.publicWaitingText.set('');
     // Consent/start supersedes the old UI snapshot, not the retained accepted capability.
     // An explicit retry still performs the live-record check through confirmDiscard.
     this.waitingRun.set(null);

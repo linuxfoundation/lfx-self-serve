@@ -142,6 +142,8 @@ test('the waiting state offers no Refresh button and re-renders on its next poll
   await expect(live.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
   await expect(page.getByTestId('mktg-run-progress-questions-refresh')).toHaveCount(0);
   await expect(page.getByTestId('mktg-document-view-refresh-progress')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-run-progress-refresh')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-run-progress-live')).not.toContainText('keeps checking');
   // An untouched form (retyped unchanged counts as untouched): the next poll re-renders Writing on its own, silently.
   await answer.fill(OPENING_ANSWER);
   await serve('writing');
