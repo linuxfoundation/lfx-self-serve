@@ -18,9 +18,19 @@ import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { SEED_KEYWORD, configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  SEED_KEYWORD,
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Search campaign's display paths, second and third ads, and create-time negative keywords (#4991).
@@ -32,7 +42,7 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -48,7 +58,7 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
     return c;
   }
 
-  it('submits the paths, the second ad and the negatives on Search, copied rather than shared', async () => {
+  it('submits the paths, the second ad and the negatives on Search, copied rather than shared', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedSearchAds();
     expect(c['canSubmit']()).toBe(true);
@@ -148,7 +158,7 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
     expect(query(errorId)?.textContent).toContain(message);
   });
 
-  it("seeds the negatives from the brief's suggestions, one per line, with Google's default match type", () => {
+  it("seeds the negatives from the brief's suggestions, one per line, with Google's default match type", STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
@@ -168,7 +178,7 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
     ]);
   });
 
-  it('seeds only the suggestions the shared judge accepts, so an untouched create is not held', () => {
+  it('seeds only the suggestions the shared judge accepts, so an untouched create is not held', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
@@ -232,7 +242,7 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
     expect(query('implementation-google-search-ads-withheld-live')?.textContent).toContain(held);
   });
 
-  it('sends searchPartners only when ticked, and round-trips and resets it', () => {
+  it('sends searchPartners only when ticked, and round-trips and resets it', STATE_ONLY, () => {
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
     const c = seedChannel(fixture, { includeSearch: true });
@@ -252,7 +262,7 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
     expect(c['googleSearchPartners']()).toBe(true);
   });
 
-  it('round-trips everything through a draft and empties it for a new brief', () => {
+  it('round-trips everything through a draft and empties it for a new brief', STATE_ONLY, () => {
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
     const c = seedSearchAds();
@@ -307,7 +317,7 @@ describe('ImplementationTabComponent google conversion action picker', () => {
     ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
     read = vi.fn(answer);
     vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsConversionActions').mockImplementation(read as never);
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -427,7 +437,7 @@ describe('ImplementationTabComponent google conversion action picker', () => {
       expect(query('implementation-google-conversion-action-picker-live')?.textContent).toContain("Loading this account's conversion actions");
     });
 
-    it("drops the previous foundation's answer when the foundation changes mid-flight", async () => {
+    it("drops the previous foundation's answer when the foundation changes mid-flight", STATE_ONLY, async () => {
       const c = await setupInFlight();
       TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-other', slug: 'other', name: 'other' } as ProjectContext, false);
       fixture.detectChanges();
@@ -443,7 +453,7 @@ describe('ImplementationTabComponent google conversion action picker', () => {
       expect(c['googleConversionActionPicker']().actions.map((a: { id: string }) => a.id)).toEqual(['222']);
     });
 
-    it('cancels the read when the section is hidden mid-flight', async () => {
+    it('cancels the read when the section is hidden mid-flight', STATE_ONLY, async () => {
       const c = await setupInFlight();
       c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
       fixture.detectChanges();
@@ -452,7 +462,7 @@ describe('ImplementationTabComponent google conversion action picker', () => {
       expect(c['googleConversionActionPicker']().status).toBe('idle');
     });
 
-    it('cancels the read and shows the refusal when the capability turns to no mid-flight', async () => {
+    it('cancels the read and shows the refusal when the capability turns to no mid-flight', STATE_ONLY, async () => {
       const c = await setupInFlight();
       fixture.componentRef.setInput('googleConversionActionsEnabled', false);
       fixture.detectChanges();
@@ -461,7 +471,7 @@ describe('ImplementationTabComponent google conversion action picker', () => {
       expect(c['googleConversionActionPicker']().reason).toContain("Your account can't list");
     });
 
-    it('cancels the read when the tab is destroyed mid-flight', async () => {
+    it('cancels the read when the tab is destroyed mid-flight', STATE_ONLY, async () => {
       await setupInFlight();
       fixture.destroy();
 
@@ -524,7 +534,7 @@ describe('ImplementationTabComponent google user list picker', () => {
     ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
     read = vi.fn(answer);
     vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsUserLists').mockImplementation(read as never);
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -627,7 +637,7 @@ describe('ImplementationTabComponent google user list picker', () => {
     });
   });
 
-  it('sends the same campaignAudienceSegments for a picked list as for the same list typed, and no audienceSegments', async () => {
+  it('sends the same campaignAudienceSegments for a picked list as for the same list typed, and no audienceSegments', STATE_ONLY, async () => {
     await setup(() => of(LISTS));
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedSearch();
@@ -643,7 +653,7 @@ describe('ImplementationTabComponent google user list picker', () => {
     expect(request).not.toHaveProperty('audienceSegments');
   });
 
-  it('adds nothing for a cleared field', async () => {
+  it('adds nothing for a cleared field', STATE_ONLY, async () => {
     await setup(() => of(LISTS));
     const c = seedSearch();
 
@@ -667,7 +677,7 @@ describe('ImplementationTabComponent google user list picker', () => {
     expect(query('implementation-google-audience-segment-remove-1')?.getAttribute('aria-label')).toBe(`Remove ${OTHER}`);
   });
 
-  it('carries the name a list was added under in the draft, from the add itself', async () => {
+  it('carries the name a list was added under in the draft, from the add itself', STATE_ONLY, async () => {
     await setup(() => of(LISTS));
     const c = seedSearch();
     let draft: Record<string, any> = {};
@@ -706,7 +716,7 @@ describe('ImplementationTabComponent google user list picker', () => {
     expect(query('implementation-google-audience-segment-0')?.textContent?.trim()).toBe('KubeCon site visitors');
   });
 
-  it('forgets the added names when the form resets for a new brief', async () => {
+  it('forgets the added names when the form resets for a new brief', STATE_ONLY, async () => {
     await setup(() => of(LISTS));
     const c = seedSearch();
     c['onGoogleUserListPicked'](LIST_A);

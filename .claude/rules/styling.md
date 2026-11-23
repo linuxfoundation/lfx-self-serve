@@ -37,6 +37,7 @@ Available scales:
 - Use its slots: `[pageHeaderActions]` for right-side buttons or filters, `[pageHeaderTitleSuffix]` for an inline tag, `[pageHeaderDescription]` (a `<span>`) for description copy with markup.
 - Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form still uses the header. Full spec: `docs/architecture/frontend/component-architecture.md` § Page header.
 - Exception: Health Metrics (`health-metrics-gate`) builds its own sticky header, because its design sets a different title type (Roboto Slab light at 24px, 12px subtitle) and pins the tab bar inside it.
+- Exception: Account & Settings (`account-layout`, behind `PROFILE_REDESIGN_FLAG`) builds its own sticky header with the same type spec, because its grouped left nav pins below the measured header height.
 - Exception: the Me lens meetings redesign (`meetings-redesign`, behind `MEETINGS_REDESIGN_FLAG`) and groups redesign (`groups-redesign`, behind `GROUPS_REDESIGN_FLAG`) also build their own sticky headers, for the same type spec and because their fades and tabs bars stick to a measured header height.
 
 ## Tailwind, PrimeNG wrappers & uikit

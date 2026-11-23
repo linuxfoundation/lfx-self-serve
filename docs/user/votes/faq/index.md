@@ -4,7 +4,7 @@ description: Frequently asked questions about creating, voting on, and managing 
 audience: [all]
 product_area: Votes
 tags: [votes, faq, governance, elections, abstain, results, present, clone]
-last_updated: 2026-11-17
+last_updated: 2026-11-20
 intercom_collection: Votes
 ---
 
@@ -18,7 +18,7 @@ The person who creates the vote picks **Eligible Participants** from the vote's 
 
 ## Can I change my vote after submitting?
 
-It depends on the vote. When its creator allows changes (the default), you can change your choices, comment or abstention until the vote ends: go to **Me → Votes**, select **Review**, edit your recorded ballot and select **Update Vote**, or use your personalized ballot link if you received one. When the creator turned changes off, your ballot is final once you submit it. You see a notice saying so before you submit, and the **Review** drawer says **Your vote is final and can't be changed.** and keeps your recorded ballot read-only.
+It depends on the vote. When its creator allows changes (the default), you can change your choices, comment or abstention until the vote ends: go to **Me → Votes**, select **Review**, edit your recorded ballot and select **Update Vote**, or use your personalized ballot link if you received one. When the creator turned changes off, your ballot is final once you submit it. You see a notice saying so before you submit, and the **Review** drawer says **Your vote is final and can't be changed.** and keeps your recorded ballot read-only. If the vote has ended or you've been removed from it, LFX Self Serve tells you so and your ballot can't be changed. If too many ballots arrive from your network at once, you're asked to wait a moment and try again.
 
 The creator's management page has no ballot-changing controls. Invited voters who also manage the vote must use **Me → Votes → Review** to change their own ballot. Management access does not allow changing anyone else's ballot. In the Me-lens **Review** drawer, and on personalized links for named votes, a comment-only change preserves your recorded ranking; include previously unranked options in a ranked multiple-selection question only by selecting **Add to ranking**. Pseudo-anonymous links do not prefill previous answers: enter your intended choices again. To replace a recorded ranked single-selection abstention, clear **Abstain from this vote**, then select **Rank all options** and reorder.
 

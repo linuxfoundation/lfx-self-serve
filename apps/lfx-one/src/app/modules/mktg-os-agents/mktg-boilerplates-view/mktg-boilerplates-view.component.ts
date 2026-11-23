@@ -4,7 +4,13 @@
 import { DOCUMENT, isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { BOILERPLATES_MODE_LABELS, BOILERPLATES_VIEW_TABS, MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  BOILERPLATES_MODE_LABELS,
+  BOILERPLATES_VIEW_TABS,
+  MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
+  MKTG_REPORT_ASSET_LABELS,
+  MKTG_REPORT_GAPS_TITLE,
+} from '@lfx-one/shared/constants';
 import {
   BoilerplatesLengthView,
   BoilerplatesViewTab,
@@ -13,12 +19,13 @@ import {
   MktgRevisionApproval,
   MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
-import { boilerplatesLengthRows, describeMktgAcceptedGaps, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
+import { boilerplatesLengthRows, describeMktgAcceptedGaps, mktgAssetHeaderFallback, mktgReportFindingsView } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
+import { MktgReportFindingsComponent } from '../components/mktg-report-findings/mktg-report-findings.component';
 
 // The Boilerplates view: the asset's own app page inside the mktg-os-agents
 // module, in the framework view's look (full width, a tab bar, white cards).
@@ -29,7 +36,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
 // host enables per-length comments on stored assets; previews stay read-only.
 @Component({
   selector: 'lfx-mktg-boilerplates-view',
-  imports: [NgClass, MktgAssetMetaComponent, ButtonComponent, MktgFieldCommentsComponent],
+  imports: [NgClass, MktgAssetMetaComponent, ButtonComponent, MktgFieldCommentsComponent, MktgReportFindingsComponent],
   templateUrl: './mktg-boilerplates-view.component.html',
 })
 export class MktgBoilerplatesViewComponent {
@@ -67,8 +74,11 @@ export class MktgBoilerplatesViewComponent {
   protected readonly header = computed(() => this.headerMetadata() ?? mktgAssetHeaderFallback('boilerplates', this.version(), null, this.approval()));
   protected readonly modeLabel = computed(() => (this.asset().mode === 'draft' ? '' : BOILERPLATES_MODE_LABELS[this.asset().mode]));
   protected readonly report = computed(() => this.asset().report);
+  /** The report's findings as the Sources tab shows them: a v2 report's three groups, a v1 report's failed list alone. */
+  protected readonly reportFindings = computed(() => mktgReportFindingsView(this.report(), MKTG_REPORT_ASSET_LABELS));
   protected readonly findings = computed(() => this.asset().checks.findings);
   protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
+  protected readonly gapsTitle = MKTG_REPORT_GAPS_TITLE;
   /** Under an approved revision's gaps: accepted at that approval, still open. */
   protected readonly acceptedGapsNote = computed(() => describeMktgAcceptedGaps(this.report(), this.approval(), this.version()));
   protected readonly rows: Signal<BoilerplatesLengthView[]> = this.initRows();

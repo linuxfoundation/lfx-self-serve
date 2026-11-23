@@ -10,7 +10,7 @@ import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slid
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants/persona.constants';
 import { SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants/project-context.constants';
 import type { BoilerplatesEnvelope } from '@lfx-one/shared/interfaces/boilerplates.interface';
-import type { BrandKitReport, BrandKitRevision } from '@lfx-one/shared/interfaces';
+import type { BrandKitReport, BrandKitRevision, FoundationMessageEnvelope, MktgAssetReport } from '@lfx-one/shared/interfaces';
 import type { FaqEnvelope } from '@lfx-one/shared/interfaces/faq.interface';
 import type { FoundationMessageGoal } from '@lfx-one/shared/interfaces/foundation-message.interface';
 import type { MktgFrameworkAsset, MktgRunResultResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
@@ -27,6 +27,7 @@ import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
 import { pinMktgOsFlags } from './mktg-os-flags.helper';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { boilerplatesReportV2Envelope, faqReportV2Envelope, frameworkReportV2Envelope } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 
@@ -144,6 +145,35 @@ export function brandKitDraftRevisionResponse(report: BrandKitReport): MktgRevis
   const revision = { ...base.revision, approval: null };
   const sidecar = { ...base.sidecar, report };
   return { ...base, sidecar, revision, revisions: [revision], approval: null, approvedCurrent: null };
+}
+
+/** The three agents whose stored documents carry a v2 report with findings; the key is the document type's agent key. */
+export type ReportV2AgentKey = 'foundation-message' | 'boilerplates' | 'faq';
+
+/** Each agent's real AAIF v2 envelope, by its document type's agent key; each loader validates and returns a fresh copy. */
+const REPORT_V2_ENVELOPES: Record<ReportV2AgentKey, () => BoilerplatesEnvelope | FaqEnvelope | FoundationMessageEnvelope> = {
+  'foundation-message': frameworkReportV2Envelope,
+  boilerplates: boilerplatesReportV2Envelope,
+  faq: faqReportV2Envelope,
+};
+
+/**
+ * An unapproved revision of one of the family's three documents whose sidecar is the agent's real AAIF v2 envelope
+ * (`report.version: 2`, `report.findings`): what the Sources tab's findings cards and the generic approve dialog are
+ * tested against. Approve stays available on it. `report` replaces the envelope's own for one test (a v1 one, or a
+ * clean v2 one with nothing in any group, say).
+ */
+export function reportV2DraftRevisionResponse(key: ReportV2AgentKey, report?: MktgAssetReport): MktgRevisionResponse {
+  const base = nativeAssetRevisionResponse('faq');
+  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === key);
+  if (!type) throw new Error('Missing native document type');
+  const envelope = REPORT_V2_ENVELOPES[key]();
+  return {
+    ...base,
+    type,
+    markdown: JSON.stringify(envelope.content),
+    sidecar: { mode: envelope.mode, report: report ?? envelope.report, checks: envelope.checks },
+  };
 }
 
 /** Synthetic preview: no live generation, credentials or customer data. */

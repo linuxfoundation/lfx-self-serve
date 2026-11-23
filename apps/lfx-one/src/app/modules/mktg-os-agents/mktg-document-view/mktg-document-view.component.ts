@@ -30,8 +30,6 @@ import {
   AEO_GEO_CATEGORIES,
   AEO_GEO_INTAKE,
   AEO_GEO_TIMEOUT_MESSAGE,
-  BRAND_KIT_APPROVE_HEADER,
-  BRAND_KIT_APPROVE_HEADER_GAPS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   LINKEDIN_POST_INTAKE,
@@ -56,6 +54,9 @@ import {
   MKTG_PRINT_KIT_READ_NONE,
   MKTG_PRINT_KIT_READ_PENDING,
   MKTG_RUN_RESUME_QUERY_CLEAR,
+  MKTG_APPROVE_HEADER,
+  MKTG_APPROVE_HEADER_GAPS,
+  BRAND_KIT_INTAKE,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -63,6 +64,7 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgAssetReport,
+  MktgApproveGapsDialogData,
   MktgPrintKitRead,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
@@ -1381,9 +1383,10 @@ export class MktgDocumentViewComponent {
     const selection = this.revisionParam();
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
+    const data: MktgApproveGapsDialogData = { report, brandKit: view.type.agentKey === BRAND_KIT_INTAKE.agentId };
     const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
-      header: mktgReportHasOpenGaps(report) ? BRAND_KIT_APPROVE_HEADER_GAPS : BRAND_KIT_APPROVE_HEADER,
-      data: report,
+      header: mktgReportHasOpenGaps(report) ? MKTG_APPROVE_HEADER_GAPS : MKTG_APPROVE_HEADER,
+      data,
       modal: true,
       // The dialog focuses its own content on show, so a long list opens at its top rather than at the footer button.
       focusOnShow: false,
@@ -1934,6 +1937,8 @@ export class MktgDocumentViewComponent {
       return read().pipe(
         catchError((error: HttpErrorResponse) => {
           if (error.status !== 404 || !canResume || !pending || !intake) throw error;
+          // The server answered (the report is not stored yet): nothing is retrying while the storage wait runs.
+          this.refreshWarning.set('');
           this.generating.set(true);
           const anchored = this.pendingDocuments.markWaitStarted(pending);
           return this.pendingDocuments
@@ -1969,8 +1974,9 @@ export class MktgDocumentViewComponent {
         this.refreshWarning.set(event.kind === 'error' ? MKTG_POLL_RETRYING_TEXT : '');
         if (event.kind === 'ok' && event.value) this.errorText.set('');
       }),
-      // A loaded report stays through a failed re-read (last loaded content stays): only a result replaces it.
-      filter((event) => event.kind === 'ok' || !this.view()),
+      // Only a result reaches the view: a loaded report stays through a failed re-read, and a failed first read keeps the
+      // loading state behind the one line (ending it would leave the page blank, and hide the storage wait a retry starts).
+      filter((event) => event.kind === 'ok'),
       map((event) => (event.kind === 'ok' ? event.value : null))
     );
   }

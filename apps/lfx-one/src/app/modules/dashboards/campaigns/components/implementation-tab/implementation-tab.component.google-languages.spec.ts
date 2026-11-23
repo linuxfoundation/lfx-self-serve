@@ -8,9 +8,18 @@ import { CampaignService } from '@services/campaign.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Google language chips.
@@ -26,12 +35,12 @@ describe('ImplementationTabComponent google languages', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('adds a code once and refuses a duplicate or a blank', () => {
+  it('adds a code once and refuses a duplicate or a blank', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const { code } = c['googleLanguageOptions'][0];
 
@@ -42,7 +51,7 @@ describe('ImplementationTabComponent google languages', () => {
     expect(c['googleLanguages']()).toEqual([code]);
   });
 
-  it('refuses an add at the cap', () => {
+  it('refuses an add at the cap', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     // The curated table holds 39 codes and the cap is 40, so the cap cannot be reached from the
     // select alone — the list is seeded past it to exercise the guard the select cannot express.
@@ -53,7 +62,7 @@ describe('ImplementationTabComponent google languages', () => {
     expect(c['googleLanguages']()).toHaveLength(GOOGLE_ADS_MAX_LANGUAGES);
   });
 
-  it('removes a chip by index', () => {
+  it('removes a chip by index', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const [first, second] = c['googleLanguageOptions'];
     c['addGoogleLanguage'](first.code);
@@ -69,7 +78,7 @@ describe('ImplementationTabComponent google languages', () => {
    * collation — the endpoints are asserted by value so the order cannot quietly follow whichever
    * locale runs the suite.
    */
-  it('offers the languages in name order', () => {
+  it('offers the languages in name order', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const labels = c['googleLanguageOptions'].map((o: { label: string }) => o.label);
 
@@ -102,7 +111,7 @@ describe('ImplementationTabComponent google languages', () => {
     ['demand-gen', { includeDemandGen: true }],
     ['performance-max', { includePerformanceMax: true }],
     ['display', { includeDisplay: true }],
-  ])('opens the section on %s, which upstream accepts campaign languages on', (channel, patch) => {
+  ])('opens the section on %s, which upstream accepts campaign languages on', STATE_ONLY, (channel, patch) => {
     const c = seedChannel(fixture, patch);
 
     expect(c['googleLanguagesChannel']()).toBe(channel);
@@ -114,7 +123,7 @@ describe('ImplementationTabComponent google languages', () => {
    * `selectedGoogleChannels` drops it and there is no Video create for a language to ride on. The
    * constant stays right about upstream; this asserts the narrower thing the UI can do.
    */
-  it('closes the section on video, which has no create to attach a language to', () => {
+  it('closes the section on video, which has no create to attach a language to', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeVideo: true });
 
     expect(c['googleLanguagesChannel']()).toBeNull();
@@ -140,7 +149,7 @@ describe('ImplementationTabComponent google languages', () => {
    * its spread from the request in `submit()` would leave them green. These drive `submit()` and read
    * the request `CampaignService.createCampaign` was handed.
    */
-  it('submits a picked language on a channel that accepts languages', async () => {
+  it('submits a picked language on a channel that accepts languages', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleLanguage']('DE');
@@ -154,7 +163,7 @@ describe('ImplementationTabComponent google languages', () => {
     expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['languages']).toEqual(['DE']);
   });
 
-  it('submits a picked language on demand-gen', async () => {
+  it('submits a picked language on demand-gen', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeDemandGen: true });
     c['addGoogleLanguage']('EN');
@@ -171,7 +180,7 @@ describe('ImplementationTabComponent google languages', () => {
    * An absent key, not `[]`. Upstream reads an absent language list as Google's own default of
    * every language, so sending an empty array would be a narrowing nobody asked for.
    */
-  it('sends nothing when no language was picked', () => {
+  it('sends nothing when no language was picked', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['googleLanguagesPayload']()).toEqual({});
@@ -202,7 +211,7 @@ describe('ImplementationTabComponent google languages', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-section"]')).not.toBeNull();
   });
 
-  it('round-trips the chips through a draft', () => {
+  it('round-trips the chips through a draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -218,7 +227,7 @@ describe('ImplementationTabComponent google languages', () => {
   });
 
   /** The chips are COPIED out of the draft, so the parent's array cannot be mutated through them. */
-  it('does not share the restored array with the draft', () => {
+  it('does not share the restored array with the draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const saved = [c['googleLanguageOptions'][1].code];
 
@@ -229,7 +238,7 @@ describe('ImplementationTabComponent google languages', () => {
   });
 
   /** A draft saved before this section shipped carries no key, and must not clear the chips. */
-  it('leaves the chips alone when the draft carries no language key', () => {
+  it('leaves the chips alone when the draft carries no language key', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const { code } = c['googleLanguageOptions'][1];
     c['addGoogleLanguage'](code);

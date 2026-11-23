@@ -1174,6 +1174,29 @@ describe('MktgRunProgressComponent', () => {
     await fixture.whenStable();
     expect(retrying.mock.calls).toEqual([[true], [false], [true], [false]]);
     expect(fixture.componentInstance['readFailure']()).toContain('write access');
+    // The reader's own retrying line goes with the retries: a latched refusal is never read again, so nothing else would clear it.
+    expect(fixture.componentInstance['warning']()).toBe('');
+    expect(text()).not.toContain(MKTG_POLL_RETRYING_TEXT);
+  });
+
+  it.each([true, false])('drops its retrying line when a refusal follows a transient failure (run page: %s)', async (runPage) => {
+    await setup();
+    fixture.componentRef.setInput('runPage', runPage);
+    read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(text()).toContain(MKTG_POLL_RETRYING_TEXT);
+    read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(read).toHaveBeenCalledTimes(2);
+    // The card renders no read failure of its own, so a line left behind would be the only thing on it, with nothing to clear it.
+    expect(text()).not.toContain(MKTG_POLL_RETRYING_TEXT);
+    if (runPage) expect(text()).toContain('write access');
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
   });
 
   it.each([401, 403])(

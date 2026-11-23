@@ -143,6 +143,9 @@ const {
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', () => ({
+  ACCOUNT_BASE_PATH: '/account',
+  ACCOUNT_IDENTITIES_PATH: '/account/identities',
+  ACCOUNT_LINUX_EMAIL_PATH: '/account/linux-email',
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
   AUTH0_LINKED_ONLY_IDENTITY_COMBOS: new Set(['gitlab+username']),
   AUTH0_TO_CDP_PROVIDER_MAP: auth0ToCdpProviderMap,
@@ -1314,6 +1317,15 @@ describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
 
     expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=profile_auth_not_configured');
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['/account/identities', '/account/linux-email'])('keeps the Account & Settings page %s as an allowed returnTo', async (returnTo) => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.startProfileAuth(buildReq({ query: { returnTo } }), res, next);
+
+    expect(res.redirect).toHaveBeenCalledWith(`${returnTo}?error=profile_auth_not_configured`);
   });
 
   it('forwards a rejected getAuthorizationUrl to next instead of leaving it unhandled', async () => {
@@ -3340,21 +3352,27 @@ describe('ProfileController — already-connected email (#4253)', () => {
         expectNoWrites();
       });
 
-      it.each(['/profile', '/profile/email', '/profile/identities', '/profile/password', '/profile/linux-email', '/profile/settings'])(
-        'issues support context for the profile-layout return %s',
-        async (returnTo) => {
-          authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo });
-          emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'email already linked' });
-          const res = buildRes();
+      it.each([
+        '/profile',
+        '/profile/email',
+        '/profile/identities',
+        '/profile/password',
+        '/profile/linux-email',
+        '/profile/settings',
+        '/account/identities',
+        '/account/linux-email',
+      ])('issues support context for the profile-layout or Account & Settings return %s', async (returnTo) => {
+        authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo });
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'email already linked' });
+        const res = buildRes();
 
-          await controller.handleProfileAuthCallback(callbackReq(), res);
+        await controller.handleProfileAuthCallback(callbackReq(), res);
 
-          expect(linkedEmailSupportSvc.issue).toHaveBeenCalledExactlyOnceWith('auth0|user-1', ownedEmail);
-          expect(res.redirect).toHaveBeenCalledExactlyOnceWith(
-            `${returnTo}?success=profile_token_obtained&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_CALLBACK_ALREADY_LINKED_STATUS}&${EMAIL_LINKED_SUPPORT_CONTEXT_PARAM}=${'a'.repeat(64)}`
-          );
-        }
-      );
+        expect(linkedEmailSupportSvc.issue).toHaveBeenCalledExactlyOnceWith('auth0|user-1', ownedEmail);
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(
+          `${returnTo}?success=profile_token_obtained&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_CALLBACK_ALREADY_LINKED_STATUS}&${EMAIL_LINKED_SUPPORT_CONTEXT_PARAM}=${'a'.repeat(64)}`
+        );
+      });
 
       it.each(['OTP verification', 'identity linking'])('does not issue support context on a mentor return after a conflict at %s', async (conflictStage) => {
         authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/mentorship/mentor' });

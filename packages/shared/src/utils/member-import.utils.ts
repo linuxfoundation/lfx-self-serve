@@ -176,8 +176,16 @@ export function validateMemberImportRow(cells: MemberImportCells, rules: MemberI
     add('email', 'Email is not a valid address.');
   }
 
-  checkLength(value('first_name'), 100, 'first_name', 'First name', add);
-  checkLength(value('last_name'), 100, 'last_name', 'Last name', add);
+  for (const [column, label] of [
+    ['first_name', 'First name'],
+    ['last_name', 'Last name'],
+  ] as const) {
+    if (!value(column).trim()) {
+      add(column, `${label} is required.`);
+    } else {
+      checkLength(value(column), 100, column, label, add);
+    }
+  }
   checkLength(value('job_title'), 200, 'job_title', 'Job title', add);
 
   const linkedin = value('linkedin_profile');

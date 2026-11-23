@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ACCOUNT_SETTINGS_SECTIONS } from '../constants/profile.constants';
+
 /**
  * Developer settings token info returned by GET /api/profile/developer.
  *
@@ -9,6 +11,34 @@
 export interface DeveloperTokenInfo {
   token: string;
   type: string;
+}
+
+/** One page in the Account & Settings left nav and on its landing page (#6067). */
+export interface AccountSettingsNavItem {
+  /** Route segment under `/account`, e.g. `identities`. */
+  route: string;
+  label: string;
+  /** Font Awesome classes for the nav item and the landing row's tile. */
+  icon: string;
+  /** One-line description for the landing page (#6069). */
+  blurb: string;
+}
+
+/** One section of the settings page: Email settings, Password or Developer settings. */
+export type AccountSettingsSection = (typeof ACCOUNT_SETTINGS_SECTIONS)[keyof typeof ACCOUNT_SETTINGS_SECTIONS];
+
+/** A path plus the optional `#fragment` it lands on. */
+export interface AccountSettingsTarget {
+  path: string;
+  fragment?: string;
+}
+
+/** A labelled group of Account & Settings pages ("Account", "Settings"). */
+export interface AccountSettingsNavGroup {
+  /** Stable key for tracking and test ids. */
+  id: string;
+  label: string;
+  items: AccountSettingsNavItem[];
 }
 
 /**

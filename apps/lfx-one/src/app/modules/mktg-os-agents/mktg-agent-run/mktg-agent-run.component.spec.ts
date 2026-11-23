@@ -1864,6 +1864,35 @@ describe('MktgAgentRunComponent', () => {
       expect(read).toHaveBeenCalledTimes(2);
     });
 
+    it('shows the connection line under the waiting copy while a failed read is retried, and only the waiting copy after', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const read = vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['privateReceiptRunId'] = runId;
+      component['activeRequest'] = { projectUid: PROJECT_1.uid, agentId: type.catalogAgentId } as MktgGenerateRequest;
+      component['onPublicLanding']();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).not.toBeNull();
+      expect(query('mktg-run-public-retrying')).toBeNull();
+      // The reader is headless here and the checking skeleton is gone: the page itself must say a read is being retried.
+      read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-retrying')?.getAttribute('role')).toBe('status');
+      expect(query('mktg-run-public-retrying')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-run-public-waiting')?.textContent).toContain('The produced revision is not confirmed yet.');
+      expect(query('mktg-run-public-error')).toBeNull();
+      read.mockReturnValue(of(record('writing')));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-retrying')).toBeNull();
+      expect(query('mktg-run-public-waiting')?.textContent).toContain('The produced revision is not confirmed yet.');
+      expect(query('mktg-run-public-document-link')).not.toBeNull();
+    });
+
     it('clears the unconfirmed-revision line when the context resets and when a read recovers', async () => {
       await configure('browser', type.catalogAgentId, { run: runId });
       activeContext.set(PROJECT_1);

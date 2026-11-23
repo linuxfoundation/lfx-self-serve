@@ -61,6 +61,7 @@ import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-d
 import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.utils';
 import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { faqReportV2Envelope } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 // package-architecture.md § Import Patterns: fixtures are intentionally not re-exported by the production utils barrel.
@@ -1540,6 +1541,29 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-error')).toBeNull();
       expect(query('mktg-document-view-loading')).toBeNull();
       expect(query('mktg-document-view-document')).not.toBeNull();
+      vi.useRealTimers();
+    });
+
+    it('keeps the loading state through a transiently failed first read, and shows the audit as generating once the retry is answered', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.waitForStorage.mockReturnValue(NEVER);
+      store.getDocument
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      // The read is still being retried: the page keeps loading behind the one line, it does not go blank.
+      expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-run-loading') ?? query('mktg-document-view-loading')).not.toBeNull();
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      // The server answered (the report is not stored yet): nothing is retrying, and the storage wait shows as loading.
+      expect(pending.waitForStorage).toHaveBeenCalledTimes(1);
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      expect(query('mktg-document-view-run-loading') ?? query('mktg-document-view-loading')).not.toBeNull();
+      expect(query('mktg-document-view-error')).toBeNull();
       vi.useRealTimers();
     });
 
@@ -3851,7 +3875,10 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/faq/living?revision=${LATEST.id}`);
     expect(query('mktg-document-view-live-state')?.textContent).toBe('Ready — 1 gap.');
     query('mktg-document-view-approve')?.querySelector('button')?.click();
-    expect(dialog.open).toHaveBeenCalledWith(MktgApproveGapsDialogComponent, expect.objectContaining({ data: expect.objectContaining({ gaps: [question] }) }));
+    expect(dialog.open).toHaveBeenCalledWith(
+      MktgApproveGapsDialogComponent,
+      expect.objectContaining({ data: { report: expect.objectContaining({ gaps: [question] }), brandKit: false } })
+    );
     expect(store.approveRevision).not.toHaveBeenCalled();
     closed.next(false);
   });
@@ -3867,7 +3894,12 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
       MktgApproveGapsDialogComponent,
-      expect.objectContaining({ header: 'Approve with open gaps?', data: report, modal: true, templates: { footer: MktgApproveGapsFooterComponent } })
+      expect.objectContaining({
+        header: 'Approve with open gaps?',
+        data: { report, brandKit: false },
+        modal: true,
+        templates: { footer: MktgApproveGapsFooterComponent },
+      })
     );
     expect(store.approveRevision).not.toHaveBeenCalled();
     if (confirmed === 'navigate') {
@@ -3896,7 +3928,7 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
       MktgApproveGapsDialogComponent,
-      expect.objectContaining({ header: 'Approve this version?', data: expect.objectContaining(fields), modal: true })
+      expect.objectContaining({ header: 'Approve this version?', data: { report: expect.objectContaining(fields), brandKit: true }, modal: true })
     );
     expect(store.approveRevision).not.toHaveBeenCalled();
     closed.next(true);
@@ -3911,6 +3943,27 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).toHaveBeenCalledExactlyOnceWith(MktgApproveGapsDialogComponent, expect.objectContaining({ header: 'Approve with open gaps?' }));
+    expect(store.approveRevision).not.toHaveBeenCalled();
+  });
+
+  it('asks under the open-gaps header for another agent’s real v2 report and hands the dialog its findings untouched (the FAQ, its gaps rewritten to the unanswered question)', async () => {
+    const faq = faqReportV2Envelope();
+    store.getRevision.mockReturnValue(
+      of({ ...faqResponse(), markdown: JSON.stringify(faq.content), sidecar: { mode: faq.mode, report: faq.report, checks: faq.checks } })
+    );
+    dialog.open.mockReturnValue({ onClose: NEVER, onDestroy: NEVER, close: vi.fn() });
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
+      MktgApproveGapsDialogComponent,
+      expect.objectContaining({
+        header: 'Approve with open gaps?',
+        data: {
+          report: expect.objectContaining({ version: 2, findings: faq.report.findings, gaps: ['How do I propose a new project to AAIF?'] }),
+          brandKit: false,
+        },
+      })
+    );
     expect(store.approveRevision).not.toHaveBeenCalled();
   });
 

@@ -546,10 +546,10 @@ so two failed sessions of one living document cannot share a retry target.
 Initial navigation discovers runs of all ages. Timer reads are bounded; private
 coverage is materialized into validated public rows, never serialized as skipped
 ids or counts. Window-skipped unfinished snapshots are last-known and unavailable.
-Clients retain missing same-scope rows while unavailable, back off and stop at the
-shared availability timeout; manual refresh resets that budget. One stale row can
-make the project's progress unknown and retain another completed run's last-known
-row until that pause/manual refresh. Known stored-current metadata is not changed.
+Clients retain missing same-scope rows while unavailable and keep checking on the
+capped jittered backoff, with no stop and no manual refresh; a healthy read resets
+it. One stale row can make the project's progress unknown and retain another
+completed run's last-known row until a healthy read. Known stored-current metadata is not changed.
 Transient reads retain the last same-scope asset/list with a warning; auth,
 permission and scope changes fail closed. A first run can have zero revisions and
 progress only. Other browsers can read writer-authorized progress, not creator

@@ -120,7 +120,7 @@ export class ProfileIdentitiesComponent implements OnInit {
     } else if (typeof params['error'] === 'string' && params['error']) {
       const errorCode = params['error'];
       // Codes in PROFILE_AUTH_ERROR_MESSAGES (including invalid_state/no_code, shared with the
-      // identity-link callback) are owned by ProfileLayoutComponent — skip here to avoid a double toast.
+      // identity-link callback) are owned by ProfileAuthReturnService — skip here to avoid a double toast.
       // hasOwn guard: errorCode is unvalidated user input — an inherited Object.prototype key
       // (e.g. 'toString') would otherwise resolve as a truthy hit in either map below.
       if (Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) return;

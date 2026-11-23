@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS } from '@lfx-one/shared/constants';
 import { MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import type { GroupsIOMailingList, MailingListMember } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
@@ -80,6 +81,27 @@ describe('MailingListMembersComponent load recovery', () => {
     const element = fixture.nativeElement as HTMLElement;
     expect(element.querySelector('[data-testid="mailing-list-members-error"]')).toBeNull();
     expect(element.textContent).toContain('No subscribers found');
+  });
+
+  it('filters the groups.io automation bot out of the roster, case-insensitively (#6038 review)', async () => {
+    const bot: MailingListMember = {
+      uid: 'bot-1',
+      mailing_list_uid: 'list-1',
+      email: GROUPSIO_SYSTEM_SUBSCRIBER_EMAILS[0].toUpperCase(),
+      first_name: 'Automation',
+      last_name: 'Bot',
+      member_type: MailingListMemberType.DIRECT,
+      delivery_mode: MailingListMemberDeliveryMode.NORMAL,
+      mod_status: MailingListMemberModStatus.NONE,
+      status: 'active',
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    };
+    const person: MailingListMember = { ...bot, uid: 'member-1', email: 'jane@example.com', first_name: 'Jane', last_name: 'Doe' };
+    getMembers.mockReturnValue(of([bot, person]));
+    const fixture = await mount();
+
+    expect(fixture.componentInstance.filteredMembers().map((m) => m.uid)).toEqual(['member-1']);
   });
 });
 
