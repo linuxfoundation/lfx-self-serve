@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  dateOnlyToUtcMidnightIso,
   daysUntilInTimezone,
   detectBrowserTimezoneOption,
   findSameWallClockZone,
@@ -369,6 +370,32 @@ describe('tryParseLocalDateString', () => {
     expect(tryParseLocalDateString('')).toBeNull();
     expect(tryParseLocalDateString('not-a-date')).toBeNull();
     expect(tryParseLocalDateString('2026-1-5')).toBeNull();
+  });
+});
+
+// Visa request dates (#6052): the picked calendar day must reach user-service unchanged, which keeps
+// only the UTC day of the RFC3339 value it receives.
+describe('dateOnlyToUtcMidnightIso', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('turns a calendar date into UTC midnight', () => {
+    expect(dateOnlyToUtcMidnightIso('1990-05-10')).toBe('1990-05-10T00:00:00.000Z');
+  });
+
+  it('returns null for empty input or a full timestamp', () => {
+    expect(dateOnlyToUtcMidnightIso(null)).toBeNull();
+    expect(dateOnlyToUtcMidnightIso(undefined)).toBeNull();
+    expect(dateOnlyToUtcMidnightIso('')).toBeNull();
+    expect(dateOnlyToUtcMidnightIso('1990-05-09T23:00:00.000Z')).toBeNull();
+  });
+
+  it.each(['Africa/Lagos', 'Asia/Kolkata', 'Pacific/Auckland', 'America/Los_Angeles'])('keeps a date picked in %s on the same UTC day', (timeZone) => {
+    vi.stubEnv('TZ', timeZone);
+    const picked = new Date(1990, 4, 10);
+
+    expect(dateOnlyToUtcMidnightIso(toLocalDateOnlyString(picked))).toBe('1990-05-10T00:00:00.000Z');
   });
 });
 

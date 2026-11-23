@@ -45,7 +45,7 @@ import {
   VisaRequestRow,
   VisaRequestsResponse,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC, isBackfillEventSource, normalizeToUrl } from '@lfx-one/shared/utils';
+import { dateOnlyToUtcMidnightIso, formatDateToUTC, isBackfillEventSource, normalizeToUrl } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -781,7 +781,7 @@ export class EventsService {
       attendeeAccommodationPaidBy: applicantInfo.attendeeAccommodationPaidBy,
       attendeeType: applicantInfo.attendeeType,
       birthCountry: applicantInfo.citizenshipCountry,
-      birthDate: formatDateToUTC(applicantInfo.birthDate),
+      birthDate: this.toUpstreamCalendarDate(req, 'birthDate', applicantInfo.birthDate),
       email: applicantInfo.email,
       eventID: eventID,
       firstName: applicantInfo.firstName,
@@ -796,7 +796,7 @@ export class EventsService {
       ...(applicantInfo.company && { jobTitle: applicantInfo.company }),
       ...(applicantInfo.mailingAddress && { addressLine01: applicantInfo.mailingAddress }),
       ...(applicantInfo.passportExpiryDate && {
-        passportExpiryDate: formatDateToUTC(applicantInfo.passportExpiryDate),
+        passportExpiryDate: this.toUpstreamCalendarDate(req, 'passportExpiryDate', applicantInfo.passportExpiryDate),
       }),
     };
 
@@ -1229,6 +1229,16 @@ export class EventsService {
       default:
         return { filter: '', binds: [] };
     }
+  }
+
+  // User-service keeps only the UTC day, so send the calendar day as UTC midnight. Tabs still running
+  // the old client send a local-midnight instant; keep accepting it so the submission isn't blocked.
+  private toUpstreamCalendarDate(req: Request, field: string, value: string | null): string | null {
+    const utcMidnight = dateOnlyToUtcMidnightIso(value);
+    if (utcMidnight || !value) return utcMidnight;
+
+    logger.warning(req, 'submit_visa_request_application', 'Visa date is not a YYYY-MM-DD calendar date; falling back to instant conversion', { field });
+    return formatDateToUTC(value);
   }
 
   private mapRowToVisaRequest(row: VisaRequestRow): VisaRequest {
