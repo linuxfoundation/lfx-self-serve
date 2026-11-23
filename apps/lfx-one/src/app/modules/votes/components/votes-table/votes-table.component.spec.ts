@@ -2151,7 +2151,9 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     expect(refreshed).toHaveBeenCalledTimes(1);
   });
 
-  it('ignores an accept for a row that has left the list', async () => {
+  it.each([false, true])('ignores an unknown missing row (lazy: %s)', async (lazy) => {
+    fixture.componentRef.setInput('lazy', lazy);
+    fixture.detectChanges();
     const accept = await acceptCancel();
     fixture.componentRef.setInput(
       'votes',
@@ -2163,6 +2165,25 @@ describe('VotesTableComponent — Cancel vote (#5968)', () => {
     expect(deleteVote).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
     expect(refreshed).not.toHaveBeenCalled();
+  });
+
+  it('explains a confirmed Close after a lazy Active-page refresh removes the row', async () => {
+    fixture.componentRef.setInput('lazy', true);
+    fixture.componentRef.setInput('statusTab', PollStatus.ACTIVE);
+    fixture.detectChanges();
+    const accept = await acceptCancel();
+    table['closedVotes'].set(new Map([['active', { status: PollStatus.ENDED }]]));
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.filter((row) => row.uid !== 'active')
+    );
+    fixture.detectChanges();
+    accept();
+
+    expect(deleteVote).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE }));
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(refreshed).toHaveBeenCalledTimes(1);
   });
 
   it.each(['input', 'close override'])('explains an ended vote hidden by Active using the %s, reconciling its carriers', async (source) => {

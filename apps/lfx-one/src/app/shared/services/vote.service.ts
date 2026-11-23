@@ -336,6 +336,9 @@ export class VoteService {
   public markVoteEnded(voteUid: string): void {
     this.confirmedEndedVotes.add(voteUid);
     this.updateRecentlyCreatedVoteStatus(voteUid, PollStatus.ENDED);
+    // An ENDED carrier inserted into an empty page is still local, not evidence that the index has caught up.
+    const carried = this.recentlyCreatedVotes().get(voteUid)?.vote;
+    if (carried) this.endedVoteOverlays.add(carried);
     if (this.recentlyOpenedVotes().has(voteUid)) this.recentlyOpenedConfirmedStatus.set(voteUid, PollStatus.ENDED);
   }
 

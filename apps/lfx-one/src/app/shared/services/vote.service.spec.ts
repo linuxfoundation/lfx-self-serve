@@ -735,6 +735,23 @@ describe('VoteService', () => {
       expect(service.mergeRecentlyCreatedVotes([active])[0].status).toBe(PollStatus.ACTIVE);
     });
 
+    it.each([false, true])('preserves a locally ended carrier after an empty composed refresh (recently opened: %s)', (opened) => {
+      const active = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, total_voting_request_invitations: 0 });
+      service.markVoteCreated(active, true);
+      if (opened) service.markVoteOpened('new-vote');
+      http.delete.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: VOTE_DELETE_ENDED } })));
+      service.cancelVote('new-vote').subscribe({ error: vi.fn() });
+
+      const emptyRefresh = service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([]));
+      expect(emptyRefresh).toEqual([expect.objectContaining({ uid: 'new-vote', status: PollStatus.ENDED })]);
+      expect(service.mergeRecentlyCreatedVotes([active], { statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      expect(service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([active]))[0].status).toBe(PollStatus.ENDED);
+
+      const indexedEnded = { ...active, status: PollStatus.ENDED, total_voting_request_invitations: 4 };
+      service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([indexedEnded]));
+      expect(service.mergeRecentlyCreatedVotes([active])[0].status).toBe(PollStatus.ACTIVE);
+    });
+
     it('retains confirmed-ended state after the optimistic windows expire', () => {
       vi.useFakeTimers();
       try {

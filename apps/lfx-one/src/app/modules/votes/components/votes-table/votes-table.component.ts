@@ -578,7 +578,7 @@ export class VotesTableComponent {
     });
   }
 
-  /** Cancel from the row menu (#5968): asks first, explains an ended row, and ignores an accept for a row that has left the list. */
+  /** Cancel from the row menu (#5968): asks first, explains confirmed ended state, and ignores unknown rows that have left the list. */
   protected onCancelVote(vote: Vote): void {
     const uid = vote.uid;
     this.confirmationService.confirm({
@@ -591,7 +591,7 @@ export class VotesTableComponent {
         // Status filters can hide a newly ended row; inspect current input and the confirmed Close overlay first.
         const current = this.votes().find((r) => r.uid === uid);
         const status = this.closedVotes().get(uid)?.status ?? current?.status;
-        if (current && status === PollStatus.ENDED) {
+        if (status === PollStatus.ENDED) {
           this.voteService.markVoteEnded(uid);
           this.messageService.add({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE, life: 8000 });
           this.refresh.emit();
