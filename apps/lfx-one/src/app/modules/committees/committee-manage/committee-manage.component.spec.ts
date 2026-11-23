@@ -875,4 +875,20 @@ describe('CommitteeManageComponent', () => {
       }
     });
   });
+
+  describe('Members Can View Social Listening save rule', () => {
+    async function clean(category: string): Promise<Record<string, unknown>> {
+      const fixture = await createComponent();
+      const instance = fixture.componentInstance as unknown as { cleanFormData: (data: Record<string, unknown>) => Record<string, unknown> };
+      return instance.cleanFormData({ category, members_can_view_social_listening: true });
+    }
+
+    it('keeps the setting on for a Board group', async () => {
+      expect((await clean('Board'))['members_can_view_social_listening']).toBe(true);
+    });
+
+    it('saves the setting as off for any other group', async () => {
+      expect((await clean('Working Group'))['members_can_view_social_listening']).toBe(false);
+    });
+  });
 });
