@@ -528,3 +528,34 @@ describe('seat reassign — caller cache invalidation', () => {
     expect(drains).toBe(2);
   });
 });
+
+describe('placeholder seat names (GH-5643)', () => {
+  const unknownSeat = (over: Partial<CommitteeServiceOrgSeat> = {}): CommitteeServiceOrgSeat =>
+    seat({ first_name: '[[unknown]]', last_name: '[[unknown]]', ...over });
+
+  it('the Reassign picker shows the email for a seat named [[unknown]]', async () => {
+    proxyRequest.mockResolvedValue(page([unknownSeat()]));
+
+    const [employee] = await new OrgLensBoardCommitteeService().getOrgEmployees(req, ORG);
+
+    expect(employee).toMatchObject({ firstName: '', lastName: '', fullName: 'dclarke@lfx-partner.example', initials: 'DC' });
+  });
+
+  it('board and committee seats show the email for a holder named [[unknown]]', async () => {
+    proxyRequest.mockResolvedValue(page([unknownSeat({ uid: 'board-1', committee_category: 'Board' }), unknownSeat({ uid: 'wg-1' })]));
+    const service = new OrgLensBoardCommitteeService();
+    // Resolve the foundation family to the seats' project; the collaborators are empty module mocks here.
+    Object.assign(service, {
+      membershipsService: { getFoundationSlug: async () => 'identity' },
+      projectService: { getProjectIdBySlug: async () => ({ exists: true, uid: 'p-1' }), getFoundationProjectUids: async () => ['p-1'] },
+    });
+
+    const { boardSeats, committeeSeats } = await service.getSeats(req, ORG, 'foundation-1');
+
+    for (const { person } of [...boardSeats, ...committeeSeats]) {
+      expect(person).toMatchObject({ firstName: '', lastName: '', fullName: 'dclarke@lfx-partner.example', initials: 'DC' });
+    }
+    expect(boardSeats).toHaveLength(1);
+    expect(committeeSeats).toHaveLength(1);
+  });
+});

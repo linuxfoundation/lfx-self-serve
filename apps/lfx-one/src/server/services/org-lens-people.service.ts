@@ -53,16 +53,9 @@ import type {
   OrgTeamMemberKeys,
   OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
-import {
-  fromColumnar,
-  hasExactColumns,
-  isColumnarAbsent,
-  isColumnarTable,
-  isFilterSafeIdentifier,
-  isPlaceholderName,
-  splitDisplayName,
-  toColumnar,
-} from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+// Direct module import: the service specs mock the utils barrel with only the helpers they exercise.
+import { isPlaceholderName } from '@lfx-one/shared/utils/display-name.utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';

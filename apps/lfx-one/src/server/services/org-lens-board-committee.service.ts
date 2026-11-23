@@ -17,7 +17,9 @@ import type {
   ReassignCommitteeSeatRequest,
   SeatCommittee,
 } from '@lfx-one/shared/interfaces';
-import { cleanNamePart, dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
+// Direct module import: the service specs mock the utils barrel with only the helpers they exercise.
+import { cleanNamePart } from '@lfx-one/shared/utils/display-name.utils';
 import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';

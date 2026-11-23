@@ -732,6 +732,29 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
   });
 });
 
+describe('OrgPeopleDirectoryService.merge — placeholder seat names (GH-5643)', () => {
+  it('builds a live-only row from [[unknown]] seats with no name parts, showing the email instead', async () => {
+    // The first seat creates the row (rowFromSeat); the second, at the same address, goes through the merge fill.
+    fetchAllOrgSeats.mockResolvedValue([
+      seat({ username: null, email: 'someone@example.com', first_name: '[[unknown]]', last_name: '[[unknown]]' }),
+      seat({ uid: 'seat-2', username: null, email: 'someone@example.com', first_name: '[[Unknown]]', last_name: '[[unknown]]' }),
+    ]);
+
+    const { rows } = await run();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ name: 'someone@example.com', firstName: null, lastName: null });
+  });
+
+  it('keeps the real part of a half-placeholder seat name', async () => {
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'someone@example.com', first_name: 'Devon', last_name: '[[unknown]]' })]);
+
+    const { rows } = await run();
+
+    expect(rows[0]).toMatchObject({ name: 'Devon', firstName: 'Devon', lastName: null });
+  });
+});
+
 describe('OrgPeopleDirectoryService.merge — no regression for single-source people', () => {
   it('leaves a stored-only person untouched', async () => {
     getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
