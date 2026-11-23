@@ -132,6 +132,8 @@ export const VOTE_DETAIL_RESULTS_POLL_OPTIONS = {
   intervalMs: 5000,
   backoffBaseMs: 5000,
   backoffMaxMs: 30000,
+  // Votes keeps its fixed 5/10/20/30 s retry cadence, as the presenter does; Marketing OS readers take the jittered default.
+  jitter: false,
 } as const;
 
 /** Detail managers: total final-results reads after closure, including held payloads and failed attempts. */
