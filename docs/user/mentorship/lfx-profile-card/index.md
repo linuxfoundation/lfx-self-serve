@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, mentor, profile, lfx-profile, github, linkedin, identities]
 last_generated: 2026-10-30
-last_updated: 2026-10-30
+last_updated: 2026-11-23
 intercom_collection: Mentorship
 ---
 
