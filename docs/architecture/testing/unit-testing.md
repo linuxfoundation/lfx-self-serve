@@ -233,6 +233,9 @@ it('refuses a malformed conversion action', STATE_ONLY, () => {
 });
 ```
 
+The campaigns page has the same fixture in `campaigns.spec-helper.ts`: `StateOnlyCampaignsComponent`,
+its own `STATE_ONLY`, `trackStateOnlyTests()` and `campaignsComponentUnderTest()`.
+
 - **Subclass, never `TestBed.overrideTemplate` on the component itself.** TestBed drops overrides
   after each test, so the whole template recompiles every time (about 250 ms a test); the subclass
   compiles once. `@Component` metadata is not inherited, so redeclare any component-scoped

@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Wiring only (#5940). Which objectives are offered, when a form holds Create and which call to action a form
@@ -38,7 +39,7 @@ describe('ImplementationTabComponent meta lead form', () => {
   const c = (f: ComponentFixture<ImplementationTabComponent>): Record<string, any> => f.componentInstance as unknown as Record<string, any>;
 
   async function mount(leadFormsEnabled: boolean | null): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     f.componentRef.setInput('createCapabilityRead', 'ready');
     f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
     f.componentRef.setInput('metaLeadFormsEnabled', leadFormsEnabled);
@@ -91,7 +92,7 @@ describe('ImplementationTabComponent meta lead form', () => {
     expect(c(f)['createBlockedReason']()).toContain('Choose a lead form');
   });
 
-  it('sends the chosen form as metaConfig.leadFormId on the Leads objective', async () => {
+  it('sends the chosen form as metaConfig.leadFormId on the Leads objective', STATE_ONLY, async () => {
     const f = await mount(true);
     c(f)['onMetaLeadFormChange']('111');
     f.detectChanges();
@@ -101,7 +102,7 @@ describe('ImplementationTabComponent meta lead form', () => {
     expect(createCampaign.mock.calls.at(-1)?.[0]['metaConfig']).toMatchObject({ objective: 'leads', leadFormId: '111' });
   });
 
-  it('drops Leads and the form on a foundation switch', async () => {
+  it('drops Leads and the form on a foundation switch', STATE_ONLY, async () => {
     const f = await mount(true);
     c(f)['onMetaLeadFormChange']('111');
     TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-cncf', slug: 'cncf', name: 'cncf' } as ProjectContext, false);
@@ -111,7 +112,7 @@ describe('ImplementationTabComponent meta lead form', () => {
     expect(c(f)['metaLeadFormId']()).toBe('');
   });
 
-  it('drops Leads and the form when a draft saved under another foundation is restored', async () => {
+  it('drops Leads and the form when a draft saved under another foundation is restored', STATE_ONLY, async () => {
     const f = await mount(true);
     let saved: CampaignImplementationDraft | null = null;
     f.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (saved = d));
@@ -122,7 +123,7 @@ describe('ImplementationTabComponent meta lead form', () => {
     f.destroy();
 
     TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-cncf', slug: 'cncf', name: 'cncf' } as ProjectContext, false);
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     restored.componentRef.setInput('metaLeadFormsEnabled', true);
     restored.componentRef.setInput('draft', saved);
     restored.componentRef.setInput('briefData', brief());

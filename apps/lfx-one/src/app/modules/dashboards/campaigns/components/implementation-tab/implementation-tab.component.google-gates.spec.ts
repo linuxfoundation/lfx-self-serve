@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { SEED_KEYWORD, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { SEED_KEYWORD, stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 describe('ImplementationTabComponent demand gen capability gate', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
@@ -35,7 +36,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -67,7 +68,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * rejects Google with NEITHER type selected, so it does not cover Search plus a stale hidden
    * Demand Gen, and the builder guard is the only thing keeping that off the wire.
    */
-  it('does not treat a hidden Demand Gen selection as a submittable Google campaign', () => {
+  it('does not treat a hidden Demand Gen selection as a submittable Google campaign', STATE_ONLY, () => {
     fixture.componentRef.setInput('demandGenEnabled', false);
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
@@ -102,7 +103,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * would render `Multi` while the request carries only `search` — naming a campaign that will
    * not be created, in a name operators use to find it in the ad platform later.
    */
-  it('previews a Search-only name when a hidden Demand Gen selection cannot be created', () => {
+  it('previews a Search-only name when a hidden Demand Gen selection cannot be created', STATE_ONLY, () => {
     fixture.componentRef.setInput('demandGenEnabled', false);
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
@@ -129,7 +130,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * the capability still `null` previews Search, and a later `true` leaves the name saying Search
    * while submit sends `demand-gen`.
    */
-  it('updates the previewed name when the capability arrives after mount', () => {
+  it('updates the previewed name when the capability arrives after mount', STATE_ONLY, () => {
     fixture.componentRef.setInput('demandGenEnabled', null);
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
@@ -161,7 +162,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * Search + a stale hidden Demand Gen is the ordinary shape of this bug: a draft saved when the
    * capability was on, restored on a deployment where it is off.
    */
-  it('sends only search when a hidden Demand Gen selection accompanies Search', async () => {
+  it('sends only search when a hidden Demand Gen selection accompanies Search', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j-1' }));
 
     // `null` AT MOUNT, so `applyDraft` PRESERVES the draft's `true` — the clear at :1636 fires
@@ -235,7 +236,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * does, so this cannot be asserted through the DOM — only the draft outcome separates them,
    * and getting it wrong destroys a user's saved selection rather than merely hiding a checkbox.
    */
-  it('preserves a restored draft selection while the capability is unknown', () => {
+  it('preserves a restored draft selection while the capability is unknown', STATE_ONLY, () => {
     restoreDraft(null, true);
     expect(demandGenValue()).toBe(true);
   });
@@ -281,7 +282,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * directly, so a draft saved when the capability was available would put a hidden `true` on the
    * form and submit it into a refusal. Asserts the VALUE, not merely that the path ran.
    */
-  it('forces a restored draft to Search when the deployment cannot create Demand Gen', () => {
+  it('forces a restored draft to Search when the deployment cannot create Demand Gen', STATE_ONLY, () => {
     restoreDraft(false, true);
     expect(demandGenValue()).toBe(false);
   });
@@ -291,7 +292,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * and the negative test above would still pass, so this is what proves the gate reads the
    * capability rather than discarding the draft value unconditionally.
    */
-  it('preserves a restored draft Demand Gen selection where the deployment supports it', () => {
+  it('preserves a restored draft Demand Gen selection where the deployment supports it', STATE_ONLY, () => {
     restoreDraft(true, true);
     expect(demandGenValue()).toBe(true);
   });
@@ -330,7 +331,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -394,7 +395,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     fixture.detectChanges();
   }
 
-  it('clears a restored selection when the deployment has answered that it cannot create these channels', () => {
+  it('clears a restored selection when the deployment has answered that it cannot create these channels', STATE_ONLY, () => {
     restoreDraft(false, true);
     expect(value('includePerformanceMax')).toBe(false);
     expect(value('includeVideo')).toBe(false);
@@ -406,7 +407,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * two would have `applyDraft` rewrite a user's saved selection from a value that was never a
    * server fact, which is a destructive edit to persisted state rather than a hidden checkbox.
    */
-  it('preserves a restored selection while the capability is still unknown', () => {
+  it('preserves a restored selection while the capability is still unknown', STATE_ONLY, () => {
     restoreDraft(null, true);
     expect(value('includePerformanceMax')).toBe(true);
     expect(value('includeVideo')).toBe(true);
@@ -417,7 +418,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * The paired positive case: without it the clear above could be an unconditional `false` and
    * still pass, so this is what proves the restore reads the capability.
    */
-  it('preserves a restored selection where the deployment supports it', () => {
+  it('preserves a restored selection where the deployment supports it', STATE_ONLY, () => {
     restoreDraft(true, true);
     expect(value('includePerformanceMax')).toBe(true);
   });
@@ -481,7 +482,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     return c;
   }
 
-  it('folds a line break in generated creative copy into a space, in linear time however long the whitespace run', () => {
+  it('folds a line break in generated creative copy into a space, in linear time however long the whitespace run', STATE_ONLY, () => {
     const c = fixture.componentInstance as unknown as Record<string, any>;
     const fit = (values: unknown[]): string[] => c['fittingCreativeCopy']('demand-gen', 'headlines', values);
 
@@ -504,7 +505,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * the budget. The server refuses the pair; refusing it here turns a terminal failure into a
    * disabled button.
    */
-  it('refuses a flagged channel combined with anything else', () => {
+  it('refuses a flagged channel combined with anything else', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeSearch: true, includeDisplay: true }, { googleChannels: true });
 
     expect(c['canSubmit']()).toBe(false);
@@ -519,7 +520,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * the server derives from `cutoverOwnsCreate()`, and it is the only thing separating this case
    * from the one below.
    */
-  it('still allows search combined with demand gen while the cutover is dark', () => {
+  it('still allows search combined with demand gen while the cutover is dark', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: false });
 
     expect(c['canSubmit']()).toBe(true);
@@ -530,7 +531,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * client that refuses a create the server would have accepted is the costlier mistake, and the
    * window before the capability call returns is exactly where that would happen.
    */
-  it('still allows search combined with demand gen while the capability is unknown', () => {
+  it('still allows search combined with demand gen while the capability is unknown', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: null });
 
     expect(c['canSubmit']()).toBe(true);
@@ -544,13 +545,13 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * exactly like the flagged ones. The legacy exception no longer applies, because the legacy
    * creator is no longer the one that runs. Submitting is then a certain terminal refusal.
    */
-  it('refuses search combined with demand gen once the cutover owns the create', () => {
+  it('refuses search combined with demand gen once the cutover owns the create', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: true });
 
     expect(c['canSubmit']()).toBe(false);
   });
 
-  it('allows a flagged channel on its own', () => {
+  it('allows a flagged channel on its own', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: true });
     expect(c['canSubmit']()).toBe(true);
   });
@@ -560,7 +561,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * refuses two. Without it, a `canSubmit` that returned false for an unrelated reason once the
    * cutover is on — a bidding plan that only renders there, say — would make them pass vacuously.
    */
-  it('allows a single channel once the cutover owns the create', () => {
+  it('allows a single channel once the cutover owns the create', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeSearch: true }, { demandGen: true, googleChannels: true, googleCreative: true });
 
     expect(c['canSubmit']()).toBe(true);
@@ -581,7 +582,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * `detectChanges` to invalidate it by another route; and only then is it read again. Remove
    * `campaignFormRevision` from `canSubmit` and the second read returns the cached `false`.
    */
-  it('canSubmit reacts to a channel ticked after it was last read', () => {
+  it('canSubmit reacts to a channel ticked after it was last read', STATE_ONLY, () => {
     const c = seedGoogleForm({}, { googleChannels: true });
 
     // Warm the memo in the no-channel state. Not an incidental assertion — if this were already
@@ -600,7 +601,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * `setValue('')` does emit both, but the assertion is about the state `canSubmit` reports, and
    * it is the case a reviewer reaches for when asking why `statusChanges` is in that merge.
    */
-  it('canSubmit reacts to a required field being emptied after it was last read', () => {
+  it('canSubmit reacts to a required field being emptied after it was last read', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: true });
 
     expect(c['canSubmit']()).toBe(true);
@@ -623,7 +624,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * where every other flagged channel IS submittable. `allows a flagged channel on its own`
    * directly above is that control: same seed, same capability, Display instead of Video.
    */
-  it('refuses Video even with the capability on and the raw value set', () => {
+  it('refuses Video even with the capability on and the raw value set', STATE_ONLY, () => {
     const c = seedGoogleForm({}, { googleChannels: true });
     c['campaignForm'].controls.includeVideo.setValue(true);
 
@@ -656,7 +657,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * Display rather than Video, which this used to use: Video is now refused by its own guard
    * regardless of the capability, so it would pass here against no capability gate at all.
    */
-  it('does not treat a hidden flagged selection as a submittable Google campaign', () => {
+  it('does not treat a hidden flagged selection as a submittable Google campaign', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: false });
 
     expect(c['canSubmit']()).toBe(false);
@@ -669,7 +670,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
   it.each([
     ['includePerformanceMax', 'PMax'],
     ['includeDisplay', 'Display'],
-  ])('previews the %s name token', (control, token) => {
+  ])('previews the %s name token', STATE_ONLY, (control, token) => {
     const c = seedGoogleForm({ [control]: true }, { googleChannels: true });
 
     expect(c['campaignName']()).toContain(`| ${token} |`);
@@ -679,13 +680,13 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * `demand-gen` keeps rendering as `DG Display`, not as its product label. The token predates the
    * nicer name, and renaming it would split a campaign's reporting history in two.
    */
-  it('keeps the legacy DG Display token for demand gen', () => {
+  it('keeps the legacy DG Display token for demand gen', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeDemandGen: true }, { demandGen: true });
 
     expect(c['campaignName']()).toContain('| DG Display |');
   });
 
-  it('previews a Search-only name when a hidden flagged selection accompanies Search', () => {
+  it('previews a Search-only name when a hidden flagged selection accompanies Search', STATE_ONLY, () => {
     const c = seedGoogleForm({ includeSearch: true, includeDisplay: true }, { googleChannels: false });
 
     expect(c['campaignName']()).toContain('| Search |');
