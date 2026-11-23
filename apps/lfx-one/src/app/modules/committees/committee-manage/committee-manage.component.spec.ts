@@ -878,6 +878,7 @@ describe('CommitteeManageComponent', () => {
 
   describe('Members Can View Social Listening save rule', () => {
     async function clean(category: string): Promise<Record<string, unknown>> {
+      getCommittee.mockReturnValue(of(enrichedCommittee()));
       const fixture = await createComponent();
       const instance = fixture.componentInstance as unknown as { cleanFormData: (data: Record<string, unknown>) => Record<string, unknown> };
       return instance.cleanFormData({ category, members_can_view_social_listening: true });
