@@ -238,6 +238,12 @@ export interface RoleGrantsResponse {
    */
   claManagerLookup?: 'ok' | 'failed';
   /**
+   * Epic #5845 — `failed` when the all employee view lookup was asked for and could not answer (a work-history, email, company or
+   * timeout failure), so the absence of `employeeView` is unknown rather than "not an employee" and the client renders the outage
+   * state with Retry. Absent ⇒ `ok` (including a flag-off server and a caller who holds something).
+   */
+  employeeViewLookup?: 'ok' | 'failed';
+  /**
    * #4225 — the caller's own employment affiliation, used only to pick between `no-organization` and
    * `affiliated-no-grant` when the caller holds nothing. Resolved server-side because the client
    * cannot read it: the employer comes from CDP work history, and its membership from the warehouse
