@@ -1502,7 +1502,8 @@ export class CommitteeService {
     const groupUids = [
       ...new Set(
         memberships
-          .filter((m) => m.status === CommitteeMemberStatus.ACTIVE && canGroupGrantSocialListening(m.committee_category))
+          // The membership's denormalized category only skips groups that are clearly not Boards; the group record decides below.
+          .filter((m) => m.status === CommitteeMemberStatus.ACTIVE && (!m.committee_category || canGroupGrantSocialListening(m.committee_category)))
           .map((m) => m.committee_uid)
           .filter((uid): uid is string => Boolean(uid))
       ),
@@ -1513,10 +1514,26 @@ export class CommitteeService {
 
     const m2mToken = await generateM2MToken(req);
     // allSettled: one failed read must not hide another group that has the setting on.
-    const results = await settleInBatches(groupUids, 10, (uid) =>
-      this.getCommitteeSettings(req, uid, { throwOnError: true, requestOptions: { bearerToken: m2mToken } })
-    );
-    if (results.some((r) => r.status === 'fulfilled' && r.value?.members_can_view_social_listening === true)) {
+    const requestOptions = { bearerToken: m2mToken };
+    const results = await settleInBatches(groupUids, 10, async (uid) => {
+      const settings = await this.getCommitteeSettings(req, uid, { throwOnError: true, requestOptions });
+      if (settings?.members_can_view_social_listening !== true) {
+        return false;
+      }
+      // Board only for now: confirm on the group record, not the membership's copy of the category.
+      const group = await this.microserviceProxy.proxyRequest<Committee>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${uid}`,
+        'GET',
+        undefined,
+        undefined,
+        undefined,
+        requestOptions
+      );
+      return canGroupGrantSocialListening(group?.category);
+    });
+    if (results.some((r) => r.status === 'fulfilled' && r.value === true)) {
       return true;
     }
     const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');

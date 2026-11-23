@@ -2118,10 +2118,19 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
 
   describe('canGroupMemberViewSocialListening', () => {
     /** Membership query, then one settings read per active group. */
-    function upstream(memberships: string[], settings: Record<string, boolean | Error>, status = 'Active', category = 'Board'): void {
+    function upstream(
+      memberships: string[],
+      settings: Record<string, boolean | Error>,
+      status = 'Active',
+      category: string | undefined = 'Board',
+      groupCategory = category
+    ): void {
       proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
         if (path === '/query/resources') {
           return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid, status, committee_category: category } })) });
+        }
+        if (!path.endsWith('/settings')) {
+          return Promise.resolve({ uid: path.split('/')[2], category: groupCategory });
         }
         const value = settings[path.split('/')[2]];
         return value instanceof Error ? Promise.reject(value) : Promise.resolve({ members_can_view_social_listening: value });
@@ -2154,6 +2163,18 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
 
       await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
       expect(proxyRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows a Board member whose membership lacks the category, using the group record', async () => {
+      upstream(['board-1'], { 'board-1': true }, 'Active', undefined, 'Board');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+    });
+
+    it('denies when the group record is not a Board, even if the membership says it is', async () => {
+      upstream(['wg-1'], { 'wg-1': true }, 'Active', 'Board', 'Working Group');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
     });
 
     it('denies when the group setting is off', async () => {
