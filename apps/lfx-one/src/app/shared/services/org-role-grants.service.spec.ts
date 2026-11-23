@@ -240,6 +240,14 @@ describe('OrgRoleGrantsService addressed full access', () => {
     expect(service.fullAccessOrgUids().has(UID)).toBe(false);
   });
 
+  it('reports a failed employee-view lookup, and clears it on the next answer', async () => {
+    await answer({ ...grants, employeeViewLookup: 'failed' });
+    expect(service.employeeViewLookupFailed()).toBe(true);
+
+    await answer({ ...grants });
+    expect(service.employeeViewLookupFailed()).toBe(false);
+  });
+
   it('keeps the note when the optional employee-view field is simply absent', async () => {
     service.noteFullAccessAddressed(UID, true);
 

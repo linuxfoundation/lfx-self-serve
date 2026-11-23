@@ -122,12 +122,26 @@ export class OrgSlugResolverService {
       const org = await this.resolveFallbackOrg(req, (employee) => employee.orgSlug === segment, null);
       return org ? { outcome: 'hit', org, cache } : { ...cached, cache };
     }
-    if (cached.outcome !== 'ambiguous') {
-      return { ...cached, cache };
+    // The all employee view company is invisible to query-service, so it can share this slug with a company the caller CAN read. It must
+    // take part in uniqueness and in the preference: otherwise the readable company silently wins the employee company's own address.
+    const { employee, failed } = await this.employeeCandidateForSlug(req, segment);
+    if (cached.outcome === 'hit') {
+      if (failed && prefer && prefer !== cached.org.uid && !(await this.lookupByUid(req, prefer))) {
+        // The employee check could not answer, and the caller's current selection is a company query-service does not show them: it
+        // may be the all employee view company sharing this slug. Do not switch them to the readable one on a guess: answer a retriable
+        // 503 (not a 409 the client would keep as "not found" for the page's lifetime).
+        throw this.employeeViewUnavailable(undefined);
+      }
+      if (!employee || employee.orgUid === cached.org.uid) return { ...cached, cache };
+      if (prefer === employee.orgUid) return { outcome: 'hit', org: this.toEmployeeResolution(employee), cache };
+      return prefer === cached.org.uid ? { ...cached, cache } : { outcome: 'ambiguous', cache };
     }
 
     if (!prefer) {
       return { outcome: 'ambiguous', cache };
+    }
+    if (employee && prefer === employee.orgUid) {
+      return { outcome: 'hit', org: this.toEmployeeResolution(employee), cache };
     }
 
     // Tie-break: the caller's current selection wins iff query-service confirms the caller can
@@ -138,6 +152,56 @@ export class OrgSlugResolverService {
       return { outcome: 'hit', org: preferred, cache };
     }
     return { outcome: 'ambiguous', cache };
+  }
+
+  /**
+   * The all employee view company whose slug is `slug`, for the uniqueness check against a readable company. `employee` is null when
+   * the flag is off, the caller is not an employee, or the lookup cannot answer; `failed` says it could not answer (an error or the
+   * {@link ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS} budget, since this rides a page-blocking guard). Fail-soft on purpose: it only adds a
+   * possible collision, so a failed lookup leaves the readable company's answer standing rather than failing an admin's page, except
+   * where the caller's own selection could be the company that could not be checked.
+   */
+  private async employeeCandidateForSlug(req: Request, slug: string): Promise<{ employee: OrgLensEmployeeViewGrant | null; failed: boolean }> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) return { employee: null, failed: false };
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const verdict = await Promise.race([
+        this.employeeView.resolveReduced(req),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new MicroserviceError(`Employee-view slug check exceeded ${ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
+                  operation: 'resolve_org_slug',
+                  service: 'LFX_V2_SERVICE',
+                })
+              ),
+            ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS
+          );
+        }),
+      ]);
+      return { employee: verdict.eligible && verdict.org.orgSlug === slug ? verdict.org : null, failed: false };
+    } catch (error) {
+      logger.warning(req, 'resolve_employee_view_org', 'Could not check the employee-view company against a readable slug; keeping the readable answer', {
+        err: error,
+      });
+      return { employee: null, failed: true };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** The structured retriable 503 for an employee-view lookup that could not answer, so the client retries instead of caching "not found". */
+  private employeeViewUnavailable(cause: unknown): MicroserviceError {
+    return new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
+      operation: 'resolve_employee_view_org',
+      service: 'org_slug_resolver_service',
+      originalError: cause instanceof Error ? cause : undefined,
+    });
+  }
+
+  private toEmployeeResolution(employee: OrgLensEmployeeViewGrant): OrgResolveResponse {
+    return { uid: employee.orgUid, slug: employee.orgSlug ?? null, name: employee.orgName, employeeView: true };
   }
 
   /**
@@ -176,11 +240,7 @@ export class OrgSlugResolverService {
       return claOnly;
     }
     if (employeeViewError !== undefined) {
-      throw new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
-        operation: 'resolve_employee_view_org',
-        service: 'org_slug_resolver_service',
-        originalError: employeeViewError instanceof Error ? employeeViewError : undefined,
-      });
+      throw this.employeeViewUnavailable(employeeViewError);
     }
     return null;
   }
