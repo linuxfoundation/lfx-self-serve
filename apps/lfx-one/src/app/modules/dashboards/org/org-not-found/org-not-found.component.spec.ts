@@ -94,6 +94,7 @@ function setup(): Harness {
           inheritedAuditorSet: signal(empty),
           claManagerOrgSet: signal(empty),
           claManagerLookupFailed: signal(false),
+          employeeViewLookupFailed: signal(false),
           employeeViewOrgUid: signal<string | null>(null),
           employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
           fullAccessOrgUid: signal<string | null>(null),
