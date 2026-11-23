@@ -451,6 +451,22 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaLeadForms = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS',
 
   /**
+   * Meta detailed targeting (#5904 row 4): accept `metaConfig.targeting.interests`, `behaviors` with
+   * `workPositions`, and `locales` on create, one flag each, and open the targeting search
+   * (`GET /api/campaigns/meta/targeting-search`) while the interest or behavior flag is on.
+   *
+   * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+   * `META_INTEREST_TARGETING_ENABLED`, `META_BEHAVIOR_TARGETING_ENABLED` or `META_LOCALE_TARGETING_ENABLED` on
+   * (and `META_TARGETING_SEARCH_ENABLED` for the search), since campaign-service refuses the field or the read
+   * with a 400 otherwise, and is only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the
+   * default), the create route refuses the field with a 400, never dropping it, and the search answers 404. A
+   * request field and a read only, so flipping one back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaInterestTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING',
+  CampaignServiceMetaBehaviorTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING',
+  CampaignServiceMetaLocaleTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *

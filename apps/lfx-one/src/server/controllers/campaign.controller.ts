@@ -63,6 +63,13 @@ import {
 import { compactMetaAdOptions, metaAdOptionOffMessage, metaAdOptionsRefusal, metaConfigRecord } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
 import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
 import {
+  compactMetaDetailedTargeting,
+  isMetaTargetingSearchType,
+  metaDetailedTargetingRefusal,
+  metaTargetingFlagRefusal,
+  metaTargetingQueryRefusal,
+} from '@lfx-one/shared/utils/campaign-meta-detailed-targeting.utils';
+import {
   googleDemandGenAudienceCarried,
   googleDemandGenAudiencesRefusal,
   googleDemandGenAudienceTypeRefusal,
@@ -148,6 +155,8 @@ import type {
   MetaAdOptionKey,
   MetaAdOptions,
   MetaAudienceTargeting,
+  MetaTargeting,
+  MetaTargetingSearchResult,
   MetaCustomAudiencesResult,
   MetaLeadFormsResult,
 } from '@lfx-one/shared/interfaces';
@@ -341,7 +350,7 @@ import {
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
   META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
-  META_AUDIENCE_TARGETING_OFF_MESSAGE,
+  META_TARGETING_SEARCH_BUSY_MESSAGE,
   META_AD_OPTION_FIELDS,
   META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE,
   META_LEAD_FORM_ID_PATTERN,
@@ -396,6 +405,10 @@ import {
   canSetMetaCallToAction,
   canSetMetaConversionEvent,
   canSetMetaLeadForm,
+  canSearchMetaTargeting,
+  canSetMetaBehaviorTargeting,
+  canSetMetaInterestTargeting,
+  canSetMetaLocaleTargeting,
   canSetMetaOptimizationGoal,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -4675,6 +4688,93 @@ export class CampaignController {
   }
 
   /**
+   * One page of Meta's targeting taxonomy for the Implement tab's detailed targeting (#5904 row 4), camel-cased:
+   * interests, behaviors or job titles matching `?query=`, through campaign-service's `search-meta-targeting-options`
+   * (linuxfoundation/lfx-v2-campaign-service#612). 404 unless interests or behaviors can be sent. Meta taxonomy, so
+   * `requireCampaignManager` is the gate, as upstream's. The kind and query are checked here first, so a bad one
+   * costs no upstream call; a Meta throttle (503, not retried upstream) answers a "busy, try again" 503.
+   */
+  public async searchMetaTargetingOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'meta_targeting_search';
+    if (!canSearchMetaTargeting()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'A project is required to search Meta targeting.', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const type = req.query['type'];
+    const queryRefusal = metaTargetingQueryRefusal(type, req.query['query']);
+    if (queryRefusal !== null || !isMetaTargetingSearchType(type)) {
+      next(
+        ServiceValidationError.forField(isMetaTargetingSearchType(type) ? 'query' : 'type', queryRefusal ?? 'Unknown search type.', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const query = String(req.query['query']).trim();
+    // The query is never logged, as upstream never logs it.
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true, type });
+    try {
+      const payload = await this.campaignServiceClient.searchMetaTargetingOptions(req, projectSlug, type, query);
+      // `options` is required upstream; reading its absence as an empty list would say nothing matched.
+      if (!Array.isArray(payload?.options)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Meta targeting search.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const num = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+      const result: MetaTargetingSearchResult = {
+        type,
+        // An option whose id is not one a create accepts cannot be sent, so it is dropped rather than offered;
+        // a repeated id is offered once.
+        options: payload.options
+          .filter((o, i, all) => typeof o?.id === 'string' && META_CUSTOM_AUDIENCE_ID_PATTERN.test(o.id) && all.findIndex((other) => other?.id === o.id) === i)
+          .map((o) => {
+            const lower = num(o.audience_size_lower_bound);
+            const upper = num(o.audience_size_upper_bound);
+            const coverage = num(o.coverage);
+            return {
+              id: o.id as string,
+              name: typeof o.name === 'string' && o.name.trim() !== '' ? o.name : (o.id as string),
+              path: Array.isArray(o.path) ? o.path.filter((part): part is string => typeof part === 'string') : [],
+              ...(typeof o.description === 'string' && o.description.trim() !== '' ? { description: o.description } : {}),
+              ...(lower !== undefined ? { audienceSizeLowerBound: lower } : {}),
+              ...(upper !== undefined ? { audienceSizeUpperBound: upper } : {}),
+              ...(coverage !== undefined ? { coverage } : {}),
+            };
+          }),
+      };
+      logger.success(req, operation, startTime, { count: result.options.length, type });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 503) {
+        next(
+          new MicroserviceError(META_TARGETING_SEARCH_BUSY_MESSAGE, 503, 'META_TARGETING_SEARCH_BUSY', {
+            operation,
+            service: 'campaign_controller',
+            clientMessage: META_TARGETING_SEARCH_BUSY_MESSAGE,
+          })
+        );
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /**
    * The custom audiences on the Meta ad account a create for this project uses, for the Implement tab's
    * Meta audience targeting (#5905), camel-cased. The ad account is shared by every foundation, so it is
    * answered on the relation campaign-service checks first: `global_marketing_ops` on the project
@@ -7046,7 +7146,7 @@ export class CampaignController {
   private createConfigEnvelope(
     body: CampaignCreateRequest,
     linkedInAdAccountId: string | null = null,
-    metaTargeting: MetaAudienceTargeting | null = null,
+    metaTargeting: MetaTargeting | null = null,
     metaAdOptions: MetaAdOptions = {},
     metaLeadFormIdToSend: string | null = null
   ): Record<string, unknown> {
@@ -9595,7 +9695,7 @@ export class CampaignController {
    */
   private buildMetaConfig(
     body: CampaignCreateRequest,
-    targeting: MetaAudienceTargeting | null = null,
+    targeting: MetaTargeting | null = null,
     adOptions: MetaAdOptions = {},
     leadFormId: string | null = null
   ): Record<string, unknown> | null {
@@ -9695,31 +9795,43 @@ export class CampaignController {
   }
 
   /**
-   * The `metaConfig.targeting` a create sends (#5905), or `null` to send none.
+   * The `metaConfig.targeting` a create sends (#5905, and #5904 row 4's detailed fields), or `null` to send none.
    *
-   * - audience targeting off on this deployment (`canSetMetaAudienceTargeting`): 400, never a silent drop.
-   *   The form never sends it in that state, so a block here comes from a tab opened while the flag was on
-   *   (a rollout or a rollback); dropping it would create the campaign without the audiences the operator
-   *   chose, for example reaching the registrants they meant to exclude;
-   * - a block that breaks campaign-service's rules (`metaAudienceTargetingRefusal`): 400 naming the field;
+   * - a field this deployment does not accept (`metaTargetingFlagRefusal`): 400, never a silent drop. The audience
+   *   flag covers age, gender, custom audiences and Advantage+ (and an empty block); interests, behaviors with job
+   *   titles, and languages each have their own, as campaign-service's `checkMetaTargeting`, so a block with only
+   *   detailed fields passes while audience targeting is off. The form never sends a field that is off, so a block
+   *   here comes from a tab opened while the flag was on (a rollout or a rollback); dropping it would create the
+   *   campaign without the audience the operator chose;
+   * - a block that breaks campaign-service's rules (`metaAudienceTargetingRefusal`, `metaDetailedTargetingRefusal`):
+   *   400 naming the field;
    * - a block naming custom audiences from a caller without `global_marketing_ops` on the project: 403;
    *   a check that cannot be made: 503 — the Meta ad account is shared by every foundation, and
-   *   campaign-service checks the same relation (lfx-v2-campaign-service#550);
+   *   campaign-service checks the same relation (lfx-v2-campaign-service#550). Detailed fields are Meta taxonomy,
+   *   so they need no such check;
    * - otherwise the block with every default dropped, or `null` when nothing is left.
    */
-  private async metaTargetingToForward(req: Request, projectSlug: string, body: CampaignCreateRequest): Promise<MetaAudienceTargeting | null> {
+  private async metaTargetingToForward(req: Request, projectSlug: string, body: CampaignCreateRequest): Promise<MetaTargeting | null> {
     const operation = 'campaign_create';
     const raw: unknown = body?.metaConfig?.targeting;
     if (raw === undefined || raw === null) return null;
-    if (!canSetMetaAudienceTargeting()) {
-      throw ServiceValidationError.forField('metaConfig.targeting', META_AUDIENCE_TARGETING_OFF_MESSAGE, { operation, service: 'campaign_controller' });
+    const flagRefusal = metaTargetingFlagRefusal(raw, {
+      audience: canSetMetaAudienceTargeting(),
+      interest: canSetMetaInterestTargeting(),
+      behavior: canSetMetaBehaviorTargeting(),
+      locale: canSetMetaLocaleTargeting(),
+    });
+    if (flagRefusal !== null) {
+      throw ServiceValidationError.forField(flagRefusal.field, flagRefusal.message, { operation, service: 'campaign_controller' });
     }
-    const refusal = metaAudienceTargetingRefusal(raw);
+    const refusal = metaAudienceTargetingRefusal(raw) ?? metaDetailedTargetingRefusal(raw);
     if (refusal !== null) {
       throw ServiceValidationError.forField(refusal.field, refusal.message, { operation, service: 'campaign_controller' });
     }
-    const targeting = compactMetaAudienceTargeting(raw as MetaAudienceTargeting);
-    if (!metaTargetingNamesCustomAudiences(targeting)) return targeting;
+    const audience = compactMetaAudienceTargeting(raw as MetaAudienceTargeting);
+    const detailed = compactMetaDetailedTargeting(raw);
+    const targeting: MetaTargeting | null = audience === null && detailed === null ? null : { ...audience, ...detailed };
+    if (!metaTargetingNamesCustomAudiences(audience)) return targeting;
     const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the Meta custom audiences');
     if (access === 'denied') {
       throw new AuthorizationError(META_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE, {

@@ -828,6 +828,24 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS:
     value:
 
+  # Meta detailed targeting (#5904 row 4), one flag each: `..._META_INTEREST_TARGETING` accepts
+  # `metaConfig.targeting.interests`, `..._META_BEHAVIOR_TARGETING` accepts `behaviors` and `workPositions`
+  # (job titles), and `..._META_LOCALE_TARGETING` accepts `locales` (languages). The targeting search
+  # (`GET /api/campaigns/meta/targeting-search`) answers while the interest or behavior flag is on.
+  #
+  # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+  # `META_INTEREST_TARGETING_ENABLED`, `META_BEHAVIOR_TARGETING_ENABLED` or `META_LOCALE_TARGETING_ENABLED` on,
+  # plus `META_TARGETING_SEARCH_ENABLED` for the search, and the create pipeline on. Off (the default), the
+  # create route refuses the field with a 400, never dropping it, and the search answers 404. A field and a
+  # read only, so turning one back off strands nothing. Order: set campaign-service's flag and pass its live
+  # probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING:
+    value:
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the

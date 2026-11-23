@@ -192,6 +192,10 @@ router.get('/twitter/create-capability', (req, res) => campaignController.getTwi
 // behind LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH — 404 while it is off. Public location data,
 // so not root-only: `requireCampaignManager` above is the gate.
 router.get('/google/geo-targets', (req, res, next) => campaignController.searchGoogleAdsGeoTargets(req, res, next));
+// Meta's targeting taxonomy (interests, behaviors, job titles), searched for the Implement tab's detailed
+// targeting (#5904 row 4; campaign-service #612). 404 unless Meta interest or behavior targeting is on. Meta
+// taxonomy, so not root-only: `requireCampaignManager` above is the gate, as campaign-service's.
+router.get('/meta/targeting-search', (req, res, next) => campaignController.searchMetaTargetingOptions(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
 // Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
 router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));

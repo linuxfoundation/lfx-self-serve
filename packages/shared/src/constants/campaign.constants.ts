@@ -961,6 +961,15 @@ export const META_ADVANTAGE_AUDIENCE_MAX_AGE_MIN = 25;
 export const META_MAX_CUSTOM_AUDIENCES = 25;
 /** A canonical Meta custom-audience id: digits with no leading zero (campaign-service's `canonicalCampaignIDRe`). */
 export const META_CUSTOM_AUDIENCE_ID_PATTERN = /^[1-9][0-9]*$/;
+/** At most this many distinct ids in each of `interests`, `behaviors` and `workPositions` (#5904 row 4; campaign-service#612). */
+export const META_MAX_DETAILED_TARGETING_IDS = 25;
+/** At most this many distinct `locales` (Meta `adlocale` keys). */
+export const META_MAX_LOCALES = 50;
+/** The Meta targeting search's kinds, as campaign-service names them. */
+export const META_TARGETING_SEARCH_TYPES = ['interest', 'behavior', 'work_position'] as const;
+/** A targeting search query is 2–100 characters after trimming, as campaign-service checks it. */
+export const META_TARGETING_QUERY_MIN_LENGTH = 2;
+export const META_TARGETING_QUERY_MAX_LENGTH = 100;
 export const META_AUDIENCE_GENDERS: readonly MetaAudienceGender[] = ['male', 'female'];
 /** The custom-audience lists the Implement tab offers, in order. */
 export const META_CUSTOM_AUDIENCE_LISTS: readonly MetaCustomAudienceListView[] = [
@@ -1664,6 +1673,16 @@ export const META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'META_CUSTOM_AUDIEN
 export const META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Meta custom audiences could not be verified. Try again in a few minutes.';
 /** The 400 a create gets for `metaConfig.leadFormId` while Meta lead forms are off on this deployment (#5940). */
 export const META_LEAD_FORMS_OFF_MESSAGE = 'Meta lead forms are not available on this deployment. Reload the page, then create again without one.';
+/** The 400 a create gets for Meta interests while interest targeting is off on this deployment (#5904 row 4). */
+export const META_INTEREST_TARGETING_OFF_MESSAGE =
+  'Meta interest targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for Meta behaviors or job titles while behavior targeting is off on this deployment. */
+export const META_BEHAVIOR_TARGETING_OFF_MESSAGE =
+  'Meta behavior and job title targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for Meta languages while language targeting is off on this deployment. */
+export const META_LOCALE_TARGETING_OFF_MESSAGE = 'Meta language targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 503 a Meta targeting search gets when Meta throttles it: campaign-service does not retry, so the caller should wait. */
+export const META_TARGETING_SEARCH_BUSY_MESSAGE = 'Meta is busy right now. Wait a few seconds, then search again.';
 /**
  * The error `code` (HTTP 403) of a Meta lead form read, or a create naming a form, refused because the caller
  * does not hold `global_marketing_ops` on the project: a project without its own Meta connection uses the
