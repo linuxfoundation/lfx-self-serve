@@ -85,6 +85,7 @@ export {
   computeParticipationSegments,
   computeVoteParticipationStats,
   isRankedPollType,
+  joinNames,
   votePermalinkPath,
 } from './vote-results.utils';
 
