@@ -36,7 +36,15 @@ import { InsightsTokensComponent } from '../components/insights-tokens/insights-
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
 import { extractErrorMessage, serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { ChangePasswordRequest, EmailManagementData, EmailSettingsState, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
+import {
+  AccountSettingsSection,
+  ChangePasswordRequest,
+  EmailManagementData,
+  EmailSettingsState,
+  MeetingInviteEmail,
+  PasswordStrength,
+  UserEmail,
+} from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -87,7 +95,8 @@ export class AccountSettingsComponent {
   // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
   public readonly embedded = this.route.snapshot.data['embedded'] === true;
   // One section alone (route data `section`) on its own Account & Settings page; null shows all three with the contents list.
-  public readonly section: string | null = (this.route.snapshot.data['section'] as string | undefined) ?? null;
+  public readonly section: AccountSettingsSection | null = (this.route.snapshot.data['section'] as AccountSettingsSection | undefined) ?? null;
+  protected readonly sections = ACCOUNT_SETTINGS_SECTIONS;
   // Latched in afterNextRender (a no-op on the server): the non-production localStorage override in
   // FeatureFlagService reads synchronously, so without it a pre-seeded `true` would render the group on
   // the first client pass and mismatch the SSR DOM (same fix as health-metrics-gate.component.ts).

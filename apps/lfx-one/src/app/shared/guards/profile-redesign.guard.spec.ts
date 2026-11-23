@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal } from '@angular/core';
+import { PLATFORM_ID, REQUEST_CONTEXT, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, Route, Router, RouterStateSnapshot, UrlSegment, UrlTree } from '@angular/router';
 import { PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { profileRedesignEnabledGuard, profileRedesignRedirectGuard } from './profile-redesign.guard';
+import { PROFILE_REDESIGN_KEY, profileRedesignEnabledGuard, profileRedesignRedirectGuard } from './profile-redesign.guard';
 
 describe('profile redesign guards', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
@@ -76,11 +76,27 @@ describe('profile redesign guards', () => {
       expect(waitForReady).not.toHaveBeenCalled();
     });
 
-    it('defers to the browser on the server', async () => {
+    it('decides on the server from the flags it evaluated, and hands the answer to the browser', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      TestBed.overrideProvider(REQUEST_CONTEXT, { useValue: { flags: { profileRedesign: false } } });
+
+      expect(url(await match('account', 'clas'))).toBe('/profile/clas');
+      expect(TestBed.inject(TransferState).get(PROFILE_REDESIGN_KEY, null)).toBe(false);
+      expect(getFlagOverride).not.toHaveBeenCalled();
+    });
+
+    it('keeps the hub on the server when no flags were evaluated', async () => {
       TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
 
+      expect(url(await match('account', 'clas'))).toBe('/profile/clas');
+    });
+
+    it("follows the server's answer in the browser without asking the flag service", async () => {
+      TestBed.inject(TransferState).set(PROFILE_REDESIGN_KEY, true);
+      providerReady.set(false);
+
       expect(await match('account', 'clas')).toBe(true);
-      expect(getFlagOverride).not.toHaveBeenCalled();
+      expect(waitForReady).not.toHaveBeenCalled();
     });
   });
 
@@ -105,11 +121,19 @@ describe('profile redesign guards', () => {
       expect(await activate('identities')).toBe(true);
     });
 
-    it('lets the tab load on the server', async () => {
+    it('redirects on the server when the flags it evaluated say so, and lets the tab load otherwise', async () => {
       TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      TestBed.overrideProvider(REQUEST_CONTEXT, { useValue: { flags: { profileRedesign: true } } });
+
+      expect(url(await activate('settings', 'password', { success: 'profile_token_obtained' }))).toBe('/account/password?success=profile_token_obtained');
+      expect(getFlagOverride).not.toHaveBeenCalled();
+    });
+
+    it('lets the tab load on the server with the flag off', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      TestBed.overrideProvider(REQUEST_CONTEXT, { useValue: { flags: { profileRedesign: false } } });
 
       expect(await activate('identities')).toBe(true);
-      expect(getFlagOverride).not.toHaveBeenCalled();
     });
   });
 });

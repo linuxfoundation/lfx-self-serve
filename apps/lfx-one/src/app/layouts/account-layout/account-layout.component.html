@@ -43,11 +43,11 @@
         aria-label="Account and settings"
         data-testid="account-layout-nav">
         <div class="sticky flex flex-col gap-[2px] max-[860px]:static" [style.top.px]="navTopPx()">
-          @for (group of navGroups; track group.label; let first = $first) {
+          @for (group of navGroups; track group.id; let first = $first) {
             <span
               class="px-[10px] pb-[6px] text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600"
               [class.pt-[14px]]="!first"
-              [attr.data-testid]="'account-layout-nav-group-' + group.label.toLowerCase()"
+              [attr.data-testid]="'account-layout-nav-group-' + group.id"
               >{{ group.label }}</span
             >
             @for (item of group.items; track item.route) {

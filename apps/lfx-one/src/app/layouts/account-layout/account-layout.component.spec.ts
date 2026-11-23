@@ -10,7 +10,7 @@ import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountLayoutComponent } from './account-layout.component';
 
@@ -39,6 +39,10 @@ describe('AccountLayoutComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
   }
+
+  afterEach(() => {
+    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true });
+  });
 
   beforeEach(() => {
     TestBed.resetTestingModule();
@@ -91,7 +95,6 @@ describe('AccountLayoutComponent', () => {
     fixture.detectChanges();
 
     expect(fade.classList.contains('opacity-0')).toBe(false);
-    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true });
   });
 
   it('handles a Flow C error return, as the hub did', async () => {

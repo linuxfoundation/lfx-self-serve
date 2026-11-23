@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRouteSnapshot, CanActivateFn, provideRouter, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { ACCOUNT_ROUTE_PROFILE_TARGETS, ACCOUNT_SETTINGS_NAV, ACCOUNT_SETTINGS_SECTIONS } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
@@ -21,5 +23,18 @@ describe('ACCOUNT_ROUTES', () => {
     expect(sectionOf('email-settings')).toBe(ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS);
     expect(sectionOf('password')).toBe(ACCOUNT_SETTINGS_SECTIONS.PASSWORD);
     expect(sectionOf('developer-settings')).toBe(ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS);
+  });
+
+  it("moves an old settings section fragment from Email settings to the section's own page", () => {
+    const [guard] = children.find((child) => child.path === 'email-settings')!.canActivate as CanActivateFn[];
+    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    const run = (fragment: string | null) =>
+      TestBed.runInInjectionContext(() =>
+        guard({ fragment, queryParams: {}, routeConfig: { path: 'email-settings' } } as unknown as ActivatedRouteSnapshot, {} as RouterStateSnapshot)
+      );
+
+    expect(TestBed.inject(Router).serializeUrl(run('password') as UrlTree)).toBe('/account/password');
+    expect(run('email-settings')).toBe(true);
+    expect(run(null)).toBe(true);
   });
 });

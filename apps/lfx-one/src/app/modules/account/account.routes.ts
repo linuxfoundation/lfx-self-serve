@@ -1,10 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { CanActivateFn, Router, Routes } from '@angular/router';
 import { ACCOUNT_SETTINGS_SECTIONS } from '@lfx-one/shared/constants';
+import { accountPathForProfileTab } from '@lfx-one/shared/utils';
 
 const loadAccountSettings = () => import('../settings/account-settings/account-settings.component').then((m) => m.AccountSettingsComponent);
+
+/**
+ * A full-page load of an old `/profile/settings#password` link reaches the server without its fragment, so the server sends
+ * it here; the browser still has the fragment and moves on to the section's own page.
+ */
+const settingsSectionFragmentGuard: CanActivateFn = (route) => {
+  const target = route.fragment ? accountPathForProfileTab('settings', route.fragment) : null;
+  return target && !target.endsWith(`/${route.routeConfig?.path}`) ? inject(Router).createUrlTree([target], { queryParams: route.queryParams }) : true;
+};
 
 /**
  * Account & Settings (#6067), behind the profile redesign flag. Each page reuses the Profile & Account hub tab it
@@ -51,6 +62,7 @@ export const ACCOUNT_ROUTES: Routes = [
       {
         path: 'email-settings',
         title: 'Email settings',
+        canActivate: [settingsSectionFragmentGuard],
         data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS },
         loadComponent: loadAccountSettings,
       },

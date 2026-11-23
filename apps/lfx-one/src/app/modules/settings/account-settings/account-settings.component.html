@@ -67,7 +67,7 @@
       <!-- ════════════════════════════════════ -->
       <!-- SECTION 1: EMAIL SETTINGS           -->
       <!-- ════════════════════════════════════ -->
-      @if (!section || section === 'email-settings') {
+      @if (!section || section === sections.EMAIL_SETTINGS) {
         <div id="email-settings" class="flex flex-col gap-6 scroll-mt-20" data-testid="section-email-settings">
           <div>
             <h2 id="email-settings-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="email-settings-heading">Email Settings</h2>
@@ -326,7 +326,7 @@
       <!-- ════════════════════════════════════ -->
       <!-- SECTION 2: PASSWORD                 -->
       <!-- ════════════════════════════════════ -->
-      @if (!section || section === 'password') {
+      @if (!section || section === sections.PASSWORD) {
         <div id="password" class="flex flex-col gap-6 scroll-mt-20" [ngClass]="{ 'pt-8 border-t border-slate-200': !section }" data-testid="section-password">
           <div>
             <h2 id="password-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="password-heading">Password</h2>
@@ -574,7 +574,7 @@
       <!-- ════════════════════════════════════ -->
       <!-- SECTION 3: DEVELOPER SETTINGS       -->
       <!-- ════════════════════════════════════ -->
-      @if (!section || section === 'developer-settings') {
+      @if (!section || section === sections.DEVELOPER_SETTINGS) {
         <div
           id="developer-settings"
           class="flex flex-col gap-6 scroll-mt-20"

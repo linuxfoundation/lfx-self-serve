@@ -15,7 +15,8 @@ import {
 /**
  * sessionStorage key for a profile-edit form interrupted by a Flow C
  * (management-token) authorization. Written by the profile-edit dialog and
- * replayed by ProfileLayoutComponent on return; cleared before unrelated
+ * replayed by ProfileAuthReturnService (provided by the Profile & Account hub and
+ * Account & Settings) on return; cleared before unrelated
  * profile-auth flows. Centralized here because it is shared across the profile
  * layout, the profile-edit dialog, and the settings feature.
  */
@@ -348,11 +349,9 @@ export const ACCOUNT_SETTINGS_SECTIONS = {
 
 /** Base path of the Account & Settings area that replaces the Profile & Account hub's tabs (#6067). */
 export const ACCOUNT_BASE_PATH = '/account';
+/** Account & Settings pages that start Flow C from their own address, so the server accepts them as a return path. */
 export const ACCOUNT_IDENTITIES_PATH = '/account/identities';
 export const ACCOUNT_LINUX_EMAIL_PATH = '/account/linux-email';
-export const ACCOUNT_EMAIL_SETTINGS_PATH = '/account/email-settings';
-export const ACCOUNT_PASSWORD_PATH = '/account/password';
-export const ACCOUNT_DEVELOPER_SETTINGS_PATH = '/account/developer-settings';
 
 export const ACCOUNT_SETTINGS_TITLE = 'Account & Settings';
 export const ACCOUNT_SETTINGS_DESCRIPTION = 'Manage your work history, linked identities, agreements, billing and sign-in.';
@@ -360,6 +359,7 @@ export const ACCOUNT_SETTINGS_DESCRIPTION = 'Manage your work history, linked id
 /** The Account & Settings pages in nav order; the landing page reads the same list. */
 export const ACCOUNT_SETTINGS_NAV: AccountSettingsNavGroup[] = [
   {
+    id: 'account',
     label: 'Account',
     items: [
       {
@@ -387,6 +387,7 @@ export const ACCOUNT_SETTINGS_NAV: AccountSettingsNavGroup[] = [
     ],
   },
   {
+    id: 'settings',
     label: 'Settings',
     items: [
       {
@@ -433,8 +434,8 @@ export const ACCOUNT_ROUTE_PROFILE_TARGETS: Readonly<Record<string, AccountSetti
 
 /**
  * Error codes from the Flow C profile-auth (`/passwordless/callback`) round trip,
- * owned by ProfileLayoutComponent — it's alive on every /profile/* route, so it
- * handles these once regardless of which tab triggered the flow. `invalid_state`
+ * owned by ProfileAuthReturnService — the Profile & Account hub and Account & Settings
+ * each provide it, so it handles these once on whichever page the flow returns to. `invalid_state`
  * and `no_code` are also emitted by the identity-link callback below, but their
  * wording is flow-agnostic and ProfileIdentitiesComponent's own hasOwn guard on
  * this map already skips them, so keeping them here (rather than duplicated in

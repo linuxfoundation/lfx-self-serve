@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ACCOUNT_BASE_PATH,
   ACCOUNT_IDENTITIES_PATH,
   ACCOUNT_LINUX_EMAIL_PATH,
   ALLOWED_AVATAR_MIME_TYPES,
@@ -1936,8 +1937,11 @@ export class ProfileController {
         return;
       }
 
-      // Only profile-layout returns consume support context; other allowed pages have no consumer.
-      const isProfileReturn = returnTo === ProfileController.profileDefaultReturnTo || returnTo.startsWith(`${ProfileController.profileDefaultReturnTo}/`);
+      // Only the Profile & Account hub and Account & Settings consume support context; other allowed pages have no consumer.
+      const isProfileReturn =
+        returnTo === ProfileController.profileDefaultReturnTo ||
+        returnTo.startsWith(`${ProfileController.profileDefaultReturnTo}/`) ||
+        returnTo.startsWith(`${ACCOUNT_BASE_PATH}/`);
       const supportHandle =
         emailStatus === EMAIL_CALLBACK_ALREADY_LINKED_STATUS && pending && isProfileReturn
           ? await linkedEmailSupportService.issue(currentUserSub, pending.email)
