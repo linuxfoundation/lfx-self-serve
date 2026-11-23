@@ -3,10 +3,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { getRoleGrantEmployeeView } = vi.hoisted(() => ({ getRoleGrantEmployeeView: vi.fn() }));
 vi.mock('../services/org-employee-view.service', () => ({
   OrgEmployeeViewService: class {
     public resolve = vi.fn().mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
-    public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
+    public getRoleGrantEmployeeView = getRoleGrantEmployeeView;
   },
 }));
 
@@ -407,6 +408,7 @@ describe('OrgIdentityController.getRoleGrants', () => {
     getRoleGrants.mockResolvedValue(grants);
     getClaManagerOrgs.mockResolvedValue({ claManagerOrgs: [], claManagerLookup: 'ok' });
     getRoleGrantAffiliation.mockResolvedValue({});
+    getRoleGrantEmployeeView.mockResolvedValue({});
   });
 
   // Spec 053: the viewer's Retry asks for a recompute past the BFF cache; nothing else does.
@@ -435,6 +437,30 @@ describe('OrgIdentityController.getRoleGrants', () => {
     expect(okRes.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(okRes.setHeader).not.toHaveBeenCalledWith(ORG_ROLE_GRANTS_CORRELATION_HEADER, expect.anything());
     expect(okRes.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'ok' });
+  });
+
+  describe('all employee view (#5845)', () => {
+    const employeeView = { orgUid: '0016100000ACMEAAA1', orgName: 'Acme Motors', orgSlug: 'acme-motors' };
+
+    it('merges the employee-view company into the response alongside the grants', async () => {
+      getRoleGrantEmployeeView.mockResolvedValueOnce({ employeeView });
+      const res = buildRes();
+      const req = request();
+
+      await new OrgIdentityController().getRoleGrants(req, res, vi.fn());
+
+      expect(getRoleGrantEmployeeView).toHaveBeenCalledWith(req, grants);
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'ok', employeeView });
+    });
+
+    it('passes a failed employee-view lookup through instead of an empty answer', async () => {
+      getRoleGrantEmployeeView.mockResolvedValueOnce({ employeeViewLookup: 'failed' });
+      const res = buildRes();
+
+      await new OrgIdentityController().getRoleGrants(request(), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'ok', employeeViewLookup: 'failed' });
+    });
   });
 
   describe('CLA-only organizations', () => {

@@ -78,6 +78,7 @@ describe('OrgClaReturnService', () => {
             noteEmployeeViewAddressed: vi.fn(),
             noteFullAccessAddressed: vi.fn(),
             claManagerLookupFailed: signal(false),
+            employeeViewLookupFailed: signal(false),
           },
         },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },

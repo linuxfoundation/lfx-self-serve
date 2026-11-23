@@ -5,6 +5,7 @@ import {
   ORG_AFFILIATION_LOOKUP_TIMEOUT_MS,
   ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES,
   ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS,
+  ORG_LENS_EMPLOYEE_VIEW_CONSUMER_MAIL_DOMAINS,
   ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -16,11 +17,12 @@ import type {
   RoleGrantsResponse,
 } from '@lfx-one/shared/interfaces';
 // Deep imports, never the `utils` barrel (see org-affiliation.service.ts).
-import { candidateMemberDomains, emailDomain, isPersonalEmailDomain, normalizeDomain } from '@lfx-one/shared/utils/email-domain.utils';
+import { candidateMemberDomains, emailDomain, isPersonalEmailDomain, normalizeDomain, registrableDomain } from '@lfx-one/shared/utils/email-domain.utils';
 import type { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { MicroserviceError } from '../errors/microservice.error';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -29,6 +31,7 @@ import { CdpService } from './cdp.service';
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { OrgRoleGrantsService } from './org-role-grants.service';
 import { claOnlyEntryApplies } from './org-cla-only-orgs.service';
 
 const OPERATION = 'resolve_org_lens_employee_view';
@@ -81,6 +84,18 @@ export function normalizeCompanyName(name: string | null | undefined): string {
 type EmployeeViewOutcome = { chosen: OrgLensEmployeeViewGrant } | { denial: OrgEmployeeViewDenial };
 
 /**
+ * The Linux.com forwarding alias is an address LFX hands to any user (`add_alias`), and consumer ISP mailboxes are personal,
+ * so neither proves employment. Covers the production alias domain, whatever this stage configures, and the consumer list.
+ */
+function isForwardingAliasDomain(domain: string): boolean {
+  const registrable = registrableDomain(domain);
+  if (registrable && ORG_LENS_EMPLOYEE_VIEW_CONSUMER_MAIL_DOMAINS.has(registrable)) return true;
+  const configured = (process.env['LINUX_FORWARD_DOMAIN'] || '').trim().toLowerCase();
+  const normalized = domain.toLowerCase();
+  return ['linux.com', configured].filter(Boolean).some((alias) => normalized === alias || normalized.endsWith(`.${alias}`));
+}
+
+/**
  * Epic #5845 — decides whether a caller may open the all employee view of a company.
  *
  * To see a company's all employee view, a user must have BOTH:
@@ -117,6 +132,7 @@ export class OrgEmployeeViewService {
   private readonly emailVerification: EmailVerificationService;
   private readonly proxy: MicroserviceProxyService;
   private readonly accessCheck: AccessCheckService;
+  private readonly roleGrants: OrgRoleGrantsService;
 
   public constructor(
     deps: {
@@ -124,12 +140,14 @@ export class OrgEmployeeViewService {
       emailVerification?: EmailVerificationService;
       proxy?: MicroserviceProxyService;
       accessCheck?: AccessCheckService;
+      roleGrants?: OrgRoleGrantsService;
     } = {}
   ) {
     this.workHistory = deps.workHistory ?? new CdpService();
     this.emailVerification = deps.emailVerification ?? new EmailVerificationService();
     this.proxy = deps.proxy ?? new MicroserviceProxyService();
     this.accessCheck = deps.accessCheck ?? new AccessCheckService();
+    this.roleGrants = deps.roleGrants ?? new OrgRoleGrantsService();
   }
 
   /** Drops every held outcome (tests). */
@@ -180,6 +198,21 @@ export class OrgEmployeeViewService {
    * an existing full-view reader the reduced mode. The authorizer is asked strictly: a failure rejects, never reads as "no".
    */
   public async resolveReduced(req: Request): Promise<OrgEmployeeViewVerdict> {
+    // One rule for who enters the employee view: no Org Lens grant and not staff. Staff and grant holders skip the lookup entirely.
+    const username = getEffectiveUsername(req);
+    if (username) {
+      const roster = await this.roleGrants.getAccessAwareOrgs(req, username);
+      const answered = !roster.upstreamFailed && !roster.degraded && roster.staffCheck !== 'failed';
+      if (!answered) {
+        throw new MicroserviceError('Unable to verify your company access right now', 503, 'ROLE_GRANTS_UNAVAILABLE', {
+          operation: 'resolve_employee_view_reduced',
+          service: 'LFX_V2_SERVICE',
+        });
+      }
+      if (!claOnlyEntryApplies(roster.isStaff, roster.resolved.size, answered)) {
+        return { eligible: false, reason: 'has-grants' };
+      }
+    }
     const verdict = await this.resolve(req, null);
     if (!verdict.eligible) {
       return verdict;
@@ -193,9 +226,12 @@ export class OrgEmployeeViewService {
    * demonstrably holds no grant on a clean roster and is not staff (the same entry rule as the CLA-only and affiliation
    * lookups), so a caller who holds anything costs no extra upstream call. There is deliberately no affiliation pre-filter:
    * that verdict names one employer, and the strict lookup considers every present employer. Never throws and never blocks
-   * past the affiliation budget: a failed or slow lookup answers nothing, which the client reads as today's empty state.
+   * past the affiliation budget: a failed or slow lookup answers `employeeViewLookup: 'failed'`, so the client shows the retryable outage state, not "not an employee".
    */
-  public async getRoleGrantEmployeeView(req: Request, grants: RoleGrantsResponse): Promise<Pick<RoleGrantsResponse, 'employeeView' | 'fullAccessOrgUid'>> {
+  public async getRoleGrantEmployeeView(
+    req: Request,
+    grants: RoleGrantsResponse
+  ): Promise<Pick<RoleGrantsResponse, 'employeeView' | 'fullAccessOrgUid' | 'employeeViewLookup'>> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
       return {};
     }
@@ -211,7 +247,13 @@ export class OrgEmployeeViewService {
         this.resolveReduced(req),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
-            () => reject(new Error(`Employee-view lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`)),
+            () =>
+              reject(
+                new MicroserviceError(`Employee-view lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
+                  operation: 'get_role_grant_employee_view',
+                  service: 'LFX_V2_SERVICE',
+                })
+              ),
             ORG_AFFILIATION_LOOKUP_TIMEOUT_MS
           );
         }),
@@ -220,8 +262,8 @@ export class OrgEmployeeViewService {
       // An authorizer-only reader who also qualifies is full, and the client needs to be told: it cannot see authorizer entitlements.
       return verdict.reason === 'holds-full-access' && verdict.org ? { fullAccessOrgUid: verdict.org.orgUid } : {};
     } catch (error) {
-      logger.warning(req, OPERATION, 'Employee-view lookup failed; reporting no employee view', { err: error });
-      return {};
+      logger.warning(req, OPERATION, 'Employee-view lookup failed; reporting the lookup as failed', { err: error });
+      return { employeeViewLookup: 'failed' };
     } finally {
       clearTimeout(timer);
     }
@@ -272,10 +314,10 @@ export class OrgEmployeeViewService {
       ...new Set(
         emails.flatMap((email) => {
           const domain = emailDomain(email);
-          return domain && !isPersonalEmailDomain(domain) ? candidateMemberDomains(domain) : [];
+          return domain && !isPersonalEmailDomain(domain) && !isForwardingAliasDomain(domain) ? candidateMemberDomains(domain) : [];
         })
       ),
-    ].slice(0, ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS);
+    ];
     if (candidates.length === 0) {
       logger.debug(req, OPERATION, 'Caller has no verified company email', {});
       return [];
@@ -296,31 +338,44 @@ export class OrgEmployeeViewService {
   private async findMemberCompanies(req: Request, domains: string[]): Promise<OrgLensEmployeeViewGrant[]> {
     // Minted OUTSIDE the lookup: a token failure must reject, never read as "no company matches" and be cached as a denial.
     const bearerToken = await generateM2MToken(req);
-    const filtersOr = domains.flatMap((domain) => [`primary_domain:${domain}`, `domain_aliases:${domain}`]);
-    const docs = await fetchAllQueryResources<B2bOrgIndexedDoc>(
-      req,
-      (pageToken) =>
-        this.proxy
-          .proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(
-            req,
-            'LFX_V2_SERVICE',
-            '/query/resources',
-            'GET',
-            { type: 'b2b_org', tags_all: ['is_member:true'], filters_or: filtersOr, page_size: 50, ...(pageToken && { page_token: pageToken }) },
-            undefined,
-            undefined,
-            { bearerToken }
-          )
-          // The canonical account id lives on the query-service wrapper (`resource.id`, `b2b_org:<sfid>`), which flattening drops.
-          .then((page) => ({
-            ...page,
-            resources: (page?.resources ?? []).map((resource) => ({
-              ...resource,
-              data: { ...resource.data, uid: bareUid(resource.id) || resource.data?.uid },
-            })),
-          })),
-      { failOnPartial: true }
-    );
+    // Asked in batches so no candidate domain is ever dropped: truncating would turn a user with many addresses into a cached false denial.
+    const docs: B2bOrgIndexedDoc[] = [];
+    for (let start = 0; start < domains.length; start += ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS) {
+      const filtersOr = domains
+        .slice(start, start + ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS)
+        .flatMap((domain) => [`primary_domain:${domain}`, `domain_aliases:${domain}`]);
+      docs.push(
+        ...(await fetchAllQueryResources<B2bOrgIndexedDoc>(
+          req,
+          (pageToken) =>
+            this.proxy
+              .proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(
+                req,
+                'LFX_V2_SERVICE',
+                '/query/resources',
+                'GET',
+                { type: 'b2b_org', tags_all: ['is_member:true'], filters_or: filtersOr, page_size: 50, ...(pageToken && { page_token: pageToken }) },
+                undefined,
+                undefined,
+                { bearerToken }
+              )
+              // The canonical account id lives on the query-service wrapper (`resource.id`, `b2b_org:<sfid>`), which flattening drops.
+              .then((page) => ({
+                ...page,
+                resources: (page?.resources ?? []).map((resource) => ({
+                  ...resource,
+                  data: { ...resource.data, uid: bareUid(resource.id) || resource.data?.uid },
+                })),
+              })),
+          { failOnPartial: true }
+        ))
+      );
+    }
+
+    if (docs.length === 0) {
+      // A clean empty answer is indistinguishable from a machine client that cannot read `b2b_org`: log it so a systemic failure is visible.
+      logger.warning(req, OPERATION, 'Member-company lookup returned no rows for the caller’s verified domains', { domain_count: domains.length });
+    }
 
     const wanted = new Set(domains);
     const companies = new Map<string, OrgLensEmployeeViewGrant>();

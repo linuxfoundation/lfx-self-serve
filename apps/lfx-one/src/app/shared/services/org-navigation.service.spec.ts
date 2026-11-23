@@ -108,6 +108,7 @@ describe('OrgNavigationService default selection', () => {
             error: grantsError,
             claManagerOrgSet,
             claManagerLookupFailed,
+            employeeViewLookupFailed: signal(false),
             employeeViewOrgUid: signal<string | null>(null),
             employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
             fullAccessOrgUid: signal<string | null>(null),
