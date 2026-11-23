@@ -456,7 +456,7 @@ describe('VoteDetailComponent', () => {
     });
   });
 
-  describe('ranked outcome (#2005)', () => {
+  describe('ranked outcome (lfx-self-serve-ops#2005)', () => {
     const squashed = (el: Element | null | undefined): string => el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
     /** A Condorcet result whose winner info lists only the winner, as upstream sends it; C beats A beats B, while A has the most first choices. */
@@ -538,6 +538,50 @@ describe('VoteDetailComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid^="vote-results-ranked-outcome-"]')).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid^="vote-results-ranked-standing-"]')).toBeNull();
       expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Most first choices: Candidate A (3 voters)');
+    });
+
+    describe('remote closure', () => {
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      });
+
+      afterEach(() => {
+        TestBed.resetTestingModule();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+      });
+
+      it('keeps the outcome hidden after the vote ends until its final results load', async () => {
+        const pending = new Subject<VoteResultsResponse>();
+        queryParamMap.next(convertToParamMap({ tab: 'results' }));
+        voteService.fetchVote
+          .mockReturnValueOnce(of(makeVote({ poll_type: PollType.CONDORCET_IRV })))
+          .mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED })));
+        voteService.getVoteResults.mockReturnValueOnce(of(condorcetResults())).mockReturnValueOnce(pending);
+        const fixture = await setup('browser', [VoteRankedQuestionResultsComponent]);
+
+        await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+        TestBed.tick();
+        fixture.detectChanges();
+        expect(read(fixture, 'isEnded')).toBe(true);
+        expect(read(fixture, 'isVoteClosed')).toBe(false);
+        expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Totals pending');
+        expect(testId(fixture, 'vote-results-ranked-choice-choice-a')).not.toBeNull();
+        expect(fixture.nativeElement.querySelector('[data-testid^="vote-results-ranked-outcome-"]')).toBeNull();
+        expect(fixture.nativeElement.querySelector('[data-testid^="vote-results-ranked-standing-"]')).toBeNull();
+        expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Most first choices: Candidate A (3 voters)');
+
+        pending.next(condorcetResults());
+        pending.complete();
+        TestBed.tick();
+        fixture.detectChanges();
+        expect(read(fixture, 'isVoteClosed')).toBe(true);
+        expect(squashed(testId(fixture, 'vote-results-ranked-outcome-question-1'))).toBe(
+          'Candidate C is the winner, having defeated every other candidate in head-to-head matchups.'
+        );
+        expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Candidate C won');
+      });
     });
   });
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, output, Signal } from '@angular/core';
-import { RankedOutcomeCopy, RankedQuestionView, RankedStanding } from '@lfx-one/shared/interfaces';
+import { RankedOutcomeCopy, RankedQuestionView, RankedStanding, RankedStandingRow } from '@lfx-one/shared/interfaces';
 import { joinNames } from '@lfx-one/shared/utils';
 
 /**
@@ -33,44 +33,14 @@ export class VoteRankedQuestionResultsComponent {
   protected readonly isCreator: Signal<boolean> = computed(() => this.variant() === 'creator');
   /** Outcome banner sentence split around the bolded winner names; null without an outcome. */
   protected readonly outcomeCopy: Signal<RankedOutcomeCopy | null> = this.initOutcomeCopy();
+  /** Standings rows with their rank and status text. */
+  protected readonly standingRows: Signal<RankedStandingRow[]> = computed(() =>
+    this.question().standings.map((row) => ({ ...row, rankText: this.ordinal(row.rank), statusText: this.standingLabel(row) }))
+  );
 
   // === Protected Methods ===
   protected onViewVoters(choiceId: string): void {
     this.viewVoters.emit(`${this.question().questionId}:${choiceId}`);
-  }
-
-  /** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th … 21st. */
-  protected ordinal(rank: number): string {
-    const lastTwo = rank % 100;
-    if (lastTwo >= 11 && lastTwo <= 13) return `${rank}th`;
-    switch (rank % 10) {
-      case 1:
-        return `${rank}st`;
-      case 2:
-        return `${rank}nd`;
-      case 3:
-        return `${rank}rd`;
-      default:
-        return `${rank}th`;
-    }
-  }
-
-  /** Right-aligned status for a standings row; null for a row with nothing to add (a runoff survivor). */
-  protected standingLabel(row: RankedStanding): string | null {
-    switch (row.label) {
-      case 'winner':
-        return 'Winner';
-      case 'tied':
-        return 'Tied';
-      case 'eliminated':
-        return row.round !== null ? `Eliminated in round ${row.round}` : 'Eliminated';
-      case 'elected':
-        return row.round !== null ? `Elected in round ${row.round}` : 'Elected';
-      case 'not_elected':
-        return 'Not elected';
-      default:
-        return null;
-    }
   }
 
   // === Private Initializers ===
@@ -103,5 +73,40 @@ export class VoteRankedQuestionResultsComponent {
           rounds > 0 ? ` is the winner, with a majority of continuing ballots in round ${rounds}.` : ' is the winner, with a majority of continuing ballots.',
       };
     });
+  }
+
+  // === Private Helpers ===
+  /** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th … 21st. */
+  private ordinal(rank: number): string {
+    const lastTwo = rank % 100;
+    if (lastTwo >= 11 && lastTwo <= 13) return `${rank}th`;
+    switch (rank % 10) {
+      case 1:
+        return `${rank}st`;
+      case 2:
+        return `${rank}nd`;
+      case 3:
+        return `${rank}rd`;
+      default:
+        return `${rank}th`;
+    }
+  }
+
+  /** Right-aligned status for a standings row; null for a row with nothing to add (a runoff survivor). */
+  private standingLabel(row: RankedStanding): string | null {
+    switch (row.label) {
+      case 'winner':
+        return 'Winner';
+      case 'tied':
+        return 'Tied';
+      case 'eliminated':
+        return row.round !== null ? `Eliminated in round ${row.round}` : 'Eliminated';
+      case 'elected':
+        return row.round !== null ? `Elected in round ${row.round}` : 'Elected';
+      case 'not_elected':
+        return 'Not elected';
+      default:
+        return null;
+    }
   }
 }

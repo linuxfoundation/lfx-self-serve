@@ -86,7 +86,7 @@ describe('VoteRankedQuestionResultsComponent', () => {
     });
   });
 
-  describe('outcome and standings (#2005)', () => {
+  describe('outcome and standings (lfx-self-serve-ops#2005)', () => {
     const banner = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-testid="vote-results-ranked-outcome-q1"]');
     /** Banner text with single spaces, so word boundaries around the bolded names are checked too. */
     const bannerText = (el: HTMLElement): string => (banner(el)?.textContent ?? '').replace(/\s+/g, ' ').trim();

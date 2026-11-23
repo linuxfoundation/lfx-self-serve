@@ -431,6 +431,48 @@ describe('VotePresenterComponent', () => {
     expect(text('vote-presenter-results')).toContain('Approve the bylaws?');
   });
 
+  it('shows the ranked outcome banner and standings on an ended Condorcet-IRV vote (lfx-self-serve-ops#2005)', async () => {
+    // B beats A head-to-head; winner info lists only the winner, as upstream sends it.
+    getVoteResults.mockReturnValue(
+      of({
+        num_recipients: 10,
+        num_votes_cast: 3,
+        num_abstained: 0,
+        poll_results: [
+          {
+            question: {
+              question_id: 'q1',
+              prompt: 'Elect the synthetic chair',
+              choices: [
+                { choice_id: 'a', choice_text: 'Candidate A' },
+                { choice_id: 'b', choice_text: 'Candidate B' },
+              ],
+            },
+            ranked_choice_votes: [
+              {
+                choice_id: 'a',
+                rank_counts: [{ rank: 1, count: 2 }],
+                condorcet_matrix: [{ choice_id: 'a', other_choice_id: 'b', choice_id_wins: 1, other_choice_id_wins: 2, result: '1(2)' }],
+              },
+              {
+                choice_id: 'b',
+                rank_counts: [{ rank: 1, count: 1 }],
+                condorcet_matrix: [{ choice_id: 'b', other_choice_id: 'a', choice_id_wins: 2, other_choice_id_wins: 1, result: '2(1)' }],
+              },
+            ],
+            ranked_choice_winner_info: { poll_choices: [{ choice_id: 'b', choice_text: 'Candidate B' }], condorcet_irv_used_for_eliminations: false },
+          },
+        ],
+      } as unknown as VoteResultsResponse)
+    );
+    fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, poll_type: PollType.CONDORCET_IRV })));
+    await mount();
+    const compact = (value: string): string => value.replace(/\s+/g, '');
+    expect(text('vote-results-ranked-outcome-q1')).toBe('Candidate B is the winner, having defeated every other candidate in head-to-head matchups.');
+    expect(compact(text('vote-results-ranked-standing-b'))).toBe(compact('1st Candidate B Won 1 out of 1 possible head-to-head matchup Winner'));
+    expect(compact(text('vote-results-ranked-standing-a'))).toBe(compact('2nd Candidate A Won 0 out of 1 possible head-to-head matchup'));
+  });
+
   it('shows abstentions on an ended ranked vote that allows them', async () => {
     fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, poll_type: PollType.MEEK_STV, allow_abstain: true })));
     await mount();

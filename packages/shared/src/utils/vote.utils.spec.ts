@@ -1267,7 +1267,7 @@ describe('buildRankedQuestionViews', () => {
     ]);
   });
 
-  it('keeps the question choice text when winner info lists only the winner (#2005)', () => {
+  it('keeps the question choice text when winner info lists only the winner (lfx-self-serve-ops#2005)', () => {
     const [view] = buildRankedQuestionViews(
       resultsWith([
         rankedQuestion({
@@ -1309,7 +1309,7 @@ describe('buildRankedQuestionViews', () => {
     expect(view.standings).toEqual([]);
   });
 
-  describe('outcome and standings (#2005)', () => {
+  describe('outcome and standings (lfx-self-serve-ops#2005)', () => {
     const choices = (ids: string[]) => ids.map((id) => ({ choice_id: id, choice_text: `Candidate ${id.toUpperCase()}` }));
     const winners = (ids: string[]) => ids.map((id) => ({ choice_id: id, choice_text: `Candidate ${id.toUpperCase()}` }));
 
@@ -1699,7 +1699,7 @@ describe('buildVoteResultsSummary (#4450)', () => {
     expect(buildVoteResultsSummary([], [ranked('q-1', {})], false, true)[0].text).toBe('No rankings recorded');
   });
 
-  describe('ended ranked outcome (#2005)', () => {
+  describe('ended ranked outcome (lfx-self-serve-ops#2005)', () => {
     const outcome = (overrides: Partial<RankedOutcome>): RankedOutcome => ({
       kind: 'condorcet',
       result: 'winner',

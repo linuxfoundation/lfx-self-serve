@@ -37,16 +37,16 @@
       </div>
     }
 
-    @if (q.standings.length > 0) {
+    @if (standingRows().length > 0) {
       <div class="flex flex-col gap-2">
         <h5 class="text-sm font-semibold text-gray-900">Standings</h5>
         <ol class="flex flex-col divide-y divide-slate-100 rounded-md border border-slate-200">
-          @for (row of q.standings; track row.choiceId) {
+          @for (row of standingRows(); track row.choiceId) {
             <li
               class="flex items-start justify-between gap-3 px-3 py-2"
               [attr.data-testid]="isCreator() ? 'vote-results-ranked-standing-' + row.choiceId : null">
               <div class="flex min-w-0 items-start gap-3">
-                <span class="w-10 flex-shrink-0 text-sm font-semibold text-slate-600">{{ ordinal(row.rank) }}</span>
+                <span class="w-10 flex-shrink-0 text-sm font-semibold text-slate-600">{{ row.rankText }}</span>
                 <div class="flex min-w-0 flex-col gap-1">
                   <span class="text-sm font-medium text-slate-800 break-words">{{ row.choiceText }}</span>
                   @if (row.headToHeadTotal !== null) {
@@ -57,7 +57,7 @@
                   }
                 </div>
               </div>
-              @if (standingLabel(row); as label) {
+              @if (row.statusText; as label) {
                 <span
                   class="flex-shrink-0 text-right text-xs font-medium"
                   [class.text-emerald-700]="row.label === 'winner' || row.label === 'elected'"

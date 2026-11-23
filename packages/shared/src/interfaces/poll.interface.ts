@@ -1731,6 +1731,12 @@ export interface RankedStanding {
   headToHeadTotal: number | null;
 }
 
+/** A standings row with its display text, derived by `lfx-vote-ranked-question-results`; `statusText` is null for a row with nothing to add (a runoff survivor). */
+export interface RankedStandingRow extends RankedStanding {
+  rankText: string;
+  statusText: string | null;
+}
+
 /** Results view model for a ranked-choice question — projection of PollQuestionResult built by `buildRankedQuestionViews` (vote.utils) and rendered by `lfx-vote-ranked-question-results`. */
 export interface RankedQuestionView {
   questionId: string;
