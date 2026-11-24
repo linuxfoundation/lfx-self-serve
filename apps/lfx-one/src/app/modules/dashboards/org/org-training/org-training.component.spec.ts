@@ -3,7 +3,7 @@
 
 import { ApplicationRef, computed, signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, NavigationEnd, provideRouter, Router } from '@angular/router';
 import {
   EMPTY_ORG_TRAINING_FILTER_OPTIONS,
   EMPTY_ORG_TRAINING_GROUPS_RESPONSE,
@@ -577,6 +577,84 @@ describe('OrgTrainingComponent — family roll-up', () => {
     expect(el.querySelector('[data-testid="org-training-stats-error"]')).not.toBeNull();
     expect(el.querySelector('lfx-org-training-stats')).toBeNull();
     error.mockRestore();
+  });
+
+  it('hides the table, not a spinner, while a picked company cannot be checked because the stats failed, and Retry restores it', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let attempts = 0;
+    const { el, fixture, trainingService } = await render(null, {
+      selectedAccount: signal<Account>(ROLL_UP),
+      params: { company: ACME_LABS.accountId },
+      statsFor: () => (++attempts === 1 ? throwError(() => new Error('boom')) : of(ROLL_UP_STATS)),
+    });
+
+    expect(el.querySelector('[data-testid="org-training-stats-error"]')).not.toBeNull();
+    expect(el.querySelector('lfx-org-training-groups-table')).toBeNull();
+    expect(trainingService.getGroups).not.toHaveBeenCalled();
+
+    (el.querySelector('[data-testid="org-training-stats-retry"] button') as HTMLButtonElement).click();
+    await settle(fixture);
+
+    expect(el.querySelector('lfx-org-training-groups-table')).not.toBeNull();
+    expect(trainingService.getGroups).toHaveBeenLastCalledWith(ROLL_UP.uid, expect.anything(), expect.objectContaining({ company: ACME_LABS.accountId }));
+    error.mockRestore();
+  });
+
+  it('writes a company picked again after a query-only navigation moved the URL off it', async () => {
+    const { fixture, queryParamMap$ } = await render(null, { stats: ROLL_UP_STATS, selectedAccount: signal<Account>(ROLL_UP) });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const companyControl = (fixture.componentInstance as unknown as { companyForm: { controls: { company: { setValue: (value: string) => void } } } })
+      .companyForm.controls.company;
+
+    companyControl.setValue(ACME_INC.accountId);
+    queryParamMap$.next(convertToParamMap({ company: ACME_LABS.accountId }));
+    await settle(fixture);
+    navigate.mockClear();
+
+    companyControl.setValue(ACME_INC.accountId);
+
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { company: ACME_INC.accountId } }));
+  });
+
+  describe('while another navigation (an org switch) is in flight', () => {
+    const endNavigation = async (fixture: { detectChanges: () => void }) => {
+      (TestBed.inject(Router).events as Subject<unknown>).next(new NavigationEnd(1, '/', '/'));
+      await Promise.resolve();
+      await settle(fixture);
+    };
+
+    it('waits for it to settle before dropping a company outside the roll-up', async () => {
+      const inFlight = vi.spyOn(Router.prototype, 'getCurrentNavigation').mockReturnValue({} as never);
+      const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+      const { fixture } = await render(null, { stats: ROLL_UP_STATS, selectedAccount: signal<Account>(ROLL_UP), params: { company: '001000000000000ZZZ' } });
+      expect(navigate).not.toHaveBeenCalled();
+
+      inFlight.mockReturnValue(null);
+      await endNavigation(fixture);
+
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { company: null } }));
+      inFlight.mockRestore();
+      navigate.mockRestore();
+    });
+
+    it('drops nothing once that navigation already left the company behind', async () => {
+      const inFlight = vi.spyOn(Router.prototype, 'getCurrentNavigation').mockReturnValue({} as never);
+      const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+      const { fixture, queryParamMap$ } = await render(null, {
+        stats: ROLL_UP_STATS,
+        selectedAccount: signal<Account>(ROLL_UP),
+        params: { company: '001000000000000ZZZ' },
+      });
+
+      queryParamMap$.next(convertToParamMap({}));
+      await settle(fixture);
+      inFlight.mockReturnValue(null);
+      await endNavigation(fixture);
+
+      expect(navigate).not.toHaveBeenCalled();
+      inFlight.mockRestore();
+      navigate.mockRestore();
+    });
   });
 
   it('offers no Company filter and sends no company on a single organization, whatever the URL says', async () => {

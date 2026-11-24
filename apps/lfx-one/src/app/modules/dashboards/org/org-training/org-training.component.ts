@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -44,6 +44,7 @@ import { AccountContextService } from '@shared/services/account-context.service'
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
+import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
 
 import { OrgTrainingGroupsTableComponent } from './components/org-training-groups-table/org-training-groups-table.component';
 
@@ -70,6 +71,7 @@ export class OrgTrainingComponent {
   // ─── Private injections ────────────────────────────────────────────────────
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly accountContext = inject(AccountContextService);
   private readonly trainingService = inject(OrgLensTrainingService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
@@ -78,6 +80,8 @@ export class OrgTrainingComponent {
   // ─── Configuration ─────────────────────────────────────────────────────────
   // Shared constants are readonly; copy into a mutable array for the component input that expects it.
   protected readonly tabs = [...ORG_TRAINING_TABS];
+  // The Company pick sits in the filter bar's row, so its Clear all resets it too.
+  protected readonly projectedFilterParams = [ORG_TRAINING_COMPANY_QUERY_PARAM];
 
   // ─── Forms ─────────────────────────────────────────────────────────────────
   // The name search sits in the filter row but is table-local: it narrows the group rows, never the stat tiles.
@@ -120,6 +124,8 @@ export class OrgTrainingComponent {
     if (!organizations) return null;
     return organizations.some((organization) => organization.accountId === picked) ? picked : '';
   });
+  // The stats read that names the roll-up's organizations failed, so the pick cannot be checked: the stats error's Retry restarts it.
+  protected readonly companyCheckFailed = computed(() => this.company() === null && this.statsError());
   protected readonly companyOptions: Signal<OrgDropdownOption[]> = computed(() => [
     { label: ORG_EVENTS_ALL_COMPANIES_LABEL, value: '' },
     ...(this.organizations() ?? []).map((organization) => ({ label: organization.name, value: organization.accountId })),
@@ -164,13 +170,17 @@ export class OrgTrainingComponent {
     toObservable(this.pickedCompany)
       .pipe(takeUntilDestroyed())
       .subscribe((company) => this.companyForm.controls.company.setValue(company, { emitEvent: false }));
-    this.companyForm.controls.company.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed()).subscribe((company) => this.navigateCompany(company));
+    this.companyForm.controls.company.valueChanges.pipe(takeUntilDestroyed()).subscribe((company) => this.navigateCompany(company));
 
-    // A company the page cannot narrow to (a single organization, or one outside the roll-up) is dropped from the URL.
+    // A company the page cannot narrow to (a single organization, or one outside the roll-up) is dropped from the URL,
+    // once no other navigation (an org switch) is in flight and only if the pick is still one to drop.
     toObservable(computed(() => ({ picked: this.pickedCompany(), company: this.company() })))
       .pipe(takeUntilDestroyed())
       .subscribe(({ picked, company }) => {
-        if (picked && company === '') this.navigateCompany('');
+        if (!picked || company !== '') return;
+        runWhenRouterIdle(this.router, this.destroyRef, () => {
+          if (this.pickedCompany() && this.company() === '') this.navigateCompany('');
+        });
       });
   }
 

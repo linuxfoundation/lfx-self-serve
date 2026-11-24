@@ -64,7 +64,7 @@
 
       <section [id]="'org-training-panel-' + activeTab()" [attr.data-testid]="'org-training-panel-' + activeTab()" class="flex flex-col gap-4 p-5">
         <!-- The one filter bar, in the card: name search, range and group-by up front, the other filters behind its toggle. State is in the URL. -->
-        <lfx-org-training-filter-bar [showGroupBy]="true">
+        <lfx-org-training-filter-bar [showGroupBy]="true" [projectedFilterParams]="projectedFilterParams">
           <div class="w-full md:w-72" data-testid="org-training-groups-search">
             <lfx-input-text
               [form]="searchForm"
@@ -89,14 +89,17 @@
             </div>
           }
         </lfx-org-training-filter-bar>
-        <lfx-org-training-groups-table
-          [orgUid]="orgUid()"
-          [rollUp]="isRollUp()"
-          [company]="company()"
-          [query]="statsQuery()"
-          [groupBy]="groupBy()"
-          [tab]="activeTab()"
-          [searchQuery]="searchQuery()" />
+        <!-- Hidden while a picked company cannot be checked because the stats read failed: the stats error above carries the Retry. -->
+        @if (!companyCheckFailed()) {
+          <lfx-org-training-groups-table
+            [orgUid]="orgUid()"
+            [rollUp]="isRollUp()"
+            [company]="company()"
+            [query]="statsQuery()"
+            [groupBy]="groupBy()"
+            [tab]="activeTab()"
+            [searchQuery]="searchQuery()" />
+        }
       </section>
     </lfx-card>
     <p class="text-xs text-gray-500" data-testid="org-training-range-note">{{ tableNote() }}</p>
