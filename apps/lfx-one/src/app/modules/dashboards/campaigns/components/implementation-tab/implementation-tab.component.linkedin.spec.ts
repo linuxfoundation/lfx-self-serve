@@ -29,7 +29,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
 
   /** Two real URNs from the shared resolve map, so `addGeoTarget` can find them. */
   const US_GEO = { urn: 'urn:li:geo:103644278', label: 'United States' };
-  const DE_GEO = { urn: 'urn:li:geo:101165590', label: 'Germany' };
+  const DE_GEO = { urn: 'urn:li:geo:101282230', label: 'Germany' };
 
   const brief = (): CampaignBriefOutput =>
     ({

@@ -10,7 +10,7 @@ import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
-import { linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
+import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
 import {
   googleAdScheduleRefusal,
@@ -9687,6 +9687,8 @@ export class CampaignController {
     delete rest['selectedAdAccountId'];
     if (adAccountId !== null) rest['adAccountId'] = adAccountId;
     delete rest['targetingProfileEdit'];
+    // Germany and the United Kingdom as the old shared map resolved them, corrected (LFXV2-2665).
+    if ('geoTargets' in rest) rest['geoTargets'] = correctLinkedInGeoTargets(rest['geoTargets']);
     if (Array.isArray(rest['variants'])) rest['variants'] = rest['variants'].map((variant: unknown) => this.linkedInVariantToForward(variant));
 
     return {

@@ -214,6 +214,23 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     expect(refusal(next).field).toBe('linkedInConfig');
   });
 
+  it('forwards Germany and the United Kingdom with the corrected URNs when a saved brief carries the old ones', async () => {
+    const { next } = await create({
+      lifetimeBudget: false,
+      targetingProfile: 'cloud-native',
+      geoTargets: [
+        { label: 'Germany', urn: 'urn:li:geo:101165590' },
+        { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+      ],
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()['geoTargets']).toEqual([
+      { label: 'Germany', urn: 'urn:li:geo:101282230' },
+      { label: 'United Kingdom', urn: 'urn:li:geo:101165590' },
+    ]);
+  });
+
   // A variant's ad name, description and call to action (#5764 rows 16–17); the rules are table rows in
   // `campaign-linkedin-variant-fields.utils.spec.ts`.
   const variant = { introText: 'Join us', headline: 'Summit' };
