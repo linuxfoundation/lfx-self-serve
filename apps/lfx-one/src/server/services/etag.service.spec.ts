@@ -48,9 +48,13 @@ describe('ETagService.updateWithETag', () => {
     );
   });
 
-  it('never lets an extra header replace the ETag the write is guarded by', async () => {
-    await service.updateWithETag(req, 'LFX_V2_SERVICE', '/projects/p/links/l', 'etag-1', {}, 'update_link', { 'If-Match': 'forged' });
+  it.each(['If-Match', 'if-match', 'IF-MATCH', 'If-match'])(
+    'never lets an extra %s header replace or join the ETag the write is guarded by',
+    async (spelling) => {
+      await service.updateWithETag(req, 'LFX_V2_SERVICE', '/projects/p/links/l', 'etag-1', {}, 'update_link', { [spelling]: '*', 'X-Sync': 'true' });
 
-    expect(proxyRequest.mock.calls[0][6]).toEqual({ 'If-Match': 'etag-1' });
-  });
+      // Exactly one If-Match, carrying the fetched ETag, and the other header untouched.
+      expect(proxyRequest.mock.calls[0][6]).toEqual({ 'X-Sync': 'true', 'If-Match': 'etag-1' });
+    }
+  );
 });

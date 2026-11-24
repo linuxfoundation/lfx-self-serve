@@ -59,7 +59,9 @@ export class ETagService {
 
   /**
    * Performs a safe update operation using If-Match header
-   * @param extraHeaders sent along with If-Match, for example `X-Sync` to wait for the indexer
+   * @param extraHeaders sent along with If-Match, for example `X-Sync` to wait for the indexer. An `If-Match` among them, in any
+   * spelling, is dropped: header names are case-insensitive, and a second one would be combined with the ETag the write is
+   * guarded by instead of replacing it.
    */
   public async updateWithETag<T>(
     req: Request,
@@ -72,7 +74,9 @@ export class ETagService {
   ): Promise<T> {
     logger.debug(req, operation, 'Updating resource with ETag', { step: 'update_with_etag', path, has_etag: !!etag });
 
-    return await this.microserviceProxy.proxyRequest<T>(req, service, path, 'PUT', {}, data, { ...extraHeaders, [HTTP_HEADERS.IF_MATCH]: etag });
+    const otherHeaders = Object.fromEntries(Object.entries(extraHeaders ?? {}).filter(([name]) => name.toLowerCase() !== HTTP_HEADERS.IF_MATCH.toLowerCase()));
+
+    return await this.microserviceProxy.proxyRequest<T>(req, service, path, 'PUT', {}, data, { ...otherHeaders, [HTTP_HEADERS.IF_MATCH]: etag });
   }
 
   /**
