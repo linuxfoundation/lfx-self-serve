@@ -32,10 +32,24 @@
     <!-- Page Header -->
     <lfx-page-header
       [title]="companyName() ? 'Training & Certifications — ' + companyName() : 'Training & Certifications'"
-      description="Training enrollments and certifications across your company."
+      [description]="description()"
       titleTestId="org-training-title"
       descriptionTestId="org-training-subtitle"
       data-testid="org-training-header" />
+
+    @if (rollUpNotices().length > 0) {
+      <div
+        class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        role="status"
+        data-testid="org-training-roll-up-notice">
+        <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
+        <div class="flex flex-col gap-1">
+          @for (notice of rollUpNotices(); track notice) {
+            <p>{{ notice }}</p>
+          }
+        </div>
+      </div>
+    }
 
     <!-- The same stat tiles as People › Trainees, for the same range and filters. A failed read is stated as such, never as dashes that read like "no data". -->
     @if (statsError()) {
@@ -62,8 +76,27 @@
               styleClass="w-full"
               data-testid="org-training-search-input" />
           </div>
+          @if (isRollUp()) {
+            <div class="w-full md:w-52">
+              <lfx-select
+                [form]="companyForm"
+                control="company"
+                size="small"
+                [options]="companyOptions()"
+                styleClass="w-full"
+                ariaLabel="Filter by company"
+                dataTest="org-training-company-filter" />
+            </div>
+          }
         </lfx-org-training-filter-bar>
-        <lfx-org-training-groups-table [orgUid]="orgUid()" [query]="statsQuery()" [groupBy]="groupBy()" [tab]="activeTab()" [searchQuery]="searchQuery()" />
+        <lfx-org-training-groups-table
+          [orgUid]="orgUid()"
+          [rollUp]="isRollUp()"
+          [company]="company()"
+          [query]="statsQuery()"
+          [groupBy]="groupBy()"
+          [tab]="activeTab()"
+          [searchQuery]="searchQuery()" />
       </section>
     </lfx-card>
     <p class="text-xs text-gray-500" data-testid="org-training-range-note">{{ tableNote() }}</p>
