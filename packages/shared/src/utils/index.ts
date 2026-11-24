@@ -156,6 +156,7 @@ export * from './campaign-bidding.utils';
 export * from './campaign-twitter.utils';
 export * from './campaign-linkedin.utils';
 export * from './campaign-linkedin-config.utils';
+export * from './campaign-linkedin-form.utils';
 export * from './campaign-google-assets.utils';
 export * from './campaign-google-conversion-actions.utils';
 export * from './campaign-google-user-lists.utils';

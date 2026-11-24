@@ -19,11 +19,9 @@ stubCreativeLibraryUpload();
 trackStateOnlyTests();
 
 /**
- * What the create request actually CARRIES for the email channel.
- *
- * The template picker's `selectedEmailTemplateId` was write-only before this: set on click, read
- * only for `aria-pressed` and row styling, and never placed on a request. These assert the value
- * reaches `hubspotConfig.sourceEmailId`, which campaign-service requires with no default.
+ * The LinkedIn section across a tab switch: what the operator set survives the round-trip and reaches the request.
+ * The rules themselves (the daily cap, the account fields, Create's refusals) are table rows in
+ * `campaign-linkedin-form.utils.spec.ts` (#5980); these specs keep the wiring.
  */
 describe('ImplementationTabComponent linkedin round-trip across a tab switch', () => {
   /** Matches the slug on the brief below — `applyDraft` ignores a draft keyed to another event. */
@@ -442,45 +440,12 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(false);
   });
 
-  it('keeps a linkedin create blocked when the account fetch fails', STATE_ONLY, async () => {
-    const f = TestBed.createComponent(tabComponentUnderTest());
-    f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
-    f.componentRef.setInput('briefData', brief());
-    f.detectChanges();
-    await f.whenStable();
-    // A failed fetch leaves loading false with an empty catalog — the worst case, because
-    // nothing further will ever arrive to correct the restored id.
-    accountsSubject.error(new Error('ad-account endpoint unavailable'));
-    f.detectChanges();
-    await f.whenStable();
-
-    makeLinkedInOtherwiseValid(f);
-
-    expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(false);
-  });
-
   /**
    * #5809: when campaign-service owns the create, the connection decides the LinkedIn account and
    * `adAccountId` is dropped server-side, so the selector is replaced with a read-only line and an
    * unavailable account catalog no longer blocks a create it has no part in. Unknown or `false`
    * keeps the selector and the gate, because the legacy creator still reads the chosen account.
    */
-  it('lets a linkedin create through without the account catalog when campaign-service owns the create', STATE_ONLY, async () => {
-    const f = TestBed.createComponent(tabComponentUnderTest());
-    f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
-    f.componentRef.setInput('briefData', brief());
-    f.componentRef.setInput('googleCreativeEnabled', true);
-    f.detectChanges();
-    await f.whenStable();
-    accountsSubject.error(new Error('ad-account endpoint unavailable'));
-    f.detectChanges();
-    await f.whenStable();
-
-    makeLinkedInOtherwiseValid(f);
-
-    expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(true);
-  });
-
   it.each([
     [true, true, false],
     [false, false, true],
@@ -513,7 +478,6 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       canChoose: true,
       accounts: [DEFAULT_ACCOUNT, GRANT],
     };
-    const viewer = { ...chooser, canChoose: false, accounts: [DEFAULT_ACCOUNT] };
 
     let createAccountSubject: Subject<typeof chooser>;
     let createAccountCalls: string[];
@@ -637,46 +601,6 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     });
 
     // The ED 403: while campaign-service's selection is on, naming the default needs global_marketing_ops too.
-    it('omits adAccountId when the default account is chosen', STATE_ONLY, async () => {
-      const f = await mountWithSelection(true);
-      await answer(f, chooser);
-
-      pick(f, GRANT.accountId);
-      pick(f, DEFAULT_ACCOUNT.accountId);
-
-      expectNoAccountSent(submitAndRead(f));
-    });
-
-    it('starts the picker on the default and sends nothing for an account the answer does not list', STATE_ONLY, async () => {
-      const f = await mountWithSelection(true);
-      await answer(f, chooser);
-
-      expect((f.componentInstance as unknown as { linkedInChosenAccountId(): string }).linkedInChosenAccountId()).toBe(DEFAULT_ACCOUNT.accountId);
-      pick(f, '999999999');
-
-      expectNoAccountSent(submitAndRead(f));
-    });
-
-    it('shows anyone who cannot choose the default read-only and sends no account', async () => {
-      const f = await mountWithSelection(true);
-      await answer(f, viewer);
-
-      expect(el(f, 'implementation-linkedin-create-account-select')).toBeNull();
-      expect(el(f, 'implementation-linkedin-create-account-default')?.textContent).toContain('Shared system account (100000001)');
-      // Not the legacy linkedin.json id the form still carries either.
-      expectNoAccountSent(submitAndRead(f));
-    });
-
-    it('lets a create through to the default when the account read fails', async () => {
-      const f = await mountWithSelection(true);
-      createAccountSubject.error(new Error('create-account unavailable'));
-      f.detectChanges();
-      await f.whenStable();
-
-      expect(el(f, 'implementation-linkedin-create-account-failed')).not.toBeNull();
-      expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(true);
-      expectNoAccountSent(submitAndRead(f));
-    });
   });
 
   /**
@@ -1096,16 +1020,6 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(buttonDisabled(f, 'implementation-linkedin-variant-add')).toBe(true);
       at(f).addLinkedInVariant();
       expect(at(f).linkedInVariants()).toHaveLength(15);
-    });
-
-    it('blocks Create for a brief holding more than 15 variants, until enough are removed', async () => {
-      const many = Array.from({ length: 16 }, (_, i) => ({ introText: `Intro ${i + 1}`, headline: `Headline ${i + 1}` }));
-      const f = (await mount(null, null, brief(many))).fixture;
-      fillForm(f);
-
-      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: remove ad variants until there are at most 15.');
-      click(f, 'implementation-linkedin-variant-remove-15');
-      expect(at(f).canSubmit()).toBe(true);
     });
   });
 

@@ -2147,6 +2147,50 @@ export interface LinkedInCreateAccountState {
   account: LinkedInCreateAccountResult | null;
 }
 
+/** What `linkedInDailyCapError` and `linkedInDailyCapField` read (#5774): the cap beside a lifetime budget. */
+export interface LinkedInDailyCapInput {
+  capUsd: number | null;
+  lifetimeBudget: boolean;
+  /** Whether this deployment offers the cap (`linkedInDailyCapEnabled`). */
+  available: boolean;
+  budgetUsd: number;
+}
+
+/** What `linkedInAccountFields` reads (#5809) to choose the account fields a LinkedIn create sends. */
+export interface LinkedInAccountFieldsInput {
+  /** The connection decides the account (`linkedInAccountSetByConnection`), so the legacy `adAccountId` is not sent. */
+  setByConnection: boolean;
+  /** The account picker applies on this deployment (`linkedInAccountSelectionAvailable`). */
+  selectionAvailable: boolean;
+  /** The account the create goes to, from `linkedInEffectiveAccount`, or `null` when the read has no answer. */
+  effectiveAccount: LinkedInCreateAccountOption | null;
+  canChoose: boolean;
+  /** The legacy form's account, sent only when the connection does not decide it. */
+  legacyAccountId: string;
+}
+
+/**
+ * What `linkedInCreateRefusal` reads (#5980): the LinkedIn section's state as the Implement tab holds it. One flat
+ * object of plain values, like `MetaCreateRefusalInput`, so the rules are tested without the component.
+ */
+export interface LinkedInCreateRefusalInput {
+  budgetUsd: number;
+  dailyCapError: string | null;
+  geoTargetCount: number;
+  variantCount: number;
+  variantTextInvalid: boolean;
+  /** Targeting entries removed from the selected profile (#5546). */
+  removalsHeld: boolean;
+  targetingEditAvailable: boolean;
+  /** The selected profile's details are loaded, so removals can be applied. */
+  profileLoaded: boolean;
+  accountSetByConnection: boolean;
+  /** The legacy form's account is one the catalog lists. */
+  accountInCatalog: boolean;
+  accountSelectionAvailable: boolean;
+  createAccountStatus: LinkedInCreateAccountState['status'];
+}
+
 export interface LinkedInCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
