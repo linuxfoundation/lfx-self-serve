@@ -4,7 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
 
-import { json, MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
+import { json, MEMBER_360_DOCUMENT_ID, member360Progress, openMember360, setupMember360, stubMember360Progress } from './helpers/member-360.helper';
 import { member360Revision } from './fixtures/mock-data/member-360.mock';
 import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
@@ -162,6 +162,32 @@ test('non-writer sees an access message, never a run form', async ({ page }, inf
   await expect(page.getByTestId('member-360-no-access')).toContainText('write access');
   await expect(page.getByTestId('member-360-run')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('no-access.png'), fullPage: true });
+});
+
+test('the in-progress view and the Start over intake keep their test-id structure', async ({ page }, info) => {
+  await setupMember360(page);
+  const detail = member360Progress('writing');
+  await page.route('**/api/mktg-agents/documents?*', (route) => json(route, { project: 'sample-project', groups: [], runs: detail.runs }));
+  await stubMember360Progress(page, () => detail);
+  await page.route('**/api/mktg-agents/member-360/result', (route) => json(route, { status: 'pending', activity: detail.runs?.[0]?.activity }));
+  await openMember360(page);
+  // The open run carries the choice: one row, holding the Start over action, beside the activity pane.
+  await expect(page.getByTestId('member-360-generating')).toBeVisible();
+  await expect(page.getByTestId('member-360-run-choice')).toHaveCount(1);
+  await expect(page.getByTestId('member-360-run-choice').getByTestId('member-360-start-over')).toHaveCount(1);
+  await expect(page.getByTestId('member-360-waiting-notice')).toHaveCount(0);
+  await page.getByTestId('member-360-start-over').getByRole('button').click();
+  // Start over: the notice holds the way back, the intake sits beside it, and the activity pane and its choice are gone.
+  const notice = page.getByTestId('member-360-waiting-notice');
+  await expect(notice).toBeVisible();
+  await expect(notice.getByTestId('member-360-waiting-open')).toHaveCount(1);
+  await expect(notice.getByTestId('member-360-waiting-open').getByRole('button')).toBeEnabled();
+  await expect(page.getByTestId('member-360-intake')).toBeVisible();
+  await expect(page.getByTestId('member-360-intake').getByTestId('member-360-run')).toHaveCount(1);
+  await expect(notice.getByTestId('member-360-intake')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-generating')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-run-choice')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('start-over-structure.png'), fullPage: true });
 });
 
 test('the document has a loading state, then keeps checking a transient read failure on its own with no Retry button', async ({ page }, info) => {

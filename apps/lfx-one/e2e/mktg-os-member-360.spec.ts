@@ -73,6 +73,83 @@ for (const choice of ['Open it', 'Discard and start over'])
     await page.screenshot({ path: info.outputPath('member-active-run-choice.png'), fullPage: true });
   });
 
+for (const choice of ['Open it', 'Open it in the dialog', 'Discard and start over'])
+  test(`Member 360 in-progress view offers Start over: ${choice}`, async ({ page }, info) => {
+    await setupMember360(page); // Includes suppressCookieBanner and synthetic writer/flag overrides.
+    let detail = member360Progress('writing');
+    const activeRunId = 'b'.repeat(64);
+    // The replacement run is a new run with a new document, as the server makes it.
+    const replacement = { runId: 'c'.repeat(64), documentId: `run-${'c'.repeat(24)}` };
+    // The server roster owns the active run: the page lands on its in-progress view, with the intake hidden.
+    await page.route('**/api/mktg-agents/documents?*', (route) => json(route, { project: 'sample-project', groups: [], runs: detail.runs }));
+    await stubMember360Progress(page, () => detail);
+    await page.route('**/api/mktg-agents/member-360/result', (route) => json(route, { status: 'pending', activity: detail.runs?.[0]?.activity }));
+    const bodies: Record<string, unknown>[] = [];
+    await page.route('**/api/mktg-agents/member-360/generate', (route) => {
+      bodies.push(route.request().postDataJSON());
+      if (!bodies.at(-1)?.['discard'])
+        return route.fulfill({
+          status: 409,
+          json: {
+            code: 'MKTG_RUN_ACTIVE',
+            message: 'Your Member 360 run is in progress.',
+            activeRunId,
+            state: 'writing',
+            agentKey: 'member-360',
+            documentId: MEMBER_360_DOCUMENT_ID,
+            startedBy: 'Synthetic writer',
+            startedByViewer: true,
+            startedAt: '2026-10-19T12:00:00.000Z',
+          },
+        });
+      // From here the roster and the progress read answer for the replacement run only.
+      detail = {
+        ...detail,
+        documentId: replacement.documentId,
+        runs: detail.runs?.map((run) => ({ ...run, ...replacement, startedAt: '2026-10-19T13:00:00Z' })),
+      };
+      return json(route, { sessionId: 'synthetic-new', ownerToken: 'synthetic-proof', ...replacement });
+    });
+    await openMember360(page);
+    await expect(page.getByTestId('member-360-generating')).toBeVisible();
+    await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
+    await page.getByTestId('member-360-start-over').getByRole('button').click();
+    // Start over shows the intake beside a notice; nothing is sent or discarded yet.
+    await expect(page.getByTestId('member-360-intake')).toBeVisible();
+    await expect(page.getByTestId('member-360-generating')).toHaveCount(0);
+    await expect(page.getByTestId('member-360-waiting-notice')).toContainText('A Member 360 run is in progress.');
+    await page.screenshot({ path: info.outputPath('member-start-over-intake.png'), fullPage: true });
+    expect(bodies).toHaveLength(0);
+    if (choice === 'Open it') {
+      await page.getByTestId('member-360-waiting-open').getByRole('button').click();
+      await expect(page.getByTestId('member-360-generating')).toBeVisible();
+      await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
+      expect(bodies).toHaveLength(0);
+    } else {
+      await selectMember360Option(page, 'member-360-compare', 'No comparison');
+      await page.getByTestId('member-360-run').getByRole('button').click();
+      const dialog = activeRunConfirmDialog(page);
+      await expect(dialog).toContainText('Your Member 360 run is in progress');
+      const discard = choice === 'Discard and start over';
+      await dialog.getByRole('button', { name: discard ? choice : 'Open it', exact: true }).click();
+      // Both end on this page's in-progress view: the replacement run, or the run the page already follows.
+      await expect(page.getByTestId('member-360-generating')).toBeVisible();
+      await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
+      await expect(page.getByTestId('member-360-waiting-notice')).toHaveCount(0);
+      expect(bodies.filter((body) => body['discard'])).toHaveLength(discard ? 1 : 0);
+      if (discard) {
+        expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
+        // The view follows the replacement run's document, not the discarded one.
+        const progressRead = page.waitForRequest((request) => request.url().includes(`/documents/member-360/${replacement.documentId}`));
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        await progressRead;
+        await expect(page.getByTestId('member-360-generating')).toBeVisible();
+      }
+    }
+    await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath('member-start-over-choice.png'), fullPage: true });
+  });
+
 for (const state of ['writing', 'questions', 'none'] as const)
   test(`Member page lands directly on the viewer's server-owned ${state} screen`, async ({ page }, info) => {
     await setupMember360(page); // Includes suppressCookieBanner, synthetic writer rights and feature flag.
