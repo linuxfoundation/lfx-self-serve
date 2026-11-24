@@ -32,19 +32,25 @@ export class CdpCompanyService {
   private availability$: Observable<CdpCompanyAudienceSignal> | null = null;
 
   /**
-   * Whether CDP pages and search are available to the caller. Shared across callers in one load; only an answered
-   * request (200) is kept; any failure is not kept, so the next ask retries. Server-side rendering never asks: it
-   * answers `unavailable`, so no CDP row or page renders before the browser has checked.
+   * Whether CDP pages and search are available to the caller. Shared across callers in one load. Only an answered
+   * `{ available: true | false }` is kept; when membership cannot be determined (network error, any error status, an
+   * unreadable or malformed body) the answer is `unverifiable`, so a page shows "could not verify" with Retry and
+   * never "no company", and the failure is not kept, so the next ask retries. Search shows CDP rows only on
+   * `available`. Server-side rendering never asks: it answers `unavailable`, so no CDP row or page renders before the
+   * browser has checked.
    */
   public availability(): Observable<CdpCompanyAudienceSignal> {
     if (!isPlatformBrowser(this.platformId)) return of('unavailable');
     if (!this.availability$) {
       this.availability$ = this.http.get<CdpCompanyAvailability>(`${BASE_URL}/availability`).pipe(
-        map((response): CdpCompanyAudienceSignal => (response?.available === true ? 'available' : 'unavailable')),
+        map((response): CdpCompanyAudienceSignal => {
+          if (typeof response?.available !== 'boolean') throw new Error('Malformed CDP availability answer');
+          return response.available ? 'available' : 'unavailable';
+        }),
         catchError((error: unknown) => {
           console.error('[cdp-company] availability failed', { error });
           this.availability$ = null;
-          return of<CdpCompanyAudienceSignal>(error instanceof HttpErrorResponse && error.status === 503 ? 'unverifiable' : 'unavailable');
+          return of<CdpCompanyAudienceSignal>('unverifiable');
         }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
