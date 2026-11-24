@@ -2402,6 +2402,17 @@ export interface MetaCampaignCreateRequest {
   variants: MetaAdVariant[];
   project?: string;
   objective?: MetaObjective;
+  /**
+   * When the ad set runs (#5904 row 5; campaign-service#612): one window of whole hours on the chosen days, in the
+   * Meta ad account's time zone. Needs `lifetimeBudget: true`. Sent ONLY when `CampaignListResult.metaAdScheduleEnabled`
+   * is a yes; the create route refuses it with a 400 otherwise.
+   */
+  adSchedule?: MetaAdSchedule;
+  /**
+   * At most `maxImpressions` impressions per person every `intervalDays` days (#5904 row 5), on the awareness objective
+   * only. Sent ONLY when `CampaignListResult.metaFrequencyCapEnabled` is a yes; the create route refuses it otherwise.
+   */
+  frequencyCap?: MetaFrequencyCap;
   placements?: Partial<MetaPlacement>;
   pixelId?: string;
   /**
@@ -2590,6 +2601,35 @@ export interface MetaTargetingSearchState {
   options: MetaTargetingSearchOption[];
   pending: boolean;
   failure: string | null;
+}
+
+/**
+ * A Meta ad set schedule (#5904 row 5; campaign-service#612): it runs only on `days` (0 Sunday to 6 Saturday, Meta's
+ * numbering) between `startMinute` and `endMinute` of the day, whole hours with 0 <= start < end <= 1440, in the
+ * ad account's time zone. One window for every chosen day.
+ */
+export interface MetaAdSchedule {
+  days: number[];
+  startMinute: number;
+  endMinute: number;
+}
+
+/** A Meta frequency cap (#5904 row 5): at most `maxImpressions` impressions per person every `intervalDays` days, each 1–90. */
+export interface MetaFrequencyCap {
+  maxImpressions: number;
+  intervalDays: number;
+}
+
+/** The Meta delivery options a create sends, each only once checked. */
+export interface MetaDeliveryOptions {
+  adSchedule?: MetaAdSchedule;
+  frequencyCap?: MetaFrequencyCap;
+}
+
+/** Which Meta delivery options this deployment accepts on create, one answer per flag. */
+export interface MetaDeliveryFlags {
+  adSchedule: boolean;
+  frequencyCap: boolean;
 }
 
 /** campaign-service's raw answer for `search-meta-targeting-options` (snake_case, as on the wire). */
@@ -7518,6 +7558,12 @@ export interface CampaignListResult {
   metaInterestTargetingEnabled?: boolean;
   metaBehaviorTargetingEnabled?: boolean;
   metaLocaleTargetingEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.adSchedule` and `frequencyCap` (#5904 row 5), one flag each:
+   * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE` / `..._META_FREQUENCY_CAP`. Deployment-wide.
+   */
+  metaAdScheduleEnabled?: boolean;
+  metaFrequencyCapEnabled?: boolean;
   /**
    * Whether THIS caller may offer the `leads` objective with an Instant Form, through
    * `GET /api/campaigns/meta/lead-forms`, and send `metaConfig.leadFormId` (#5940): `cutoverOwnsCreate()` AND

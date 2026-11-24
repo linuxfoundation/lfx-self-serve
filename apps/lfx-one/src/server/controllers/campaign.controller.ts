@@ -63,6 +63,13 @@ import {
 import { compactMetaAdOptions, metaAdOptionOffMessage, metaAdOptionsRefusal, metaConfigRecord } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
 import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
 import {
+  compactMetaDeliveryOptions,
+  metaAdScheduleRefusal,
+  metaDeliveryFlagRefusal,
+  metaDeliveryKeyVariant,
+  metaFrequencyCapRefusal,
+} from '@lfx-one/shared/utils/campaign-meta-delivery.utils';
+import {
   compactMetaDetailedTargeting,
   isMetaTargetingSearchType,
   metaDetailedTargetingRefusal,
@@ -154,6 +161,7 @@ import type {
   NormalizedGoogleDeviceBidModifier,
   MetaAdOptionKey,
   MetaAdOptions,
+  MetaDeliveryOptions,
   MetaAudienceTargeting,
   MetaTargeting,
   MetaTargetingSearchResult,
@@ -409,6 +417,8 @@ import {
   canSetMetaBehaviorTargeting,
   canSetMetaInterestTargeting,
   canSetMetaLocaleTargeting,
+  canSetMetaAdSchedule,
+  canSetMetaFrequencyCap,
   canSetMetaOptimizationGoal,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -1310,7 +1320,9 @@ export class CampaignController {
       const metaAdOptions = this.metaAdOptionsToForward(body);
       // The Meta Instant Form of a `leads` create (#5940), or none. See `metaLeadFormToForward`.
       const metaLeadFormIdToSend = await this.metaLeadFormToForward(req, projectSlug, body);
-      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions, metaLeadFormIdToSend);
+      // The Meta ad schedule and frequency cap (#5904 row 5). See `metaDeliveryOptionsToForward`.
+      const metaDelivery = this.metaDeliveryOptionsToForward(body);
+      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
 
       // The channel the Google config resolved to, read ONCE for every channel fence below rather
       // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever
@@ -7158,7 +7170,8 @@ export class CampaignController {
     linkedInAdAccountId: string | null = null,
     metaTargeting: MetaTargeting | null = null,
     metaAdOptions: MetaAdOptions = {},
-    metaLeadFormIdToSend: string | null = null
+    metaLeadFormIdToSend: string | null = null,
+    metaDelivery: MetaDeliveryOptions = {}
   ): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
@@ -7170,7 +7183,7 @@ export class CampaignController {
     if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
 
-    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend);
+    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
     const microsoftConfig = this.buildMicrosoftConfig(body);
@@ -9701,21 +9714,57 @@ export class CampaignController {
    * The request's own `targeting` is never forwarded: only the block `metaTargetingToForward` checked and
    * compacted (#5905), and otherwise nothing. Likewise the call to action, conversion event and
    * optimization goal: only what `metaAdOptionsToForward` checked (#5934), and the lead form: only the id
-   * `metaLeadFormToForward` checked (#5940).
+   * `metaLeadFormToForward` checked (#5940), and the ad schedule and frequency cap: only what
+   * `metaDeliveryOptionsToForward` checked (#5904 row 5).
    */
   private buildMetaConfig(
     body: CampaignCreateRequest,
     targeting: MetaTargeting | null = null,
     adOptions: MetaAdOptions = {},
-    leadFormId: string | null = null
+    leadFormId: string | null = null,
+    delivery: MetaDeliveryOptions = {}
   ): Record<string, unknown> | null {
     if (!body?.metaConfig) return null;
 
     const { budgetUsd, ...rest } = body.metaConfig;
     delete rest.targeting;
     delete rest.leadFormId;
+    delete rest.adSchedule;
+    delete rest.frequencyCap;
     for (const { key } of META_AD_OPTION_FIELDS) delete rest[key];
-    return { ...rest, budget: budgetUsd, ...(targeting ? { targeting } : {}), ...adOptions, ...(leadFormId !== null ? { leadFormId } : {}) };
+    return {
+      ...rest,
+      budget: budgetUsd,
+      ...(targeting ? { targeting } : {}),
+      ...adOptions,
+      ...(leadFormId !== null ? { leadFormId } : {}),
+      ...delivery,
+    };
+  }
+
+  /**
+   * The `metaConfig.adSchedule` and `frequencyCap` a create sends (#5904 row 5):
+   *
+   * - either under another spelling of its key (`metaDeliveryKeyVariant`): 400, whatever the flag. campaign-service
+   *   decodes keys ignoring case, so it would otherwise reach it past every check below;
+   * - a field present (anything but absent or null) while its flag is off (`canSetMetaAdSchedule`,
+   *   `canSetMetaFrequencyCap`): 400, never a silent drop. Dropping a schedule would run the ads around the clock;
+   * - a schedule or cap that breaks campaign-service's rules (`metaAdScheduleRefusal`, `metaFrequencyCapRefusal`, the
+   *   tab's own rules): 400 naming the field;
+   * - otherwise only the known fields, the schedule's days de-duplicated and sorted.
+   */
+  private metaDeliveryOptionsToForward(body: CampaignCreateRequest): MetaDeliveryOptions {
+    const meta = metaConfigRecord(body?.metaConfig);
+    if (!meta) return {};
+    const context = { operation: 'campaign_create', service: 'campaign_controller' };
+    const variant = metaDeliveryKeyVariant(meta);
+    if (variant !== null) throw ServiceValidationError.forField(`metaConfig.${variant}`, `Send it as metaConfig.${variant}, spelled exactly.`, context);
+    const refusal =
+      metaDeliveryFlagRefusal(meta, { adSchedule: canSetMetaAdSchedule(), frequencyCap: canSetMetaFrequencyCap() }) ??
+      metaAdScheduleRefusal(meta) ??
+      metaFrequencyCapRefusal(meta);
+    if (refusal !== null) throw ServiceValidationError.forField(refusal.field, refusal.message, context);
+    return compactMetaDeliveryOptions(meta);
   }
 
   /**
