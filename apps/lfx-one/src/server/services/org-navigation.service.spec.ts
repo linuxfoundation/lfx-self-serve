@@ -20,12 +20,13 @@ vi.mock('@lfx-one/shared/constants', () => ({
   ORG_LENS_ROLLUP_ENABLED_FLAG: 'org-lens-rollup-enabled',
 }));
 
-const { proxyRequest, getAccessAwareOrgs, resolveFamilyRoots, isFlagEnabled, getEffectiveUsername, listClaOnlyOrgs } = vi.hoisted(() => ({
+const { proxyRequest, getAccessAwareOrgs, resolveFamilyRoots, isFlagEnabled, getEffectiveUsername, isImpersonating, listClaOnlyOrgs } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getAccessAwareOrgs: vi.fn(),
   resolveFamilyRoots: vi.fn(),
   isFlagEnabled: vi.fn(),
   getEffectiveUsername: vi.fn(),
+  isImpersonating: vi.fn(() => false),
   listClaOnlyOrgs: vi.fn(),
 }));
 
@@ -42,7 +43,7 @@ vi.mock('./org-role-grants.service', () => ({
   },
 }));
 vi.mock('./launchdarkly-server.service', () => ({ LaunchDarklyServerService: { getInstance: () => ({ isFlagEnabled }) } }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername, isImpersonating }));
 // The real predicate is pinned in org-cla-only-orgs.service.spec.ts; the service's own imports reach
 // the Angular-bearing shared barrel, so it cannot be loaded here.
 vi.mock('./org-cla-only-orgs.service', () => ({
@@ -70,6 +71,8 @@ beforeEach(() => {
   // be answered to the next test's first request.
   vi.resetAllMocks();
   delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+  delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY'];
+  isImpersonating.mockReturnValue(false);
   resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
   getEffectiveUsername.mockReturnValue('staffer');
   // The defining staff shape: the catalogue is the only source of rows.
@@ -530,6 +533,29 @@ describe('OrgNavigationService — all employee view company (#5845)', () => {
 
     expect(response.items).toEqual([]);
     expect(response.upstream_failed).toBe(true);
+  });
+
+  describe('staff preview (impersonation-only)', () => {
+    beforeEach(() => {
+      delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+      process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY'] = 'true';
+      resolveEmployeeView.mockResolvedValue(eligible);
+    });
+
+    it('lists the employee company only while staff impersonate the caller', async () => {
+      isImpersonating.mockReturnValue(true);
+
+      const response = await new OrgNavigationService().getOrgItems(req, {});
+
+      expect(response.items).toEqual([expect.objectContaining({ uid: COMPANY_A, employeeView: true })]);
+    });
+
+    it('asks nothing and lists nothing for a real, non-impersonated caller', async () => {
+      const response = await new OrgNavigationService().getOrgItems(req, {});
+
+      expect(resolveEmployeeView).not.toHaveBeenCalled();
+      expect(response.items).toEqual([]);
+    });
   });
 
   it('does not ask while the flag is off', async () => {
