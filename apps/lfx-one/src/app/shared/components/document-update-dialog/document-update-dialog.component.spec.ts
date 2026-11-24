@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { DOCUMENT_ROOT_FOLDER_VALUE } from '@lfx-one/shared/constants';
@@ -27,6 +28,10 @@ const baseData: DocumentUpdateDialogData = {
   folders: [{ label: 'Reports', value: FOLDER }],
 };
 
+// State only: validity, the computed change and the calls are asserted without rendering a template (see .claude/rules/unit-test-cost.md).
+@Component({ selector: 'lfx-document-update-dialog-state', template: '' })
+class DocumentUpdateDialogStateComponent extends DocumentUpdateDialogComponent {}
+
 describe('DocumentUpdateDialogComponent', () => {
   const close = vi.fn();
   const updateCommitteeDocument = vi.fn();
@@ -34,7 +39,7 @@ describe('DocumentUpdateDialogComponent', () => {
 
   function create(data: Partial<DocumentUpdateDialogData> = {}) {
     TestBed.configureTestingModule({
-      imports: [DocumentUpdateDialogComponent],
+      imports: [DocumentUpdateDialogStateComponent],
       providers: [
         provideNoopAnimations(),
         { provide: DynamicDialogConfig, useValue: { data: { ...baseData, ...data } } },
@@ -43,7 +48,7 @@ describe('DocumentUpdateDialogComponent', () => {
         { provide: ProjectService, useValue: { updateProjectDocument } },
       ],
     });
-    const fixture = TestBed.createComponent(DocumentUpdateDialogComponent);
+    const fixture = TestBed.createComponent(DocumentUpdateDialogStateComponent);
     fixture.detectChanges();
     return fixture.componentInstance;
   }
@@ -101,6 +106,14 @@ describe('DocumentUpdateDialogComponent', () => {
 
     cmp.form.controls.parent_uid.setValue(FOLDER);
     expect(cmp.changes()).toEqual({ parent_uid: FOLDER });
+  });
+
+  it('moves a document whose current name would fail the rename rules', () => {
+    const cmp = create({ mode: 'move', name: 'x'.repeat(600) });
+    cmp.form.controls.parent_uid.setValue(FOLDER);
+    cmp.onSubmit();
+
+    expect(updateCommitteeDocument).toHaveBeenCalledWith('c-1', 'd-1', 'link', { parent_uid: FOLDER });
   });
 
   it('moves to the root as a null parent', () => {

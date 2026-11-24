@@ -39,7 +39,8 @@ export class DocumentUpdateDialogComponent {
   public readonly folderOptions = [{ label: DOCUMENT_ROOT_FOLDER_LABEL, value: DOCUMENT_ROOT_FOLDER_VALUE }, ...this.data.folders];
 
   public readonly form = new FormGroup({
-    name: new FormControl(this.data.name, [
+    // The name is only edited in rename mode. A move leaves it as it is, so a current name that fails these rules must not block it.
+    name: new FormControl({ value: this.data.name, disabled: !this.isRename }, [
       Validators.required,
       Validators.maxLength(this.nameMaxLength),
       (c) => (String(c.value ?? '').trim() ? null : { required: true }),
@@ -63,7 +64,6 @@ export class DocumentUpdateDialogComponent {
     return target === current ? {} : { parent_uid: target === DOCUMENT_ROOT_FOLDER_VALUE ? null : target };
   });
   public readonly unchanged = computed(() => Object.keys(this.changes()).length === 0);
-  public readonly title = this.isRename ? `Rename ${this.data.documentType}` : `Move ${this.data.documentType}`;
   public readonly submitLabel = this.isRename ? 'Rename' : 'Move';
 
   public onCancel(): void {

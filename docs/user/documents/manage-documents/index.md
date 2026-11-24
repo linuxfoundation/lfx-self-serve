@@ -47,7 +47,7 @@ Because of this, the **Upload Files**, **New Folder**, and **Add Link** buttons 
 
 ### Group documents
 
-Every group has its own **Documents** tab on its details page. Anyone who can view the group can see the tab, and its badge shows how many documents it holds. If you have write access to the group, you also get **Upload Files**, **New Folder**, and **Add Link** there, and they work the same way as on the project Documents page, and you can [delete](#delete-documents) the group's own files and links. See [Manage Committees](../../committees/manage-committees/).
+Every group has its own **Documents** tab on its details page. Anyone who can view the group can see the tab, and its badge shows how many documents it holds. If you have write access to the group, you also get **Upload Files**, **New Folder**, and **Add Link** there, and they work the same way as on the project Documents page, and you can [rename, move, or delete](#rename-move-or-delete-documents) the group's own files, links, and folders. See [Manage Committees](../../committees/manage-committees/).
 
 Documents you add to a group also appear on the project Documents page, in the **Groups** tab, with the group's name in the **Group / Meeting** column. Folders you create in a group stay on that group's page. The project page lists the group's files and links on their own, without the folders.
 

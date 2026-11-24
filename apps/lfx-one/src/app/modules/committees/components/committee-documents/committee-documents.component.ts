@@ -244,43 +244,6 @@ export class CommitteeDocumentsComponent {
     });
   }
 
-  // === Private Methods ===
-  private openUpdateDialog(doc: MyDocumentItem, mode: DocumentUpdateMode): void {
-    const type = doc.manageableType;
-    if (!type) return;
-
-    // Row ids are `committee_<type>:<uid>`.
-    const documentUid = doc.id.slice(doc.id.indexOf(':') + 1);
-    const current = this.committeeDocuments().find((d) => d.uid === documentUid);
-    const data: DocumentUpdateDialogData = {
-      mode,
-      entityType: 'committee',
-      entityId: this.committee().uid,
-      documentUid,
-      documentType: type,
-      name: current?.name ?? doc.name,
-      parentUid: current?.parent_uid ?? null,
-      folders: this.folderOptions(),
-    };
-
-    const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentUpdateDialogComponent, {
-      header: `${mode === 'rename' ? 'Rename' : 'Move'} ${type}`,
-      width: '480px',
-      modal: true,
-      closable: true,
-      data,
-    });
-
-    dialogRef?.onClose.pipe(take(1)).subscribe((updated: CommitteeDocument | undefined) => {
-      if (!updated) return;
-      this.messageService.add({ severity: 'success', summary: mode === 'rename' ? 'Renamed' : 'Moved', detail: `"${updated.name}" was updated.` });
-      this.updatedDocuments.update((patches) =>
-        mergeDocumentUpdate(patches, documentUid, { name: updated.name, parent_uid: updated.parent_uid ?? null, updated_at: updated.updated_at })
-      );
-      this.onDocumentsChanged();
-    });
-  }
-
   // === Private Initializers ===
   private initSearchQuery(): Signal<string> {
     return toSignal(
@@ -528,6 +491,42 @@ export class CommitteeDocumentsComponent {
       const uid = this.currentFolderUid();
       if (!uid) return null;
       return this.committeeDocuments().find((doc) => doc.type === 'folder' && doc.uid === uid) ?? null;
+    });
+  }
+
+  private openUpdateDialog(doc: MyDocumentItem, mode: DocumentUpdateMode): void {
+    const type = doc.manageableType;
+    if (!type) return;
+
+    // Row ids are `committee_<type>:<uid>`.
+    const documentUid = doc.id.slice(doc.id.indexOf(':') + 1);
+    const current = this.committeeDocuments().find((d) => d.uid === documentUid);
+    const data: DocumentUpdateDialogData = {
+      mode,
+      entityType: 'committee',
+      entityId: this.committee().uid,
+      documentUid,
+      documentType: type,
+      name: current?.name ?? doc.name,
+      parentUid: current?.parent_uid ?? null,
+      folders: this.folderOptions(),
+    };
+
+    const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentUpdateDialogComponent, {
+      header: `${mode === 'rename' ? 'Rename' : 'Move'} ${type}`,
+      width: '480px',
+      modal: true,
+      closable: true,
+      data,
+    });
+
+    dialogRef?.onClose.pipe(take(1)).subscribe((updated: CommitteeDocument | undefined) => {
+      if (!updated) return;
+      this.messageService.add({ severity: 'success', summary: mode === 'rename' ? 'Renamed' : 'Moved', detail: `"${updated.name}" was updated.` });
+      this.updatedDocuments.update((patches) =>
+        mergeDocumentUpdate(patches, documentUid, { name: updated.name, parent_uid: updated.parent_uid ?? null, updated_at: updated.updated_at })
+      );
+      this.onDocumentsChanged();
     });
   }
 }
