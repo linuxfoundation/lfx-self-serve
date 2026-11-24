@@ -182,6 +182,8 @@ export interface CommitteeMemberBulkCreateResult {
 /** Client-only wizard state. Strip these options before sending the native member request body. */
 export interface StagedCommitteeMemberRequest extends CreateCommitteeMemberRequest {
   createOptions?: CreateCommitteeMemberOptions;
+  /** Client-only origin: self-add silence ends if this row's email is changed. */
+  isSelfAddition?: boolean;
   /** Matching pending invitations to revoke only after this member is successfully created. */
   pendingInviteUids?: string[];
 }
@@ -243,6 +245,8 @@ export interface CommitteeMemberWithState extends CommitteeMember {
   tempId?: string;
   /** Client-only create behavior retained while a new member is edited or the step remounts. */
   createOptions?: CreateCommitteeMemberOptions;
+  /** Retains self-add origin through wizard step remounts, independently of CSV notification choices. */
+  isSelfAddition?: boolean;
   pendingInviteUids?: string[];
 }
 

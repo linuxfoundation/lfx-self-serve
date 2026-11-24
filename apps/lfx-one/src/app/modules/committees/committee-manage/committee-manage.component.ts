@@ -814,6 +814,7 @@ export class CommitteeManageComponent {
     if (memberUpdates.toAdd.length > 0) {
       for (const member of memberUpdates.toAdd) {
         const { createOptions, pendingInviteUids = [], ...payload } = member;
+        delete payload.isSelfAddition; // Client-only staging origin must not reach the native API.
         operations.push(
           this.createMemberOperation(
             'add',

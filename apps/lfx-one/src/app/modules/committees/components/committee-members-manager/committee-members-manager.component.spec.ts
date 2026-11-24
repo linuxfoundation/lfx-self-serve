@@ -516,6 +516,49 @@ describe('CommitteeMembersManagerComponent', () => {
       expect(component.canAddSelf()).toBe(true);
     });
 
+    it.each([
+      ['same normalized email', ' SELF@example.com ', true],
+      ['another member', REQUEST.email, false],
+    ])('retains self-add behavior only for %s after remount and edit', async (_description, email, remainsSelf) => {
+      await setupStateOnly();
+      committeeService.getCommitteeInvites.mockReturnValue(of([{ uid: 'self-pending', invitee_email: SELF_USER.email, status: 'pending' }]));
+      component.addMyself();
+      const pending = updates.at(-1)!;
+      fixture.destroy();
+      TestBed.resetTestingModule();
+      await setupStateOnly({ memberUpdates: pending });
+      const staged = component.membersWithState().find((member) => member.email === SELF_USER.email)!;
+      component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email } });
+      expect(updates.at(-1)?.toAdd[0]).toMatchObject({ email });
+      expect(updates.at(-1)?.toAdd[0].createOptions).toEqual(remainsSelf ? { skipNotification: true } : undefined);
+      expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual(remainsSelf ? ['self-pending'] : undefined);
+      expect(updates.at(-1)?.toAdd[0].isSelfAddition).toBe(remainsSelf ? true : undefined);
+    });
+
+    it('keeps the fresh self-add invitation lookup separate from an earlier CSV snapshot', async () => {
+      await setupStateOnly({
+        memberUpdates: {
+          toAdd: [],
+          toUpdate: [],
+          toDelete: [],
+          toInvite: [],
+          importInvites: [{ uid: 'old-self-invite', invitee_email: SELF_USER.email, status: 'pending' }],
+        },
+      });
+      committeeService.getCommitteeInvites.mockReturnValue(of([{ uid: 'new-self-invite', invitee_email: SELF_USER.email, status: 'pending' }]));
+      component.addMyself();
+      expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual(['new-self-invite']);
+    });
+
+    it('preserves an explicit CSV notification choice even when the imported email belongs to self', async () => {
+      await setupStateOnly({
+        memberUpdates: { toAdd: [{ ...SELF_REQUEST, createOptions: { skipNotification: true } }], toUpdate: [], toDelete: [], toInvite: [] },
+      });
+      const staged = component.membersWithState().find((member) => member.email === SELF_USER.email)!;
+      component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email: REQUEST.email } });
+      expect(updates.at(-1)?.toAdd[0].createOptions).toEqual({ skipNotification: true });
+    });
+
     it('is offered again once the user is removed as an existing member', async () => {
       await setupStateOnly({}, { ...SELF_USER, email: EXISTING.email });
       expect(component.canAddSelf()).toBe(false);

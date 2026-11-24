@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-23
+last_updated: 2026-11-24
 intercom_collection: Committees
 ---
 
@@ -98,7 +98,7 @@ Correct the member values, save as **CSV UTF-8 (comma delimited)**, and choose t
 ### Import while creating or editing a group
 
 1. When creating a group, select **Create Group** on the **Settings** step to reach **Add Members**. When editing, open **Edit Group** and go to the **Add Members** step.
-2. Select **Import Members** alongside **Invite by email** and **Add with details**.
+2. Select **Import Members** alongside **Invite by email**, **Add with details**, and **Add myself**. To add yourself instead, see [Add Members](../create-committee/#step-4-add-members).
 3. Download the template or choose a CSV file, then review the preview. Required company and voting fields reflect the group's current settings in the form.
 4. Optionally select **Send notification emails to added members**. Notifications are off by default; this choice is retained when you edit staged members or move between steps.
 5. Select **Import _N_ members**. As on the Members tab, invalid rows are skipped and the button says how many, for example **Import 27 members (skip 3 invalid)**; use **Download invalid rows** to fix them later. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.

@@ -694,6 +694,15 @@ describe('CommitteeManageComponent', () => {
       expect(navigate).toHaveBeenCalledWith(['/groups']);
     });
 
+    it('strips the self-add origin from the native member body while preserving its create options', async () => {
+      const component = await setupPending([
+        { email: createdMember.email, isSelfAddition: true, createOptions: { skipNotification: true }, pendingInviteUids: ['invite-1'] },
+      ]);
+      component.onSubmitAll();
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, { email: createdMember.email }, { skipNotification: true });
+      expect(revokeCommitteeInvite).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, 'invite-1');
+    });
+
     it('waits for the group update and successful member creation before revoking invitations', async () => {
       const groupResponse = new Subject<Committee>();
       const memberResponse = new Subject<CommitteeMember>();

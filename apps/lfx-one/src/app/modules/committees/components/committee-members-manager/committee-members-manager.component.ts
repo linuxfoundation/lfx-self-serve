@@ -409,13 +409,15 @@ export class CommitteeMembersManagerComponent implements OnInit {
     this.membersWithState.update((members) =>
       members.map((m) => {
         if (m.uid === updateData.id || m.tempId === updateData.id) {
+          const sameEmail = m.email.trim().toLowerCase() === updateData.data.email.trim().toLowerCase();
           return {
             ...updateData.data,
             state: m.state === 'existing' ? ('modified' as CommitteeMemberState) : m.state,
             originalData: m.originalData,
             tempId: m.tempId,
-            createOptions: m.createOptions,
-            pendingInviteUids: m.email.trim().toLowerCase() === updateData.data.email.trim().toLowerCase() ? m.pendingInviteUids : undefined,
+            createOptions: m.isSelfAddition && !sameEmail ? undefined : m.createOptions,
+            isSelfAddition: m.isSelfAddition && sameEmail ? true : undefined,
+            pendingInviteUids: sameEmail ? m.pendingInviteUids : undefined,
           } as CommitteeMemberWithState;
         }
         return m;
@@ -631,6 +633,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
     return {
       ...request,
       createOptions: { skipNotification: true },
+      isSelfAddition: true,
       ...(selfInviteUids.length > 0 ? { pendingInviteUids: selfInviteUids } : {}),
     };
   }
@@ -653,6 +656,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       tempId: generateTempId(),
       originalData: undefined,
       createOptions: memberData.createOptions,
+      isSelfAddition: memberData.isSelfAddition,
       pendingInviteUids: memberData.pendingInviteUids,
     };
   }
@@ -888,6 +892,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
           return {
             ...this.stripMetadata(m),
             ...(m.createOptions ? { createOptions: m.createOptions } : {}),
+            ...(m.isSelfAddition ? { isSelfAddition: true } : {}),
             ...(pendingInviteUids ? { pendingInviteUids } : {}),
           };
         }),
@@ -906,7 +911,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
   /** Re-match the current email, not the address originally uploaded, without duplicating the snapshot on every member. */
   private getImportedInviteUids(member: CommitteeMemberWithState): string[] | undefined {
     const invites = this.importInvites();
-    if (!member.createOptions || !invites) {
+    // Self-add uses its fresh lookup; only CSV rows are re-matched against the import snapshot.
+    if (member.isSelfAddition || !member.createOptions || !invites) {
       return member.pendingInviteUids;
     }
     const email = member.email.trim().toLowerCase();
