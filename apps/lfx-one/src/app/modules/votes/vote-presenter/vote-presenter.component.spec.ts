@@ -476,6 +476,34 @@ describe('VotePresenterComponent', () => {
     expect(compact(text('vote-results-ranked-standing-a'))).toBe(compact('2nd Candidate A Won 0 out of 1 possible head-to-head matchup'));
   });
 
+  it.each([false, true])('shows no winner or Tied labels when Condorcet returns every candidate (IRV: %s)', async (usedIrv) => {
+    const choices = [
+      { choice_id: 'a', choice_text: 'Candidate A' },
+      { choice_id: 'b', choice_text: 'Candidate B' },
+    ];
+    getVoteResults.mockReturnValue(
+      of({
+        num_recipients: 2,
+        num_votes_cast: 2,
+        num_abstained: 0,
+        comment_results: [],
+        poll_end_time: '2026-12-01T17:00:00Z',
+        poll_results: [
+          {
+            question: { question_id: 'q1', prompt: 'Elect the synthetic chair', type: 'single_choice', choices },
+            ranked_choice_votes: choices.map(({ choice_id: choiceId }) => ({ choice_id: choiceId, rank_counts: [{ rank: 1, count: 1 }] })),
+            ranked_choice_winner_info: { poll_choices: choices, condorcet_irv_used_for_eliminations: usedIrv },
+          },
+        ],
+      } satisfies VoteResultsResponse)
+    );
+    fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, poll_type: PollType.CONDORCET_IRV })));
+    await mount();
+    expect(text('vote-results-ranked-outcome-q1')).toContain('No winner could be determined');
+    expect(text('vote-results-ranked-standing-a')).not.toContain('Tied');
+    expect(text('vote-results-ranked-standing-b')).not.toContain('Tied');
+  });
+
   it('shows abstentions on an ended ranked vote that allows them', async () => {
     fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, poll_type: PollType.MEEK_STV, allow_abstain: true })));
     await mount();

@@ -703,6 +703,57 @@ describe('VoteDetailComponent', () => {
         expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-yes\u0000choice-no', count: 1, ranking: ['Yes', 'No'] }]);
       });
 
+      it('lets a slow ballot read finish and coalesces multiple results polls into one follow-up', async () => {
+        const slowRead = new Subject<VoteVoter[]>();
+        voteService.getVoteVoters.mockReturnValueOnce(slowRead).mockReturnValue(of([laterBallot('ballot-1')]));
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+        await nextPoll(fixture);
+        await nextPoll(fixture);
+        expect(voteService.getVoteResults).toHaveBeenCalledTimes(3);
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+        expect(slowRead.observed).toBe(true);
+        expect(condorcetQuestion(fixture).ballotsLoading()).toBe(true);
+
+        slowRead.next([firstBallot]);
+        fixture.detectChanges();
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-no\u0000choice-yes', count: 1, ranking: ['No', 'Yes'] }]);
+        slowRead.complete();
+        fixture.detectChanges();
+
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+        expect(condorcetQuestion(fixture).ballotsLoading()).toBe(false);
+        expect(condorcetQuestion(fixture).question().ballotPatterns).toEqual([{ key: 'choice-yes\u0000choice-no', count: 1, ranking: ['Yes', 'No'] }]);
+      });
+
+      it.each(['tab', 'vote', 'privacy', 'destruction'])('cancels a slow ballot read and its queued refresh on %s changes', async (boundary) => {
+        const slowRead = new Subject<VoteVoter[]>();
+        voteService.getVoteVoters.mockReturnValueOnce(slowRead).mockReturnValue(of([]));
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+        await nextPoll(fixture);
+        expect(slowRead.observed).toBe(true);
+
+        if (boundary === 'tab') {
+          queryParamMap.next(convertToParamMap({ tab: 'overview' }));
+          TestBed.tick();
+        } else if (boundary === 'vote') {
+          voteService.fetchVote.mockReturnValue(of({ ...activeVote, uid: 'vote-2' }));
+          paramMap.next(convertToParamMap({ id: 'vote-2' }));
+          TestBed.tick();
+        } else if (boundary === 'privacy') {
+          voteService.fetchVote.mockReturnValue(of({ ...activeVote, pseudo_anonymity: true }));
+          await nextPoll(fixture);
+        } else {
+          fixture.destroy();
+        }
+
+        expect(slowRead.observed).toBe(false);
+        const calls = voteService.getVoteVoters.mock.calls.length;
+        slowRead.next([firstBallot]);
+        slowRead.complete();
+        expect(voteService.getVoteVoters).toHaveBeenCalledTimes(calls);
+        expect(calls).toBe(boundary === 'vote' ? 2 : 1);
+      });
+
       it('does not refresh ballots when the results poll fails', async () => {
         const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
         voteService.getVoteResults.mockReturnValue(httpError(503));

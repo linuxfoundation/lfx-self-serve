@@ -17,7 +17,7 @@ import type {
   VoteResultsSummaryLine,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { joinNames } from './vote-results.utils';
+import { joinNames, resolveCondorcetOutcome } from './vote-results.utils';
 import { rankedAnswerChoices } from './vote.utils';
 
 /**
@@ -78,7 +78,7 @@ function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null):
 
   const winnerIds = [...new Set((pr.ranked_choice_winner_info?.poll_choices ?? []).map((choice) => choice.choice_id))];
   const usedIrv = pr.ranked_choice_winner_info?.condorcet_irv_used_for_eliminations === true;
-  const outcome = resolveOutcome(winnerIds.length, candidates.length, usedIrv);
+  const outcome = resolveCondorcetOutcome(winnerIds.length, candidates.length, usedIrv);
   // Every candidate returned is no winner (PCC parity), so nobody is marked as a winner.
   const winners = new Set(outcome === CondorcetOutcome.NO_WINNER ? [] : winnerIds);
   const winnerNames = candidates.filter((candidate) => winners.has(candidate.choiceId)).map((candidate) => candidate.choiceText);
@@ -108,13 +108,6 @@ function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null):
     rankSummary,
     ballotPatterns: ballots ? buildBallotPatterns(pr.question.question_id, ballots, textById) : null,
   };
-}
-
-/** Outcome rules mirror PCC's condorcet-poll-result: one winner, a partial tie, or no winner (none, or every candidate). */
-function resolveOutcome(winnerCount: number, candidateCount: number, usedIrv: boolean): CondorcetOutcome {
-  if (winnerCount === 1) return usedIrv ? CondorcetOutcome.IRV_WINNER : CondorcetOutcome.CONDORCET_WINNER;
-  if (winnerCount > 1 && winnerCount < candidateCount) return CondorcetOutcome.TIE;
-  return CondorcetOutcome.NO_WINNER;
 }
 
 /** Pairwise lookup: row choice id → column choice id → matrix entry. */

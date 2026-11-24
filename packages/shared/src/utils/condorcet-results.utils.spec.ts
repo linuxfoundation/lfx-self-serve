@@ -6,7 +6,7 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
-import { CondorcetOutcome, VoteVoterStatus } from '../enums/poll.enum';
+import { CondorcetOutcome, PollType, VoteVoterStatus } from '../enums/poll.enum';
 import type {
   CondorcetMatrixEntry,
   IrvRoundSummary,
@@ -16,6 +16,7 @@ import type {
   VoteVoter,
 } from '../interfaces/poll.interface';
 import { buildCondorcetQuestionViews, buildCondorcetSummaryLines } from './condorcet-results.utils';
+import { buildRankedQuestionViews } from './vote-results.utils';
 
 const CHOICES = [
   { choice_id: 'a', choice_text: 'Candidate A' },
@@ -413,6 +414,42 @@ describe('buildCondorcetQuestionViews', () => {
       { key: before[1].key, count: 2 },
       { key: before[0].key, count: 1 },
     ]);
+  });
+
+  it.each([false, true])('keeps Results and Present outcome/standing labels aligned for every candidate returned (IRV: %s)', (usedIrv) => {
+    const q = question({
+      ranked_choice_winner_info: winners(['a', 'b', 'c'], usedIrv),
+      irv_round_summary: [
+        {
+          round_number: 1,
+          votes: CHOICES.map(({ choice_id }) => ({ choice_id, vote_count: 1 })),
+          total_votes: 3,
+          exhausted_votes: 0,
+          threshold: 2,
+          message: '',
+        },
+      ],
+    });
+    const detail = view(q);
+    const [present] = buildRankedQuestionViews(results(q), PollType.CONDORCET_IRV);
+    expect(detail.outcome).toBe(CondorcetOutcome.NO_WINNER);
+    expect(present.outcome?.result).toBe('none');
+    expect(present.outcome?.winnerTexts).toEqual([]);
+    expect(present.standings.map(({ choiceId, rank, label }) => ({ choiceId, rank, label }))).toEqual(
+      detail.standings.map(({ choiceId, rank }) => ({ choiceId, rank, label: null }))
+    );
+    expect(buildCondorcetSummaryLines([detail], true)[0].text).toBe('No winner');
+  });
+
+  it.each([
+    { pollType: PollType.INSTANT_RUNOFF_VOTE, result: 'tie', label: 'tied' },
+    { pollType: PollType.MEEK_STV, result: 'winner', label: 'elected' },
+  ])('preserves $pollType outcomes when every candidate is returned', ({ pollType, result, label }) => {
+    const q = question({ ranked_choice_winner_info: winners(['a', 'b', 'c'], true) });
+    const [present] = buildRankedQuestionViews(results(q), pollType);
+    expect(present.outcome?.result).toBe(result);
+    expect(present.outcome?.winnerTexts).toEqual(['Candidate A', 'Candidate B', 'Candidate C']);
+    expect(present.standings.map((row) => row.label)).toEqual([label, label, label]);
   });
 
   it('marks ballot patterns unavailable when no ballots are provided', () => {

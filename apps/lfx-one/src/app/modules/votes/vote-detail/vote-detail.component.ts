@@ -95,7 +95,9 @@ import {
   Observable,
   of,
   startWith,
+  shareReplay,
   Subject,
+  Subscription,
   switchMap,
   take,
   tap,
@@ -879,30 +881,61 @@ export class VoteDetailComponent {
    */
   private initCondorcetBallotsRead(): Signal<CondorcetBallotsRead | null> {
     let last: CondorcetBallotsRead | null = null;
+    const keys = toObservable(this.condorcetBallotsKey).pipe(
+      distinctUntilChanged(
+        (a, b) =>
+          a?.uid === b?.uid &&
+          a?.active === b?.active &&
+          a?.tick === b?.tick &&
+          a?.votesCast === b?.votesCast &&
+          a?.resultsRevision === b?.resultsRevision &&
+          a?.closed === b?.closed &&
+          a?.draft === b?.draft
+      ),
+      shareReplay({ bufferSize: 1, refCount: true })
+    );
     return toSignal(
-      toObservable(this.condorcetBallotsKey).pipe(
-        distinctUntilChanged(
-          (a, b) =>
-            a?.uid === b?.uid &&
-            a?.active === b?.active &&
-            a?.tick === b?.tick &&
-            a?.votesCast === b?.votesCast &&
-            a?.resultsRevision === b?.resultsRevision &&
-            a?.closed === b?.closed &&
-            a?.draft === b?.draft
-        ),
+      keys.pipe(
+        // Only context changes cancel a read; same-vote refreshes coalesce while it is in flight.
+        distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.active === b?.active && a?.draft === b?.draft),
         switchMap((key) => {
-          // Only a tab switch retains the cache; a different vote or lost eligibility clears it.
           if (!key || last?.uid !== key.uid) last = null;
           if (!key?.active) return of(null);
           if (key.draft) return of({ uid: key.uid, voters: [] });
-          return this.voteService.getVoteVoters(key.uid).pipe(
-            map((voters) => ({ uid: key.uid, voters: voters.filter((voter): voter is VoteVoter => 'uid' in voter) })),
-            catchError((error) => {
-              console.error('Failed to load Condorcet ballots', { status: error?.status });
-              return of({ uid: key.uid, voters: last?.uid === key.uid ? last.voters : null });
-            })
-          );
+          return new Observable<CondorcetBallotsRead>((subscriber) => {
+            const subscriptions = new Subscription();
+            let reading = false;
+            let pending = false;
+            const load = () => {
+              reading = true;
+              pending = false;
+              subscriptions.add(
+                this.voteService
+                  .getVoteVoters(key.uid)
+                  .pipe(
+                    map((voters) => ({ uid: key.uid, voters: voters.filter((voter): voter is VoteVoter => 'uid' in voter) })),
+                    catchError((error) => {
+                      console.error('Failed to load Condorcet ballots', { status: error?.status });
+                      return of({ uid: key.uid, voters: last?.uid === key.uid ? last.voters : null });
+                    })
+                  )
+                  .subscribe({
+                    next: (read) => subscriber.next(read),
+                    complete: () => {
+                      reading = false;
+                      if (pending && !subscriber.closed) load();
+                    },
+                  })
+              );
+            };
+            subscriptions.add(
+              keys.subscribe(() => {
+                if (reading) pending = true;
+                else load();
+              })
+            );
+            return subscriptions;
+          });
         }),
         tap((read) => {
           if (read) last = read;
