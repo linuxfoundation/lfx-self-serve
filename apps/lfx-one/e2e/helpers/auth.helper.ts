@@ -38,7 +38,7 @@ export class AuthHelper {
     await page.waitForSelector('button:has-text("SIGN IN"):not([disabled])', { timeout: 5000 });
     // Re-assert the style in case the banner mounted late (its own load/render can lag the form).
     await page.addStyleTag({ content: '#transcend-consent-manager { display: none !important; pointer-events: none !important; }' });
-    await page.getByRole('button', { name: 'SIGN IN' }).click();
+    await page.getByRole('button', { name: 'SIGN IN', exact: true }).click();
 
     // Handle consent page if it appears (Auth0 may show /u/consent after login)
     try {

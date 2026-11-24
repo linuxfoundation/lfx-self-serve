@@ -274,8 +274,6 @@ describe('My Meetups routes', () => {
   }
 });
 
-// #4133: a family roll-up renders Memberships only, so every other page is preceded by the
-// roll-up-unavailable page — on both mounts, so a legacy address is covered as well.
 describe('Org Lens roll-up routes', () => {
   const org = shellRoute.children!.find((route) => route.path === ORG_LENS_URL_ROOT)!;
   const addressed = org.children!.find((route) => route.path === `:${ORG_SEGMENT_PARAM}`)!;
@@ -293,7 +291,6 @@ describe('Org Lens roll-up routes', () => {
       'roi',
       'people',
       'contributions',
-      'events',
       'training',
       'meetings',
       'groups',
@@ -316,10 +313,10 @@ describe('Org Lens roll-up routes', () => {
   });
 
   it('lazy-loads the unavailable page for every address under a gated page', async () => {
-    const events = gates(addressed.children!).find((gate) => gate.path === 'events')!;
+    const people = gates(addressed.children!).find((gate) => gate.path === 'people')!;
 
-    expect(events.children?.map((child) => child.path)).toEqual(['**']);
-    expect(await events.children?.[0].loadComponent?.()).toBe(OrgRollUpUnavailableComponent);
+    expect(people.children?.map((child) => child.path)).toEqual(['**']);
+    expect(await people.children?.[0].loadComponent?.()).toBe(OrgRollUpUnavailableComponent);
   });
 
   it("sends a bare roll-up address to its Memberships page and an organization's to its overview", () => {

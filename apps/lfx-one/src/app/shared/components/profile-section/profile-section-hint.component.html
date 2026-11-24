@@ -1,0 +1,12 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Focusable so the explanation reaches keyboard users; exact [Npx] design values. -->
+<span
+  tabindex="0"
+  class="inline-flex cursor-help items-center gap-[6px] whitespace-nowrap rounded-sm text-[13px] leading-[18px] text-gray-600 hover:text-gray-900 focus-visible:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+  [lfxUiTooltip]="tip()"
+  data-testid="profile-section-hint">
+  <i class="fa-light fa-eyes text-[13px] text-gray-500" aria-hidden="true"></i>
+  <span class="underline decoration-gray-400 decoration-dashed underline-offset-[3px]">{{ label() }}</span>
+</span>

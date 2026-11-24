@@ -35,7 +35,12 @@ import {
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
+import {
+  isMentorshipNotProvisionedError,
+  listMentorshipPagesWithoutProvisioning,
+  proxyMentorshipRequest,
+  withoutQueryInErrorPath,
+} from '../helpers/mentorship-api.helper';
 import {
   buildMentorshipUpstreamLfxProfileFields,
   buildMentorshipUpstreamProfileLinks,
@@ -253,9 +258,20 @@ export class MentorshipService {
    * the caller's. Only the keys that have a value are sent, so with no rows, or nothing to send, no
    * row is patched. A failed row propagates and leaves the rows after it unpatched; the card asks
    * the user to save again, which rewrites them all.
+   *
+   * The Profile & Account page calls this after every picture or name change, for people who never used Mentorship
+   * too, so the profiles are read without provisioning: a caller with no mentorship record holds no profile, and gets
+   * none of the records a provisioning read would create.
    */
   public async syncLfxProfileFields(req: Request, fields: MentorshipLfxProfileFields): Promise<number> {
-    const profiles = await listAllMentorshipPages<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    let profiles: MentorshipUpstreamUserProfile[];
+    try {
+      profiles = await listMentorshipPagesWithoutProvisioning<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    } catch (error) {
+      if (!isMentorshipNotProvisionedError(error)) throw error;
+      logger.debug(req, 'mentorship_sync_lfx_profile', 'Caller has no mentorship record, nothing to copy');
+      return 0;
+    }
     const targets = profiles.filter((profile) => profile.profile_type === 'mentor' || profile.profile_type === 'mentee');
     if (targets.length === 0) return 0;
 

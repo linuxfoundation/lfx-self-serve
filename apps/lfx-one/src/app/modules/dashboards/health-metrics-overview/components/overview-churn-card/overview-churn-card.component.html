@@ -16,17 +16,43 @@
       <div
         class="grid min-w-[520px] grid-cols-[minmax(90px,0.8fr)_minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(90px,0.8fr)] gap-[16px] border-b border-gray-200 pb-[8px] text-[12px] text-gray-500"
         role="row">
-        <span role="columnheader">Tier</span>
-        <span role="columnheader">Churn rate</span>
-        <span class="text-right" role="columnheader">Memberships lost</span>
-        <span class="text-right" role="columnheader">Value lost</span>
+        <span role="columnheader" [attr.aria-sort]="table.headers().tier.ariaSort">
+          <lfx-health-metrics-th label="Tier" [sort]="table.headers().tier.state" (sorted)="table.toggle('tier')" data-testid="overview-churn-sort-tier" />
+        </span>
+        <span role="columnheader" [attr.aria-sort]="table.headers().rate.ariaSort">
+          <lfx-health-metrics-th
+            label="Churn rate"
+            [sort]="table.headers().rate.state"
+            (sorted)="table.toggle('rate')"
+            data-testid="overview-churn-sort-rate" />
+        </span>
+        <span class="text-right" role="columnheader" [attr.aria-sort]="table.headers().lost.ariaSort">
+          <lfx-health-metrics-th
+            label="Memberships lost"
+            [sort]="table.headers().lost.state"
+            (sorted)="table.toggle('lost')"
+            data-testid="overview-churn-sort-lost" />
+        </span>
+        <span class="text-right" role="columnheader" [attr.aria-sort]="table.headers().value.ariaSort">
+          <lfx-health-metrics-th
+            label="Value lost"
+            [sort]="table.headers().value.state"
+            (sorted)="table.toggle('value')"
+            data-testid="overview-churn-sort-value" />
+        </span>
       </div>
-      @for (tier of view.tiers; track tier.key) {
+      @for (tier of tiers(); track tier.key) {
         <div
           class="grid min-w-[520px] grid-cols-[minmax(90px,0.8fr)_minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(90px,0.8fr)] items-center gap-[16px] border-b border-gray-100 py-[10px] text-[13px] text-gray-900"
           role="row"
           [attr.data-testid]="'overview-churn-tier-' + tier.key">
-          <span class="font-medium" role="cell">{{ tier.label }}</span>
+          <!-- A reserved tier leads with its icon; the name stays neutral-900 at 500. -->
+          <span class="flex min-w-0 items-center gap-[8px] font-medium" role="cell">
+            @if (tier.tier; as icon) {
+              <lfx-health-metrics-tier-icon [tier]="icon" />
+            }
+            <span class="min-w-0 break-words">{{ tier.label }}</span>
+          </span>
           <div class="flex items-center gap-[10px]" role="cell">
             <span class="relative h-[8px] flex-1 rounded-full bg-gray-100" aria-hidden="true">
               <span class="block h-full rounded-full bg-blue-500" [style.width.%]="tier.rateWidthPct"></span>

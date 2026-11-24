@@ -588,12 +588,8 @@ export interface MentorshipUpstreamApplication {
   user_id: string;
   role: MentorshipUpstreamRole;
   status: MentorshipUpstreamApplicationStatus;
-  program_term_status?: MentorshipUpstreamProgramTermStatus;
-  start_date_time?: string;
-  end_date_time?: string;
   attendance_type?: 'full_time' | 'part_time';
   tasks_submitted: boolean;
-  admin_notified: boolean;
   created_on: string;
   updated_on: string;
   program?: MentorshipUpstreamApplicationProgram;
@@ -606,7 +602,6 @@ export interface MentorshipUpstreamProgramTerm {
   program_id: string;
   name: string;
   status: MentorshipUpstreamProgramTermStatus;
-  active_users: number;
   start_date_time?: string;
   end_date_time?: string;
   application_start_date?: string;
@@ -637,8 +632,6 @@ export interface MentorshipUpstreamTask {
   description?: string;
   category?: 'prerequisite' | 'non_prerequisite';
   status: MentorshipUpstreamTaskStatus;
-  application_status?: MentorshipUpstreamApplicationStatus;
-  program_term_status?: MentorshipUpstreamProgramTermStatus;
   custom: boolean;
   submit_file?: string;
   file?: string;
@@ -732,7 +725,6 @@ export interface MentorshipUpstreamUserProfile {
   logo_url?: string;
   introduction?: string;
   terms_and_conditions: boolean;
-  number_of_projects: number;
   address?: unknown;
   demographics?: unknown;
   socioeconomics?: unknown;

@@ -42,29 +42,32 @@
 
     <!-- The canvas is otherwise the only presentation of these values, and it plots floored
          coordinates — so this table carries the true figures rather than the plotted ones. -->
-    <table class="sr-only" data-testid="org-roi-projects-bubble-table">
-      <caption>
-        Investment, return and ROI by project
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Project</th>
-          <th scope="col">Investment</th>
-          <th scope="col">Return</th>
-          <th scope="col">ROI</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (row of tableRows(); track row.projectId) {
+    <!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+    <div class="sr-only">
+      <table data-testid="org-roi-projects-bubble-table">
+        <caption>
+          Investment, return and ROI by project
+        </caption>
+        <thead>
           <tr>
-            <th scope="row">{{ row.projectName }}</th>
-            <td>{{ row.investment }}</td>
-            <td>{{ row.return }}</td>
-            <td>{{ row.roi }}</td>
+            <th scope="col">Project</th>
+            <th scope="col">Investment</th>
+            <th scope="col">Return</th>
+            <th scope="col">ROI</th>
           </tr>
-        }
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          @for (row of tableRows(); track row.projectId) {
+            <tr>
+              <th scope="row">{{ row.projectName }}</th>
+              <td>{{ row.investment }}</td>
+              <td>{{ row.return }}</td>
+              <td>{{ row.roi }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
 
     <p class="text-xs text-gray-500" data-testid="org-roi-projects-bubble-modelled-cost-note">{{ investmentExplanation }}</p>
   }

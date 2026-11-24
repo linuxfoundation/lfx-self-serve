@@ -281,6 +281,26 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(query('events-registration-forecast-goal-none')?.querySelector('[data-testid="health-metrics-progress-fill"]')).toBeNull();
   });
 
+  it('opens on the worst pace with the Registrations arrow, and sorts the whole list from page 1 on a picked column', async () => {
+    const events = Array.from({ length: 12 }, (_, index) =>
+      event({ eventId: `evt-${index}`, eventName: `Event ${String(index).padStart(2, '0')}`, registrationsNow: index * 10 })
+    );
+    await render({ events });
+    const header = (key: string): HTMLElement => query(`events-registration-forecast-sort-${key}`) as HTMLElement;
+
+    expect(header('registrations').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+    fixture.componentInstance['page'].set(1);
+    await settle();
+
+    (header('event').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    (header('event').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(fixture.componentInstance['page']()).toBe(0);
+    expect(header('event').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    expect(rowIds()[0]).toContain('evt-11');
+  });
+
   it('pages the table at 10 events', async () => {
     const events = Array.from({ length: 12 }, (_, index) => event({ eventId: `evt-${index}`, registrationsNow: index * 10 }));
     await render({ events });

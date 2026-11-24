@@ -34,7 +34,15 @@ export const AEO_GEO_MAX_DOCUMENT_BYTES = MKTG_ARTIFACT_MAX_DOCUMENT_BYTES;
 export const AEO_GEO_INTAKE_ERRORS = {
   domain: 'Enter a valid domain or website URL, e.g. project.example or https://project.example/. Public website names only.',
   key_pages: 'Leave blank to let the agent choose, or enter two to five different absolute http(s) URLs, one per line. Public website names only.',
+  notes: 'Keep the notes to 10,000 characters or fewer.',
 } as const;
+/** The agent's own cap on request notes (marketing-os-agents agents/aeo-geo/src/form.ts, `notes: z.string().max(10000)`). */
+export const AEO_GEO_NOTES_MAX_CHARS = 10_000;
+/** The NOTES block the agent's renderFormMessage writes last, after every structural line, so the parser never reads it as provenance. */
+export const AEO_GEO_NOTES_LINES = { open: 'NOTES (untrusted context):', close: 'END NOTES' } as const;
+/** The protocol line starts the agent's guardText quotes inside free text (agents/aeo-geo/src/form.ts). */
+export const AEO_GEO_PROTOCOL_LINE_PATTERN =
+  /^(?:BATCH INTAKE|TARGET DOMAIN:|KEY PAGES|FEEDBACK on report|LFX SCOPE:|--- |AEO\/GEO —|NOTES \(untrusted context\):|END NOTES)/;
 /**
  * A printed Sources list up to this long moves to the next page whole with its heading rather than leave its
  * last lines alone on a page; a longer list flows, so a near-empty page is never forced.

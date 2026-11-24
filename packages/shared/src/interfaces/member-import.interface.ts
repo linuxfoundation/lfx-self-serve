@@ -132,12 +132,111 @@ export interface MemberImportDialogData {
   existingInvites: CommitteeInvite[];
   /** Collect validated member requests for the create or edit wizard; close returns StagedCommitteeMemberRequest[] with notification/cleanup metadata, without writing. */
   collectOnly?: boolean;
+  /**
+   * Reattach to the group's retained run (#5731) without a file, snapshots or a write. The dialog closes
+   * instead of offering a new preview once that run is no longer retained.
+   */
+  attach?: boolean;
 }
 
-/** Cumulative confirmed outcomes and unresolved attempts returned when the import dialog closes. */
-export interface MemberImportDialogResult {
+/** Whether a confirmed import run is still writing (`importing`) or has finished its latest attempt (`settled`). */
+export type MemberImportRunStatus = 'importing' | 'settled';
+
+/** A confirmed Members-tab import, captured from the preview when the user starts it (#5730). */
+export interface MemberImportRunInput {
+  /** Pinned at confirmation — every write targets this group even if the page navigates elsewhere. */
+  committeeUid: string;
+  committeeName: string;
+  rules: MemberImportGroupRules;
+  /** Original file name, kept only in memory. */
+  fileName: string | null;
+  /** Every previewed row; only `ready` rows are submitted. */
+  rows: MemberImportRow[];
+  skipNotification: boolean;
+  /** Pending invitation UID by normalized email, revoked after a direct add so the roster does not show member + invite. */
+  pendingInviteUidByEmail: Record<string, string>;
+  /** Roster size from the complete pre-import snapshot. */
+  baselineMemberCount: number;
+}
+
+/** Identity of one run: its group, its unique ID, and the user subject that started it. */
+export interface MemberImportRunRef {
+  committeeUid: string;
+  runId: string;
+  ownerSubject: string;
+}
+
+/** Immutable in-memory snapshot of a confirmed import run, owned by the committee member import service. */
+export interface MemberImportRun extends MemberImportRunRef, MemberImportRunInput {
+  status: MemberImportRunStatus;
+  /** Submissions made so far: 1 for the initial import, plus one per Retry. */
+  attempt: number;
+  /** Rows submitted by the current attempt and how many of them have settled. */
+  batchTotal: number;
+  batchSettled: number;
+  /** Automatic pauses taken by the current attempt (at most MEMBER_IMPORT_MAX_PAUSES). */
+  pauseCount: number;
+  /** Epoch ms when a paused attempt resumes automatically; null while not paused. */
+  resumeAt: number | null;
+  /** Length of the current pause, rounded up to whole seconds. */
+  resumeInSeconds: number;
+  /** Minimum server deadline for Retry, retained even if automatic recovery or a pause is stopped; 0 when none. */
+  retryNotBefore: number;
+  /** Set when auth/not-found, the pause cap, an excessive server cooldown or Stop import ends the attempt. */
+  stopReason: string | null;
+  /** Distinguishes the manager's Stop action from fatal errors and automatic recovery limits. */
+  manualStopRequested: boolean;
+  /**
+   * `baselineMemberCount` plus every confirmed addition across attempts. Retries keep the original
+   * baseline; this never rebases onto a roster that already includes the import's own additions.
+   */
+  reconciliationTarget: number;
+}
+
+/** What a retained run is doing now: writing, waiting out an automatic pause, finishing a requested stop, or finished. */
+export type MemberImportRunPhase = 'importing' | 'paused' | 'stopping' | 'settled';
+
+/** Counts-only projection of a retained run for status surfaces; it carries no member data (#5731). */
+export interface MemberImportRunSummary {
+  committeeUid: string;
+  committeeName: string;
+  runId: string;
+  attempt: number;
+  phase: MemberImportRunPhase;
+  /** Rows submitted by the current attempt and how many of them have settled. */
+  batchTotal: number;
+  batchSettled: number;
   added: number;
-  conflicts: number;
-  /** Refresh the roster when an attempted write may have committed without a confirmed response. */
-  uncertain?: boolean;
+  failed: number;
+  unknown: number;
+  notSubmitted: number;
+  /** Rows that Retry would resubmit. */
+  retryable: number;
+  stopReason: string | null;
+  manualStopRequested: boolean;
+  baselineMemberCount: number;
+  reconciliationTarget: number;
+}
+
+/** One settled attempt of a run. `key` (run ID plus attempt) identifies it exactly once. */
+export interface MemberImportSettlement {
+  key: string;
+  summary: MemberImportRunSummary;
+}
+
+/** A fresh manager-access check for a group with a retained run; only `authorized` reveals its summary. */
+export type MemberImportAccessState = 'pending' | 'authorized' | 'denied' | 'error';
+
+/** Result of a fresh manager-access check, with group details only when authorized. */
+export interface MemberImportAccessCheck {
+  state: MemberImportAccessState;
+  committee?: Committee;
+}
+
+/** The compact Groups-list entry beneath a group's member count, shown only after a fresh access check authorizes it. */
+export interface MemberImportTableStatus {
+  committeeUid: string;
+  phase: MemberImportRunPhase;
+  label: string;
+  ariaLabel: string;
 }

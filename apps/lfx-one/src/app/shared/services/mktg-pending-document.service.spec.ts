@@ -160,6 +160,24 @@ describe('MktgPendingDocumentService', () => {
     expect(localStorage.getItem(`${prefix}other-project:undated`)).toBeNull();
     expect(localStorage.getItem(otherUser)).not.toBeNull();
   });
+  it('anchors the storage wait once, persists it with the record and returns the same anchor on every later wait', () => {
+    service.start(AEO_GEO_INTAKE, 'project-1', { domain: 'project.example' }).subscribe();
+    const stored = service.load('project-1', DOCUMENT_ID);
+    expect(stored?.waitStartedAt).toBeUndefined();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T10:00:00.000Z'));
+    const first = service.markWaitStarted(run());
+    expect(first.waitStartedAt).toBe('2026-01-01T10:00:00.000Z');
+    vi.setSystemTime(new Date('2026-01-01T10:09:50.000Z'));
+    // A reload finds the same anchor: a later wait (a tab return, a focus) never moves the budget.
+    const restored = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
+    expect(restored.markWaitStarted(run()).waitStartedAt).toBe('2026-01-01T10:00:00.000Z');
+    expect(restored.load('project-1', DOCUMENT_ID)?.waitStartedAt).toBe('2026-01-01T10:00:00.000Z');
+    // A record of another session is not anchored (and not rewritten): the caller gets its run back unchanged.
+    expect(restored.markWaitStarted({ ...run(), sessionId: 'session-2' }).waitStartedAt).toBeUndefined();
+    vi.useRealTimers();
+  });
+
   it('removes a corrupt exact record instead of keeping its capability at rest', () => {
     const key = `${MKTG_PENDING_DOCUMENT_STORAGE_PREFIX}:synthetic-user:project-1:${DOCUMENT_ID}`;
     localStorage.setItem(key, '{broken JSON');

@@ -13,18 +13,34 @@
   } @else if (loading()) {
     <p-skeleton height="26rem" borderRadius="0.5rem" data-testid="members-breakdown-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    @let breakdown = view();
-    <!-- Only the table scrolls sideways below 560px. -->
+    <!-- Only the table scrolls sideways, below its columns' least width. -->
     <div class="min-w-0 overflow-x-auto" data-testid="members-breakdown-table">
-      <div class="flex min-w-[560px] flex-col" role="table" aria-label="Members per tier by year">
-        <div class="grid min-h-[40px] bg-gray-50 shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-200)]" [style.grid-template-columns]="gridColumns()" role="row">
-          <span class="flex items-center whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600" role="columnheader">Tier</span>
-          @for (column of breakdown.columns; track column.year) {
+      <div class="flex flex-col" role="table" aria-label="Members per tier by year" [style.min-width.px]="tableMinWidthPx()">
+        <!-- The design's 32px header row. -->
+        <div class="grid min-h-[32px] bg-gray-50 shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-200)]" [style.grid-template-columns]="gridColumns()" role="row">
+          <span
+            class="flex items-center whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
+            role="columnheader"
+            [attr.aria-sort]="sorting.headers()['tier'].ariaSort">
+            <lfx-health-metrics-th
+              label="Tier"
+              [sort]="sorting.headers()['tier'].state"
+              (sorted)="sorting.toggle('tier')"
+              data-testid="members-breakdown-sort-tier" />
+          </span>
+          @for (column of yearHeaders(); track column.year) {
+            <!-- Each year column is wide enough for its label and arrow; the clip only guards a label longer than the design's. -->
             <span
-              class="flex min-w-0 items-center justify-end whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
+              class="flex min-w-0 items-center justify-end overflow-hidden whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
               role="columnheader"
-              ><span class="min-w-0 truncate">{{ column.label }}</span></span
-            >
+              [attr.aria-sort]="column.header.ariaSort">
+              <lfx-health-metrics-th
+                class="min-w-0"
+                [label]="column.label"
+                [sort]="column.header.state"
+                (sorted)="sorting.toggle(column.sortKey)"
+                [attr.data-testid]="'members-breakdown-sort-' + column.year" />
+            </span>
           }
         </div>
         @for (row of tableRows(); track row.key) {

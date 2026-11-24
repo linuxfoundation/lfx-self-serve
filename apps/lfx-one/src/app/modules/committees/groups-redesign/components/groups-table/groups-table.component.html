@@ -36,6 +36,23 @@
       <span class="truncate">{{ item.typeLabel }}</span>
     </lfx-ui-badge>
   </ng-template>
+  <ng-template lfxUiTableCell="members" let-row>
+    @let item = row | groupsTableRow;
+    <div class="flex flex-col items-end gap-[4px]" data-testid="groups-table-members">
+      <span>{{ item.members }}</span>
+      @if (importStatusByUid().get(item.uid); as status) {
+        <button
+          type="button"
+          class="inline-flex items-center gap-[4px] text-[12px] text-blue-600 hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+          [attr.aria-label]="status.ariaLabel"
+          (click)="openImportStatus($event, item.uid)"
+          (keydown)="$event.stopPropagation()"
+          data-testid="groups-table-import-status">
+          {{ status.label }}
+        </button>
+      }
+    </div>
+  </ng-template>
   <ng-template lfxUiTableCell="channels" let-row>
     <span class="flex items-center gap-[6px]" data-testid="groups-table-channels">
       <lfx-group-channels [group]="(row | groupsTableRow).group" />

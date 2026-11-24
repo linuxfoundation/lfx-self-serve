@@ -40,6 +40,7 @@ import {
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
 
+import { healthMetricsTrimSql } from '../helpers/health-metrics-sort.helper';
 import { HealthMetricsEventsService, isSupportedEventsRange } from './health-metrics-events.service';
 
 import type { HealthMetricsEventsOrganizationsQuery, HealthMetricsEventsSpeakerProposalsQuery } from '@lfx-one/shared/interfaces';
@@ -1245,7 +1246,15 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
 });
 
 describe('HealthMetricsEventsService.getOrganizations', () => {
-  const baseQuery: HealthMetricsEventsOrganizationsQuery = { foundationSlug: 'acme', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25 };
+  const baseQuery: HealthMetricsEventsOrganizationsQuery = {
+    foundationSlug: 'acme',
+    range: 'YTD',
+    segment: 'all',
+    search: '',
+    offset: 0,
+    pageSize: 25,
+    sort: null,
+  };
 
   function organizationRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -1295,7 +1304,28 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
     expect(sql).toContain("COALESCE(NULLIF(TRIM(logos.logo_url), ''), NULLIF(TRIM(page.logo_url), '')) AS logo_url");
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION');
-    expect(sql).toMatch(/WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+GROUP BY account_id\s+\) tiers ON tiers\.account_id = page\.account_id/);
+    // The tier joins before the page is cut, so a Membership sort covers every page.
+    expect(sql).toMatch(
+      /WITH tiers AS \(\s+--[^\n]*\n\s+SELECT account_id, MAX\(NULLIF\(TRIM\(membership_tier\), ''\)\) AS membership_tier\s+FROM ANALYTICS\.PLATINUM_LFX_ONE\.ENGAGEMENT_ORG_PARTICIPATION\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+GROUP BY account_id/
+    );
+    expect(sql).toContain('SELECT scoped.*, tiers.membership_tier FROM scoped LEFT JOIN tiers ON tiers.account_id = scoped.account_id');
+    expect(sql).toContain('page.membership_tier,');
+  });
+
+  it("sorts every page by the reader's column, empty values last, then the view's rank, and keeps that order after the joins", async () => {
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, sort: { key: 'sponsorship', direction: 'desc' } });
+
+    const [sql] = execute.mock.calls[0];
+    const order = 'NULLIF(sponsorship_revenue, 0) DESC NULLS LAST, sort_rank ASC NULLS LAST, account_id ASC';
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY ${order}) AS page_position`);
+    // The page cut follows the same order as its row positions.
+    expect((sql as string).replace(/\s+/g, ' ')).toContain(`ORDER BY ${order} LIMIT`);
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+
+    execute.mockClear();
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, sort: { key: 'membership', direction: 'desc' } });
+    // A non-member ranks lowest; a member with no tier or a "Non-Member" one reads "Member", an unnamed tier.
+    expect(execute.mock.calls[0][0]).toContain('CASE WHEN NOT COALESCE(is_member, FALSE) THEN 0 ELSE COALESCE(NULLIF(CASE WHEN');
   });
 
   it('binds the search once, with its wildcards escaped', async () => {
@@ -1304,8 +1334,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(sql).toContain("account_name ILIKE ? ESCAPE '!'");
     expect((sql as string).match(/\?/g)).toHaveLength(binds.length);
-    // The tier lookup's slug comes after the search, in text order.
-    expect(binds).toEqual(['acme', '%50!%!_off%', 'acme']);
+    // The tier lookup's slug comes first in the text, then the scope's, then the search.
+    expect(binds).toEqual(['acme', 'acme', '%50!%!_off%']);
   });
 
   it.each([
@@ -1392,6 +1422,7 @@ describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
     offset: 0,
     pageSize: 25,
     includeEvents: false,
+    sort: null,
   };
   const PAGE_SQL = /WITH matched AS/;
 
@@ -1438,6 +1469,29 @@ describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
     expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
     expect(sql).not.toContain('event_id = ?');
     expect(binds).toEqual(['acme']);
+  });
+
+  it('sorts the whole period by a picked column, each as its cell reads, then the most recent first, and keeps the order', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'status', direction: 'asc' } });
+
+    const [sql, binds] = pageCall();
+    const status =
+      "CASE WHEN proposal_status_group = 'Accepted' THEN 'Accepted' WHEN proposal_status_group = 'In review' THEN 'In review' WHEN proposal_status_group = 'Declined' THEN 'Declined' ELSE COALESCE(submission_status_original, proposal_status_group) END";
+    expect(sql).toContain(`ROW_NUMBER() OVER (ORDER BY COLLATE(NULLIF(NULLIF(TRIM(${status}`);
+    expect(sql).toContain("'en-ci-ai') ASC NULLS LAST, TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC");
+    expect(sql).toContain('ORDER BY page.page_position ASC NULLS LAST');
+    expect(binds).toEqual(['acme']);
+
+    // The speaker's job title is blank after the same trim the cell uses, so a whitespace-only one falls to the session title.
+    execute.mockClear();
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'speaker', direction: 'asc' } });
+    expect(pageCall()[0]).toContain(`COALESCE(NULLIF(${healthMetricsTrimSql('job_title')}, ''), session_title)`);
+    expect(healthMetricsTrimSql('job_title')).toContain('\\u00a0');
+
+    execute.mockClear();
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, sort: { key: 'company', direction: 'desc' } });
+    // An unaffiliated speaker reads "Individual", as the Company cell shows it.
+    expect(pageCall()[0]).toContain("CASE WHEN is_unaffiliated_proposal = TRUE THEN 'Individual' ELSE account_name END");
   });
 
   it('binds the event and the status group the view names', async () => {
@@ -1670,7 +1724,19 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(kept).not.toContain("'UK'");
     expect(kept).not.toContain("'ZZ'");
     expect(countrySql).toContain("GROUP BY NULLIF(TRIM(country), '')");
-    expect(countrySql).toContain('GROUP BY COALESCE(country_code, country)');
+    // Spellings fold by their words first, taking any code one carries, then by code; each group keeps its most common spelling.
+    // Trimmed after the underscores turn to spaces, so "_united_kingdom_" reads as the same words as "United Kingdom".
+    const nameKey = "LOWER(TRIM(REGEXP_REPLACE(REPLACE(country, '_', ' '), '[[:space:]]+', ' ')))";
+    expect(countrySql).toContain(`${nameKey} AS name_key`);
+    // The label's weights read the source's columns, qualified, never the SUM aliases of the same name.
+    expect(countrySql).toMatch(
+      /by_name AS \(\s+SELECT\s+name_key,\s+MAX\(country_code\) AS country_code,\s+MAX_BY\(spellings\.country, COALESCE\(spellings\.registration_count_/
+    );
+    expect(countrySql).toContain('COALESCE(spellings.registration_count_ytd, 0)');
+    expect(countrySql).toContain('MAX_BY(by_name.country, COALESCE(by_name.registration_count_');
+    expect(countrySql).toContain('GROUP BY name_key');
+    expect(countrySql).toContain('GROUP BY COALESCE(country_code, name_key)');
+    expect(countrySql).not.toContain('MAX(country) AS country');
     for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
       expect(scopeSql).toContain(`countries_count_${suffix}`);
       expect(countrySql).toContain(`SUM(registration_count_${suffix}) AS registration_count_${suffix}`);
@@ -1705,6 +1771,21 @@ describe('HealthMetricsEventsService.getGeography', () => {
     });
     expect(byRange('COMPLETED_YEAR_2')).toMatchObject({ countries: 2, changes: null, registrationsByCountry: [] });
     expect(byRange('COMPLETED_YEAR_3')).toMatchObject({ countries: null, changes: null });
+  });
+
+  it("names a country by its code, never by the data's own spelling, and reads a name with no code as words", async () => {
+    mockReads(
+      [scopeRow],
+      [countryRow('us', 30, 0, 'US'), countryRow('united_kingdom', 20, 0, 'GB'), countryRow('kosovo', 5, 0, 'XK'), countryRow('north_atlantis', 3)]
+    );
+
+    const { periods } = await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
+    expect(periods.find((period) => period.range === 'YTD')?.registrationsByCountry.map((country) => country.country)).toEqual([
+      'United States',
+      'United Kingdom',
+      'Kosovo',
+      'North Atlantis',
+    ]);
   });
 
   it('returns no periods without a rollup row, skipping the country read', async () => {

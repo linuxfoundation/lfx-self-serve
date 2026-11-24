@@ -20,6 +20,7 @@ import type {
 } from '../interfaces/mktg-document-run.interface';
 import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX } from '../constants/mktg-artifact.constants';
 import {
+  MKTG_DOCUMENT_CURRENT_CONFLICT_COPY,
   MKTG_DOCUMENT_ID_REGEX,
   MKTG_DOCUMENT_STORE_KEY_PREFIX,
   MKTG_DOCUMENT_TYPES,
@@ -33,6 +34,9 @@ import {
   MKTG_REVISION_UNKNOWN_AUTHOR_LABEL,
 } from '../constants/mktg-document-store.constants';
 import type {
+  MktgDocumentCurrentConflictAction,
+  MktgDocumentCurrentConflictNotice,
+  MktgDocumentCurrentConflictResponse,
   MktgDocumentLocation,
   MktgDocumentType,
   MktgRevisionAuthor,
@@ -317,4 +321,26 @@ export function mktgRunResultIdentity(result: MktgRunResultResponse, preferRecei
     second = (Math.imul(second, 33) ^ text.charCodeAt(i)) >>> 0;
   }
   return first.toString(16).padStart(8, '0') + second.toString(16).padStart(8, '0');
+}
+
+/**
+ * The in-place notice for a refused approve or Make current. It says what happened to the current, not what the reader
+ * tried: the approval wording only when the current was made current by its approval (`approvedAt` set); otherwise the
+ * selection wording with who selected it, so a draft or an earlier-approved revision is never called "approved" now.
+ */
+export function describeMktgCurrentConflict(
+  current: MktgDocumentCurrentConflictResponse['current'] | undefined,
+  action: MktgDocumentCurrentConflictAction
+): MktgDocumentCurrentConflictNotice {
+  const approved = typeof current?.approvedAt === 'string' && !!current.approvedAt;
+  const copy = MKTG_DOCUMENT_CURRENT_CONFLICT_COPY[action === 'approve' && approved ? 'approve' : 'restore'];
+  const by = approved ? current?.approvedBy : current?.selectedBy;
+  const name = typeof by === 'string' ? by.trim() : '';
+  const known = !!name && typeof current?.number === 'number' && Number.isInteger(current.number) && current.number > 0;
+  const number = String(current?.number ?? '');
+  return {
+    message: known ? copy.known.replaceAll('<Name>', name).replaceAll('<N>', number) : copy.unknown,
+    buttonLabel: known ? MKTG_DOCUMENT_CURRENT_CONFLICT_COPY.openKnown.replaceAll('<N>', number) : MKTG_DOCUMENT_CURRENT_CONFLICT_COPY.openUnknown,
+    revisionId: typeof current?.revisionId === 'string' && current.revisionId ? current.revisionId : null,
+  };
 }

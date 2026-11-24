@@ -4,15 +4,26 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_NO_PAST_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingRollupFilterOptions,
+  MeetingRsvp,
+  MeetingsHomePastFilters,
+  MeetingsHomePastPage,
+  PastMeeting,
+  PastMeetingRecording,
+  PastMeetingSummary,
+} from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
+import { getLocalDayKey } from '@lfx-one/shared/utils';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeFeed, UserMeetingsHomeFeed } from './meetings-home-feed';
 import { MeetingsHomeStore } from './meetings-home.store';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -50,9 +61,9 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
   };
 }
 
-function buildPastMeeting(id: string, start: Date): PastMeeting {
+function buildPastMeeting(id: string, start: Date, overrides: Partial<Meeting> = {}): PastMeeting {
   return {
-    ...buildMeeting({ id, title: `Past ${id}`, start_time: start.toISOString() }),
+    ...buildMeeting({ id, title: `Past ${id}`, start_time: start.toISOString(), ...overrides }),
     scheduled_start_time: start.toISOString(),
     scheduled_end_time: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
     meeting_id: 'm-past',
@@ -103,6 +114,7 @@ describe('MeetingsHomeStore', () => {
     TestBed.configureTestingModule({
       providers: [
         MeetingsHomeStore,
+        { provide: MeetingsHomeFeed, useClass: UserMeetingsHomeFeed },
         { provide: PLATFORM_ID, useValue: platform },
         { provide: UserService, useValue: userService },
         { provide: MeetingService, useValue: meetingService },
@@ -156,8 +168,96 @@ describe('MeetingsHomeStore', () => {
       confirmedMeetingRsvps: vi.fn(() => confirmed()),
       isMeetingRsvpCurrent: vi.fn(() => true),
       authenticated: signal(true),
+      refreshUserMeetings: vi.fn(() => meetingsRefresh$.next()),
       meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }),
     };
+  });
+
+  describe('self-invite reconciliation', () => {
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }));
+    afterEach(() => {
+      TestBed.resetTestingModule();
+      vi.useRealTimers();
+    });
+
+    it.each([[], ['reg-new']])('recovers from a stale initial refresh without an unrelated mutation: %j', (...uids) => {
+      const store = create();
+      const stale = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([stale]);
+      store.markSelfInvited('organized', uids);
+      upcoming$.next([stale]);
+      TestBed.tick();
+      const refresh = userService['refreshUserMeetings'] as ReturnType<typeof vi.fn>;
+      refresh.mockImplementation(() =>
+        upcoming$.next([{ ...stale, invited: true, my_registrant_ids: refresh.mock.calls.length === 1 ? undefined : ['reg-new'] }])
+      );
+
+      vi.advanceTimersByTime(1000);
+      TestBed.tick();
+      expect(store.selfInviteOf('organized')).toEqual(uids);
+      vi.advanceTimersByTime(4000);
+      TestBed.tick();
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      vi.advanceTimersByTime(60000);
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(toast.show).not.toHaveBeenCalledWith(expect.objectContaining({ message: 'Invitation syncing' }));
+    });
+
+    it('bounds stale confirmation reads and lets an explicit retry start a new bounded window', () => {
+      const store = create();
+      const stale = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([stale]);
+      store.markSelfInvited('organized', []);
+      TestBed.tick();
+      const refresh = userService['refreshUserMeetings'] as ReturnType<typeof vi.fn>;
+      refresh.mockImplementation(() => upcoming$.next([stale]));
+
+      for (const delay of [1000, 4000, 10000]) {
+        vi.advanceTimersByTime(delay);
+        TestBed.tick();
+      }
+      expect(refresh).toHaveBeenCalledTimes(3);
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      expect(toast.show).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Invitation syncing', actions: [expect.objectContaining({ label: 'Refresh invitation' })] })
+      );
+      vi.advanceTimersByTime(60000);
+      expect(refresh).toHaveBeenCalledTimes(3);
+
+      store.retrySelfInvites();
+      expect(refresh).toHaveBeenCalledTimes(4);
+      for (const delay of [1000, 4000, 10000]) {
+        vi.advanceTimersByTime(delay);
+        TestBed.tick();
+      }
+      expect(refresh).toHaveBeenCalledTimes(7);
+      vi.advanceTimersByTime(60000);
+      expect(refresh).toHaveBeenCalledTimes(7);
+    });
+
+    it.each(['removal', 'deletion', 'viewer', 'destruction'])('stops delayed work after %s', (change) => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-new']);
+      TestBed.tick();
+      if (change === 'removal') removed.set(new Set(['organized']));
+      if (change === 'deletion') store.removeMeeting('organized');
+      if (change === 'viewer') identity.set('viewer-b');
+      if (change === 'destruction') TestBed.resetTestingModule();
+      else TestBed.tick();
+      if (change !== 'destruction') expect(store.selfInviteOf('organized')).toBeUndefined();
+      vi.advanceTimersByTime(60000);
+      expect(userService['refreshUserMeetings']).not.toHaveBeenCalled();
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    it('does not schedule or retry confirmation reads during SSR', () => {
+      const store = create('server');
+      store.markSelfInvited('organized', []);
+      store.retrySelfInvites();
+      vi.advanceTimersByTime(60000);
+      expect(userService['refreshUserMeetings']).not.toHaveBeenCalled();
+    });
   });
 
   describe('loading', () => {
@@ -199,6 +299,43 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.failed()).toBe(false);
       expect(store.upcomingRows()).toHaveLength(1);
+    });
+
+    it('reports a past day on the whole feed after a retry made with a search', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = create();
+      upcoming$.next([]);
+      store.setTab('past');
+      past$.error(new Error('down'));
+      const retried$ = new Subject<PastMeeting[]>();
+      (userService['getUserPastMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(retried$);
+      store.setSearch('board');
+      store.retry();
+      retried$.next([buildPastMeeting('a', inDays(-1))]);
+      TestBed.tick();
+      const day = getLocalDayKey(inDays(-1));
+
+      store.showDay(day, 'past');
+      TestBed.tick();
+
+      expect(store.revealedDay()).toBe(day);
+    });
+
+    it('keeps the loaded past rows, searched locally, when a reload after a search change fails on the whole feed', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = create();
+      past$.next([buildPastMeeting('a', inDays(-1))]);
+      upcoming$.error(new Error('down'));
+      (userService['getUserMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(of([]));
+      (userService['getUserPastMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(throwError(() => new Error('past down')));
+      store.setTab('past');
+      store.setSearch('Past');
+
+      store.retry();
+      TestBed.tick();
+
+      expect(store.pastShowsError()).toBe(false);
+      expect(store.pastRows()).toHaveLength(1);
     });
 
     it('keeps the loaded rows on a failed refresh, shows one toast and takes the next refresh', () => {
@@ -263,6 +400,159 @@ describe('MeetingsHomeStore', () => {
       const [organized] = store.upcomingRows();
       expect(organized.meeting).toMatchObject({ invited: false, my_registrant_ids: [], my_rsvp: null });
       expect(organized.myRsvp ?? null).toBeNull();
+    });
+
+    it('keeps a self-invited meeting invited, with its new registration, while a refetch still misses it', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+
+      store.markSelfInvited('organized', ['reg-self']);
+      upcoming$.next([organized]);
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: true, my_registrant_ids: ['reg-self'] });
+    });
+
+    it('lets invited decide when the self-invite returned no registration uid', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+
+      store.markSelfInvited('organized', []);
+
+      expect(store.upcomingRows()[0].meeting.invited).toBe(true);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toBeUndefined();
+    });
+
+    it('lets a later removal win over a self-invite', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+
+      store.markSelfInvited('organized', ['reg-self']);
+      removed.set(new Set(['organized']));
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      removed.set(new Set());
+      store.markSelfInvited('organized', ['reg-readded']);
+      expect(store.selfInviteOf('organized')).toEqual(['reg-readded']);
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: true, my_registrant_ids: ['reg-readded'] });
+    });
+
+    it('retires a self-invite once the feed lists it, so a later feed decides again', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+      store.markSelfInvited('organized', ['reg-self']);
+
+      upcoming$.next([{ ...organized, invited: true, my_registrant_ids: ['reg-self'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      upcoming$.next([organized]);
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+    });
+
+    it('keeps a self-invite without a uid until the feed lists a registration of the viewer', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: true, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+      store.markSelfInvited('organized', []);
+
+      upcoming$.next([organized]);
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-self'] }]);
+
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+    });
+
+    it('does not confirm a no-UID invitation from unknown registration enrichment', () => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] });
+      upcoming$.next([organized]);
+      store.markSelfInvited('organized', []);
+      upcoming$.next([{ ...organized, invited: true, my_registrant_ids: undefined }]);
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      upcoming$.next([{ ...organized, invited: true, my_registrant_ids: ['reg-confirmed'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+    });
+
+    it('forgets the registrations the viewer removed from a self-invite', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-self', 'reg-other']);
+
+      store.forgetSelfInvite('organized', ['reg-self']);
+      expect(store.selfInviteOf('organized')).toEqual(['reg-other']);
+      store.forgetSelfInvite('organized', ['reg-other']);
+
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
+    });
+
+    it.each([
+      ['reg-old', 'reg-new'],
+      ['reg-new', 'reg-old'],
+    ])('saves only active UIDs from a mixed re-invite roster: %j', (...uids) => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: true, my_registrant_ids: ['reg-old'] });
+      upcoming$.next([organized]);
+      // The removed registration can already have retired its self-invite override.
+      store.forgetSelfInvite('organized', ['reg-old']);
+      store.markSelfInvited('organized', uids);
+
+      expect(store.selfInviteOf('organized')).toEqual(['reg-new']);
+      expect(store.selfInviteOf('organized')?.at(-1)).toBe('reg-new');
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-new']);
+
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-new'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-old', 'reg-new'] }]);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-new']);
+    });
+
+    it.each([{ ids: ['reg-old'] }, { ids: [] }, { ids: undefined }])('keeps a no-UID re-add pending without an active indexed UID: $ids', ({ ids }) => {
+      const store = create();
+      const organized = buildMeeting({ id: 'organized', organizer: true, invited: true, my_registrant_ids: ['reg-old'] });
+      upcoming$.next([organized]);
+      store.forgetSelfInvite('organized', ['reg-old']);
+      removed.set(new Set(['organized']));
+      expect(store.upcomingRows()[0].meeting.invited).toBe(false);
+
+      removed.set(new Set());
+      store.markSelfInvited('organized', []);
+      upcoming$.next([{ ...organized, my_registrant_ids: ids }]);
+
+      expect(store.selfInviteOf('organized')).toEqual([]);
+      expect(store.upcomingRows()[0].meeting.invited).toBe(true);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toBeUndefined();
+
+      upcoming$.next([{ ...organized, my_registrant_ids: ['reg-old', 'reg-new'] }]);
+      expect(store.selfInviteOf('organized')).toBeUndefined();
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-new']);
+    });
+
+    it("resets removed UIDs with the viewer instead of suppressing the next viewer's registration", () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, my_registrant_ids: ['reg-old'] })]);
+      store.forgetSelfInvite('organized', ['reg-old']);
+      identity.set('viewer-b');
+      TestBed.tick();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-old']);
+
+      expect(store.selfInviteOf('organized')).toEqual(['reg-old']);
+      expect(store.upcomingRows()[0].meeting.my_registrant_ids).toEqual(['reg-old']);
+    });
+
+    it('forgets a self-invite on a viewer change', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+      store.markSelfInvited('organized', ['reg-self']);
+
+      identity.set('viewer-b');
+      TestBed.tick();
+      upcoming$.next([buildMeeting({ id: 'organized', organizer: true, invited: false, my_registrant_ids: [] })]);
+
+      expect(store.upcomingRows()[0].meeting).toMatchObject({ invited: false, my_registrant_ids: [] });
     });
 
     it('shows an answer confirmed this session on the date it applies to', () => {
@@ -818,6 +1108,930 @@ describe('MeetingsHomeStore', () => {
       expect(store.lastMeetingSummary()).toBeNull();
       expect(store.lastMeetingRecordingUrl()).toBeNull();
       expect(logged).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('paged past feed', () => {
+    let pastPages: Subject<MeetingsHomePastPage>[];
+    let past: ReturnType<typeof vi.fn<(search: string, filters: MeetingsHomePastFilters, pageToken?: string) => Subject<MeetingsHomePastPage>>>;
+    let scope$: Subject<MeetingRollupFilterOptions>;
+
+    const createPaged = (): MeetingsHomeStore => {
+      pastPages = [];
+      scope$ = new Subject();
+      past = vi.fn<(search: string, filters: MeetingsHomePastFilters, pageToken?: string) => Subject<MeetingsHomePastPage>>(() => {
+        const page$ = new Subject<MeetingsHomePastPage>();
+        pastPages.push(page$);
+        return page$;
+      });
+      const feed: MeetingsHomeFeed = {
+        key: identity,
+        scope: 'project',
+        showsProject: signal(false),
+        pagedPast: true,
+        upcomingRefresh$: meetingsRefresh$,
+        pastRefresh$: pastMeetingsRefresh$,
+        upcoming: () => upcoming$,
+        past,
+        latestPast: () => latestPast$,
+        filterOptions: () => scope$,
+      };
+      TestBed.configureTestingModule({
+        providers: [
+          MeetingsHomeStore,
+          { provide: MeetingsHomeFeed, useValue: feed },
+          { provide: PLATFORM_ID, useValue: 'browser' },
+          { provide: UserService, useValue: userService },
+          { provide: MeetingService, useValue: meetingService },
+          { provide: UiToastService, useValue: toast },
+        ],
+      });
+      const store = TestBed.inject(MeetingsHomeStore);
+      TestBed.tick();
+      return store;
+    };
+    const olderPage = (prefix: string, fromDay: number, count: number, pageToken?: string): MeetingsHomePastPage => ({
+      meetings: Array.from({ length: count }, (_, index) => buildPastMeeting(`${prefix}${index}`, inDays(-fromDay - index))),
+      pageToken,
+    });
+    const pastPage = (prefix: string, count: number, pageToken?: string): MeetingsHomePastPage => ({
+      meetings: Array.from({ length: count }, (_, index) => buildPastMeeting(`${prefix}${index}`, inDays(-1 - index))),
+      pageToken,
+    });
+
+    it('loads the next server page once the loaded rows are shown, and stops when the cursor ends', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      expect(store.hasMore()).toBe(true);
+      store.loadMore();
+      TestBed.tick();
+      expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+
+      pastPages[1].next(pastPage('b', 5));
+      TestBed.tick();
+      expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE + 5);
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('reloads from the first page with the search, and drops a next page of the earlier query', async () => {
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        store.setTab('past');
+        pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+        TestBed.tick();
+        store.loadMore();
+        TestBed.tick();
+        TestBed.tick();
+
+        store.setSearch(' weekly ');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        expect(past).toHaveBeenLastCalledWith('weekly', MEETINGS_HOME_NO_PAST_FILTERS);
+
+        pastPages[1].next(pastPage('stale', 3));
+        pastPages[2].next(pastPage('w', 2));
+        TestBed.tick();
+        expect(store.pastRows().map((row) => row.meeting.id)).toEqual(['w0', 'w1']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('reloads a paged past feed from its first page on refresh', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].next(pastPage('b', MEETINGS_HOME_PAGE_SIZE, 'cursor-2'));
+      TestBed.tick();
+
+      pastMeetingsRefresh$.next();
+      pastPages[2].next(pastPage('c', 1));
+      TestBed.tick();
+
+      expect(past).toHaveBeenCalledTimes(3);
+      expect(store.pastRows().map((row) => row.meeting.id)).toEqual(['c0']);
+      expect(store.hasMore()).toBe(false);
+    });
+
+    describe('project filters', () => {
+      const tsc = { uid: 'c-1', name: 'TSC' };
+      const wg = { uid: 'c-2', name: 'Docs WG' };
+      const loadPast = (store: MeetingsHomeStore): void => {
+        store.setTab('past');
+        pastPages[0].next({
+          meetings: [
+            buildPastMeeting('a', inDays(-1), { committees: [tsc] }),
+            buildPastMeeting('b', inDays(-2), { committees: [wg], project_uid: 'p-2', project_name: 'Project Two', meeting_type: 'Board' }),
+          ],
+        });
+        TestBed.tick();
+      };
+
+      it('reloads the past list from its first page with the filters the server can apply, and continues cursors with them', () => {
+        const store = createPaged();
+        scope$.next({ projects: [], groups: [{ uid: 'c-1', name: 'TSC', category: 'Technical Steering Committee', project_uid: 'p-1' }], complete: true });
+        loadPast(store);
+
+        store.setFilters({
+          ...MEETINGS_HOME_DEFAULT_FILTERS,
+          project: 'p-1',
+          group: 'c-1',
+          groupType: 'Technical Steering Committee',
+          meetingType: 'Technical',
+        });
+        TestBed.tick();
+
+        // With a group picked, its type stays on the client: the server would need the picked group itself to be of that type.
+        const applied = { projectUid: 'p-1', committeeUid: 'c-1', groupType: null, meetingType: 'Technical' };
+        expect(past).toHaveBeenLastCalledWith('', applied);
+        pastPages[1].next({ meetings: [buildPastMeeting('c', inDays(-3), { committees: [tsc] })], pageToken: 'cursor-2' });
+        TestBed.tick();
+        expect(store.pastRows().map((row) => row.meeting.id)).toEqual(['c']);
+        // Fewer rows than a list page, so the next server page loads on its own.
+        expect(past).toHaveBeenLastCalledWith('', applied, 'cursor-2');
+      });
+
+      it('does not page the previous filters after a filtered reload fails', () => {
+        const store = createPaged();
+        store.setTab('past');
+        pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+        TestBed.tick();
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, group: 'c-1' });
+        TestBed.tick();
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        pastPages[1].error(new Error('boom'));
+        TestBed.tick();
+
+        // The cursor belongs to the unfiltered query, so it is not paged under the new filters.
+        expect(past).toHaveBeenCalledTimes(2);
+        expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+      });
+
+      it('keeps a category on the client when an uncategorised group in scope reads as the same type', () => {
+        const store = createPaged();
+        scope$.next({
+          projects: [],
+          groups: [
+            { uid: 'c-1', name: 'TSC', category: 'Working Group', project_uid: 'p-1' },
+            { uid: 'c-2', name: 'Docs WG', category: null, project_uid: 'p-1' },
+          ],
+          complete: true,
+        });
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Working Group' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['a', 'b']);
+      });
+
+      it('filters a group type read from group names on the loaded rows only', () => {
+        const store = createPaged();
+        scope$.next({ projects: [], groups: [], complete: true });
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Working Group' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['b']);
+      });
+
+      it('matches group types by category from the groups in scope', () => {
+        const store = createPaged();
+        scope$.next({ projects: [], groups: [{ uid: 'c-2', name: 'Docs WG', category: 'Special Interest Group', project_uid: 'p-1' }], complete: true });
+        loadPast(store);
+
+        expect(store.groupCategories()).toEqual(new Map([['c-2', 'Special Interest Group']]));
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Special Interest Group' });
+        TestBed.tick();
+        pastPages[1].next({ meetings: [buildPastMeeting('b', inDays(-2), { committees: [wg] })] });
+        TestBed.tick();
+
+        expect(past).toHaveBeenLastCalledWith('', { ...MEETINGS_HOME_NO_PAST_FILTERS, groupType: 'Special Interest Group' });
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['b']);
+      });
+
+      it('keeps the filter options and chip names of the last unfiltered past load while filters narrow it', () => {
+        const store = createPaged();
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-2', group: 'c-2' });
+        TestBed.tick();
+        pastPages[1].next({ meetings: [] });
+        TestBed.tick();
+
+        expect(store.filterOptionRows().map((row) => row.meeting.id)).toEqual(['a', 'b']);
+        expect(store.filterChips()).toEqual([
+          { key: 'project', prefix: 'Project:', label: 'Project Two' },
+          { key: 'group', prefix: 'Group:', label: 'Docs WG' },
+        ]);
+
+        store.clearFilter('project');
+        store.clearFilter('group');
+        TestBed.tick();
+        pastPages[2].next({ meetings: [buildPastMeeting('d', inDays(-4))] });
+        TestBed.tick();
+        expect(store.filterOptionRows().map((row) => row.meeting.id)).toEqual(['d']);
+      });
+
+      it('applies filters on the Upcoming tab without reloading the past list', () => {
+        const store = createPaged();
+        upcoming$.next([buildMeeting({ id: 'u1', committees: [tsc] }), buildMeeting({ id: 'u2', committees: [wg] })]);
+        TestBed.tick();
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, group: 'c-2' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['u2']);
+      });
+
+      it('keeps a meeting whose picked group and group type are on different groups, filtering the type on the client', () => {
+        const store = createPaged();
+        scope$.next({
+          projects: [],
+          groups: [
+            { uid: 'c-1', name: 'TSC', category: 'Board', project_uid: 'p-1' },
+            { uid: 'c-2', name: 'Docs WG', category: 'Working Group', project_uid: 'p-1' },
+          ],
+          complete: true,
+        });
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, group: 'c-1', groupType: 'Working Group' });
+        TestBed.tick();
+        expect(past).toHaveBeenLastCalledWith('', { ...MEETINGS_HOME_NO_PAST_FILTERS, committeeUid: 'c-1' });
+        pastPages[1].next({ meetings: [buildPastMeeting('both', inDays(-1), { committees: [tsc, wg] })] });
+        TestBed.tick();
+
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['both']);
+      });
+
+      it('keeps a category on the client while the scope is incomplete', () => {
+        const store = createPaged();
+        scope$.next({ projects: [], groups: [{ uid: 'c-2', name: 'Docs WG', category: 'Special Interest Group', project_uid: 'p-1' }], complete: false });
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Special Interest Group' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+      });
+
+      it('keeps a category on the client when an uncategorised group on the loaded rows reads as the same type', () => {
+        const store = createPaged();
+        scope$.next({ projects: [], groups: [{ uid: 'c-1', name: 'TSC', category: 'Working Group', project_uid: 'p-1' }], complete: true });
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Working Group' });
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(1);
+        expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['a', 'b']);
+      });
+
+      it("drops the previous scope's filter options when the feed changes before its first past page loads", () => {
+        const store = createPaged();
+        loadPast(store);
+
+        identity.set('viewer-b');
+        TestBed.tick();
+        store.setTab('past');
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-2' });
+        TestBed.tick();
+
+        expect(store.filterOptionRows().map((row) => row.meeting.id)).toEqual([]);
+      });
+
+      it('offers values from the narrowed rows too, beside the last unfiltered load', () => {
+        const store = createPaged();
+        loadPast(store);
+
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-2' });
+        TestBed.tick();
+        pastPages[1].next({ meetings: [buildPastMeeting('old', inDays(-30), { project_uid: 'p-2', project_name: 'Project Two' })] });
+        TestBed.tick();
+
+        expect(store.filterOptionRows().map((row) => row.meeting.id)).toEqual(['a', 'b', 'old']);
+      });
+    });
+
+    it('keeps loading server pages while none of the loaded rows can be shown', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+
+      expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+      expect(store.loading()).toBe(true);
+      pastPages[1].next(pastPage('b', 3));
+      TestBed.tick();
+      expect(store.pastRows()).toHaveLength(3);
+      expect(store.loading()).toBe(false);
+    });
+
+    it('ignores a Load more while a page is loading', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      const count = store.visibleCount();
+
+      store.loadMore();
+
+      expect(store.visibleCount()).toBe(count);
+      expect(past).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops the failure of a next page the query has moved on from, and keeps the cursor when a reload fails', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+
+      pastMeetingsRefresh$.next();
+      pastPages[1].error(new Error('stale'));
+      expect(toast.show).not.toHaveBeenCalled();
+      pastPages[2].error(new Error('reload failed'));
+      TestBed.tick();
+
+      expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+      expect(store.hasMore()).toBe(true);
+    });
+
+    it('drops the cursor when the viewer or scope changes, even if the new first page fails', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-a'));
+      TestBed.tick();
+
+      identity.set('viewer-b');
+      TestBed.tick();
+      pastPages[pastPages.length - 1].error(new Error('first page failed'));
+      TestBed.tick();
+
+      expect(past).not.toHaveBeenCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-a');
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('shows the error state with Retry when a next page fails and no past rows are loaded', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      expect(store.failed()).toBe(true);
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    it('does not page the previous search while a new one is debouncing', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      store.setSearch('nothing loaded matches this');
+      TestBed.tick();
+
+      expect(past).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers to load more after a next page fails with rows shown, and retries the same cursor', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      expect(store.pastPageFailed()).toBe(true);
+      expect(store.hasMore()).toBe(false);
+      expect(past).toHaveBeenCalledTimes(2);
+      store.retryPastPage();
+      TestBed.tick();
+      expect(store.pastPageFailed()).toBe(false);
+      expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+    });
+
+    it('keeps showing more upcoming rows while a past page is loading', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      store.setTab('upcoming');
+      upcoming$.next(
+        Array.from({ length: MEETINGS_HOME_PAGE_SIZE + 5 }, (_, index) => buildMeeting({ id: `u-${index}`, start_time: inDays(index + 1).toISOString() }))
+      );
+      TestBed.tick();
+
+      store.loadMore();
+
+      expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE * 2);
+    });
+
+    it('stays on the error state when Retry after a failed empty past list fails again', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+      expect(store.failed()).toBe(true);
+
+      store.retry();
+      TestBed.tick();
+      pastPages[pastPages.length - 1].error(new Error('reload failed'));
+      TestBed.tick();
+
+      expect(store.failed()).toBe(true);
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
+    it('shows the error state when a next page fails and the filters hide every loaded row', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      // A group type read from names, with no scope loaded, filters on the client, so the next page is a cursor page.
+      store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, groupType: 'Working Group' });
+      TestBed.tick();
+
+      expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      expect(store.failed()).toBe(true);
+    });
+
+    it('offers no more rows while the cursor belongs to a search still debouncing', () => {
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+
+      store.setSearch('Past a1');
+      TestBed.tick();
+
+      expect(store.hasMore()).toBe(false);
+    });
+
+    it('does not mark Past failed when its next page fails while Upcoming is shown', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      store.setTab('upcoming');
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      store.setTab('past');
+      TestBed.tick();
+
+      expect(store.failed()).toBe(false);
+      expect(store.pastPageFailed()).toBe(true);
+    });
+
+    it('keeps Retry on Upcoming from putting a loaded Past list into its error state', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+      store.setTab('upcoming');
+      upcoming$.error(new Error('upcoming failed'));
+      TestBed.tick();
+
+      store.retry();
+      TestBed.tick();
+      pastPages[pastPages.length - 1].error(new Error('past reload failed'));
+      store.setTab('past');
+      TestBed.tick();
+
+      expect(store.failed()).toBe(false);
+      expect(store.pastRows()).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+    });
+
+    it('shows no error while a new search debounces after a failed page', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+      TestBed.tick();
+      store.loadMore();
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      store.setSearch('nothing loaded matches this');
+      TestBed.tick();
+
+      expect(store.failed()).toBe(false);
+    });
+
+    it('shows no kept-list toast when a changed search fails after the field moved on', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 2));
+        TestBed.tick();
+
+        store.setSearch('board');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        store.setSearch('boards');
+        TestBed.tick();
+        pastPages[1].error(new Error('search failed'));
+        TestBed.tick();
+
+        expect(toast.show).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('treats the past count as unknown on Upcoming when the first page for a changed search fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.useFakeTimers();
+      try {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 2));
+        TestBed.tick();
+
+        store.setSearch('board');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(300);
+        pastPages[1].error(new Error('search failed'));
+        TestBed.tick();
+
+        expect(store.tab()).toBe('upcoming');
+        expect(store.pastCountUnknown()).toBe(true);
+        store.setTab('past');
+        expect(store.pastShowsError()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('treats the past count as unknown on any tab when a next page failed with nothing loaded', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = createPaged();
+      store.setTab('past');
+      pastPages[0].next(pastPage('a', 0, 'cursor-1'));
+      TestBed.tick();
+      pastPages[1].error(new Error('next page failed'));
+      TestBed.tick();
+
+      store.setTab('upcoming');
+      TestBed.tick();
+
+      expect(store.pastCountUnknown()).toBe(true);
+    });
+
+    it('keeps a meeting on a project list after the viewer removes their registration, without it', () => {
+      const store = createPaged();
+      upcoming$.next([buildMeeting({ id: 'public-1', organizer: false, my_rsvp: rsvp({ meeting_id: 'public-1' }) })]);
+      removed.set(new Set(['public-1']));
+      TestBed.tick();
+
+      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['public-1']);
+      expect(store.upcomingRows()[0].meeting.invited).toBe(false);
+      expect(store.upcomingRows()[0].meeting.my_rsvp).toBeNull();
+    });
+
+    describe('showing a calendar day', () => {
+      it('switches tab, clears search and filters, and loads older pages until the day is covered', () => {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+        TestBed.tick();
+        store.setSearch('board');
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, meetingType: 'Board' });
+        const day = getLocalDayKey(inDays(-25));
+
+        store.showDay(day, 'past');
+        TestBed.tick();
+
+        expect(store.tab()).toBe('past');
+        expect(store.search()).toBe('');
+        expect(store.filters()).toEqual(MEETINGS_HOME_DEFAULT_FILTERS);
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+        expect(store.revealedDay()).toBeNull();
+
+        pastPages[1].next(olderPage('b', 21, 3, 'cursor-2'));
+        TestBed.tick();
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-2');
+
+        pastPages[2].next(olderPage('c', 24, 5, 'cursor-3'));
+        TestBed.tick();
+        expect(past).toHaveBeenCalledTimes(3);
+        expect(store.revealedDay()).toBe(day);
+        // Every row through the picked day shows, past the one-page limit.
+        expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE + 3 + 2);
+
+        store.completeReveal();
+        expect(store.revealedDay()).toBeNull();
+        expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE + 5);
+      });
+
+      it('waits for the first page of a cleared search before covering the day', async () => {
+        vi.useFakeTimers();
+        try {
+          const store = createPaged();
+          store.setTab('past');
+          store.setSearch('board');
+          TestBed.tick();
+          await vi.advanceTimersByTimeAsync(300);
+          pastPages[1].next(pastPage('s', 1));
+          TestBed.tick();
+          const day = getLocalDayKey(inDays(-1));
+
+          store.showDay(day, 'past');
+          TestBed.tick();
+          expect(store.revealedDay()).toBeNull();
+
+          await vi.advanceTimersByTimeAsync(300);
+          expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS);
+          pastPages[2].next(pastPage('a', 2));
+          TestBed.tick();
+          expect(store.revealedDay()).toBe(day);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('shows every upcoming row through the day at once', () => {
+        const store = createPaged();
+        const meetings = Array.from({ length: MEETINGS_HOME_PAGE_SIZE + 5 }, (_, index) =>
+          buildMeeting({ id: `u-${index}`, start_time: inDays(40 + index).toISOString() })
+        );
+        upcoming$.next(meetings);
+        const day = getLocalDayKey(inDays(40 + MEETINGS_HOME_PAGE_SIZE + 2));
+
+        store.showDay(day, 'upcoming');
+        TestBed.tick();
+
+        expect(store.revealedDay()).toBe(day);
+        expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE + 3);
+        expect(past).toHaveBeenCalledTimes(1);
+      });
+
+      it('opens the list through a day with no meetings, up to its date', () => {
+        const store = createPaged();
+        const meetings = Array.from({ length: MEETINGS_HOME_PAGE_SIZE + 5 }, (_, index) =>
+          buildMeeting({ id: `u-${index}`, start_time: inDays(40 + index * 2).toISOString() })
+        );
+        upcoming$.next(meetings);
+        const day = getLocalDayKey(inDays(40 + MEETINGS_HOME_PAGE_SIZE * 2 + 1));
+
+        store.showDay(day, 'upcoming');
+        TestBed.tick();
+
+        expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE + 1);
+      });
+
+      it('keeps an Upcoming day when a past load fails', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const store = createPaged();
+        upcoming$.next([buildMeeting({ id: 'u-1', start_time: inDays(3).toISOString() })]);
+        const day = getLocalDayKey(inDays(3));
+
+        store.showDay(day, 'upcoming');
+        pastPages[0].error(new Error('past down'));
+        TestBed.tick();
+
+        expect(store.revealedDay()).toBe(day);
+      });
+
+      it('keeps a day picked while a searched past load is in flight when that load fails', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.useFakeTimers();
+        try {
+          const store = createPaged();
+          store.setTab('past');
+          pastPages[0].next(pastPage('a', 1));
+          store.setSearch('board');
+          TestBed.tick();
+          await vi.advanceTimersByTimeAsync(300);
+          const day = getLocalDayKey(inDays(-1));
+
+          store.showDay(day, 'past');
+          TestBed.tick();
+          pastPages[1].error(new Error('searched load failed'));
+          TestBed.tick();
+          await vi.advanceTimersByTimeAsync(300);
+          pastPages[pastPages.length - 1].next(pastPage('a', 2));
+          TestBed.tick();
+
+          expect(store.revealedDay()).toBe(day);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('keeps a day picked while a filtered past load is in flight when that load fails', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const store = createPaged();
+        store.setTab('past');
+        pastPages[0].next(pastPage('a', 1));
+        store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, group: 'c-1' });
+        TestBed.tick();
+        expect(past).toHaveBeenLastCalledWith('', { ...MEETINGS_HOME_NO_PAST_FILTERS, committeeUid: 'c-1' });
+        const day = getLocalDayKey(inDays(-1));
+
+        // The day clears the filters; the filtered load fails before the unfiltered reload starts.
+        store.showDay(day, 'past');
+        pastPages[1].error(new Error('filtered load failed'));
+        TestBed.tick();
+        pastPages[pastPages.length - 1].next(pastPage('a', 2));
+        TestBed.tick();
+
+        expect(store.revealedDay()).toBe(day);
+      });
+
+      it('does not hold a covered day back while a next page loads', () => {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 3, 'cursor-1'));
+        TestBed.tick();
+        const day = getLocalDayKey(inDays(-1));
+
+        store.showDay(day, 'past');
+        TestBed.tick();
+
+        // Three rows are under a page, so the next page is loading.
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+        expect(store.revealedDay()).toBe(day);
+      });
+
+      it('settles on the rows it has, without retrying, when an older page fails', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 2, 'cursor-1'));
+        TestBed.tick();
+
+        const day = getLocalDayKey(inDays(-30));
+        store.showDay(day, 'past');
+        TestBed.tick();
+        pastPages[1].error(new Error('down'));
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(2);
+        expect(store.revealedDay()).toBe(day);
+        expect(store.pastPageFailed()).toBe(true);
+      });
+
+      it('drops a pending day when the tab, search or filters change', () => {
+        for (const change of [
+          (store: MeetingsHomeStore) => store.setTab('upcoming'),
+          (store: MeetingsHomeStore) => store.setSearch('board'),
+          (store: MeetingsHomeStore) => store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, meetingType: 'Board' }),
+        ]) {
+          TestBed.resetTestingModule();
+          const store = createPaged();
+          pastPages[0].next(pastPage('a', MEETINGS_HOME_PAGE_SIZE, 'cursor-1'));
+          TestBed.tick();
+          store.showDay(getLocalDayKey(inDays(-25)), 'past');
+          TestBed.tick();
+
+          change(store);
+          pastPages[pastPages.length - 1].next(olderPage('b', 21, 30));
+          TestBed.tick();
+
+          // The day would be covered now; it no longer shows or extends the list.
+          expect(store.revealedDay()).toBeNull();
+          expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE);
+        }
+      });
+
+      it('drops a pending day when the past first page fails', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+          const store = createPaged();
+          store.setTab('past');
+          store.setSearch('board');
+          TestBed.tick();
+          await vi.advanceTimersByTimeAsync(300);
+          pastPages[1].next(pastPage('s', 1));
+          TestBed.tick();
+
+          store.showDay(getLocalDayKey(inDays(-1)), 'past');
+          TestBed.tick();
+          await vi.advanceTimersByTimeAsync(300);
+          pastPages[2].error(new Error('down'));
+          TestBed.tick();
+          pastMeetingsRefresh$.next();
+          pastPages[pastPages.length - 1].next(pastPage('a', 2));
+          TestBed.tick();
+
+          expect(store.revealedDay()).toBeNull();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    });
+
+    describe('calendar months', () => {
+      it('loads past pages back to an older month the calendar shows, on any tab', () => {
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 5, 'cursor-1'));
+        TestBed.tick();
+        expect(past).toHaveBeenCalledTimes(1);
+
+        store.showPastFrom(getLocalDayKey(inDays(-12)));
+        TestBed.tick();
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+
+        pastPages[1].next(olderPage('b', 6, 5, 'cursor-2'));
+        TestBed.tick();
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-2');
+        pastPages[2].next(olderPage('c', 11, 5, 'cursor-3'));
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(3);
+        expect(store.tab()).toBe('upcoming');
+        expect(store.pastRows()).toHaveLength(15);
+      });
+
+      it('reports a failed first past page to the calendar, and retries it from the first page', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const store = createPaged();
+        pastPages[0].error(new Error('down'));
+        TestBed.tick();
+
+        expect(store.calendarPastFailed()).toBe(true);
+
+        store.retryCalendarPast(getLocalDayKey(inDays(-30)));
+        TestBed.tick();
+        expect(past).toHaveBeenCalledTimes(2);
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS);
+      });
+
+      it('stops, without retrying, when an older page fails', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const store = createPaged();
+        pastPages[0].next(pastPage('a', 5, 'cursor-1'));
+        TestBed.tick();
+
+        store.showPastFrom(getLocalDayKey(inDays(-60)));
+        TestBed.tick();
+        pastPages[1].error(new Error('down'));
+        TestBed.tick();
+
+        expect(past).toHaveBeenCalledTimes(2);
+        expect(store.calendarPastFailed()).toBe(true);
+
+        // Going back another month retries the page from the kept cursor.
+        store.showPastFrom(getLocalDayKey(inDays(-90)));
+        TestBed.tick();
+        expect(past).toHaveBeenCalledTimes(3);
+        expect(past).toHaveBeenLastCalledWith('', MEETINGS_HOME_NO_PAST_FILTERS, 'cursor-1');
+        expect(store.calendarPastFailed()).toBe(false);
+      });
+    });
+
+    it('does not request a next page on the upcoming tab', () => {
+      const store = createPaged();
+      pastPages[0].next(pastPage('a', 1, 'cursor-1'));
+      TestBed.tick();
+
+      store.loadMore();
+      TestBed.tick();
+
+      expect(past).toHaveBeenCalledTimes(1);
     });
   });
 });

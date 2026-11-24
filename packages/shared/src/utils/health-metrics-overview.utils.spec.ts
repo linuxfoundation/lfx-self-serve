@@ -14,7 +14,7 @@ import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-even
 import { HEALTH_METRICS_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
 import { HEALTH_METRICS_OVERVIEW_EMPTY_COPY, HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS } from '../constants/health-metrics-overview.constants';
-import { HEALTH_METRICS_TRAINING_SECTIONS } from '../constants/health-metrics-training.constants';
+import { HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED, HEALTH_METRICS_TRAINING_SECTIONS } from '../constants/health-metrics-training.constants';
 import {
   buildHealthMetricsOverviewAddPastMeetingUrl,
   buildHealthMetricsOverviewBalanceView,
@@ -36,7 +36,9 @@ import {
   buildHealthMetricsOverviewTrendMeta,
   buildHealthMetricsOverviewTrendView,
   buildHealthMetricsYtdRangeLabel,
+  healthMetricsOverviewBalanceSortValue,
   healthMetricsOverviewBoardSortValue,
+  healthMetricsOverviewChurnSortValue,
   toHealthMetricsOverviewKpiStripLayout,
   toHealthMetricsOverviewPastYear,
   toHealthMetricsOverviewRange,
@@ -52,6 +54,7 @@ import type {
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsOverviewBalancePeriod,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewChurn,
   HealthMetricsOverviewChurnTotals,
@@ -62,10 +65,15 @@ import type {
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewNpsPeriod,
+  HealthMetricsOverviewOutstandingBalance,
   HealthMetricsOverviewParticipatingOrgs,
   HealthMetricsOverviewParticipatingOrgsPeriod,
 } from '../interfaces/health-metrics-overview.interface';
-import type { HealthMetricsTrainingEnrollment, HealthMetricsTrainingEnrollmentPeriod } from '../interfaces/health-metrics-training.interface';
+import type {
+  HealthMetricsTrainingEnrollment,
+  HealthMetricsTrainingEnrollmentGoals,
+  HealthMetricsTrainingEnrollmentPeriod,
+} from '../interfaces/health-metrics-training.interface';
 
 /** The same value under every period, with per-period overrides. */
 function everyPeriod<T>(value: T, overrides: Partial<Record<HealthMetricsL2Range, T>> = {}): Record<HealthMetricsL2Range, T> {
@@ -105,15 +113,14 @@ describe('buildHealthMetricsOverviewEmptyCopy', () => {
     });
   });
 
-  it('names the year in every past-year title, while the balance, a snapshot of today, keeps its present-tense words', () => {
-    const { balance, ...periodCards } = HEALTH_METRICS_OVERVIEW_EMPTY_COPY;
-    for (const copy of Object.values(periodCards)) {
+  it('names the year in every past-year title', () => {
+    for (const copy of Object.values(HEALTH_METRICS_OVERVIEW_EMPTY_COPY)) {
       expect(copy.ytd.title).not.toContain('{Y}');
       expect(buildHealthMetricsOverviewEmptyCopy(copy, 2023).title).toMatch(/ in 2023$/);
       expect(Boolean(copy.ytd.text) !== copy.ytd.reasons.length > 0).toBe(true);
       expect(Boolean(copy.past.text) !== copy.past.reasons.length > 0).toBe(true);
     }
-    expect(buildHealthMetricsOverviewEmptyCopy(balance, 2023).title).toBe('All invoices paid');
+    expect(buildHealthMetricsOverviewEmptyCopy(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.balance, 2023).title).toBe('Nothing overdue in 2023');
   });
 });
 
@@ -190,7 +197,7 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
       ['Medium', '164', '72%'],
       ['Low', '0', '0%'],
     ]);
-    expect(nonMembers.rows[0].pctLabel).toBe('<1%');
+    expect(nonMembers.rows[0].pctLabel).toBe('0.3%');
   });
 
   /** Each segment's start on the ring and its drawn length. */
@@ -232,11 +239,11 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
     expect(donut.map((segment) => segment.key)).toEqual(['high']);
   });
 
-  it('reads a share between 0.5% and 1% as "<1%", as the design does', () => {
+  it('reads a share under 1% to one decimal, never as 0%', () => {
     const tiny = { ...period, memberEngagement: { highCount: 7, mediumCount: 993, lowCount: 0, highPct: null, mediumPct: null, lowPct: null } };
     const [members] = buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(tiny) }, 'YTD').halves;
 
-    expect(members.rows.map((row) => row.pctLabel)).toEqual(['<1%', '99%', '0%']);
+    expect(members.rows.map((row) => row.pctLabel)).toEqual(['0.7%', '99%', '0%']);
   });
 
   it('leaves the split unmeasured for a period the view does not model', () => {
@@ -356,6 +363,28 @@ describe('buildHealthMetricsOverviewChurnView', () => {
     ]);
   });
 
+  it("leads with Diamond, Platinum, Gold and Silver, each with its icon, then the rest in the view's order", () => {
+    const mixed: HealthMetricsOverviewChurn = {
+      periods: everyPeriod({
+        totals,
+        tiers: [
+          { tier: 'Associate', label: 'Associate', churnRatePct: 5, membershipsLost: 2, valueLostUsd: 0 },
+          { tier: 'Gold Membership', label: 'Gold Membership', churnRatePct: 3, membershipsLost: 1, valueLostUsd: 100 },
+          { tier: 'End User', label: 'End User Supporter', churnRatePct: 2, membershipsLost: 1, valueLostUsd: 0 },
+          { tier: 'Diamond', label: 'Diamond', churnRatePct: 1, membershipsLost: 1, valueLostUsd: 900 },
+        ],
+      }),
+    };
+    const { tiers } = buildHealthMetricsOverviewChurnView(mixed, 'YTD');
+
+    expect(tiers.map((tier) => [tier.label, tier.tier, tier.tierRank])).toEqual([
+      ['Diamond', 'diamond', 4],
+      ['Gold', 'gold', 3],
+      ['Associate', null, 2],
+      ['End User Supporter', null, 1],
+    ]);
+  });
+
   it('lists every tier, zero churn included, against the overall rate', () => {
     const view = buildHealthMetricsOverviewChurnView(churn, 'YTD');
 
@@ -376,8 +405,7 @@ describe('buildHealthMetricsOverviewChurnView', () => {
 });
 
 describe('buildHealthMetricsOverviewBalanceView', () => {
-  const balance = {
-    measured: true,
+  const figures: HealthMetricsOverviewBalancePeriod = {
     outstandingUsd: 1105250,
     overdueMembers: 20,
     highRiskUsd: 1083250,
@@ -388,37 +416,55 @@ describe('buildHealthMetricsOverviewBalanceView', () => {
     mediumRiskSharePct: 0.02,
   };
 
-  it('reads the total, the members at risk and each band', () => {
-    const view = buildHealthMetricsOverviewBalanceView(balance);
+  /** `ytd` in the year to date; every past year holds `past`. */
+  function balance(
+    ytd: Partial<HealthMetricsOverviewBalancePeriod> = {},
+    past: Partial<HealthMetricsOverviewBalancePeriod> = {}
+  ): HealthMetricsOverviewOutstandingBalance {
+    const year = { ...figures, ...past };
+    return { measured: true, periods: { YTD: { ...figures, ...ytd }, COMPLETED_YEAR: year, COMPLETED_YEAR_2: year, COMPLETED_YEAR_3: year } };
+  }
 
-    expect([view.totalLabel, view.overdueMembersLabel, view.atRiskLabel]).toEqual(['$1,105,250', '20', '18 members']);
+  it('reads the total, the members at risk and each band', () => {
+    const view = buildHealthMetricsOverviewBalanceView(balance(), 'YTD');
+
+    expect([view.totalLabel, view.overdueMembersLabel, view.atRiskLabel, view.showAtRisk]).toEqual(['$1,105,250', '20', '18 members', true]);
     expect(view.rows.map((row) => [row.label, row.daysLabel, row.widthPct, row.membersLabel, row.amountLabel])).toEqual([
       ['High risk', '90+ days', 98, '18', '$1,083,250'],
       ['Medium risk', '60–89 days', 2, '2', '$22,000'],
     ]);
   });
 
+  it('follows the selected period', () => {
+    const view = buildHealthMetricsOverviewBalanceView(balance({}, { outstandingUsd: 4000, overdueMembers: 2 }), 'COMPLETED_YEAR_2');
+
+    expect([view.totalLabel, view.overdueMembersLabel]).toEqual(['$4,000', '2']);
+  });
+
   it('splits the bar by amount when the view has no shares', () => {
-    const view = buildHealthMetricsOverviewBalanceView({
-      ...balance,
-      highRiskUsd: 300,
-      mediumRiskUsd: 100,
-      highRiskSharePct: null,
-      mediumRiskSharePct: null,
-      highRiskMembers: 1,
-    });
+    const view = buildHealthMetricsOverviewBalanceView(
+      balance({ highRiskUsd: 300, mediumRiskUsd: 100, highRiskSharePct: null, mediumRiskSharePct: null, highRiskMembers: 1 }),
+      'YTD'
+    );
 
     expect(view.rows.map((row) => row.widthPct)).toEqual([75, 25]);
     expect(view.atRiskLabel).toBe('1 member');
   });
 
+  it('hides the at-risk tag when the period has no high-risk members, measured or not', () => {
+    expect(buildHealthMetricsOverviewBalanceView(balance({ highRiskMembers: 0 }), 'YTD').showAtRisk).toBe(false);
+    expect(buildHealthMetricsOverviewBalanceView(balance({ highRiskMembers: null }), 'YTD').showAtRisk).toBe(false);
+  });
+
   it('is empty when nothing is overdue, and paid in full only for a measured zero', () => {
-    const paid = buildHealthMetricsOverviewBalanceView({ ...balance, outstandingUsd: 0 });
-    const unmeasured = buildHealthMetricsOverviewBalanceView({ ...balance, measured: false, outstandingUsd: null });
+    const paid = buildHealthMetricsOverviewBalanceView(balance({}, { outstandingUsd: 0 }), 'COMPLETED_YEAR');
+    const unmeasured = buildHealthMetricsOverviewBalanceView({ ...balance(), measured: false }, 'YTD');
+    const blank = buildHealthMetricsOverviewBalanceView(balance({ outstandingUsd: null }), 'YTD');
 
     expect([paid.isEmpty, paid.isPaidInFull]).toEqual([true, true]);
     expect([unmeasured.isEmpty, unmeasured.isPaidInFull]).toEqual([true, false]);
-    expect(buildHealthMetricsOverviewBalanceView(balance).isPaidInFull).toBe(false);
+    expect([blank.isEmpty, blank.isPaidInFull]).toEqual([true, false]);
+    expect(buildHealthMetricsOverviewBalanceView(balance(), 'YTD').isPaidInFull).toBe(false);
   });
 });
 
@@ -433,6 +479,7 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       registrations: 328,
       registrationsGoal: 1000,
       compScore: 'medium',
+      proposalsCompScore: null,
       acceptedTalks: 0,
       totalProposals: 185,
       cfpStatus: 'Review Complete',
@@ -562,15 +609,29 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       sideValue: '185',
       widthPct: 0,
       barClass: 'bg-blue-500',
+      statusLabel: null,
       neutral: false,
       gauge: { tone: 'accent', level: null, empty: false, unmeasured: false },
       note: 'N/A',
       compactValue: '0 (Received: 185)',
-      // No rule rates upcoming proposals, so their line stays grey.
+      // With no proposals rating, the bar stays blue and the line grey.
       lineClass: 'border-l-gray-200',
     });
     expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP In Review', compactValue: 'CFP In Review', lineClass: 'border-l-gray-200' });
     expect(none.talks.note).toBe('N/A');
+  });
+
+  it("colours an upcoming event's proposals by their rating, as registrations are by theirs", () => {
+    const rated = (proposalsCompScore: string | null) =>
+      buildHealthMetricsOverviewEventsView(glance, sponsorship, { ...events, upcoming: [event({ proposalsCompScore, acceptedTalks: 40 })] }, 'YTD').rows[0]
+        .talks;
+
+    expect([rated('high'), rated('medium'), rated('low')].map((talks) => [talks.barClass, talks.statusLabel, talks.gauge.level, talks.lineClass])).toEqual([
+      ['bg-emerald-500', 'On track', 'high', 'border-l-emerald-500'],
+      ['bg-amber-400', 'At risk', 'mid', 'border-l-amber-400'],
+      ['bg-red-400', 'Action required', 'low', 'border-l-red-400'],
+    ]);
+    expect(rated(null)).toMatchObject({ barClass: 'bg-blue-500', statusLabel: null, lineClass: 'border-l-gray-200' });
   });
 
   it("lists a past year's events, colored by their share of the goal, with green submitted proposals", () => {
@@ -690,7 +751,7 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     measured: true,
     periods: everyPeriod(period),
     trend: [],
-    goals: { enrollments: 150000, revenueUsd: 5000000, enrollmentsProgressYtd: null, revenueProgressYtd: null },
+    goals: everyPeriod<HealthMetricsTrainingEnrollmentGoals>({ enrollments: 150000, revenueUsd: 5000000, enrollmentsProgress: null, revenueProgress: null }),
   };
 
   it('ranks the listed enrollment programs against the largest one', () => {
@@ -699,15 +760,15 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     expect([view.totalLabel, view.metricLabel, view.goalLabel]).toEqual(['131.5K', 'Enrollments', '88% of 150K goal']);
     expect(view.items.map((item) => [item.label, item.valueLabel, item.shareLabel])).toEqual([
       ['eLearning', '112.8K', '86%'],
-      ['Instructor-led', '337', '<1%'],
+      ['Instructor-led', '337', '0.3%'],
     ]);
     expect(view.items[0].widthPct).toBe(100);
     expect(view.items[1].widthPct).toBe(1);
     expect(view.progressPath).not.toBe('');
   });
 
-  it("prefers the view's modelled progress for YTD over the plain share of the goal", () => {
-    const modelled = { ...enrollment, goals: { ...enrollment.goals, enrollmentsProgressYtd: 1 } };
+  it("prefers the view's progress over the plain share of the goal", () => {
+    const modelled = { ...enrollment, goals: { ...enrollment.goals, YTD: { ...enrollment.goals.YTD, enrollmentsProgress: 1 } } };
 
     expect(buildHealthMetricsOverviewTrainingView(modelled, 'YTD', 'enrollments').goalLabel).toBe('100% of 150K goal');
   });
@@ -731,22 +792,37 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     ]);
   });
 
-  it('draws no goal outside YTD, where the view models none', () => {
-    const view = buildHealthMetricsOverviewTrainingView(enrollment, 'COMPLETED_YEAR', 'enrollments');
+  it("reads a past year's own goal and progress", () => {
+    const pastGoal = { enrollments: 120000, revenueUsd: null, enrollmentsProgress: 1.0, revenueProgress: null };
+    const view = buildHealthMetricsOverviewTrainingView(
+      { ...enrollment, goals: { ...enrollment.goals, COMPLETED_YEAR: pastGoal } },
+      'COMPLETED_YEAR',
+      'enrollments'
+    );
 
-    expect(view.goalLabel).toBeNull();
+    expect(view.goalLabel).toBe('100% of 120K goal');
     expect(view.noGoal).toBe(false);
-    expect(view.progressPath).toBe('');
-    expect(view.ariaLabel).toBe('Enrollments 131.5K');
+    expect(view.progressPath).not.toBe('');
+    expect(view.ariaLabel).toBe('Enrollments 131.5K of 120K goal');
   });
 
-  it('says no goal is set in YTD when the measure has none', () => {
-    const view = buildHealthMetricsOverviewTrainingView({ ...enrollment, goals: { ...enrollment.goals, revenueUsd: null } }, 'YTD', 'revenue');
+  it('says no goal is set for any period whose measure has none', () => {
+    const view = buildHealthMetricsOverviewTrainingView(
+      { ...enrollment, goals: { ...enrollment.goals, YTD: { ...enrollment.goals.YTD, revenueUsd: null } } },
+      'YTD',
+      'revenue'
+    );
+    const past = buildHealthMetricsOverviewTrainingView(
+      { ...enrollment, goals: { ...enrollment.goals, COMPLETED_YEAR_2: HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED.goals.COMPLETED_YEAR_2 } },
+      'COMPLETED_YEAR_2',
+      'enrollments'
+    );
 
     expect(view.goalLabel).toBe('No goal set');
     expect(view.noGoal).toBe(true);
     expect(view.progressPath).toBe('');
     expect(view.ariaLabel).toBe('Revenue $4.3M, no goal set');
+    expect([past.goalLabel, past.noGoal, past.progressPath]).toEqual(['No goal set', true, '']);
     expect(buildHealthMetricsOverviewTrainingView(enrollment, 'YTD', 'enrollments').noGoal).toBe(false);
   });
 
@@ -869,7 +945,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     // A click rate under 1% is not rounded down to 0%.
     expect(chart?.points[0]?.tip.rows[1]?.value).toBe('3%');
     const faint = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.3, 0.004)] };
-    expect(buildHealthMetricsOverviewNewsletterView(faint, 'YTD').chart?.points[0]?.tip.rows[1]?.value).toBe('<1%');
+    expect(buildHealthMetricsOverviewNewsletterView(faint, 'YTD').chart?.points[0]?.tip.rows[1]?.value).toBe('0.4%');
     expect(chart?.points[1]?.ariaLabel).toBe(`Newsletter n3, Aug 24, ${year}: open rate 40%, click rate —`);
     expect(chart?.ticks).toEqual([
       { label: 'Aug', xPct: '0.00' },
@@ -922,7 +998,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
       periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, highEngagement: 1, highEngagementShare: 0.0001 }),
     };
     expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.widthPct).toBe(1.5);
-    expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.pctLabel).toBe('<1%');
+    expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.pctLabel).toBe('0.1%');
   });
 
   it('is empty when nothing was sent in the period or the foundation is unmeasured', () => {
@@ -965,6 +1041,7 @@ describe('buildHealthMetricsOverviewBoardView', () => {
         jobTitle: 'CTO',
         organization: 'Acme Corp',
         logoUrl: null,
+        photoUrl: 'https://photos.example/pat.jpg',
         lastAttendedDate: '2025-12-09',
         attendance: { YTD: { invited: 3, attended: 3, attendancePct: 1 } },
       },
@@ -974,6 +1051,7 @@ describe('buildHealthMetricsOverviewBoardView', () => {
         jobTitle: null,
         organization: null,
         logoUrl: 'https://logos.example/r.png',
+        photoUrl: null,
         lastAttendedDate: null,
         attendance: { YTD: { invited: 3, attended: 0, attendancePct: 0 } },
       },
@@ -983,6 +1061,7 @@ describe('buildHealthMetricsOverviewBoardView', () => {
         jobTitle: null,
         organization: 'Moe Inc',
         logoUrl: null,
+        photoUrl: null,
         lastAttendedDate: null,
         attendance: { YTD: { invited: 2, attended: 1, attendancePct: null } },
       },
@@ -992,6 +1071,7 @@ describe('buildHealthMetricsOverviewBoardView', () => {
         jobTitle: null,
         organization: 'Lee Co',
         logoUrl: null,
+        photoUrl: null,
         lastAttendedDate: null,
         attendance: { COMPLETED_YEAR: { invited: 1, attended: 1, attendancePct: 1 } },
       },
@@ -1015,8 +1095,14 @@ describe('buildHealthMetricsOverviewBoardView', () => {
       ['Alex Moe', '1 of 2', '50%', 'bg-amber-400'],
       ['Pat Doe', '3 of 3', '100%', 'bg-emerald-500'],
     ]);
-    expect(rows[2]).toMatchObject({ initials: 'PD', title: 'CTO', organizationInitial: 'A', lastAttendedLabel: 'Dec 9, 2025' });
-    expect(rows[0]).toMatchObject({ organization: '—', organizationInitial: '', lastAttendedLabel: '—' });
+    expect(rows[2]).toMatchObject({
+      initials: 'PD',
+      photoUrl: 'https://photos.example/pat.jpg',
+      title: 'CTO',
+      organizationInitial: 'A',
+      lastAttendedLabel: 'Dec 9, 2025',
+    });
+    expect(rows[0]).toMatchObject({ photoUrl: '', organization: '—', organizationInitial: '', lastAttendedLabel: '—' });
   });
 
   it('sorts by name or attendance either way', () => {
@@ -1028,6 +1114,17 @@ describe('buildHealthMetricsOverviewBoardView', () => {
     expect(sorted('name', 'asc')).toEqual(['Alex Moe', 'Pat Doe', 'Sam Roe']);
     expect(sorted('name', 'desc')).toEqual(['Sam Roe', 'Pat Doe', 'Alex Moe']);
     expect(sorted('att', 'desc')).toEqual(['Pat Doe', 'Alex Moe', 'Sam Roe']);
+  });
+
+  it('sorts by company and by last attended, with no company or no meeting last', () => {
+    const { rows } = buildHealthMetricsOverviewBoardView(board, 'YTD');
+    const sorted = (key: 'org' | 'last', direction: 'asc' | 'desc'): string[] =>
+      sortHealthMetricsRows(rows, { key, direction }, healthMetricsOverviewBoardSortValue).map((row) => row.name);
+
+    expect(sorted('org', 'desc').at(-1)).toBe('Sam Roe');
+    expect(sorted('last', 'desc')[0]).toBe('Pat Doe');
+    // Both empty dates go last, in the default order between them.
+    expect(sorted('last', 'asc')).toEqual(['Pat Doe', 'Sam Roe', 'Alex Moe']);
   });
 
   it('is empty for a period with no board meetings', () => {
@@ -1054,6 +1151,7 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     registrations: 328,
     registrationsGoal: 1000,
     compScore: 'medium',
+    proposalsCompScore: null,
     acceptedTalks: null,
     totalProposals: null,
     cfpStatus: null,
@@ -1241,6 +1339,7 @@ describe('buildHealthMetricsOverviewPastTrendView', () => {
     registrations: 512,
     registrationsGoal: 500,
     compScore: null,
+    proposalsCompScore: null,
     acceptedTalks: null,
     totalProposals: null,
     cfpStatus: null,
@@ -1332,6 +1431,7 @@ describe('buildHealthMetricsOverviewEventDialogBadges', () => {
     registrations: 328,
     registrationsGoal: 1000,
     compScore: null,
+    proposalsCompScore: null,
     acceptedTalks: null,
     totalProposals: null,
     cfpStatus: null,
@@ -1470,5 +1570,48 @@ describe('buildHealthMetricsOverviewScrollFadeMask', () => {
     expect(buildHealthMetricsOverviewScrollFadeMask(false, true)).toBe(
       'linear-gradient(to bottom, transparent 0, black 0px, black calc(100% - 32px), transparent 100%)'
     );
+  });
+});
+
+describe('Overview churn and balance sort values', () => {
+  it("ranks churn tiers by the view's order and reads each band's raw figures", () => {
+    const churn = buildHealthMetricsOverviewChurnView(
+      {
+        periods: {
+          YTD: {
+            totals: null,
+            tiers: [
+              { tier: 'a', label: 'Platinum', churnRatePct: 8, membershipsLost: 1, valueLostUsd: 480000 },
+              { tier: 'b', label: 'Premier', churnRatePct: 2, membershipsLost: 3, valueLostUsd: null },
+            ],
+          },
+          COMPLETED_YEAR: { totals: null, tiers: [] },
+          COMPLETED_YEAR_2: { totals: null, tiers: [] },
+          COMPLETED_YEAR_3: { totals: null, tiers: [] },
+        },
+      },
+      'YTD'
+    );
+    expect(churn.tiers.map((tier) => healthMetricsOverviewChurnSortValue(tier, 'tier'))).toEqual([2, 1]);
+    expect(churn.tiers.map((tier) => healthMetricsOverviewChurnSortValue(tier, 'value'))).toEqual([480000, null]);
+
+    const period: HealthMetricsOverviewBalancePeriod = {
+      outstandingUsd: 32000,
+      overdueMembers: 3,
+      highRiskUsd: 10000,
+      highRiskMembers: 1,
+      highRiskSharePct: null,
+      mediumRiskUsd: 22000,
+      mediumRiskMembers: 2,
+      mediumRiskSharePct: null,
+    };
+    const balance = buildHealthMetricsOverviewBalanceView(
+      { measured: true, periods: { YTD: period, COMPLETED_YEAR: period, COMPLETED_YEAR_2: period, COMPLETED_YEAR_3: period } },
+      'YTD'
+    );
+    expect(balance.rows.map((row) => [healthMetricsOverviewBalanceSortValue(row, 'risk'), healthMetricsOverviewBalanceSortValue(row, 'amount')])).toEqual([
+      ['High risk', 10000],
+      ['Medium risk', 22000],
+    ]);
   });
 });

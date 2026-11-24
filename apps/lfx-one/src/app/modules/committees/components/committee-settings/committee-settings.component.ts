@@ -61,6 +61,8 @@ export class CommitteeSettingsComponent {
    * disable path exists.
    */
   public readonly impersonating = input<boolean>(false);
+  /** The group's category — hides toggles that apply only to other categories (e.g. Social Listening is Board only). */
+  public readonly category = input<string | null | undefined>(null);
 
   // Outputs
   public readonly startEditingSlackWebhookUrl = output<void>();
@@ -75,7 +77,10 @@ export class CommitteeSettingsComponent {
   public readonly cancelEditingSlackWebhookUrl = output<void>();
 
   // Constants from shared package
-  public readonly features = COMMITTEE_SETTINGS_FEATURES;
+  public readonly features = computed(() => {
+    const category = this.category();
+    return COMMITTEE_SETTINGS_FEATURES.filter((feature) => !feature.categories || (!!category && feature.categories.includes(category)));
+  });
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
   public readonly memberVisibilityOptions = MEMBER_VISIBILITY_OPTIONS;
   public readonly joinModeOptions = JOIN_MODE_OPTIONS;

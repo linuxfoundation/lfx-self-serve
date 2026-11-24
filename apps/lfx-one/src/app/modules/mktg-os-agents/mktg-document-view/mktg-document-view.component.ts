@@ -30,8 +30,6 @@ import {
   AEO_GEO_CATEGORIES,
   AEO_GEO_INTAKE,
   AEO_GEO_TIMEOUT_MESSAGE,
-  BRAND_KIT_APPROVE_HEADER,
-  BRAND_KIT_APPROVE_HEADER_GAPS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   LINKEDIN_POST_INTAKE,
@@ -41,10 +39,13 @@ import {
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
+  MKTG_APPROVED_CURRENT_CHANGED,
   MKTG_DOCUMENT_MAKE_CURRENT_HINT,
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENTS,
+  MKTG_NOT_AVAILABLE_TEXT,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
@@ -55,6 +56,9 @@ import {
   MKTG_PRINT_KIT_READ_NONE,
   MKTG_PRINT_KIT_READ_PENDING,
   MKTG_RUN_RESUME_QUERY_CLEAR,
+  MKTG_APPROVE_HEADER,
+  MKTG_APPROVE_HEADER_GAPS,
+  BRAND_KIT_INTAKE,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -62,18 +66,25 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgAssetReport,
+  MktgApproveGapsDialogData,
   MktgPrintKitRead,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
   MktgRevisionSummary,
   MktgSlidesExportTarget,
   MktgApprovedRevisionState,
+  MktgApproveRevisionRequest,
   MktgDocumentDetailResponse,
+  MktgDocumentCurrentConflictResponse,
+  MktgDocumentCurrentConflictAction,
+  MktgDocumentCurrentConflictNotice,
   MktgDocumentReadCycle,
   MktgDocumentLocalProgress,
   MktgDocumentRunProgress,
   MktgGenerateProgress,
+  MktgPendingDocumentRun,
   MktgPendingGeneration,
+  MktgRunAnsweredNotice,
   MktgDocumentCommentScope,
   MktgRedraftLanding,
   MktgCommentAgentKey,
@@ -81,6 +92,7 @@ import {
 import {
   boilerplatesAssetOfRevision,
   describeMktgAssetReadiness,
+  describeMktgCurrentConflict,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
   findMktgRunIntake,
@@ -146,6 +158,7 @@ import { MktgApproveGapsFooterComponent } from '../components/mktg-approve-gaps-
 import { MktgClosedRunMessageComponent } from '../components/mktg-closed-run-message/mktg-closed-run-message.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
+import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { AeoGeoReportComponent } from '../components/aeo-geo-report/aeo-geo-report.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
@@ -167,7 +180,8 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
-import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
+import { mktgRunAnsweredNoticeAsLanded } from '@shared/utils/mktg-run-answered-notice.utils';
+import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibility-poll.util';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -214,6 +228,7 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
     MktgRunActivityComponent,
     MktgSkeletonComponent,
     MktgRunProgressComponent,
+    MktgRunQuestionsComponent,
     MktgClosedRunMessageComponent,
   ],
   providers: [DialogService],
@@ -255,7 +270,6 @@ export class MktgDocumentViewComponent {
   protected readonly failureDetails = signal('');
   protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
   protected readonly historyError = signal('');
-  protected readonly reload = signal(0);
   protected readonly errorText = signal('');
   protected readonly notice = signal('');
   protected readonly downloadingWorkbook = signal(false);
@@ -268,6 +282,7 @@ export class MktgDocumentViewComponent {
   private readonly confirmingApproval = signal(false);
   protected readonly approvingId = signal<string | null>(null);
   protected readonly approvalError = signal('');
+  protected readonly currentConflict = signal<MktgDocumentCurrentConflictNotice | null>(null);
   protected readonly approvedReadIsExplicit = signal(true);
   protected readonly approvalAnnouncement = signal('');
   protected readonly editingLink = signal(false);
@@ -291,16 +306,40 @@ export class MktgDocumentViewComponent {
   private redirectedRun = '';
   protected readonly projectUid = computed(() => this.projectContext.activeContextUid());
   protected readonly publicProgressPolling = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.kind === 'living');
+  /** The progress reader renders no line of its own while headless; then this view's one status line is the only one. */
+  protected readonly progressHeadless = computed(() => this.loading() || !!this.closedRun() || (this.publicProgressPolling() && this.runState() !== 'failed'));
   protected readonly progressRefreshKey = signal('0');
   protected readonly remoteRevisionId = signal('');
   private pinnedRouteRevision = '';
   private readonly refreshedFailures = new Set<string>();
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
+  private documentReads = 0;
+  /** Server instant of the selection the notice on screen names; reads of an earlier selection predate the conflict. */
+  private conflictSelectedAt: string | null = null;
   private loadedScope = '';
-  private progressReadUnavailable = false;
   private readonly concurrentAnswers = inject(MktgRunAnswersService);
   protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
+  /**
+   * The remembered notice as this page should show it, scoped like the reader's own: hidden once its run closed without
+   * landing (failed, discarded, superseded), once the run asks a newer round, or once the page follows another run — an
+   * explicit `run=` selection, or a genuinely newer run (one still active, or started after the notice's); an older or
+   * failed row in the history is not one. Its line is true when read: once the run has landed (completed, or absent from a
+   * complete read that lists runs), the asset is ready. An unavailable read, or one without a runs list, changes nothing.
+   */
+  protected readonly answeredNoticeView = computed(() => {
+    const notice = this.answeredNotice();
+    if (!notice) return null;
+    const detail = this.runDetail();
+    const asHeard = { text: notice.message, kept: notice.kept ?? null };
+    if (!detail || detail.progressUnavailable || !detail.runs) return asHeard;
+    const run = detail.runs.find((row) => row.runId === notice.runId);
+    if (run && (run.state === 'failed' || readMktgRetiredRunHint(run))) return null;
+    if (run?.pendingQuestions && run.pendingQuestions.questionsId !== notice.questionsId) return null;
+    if (this.runFollowedInstead(notice, detail)) return null;
+    const landed = !run || run.state === 'completed';
+    return landed ? { ...asHeard, text: mktgRunAnsweredNoticeAsLanded(notice.message) } : asHeard;
+  });
 
   protected readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
@@ -525,7 +564,7 @@ export class MktgDocumentViewComponent {
       revisionId: this.revisionParam(),
       runId: this.runParam(),
       generation: this.generationParam(),
-      reload: this.reloads() + this.reload(),
+      reload: this.reloads(),
     }))
   );
 
@@ -599,7 +638,6 @@ export class MktgDocumentViewComponent {
   protected readonly aeoPrintOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   protected readonly activity = signal<MktgRunActivity[]>([]);
   protected readonly aeoActivityStartedAt = signal(0);
-  protected readonly retryGenerating = signal(false);
   protected readonly isAeoDocument = computed(() => this.isPendingReportAgent(this.params().agentKey));
   protected readonly aeoHeaderTitle = computed(() => {
     const site = this.view()?.aeoGeoReport?.domain;
@@ -693,7 +731,6 @@ export class MktgDocumentViewComponent {
             this.progressRefreshKey.update((value) => String(Number(value) + 1));
             // 145: a refresh is not a new reader selection. Keep the mounted body, choices and announcements.
             if (selectionChanged) {
-              this.progressReadUnavailable = false;
               if (request.runId) {
                 this.loading.set(true);
                 this.view.set(null);
@@ -703,6 +740,7 @@ export class MktgDocumentViewComponent {
               this.errorText.set('');
               this.notice.set('');
               this.runHistory.set([]);
+              this.currentConflict.set(null);
               this.historyError.set('');
               this.runFailed.set(false);
               this.failureDetails.set('');
@@ -848,13 +886,12 @@ export class MktgDocumentViewComponent {
                 view: null,
               };
             }
-            let unavailableSince: number | null = null;
             let unavailableCount = 0;
             let observedRun = false;
+            // One plain connection-state line while a check fails; it clears on the next good read and the loaded asset stays.
             const unavailable = () => {
-              unavailableSince ??= Date.now();
               unavailableCount++;
-              this.refreshWarning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
+              this.refreshWarning.set(MKTG_POLL_RETRYING_TEXT);
             };
             const read = (poll: boolean) => {
               const readerSubject = this.userService.user()?.sub ?? '';
@@ -916,10 +953,10 @@ export class MktgDocumentViewComponent {
                   known = cycle;
                   if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) unavailable();
                   else {
-                    unavailableSince = null;
                     unavailableCount = 0;
                     this.refreshWarning.set('');
                   }
+                  this.retireCurrentConflict(cycle);
                   this.runDetail.set(cycle.detail);
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
@@ -945,7 +982,7 @@ export class MktgDocumentViewComponent {
                 })
               );
             };
-            // Living reads (metadata AND body) have one availability budget in the shared component.
+            // Living reads (metadata AND body) share the progress component's one reader and its retry policy.
             const detail$ = (
               type?.kind === 'living'
                 ? this.publicReads.pipe(
@@ -956,6 +993,7 @@ export class MktgDocumentViewComponent {
                         cycle.detail.documentId === request.documentId
                     ),
                     tap((cycle) => {
+                      this.retireCurrentConflict(cycle);
                       this.runDetail.set(cycle.detail);
                       if (this.closedRun()) {
                         closedAttempt$.next();
@@ -975,14 +1013,10 @@ export class MktgDocumentViewComponent {
                       read(false).pipe(
                         expand(() => {
                           if (readMktgRetiredRunHint(this.selectedRun())) return EMPTY;
-                          const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
-                          if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
-                            this.refreshWarning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
-                            return EMPTY;
-                          }
-                          let delay: number = this.selectedRun()?.state === 'questions' ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
-                          if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
-                          if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
+                          const base: number = this.selectedRun()?.state === 'questions' ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
+                          // After a partial read: capped jittered backoff floored at the state's interval, never a stop (a thrown read
+                          // retries on the shared poller, floored at `MKTG_RUN_POLL.intervalMs`).
+                          const delay = unavailableCount ? pollBackoffDelayMs(unavailableCount, base, MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs) : base;
                           return timer(delay).pipe(switchMap(() => read(true)));
                         })
                       ),
@@ -993,12 +1027,25 @@ export class MktgDocumentViewComponent {
                       wakeDebounceMs: VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
                       shouldContinue: () => false,
                     }
-                  ).pipe(switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))))
+                  ).pipe(
+                    switchMap((event) => {
+                      if (event.kind === 'ok') return of(event.value);
+                      // A transient first read fails quietly and the poller retries it; anything else is terminal and the
+                      // outer handler logs it once.
+                      if (!isTransientHttpError(event.error)) return throwError(() => event.error);
+                      // Status only: no upstream payload enters diagnostics.
+                      console.error('Marketing OS document read failed', { status: event.error instanceof HttpErrorResponse ? event.error.status : 0 });
+                      unavailable();
+                      return EMPTY;
+                    })
+                  )
             ).pipe(
               map((cycle) => cycle.view),
               catchError((error: HttpErrorResponse) => {
+                console.error('Marketing OS document read failed for good', { status: error.status });
                 this.localProgress.set(null);
                 this.runDetail.set(null);
+                this.refreshWarning.set(''); // Nothing is retrying beside a final error.
                 this.errorText.set(this.loadErrorText(error.status, error.error?.code));
                 return of(null);
               })
@@ -1056,7 +1103,15 @@ export class MktgDocumentViewComponent {
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
+    // A poll that started before a conflict, or the reader's replay of one, answers with the selection from before
+    // it: older than what the page already shows. Merging it would mark the superseded revision current again.
+    if (this.predatesConflict(cycle.detail)) {
+      if (cycle.detail.progressUnavailable && this.publicProgressPolling()) this.refreshWarning.set(MKTG_POLL_RETRYING_TEXT);
+      return;
+    }
     const viewed = this.view();
+    // False once the cycle's view is the body already on screen with fresh metadata merged in: its flags are an earlier read's.
+    let viewRead = true;
     if (
       viewed &&
       !this.readStoredBody() &&
@@ -1072,29 +1127,31 @@ export class MktgDocumentViewComponent {
         this.remoteRevisionId.set(viewed.revision.id);
       }
       cycle = { ...cycle, view: this.mergeDocumentMetadata(viewed, cycle.detail) };
+      viewRead = false;
     } else if (viewed && this.handoffRunId()) {
       this.remoteRevisionId.set('');
     }
     // A verified ACK may arrive before its run= URL replacement. The hint selects a row; only that server row authorizes the redirect.
     const selectedRunId = this.runParam() || this.handoffRunId();
     const run = cycle.detail.runs?.find((entry) => entry.runId === selectedRunId);
+    // Another run followed here retires the notice remembered for the earlier one, as the run page does when it starts one.
+    const remembered = this.answeredNotice();
+    const followed = remembered && !cycle.detail.progressUnavailable ? this.runFollowedInstead(remembered, cycle.detail) : null;
+    if (followed) this.concurrentAnswers.observeRun(cycle.detail.project, cycle.detail.type.agentKey, cycle.detail.documentId, followed);
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
     if (this.publicProgressPolling() && cycle.detail.progressUnavailable) {
       this.runDetail.set(cycle.detail);
-      this.refreshWarning.set('Run progress could not be checked. Showing available content; checking again.');
-      if (selectedRunId || !cycle.view) {
-        this.progressReadUnavailable = true;
-        this.errorText.set('This run could not be verified. Refresh to check its saved state.');
-      }
+      // One quiet status line, with or without a body to show; the progress reader keeps checking on its own.
+      this.refreshWarning.set(MKTG_POLL_RETRYING_TEXT);
       // A plain URL may show its verified revision; a selected unverified run must not expose an older body.
       this.publicReads.next({ ...cycle, view: selectedRunId ? null : cycle.view });
       this.loading.set(false);
       return;
     }
-    if (this.progressReadUnavailable) {
-      this.progressReadUnavailable = false;
-      this.errorText.set('');
-    }
+    // A good public cycle clears the line a partial one put up; a partial revision read (the detail complete, the view's
+    // progress not) keeps it, since the reader reports transitions only and repeats of a partial view would show no line.
+    // A metadata-only cycle over the body on screen is judged by its own complete detail, never by that body's old flag.
+    if (this.publicProgressPolling()) this.refreshWarning.set(viewRead && cycle.view?.progressUnavailable ? MKTG_POLL_RETRYING_TEXT : '');
     if (
       !this.publicProgressPolling() ||
       cycle.detail.progressUnavailable ||
@@ -1290,6 +1347,15 @@ export class MktgDocumentViewComponent {
     this.reloads.update((count) => count + 1);
   }
 
+  /**
+   * The progress reader's own connection-state line is invisible while this view renders it headless (loading, closed run,
+   * living document): the reader reports its retrying state and this view shows the one line (and clears it) itself.
+   */
+  protected onProgressRetrying(retrying: boolean): void {
+    if (!this.publicProgressPolling()) return;
+    this.refreshWarning.set(retrying ? MKTG_POLL_RETRYING_TEXT : '');
+  }
+
   protected onRunAgain(): void {
     const project = this.projectContext.activeContextUid();
     if (project) this.pendingDocuments.clear(project, this.params().documentId);
@@ -1337,9 +1403,12 @@ export class MktgDocumentViewComponent {
     const selection = this.revisionParam();
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
+    // The reader confirms what was current when the dialog opened; a read merged behind it must not move the expectation.
+    const reviewed = this.reviewedCurrent(view);
+    const data: MktgApproveGapsDialogData = { report, brandKit: view.type.agentKey === BRAND_KIT_INTAKE.agentId };
     const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
-      header: mktgReportHasOpenGaps(report) ? BRAND_KIT_APPROVE_HEADER_GAPS : BRAND_KIT_APPROVE_HEADER,
-      data: report,
+      header: mktgReportHasOpenGaps(report) ? MKTG_APPROVE_HEADER_GAPS : MKTG_APPROVE_HEADER,
+      data,
       modal: true,
       // The dialog focuses its own content on show, so a long list opens at its top rather than at the footer button.
       focusOnShow: false,
@@ -1363,11 +1432,11 @@ export class MktgDocumentViewComponent {
       )
       .subscribe((confirmed: unknown) => {
         if (confirmed === true && epoch === this.restoreEpoch && subject === this.userService.user()?.sub && this.sameView(project, view, selection))
-          this.onApprove();
+          this.onApprove(reviewed);
       });
   }
 
-  protected onApprove(): void {
+  protected onApprove(reviewed?: MktgApproveRevisionRequest): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
     if (!view || !project || view.project !== project || this.loading() || !this.mayApprove() || this.writePending()) {
@@ -1380,18 +1449,20 @@ export class MktgDocumentViewComponent {
     const epoch = this.restoreEpoch;
     // The one-shot write outlives navigation; only its presentation is view-scoped.
     this.documentStore
-      .approveRevision(project, view.type.agentKey, view.documentId, view.revision.id)
+      .approveRevision(project, view.type.agentKey, view.documentId, view.revision.id, reviewed ?? this.reviewedCurrent(view))
       .pipe(finalize(() => this.approvingId.update((id) => (id === view.revision.id ? null : id))))
       .subscribe({
         next: (approved) => {
           this.dependencyService.notifyDocumentsChanged(project);
           if (epoch === this.restoreEpoch && this.sameView(project, view, selection)) {
+            this.currentConflict.set(null);
             this.view.set(approved);
             this.approvalAnnouncement.set(`Revision ${view.revision.number} is approved and current.`);
           }
         },
         error: (error: unknown) => {
           if (epoch === this.restoreEpoch && this.sameView(project, view, selection)) {
+            if (this.refreshCurrentConflict(error, view, selection, 'approve')) return;
             const message = extractErrorMessage(error, 'The approval could not be confirmed. Reload to see the current state before trying again.');
             this.approvalError.set(message);
             this.approvalAnnouncement.set(message);
@@ -1472,11 +1543,6 @@ export class MktgDocumentViewComponent {
     });
   }
 
-  protected retryLoad(): void {
-    if (this.submittingGeneration()) return;
-    this.reload.update((value) => value + 1);
-  }
-
   protected onRestore(revision: MktgRevisionSummary): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
@@ -1493,7 +1559,7 @@ export class MktgDocumentViewComponent {
     // This one-shot write outlives the page. Only its presentation is scoped to
     // the initiating project/revision, so navigation cannot cancel the save.
     this.documentStore
-      .restoreRevision(project, view.type.agentKey, view.documentId, revision.id)
+      .restoreRevision(project, view.type.agentKey, view.documentId, revision.id, this.reviewedCurrent(view))
       .pipe(finalize(() => this.restoringId.update((id) => (id === revision.id ? null : id))))
       .subscribe({
         next: (restored) => {
@@ -1508,10 +1574,12 @@ export class MktgDocumentViewComponent {
             approval,
             revision: { ...view.revision, latest: view.revision.id === restored.revision.id, approval },
           });
+          this.currentConflict.set(null);
           this.notice.set(`Revision ${revision.number} is now current. No revision was added.`);
         },
         error: (error: HttpErrorResponse) => {
           if (epoch !== this.restoreEpoch || this.userService.user()?.sub !== subject || !this.sameView(project, view, selection)) return;
+          if (this.refreshCurrentConflict(error, view, selection, 'restore')) return;
           this.errorText.set(this.writeErrorText(error));
         },
       });
@@ -1603,6 +1671,25 @@ export class MktgDocumentViewComponent {
       if (this.revisionParam() && this.revisionParam() !== view.revision.id) return null;
       return { projectUid: view.project, agentKey: view.type.agentKey as MktgCommentAgentKey, documentId: view.documentId, revisionId: view.revision.id };
     });
+  }
+
+  /**
+   * The run this page follows instead of the notice's, if any: the `run=` row when it names another run, else a genuinely
+   * newer run — one still active (an older run cannot be, once a newer one started), or one started after the notice's run
+   * when that run is still listed. Older or failed rows in the history never count.
+   */
+  private runFollowedInstead(notice: MktgRunAnsweredNotice, detail: MktgDocumentDetailResponse): string | null {
+    const selected = this.runParam();
+    if (MKTG_STARTED_RUN_ID_REGEX.test(selected) && selected !== notice.runId) return selected;
+    const own = detail.runs?.find((row) => row.runId === notice.runId);
+    const newer = detail.runs?.find(
+      (row) =>
+        row.runId !== notice.runId &&
+        row.state !== 'failed' &&
+        !readMktgRetiredRunHint(row) &&
+        (row.state === 'questions' || row.state === 'writing' || row.state === 'storing' || (!!own && Date.parse(row.startedAt) > Date.parse(own.startedAt)))
+    );
+    return newer?.runId ?? null;
   }
 
   private initSelectedRun(): Signal<MktgDocumentRunProgress | null> {
@@ -1715,6 +1802,82 @@ export class MktgDocumentViewComponent {
     );
   }
 
+  private expectedCurrentId(view: MktgDocumentDetailResponse): string | undefined {
+    return view.current?.revisionId ?? view.revisions.find((revision) => revision.latest)?.id;
+  }
+
+  /** What the reader has reviewed as current: the selected revision and the instant it was selected. */
+  private reviewedCurrent(view: MktgDocumentDetailResponse): MktgApproveRevisionRequest {
+    const expectedCurrentId = this.expectedCurrentId(view);
+    const expectedCurrentChangedAt = view.current?.changedAt;
+    return { ...(expectedCurrentId ? { expectedCurrentId } : {}), ...(expectedCurrentChangedAt ? { expectedCurrentChangedAt } : {}) };
+  }
+
+  /**
+   * The page reads continuously (one visibility poller), so a read alone must not take the notice away: it stays until
+   * the reader moves, a write of theirs lands, or a read shows the current moved again past the revision it names.
+   * Only metadata read from the server counts. The reader's fallback for a failed poll replays the last known detail
+   * (flagged unavailable), and a poll that started before the conflict can answer after it: both carry the selection
+   * from before the conflict. Each counted read also outdates a conflict re-read still in flight.
+   */
+  private retireCurrentConflict(cycle: MktgDocumentReadCycle): void {
+    // The detail alone decides: a metadata-only cycle carries the body on screen, whose flag is an earlier read's.
+    if (cycle.detail.progressUnavailable) return;
+    if (this.predatesConflict(cycle.detail)) return;
+    this.documentReads++;
+    this.settleCurrentConflict(cycle.detail);
+  }
+
+  /** While a notice is up: whether this detail carries a selection made before the one the conflict named. */
+  private predatesConflict(detail: MktgDocumentDetailResponse): boolean {
+    const selectedAt = detail.current?.changedAt;
+    return !!this.currentConflict() && !!this.conflictSelectedAt && !!selectedAt && selectedAt < this.conflictSelectedAt;
+  }
+
+  /** Complete the notice's link from a read, or retire a notice that names a selection the read shows superseded. */
+  private settleCurrentConflict(detail: MktgDocumentDetailResponse): void {
+    const notice = this.currentConflict();
+    if (!notice) return;
+    const current = this.expectedCurrentId(detail) ?? null;
+    if (!notice.revisionId) this.currentConflict.set({ ...notice, revisionId: current });
+    else if (notice.revisionId !== current) this.currentConflict.set(null);
+  }
+
+  /** A rejected selection is never automatically replayed. Refresh metadata, not the viewed bytes. */
+  private refreshCurrentConflict(error: unknown, viewed: MktgRevisionResponse, selection: string, action: MktgDocumentCurrentConflictAction): boolean {
+    if (!(error instanceof HttpErrorResponse) || error.status !== 409 || error.error?.code !== MKTG_APPROVED_CURRENT_CHANGED) return false;
+    const epoch = this.restoreEpoch;
+    const subject = this.userService.user()?.sub;
+    const body = error.error as MktgDocumentCurrentConflictResponse;
+    const notice = describeMktgCurrentConflict(body.current, action);
+    this.approvalError.set('');
+    this.approvalAnnouncement.set('');
+    this.currentConflict.set(notice);
+    this.conflictSelectedAt = typeof body.current?.selectedAt === 'string' ? body.current.selectedAt : null;
+    const reads = this.documentReads;
+    this.documentStore
+      .getDocument(viewed.project, viewed.type.agentKey, viewed.documentId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (detail) => {
+          if (epoch !== this.restoreEpoch || subject !== this.userService.user()?.sub || !this.sameView(viewed.project, viewed, selection)) return;
+          if (detail.project !== viewed.project || detail.type.agentKey !== viewed.type.agentKey || detail.documentId !== viewed.documentId) return;
+          // Late answer: the notice was retired or replaced (a write landed, the current moved on), or the poller has
+          // read since. Applying it would put older metadata and a cleared notice back.
+          if (this.currentConflict() !== notice || reads !== this.documentReads) return;
+          const view = this.view();
+          if (!view) return;
+          this.view.set(this.mergeDocumentMetadata(view, detail));
+          this.runDetail.set(detail);
+          // This re-read can already show a selection after the one the 409 named: the same rule as any other read.
+          this.settleCurrentConflict(detail);
+        },
+        // Keep the conflict and existing content on a failed metadata refresh; never ask for a page reload.
+        error: () => undefined,
+      });
+    return true;
+  }
+
   private writeErrorText(error: HttpErrorResponse): string {
     if (error.status === 403 || error.status === 404) return this.loadErrorText(error.status, error.error?.code);
     if (error.status === 412) return 'The document changed. Reload before making a revision current.';
@@ -1728,7 +1891,7 @@ export class MktgDocumentViewComponent {
     if (status === 404) {
       return code === 'MKTG_DOCUMENT_NOT_FOUND' ? 'This document could not be found.' : 'This document has no such revision.';
     }
-    return 'This revision could not be loaded. Try again in a moment.';
+    return MKTG_NOT_AVAILABLE_TEXT.revision;
   }
 
   // === Private helpers ===
@@ -1839,7 +2002,6 @@ export class MktgDocumentViewComponent {
   private loadAeoReport(project: string, agentKey: string, documentId: string, revisionId: string, user: string | undefined) {
     this.generating.set(false);
     this.activity.set([]);
-    this.retryGenerating.set(false);
     this.view.set(null);
     if (!project || !documentId || !user) return EMPTY;
     const pending = this.pendingDocuments.load(project, documentId);
@@ -1863,34 +2025,61 @@ export class MktgDocumentViewComponent {
               return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
             })
           );
-    return read().pipe(
-      catchError((error: HttpErrorResponse) => {
-        if (error.status !== 404 || !canResume || !pending || !intake) throw error;
-        this.generating.set(true);
-        return this.pendingDocuments.waitForStorage(pending, intake, (activity) => this.activity.set(activity)).pipe(switchMap(() => read()));
+    // The storage wait's budget is absolute from the moment this view first began waiting (persisted with the pending
+    // record, so a tab return, a focus or a reload never moves it); research and answering time are not spent from it.
+    // Only a record that cannot be anchored falls back to the run's savedAt.
+    const deadlineFor = (run: MktgPendingDocumentRun): number => {
+      const anchor = Date.parse(run.waitStartedAt ?? run.savedAt);
+      return (Number.isFinite(anchor) ? anchor : Date.now()) + MKTG_RUN_POLL.timeoutMs;
+    };
+    let denied = false;
+    const attempt = () => {
+      // A refused read is latched for this report (RFC 9110 §15.5.4): no wake sends the same credentials again.
+      if (denied) return EMPTY;
+      return read().pipe(
+        catchError((error: HttpErrorResponse) => {
+          if (error.status !== 404 || !canResume || !pending || !intake) throw error;
+          // The server answered (the report is not stored yet): nothing is retrying while the storage wait runs.
+          this.refreshWarning.set('');
+          this.generating.set(true);
+          const anchored = this.pendingDocuments.markWaitStarted(pending);
+          return this.pendingDocuments
+            .waitForStorage(anchored, intake, (activity) => this.activity.set(activity), deadlineFor(anchored))
+            .pipe(switchMap(() => read()));
+        }),
+        tap(() => this.pendingDocuments.clear(project, documentId)),
+        catchError((error: unknown) => {
+          console.error('Failed to load the audit document', error);
+          const status = error instanceof HttpErrorResponse ? error.status : 0;
+          const refused = error instanceof MktgRunRefusalError;
+          // A transient HTTP failure (RFC 9110: 408, 429, 5xx, no response) is retried by the poller below; a refusal, the
+          // audit's own deadline and everything else, HTTP or not, is final.
+          if (!refused && !(error instanceof TimeoutError) && isTransientHttpError(error)) throw error;
+          denied = status === 401 || status === 403;
+          if (refused) this.errorText.set(error.message);
+          else if (error instanceof TimeoutError) this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
+          else this.errorText.set(this.loadErrorText(status, error instanceof HttpErrorResponse ? error.error?.code : undefined));
+          return of(null);
+        })
+      );
+    };
+    // One read that retries itself on the shared poller's capped backoff and again on tab return, focus or reconnect; no button.
+    return createVisibilityPoll(this.document, attempt, {
+      intervalMs: 0,
+      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+      backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+      shouldContinue: () => false,
+    }).pipe(
+      tap((event) => {
+        this.generating.set(false);
+        // A transient failure is one quiet status line; a report that arrives, or a final failure's own text, clears it.
+        this.refreshWarning.set(event.kind === 'error' ? MKTG_POLL_RETRYING_TEXT : '');
+        if (event.kind === 'ok' && event.value) this.errorText.set('');
       }),
-      tap(() => this.pendingDocuments.clear(project, documentId)),
-      catchError((error: unknown) => {
-        console.error('Failed to load the audit document', error);
-        const status = error instanceof HttpErrorResponse ? error.status : undefined;
-        const refused = error instanceof MktgRunRefusalError;
-        this.retryGenerating.set(!refused && (status === undefined || isTransientHttpError(error)));
-        if (refused) {
-          this.errorText.set(error.message);
-        } else if (error instanceof TimeoutError) {
-          this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
-        } else if (this.retryGenerating()) {
-          this.errorText.set(
-            !this.generating() && !canResume
-              ? 'The report could not be loaded. Check again.'
-              : 'The report has not been stored yet. Try checking again; starting a new audit creates a separate report.'
-          );
-        } else {
-          this.errorText.set(this.loadErrorText(status ?? 0, error instanceof HttpErrorResponse ? error.error?.code : undefined));
-        }
-        return of(null);
-      }),
-      tap(() => this.generating.set(false))
+      // Only a result reaches the view: a loaded report stays through a failed re-read, and a failed first read keeps the
+      // loading state behind the one line (ending it would leave the page blank, and hide the storage wait a retry starts).
+      filter((event) => event.kind === 'ok'),
+      map((event) => (event.kind === 'ok' ? event.value : null))
     );
   }
 }

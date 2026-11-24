@@ -8,9 +8,12 @@ import { HEALTH_METRICS_BASE_PATH } from './health-metrics-engagement.constants'
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
 import type { HealthMetricsBlankCopy, HealthMetricsBlankTile, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsOverviewBalanceSortKey,
   HealthMetricsOverviewBoardSortKey,
+  HealthMetricsOverviewChurnSortKey,
   HealthMetricsOverviewEmptyCopy,
   HealthMetricsOverviewEmptyStateCopy,
+  HealthMetricsOverviewEventsSortKey,
   HealthMetricsOverviewExploreLink,
 } from '../interfaces/health-metrics-overview.interface';
 import type { HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
@@ -42,11 +45,41 @@ export const HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP = 500;
 /** The board table's sortable columns. */
 export const HEALTH_METRICS_OVERVIEW_BOARD_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsOverviewBoardSortKey>[] = [
   { key: 'name', kind: 'text' },
+  { key: 'org', kind: 'text' },
   { key: 'att', kind: 'number' },
+  { key: 'last', kind: 'date' },
 ];
 
 /** The design opens the board table on the lowest attendance first. */
 export const HEALTH_METRICS_OVERVIEW_BOARD_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsOverviewBoardSortKey> = { key: 'att', direction: 'asc' };
+
+/** The churn table's sortable columns; Tier ranks as the view does. */
+export const HEALTH_METRICS_OVERVIEW_CHURN_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsOverviewChurnSortKey>[] = [
+  { key: 'tier', kind: 'tier' },
+  { key: 'rate', kind: 'number' },
+  { key: 'lost', kind: 'number' },
+  { key: 'value', kind: 'number' },
+];
+
+/** The churn table opens in the view's tier rank, highest first. */
+export const HEALTH_METRICS_OVERVIEW_CHURN_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsOverviewChurnSortKey> = { key: 'tier', direction: 'desc' };
+
+/** The balance table's sortable columns; Risk sorts by its label. */
+export const HEALTH_METRICS_OVERVIEW_BALANCE_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsOverviewBalanceSortKey>[] = [
+  { key: 'risk', kind: 'text' },
+  { key: 'members', kind: 'number' },
+  { key: 'amount', kind: 'number' },
+];
+
+/** The design opens the balance table on the largest amount first. */
+export const HEALTH_METRICS_OVERVIEW_BALANCE_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsOverviewBalanceSortKey> = { key: 'amount', direction: 'desc' };
+
+/** The events table's sortable columns. It opens on no column: upcoming soonest first, past newest first. */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsOverviewEventsSortKey>[] = [
+  { key: 'event', kind: 'text' },
+  { key: 'registrations', kind: 'number' },
+  { key: 'talks', kind: 'number' },
+];
 
 /** Newsletters read for the Overview chart; one past it flags a truncated read. */
 export const HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP = 1000;
@@ -155,12 +188,16 @@ export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
       ],
     },
   },
-  // The balance is today's whatever the period, so the card keeps the present-tense words for every year.
   balance: {
     icon: 'fa-light fa-file-invoice-dollar',
     ytd: {
       title: 'All invoices paid',
       text: 'No invoice is 60 or more days overdue and no member has said they won’t renew. Late invoices show here as soon as they come up.',
+      reasons: [],
+    },
+    past: {
+      title: 'Nothing overdue in {Y}',
+      text: 'Every member invoice was paid within 60 days, and no member said they wouldn’t renew.',
       reasons: [],
     },
   },
@@ -332,7 +369,7 @@ export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
     label: 'Explore Membership Churn',
     commands: [HEALTH_METRICS_BASE_PATH, 'members'],
     fragment: 'churn',
-    queryParams: { churnMode: null, churnPage: null },
+    queryParams: { churnView: null, churnPage: null },
   },
   balance: {
     label: 'Explore At-Risk & Balance',

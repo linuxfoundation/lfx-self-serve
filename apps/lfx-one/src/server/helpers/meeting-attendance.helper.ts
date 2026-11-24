@@ -69,10 +69,14 @@ export async function attachMeetingRsvpSummaries(req: Request, meetings: Meeting
   });
 }
 
-/** Adds `attendance_summary` to the past meetings the viewer organizes; meetings whose lookup fails are returned unchanged. */
+/**
+ * Adds `attendance_summary` to the past meetings the viewer organizes, keyed by `meeting_and_occurrence_id` (the user
+ * feed's `id`); meetings whose lookup fails are returned unchanged.
+ */
 export async function attachPastMeetingAttendanceSummaries(req: Request, meetings: PastMeeting[]): Promise<PastMeeting[]> {
   const viewer = getEffectiveUsername(req);
-  const ids = [...new Set(meetings.filter((meeting) => isMeetingHomeOrganizer(meeting, viewer)).map((meeting) => meeting.id))];
+  const occurrenceKey = (meeting: PastMeeting): string => meeting.meeting_and_occurrence_id ?? meeting.id;
+  const ids = [...new Set(meetings.filter((meeting) => isMeetingHomeOrganizer(meeting, viewer)).map(occurrenceKey))];
   if (ids.length === 0) return meetings;
 
   const summaries = await loadSummaries<PastMeetingAttendanceSummary>(
@@ -84,7 +88,10 @@ export async function attachPastMeetingAttendanceSummaries(req: Request, meeting
     (batch) => fetchAttendanceSummaries(req, batch)
   );
 
-  return meetings.map((meeting) => (summaries.has(meeting.id) ? { ...meeting, attendance_summary: summaries.get(meeting.id) } : meeting));
+  return meetings.map((meeting) => {
+    const summary = summaries.get(occurrenceKey(meeting));
+    return summary ? { ...meeting, attendance_summary: summary } : meeting;
+  });
 }
 
 /**

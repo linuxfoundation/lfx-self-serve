@@ -71,7 +71,7 @@ export const MENTORSHIP_ENROLL_SETUP_INTRO = 'Define the skills mentees need and
 export const MENTORSHIP_ENROLL_SETUP_SKILLS_HELPER =
   'What skills or interest areas are you looking for in prospective mentees? Remember to include non-technical areas that your program could benefit from.';
 export const MENTORSHIP_ENROLL_SETUP_MENTOR_INFO = 'Mentor invitation has been moved to the Mentors tab and will be available after your program is approved.';
-export const MENTORSHIP_MENTOR_DOCS_URL = 'https://docs.linuxfoundation.org/lfx/mentorship/administrators/manage-mentors';
+export const MENTORSHIP_MENTOR_DOCS_URL = '/docs/mentorship/manage-mentors';
 export const MENTORSHIP_ENROLL_SETUP_TERMS_HELPER =
   'The mentorship program is available for specific periods throughout the year - you may also define a custom term.';
 export const MENTORSHIP_ENROLL_PREREQ_INTRO =

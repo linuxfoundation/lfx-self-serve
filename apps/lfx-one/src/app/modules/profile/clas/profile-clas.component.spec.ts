@@ -37,7 +37,7 @@ import { UserService } from '@services/user.service';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, NEVER, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClaGroupSelectComponent } from './cla-group-select.component';
 import { GitlabUnsupportedComponent } from './gitlab-unsupported.component';
@@ -163,6 +163,16 @@ describe('ProfileClasComponent', () => {
 
   describe('account-linking banner (#4191)', () => {
     const LINK_TEXT = 'Link your Email or GitHub accounts →';
+    const originalProduction = environment.production;
+
+    // The banner's GitLab copy follows the build-time gate; these cases pin the staging/production copy.
+    beforeEach(() => {
+      environment.production = true;
+    });
+
+    afterEach(() => {
+      environment.production = originalProduction;
+    });
 
     /** The banner's Identities link, or null when no banner rendered. */
     function bannerLink(): { text: string; url: string } | null {
@@ -181,6 +191,15 @@ describe('ProfileClasComponent', () => {
       expect(bannerLink()).toEqual({ text: LINK_TEXT, url: '/profile/identities' });
       const banner = fixture.nativeElement.querySelector('[data-testid="my-clas-info-banner"]') as HTMLElement;
       expect(banner.textContent?.replace(/\s+/g, ' ')).toContain('Already-connected GitLab accounts are matched too; new GitLab linking is coming soon.');
+    });
+
+    it('offers GitLab linking without the coming-soon note in dev builds (#4042)', async () => {
+      environment.production = false;
+      await render([agreement()]);
+
+      expect(bannerLink()).toEqual({ text: 'Link your Email, GitHub or GitLab accounts →', url: '/profile/identities' });
+      const banner = fixture.nativeElement.querySelector('[data-testid="my-clas-info-banner"]') as HTMLElement;
+      expect(banner.textContent).not.toContain('coming soon');
     });
 
     it('stays visible for a caller without a linked GitHub account, alongside GitLab-signed agreements', async () => {

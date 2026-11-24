@@ -14,7 +14,7 @@ import type { HealthMetricsRange } from './dashboard-metric.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
 import type { HealthMetricsLineChartView } from './health-metrics-line-chart.interface';
 import type { HealthMetricsMembersReservedTier } from './health-metrics-members.interface';
-import type { HealthMetricsBarFillRule } from './health-metrics-table.interface';
+import type { HealthMetricsBarFillRule, HealthMetricsSortValue, HealthMetricsTableSort } from './health-metrics-table.interface';
 
 /** Section key from the design's `L2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEngagementSectionKey = (typeof HEALTH_METRICS_ENGAGEMENT_SECTIONS)[number]['key'];
@@ -153,6 +153,8 @@ export interface HealthMetricsEngagementGroupQuery {
   /** 1-based. */
   page: number;
   size: number;
+  /** A column the reader picked; `null` keeps the view's rank (dormant first, then lowest attendance). */
+  sort: HealthMetricsTableSort<HealthMetricsEngagementGroupSortKey> | null;
 }
 
 /**
@@ -283,6 +285,8 @@ export interface HealthMetricsEngagementParticipationRowView {
   attendanceLabel: string;
   attendancePct: number | null;
   fillRule: HealthMetricsBarFillRule;
+  /** Each sortable column's value, so the whole list sorts before a page is cut from it. */
+  sortValues: Record<HealthMetricsEngagementParticipationSortKey, HealthMetricsSortValue>;
 }
 
 /** Which cut of the org table is showing: everyone, or only orgs lapsed past the dormancy window. */
@@ -342,6 +346,8 @@ export interface HealthMetricsEngagementOrgRowView {
   avgRepsLabel: string;
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastEngagedLabel: string;
+  /** Each sortable column's value, so the whole list sorts before a page is cut from it. */
+  sortValues: Record<HealthMetricsEngagementOrgSortKey, HealthMetricsSortValue>;
 }
 
 /** `#orgs` scope counts; the lapsed count feeds its sub-nav note. Both are period-agnostic, denormalized onto every row. */
@@ -395,6 +401,8 @@ export interface HealthMetricsEngagementNonMemberRowView {
   logoUrl: string;
   meetings: string;
   people: string;
+  /** Each sortable column's value, so the whole list sorts before a page is cut from it. */
+  sortValues: Record<HealthMetricsEngagementNonMemberSortKey, HealthMetricsSortValue>;
 }
 
 /** The `#nonmem` scope count for one period: companies that attended a meeting in it. */
@@ -470,6 +478,8 @@ export interface HealthMetricsEngagementRepRowView {
   neverAttended: boolean;
   /** Pre-rendered so the template stays free of `DatePipe`; "—" for a rep who never attended. */
   lastAttendedLabel: string;
+  /** Each sortable column's value, so the whole list sorts before a page is cut from it. */
+  sortValues: Record<HealthMetricsEngagementRepSortKey, HealthMetricsSortValue>;
 }
 
 /** Scope counts for one period. Unlike the org counts, this view's are period-suffixed, so the
@@ -567,6 +577,8 @@ export interface HealthMetricsEngagementNewsletterRowView {
   totalClicksLabel: string;
   clickRateLabel: string;
   clickToOpenLabel: string;
+  /** Each sortable column's value, so the whole list sorts before a page is cut from it. */
+  sortValues: Record<HealthMetricsEngagementNewsletterSortKey, HealthMetricsSortValue>;
 }
 
 /** One newsletter on the chart. Rates are percentages (0–100); a figure the newsletter lacks is `null`. */
@@ -595,11 +607,12 @@ export interface HealthMetricsEngagementNewsletterView {
   ratePoints: HealthMetricsEngagementNewsletterPointView[];
 }
 
-/** One entry of the newsletter chart's legend: a line swatch in the series colour. */
+/** One entry of the newsletter chart's legend: a line swatch in the series colour, dashed like a dashed line. */
 export interface HealthMetricsEngagementNewsletterLegendItem {
   key: string;
   label: string;
   color: string;
+  dashed: boolean;
 }
 
 /** The newsletter chart for the selected mode, and its legend. */
@@ -667,7 +680,30 @@ export interface HealthMetricsEngagementRecipientRowView {
   opensDescription: string;
   clicksLabel: string;
   clicksDescription: string;
+  /** Each sortable column's value, so the whole list sorts before a page is cut from it. */
+  sortValues: Record<HealthMetricsEngagementRecipientSortKey, HealthMetricsSortValue>;
 }
 
 /** A recipient badge's colour role. */
 export type HealthMetricsEngagementRecipientTone = 'success' | 'danger' | 'neutral' | 'accent';
+
+/** Meeting participation's sortable columns. */
+export type HealthMetricsEngagementParticipationSortKey = 'type' | 'meetings' | 'attendance';
+
+/** Group attendance's sortable columns, sorted on the server. */
+export type HealthMetricsEngagementGroupSortKey = 'group' | 'meetings' | 'last' | 'attendance';
+
+/** Company participation's sortable columns. */
+export type HealthMetricsEngagementOrgSortKey = 'company' | 'membership' | 'attended' | 'reps' | 'last';
+
+/** The representatives table's sortable columns. */
+export type HealthMetricsEngagementRepSortKey = 'representative' | 'group' | 'attended' | 'last';
+
+/** Non-member participation's sortable columns. */
+export type HealthMetricsEngagementNonMemberSortKey = 'company' | 'meetings' | 'people';
+
+/** Newsletter performance's sortable columns; Newsletter sorts by send date. */
+export type HealthMetricsEngagementNewsletterSortKey = 'newsletter' | 'recipients' | 'opens' | 'openRate' | 'clicks' | 'clickRate' | 'clickToOpen';
+
+/** The recipient engagement table's sortable columns. */
+export type HealthMetricsEngagementRecipientSortKey = 'recipient' | 'delivery' | 'engagement' | 'opens' | 'clicks';

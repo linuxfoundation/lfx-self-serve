@@ -2,43 +2,35 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import {
-  HEALTH_METRICS_L2_RANGES,
-  HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS,
-  HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED,
-  lfxColors,
-} from '@lfx-one/shared/constants';
-import { buildHealthMetricsTrainingEnrollmentView, formatHealthMetricsTrainingCount, hexToRgba } from '@lfx-one/shared/utils';
+import { HEALTH_METRICS_L2_RANGES, HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED } from '@lfx-one/shared/constants';
+import { buildHealthMetricsTrainingEnrollmentView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsColumnChartComponent } from '../../../components/health-metrics-column-chart/health-metrics-column-chart.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type { ChartData, ChartOptions } from 'chart.js';
 import type {
-  FilterPillOption,
   HealthMetricsL2Range,
   HealthMetricsTrainingEnrollment,
   HealthMetricsTrainingEnrollmentMetric,
   HealthMetricsTrainingEnrollmentQuery,
   HealthMetricsTrainingEnrollmentView,
-  HealthMetricsTrainingEnrollmentYearView,
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#enroll` — the period's enrollments, certifications and revenue, the split by delivery type, and
- * enrollments per year. The by-type list follows the Enrollments / Revenue toggle.
+ * `#enroll` — the period's enrollments, certifications and revenue, and the selected measure by delivery type over the
+ * current year and the five before it. The page's Enrollments / Revenue header switch picks the measure.
  */
 @Component({
   selector: 'lfx-training-enroll',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsColumnChartComponent, HealthMetricsMetricsRowComponent, Skeleton],
   templateUrl: './training-enroll.component.html',
 })
 export class TrainingEnrollComponent {
@@ -52,10 +44,11 @@ export class TrainingEnrollComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  /** The header switch's measure; the page owns the switch in the card header. */
+  public readonly metric = model<HealthMetricsTrainingEnrollmentMetric>('enrollments');
+
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
-  protected readonly metric = signal<HealthMetricsTrainingEnrollmentMetric>(HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS[0].id);
-  protected readonly metricOptions: FilterPillOption[] = [...HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS];
 
   // Every period comes back in one read, so a period change re-projects it and never re-reads.
   protected readonly query: Signal<HealthMetricsTrainingEnrollmentQuery> = computed(() => ({
@@ -68,50 +61,15 @@ export class TrainingEnrollComponent {
   /** Nothing was enrolled or earned in the period; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyPeriod(this.response(), this.range()));
 
-  protected readonly byTypeTitle = computed(() => (this.metric() === 'revenue' ? 'Revenue by type' : 'Enrollments by type'));
-  protected readonly byTypeNote = computed(() => (this.metric() === 'revenue' ? 'highest revenue first' : 'highest volume first'));
-  protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.view().trend));
-  protected readonly chartSummaryLabel = computed(() => this.buildChartSummaryLabel(this.view().trend));
-  protected readonly trendCaption = computed(() => (this.view().trend.some((year) => (year.enrollments ?? 0) >= 1000) ? 'thousands per year' : 'per year'));
-  protected readonly chartOptions: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        enabled: true,
-        callbacks: {
-          title: (items) => this.tooltipTitle(items[0]?.dataIndex),
-          label: (item) => `Enrollments: ${formatHealthMetricsTrainingCount(item.parsed.y)}`,
-        },
-      },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: lfxColors.gray[500], font: { size: 10 } } },
-      y: {
-        beginAtZero: true,
-        grid: { color: lfxColors.gray[200] },
-        border: { display: false },
-        // Thousands read in K; a small programme keeps plain counts so ticks never show 0.05K.
-        ticks: { color: lfxColors.gray[500], font: { size: 10 }, callback: (value) => this.formatTick(Number(value)) },
-      },
-    },
-  };
-
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      // Whether the period has anything to show moves with it, so a pill change re-settles off the loaded response.
+      // Whether the period has anything to show moves with it, so a period change re-settles off the loaded response.
       toObservable(this.chrome.selectedRange)
         .pipe(skip(1), takeUntilDestroyed())
         .subscribe(() => {
           if (!this.loadFailed() && !this.loading()) this.settled.emit(isEmptyPeriod(this.response(), this.range()));
         });
     }
-  }
-
-  protected onMetricChange(id: string): void {
-    const option = HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS.find((candidate) => candidate.id === id);
-    if (option) this.metric.set(option.id);
   }
 
   private initResponse(): Signal<HealthMetricsTrainingEnrollment> {
@@ -156,41 +114,6 @@ export class TrainingEnrollComponent {
     const range = this.chrome.selectedRange();
     // The training views carry the four L2 periods; anything else falls back to the default.
     return HEALTH_METRICS_L2_RANGES.find((candidate) => candidate === range) ?? 'YTD';
-  }
-
-  private formatTick(value: number): string {
-    return value >= 1000 ? `${value / 1000}K` : String(value);
-  }
-
-  /** Enrollments per year; the open year is drawn lighter, as it will always look short until it ends. */
-  private buildChart(trend: HealthMetricsTrainingEnrollmentYearView[]): ChartData<'bar'> {
-    const color = lfxColors.blue[500];
-
-    return {
-      labels: trend.map((year) => String(year.year)),
-      datasets: [
-        {
-          label: 'Enrollments',
-          data: trend.map((year) => year.enrollments),
-          backgroundColor: trend.map((year) => (year.isPartialYear ? hexToRgba(color, 0.4) : color)),
-          borderRadius: 2,
-          maxBarThickness: 32,
-        },
-      ],
-    };
-  }
-
-  private buildChartSummaryLabel(trend: HealthMetricsTrainingEnrollmentYearView[]): string {
-    if (trend.length === 0) return 'Bar chart of enrollments per year.';
-
-    return `Bar chart of enrollments per year, ${trend[0].year} to ${trend[trend.length - 1].year}. The same figures follow in a table.`;
-  }
-
-  private tooltipTitle(index: number | undefined): string {
-    const year = index === undefined ? undefined : this.view().trend[index];
-    if (!year) return '';
-
-    return year.isPartialYear ? `${year.year} · partial year` : String(year.year);
   }
 }
 

@@ -111,7 +111,7 @@ import { ViewsDropdownComponent } from './components/views-dropdown/views-dropdo
 const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], computedAt: null };
 
 /**
- * Social Listening — Foundation Lens page (ED + LF Staff), LFXV2-3016: PCC's mentions feed on the 3015 endpoints —
+ * Social Listening — Foundation Lens page (ED, LF Staff, members of opted-in foundation groups), LFXV2-3016: PCC's mentions feed on the 3015 endpoints —
  * windowed pagination (100-row windows, ±2 cached), query-param sync, and reset effects on scope/filter/foundation change.
  */
 @Component({
@@ -392,6 +392,8 @@ export class SocialListeningComponent {
   public readonly activeViewName: Signal<string | null> = this.initActiveViewName();
 
   public constructor() {
+    this.socialListeningService.trackGroupGrant();
+
     // Relative timestamps refresh on a shared tick — browser-only (setInterval), one interval
     // for the whole page instead of PCC's per-card intervals.
     if (isPlatformBrowser(this.platformId)) {
@@ -482,7 +484,7 @@ export class SocialListeningComponent {
     // Preference state is per user + foundation: reload it as either resolves or changes (PCC port).
     effect(() => {
       const userId = this.userService.user()?.sub;
-      const projectId = this.projectContextService.selectedFoundationSfid();
+      const projectId = this.socialListeningService.foundationSfid();
       const ctx = userId && projectId ? { userId, projectId } : null;
       untracked(() => {
         this.mentionBookmarkService.setContext(ctx);
@@ -545,7 +547,7 @@ export class SocialListeningComponent {
     // Foreign-view detector (PCC port): gated on !savedFiltersLoading() so a cold ?view= id isn't wiped
     // before the list arrives. Not-found + non-default state → clear id + banner; found-but-drifted → silent clear.
     effect(() => {
-      const projectId = this.projectContextService.selectedFoundationSfid();
+      const projectId = this.socialListeningService.foundationSfid();
       const userId = this.userService.user()?.sub;
       if (!projectId || !userId) return;
       if (this.savedFiltersLoading()) return;

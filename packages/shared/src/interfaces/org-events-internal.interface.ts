@@ -27,6 +27,10 @@ export interface OrgEventRow {
   TOTAL_RECORDS: number;
 }
 
+export interface OrgFamilyEventRow extends OrgEventRow {
+  ACCOUNT_ID: string;
+}
+
 /** Raw row returned by the org events summary (stat strip) Snowflake query. */
 export interface OrgEventsSummaryRow {
   PAST_EVENTS: number;

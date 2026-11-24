@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -49,6 +50,7 @@ describe('EventsAtAGlanceComponent', () => {
       providers: [
         provideRouter([]),
         HealthMetricsChromeService,
+        { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
       ],
@@ -111,6 +113,27 @@ describe('EventsAtAGlanceComponent', () => {
     expect(query('events-at-a-glance-row-registrations-change')?.textContent?.trim()).toBe('−12%');
     expect(text('events-at-a-glance-row-show-up-rate-change')).toBe('+2.2pp');
     expect(query('events-at-a-glance-tiles')).toBeNull();
+  });
+
+  it('opens in its list of metrics with no arrow, and sorts the figures on a picked column, the dated headings kept', async () => {
+    const year = new Date().getFullYear();
+    await render('ready', glance({ periods: [period(), period({ range: 'COMPLETED_YEAR', registrations: 14091 })] }));
+    const header = (key: string): HTMLElement => query(`events-at-a-glance-sort-${key}`) as HTMLElement;
+    const keys = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('tr[data-testid^="events-at-a-glance-row-"]')].map((row: Element) => row.getAttribute('data-testid') ?? '');
+
+    expect(['metric', 'period', 'comparison', 'change'].map((key) => header(key).closest('th')?.getAttribute('aria-sort'))).toEqual([
+      'none',
+      'none',
+      'none',
+      'none',
+    ]);
+    expect(keys()[0]).toBe('events-at-a-glance-row-registrations');
+    expect(text('events-at-a-glance-period-heading')).toBe(`${year} (YTD)`);
+
+    (header('metric').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(keys()[0]).toBe('events-at-a-glance-row-attendees');
   });
 
   it('re-projects a period change, with "—" for a year the view does not compare, and settles again', async () => {

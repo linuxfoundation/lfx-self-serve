@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Subject, of, throwError } from 'rxjs';
+import { EMPTY, Subject, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { VisibilityPollEvent } from '@lfx-one/shared/interfaces';
-import { VISIBILITY_POLL_WAKE_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { MKTG_POLL_MAX_BACKOFF_MS, MKTG_RUN_POLL, VISIBILITY_POLL_WAKE_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 
-import { createVisibilityPoll, pollBackoffDelayMs } from './visibility-poll.util';
+import { HttpErrorResponse } from '@angular/common/http';
+
+import { createVisibilityPoll, pollBackoffDelayMs, pollWake, readUntilReachable } from './visibility-poll.util';
 
 describe('createVisibilityPoll', () => {
   const options = { intervalMs: 5000, backoffBaseMs: 5000, backoffMaxMs: 30000 };
@@ -155,12 +157,72 @@ describe('createVisibilityPoll', () => {
   it('backs off on errors, recovers without a reload, and resets the failure count', () => {
     const results: ('fail' | 'ok')[] = ['fail', 'fail', 'ok'];
     const fetch = vi.fn(() => (results.shift() === 'ok' ? of(7) : throwError(() => new Error('down'))));
-    const sub = createVisibilityPoll(doc, fetch, options).subscribe((e) => events.push(e));
+    // Jitter pinned at the ceiling: the first retry waits 2 × 5 s, the second 4 × 5 s.
+    const sub = createVisibilityPoll(doc, fetch, { ...options, random: () => 1 }).subscribe((e) => events.push(e));
     expect(events.map((e) => e.kind)).toEqual(['error']);
-    vi.advanceTimersByTime(5000);
-    expect(events.map((e) => (e.kind === 'error' ? e.failures : 0))).toEqual([1, 2]);
     vi.advanceTimersByTime(10000);
+    expect(events.map((e) => (e.kind === 'error' ? e.failures : 0))).toEqual([1, 2]);
+    vi.advanceTimersByTime(20000);
     expect(events[2]).toEqual({ kind: 'ok', value: 7 });
+    sub.unsubscribe();
+  });
+
+  it('spreads retries with jitter so many tabs do not hit a recovering server together, never below the base, and never stops', () => {
+    const fetch = vi.fn(() => throwError(() => new Error('down')));
+    const random = vi.fn(() => 0.5);
+    const sub = createVisibilityPoll(doc, fetch, { ...options, random }).subscribe((e) => events.push(e));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    // First retry: 5 s + half of the 5 s spread ([5 s, 10 s]), never earlier than the healthy step. Second: 5 s + half of 15 s ([5 s, 20 s]).
+    vi.advanceTimersByTime(7499);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(12499);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(1);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    // Past the cap every wait is drawn from [5 s, 30 s]: 30 minutes of outage still yields a bounded, steady stream of checks.
+    vi.advanceTimersByTime(30 * 60 * 1000);
+    expect(fetch.mock.calls.length).toBeGreaterThan(3 + 60);
+    expect(fetch.mock.calls.length).toBeLessThan(3 + 360);
+    expect(random).toHaveBeenCalled();
+    sub.unsubscribe();
+  });
+
+  it('ignores focus and online while the tab is hidden, and reads once on return', () => {
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, options).subscribe();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    setVisibility('hidden');
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
+    vi.advanceTimersByTime(60000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    setVisibility('visible');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    sub.unsubscribe();
+  });
+
+  it('lets a caller end a denied read for good by returning EMPTY from fetch', () => {
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const fetch = vi.fn(() => EMPTY);
+    const sub = createVisibilityPoll(doc, fetch, options).subscribe((e) => events.push(e));
+    vi.advanceTimersByTime(60000);
+    window.dispatchEvent(new Event('focus'));
+    expect(events).toEqual([]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    sub.unsubscribe();
+  });
+
+  it('checks at once when the browser comes back online', () => {
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, options).subscribe();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new Event('online'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenLastCalledWith(false);
     sub.unsubscribe();
   });
 
@@ -174,7 +236,120 @@ describe('createVisibilityPoll', () => {
 });
 
 describe('pollBackoffDelayMs', () => {
-  it('doubles per failure up to the cap', () => {
-    expect([1, 2, 3, 4, 5].map((f) => pollBackoffDelayMs(f, 5000, 30000))).toEqual([5000, 10000, 20000, 30000, 30000]);
+  it('jitters every retry: the ceiling doubles from twice the healthy interval up to the cap', () => {
+    expect([1, 2, 3, 4, 5].map((f) => pollBackoffDelayMs(f, 5000, 30000, () => 1))).toEqual([10000, 20000, 30000, 30000, 30000]);
+  });
+
+  it('draws the wait uniformly between the healthy interval and that ceiling, never below it', () => {
+    expect(pollBackoffDelayMs(1, 5000, 30000, () => 0.5)).toBe(7500);
+    expect(pollBackoffDelayMs(2, 5000, 30000, () => 0.5)).toBe(12500);
+    expect(pollBackoffDelayMs(9, 5000, 30000, () => 0.1)).toBe(7500);
+    expect(pollBackoffDelayMs(1, 5000, 30000, () => 0)).toBe(5000);
+    expect(pollBackoffDelayMs(9, 5000, 30000, () => 0)).toBe(5000);
+  });
+
+  it('is a constant interval, no spread, for a caller whose cap equals its interval', () => {
+    expect([1, 2, 3].map((f) => pollBackoffDelayMs(f, 5000, 5000, () => 0.7))).toEqual([5000, 5000, 5000]);
+  });
+
+  it('keeps the un-randomised doubling (base, 2·base, 4·base … capped) with jitter off', () => {
+    const random = vi.fn(() => 0.5);
+    expect([1, 2, 3, 4, 5].map((f) => pollBackoffDelayMs(f, 5000, 30000, random, false))).toEqual([5000, 10000, 20000, 30000, 30000]);
+    expect(random).not.toHaveBeenCalled();
+  });
+});
+
+describe('readUntilReachable', () => {
+  let state: DocumentVisibilityState;
+  let doc: Document;
+  const unreachable = (status: number) => throwError(() => new HttpErrorResponse({ status }));
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    state = 'visible';
+    doc = document.implementation.createHTMLDocument('t');
+    Object.defineProperty(doc, 'visibilityState', { get: () => state, configurable: true });
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it.each([0, 408, 429, 500, 503])('keeps trying a %i behind the retrying cue and never stops, backing off to the shared cap', (status) => {
+    const read = vi.fn(() => unreachable(status));
+    const retrying: boolean[] = [];
+    const settled = vi.fn();
+    const sub = readUntilReachable(doc, read, (value) => retrying.push(value)).subscribe({ next: settled, error: settled, complete: settled });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(retrying).toEqual([true]);
+    // Ten minutes offline: every wait is between the poll interval and the cap, so the read keeps being tried.
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(read.mock.calls.length).toBeGreaterThanOrEqual((10 * 60_000) / MKTG_POLL_MAX_BACKOFF_MS);
+    expect(read.mock.calls.length).toBeLessThanOrEqual((10 * 60_000) / MKTG_RUN_POLL.intervalMs + 1);
+    expect(retrying.every(Boolean)).toBe(true);
+    expect(settled).not.toHaveBeenCalled();
+    sub.unsubscribe();
+  });
+
+  it('re-reads at once on reconnect, emits the good read once, clears the cue and sends nothing on a later wake', () => {
+    let online = false;
+    const read = vi.fn(() => (online ? of('kit') : unreachable(0)));
+    const retrying: boolean[] = [];
+    const values: string[] = [];
+    const done = vi.fn();
+    readUntilReachable(doc, read, (value) => retrying.push(value)).subscribe({ next: (value) => values.push(value), complete: done });
+    expect(values).toEqual([]);
+    online = true;
+    window.dispatchEvent(new Event('online'));
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(values).toEqual(['kit']);
+    expect(retrying).toEqual([true, false]);
+    expect(done).toHaveBeenCalledOnce();
+    window.dispatchEvent(new Event('focus'));
+    vi.advanceTimersByTime(60_000);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([400, 401, 403, 404])('ends on a final %i with the error and no retry', (status) => {
+    const read = vi.fn(() => unreachable(status));
+    const retrying: boolean[] = [];
+    const failed = vi.fn();
+    readUntilReachable(doc, read, (value) => retrying.push(value)).subscribe({ error: failed });
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining({ status }));
+    expect(retrying).toEqual([false]);
+    window.dispatchEvent(new Event('online'));
+    vi.advanceTimersByTime(60_000);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads nothing in a hidden tab and reads once it is shown', () => {
+    state = 'hidden';
+    const read = vi.fn(() => of(1));
+    const values: number[] = [];
+    readUntilReachable(doc, read, () => undefined).subscribe((value) => values.push(value));
+    vi.advanceTimersByTime(60_000);
+    expect(read).not.toHaveBeenCalled();
+    state = 'visible';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(values).toEqual([1]);
+  });
+});
+
+describe('pollWake', () => {
+  it('emits on tab return, focus and reconnect, and only while the tab is visible', () => {
+    let state: DocumentVisibilityState = 'visible';
+    const doc = document.implementation.createHTMLDocument('t');
+    Object.defineProperty(doc, 'visibilityState', { get: () => state, configurable: true });
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const woke = vi.fn();
+    const sub = pollWake(doc).subscribe(woke);
+    window.dispatchEvent(new Event('online'));
+    window.dispatchEvent(new Event('focus'));
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(woke).toHaveBeenCalledTimes(3);
+    state = 'hidden';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('online'));
+    expect(woke).toHaveBeenCalledTimes(3);
+    sub.unsubscribe();
   });
 });

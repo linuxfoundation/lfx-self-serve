@@ -146,6 +146,12 @@ export interface OrgLensRollUpScope {
   rootUid: string;
   members: OrgRollUpSetOrg[];
   complete: boolean;
+  excludedCount: number;
+}
+
+export interface OrgLensRollUpCoverage {
+  complete: boolean;
+  excludedCount: number;
 }
 
 export interface OrgStaffRollUpFamily {

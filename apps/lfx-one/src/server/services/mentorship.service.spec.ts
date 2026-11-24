@@ -7,7 +7,12 @@ import { MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi, afterEach, type MockInstance } from 'vitest';
 
-import { MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH, MENTORSHIP_LF_PROJECT_MAX_LIMIT, MENTORSHIP_LF_PROJECT_MAX_READS } from '../constants';
+import {
+  MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH,
+  MENTORSHIP_LF_PROJECT_MAX_LIMIT,
+  MENTORSHIP_LF_PROJECT_MAX_READS,
+  MENTORSHIP_SESSION_LOGIN_ID_KEY,
+} from '../constants';
 import { MicroserviceError } from '../errors';
 
 // The service resolves its request-scoped logger through this module; stubbing it here
@@ -571,8 +576,7 @@ describe('MentorshipService LFX profile sync', () => {
       'LFX_V2_SERVICE',
       '/mentorship/v1/me/profiles',
       'GET',
-      expect.objectContaining({ offset: 0 }),
-      undefined
+      expect.objectContaining({ offset: 0 })
     );
     expect(proxyRequest).toHaveBeenNthCalledWith(
       2,
@@ -709,6 +713,39 @@ describe('MentorshipService LFX profile sync', () => {
         profile_links: { githubProfileLink: 'https://github.com/test-user' },
       }
     );
+  });
+
+  it('returns 0 without provisioning when the caller has no mentorship record', async () => {
+    proxyRequest.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(
+        401,
+        'Unauthorized',
+        { error: 'local user is not provisioned' },
+        'LFX_V2_SERVICE',
+        '/mentorship/v1/me/profiles'
+      )
+    );
+
+    await expect(service.syncLfxProfileFields(signedInReq(), fields)).resolves.toBe(0);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).not.toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(getUserEmails).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh the mentorship user once per login before reading the profiles', async () => {
+    const req = { ...signedInReq(), appSession: { [MENTORSHIP_SESSION_LOGIN_ID_KEY]: 'login-466' } } as unknown as Request;
+    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0 } });
+
+    await expect(service.syncLfxProfileFields(req, fields)).resolves.toBe(0);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me/profiles', 'GET', expect.anything());
+  });
+
+  it('lets a failed profile read other than not-provisioned through', async () => {
+    const unavailable = MicroserviceError.fromMicroserviceResponse(503, 'Service Unavailable', {}, 'LFX_V2_SERVICE', '/mentorship/v1/me/profiles');
+    proxyRequest.mockRejectedValueOnce(unavailable);
+
+    await expect(service.syncLfxProfileFields(signedInReq(), fields)).rejects.toBe(unavailable);
   });
 
   it('lets a failed patch through so the card can report it', async () => {

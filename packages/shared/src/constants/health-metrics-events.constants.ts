@@ -3,27 +3,35 @@
 
 import { ASSIGNED_COUNTRY_CODES } from './campaign.constants';
 import { lfxColors } from './colors.constants';
+import { HEALTH_METRICS_COUNTRY_NAME_EXTRAS } from './health-metrics-world-map.constants';
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type {
   HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsAtAGlanceSortKey,
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
+  HealthMetricsEventsForecastSortKey,
   HealthMetricsEventsGeography,
   HealthMetricsEventsOrganizations,
   HealthMetricsEventsOrganizationsSegmentOption,
+  HealthMetricsEventsOrganizationsSortKey,
   HealthMetricsEventsPast,
+  HealthMetricsEventsPastSortKey,
   HealthMetricsEventsQueryParams,
   HealthMetricsEventsRegistrationsGrowth,
   HealthMetricsEventsRegistrationsGrowthMetricOption,
   HealthMetricsEventsRevenue,
+  HealthMetricsEventsRevenueSortKey,
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSnapshot,
   HealthMetricsEventsSnapshotPeriodOption,
   HealthMetricsEventsSpeakerProposalsFilterOption,
+  HealthMetricsEventsSpeakerProposalSortKey,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersListOption,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
+import type { HealthMetricsSortColumn, HealthMetricsTableSort } from '../interfaces/health-metrics-table.interface';
 import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type { HealthMetricsColumnChartSeries } from '../interfaces/health-metrics-column-chart.interface';
 import type { UiBadgeTone } from '../interfaces/uikit.interface';
@@ -266,6 +274,9 @@ export const HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS = {
   declined: { label: 'Declined', viewValue: 'Declined', tone: 'danger' },
 } as const satisfies Record<string, { label: string; viewValue: string; tone: UiBadgeTone }>;
 
+/** A speaker the view flags as unaffiliated reads as this in the Company column. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_INDIVIDUAL = 'Individual';
+
 /** Proposals by year's stacked series, bottom up: accepted blue-500, in review amber-500, declined red-500. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_SERIES: readonly HealthMetricsColumnChartSeries[] = [
   { key: 'accepted', label: 'Accepted', color: lfxColors.blue[500] },
@@ -341,8 +352,11 @@ export const HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES = 5;
 /** Outside the US counts every registration not from this country, as the design labels the metric. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_HOME_CODE = 'US';
 
-/** Codes that can key a country: every assigned ISO 3166-1 alpha-2 code, and XK for Kosovo, which the outlines draw. */
-export const HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES: ReadonlySet<string> = new Set([...ASSIGNED_COUNTRY_CODES, 'XK']);
+/** Codes that can key a country: every assigned ISO 3166-1 alpha-2 code, and the extra codes the map names, such as XK. */
+export const HEALTH_METRICS_EVENTS_GEOGRAPHY_CODES: ReadonlySet<string> = new Set([
+  ...ASSIGNED_COUNTRY_CODES,
+  ...Object.keys(HEALTH_METRICS_COUNTRY_NAME_EXTRAS),
+]);
 
 /** The event dialog Snapshot's periods, as the design orders them. */
 export const HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS: readonly HealthMetricsEventsSnapshotPeriodOption[] = [
@@ -358,4 +372,76 @@ export const HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED: HealthMetricsEventsSnaps
   packages: [],
   sponsorshipRevenueUsd: 0,
   sponsorshipRevenueInPeriodUsd: { '7d': 0, '30d': 0, '90d': 0 },
+};
+
+// ── Sorting ────────────────────────────────────────────────────────────────
+
+/** All upcoming events' sortable columns. */
+export const HEALTH_METRICS_EVENTS_FORECAST_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEventsForecastSortKey>[] = [
+  { key: 'event', kind: 'text' },
+  { key: 'registrations', kind: 'number' },
+];
+
+/** All upcoming events opens on the worst pace first, the lowest share of goal reached. */
+export const HEALTH_METRICS_EVENTS_FORECAST_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsEventsForecastSortKey> = {
+  key: 'registrations',
+  direction: 'asc',
+};
+
+/** Past events' sortable columns. */
+export const HEALTH_METRICS_EVENTS_PAST_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEventsPastSortKey>[] = [
+  { key: 'event', kind: 'date' },
+  { key: 'registrations', kind: 'number' },
+  { key: 'revenue', kind: 'number' },
+  { key: 'status', kind: 'text' },
+];
+
+/** Past events opens on the latest event first. */
+export const HEALTH_METRICS_EVENTS_PAST_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsEventsPastSortKey> = { key: 'event', direction: 'desc' };
+
+/** At a glance's sortable columns; it opens in its list of metrics, with no arrow. */
+export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEventsAtAGlanceSortKey>[] = [
+  { key: 'metric', kind: 'text' },
+  { key: 'period', kind: 'number' },
+  { key: 'comparison', kind: 'number' },
+  { key: 'change', kind: 'number' },
+];
+
+/** Event revenue's sortable columns; it opens with upcoming events first, with no arrow. */
+export const HEALTH_METRICS_EVENTS_REVENUE_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEventsRevenueSortKey>[] = [
+  { key: 'event', kind: 'text' },
+  { key: 'registration', kind: 'number' },
+  { key: 'sponsorship', kind: 'number' },
+];
+
+/** The recent proposals table's sortable columns, which the server sorts across the whole period. */
+export const HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEventsSpeakerProposalSortKey>[] = [
+  { key: 'speaker', kind: 'text' },
+  { key: 'company', kind: 'text' },
+  { key: 'event', kind: 'text' },
+  { key: 'submitted', kind: 'date' },
+  { key: 'status', kind: 'text' },
+];
+
+/** The recent proposals table opens on the most recent first. */
+export const HEALTH_METRICS_EVENTS_SPEAKER_PROPOSAL_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsEventsSpeakerProposalSortKey> = {
+  key: 'submitted',
+  direction: 'desc',
+};
+
+/** Companies at events' sortable columns, which the server sorts across every page. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_SORT_COLUMNS: readonly HealthMetricsSortColumn<HealthMetricsEventsOrganizationsSortKey>[] = [
+  { key: 'company', kind: 'text' },
+  { key: 'membership', kind: 'tier' },
+  { key: 'registrations', kind: 'number' },
+  { key: 'sponsorship', kind: 'number' },
+  { key: 'proposals', kind: 'number' },
+  { key: 'speakers', kind: 'number' },
+  { key: 'events', kind: 'number' },
+];
+
+/** Companies at events opens on the view's rank, the most registrations first. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_DEFAULT_SORT: HealthMetricsTableSort<HealthMetricsEventsOrganizationsSortKey> = {
+  key: 'registrations',
+  direction: 'desc',
 };

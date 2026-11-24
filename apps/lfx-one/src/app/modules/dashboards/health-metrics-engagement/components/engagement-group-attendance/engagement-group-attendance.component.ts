@@ -10,7 +10,9 @@ import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_ENGAGEMENT_DORMANT_TIP,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_DEFAULT_SORT,
   HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_SORT_COLUMNS,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEngagementGroupRowView } from '@lfx-one/shared/utils';
@@ -21,6 +23,8 @@ import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.compo
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsValueBarComponent } from '../../../components/health-metrics-value-bar/health-metrics-value-bar.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -42,6 +46,7 @@ import type {
   imports: [
     EmptyStateComponent,
     HealthMetricsCellComponent,
+    HealthMetricsThComponent,
     HealthMetricsValueBarComponent,
     TableComponent,
     UiBadgeComponent,
@@ -75,12 +80,17 @@ export class EngagementGroupAttendanceComponent {
 
   protected readonly dormantTip = HEALTH_METRICS_ENGAGEMENT_DORMANT_TIP;
   protected readonly size = HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE;
+  /** Sorted on the server across every page; the default keeps the view's rank. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_ENGAGEMENT_GROUP_SORT_COLUMNS, HEALTH_METRICS_ENGAGEMENT_GROUP_DEFAULT_SORT);
   /**
-   * Every scope change restarts paging. The period and foundation come from the page header, which
+   * Every scope or order change restarts paging. The period and foundation come from the page header, which
    * cannot know this table's page, and a page from the wider scope sits past the end of a smaller one.
    */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}|${this.groupType()}`),
+    source: computed(
+      () =>
+        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}|${this.groupType()}|${JSON.stringify(this.sorting.sort())}`
+    ),
     computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
   });
   protected readonly loading = signal<boolean>(true);
@@ -129,6 +139,7 @@ export class EngagementGroupAttendanceComponent {
       range: this.chrome.selectedRange(),
       page: this.page(),
       size: this.size,
+      sort: this.sorting.order(),
     };
   }
 

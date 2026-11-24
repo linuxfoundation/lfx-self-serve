@@ -452,7 +452,7 @@ app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
-// Executive-dashboard Foundation Lens surface (ED + LF Staff) — the router applies requireDashboardAccess to every endpoint.
+// Foundation Lens Social Listening (ED, LF Staff, members of opted-in foundation groups) — the router applies requireSocialListeningAccess to every endpoint except the /access probe.
 app.use('/api/social-listening', socialListeningRouter);
 // Foundation Lens → Participating Companies (#5697): executive director or LF staff, like Health Metrics.
 app.use('/api/foundation-participating-orgs', foundationParticipatingOrgsRouter);

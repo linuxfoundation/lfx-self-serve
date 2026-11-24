@@ -22,6 +22,8 @@ import {
   MKTG_KIT_FAMILIES,
   MKTG_DOCUMENT_TYPES,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
+  MKTG_NOT_AVAILABLE_TEXT,
+  MKTG_POLL_RETRYING_TEXT,
 } from '@lfx-one/shared/constants';
 import {
   MktgLastIntake,
@@ -53,7 +55,7 @@ describe('LinkedIn profile and post surface', () => {
     startForDocument: vi.fn(),
     setupForDocument: vi.fn(),
   };
-  const projects = { getProject: vi.fn() };
+  const projects = { getProjectStrict: vi.fn() };
   const confirmation = Object.assign(new ConfirmationService(), { confirm: vi.fn<ConfirmationService['confirm']>(), close: vi.fn() });
   const history = { lastIntake: vi.fn() };
   const documents = { getDocument: vi.fn(), listDocuments: vi.fn() };
@@ -91,7 +93,7 @@ describe('LinkedIn profile and post surface', () => {
     );
     api.setupForDocument.mockReturnValue(null);
     identity.set({ sub: 'subject-one', name: 'Example author' });
-    projects.getProject.mockReset().mockReturnValue(of({ writer: true }));
+    projects.getProjectStrict.mockReset().mockReturnValue(of({ writer: true }));
     context.set({ uid: 'project-one', slug: 'example-project', name: 'Example project' });
     api.profile.mockReturnValue(of({ profile: null }));
     api.save.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
@@ -199,7 +201,7 @@ describe('LinkedIn profile and post surface', () => {
     await fixture.whenStable();
     expect(component['contentForm'].controls.text.value).toBe('Synthetic unsent edit');
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
-    expect(component['runWarning']()).toContain('checking again');
+    expect(component['runWarning']()).toBe(MKTG_POLL_RETRYING_TEXT);
     documents.listDocuments.mockReturnValue(
       of({
         project: 'project-one',
@@ -258,7 +260,7 @@ describe('LinkedIn profile and post surface', () => {
     const fixture = await render();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
-    expect(fixture.componentInstance['runWarning']()).toContain('checking again');
+    expect(fixture.componentInstance['runWarning']()).toBe(MKTG_POLL_RETRYING_TEXT);
     fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic unsent edit');
     documents.listDocuments.mockReturnValue(of({ project: 'project-one', groups: [], runs: [], creatorScoped: true }));
     window.dispatchEvent(new Event('focus'));
@@ -274,9 +276,24 @@ describe('LinkedIn profile and post surface', () => {
     const fixture = await render();
     expect(fixture.nativeElement.querySelector('form')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-first-run"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')?.textContent).toContain('could not be loaded');
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retry-load"]')).not.toBeNull();
+    // Opened while the server cannot be reached: the grey line over the skeleton, no alert and no button.
+    const line = fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retrying"]');
+    expect(line?.textContent?.trim()).toBe(MKTG_POLL_RETRYING_TEXT);
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.className).toContain('text-gray-500');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retry-load"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Try again');
     expect(api.profile).not.toHaveBeenCalled();
+    // The network coming back re-reads at once; the good read replaces the skeleton and the line by itself.
+    documents.listDocuments.mockReturnValue(of({ project: 'project-one', groups: [], runs: [], creatorScoped: true }));
+    window.dispatchEvent(new Event('online'));
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retrying"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')).toBeNull();
+    expect(api.profile).toHaveBeenCalledOnce();
     log.mockRestore();
   });
 
@@ -447,7 +464,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(history.lastIntake).not.toHaveBeenCalled();
   });
   it('does not request last inputs without writer access', async () => {
-    projects.getProject.mockReturnValue(of({ writer: false }));
+    projects.getProjectStrict.mockReturnValue(of({ writer: false }));
     await fresh();
     expect(history.lastIntake).not.toHaveBeenCalled();
   });
@@ -481,7 +498,7 @@ describe('LinkedIn profile and post surface', () => {
     const pending = new Subject<MktgLastIntake | null>();
     history.lastIntake.mockReturnValue(pending);
     const fixture = await fresh();
-    projects.getProject.mockReturnValue(of({ writer: false }));
+    projects.getProjectStrict.mockReturnValue(of({ writer: false }));
     if (scope === 'project') context.set({ uid: 'other-project', slug: 'other-project', name: 'Synthetic other project' });
     else identity.set({ sub: 'other-subject', name: 'Synthetic other author' });
     await fixture.whenStable();
@@ -1065,14 +1082,16 @@ describe('LinkedIn profile and post surface', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')?.textContent).toContain('Checking the run…');
       expect(fixture.nativeElement.querySelector('form')).toBeNull();
     }
-    expect(projects.getProject).not.toHaveBeenCalled();
+    expect(projects.getProjectStrict).not.toHaveBeenCalled();
   });
   it('reads writer access without changing the current project even if loading fails', async () => {
-    projects.getProject.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    projects.getProjectStrict.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
     const fixture = await render();
-    expect(projects.getProject).toHaveBeenCalledWith('example-project', false);
+    expect(projects.getProjectStrict).toHaveBeenCalledWith('example-project', { strictWriter: true });
     expect(context()?.uid).toBe('project-one');
-    expect(fixture.componentInstance['error']()).toContain('could not be loaded');
+    expect(fixture.componentInstance['error']()).toBe('');
+    expect(fixture.componentInstance['loadRetrying']()).toBe(true);
+    expect(fixture.componentInstance['loading']()).toBe(true);
   });
   it('keeps a selected file visible after editing, but clears it on a source switch', async () => {
     const fixture = await savedIntake();
@@ -1390,17 +1409,59 @@ describe('LinkedIn profile and post surface', () => {
     expect(component['busy']()).toBe(false);
   });
   it('does not read the LinkedIn profile when project write access is denied', async () => {
-    TestBed.overrideProvider(ProjectService, { useValue: { getProject: () => of({ writer: false }) } });
+    TestBed.overrideProvider(ProjectService, { useValue: { getProjectStrict: () => of({ writer: false }) } });
     const fixture = await render();
     expect(api.profile).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-no-access"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
   });
   it('renders a distinct load error, not an empty first-run profile', async () => {
-    api.profile.mockReturnValue(throwError(() => new Error('offline')));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    api.profile.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
     const fixture = await render();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retry-load"]')).not.toBeNull();
+    // A final refusal: one red line that names what is not available, with no Retry.
+    const alert = fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]');
+    expect(alert?.textContent).toContain(MKTG_NOT_AVAILABLE_TEXT.linkedin);
+    expect(alert?.getAttribute('role')).toBe('alert');
+    expect(alert?.className).toContain('text-red-700');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retrying"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retry-load"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Try again');
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-profile-form"]')).toBeNull();
+    expect(log).toHaveBeenCalledWith('LinkedIn first load refused', { status: 404 });
+    log.mockRestore();
+  });
+  it('shows the plain no-access state, not a load error, when the project read is refused', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    projects.getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+    const fixture = await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-no-access"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retrying"]')).toBeNull();
+    expect(api.profile).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+  it.each([
+    ['recorded-runs', 401],
+    ['recorded-runs', 403],
+    ['profile', 401],
+    ['profile', 403],
+  ])('shows the no-access state, never a blank page, when the %s read is refused (%s) after the project granted write', async (read, status) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const refusal = throwError(() => new HttpErrorResponse({ status }));
+    if (read === 'profile') api.profile.mockReturnValue(refusal);
+    else documents.listDocuments.mockReturnValue(refusal);
+    const fixture = await render();
+    expect(projects.getProjectStrict).toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-no-access"]')?.textContent).toContain(
+      'You need write access to this project to draft LinkedIn posts.'
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retrying"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-profile-form"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
+    expect(log).toHaveBeenCalledWith('LinkedIn first load refused', { status });
+    log.mockRestore();
   });
 });

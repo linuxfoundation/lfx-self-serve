@@ -63,6 +63,7 @@ function event(eventId: string, overrides: Partial<HealthMetricsOverviewEvent> =
     registrations: 328,
     registrationsGoal: 1000,
     compScore: 'medium',
+    proposalsCompScore: null,
     acceptedTalks: 0,
     totalProposals: 185,
     cfpStatus: 'Review Complete',
@@ -84,7 +85,7 @@ describe('OverviewEventsCardComponent', () => {
   let fixture: ComponentFixture<OverviewEventsCardComponent>;
   let open: ReturnType<typeof vi.fn>;
 
-  async function render(failSponsorship = false): Promise<void> {
+  async function render(failSponsorship = false, events: HealthMetricsOverviewEvents = EVENTS): Promise<void> {
     open = vi.fn().mockReturnValue({});
     await TestBed.configureTestingModule({
       imports: [OverviewEventsCardComponent],
@@ -96,7 +97,7 @@ describe('OverviewEventsCardComponent', () => {
           useValue: {
             getEventsAtAGlance: vi.fn().mockReturnValue(of(GLANCE)),
             getEventsSponsorship: vi.fn().mockReturnValue(failSponsorship ? throwError(() => new Error('down')) : of(SPONSORSHIP)),
-            getOverviewEvents: vi.fn().mockReturnValue(of(EVENTS)),
+            getOverviewEvents: vi.fn().mockReturnValue(of(events)),
           },
         },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
@@ -149,6 +150,51 @@ describe('OverviewEventsCardComponent', () => {
     expect(query('overview-events-view-all')).toBeNull();
   });
 
+  it('opens on no sorted column, and sorts the whole list before showing its first five', async () => {
+    const original = [...EVENTS.upcoming];
+    EVENTS.upcoming[6] = event('u6', { registrations: 999 });
+    EVENTS.upcoming[0] = event('u0', { acceptedTalks: 0, totalProposals: 0 });
+    EVENTS.upcoming[1] = event('u1', { acceptedTalks: 3 });
+    try {
+      await render();
+      const sortHeader = (key: string): HTMLElement => query(`overview-events-sort-${key}`) as HTMLElement;
+
+      expect(['event', 'registrations', 'talks'].map((key) => sortHeader(key).parentElement?.getAttribute('aria-sort'))).toEqual(['none', 'none', 'none']);
+      expect(rows()[0].getAttribute('data-testid')).toBe('overview-events-row-u0');
+
+      // The design's order inside the header: label, its tip, then the arrow.
+      const registrations = sortHeader('registrations');
+      expect([...registrations.children].map((child) => child.tagName.toLowerCase())).toEqual(['button', 'lfx-overview-info-tip', 'button']);
+
+      (registrations.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(rows()).toHaveLength(5);
+      expect(rows()[0].getAttribute('data-testid')).toBe('overview-events-row-u6');
+      expect(registrations.parentElement?.getAttribute('aria-sort')).toBe('descending');
+
+      // An event with no proposals shows its note, not 0, so it sorts last in both directions.
+      const talks = sortHeader('talks').querySelector('button') as HTMLButtonElement;
+      talks.click();
+      fixture.detectChanges();
+      expect(rows()[0].getAttribute('data-testid')).toBe('overview-events-row-u1');
+      talks.click();
+      fixture.detectChanges();
+      expect(sortHeader('talks').parentElement?.getAttribute('aria-sort')).toBe('ascending');
+      expect(rows()[0].getAttribute('data-testid')).not.toBe('overview-events-row-u0');
+      query('overview-events-view-all')?.click();
+      fixture.detectChanges();
+      expect(rows().at(-1)?.getAttribute('data-testid')).toBe('overview-events-row-u0');
+
+      // A new sort starts again on the first five.
+      talks.click();
+      fixture.detectChanges();
+      expect(rows()).toHaveLength(5);
+      expect(text('overview-events-view-all')).toBe('View all (7)');
+    } finally {
+      EVENTS.upcoming.splice(0, EVENTS.upcoming.length, ...original);
+    }
+  });
+
   function squashed(testId: string): string {
     return query(testId)?.textContent?.replace(/\s+/g, '') ?? '';
   }
@@ -177,6 +223,17 @@ describe('OverviewEventsCardComponent', () => {
     expect(query('overview-events-footer')?.contains(query('overview-events-legend'))).toBe(true);
     expect(text('overview-events-legend')).toBe('On trackAt riskAction required');
     expect(text('overview-events-list-title')).toBe('Upcoming events');
+  });
+
+  it("colours an upcoming event's proposals by their rating and names it for screen readers", async () => {
+    await render(false, { ...EVENTS, upcoming: [event('u0', { proposalsCompScore: 'low', acceptedTalks: 40 }), event('u1')] });
+
+    expect(query('overview-events-row-u0-talks-bar')?.className).toContain('bg-red-400');
+    expect(query('overview-events-row-u0-talks')?.className).toContain('border-l-red-400');
+    expect(squashed('overview-events-row-u0-talks')).toContain('Status:Actionrequired');
+    // No rating keeps the neutral bar, with no status to name.
+    expect(query('overview-events-row-u1-talks-bar')?.className).toContain('bg-blue-500');
+    expect(squashed('overview-events-row-u1-talks')).not.toContain('Status:');
   });
 
   it('stacks each row by default, with a status line, a label and a dark value per cell, and the table from 561px', async () => {

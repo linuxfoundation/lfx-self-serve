@@ -9,6 +9,7 @@ import { MKTG_INTAKE_LINK_ADVICE } from '../../../packages/shared/src/constants/
 import { MKTG_LAST_INTAKE_API, MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
 import { mktgSentenceCaseLabel } from '../../../packages/shared/src/utils/mktg-navigation.utils';
 import { DOCUMENT_PROJECT, documentFixture } from './helpers/mktg-os-documents.helper';
+import { expectRetryingLine } from './helpers/mktg-os-outage.helper';
 import { setupFreshSources, withDesktopSourcesSetup } from './helpers/mktg-os-sources.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { DATA_LOAD_TIMEOUT } from './helpers/mktg-os-assets.helper';
@@ -584,15 +585,20 @@ test.describe('Marketing OS new run Sources', () => {
       await sources.open();
       const card = page.getByTestId('mktg-run-sources');
       await expect(page.getByTestId('mktg-agent-run-form')).not.toBeVisible();
-      await expect(card.getByTestId('mktg-agent-run-missing-dependency')).toBeVisible();
-      await expect(card.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
-      await expect(card.getByTestId('mktg-run-start-reason')).toBeVisible();
       if (status === 503) {
+        // The check cannot reach the server: one grey line in its spot, no yellow note and no button; it lands by itself.
+        await expectRetryingLine(page, card.getByTestId('mktg-agent-run-dependency-retrying'));
+        await expect(card.getByTestId('mktg-agent-run-missing-dependency')).toHaveCount(0);
+        await expect(card.getByTestId('mktg-agent-run-dependency-retry')).toHaveCount(0);
         await page.route('**/api/mktg-agents/foundation-message/stored**', (route) =>
           route.fulfill({ status: 404, json: { error: 'No approved synthetic framework' } })
         );
-        await card.getByTestId('mktg-agent-run-dependency-retry').getByRole('button').click();
+        await page.evaluate(() => window.dispatchEvent(new Event('online')));
       }
+      await expect(card.getByTestId('mktg-agent-run-missing-dependency')).toBeVisible();
+      await expect(card.getByTestId('mktg-agent-run-dependency-retrying')).toHaveCount(0);
+      await expect(card.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
+      await expect(card.getByTestId('mktg-run-start-reason')).toBeVisible();
       await expect(card.getByTestId('mktg-agent-run-missing-dependency-link').getByRole('button')).toBeVisible();
       expect(sources.generated).toHaveLength(0);
       await page.screenshot({ path: test.info().outputPath(`collapsed-dependency-${status}.png`), fullPage: true });

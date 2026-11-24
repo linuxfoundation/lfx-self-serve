@@ -21,23 +21,23 @@
           <div class="flex-1">
             <span class="mb-0.5 flex items-center gap-2 text-sm font-bold text-slate-900">
               {{ provider.name }}
-              @if (provider.id === 'gitlab') {
+              @if (provider.id === 'gitlab' && gitlabLinkingDisabled) {
                 <span class="text-xs font-medium text-slate-500" data-testid="provider-gitlab-coming-soon">Coming soon</span>
               }
             </span>
             <span class="text-[13px] leading-snug text-slate-500">{{ provider.description }}</span>
           </div>
-          <!-- Keep GitLab unavailable until the #4151 rollout is verified; enable it in a follow-up PR. -->
+          <!-- Allow dev rollout checks; keep GitLab unavailable in staging and production. -->
           <span class="relative inline-flex">
             <lfx-button
               [label]="provider.id === 'email' ? 'Add email' : 'Continue with ' + provider.name"
               severity="secondary"
               [outlined]="true"
               size="small"
-              [disabled]="provider.id === 'gitlab'"
+              [disabled]="provider.id === 'gitlab' && gitlabLinkingDisabled"
               (onClick)="onSelectProvider(provider)"
               [attr.data-testid]="'provider-action-' + provider.id" />
-            @if (provider.id === 'gitlab') {
+            @if (provider.id === 'gitlab' && gitlabLinkingDisabled) {
               <!-- A child-free tooltip target keeps PrimeNG's focus listener off the disabled .p-component button. -->
               <span
                 class="absolute inset-0 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"

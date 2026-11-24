@@ -28,6 +28,7 @@ import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
 import { Observable, of, Subject } from 'rxjs';
@@ -64,6 +65,8 @@ describe('SidebarNavService', () => {
   const selectedProject = signal<{ slug: string } | null>(null);
   const activeProject = signal<{ uid: string; parent_uid?: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
+  const hasBoardRole = signal(false);
+  const getSocialListeningAccess = vi.fn(() => of({ canView: false, reason: 'none' }));
   const personaLoaded = signal(true);
   const personaLookupFailed = signal(false);
   const marketingOpsEnabled = signal(false);
@@ -117,6 +120,8 @@ describe('SidebarNavService', () => {
     employeeViewOrgUids.set(new Set());
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
+    hasBoardRole.set(false);
+    getSocialListeningAccess.mockReset().mockReturnValue(of({ canView: false, reason: 'none' }));
     personaLoaded.set(true);
     personaLookupFailed.set(false);
     marketingOpsEnabled.set(false);
@@ -149,7 +154,7 @@ describe('SidebarNavService', () => {
         {
           provide: PersonaService,
           useValue: {
-            hasBoardRole: signal(false),
+            hasBoardRole,
             isRootWriter: hasFullFoundationAccess,
             isLFStaff: lfStaff,
             canViewExecutiveDashboards: hasFullFoundationAccess,
@@ -225,6 +230,7 @@ describe('SidebarNavService', () => {
             noteFullAccessAddressed: vi.fn(),
           },
         },
+        { provide: SocialListeningService, useValue: { getAccess: getSocialListeningAccess } },
       ],
     });
   });
@@ -700,20 +706,23 @@ describe('SidebarNavService', () => {
   // Epic #5845: Crowdfunding (Initiatives and Donations) is hidden entirely in the all employee view. An employee holds no
   // writer grant, so Initiatives never lists; Donations lists to every viewer and is the one the view must drop.
   it('drops Crowdfunding Donations in the all employee view, lists no Initiatives, and keeps both pages for a writer in the full view', () => {
+    const uid = '0014100000MgaAAAAA';
+    const engagement = (): SidebarMenuItem[] => sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement');
     activeLens.set('org');
+    orgSegment.set('acme-inc');
     cfOrgDonationsEnabled.set(true);
-    selectedOrgUid.set('0014100000MgaAAAAA');
+    selectedOrgUid.set(uid);
     const grants = TestBed.inject(OrgRoleGrantsService);
-    (grants.writerSet as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set(['0014100000MgaAAAAA']));
+    (grants.writerSet as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set([uid]));
 
-    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toEqual(expect.arrayContaining(['Crowdfunding Initiatives', 'Crowdfunding Donations']));
+    expect(findByLink(engagement(), '/company/acme-inc/initiatives')).toBeDefined();
+    expect(findByLink(engagement(), '/company/acme-inc/donations')).toBeDefined();
 
     (grants.writerSet as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set());
-    (grants.employeeViewOrgUids as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set(['0014100000MgaAAAAA']));
-    const items = labels(TestBed.inject(SidebarNavService).sidebarItems());
+    (grants.employeeViewOrgUids as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set([uid]));
 
-    expect(items).not.toContain('Crowdfunding Initiatives');
-    expect(items).not.toContain('Crowdfunding Donations');
+    expect(findByLink(engagement(), '/company/acme-inc/initiatives')).toBeUndefined();
+    expect(findByLink(engagement(), '/company/acme-inc/donations')).toBeUndefined();
   });
 
   // Crowdfunding Donations is single-company too: its endpoint takes one `orgUid` (#4415, Copilot).
@@ -870,7 +879,7 @@ describe('SidebarNavService', () => {
     expect(findByLink(engagement, '/company/acme-inc/contributions')?.carryQueryParams).not.toContain('participation');
   });
 
-  it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected company', () => {
+  it('shows Initiatives right below Groups on the org lens only for a direct writer on the selected company', () => {
     const orgUid = '001000000000000AAA';
     activeLens.set('org');
     orgSegment.set('acme-inc');
@@ -878,15 +887,17 @@ describe('SidebarNavService', () => {
     const service = TestBed.inject(SidebarNavService);
 
     orgWriterSet.set(new Set(['001000000000000BBB']));
-    expect(findByLink(service.sidebarItems(), '/company/acme-inc/initiatives')).toBeUndefined();
+    expect(findByLink(sectionItems(service.sidebarItems(), 'Company Engagement'), '/company/acme-inc/initiatives')).toBeUndefined();
 
     orgWriterSet.set(new Set([orgUid]));
     const items = service.sidebarItems();
     const itemLabels = labels(items);
-    expect(findByLink(items, '/company/acme-inc/initiatives')).toEqual(
+    expect(findByLink(sectionItems(items, 'Company Engagement'), '/company/acme-inc/initiatives')).toEqual(
       expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: 'sidebar-org-initiatives' })
     );
-    expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('Projects') + 1);
+    expect(itemLabels).not.toContain('Crowdfunding Initiatives');
+    const engagement = labels(sectionItems(items, 'Company Engagement'));
+    expect(engagement.indexOf('Crowdfunding Initiatives')).toBe(engagement.indexOf(COMMITTEE_LABEL.plural) + 1);
   });
 
   describe('the LF Staff Only section', () => {
@@ -942,21 +953,35 @@ describe('SidebarNavService', () => {
     });
   });
 
-  it('shows Donations right after Projects on the org lens with the flag on, without a writer grant (#415)', () => {
+  it('shows Donations right below Groups on the org lens with the flag on, without a writer grant (#415)', () => {
     activeLens.set('org');
     orgSegment.set('acme-inc');
     selectedOrgUid.set('001000000000000AAA');
     const service = TestBed.inject(SidebarNavService);
 
-    expect(findByLink(service.sidebarItems(), '/company/acme-inc/donations')).toBeUndefined();
+    expect(findByLink(sectionItems(service.sidebarItems(), 'Company Engagement'), '/company/acme-inc/donations')).toBeUndefined();
 
     cfOrgDonationsEnabled.set(true);
     const items = service.sidebarItems();
-    expect(findByLink(items, '/company/acme-inc/donations')).toEqual(
+    expect(findByLink(sectionItems(items, 'Company Engagement'), '/company/acme-inc/donations')).toEqual(
       expect.objectContaining({ label: 'Crowdfunding Donations', testId: 'sidebar-org-donations' })
     );
-    expect(findByLink(items, '/company/acme-inc/initiatives')).toBeUndefined();
-    expect(labels(items).indexOf('Crowdfunding Donations')).toBe(labels(items).indexOf('Projects') + 1);
+    expect(findByLink(sectionItems(items, 'Company Engagement'), '/company/acme-inc/initiatives')).toBeUndefined();
+    expect(labels(items)).not.toContain('Crowdfunding Donations');
+    const engagement = labels(sectionItems(items, 'Company Engagement'));
+    expect(engagement.indexOf('Crowdfunding Donations')).toBe(engagement.indexOf(COMMITTEE_LABEL.plural) + 1);
+  });
+
+  it('orders Groups, Crowdfunding Initiatives, then Crowdfunding Donations at the end of Company Engagement', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+    selectedOrgUid.set('001000000000000AAA');
+    orgWriterSet.set(new Set(['001000000000000AAA']));
+    cfOrgDonationsEnabled.set(true);
+
+    const engagement = labels(sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement'));
+
+    expect(engagement.slice(-3)).toEqual([COMMITTEE_LABEL.plural, 'Crowdfunding Initiatives', 'Crowdfunding Donations']);
   });
 
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {
@@ -1190,6 +1215,56 @@ describe('SidebarNavService', () => {
       gatewazeEmbedEnabled.set(true);
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
+  });
+  describe('foundation-lens Metrics for group members (lfx-self-serve-ops#387)', () => {
+    beforeEach(() => {
+      authenticated.set(true);
+      hasFullFoundationAccess.set(false);
+      hasBoardRole.set(true);
+      currentPersona.set('board-member');
+      selectedFoundation.set({ slug: 'tlf' });
+    });
+
+    it('keeps the full Metrics section for the executive-dashboard audience without asking the access endpoint', () => {
+      hasFullFoundationAccess.set(true);
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Health Metrics', 'Social Listening', 'Participating companies']);
+      expect(getSocialListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it('shows only Social Listening when one of the user’s groups on the foundation has the setting on', () => {
+      getSocialListeningAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(getSocialListeningAccess).toHaveBeenCalledWith('tlf');
+      expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Social Listening']);
+    });
+
+    it('does not show Participating companies to a group member', () => {
+      getSocialListeningAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Social Listening']);
+    });
+
+    it('does not probe for an anonymous visitor', () => {
+      authenticated.set(false);
+      TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(getSocialListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it('shows no Metrics section when no group grants access', () => {
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(sectionItems(service.sidebarItems(), 'Metrics')).toEqual([]);
     });
   });
 

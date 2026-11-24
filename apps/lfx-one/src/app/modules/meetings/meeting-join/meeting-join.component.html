@@ -386,7 +386,7 @@
 
                 <!-- Attendance Stats (past meetings) -->
                 @if (hasAttendanceData()) {
-                  <div class="flex items-center gap-4" data-testid="attendance-summary">
+                  <div class="flex flex-wrap items-center gap-2 sm:gap-4 min-w-0 max-w-full" data-testid="attendance-summary">
                     <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
                       <i class="fa-light fa-circle-check text-emerald-500 text-sm"></i>
                       <span class="text-sm font-semibold text-emerald-600">{{ attendedCount() }}</span>
@@ -407,9 +407,11 @@
 
                 <!-- Alert Banner -->
                 @if (isPastMeeting()) {
-                  <div class="bg-gray-50 border border-gray-300 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-past'">
-                    <i class="fa-light fa-clock-rotate-left text-gray-500 text-base"></i>
-                    <p class="text-sm text-gray-700">This meeting has ended.</p>
+                  <div
+                    class="bg-gray-50 border border-gray-300 rounded px-3 py-2 flex items-center gap-2 min-w-0 max-w-full"
+                    [attr.data-testid]="'meeting-alert-past'">
+                    <i class="fa-light fa-clock-rotate-left text-gray-500 text-base shrink-0"></i>
+                    <p class="text-sm text-gray-700 min-w-0 break-words">This meeting has ended.</p>
                   </div>
                 } @else if (messageSeverity() === 'warn') {
                   <div class="bg-amber-50 border border-amber-500/50 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-warn'">

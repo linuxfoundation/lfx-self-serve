@@ -33,11 +33,35 @@
       data-testid="engagement-group-attendance-table">
       <ng-template #header>
         <tr>
-          <th scope="col">Group</th>
+          <th scope="col" [attr.aria-sort]="sorting.headers().group.ariaSort">
+            <lfx-health-metrics-th
+              label="Group"
+              [sort]="sorting.headers().group.state"
+              (sorted)="sorting.toggle('group')"
+              data-testid="engagement-group-attendance-sort-group" />
+          </th>
           <!-- Exact px: the design's 140px attendance column; the middle two share the rest about 5:8. -->
-          <th scope="col" class="w-[12%]">Meetings</th>
-          <th scope="col" class="w-[18%]">Last meeting</th>
-          <th scope="col" class="w-[140px]">Attendance</th>
+          <th scope="col" class="w-[12%]" [attr.aria-sort]="sorting.headers().meetings.ariaSort">
+            <lfx-health-metrics-th
+              label="Meetings"
+              [sort]="sorting.headers().meetings.state"
+              (sorted)="sorting.toggle('meetings')"
+              data-testid="engagement-group-attendance-sort-meetings" />
+          </th>
+          <th scope="col" class="w-[18%]" [attr.aria-sort]="sorting.headers().last.ariaSort">
+            <lfx-health-metrics-th
+              label="Last meeting"
+              [sort]="sorting.headers().last.state"
+              (sorted)="sorting.toggle('last')"
+              data-testid="engagement-group-attendance-sort-last" />
+          </th>
+          <th scope="col" class="w-[140px]" [attr.aria-sort]="sorting.headers().attendance.ariaSort">
+            <lfx-health-metrics-th
+              label="Attendance"
+              [sort]="sorting.headers().attendance.state"
+              (sorted)="sorting.toggle('attendance')"
+              data-testid="engagement-group-attendance-sort-attendance" />
+          </th>
         </tr>
       </ng-template>
 

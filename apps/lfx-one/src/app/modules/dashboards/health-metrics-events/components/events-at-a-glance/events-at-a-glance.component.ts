@@ -1,16 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_EVENTS_AT_A_GLANCE_SORT_COLUMNS } from '@lfx-one/shared/constants';
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { buildHealthMetricsEventsAtAGlanceView } from '@lfx-one/shared/utils';
+import { buildHealthMetricsEventsAtAGlanceView, healthMetricsRowSortValue, sortHealthMetricsRows } from '@lfx-one/shared/utils';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { Skeleton } from 'primeng/skeleton';
 import { combineLatest } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -28,7 +31,15 @@ import type {
  */
 @Component({
   selector: 'lfx-events-at-a-glance',
-  imports: [EmptyStateComponent, HealthMetricsCellComponent, HealthMetricsMetricsRowComponent, Skeleton, TableComponent, UiBadgeComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsMetricsRowComponent,
+    HealthMetricsThComponent,
+    Skeleton,
+    TableComponent,
+    UiBadgeComponent,
+  ],
   templateUrl: './events-at-a-glance.component.html',
 })
 export class EventsAtAGlanceComponent {
@@ -49,6 +60,9 @@ export class EventsAtAGlanceComponent {
   protected readonly view: Signal<HealthMetricsEventsAtAGlanceView> = computed(() =>
     buildHealthMetricsEventsAtAGlanceView(this.glance(), this.chrome.selectedRange())
   );
+  /** No arrow by default: the metrics keep their list order. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_EVENTS_AT_A_GLANCE_SORT_COLUMNS, null);
+  protected readonly rows = computed(() => sortHealthMetricsRows(this.view().rows, this.sorting.order(), healthMetricsRowSortValue));
   /** The period was never measured or held nothing; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => this.status() === 'ready' && isEmptyPeriod(this.glance(), this.chrome.selectedRange()));
 

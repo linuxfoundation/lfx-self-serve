@@ -4,7 +4,7 @@ description: How managers change a group's name, type, join mode, visibility, ma
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, settings, join-mode, mailing-lists, delete]
-last_updated: 2026-11-16
+last_updated: 2026-11-23
 intercom_collection: Committees
 ---
 
@@ -73,6 +73,7 @@ Toggle each feature, then **Save Changes**:
 - **Make Group Public**: makes the group visible to all users.
 - **Enable SSO Group**: syncs membership with a Single Sign-On provider.
 - **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board meetings never share their guest list.
+- **Members Can View Social Listening**: lets the board's members view [Social Listening](../../social-listening/) for the whole foundation. Shown for Board groups only. Off by default. Applies to the foundation's own board, not its projects' groups.
 
 With **Business Email Required** or **Enable Voting** on, members who join must give a company name and website.
 

@@ -2,36 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import {
-  EMAIL_ALREADY_CONNECTED_MESSAGE,
-  EMAIL_ALREADY_CONNECTED_STATUS,
-  EMAIL_ALREADY_CONNECTED_SUMMARY,
-  EMAIL_ALREADY_LINKED_MESSAGE,
-  EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
-  EMAIL_CALLBACK_RETRY_MESSAGE,
-  EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
-  EMAIL_CALLBACK_STATUS_PARAM,
-  EMAIL_LINKED_SUPPORT_TITLE,
-  EMAIL_LINKED_SUPPORT_TOAST_KEY,
-  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
-  normalizeTShirtSize,
-  OPEN_PROFILE_BANNER_LINK_CLICKED,
-  PENDING_PROFILE_SAVE_KEY,
-  PROFILE_AUTH_ERROR_MESSAGES,
-  PROFILE_TABS,
-  TSHIRT_SIZES,
-} from '@lfx-one/shared/constants';
-import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
-import { buildDisplayName, buildLinkedEmailSupportMessage, formatMemberSince } from '@lfx-one/shared/utils';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { normalizeTShirtSize, OPEN_PROFILE_BANNER_LINK_CLICKED, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, UserMetadata } from '@lfx-one/shared/interfaces';
+import { buildDisplayName, buildMentorshipLfxProfileFields, formatMemberSince } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { IntercomService } from '@services/intercom.service';
+import { MentorshipService } from '@services/mentorship.service';
+import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
 import { UserService } from '@services/user.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
-import { MessageService } from 'primeng/api';
-import { ToastModule } from 'primeng/toast';
 import { BehaviorSubject, catchError, distinctUntilChanged, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
@@ -41,8 +22,8 @@ import { ProfileVisibilityDrawerComponent } from '../../modules/profile/componen
 import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { OpenProfileBannerComponent } from './open-profile-banner/open-profile-banner.component';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
+import { LinkedEmailSupportToastComponent } from '@components/linked-email-support-toast/linked-email-support-toast.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
-import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
 
 /**
  * ProfileLayoutComponent is the shell for the Profile & Account hub. It provides:
@@ -68,9 +49,7 @@ import { ToastMessageComponent } from '@components/toast-message/toast-message.c
     ProfileVisibilityDrawerComponent,
     OpenProfileBannerComponent,
     PageHeaderComponent,
-    ToastModule,
-    ToastMessageComponent,
-    OpenIntercomDirective,
+    LinkedEmailSupportToastComponent,
   ],
   // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
   // is left; each drawer child shares this injector instance via the providers below. MessageService
@@ -78,30 +57,21 @@ import { ToastMessageComponent } from '@components/toast-message/toast-message.c
   // the root MessageService, so a layout-local instance would shadow it and every toast raised by the
   // drawer/panel/visibility-drawer would be added to a MessageService no <p-toast/> ever consumes. The
   // layout's own keyed <p-toast> (already-linked support) reads the same root instance.
-  providers: [ProfileEditDrawerService, ProfileVisibilityDrawerService],
+  providers: [ProfileEditDrawerService, ProfileVisibilityDrawerService, ProfileAuthReturnService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileLayoutComponent {
-  private static readonly formStateKey = PENDING_PROFILE_SAVE_KEY;
-  // Discard a stored pending-save older than this. Prevents an abandoned profile-edit authorization
-  // from being silently replayed by a later, unrelated profile-auth return (e.g. an email-delete
-  // authorization that now lands on /profile/settings inside this shell).
-  private static readonly pendingSaveTtlMs = 10 * 60 * 1000;
-
   // Private injections
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly injector = inject(Injector);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
   private readonly editDrawer = inject(ProfileEditDrawerService);
   private readonly visibilityDrawer = inject(ProfileVisibilityDrawerService);
-  private readonly messageService = inject(MessageService);
+  private readonly authReturn = inject(ProfileAuthReturnService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly rumService = inject(DataDogRumService);
   private readonly intercomService = inject(IntercomService);
+  private readonly mentorshipService = inject(MentorshipService);
 
   // Refresh trigger for profile data
   private readonly refreshProfile$ = new BehaviorSubject<void>(undefined);
@@ -114,7 +84,6 @@ export class ProfileLayoutComponent {
   private pendingOptimisticMetadata: Partial<UserMetadata> | null = null;
 
   protected readonly tabs: ProfileTab[] = PROFILE_TABS;
-  protected readonly linkedSupportToastKey = EMAIL_LINKED_SUPPORT_TOAST_KEY;
 
   // Profile data from the service (server-fetched). The profile GET is eventually consistent
   // (read-after-write lag in the auth-service), so after a save we apply an optimistic override
@@ -209,33 +178,10 @@ export class ProfileLayoutComponent {
     // queues the reattach/update pair and replays it once the widget script loads.
     afterNextRender(() => this.intercomService.update());
 
-    // Handle Flow C return — restore saved form state and auto-save
-    this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
-      // Keep callback markers intact during SSR; server-side query cleanup becomes an HTTP redirect.
-      if (isPlatformBrowser(this.platformId) && params['success'] === 'profile_token_obtained') {
-        this.handleProfileAuthReturn();
-        // Only read alongside the authorization flag, which on its own never implies an email outcome.
-        this.handleEmailCallbackStatus(params[EMAIL_CALLBACK_STATUS_PARAM], params[EMAIL_LINKED_SUPPORT_CONTEXT_PARAM]);
-        this.clearAuthQueryParams();
-      }
-
-      // hasOwn guard: params['error'] is unvalidated user input — an inherited Object.prototype
-      // key (e.g. 'toString') would otherwise resolve as a truthy, non-string "message".
-      const errorCode = params['error'];
-      if (typeof errorCode === 'string' && Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) {
-        const authErrorMessage = PROFILE_AUTH_ERROR_MESSAGES[errorCode];
-        // Clear any stash so it can't be replayed by a later unrelated Flow C success. Unconditional
-        // by design: an identity-link failure shares these codes too, and a stash still here is orphaned.
-        if (isPlatformBrowser(this.platformId)) {
-          sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
-        }
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Authorization Error',
-          detail: authErrorMessage,
-        });
-        this.clearAuthQueryParams();
-      }
+    // Flow C return: replay a save stashed before the redirect into this hub's optimistic view.
+    this.authReturn.listen((metadata) => {
+      this.syncMentorshipProfiles(metadata);
+      this.applyOptimisticProfileUpdate(metadata);
     });
   }
 
@@ -257,6 +203,7 @@ export class ProfileLayoutComponent {
 
   /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
   public onProfileSaved(metadata: Partial<UserMetadata>): void {
+    this.syncMentorshipProfiles(metadata);
     this.applyOptimisticProfileUpdate(metadata);
 
     // Sync a fresh avatar upload into the shared signal immediately, so the home sidebar/header
@@ -327,6 +274,31 @@ export class ProfileLayoutComponent {
     }
   }
 
+  /**
+   * Copies a new picture or name onto the user's mentor and mentee profiles, which Mentorship shows ahead of the LFX profile
+   * (linuxfoundation/lfx-mentorship#466). Called before the save is merged into `combinedProfile`, so a name is sent only when
+   * it differs from the one saved before; with no profile loaded yet it is sent as saved. The picture is sent only when this
+   * save uploaded one, so an unchanged save never replaces a photo kept in Mentorship with the avatar shown here.
+   *
+   * Copies are queued on `MentorshipService`, which sends them one at a time in save order, so a quick second save cannot be
+   * overtaken by the first. The BFF does nothing for a user with no mentorship record. A failure is only logged, since the
+   * LFX profile did save. The saved name is merged locally either way, so a later save here copies only a name or picture
+   * that changes again; a save from a Mentorship page, whose profile card sends every field, repairs the rows.
+   */
+  private syncMentorshipProfiles(metadata: Partial<UserMetadata>): void {
+    if (this.impersonating()) return;
+
+    const savedUser = this.combinedProfile?.user;
+    const fields = buildMentorshipLfxProfileFields({
+      firstName: metadata.given_name !== savedUser?.first_name ? metadata.given_name : undefined,
+      lastName: metadata.family_name !== savedUser?.last_name ? metadata.family_name : undefined,
+      logoUrl: metadata.picture,
+    });
+    if (Object.keys(fields).length === 0) return;
+
+    this.mentorshipService.queueLfxProfileSync(fields);
+  }
+
   // After a GET populates combinedProfile, re-apply a save that was stashed because no base profile
   // existed when it resolved (Flow C cold return), so an eventually-consistent (pre-save) body can't
   // mask the write. No-op until a real profile record lands (merging a null profile would fabricate one).
@@ -337,165 +309,6 @@ export class ProfileLayoutComponent {
     }
     this.pendingOptimisticMetadata = null;
     this.applyOptimisticProfileUpdate(pending);
-  }
-
-  /**
-   * After returning from Flow C authorization, restore saved form state and auto-save
-   */
-  private handleProfileAuthReturn(): void {
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-
-    const savedState = sessionStorage.getItem(ProfileLayoutComponent.formStateKey);
-    if (!savedState) {
-      return;
-    }
-
-    sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
-
-    // Stored as one of: { savedAt, userMetadata } (drawer's mapped text-field save),
-    // { savedAt, avatarPending, userMetadata? } (avatar-upload redirect, mapped and optional), or the
-    // pre-LFXV2-2933 legacy { savedAt, form } (raw, no avatarPending — mapLegacyFormEnvelope below
-    // preserves its original non-clearing semantics). Discard past the TTL so a stale or abandoned
-    // profile-edit authorization isn't silently replayed by a later, unrelated profile-auth return.
-    let userMetadata: Partial<UserMetadata> | undefined;
-    let avatarPending = false;
-    try {
-      const envelope = JSON.parse(savedState) as {
-        savedAt?: unknown;
-        userMetadata?: Partial<UserMetadata>;
-        form?: Partial<UserMetadata>;
-        avatarPending?: boolean;
-      };
-      if (typeof envelope?.savedAt !== 'number' || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
-        return;
-      }
-      avatarPending = envelope.avatarPending === true;
-      if (envelope.userMetadata) {
-        userMetadata = envelope.userMetadata;
-      } else if (envelope.form) {
-        userMetadata = this.mapLegacyFormEnvelope(envelope.form);
-      }
-    } catch {
-      return;
-    }
-
-    // The selected File can't survive the redirect (sessionStorage can't hold one), so this is the
-    // earliest reliable point to tell the user to re-select their image — a toast shown right before
-    // `window.location.href` in the drawer is wiped by the same-tick navigation before it can be read.
-    if (avatarPending) {
-      this.messageService.add({
-        severity: 'info',
-        summary: 'Authorization complete',
-        detail: 'Please re-select your image to upload it.',
-      });
-    }
-
-    if (!userMetadata) {
-      return;
-    }
-
-    const updateData: ProfileUpdateRequest = {
-      user_metadata: userMetadata as UserMetadata,
-    };
-
-    this.userService.updateUserProfile(updateData).subscribe({
-      next: () => {
-        // Optimistic update only — same as the drawer-save path. We intentionally do NOT
-        // refresh here: the profile GET is eventually consistent, so an immediate refetch could
-        // overwrite combinedProfile with the pre-save body and reintroduce stale-on-reopen.
-        this.applyOptimisticProfileUpdate(userMetadata);
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Success',
-          detail: 'Profile updated successfully!',
-        });
-      },
-      error: () => {
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: 'Failed to save profile. Please try again.',
-        });
-      },
-    });
-  }
-
-  /**
-   * Surface the outcome of an email verification the Flow C callback replayed after authorization.
-   * The marker is presentation-only (no email, code, or token), so unknown values are ignored and
-   * no outcome changes identity state locally — already-connected re-fetches the canonical list, while
-   * already-linked and retry outcomes leave identities untouched. Already-linked goes to the layout's
-   * keyed sticky toast after rendering; its private, one-shot context supplies only the proven address.
-   */
-  private handleEmailCallbackStatus(status: unknown, supportHandle?: unknown): void {
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-
-    if (status === EMAIL_ALREADY_CONNECTED_STATUS) {
-      this.messageService.add({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
-      this.userService.refreshUserIdentities();
-    } else if (status === EMAIL_CALLBACK_ALREADY_LINKED_STATUS) {
-      const subject = this.userService.user()?.sub;
-      // MessageService does not replay: the layout's keyed Toast must subscribe before we publish.
-      afterNextRender(
-        () => {
-          this.userService
-            .consumeLinkedEmailSupportContext(supportHandle)
-            .pipe(
-              takeUntilDestroyed(this.destroyRef),
-              filter(() => this.userService.user()?.sub === subject && !this.userService.impersonating())
-            )
-            .subscribe(({ email }) => {
-              this.messageService.add({
-                key: EMAIL_LINKED_SUPPORT_TOAST_KEY,
-                severity: 'warn',
-                summary: EMAIL_LINKED_SUPPORT_TITLE,
-                detail: EMAIL_ALREADY_LINKED_MESSAGE,
-                sticky: true,
-                data: { supportMessage: buildLinkedEmailSupportMessage(email) },
-              });
-            });
-        },
-        { injector: this.injector }
-      );
-    } else if (status === EMAIL_CALLBACK_RETRY_REQUIRED_STATUS) {
-      this.messageService.add({ severity: 'warn', summary: 'Email not verified', detail: EMAIL_CALLBACK_RETRY_MESSAGE });
-    }
-  }
-
-  // Legacy { savedAt, form } envelope (pre-LFXV2-2933 bundle) stored the raw form value. Map it with
-  // the prior `|| undefined` omit-empties rules so a save started before a mid-Flow-C deploy replays
-  // with its original (non-clearing) semantics rather than being silently dropped by the new parser.
-  // Removable once no pre-2933 bundle can still be serving the write path (past the pending-save TTL).
-  private mapLegacyFormEnvelope(form: Partial<UserMetadata>): Partial<UserMetadata> {
-    return {
-      given_name: form.given_name || undefined,
-      family_name: form.family_name || undefined,
-      job_title: form.job_title || undefined,
-      organization: form.organization || undefined,
-      country: form.country || undefined,
-      state_province: form.state_province || undefined,
-      city: form.city || undefined,
-      address: form.address || undefined,
-      postal_code: form.postal_code || undefined,
-      phone_number: form.phone_number || undefined,
-      t_shirt_size: form.t_shirt_size || undefined,
-      bio: form.bio || undefined,
-    };
-  }
-
-  // Strip the Flow C query params (success/error/email_status) while staying on the current tab.
-  // Navigating relative to this.route would resolve to the parent /profile route and
-  // bounce the user to the default tab — so re-navigate to the current path sans query.
-  // Keep the fragment (e.g. #password): router.url serializes as path?query#fragment, so a
-  // naive split('?')[0] would drop it too, breaking deep-link scroll on Flow C return.
-  private clearAuthQueryParams(): void {
-    const [pathAndQuery, fragment] = this.router.url.split('#');
-    const path = pathAndQuery.split('?')[0];
-    this.router.navigateByUrl(fragment ? `${path}#${fragment}` : path, { replaceUrl: true });
   }
 
   // Private init functions

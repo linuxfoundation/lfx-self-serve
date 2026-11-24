@@ -164,6 +164,7 @@ export * from './github-url.constants';
 export * from './health-metrics-engagement.constants';
 export * from './health-metrics-events.constants';
 export * from './health-metrics-l2.constants';
+export * from './health-metrics-bar-chart.constants';
 export * from './health-metrics-column-chart.constants';
 export * from './health-metrics-world-map.constants';
 export * from './health-metrics-line-chart.constants';

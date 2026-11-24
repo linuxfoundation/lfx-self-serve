@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ORG_EVENTS_PAGE_COPY, ORG_EVENTS_ROLL_UP_PAGE_COPY } from '@lfx-one/shared/constants';
 import type { OrgEvent, OrgEventsResponse } from '@lfx-one/shared/interfaces';
 import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { describe, expect, it } from 'vitest';
@@ -11,55 +12,115 @@ import { describe, expect, it } from 'vitest';
 import { OrgEventsTableComponent } from './org-events-table.component';
 
 const EVENT: OrgEvent = {
-  eventId: 'evt-1',
-  eventName: 'Summit',
-  foundation: 'Foundation A',
-  eventStartDate: '2026-12-01',
-  eventEndDate: '2026-12-03',
-  eventLocation: null,
-  eventCity: 'Paris',
-  eventCountry: 'France',
+  eventId: 'event-one',
+  eventName: 'Open Source Summit',
   eventUrl: null,
   eventRegistrationUrl: null,
-  orgAttendeeCount: 12,
-  orgSpeakerAcceptedCount: 2,
-  orgSpeakerSubmittedCount: 5,
-  isOrgSponsor: false,
+  foundation: 'Foundation A',
+  eventStartDate: '2027-03-01',
+  eventEndDate: '2027-03-03',
+  eventCity: 'Denver',
+  eventCountry: 'United States',
+  eventLocation: null,
+  orgAttendeeCount: 3,
+  eventRegistrationsGoal: null,
+  orgSpeakerAcceptedCount: 0,
+  orgSpeakerSubmittedCount: 0,
+  isOrgSponsor: true,
 };
 
-async function render(employeeView: boolean) {
+async function render({
+  rollUp = false,
+  loadFailed = false,
+  events = [EVENT],
+  employeeView = false,
+}: { rollUp?: boolean; loadFailed?: boolean; events?: OrgEvent[]; employeeView?: boolean } = {}) {
   await TestBed.configureTestingModule({
     imports: [OrgEventsTableComponent],
     providers: [provideNoopAnimations(), { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(employeeView) } }],
   }).compileComponents();
+
   const fixture = TestBed.createComponent(OrgEventsTableComponent);
-  const response: OrgEventsResponse = { data: [EVENT], total: 1, pageSize: 10, offset: 0 } as unknown as OrgEventsResponse;
+  const response: OrgEventsResponse = { data: events, total: events.length, pageSize: 10, offset: 0 };
   fixture.componentRef.setInput('eventsResponse', response);
+  fixture.componentRef.setInput('rollUp', rollUp);
+  fixture.componentRef.setInput('loadFailed', loadFailed);
   fixture.detectChanges();
   await fixture.whenStable();
-  fixture.detectChanges();
-  return { el: fixture.nativeElement as HTMLElement, component: fixture.componentInstance };
+  return fixture.nativeElement as HTMLElement;
 }
 
 describe('OrgEventsTableComponent', () => {
-  it('makes the attendee and speaker numbers buttons in the full view', async () => {
-    const { el } = await render(false);
+  it('has no Company column and credits attendees to My Company on a single organization', async () => {
+    const el = await render();
 
-    expect(el.querySelector('[data-testid="org-event-attendees-evt-1"] button')).not.toBeNull();
-    expect(el.querySelector('[data-testid="org-event-speakers-evt-1"] button')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-events-company-header"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-event-company-event-one"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-events-attendees-owner"]')?.textContent?.trim()).toBe('My Company');
+    expect(el.querySelector('[data-testid="org-event-sponsor-event-one"]')?.textContent?.trim()).toBe('Yes');
+  });
+
+  it("follows Event Name with a Company column, one row per company, repeating the event's details", async () => {
+    const el = await render({
+      rollUp: true,
+      events: [
+        { ...EVENT, organization: { accountId: 'acc-a', name: 'Acme Motors, Inc.' }, isOrgSponsor: false },
+        { ...EVENT, organization: { accountId: 'acc-b', name: 'Acme Robotics' } },
+      ],
+    });
+
+    const headers = Array.from(el.querySelectorAll('thead th')).map((th) => th.textContent?.trim() ?? '');
+    expect(headers.indexOf('Company')).toBe(headers.findIndex((text) => text.startsWith('Event Name')) + 1);
+    expect(el.querySelector('[data-testid="org-events-company-header"] button')).toBeNull();
+    expect(el.querySelector('[data-testid="org-event-company-event-one-acc-a"]')?.textContent?.trim()).toBe('Acme Motors, Inc.');
+    expect(el.querySelector('[data-testid="org-event-company-event-one-acc-b"]')?.textContent?.trim()).toBe('Acme Robotics');
+    expect(el.querySelector('[data-testid="org-event-name-event-one-acc-b"]')?.textContent?.trim()).toBe('Open Source Summit');
+  });
+
+  it("reads each company's own Event Sponsor flag", async () => {
+    const el = await render({
+      rollUp: true,
+      events: [
+        { ...EVENT, organization: { accountId: 'acc-a', name: 'Acme Motors, Inc.' }, isOrgSponsor: false },
+        { ...EVENT, organization: { accountId: 'acc-b', name: 'Acme Robotics' } },
+      ],
+    });
+
+    expect(el.querySelector('[data-testid="org-event-sponsor-event-one-acc-a"]')?.textContent?.trim()).toBe('No');
+    expect(el.querySelector('[data-testid="org-event-sponsor-event-one-acc-b"]')?.textContent?.trim()).toBe('Yes');
+  });
+
+  it("credits each row's attendees to that company in a roll-up", async () => {
+    const el = await render({ rollUp: true, events: [{ ...EVENT, organization: { accountId: 'acc-a', name: 'Acme Motors, Inc.' } }] });
+
+    expect(el.querySelector('[data-testid="org-events-attendees-owner"]')?.textContent?.trim()).toBe(ORG_EVENTS_ROLL_UP_PAGE_COPY.attendeesOwner);
+  });
+
+  it("says it could not read the companies' events in a roll-up, and the company's otherwise", async () => {
+    const rollUp = await render({ rollUp: true, loadFailed: true, events: [] });
+    expect(rollUp.querySelector('[data-testid="org-events-load-error"]')?.textContent).toContain(ORG_EVENTS_ROLL_UP_PAGE_COPY.loadError);
+    TestBed.resetTestingModule();
+
+    const single = await render({ loadFailed: true, events: [] });
+    expect(single.querySelector('[data-testid="org-events-load-error"]')?.textContent).toContain(ORG_EVENTS_PAGE_COPY.loadError);
+  });
+
+  // Epic #5845: the all employee view shows the attendee and speaker numbers as plain text, never as a button that opens the panel.
+  it('makes the attendee and speaker numbers buttons in the full view', async () => {
+    const el = await render({ events: [{ ...EVENT, orgAttendeeCount: 12, orgSpeakerAcceptedCount: 2, orgSpeakerSubmittedCount: 5 }] });
+
+    expect(el.querySelector('[data-testid="org-event-attendees-event-one"] button')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-event-speakers-event-one"] button')).not.toBeNull();
   });
 
   it('shows the same numbers as plain text, with no button, in the employee view', async () => {
-    const { el, component } = await render(true);
-    let emitted = 0;
-    component.attendeesClick.subscribe(() => emitted++);
+    const el = await render({ employeeView: true, events: [{ ...EVENT, orgAttendeeCount: 12, orgSpeakerAcceptedCount: 2, orgSpeakerSubmittedCount: 5 }] });
 
-    const attendees = el.querySelector('[data-testid="org-event-attendees-evt-1"]');
-    const speakers = el.querySelector('[data-testid="org-event-speakers-evt-1"]');
+    const attendees = el.querySelector('[data-testid="org-event-attendees-event-one"]');
+    const speakers = el.querySelector('[data-testid="org-event-speakers-event-one"]');
     expect(attendees?.querySelector('button')).toBeNull();
     expect(speakers?.querySelector('button')).toBeNull();
     expect(attendees?.textContent).toContain('12');
     expect(speakers?.textContent).toContain('2 / 5');
-    expect(emitted).toBe(0);
   });
 });

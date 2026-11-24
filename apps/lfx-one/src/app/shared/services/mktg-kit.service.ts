@@ -5,6 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { MKTG_NOT_AVAILABLE_TEXT } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse } from '@lfx-one/shared/interfaces';
 import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
@@ -23,6 +24,7 @@ import {
   switchMap,
   takeUntil,
   tap,
+  throwError,
 } from 'rxjs';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ProjectContextService } from './project-context.service';
@@ -42,7 +44,13 @@ export class MktgKitService {
   private readonly inFlight = new Map<string, Observable<MktgDocumentsResponse>>();
 
   public readonly loading = signal(true);
+  /** A FINAL refusal only (403, 404, 400…): one red line, no Retry. A connection failure is `retrying`, never this. */
   public readonly error = signal('');
+  /**
+   * The server cannot be reached (network, 408, 429, 5xx): the pages show one grey line where the kit is read, keep
+   * whatever is loaded usable, and the page's poller keeps checking. Cleared by the next good read.
+   */
+  public readonly retrying = signal(false);
   /** A denied read resolves access, not private document state. */
   public readonly accessDenied = signal(false);
   /** Quiet refresh denial controls polling only, without changing the existing action/error UI. */
@@ -73,18 +81,20 @@ export class MktgKitService {
             if (scope !== this.loadedScope) this.documents.set(null);
             this.loadedScope = scope;
             this.error.set('');
+            this.retrying.set(false);
             this.accessDenied.set(false);
             if (project) this.contextSeen = true;
             this.loading.set(!!project || !this.contextSeen);
             if (!project) return of(null);
             return this.read(project).pipe(
               catchError((error: HttpErrorResponse) => {
-                this.accessDenied.set(error.status === 403);
-                this.error.set(
-                  error.status === 403 ? 'You need write access to this project to see its Marketing kit.' : 'The Marketing kit could not be loaded. Try again.'
-                );
-                // A same-scope transient failure cannot erase an already measured kit.
-                return of(isTransientHttpError(error) ? this.documents() : null);
+                // A same-scope transient failure cannot erase an already measured kit; the page's poller reads again.
+                if (isTransientHttpError(error)) {
+                  this.retrying.set(true);
+                  return of(this.documents());
+                }
+                this.refuse(error);
+                return of(null);
               })
             );
           }),
@@ -92,7 +102,8 @@ export class MktgKitService {
         )
         .subscribe((documents) => {
           this.documents.set(documents);
-          if (this.contextSeen) this.loading.set(false);
+          // Opened offline: the skeleton stays under the grey line until the poller's first good read.
+          if (this.contextSeen) this.loading.set(this.retrying() && !documents);
         });
     }
   }
@@ -108,19 +119,40 @@ export class MktgKitService {
           if (project !== this.projectUid()) return;
           this.documents.set(documents);
           this.error.set('');
+          this.retrying.set(false);
+          this.loading.set(false);
         }),
         // A scope/reload cancellation must still schedule the visibility poll's next tick.
         defaultIfEmpty(null),
         catchError((error: HttpErrorResponse) => {
-          if (project === this.projectUid() && error.status === 403) this.refreshDenied.set(true);
+          const current = project === this.projectUid();
+          // Rethrown so the shared poller backs off with jitter; it never stops and a wake re-reads at once.
+          if (isTransientHttpError(error)) {
+            if (current) this.retrying.set(true);
+            return throwError(() => error);
+          }
+          if (current) {
+            this.retrying.set(false);
+            // Nothing loaded yet (opened offline, then refused): the refusal is the page's final state.
+            if (!this.documents()) {
+              this.refuse(error);
+              this.loading.set(false);
+            } else if (error.status === 403) this.refreshDenied.set(true);
+          }
           return error.status === 403 ? EMPTY : of(null);
         })
       );
     });
   }
 
+  /** Re-read after an action changed the kit (a rebuild). Not a control: no screen offers a Retry for a failed read. */
   public retry(): void {
     this.reload.update((value) => value + 1);
+  }
+
+  private refuse(error: HttpErrorResponse): void {
+    this.accessDenied.set(error.status === 403);
+    this.error.set(error.status === 403 ? 'You need write access to this project to see its Marketing kit.' : MKTG_NOT_AVAILABLE_TEXT.kit);
   }
 
   /** Initial loads and quiet refreshes share reads only within the same project and discovery/poll mode. */

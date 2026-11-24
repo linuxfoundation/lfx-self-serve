@@ -87,6 +87,7 @@ import type {
   CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
   CampaignServiceMetaCustomAudiences,
+  CampaignServiceMetaLeadForms,
   CampaignServiceLinkedInAdsCreateAccount,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
@@ -131,6 +132,8 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   StoredCreativeAsset,
+  CampaignServiceMetaTargetingSearch,
+  MetaTargetingSearchType,
 } from '@lfx-one/shared/interfaces';
 import { MULTI_CAMPAIGN_PLATFORMS_ENV } from '../constants/campaign-multi.constants';
 import type { Request } from 'express';
@@ -828,6 +831,55 @@ export function canSetMetaOptimizationGoal(): boolean {
 }
 
 /**
+ * Whether a Meta create may carry `metaConfig.leadFormId`, and whether `GET /api/campaigns/meta/lead-forms`
+ * answers (#5940). Needs the campaign-service create path AND the lead-form flag: the legacy creator never
+ * reads the form. Whether the caller may use forms (`global_marketing_ops`) the controller decides per request.
+ */
+export function canSetMetaLeadForm(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaLeadForms);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.targeting.interests`, `behaviors` with `workPositions`, and
+ * `locales` (#5904 row 4), one flag each, each also needing the campaign-service create path.
+ */
+export function canSetMetaInterestTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaInterestTargeting);
+}
+export function canSetMetaBehaviorTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaBehaviorTargeting);
+}
+export function canSetMetaLocaleTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaLocaleTargeting);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.targeting.devicePlatforms` and `userOs` (#5904 row 6), one flag each,
+ * each also needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaDeviceTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaDeviceTargeting);
+}
+export function canSetMetaOsTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaOsTargeting);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.adSchedule` and `frequencyCap` (#5904 row 5), one flag each, each also
+ * needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaAdSchedule(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaAdSchedule);
+}
+export function canSetMetaFrequencyCap(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaFrequencyCap);
+}
+/** Whether `GET /api/campaigns/meta/targeting-search` answers: only while interests or behaviors can be sent. */
+export function canSearchMetaTargeting(): boolean {
+  return canSetMetaInterestTargeting() || canSetMetaBehaviorTargeting();
+}
+
+/**
  * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
  * targeting profile with entries removed.
  *
@@ -1086,6 +1138,13 @@ export class CampaignServiceClient {
         metaCallToActionEnabled: canSetMetaCallToAction(),
         metaConversionEventEnabled: canSetMetaConversionEvent(),
         metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
+        metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
+        metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
+        metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+        metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
+        metaOsTargetingEnabled: canSetMetaOsTargeting(),
+        metaAdScheduleEnabled: canSetMetaAdSchedule(),
+        metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -1164,6 +1223,13 @@ export class CampaignServiceClient {
       metaCallToActionEnabled: canSetMetaCallToAction(),
       metaConversionEventEnabled: canSetMetaConversionEvent(),
       metaOptimizationGoalEnabled: canSetMetaOptimizationGoal(),
+      metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
+      metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
+      metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+      metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
+      metaOsTargetingEnabled: canSetMetaOsTargeting(),
+      metaAdScheduleEnabled: canSetMetaAdSchedule(),
+      metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -3633,6 +3699,54 @@ export class CampaignServiceClient {
       `/projects/${encodePathSegment(projectSlug)}/meta-ads/custom-audiences`,
       'GET',
       q === undefined ? undefined : { q }
+    );
+  }
+
+  /**
+   * The Instant Forms of the Facebook Page a Meta create for this project uses (`list-meta-lead-forms`,
+   * linuxfoundation/lfx-v2-campaign-service#550), for the Implement tab's lead form picker (#5940). Every
+   * status is listed, sorted by name. Upstream answers it on `global_marketing_ops` of the path project, the
+   * relation the BFF checks first. Failures are left to the caller.
+   */
+  public async listMetaLeadForms(req: Request, projectSlug: string): Promise<CampaignServiceMetaLeadForms> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A lead form read requires the project it belongs to.', {
+        operation: 'list_meta_lead_forms',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaLeadForms>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/lead-forms`,
+      'GET'
+    );
+  }
+
+  /**
+   * One page of Meta's targeting taxonomy for the Implement tab's detailed-targeting picker (#5904 row 4):
+   * `search-meta-targeting-options` (linuxfoundation/lfx-v2-campaign-service#612), at most 50 options, cached
+   * upstream for an hour per query. Upstream answers it on `campaign_manager` of the path project, with the same
+   * credentials a create uses. A Meta throttle answers 503 and is not retried. Failures are left to the caller.
+   */
+  public async searchMetaTargetingOptions(
+    req: Request,
+    projectSlug: string,
+    type: MetaTargetingSearchType,
+    query: string
+  ): Promise<CampaignServiceMetaTargetingSearch> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A targeting search requires the project it is made for.', {
+        operation: 'search_meta_targeting_options',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaTargetingSearch>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/meta-ads/targeting-search`,
+      'GET',
+      { type, query }
     );
   }
 

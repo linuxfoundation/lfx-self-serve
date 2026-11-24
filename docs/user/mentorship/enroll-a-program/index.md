@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, enroll, program, logo, terms, prerequisites, review]
 last_generated: 2026-10-26
-last_updated: 2026-11-09
+last_updated: 2026-11-24
 intercom_collection: Mentorship
 ---
 
@@ -49,11 +49,11 @@ If your project has no CII Project ID yet, **Apply for CII** opens the CII Best 
 
 Define the skills mentees need and the term schedule.
 
-| Field                                             | Notes                                                                  |
-| ------------------------------------------------- | ---------------------------------------------------------------------- |
-| **Required and/or desirable skills and training** | Include non-technical areas your program could benefit from            |
-| **Program Terms**                                 | Standard periods, or a custom term. A term name is up to 50 characters |
-| **Open terms**                                    | At most **4** open terms at once                                       |
+| Field                                             | Notes                                                       |
+| ------------------------------------------------- | ----------------------------------------------------------- |
+| **Required and/or desirable skills and training** | Include non-technical areas your program could benefit from |
+| **Program Terms**                                 | Name (up to 50 characters), months and application dates    |
+| **Open terms**                                    | At most **4** open terms at once                            |
 
 ## Step 3 — Prerequisites
 

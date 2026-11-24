@@ -8,7 +8,7 @@
 import { expect, Locator, test } from '@playwright/test';
 
 import { MEETINGS_HOME_TITLES as TITLES } from './fixtures/mock-data';
-import { gotoMeetingsHome, homeRow, homeRows, MEETINGS_HOME_TEST_OPTIONS, rightColumn } from './helpers/meetings-home.helper';
+import { gotoMeetingsHome, homeRow, homeRows, MEETINGS_HOME_TEST_OPTIONS, openMeetingsSearch, rightColumn } from './helpers/meetings-home.helper';
 
 async function box(locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
   await expect(locator).toBeVisible();
@@ -45,7 +45,9 @@ test.describe('Meetings home page - Robust Tests', () => {
       await expect(page.getByTestId('ui-tab-count-past')).toHaveText('2');
       await expect(page.getByTestId('meetings-redesign-list-past')).toBeHidden();
 
-      await expect(page.getByTestId('meetings-redesign-search').getByRole('searchbox')).toBeVisible();
+      // Search starts as a button and opens into its field.
+      await expect(page.getByTestId('meetings-redesign-search-button').getByRole('button', { name: 'Search meetings' })).toBeVisible();
+      await expect(await openMeetingsSearch(page)).toBeVisible();
       await expect(page.getByTestId('meetings-home-filters-button').getByRole('button')).toHaveAttribute('aria-haspopup', 'dialog');
 
       const rail = rightColumn(page);
@@ -172,6 +174,7 @@ test.describe('Meetings home page - Robust Tests', () => {
       await expect(page.getByTestId('meetings-home-empty-upcoming')).toBeVisible();
       await expect(page.getByTestId('meetings-home-list')).toHaveCount(0);
       await expect(page.getByTestId('meetings-redesign-search')).toHaveCount(0);
+      await expect(page.getByTestId('meetings-redesign-search-button')).toHaveCount(0);
       await expect(page.getByTestId('meetings-home-filters-button')).toHaveCount(0);
       await expect(rightColumn(page).getByTestId('meetings-home-next-card-empty')).toBeVisible();
     });
@@ -179,7 +182,7 @@ test.describe('Meetings home page - Robust Tests', () => {
     test('no results state carries the reset action', async ({ page }) => {
       await gotoMeetingsHome(page);
 
-      await page.getByTestId('meetings-redesign-search').getByRole('searchbox').fill('zzz-no-such-meeting');
+      await (await openMeetingsSearch(page)).fill('zzz-no-such-meeting');
       await expect(page.getByTestId('meetings-home-no-results')).toBeVisible();
       await expect(page.getByTestId('meetings-home-no-results-reset').getByRole('button')).toBeEnabled();
       await expect(page.getByTestId('meetings-home-list')).toHaveCount(0);
@@ -194,6 +197,7 @@ test.describe('Meetings home page - Robust Tests', () => {
       test('the tabs, search and Filters share one line without overflowing', async ({ page, isMobile }) => {
         test.skip(isMobile, 'A touch device docks the navbar open; covered by the touch tablet case');
         await gotoMeetingsHome(page);
+        await openMeetingsSearch(page);
 
         const bar = page.getByTestId('meetings-redesign-tabs-bar');
         const tabs = await box(page.getByTestId('meetings-redesign-tabs').getByRole('tablist'));
@@ -214,6 +218,7 @@ test.describe('Meetings home page - Robust Tests', () => {
 
     test('the navbar stays docked, so search and Filters wrap under the tabs inside the bar', async ({ page }) => {
       await gotoMeetingsHome(page);
+      await openMeetingsSearch(page);
 
       const bar = await box(page.getByTestId('meetings-redesign-tabs-bar'));
       const tabs = await box(page.getByTestId('meetings-redesign-tabs').getByRole('tablist'));
@@ -296,6 +301,7 @@ test.describe('Meetings home page - Robust Tests', () => {
       const last = await box(page.getByTestId('meetings-redesign-folded-last-meeting'));
       expect(last.y).toBeGreaterThanOrEqual(next.y + next.height);
 
+      await openMeetingsSearch(page);
       const search = await box(page.getByTestId('meetings-redesign-search'));
       expect((await box(page.getByTestId('meetings-home-filters-button'))).y).toBeGreaterThanOrEqual(search.y + search.height);
       expect(Math.abs(search.width - (await box(page.getByTestId('meetings-redesign-tabs-bar'))).width)).toBeLessThanOrEqual(1);

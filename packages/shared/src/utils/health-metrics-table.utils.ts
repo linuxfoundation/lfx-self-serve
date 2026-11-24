@@ -8,7 +8,9 @@ import {
   HEALTH_METRICS_TABLE_MIN_WIDTH_CAP_PX,
   HEALTH_METRICS_VALUE_BAR_FILL,
 } from '../constants/health-metrics-table.constants';
+import { HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS, HEALTH_METRICS_MEMBERS_RESERVED_TIERS } from '../constants/health-metrics-members.constants';
 
+import type { HealthMetricsMembersReservedTier } from '../interfaces/health-metrics-members.interface';
 import type {
   HealthMetricsBarFillRule,
   HealthMetricsColumnSort,
@@ -48,6 +50,26 @@ export function healthMetricsSortIcon(sort: HealthMetricsColumnSort): string {
   if (sort === 'asc') return 'fa-solid fa-arrow-up';
   if (sort === 'desc') return 'fa-solid fa-arrow-down';
   return 'fa-light fa-arrow-up-arrow-down';
+}
+
+/**
+ * A 0–100 percentage under 1% as Health Metrics shows it: one decimal, "0.1%" to "0.9%", never "0%" above zero (a share
+ * that rounds to 1.0 reads "1%"). `null` for zero, negatives and anything from 1% up, which each caller formats its way.
+ */
+export function formatHealthMetricsSmallPercent(pct: number): string | null {
+  if (!(pct > 0 && pct < 1)) return null;
+  const tenths = smallPercentTenths(pct);
+  return tenths >= 1 ? '1%' : `${tenths.toFixed(1)}%`;
+}
+
+/** A 0–100 percentage as Health Metrics shows it: whole from 1% and at 0, one decimal between them. */
+export function formatHealthMetricsPercent(pct: number): string {
+  return formatHealthMetricsSmallPercent(pct) ?? `${Math.round(pct)}%`;
+}
+
+/** The number `formatHealthMetricsPercent` shows, so a column sorts on what its cell reads. */
+export function healthMetricsShownPercent(pct: number): number {
+  return pct > 0 && pct < 1 ? smallPercentTenths(pct) : Math.round(pct);
 }
 
 /** The sort after a header click: the sorted column flips; any other starts A to Z for text, highest or newest first otherwise. */
@@ -124,6 +146,11 @@ export function sortHealthMetricsRows<T, K extends string>(
   return [...sorted, ...rows.filter(pinned)];
 }
 
+/** A row's sort value from the `sortValues` its view builder records for each column. */
+export function healthMetricsRowSortValue<K extends string>(row: { sortValues: Readonly<Record<K, HealthMetricsSortValue>> }, key: K): HealthMetricsSortValue {
+  return row.sortValues[key];
+}
+
 /** A request's sort, kept only for an allowed column and a known direction; anything else is the table's default order. */
 export function parseHealthMetricsTableSort<K extends string>(key: unknown, direction: unknown, allowed: readonly K[]): HealthMetricsTableSort<K> | null {
   if (typeof key !== 'string' || !(allowed as readonly string[]).includes(key)) return null;
@@ -141,4 +168,18 @@ function isEmptySortValue(value: HealthMetricsSortValue): boolean {
 /** Letters only, so "Non-Member" and "non member" both read `nonmember`. */
 function normalizeTierName(tier: string): string {
   return tier.toLowerCase().replace(/[^a-z]/g, '');
+}
+
+/** The one-decimal value a share under 1% shows: at least 0.1, rounding up to 1 at the top. */
+function smallPercentTenths(pct: number): number {
+  return Math.min(1, Math.max(0.1, Math.round(pct * 10) / 10));
+}
+
+/** A tier as Members shows it: without a trailing "Membership" or "Member", with Diamond, Platinum, Gold and Silver marked for their icon. */
+export function resolveHealthMetricsMembersTier(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
+  const trimmed = raw.trim();
+  const suffix = [' membership', ' member'].find((candidate) => trimmed.toLowerCase().endsWith(candidate));
+  const label = (suffix ? trimmed.slice(0, -suffix.length).trim() : trimmed) || trimmed;
+  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === label.toLowerCase()) ?? null;
+  return { label: reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved] : label, reserved };
 }

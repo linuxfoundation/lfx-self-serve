@@ -8,9 +8,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import {
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_DEFAULT_SORT,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEARCH_DEBOUNCE_MS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_SORT_COLUMNS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED,
   HEALTH_METRICS_EVENTS_QUERY_PARAMS,
   HEALTH_METRICS_L2_RANGES,
@@ -22,6 +24,8 @@ import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.compo
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { catchError, debounce, distinctUntilChanged, map, of, skip, switchMap, tap, timer } from 'rxjs';
 
+import { injectHealthMetricsTableSort } from '../../../components/health-metrics-th/health-metrics-table-sort';
+import { HealthMetricsThComponent } from '../../../components/health-metrics-th/health-metrics-th.component';
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
@@ -39,7 +43,15 @@ import type {
  */
 @Component({
   selector: 'lfx-events-organizations',
-  imports: [EmptyStateComponent, HealthMetricsCellComponent, RouterLink, TableComponent, UiPaginationComponent, UiSearchInputComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsThComponent,
+    RouterLink,
+    TableComponent,
+    UiPaginationComponent,
+    UiSearchInputComponent,
+  ],
   templateUrl: './events-organizations.component.html',
 })
 export class EventsOrganizationsComponent {
@@ -74,9 +86,14 @@ export class EventsOrganizationsComponent {
     ),
     { initialValue: this.searchText() }
   );
-  /** Zero-based, as the pager counts. Any change to the cut restarts paging, since a wider cut's page can sit past a narrower one's end. */
+  /** Sorted on the server across every page; the default keeps the view's rank. */
+  protected readonly sorting = injectHealthMetricsTableSort(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SORT_COLUMNS, HEALTH_METRICS_EVENTS_ORGANIZATIONS_DEFAULT_SORT);
+  /** Zero-based, as the pager counts. Any change to the cut or the order restarts paging, since a wider cut's page can sit past a narrower one's end. */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.range()}|${this.segment()}|${this.search()}`),
+    source: computed(
+      () =>
+        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.range()}|${this.segment()}|${this.search()}|${JSON.stringify(this.sorting.sort())}`
+    ),
     computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 0),
   });
 
@@ -121,6 +138,7 @@ export class EventsOrganizationsComponent {
       search: this.search(),
       offset: this.page() * this.size,
       pageSize: this.size,
+      sort: this.sorting.order(),
     }));
   }
 

@@ -25,9 +25,12 @@ import {
   VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
   VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT,
 } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
   CommentResponseView,
+  CondorcetBallotsKey,
+  CondorcetBallotsRead,
+  CondorcetQuestionView,
   MyVoteBallot,
   MyVoteResponse,
   PollCommentPrompt,
@@ -48,8 +51,12 @@ import {
   VoteResultsResponse,
   VoteResultsSummaryLine,
   VoterResultsState,
+  VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildCondorcetQuestionViews,
+  condorcetBallotsMatchResults,
+  buildCondorcetSummaryLines,
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
@@ -103,6 +110,7 @@ import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vo
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
 import { VoteCommentResultsComponent } from '../components/vote-comment-results/vote-comment-results.component';
+import { VoteCondorcetResultsComponent } from '../components/vote-condorcet-results/vote-condorcet-results.component';
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteMyBallotComponent } from '../components/vote-my-ballot/vote-my-ballot.component';
@@ -153,6 +161,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     VoteCastDrawerComponent,
     VoteCommentItemComponent,
     VoteCommentResultsComponent,
+    VoteCondorcetResultsComponent,
     VoteDetailFactsComponent,
     VoteDetailHeaderComponent,
     VoteMyBallotComponent,
@@ -311,11 +320,37 @@ export class VoteDetailComponent {
   /** Overview results tag — a draft reads "Not open yet", never "Voting in progress". */
   protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary' }> = this.initResultsStatusTag();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
-  protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
-  /** One leader/winner line per question for the Overview results card; the full breakdown stays on the Results tab. */
-  protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = computed(() =>
-    buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed())
+  protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults(), this.vote()?.poll_type));
+  /** Ranked outcomes from main wait for ended status and released final totals. */
+  protected readonly showRankedOutcome: Signal<boolean> = computed(() => this.isEnded() && this.isVoteClosed());
+  /** Condorcet IRV gets its own results layout (#5969); other ranked methods retain main's outcome and standings. */
+  protected readonly isCondorcetPoll: Signal<boolean> = computed(() => this.vote()?.poll_type === PollType.CONDORCET_IRV);
+  /** Managers on Results only; `closed` here means voting ended and final totals were released, not 100% participation. */
+  private readonly condorcetBallotsKey: Signal<CondorcetBallotsKey | null> = this.initCondorcetBallotsKey();
+  private readonly condorcetBallotsRead: Signal<CondorcetBallotsRead | null> = this.initCondorcetBallotsRead();
+  private readonly condorcetBallots: Signal<VoteVoter[] | null> = computed(() => {
+    const read = this.condorcetBallotsRead();
+    if (!this.condorcetBallotsKey()?.active || !read || read.uid !== this.vote()?.uid) return null;
+    return read.voters;
+  });
+  protected readonly condorcetBallotsLoading: Signal<boolean> = computed(() => {
+    const key = this.condorcetBallotsKey();
+    return !!key?.active && this.condorcetBallotsRead()?.uid !== key.uid;
+  });
+  protected readonly condorcetBallotsStale: Signal<boolean> = computed(() => this.condorcetBallots() !== null && this.condorcetBallotsRead()?.stale === true);
+  protected readonly condorcetBallotsConfirming: Signal<boolean> = computed(
+    () => !!this.condorcetBallotsKey()?.active && this.condorcetBallotsRead()?.confirming === true
   );
+  protected readonly condorcetBallotsMismatch: Signal<boolean> = computed(() => {
+    const ballots = this.condorcetBallots();
+    const results = this.voteResults();
+    return this.condorcetBallotsKey()?.closed === true && ballots !== null && !!results && !condorcetBallotsMatchResults(results, ballots);
+  });
+  protected readonly condorcetQuestions: Signal<CondorcetQuestionView[]> = computed(() =>
+    buildCondorcetQuestionViews(this.voteResults(), this.condorcetBallots())
+  );
+  /** One leader/winner line per question for the Overview results card; the full breakdown stays on the Results tab. */
+  protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = this.initOverviewSummary();
   /** The lone generic question that renders as bars on the Overview results card; null for ranked and multi-question votes (#4769). */
   protected readonly overviewQuestion: Signal<VoteResultsQuestion | null> = computed(() => {
     const questions = this.questionsWithResults();
@@ -805,6 +840,85 @@ export class VoteDetailComponent {
       if (this.isActive()) return { value: 'Voting in progress', severity: 'success' };
       return { value: 'Not open yet', severity: 'secondary' };
     });
+  }
+
+  /** Final Condorcet summaries wait for ended status and released totals, matching main's ranked outcome gate. */
+  private initOverviewSummary(): Signal<VoteResultsSummaryLine[]> {
+    return computed(() => {
+      if (this.isCondorcetPoll() && this.showRankedOutcome()) {
+        const lines = buildCondorcetSummaryLines(this.condorcetQuestions(), true);
+        if (lines.length) return lines;
+      }
+      return buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed(), this.showRankedOutcome());
+    });
+  }
+
+  /**
+   * Only managers of named Condorcet votes on Results can read ballots (#5969). A draft skips the voters endpoint
+   * (409). Aggregate counts cannot identify all revised ballot patterns, so eligible live ballots poll independently.
+   */
+  private initCondorcetBallotsKey(): Signal<CondorcetBallotsKey | null> {
+    return computed(() => {
+      const uid = this.vote()?.uid;
+      if (!uid || !this.voteResults() || !this.isCondorcetPoll() || this.audience() !== 'creator' || this.isPseudoAnonymous() || !this.showsResults())
+        return null;
+      return {
+        uid,
+        active: this.activeTab() === 'results',
+        tick: this.refreshTick(),
+        closed: this.isEnded() && this.isVoteClosed(),
+        draft: !this.showVotersTab(),
+      };
+    });
+  }
+
+  /**
+   * Indexed ballots can lag released final totals, so ended votes read through the entire bounded finalization
+   * window, including successful reads. Active votes keep polling even at 100% participation. Visibility wakes
+   * cannot reset the budget. Temporary failures retry with backoff; tab/access/route changes cancel all reads.
+   */
+  private initCondorcetBallotsRead(): Signal<CondorcetBallotsRead | null> {
+    let last: CondorcetBallotsRead | null = null;
+    return toSignal(
+      toObservable(this.condorcetBallotsKey).pipe(
+        distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.active === b?.active && a?.tick === b?.tick && a?.closed === b?.closed && a?.draft === b?.draft),
+        switchMap((key) => {
+          // Tab changes preserve the same eligible vote's cache; route and privacy changes discard it.
+          if (!key || last?.uid !== key.uid) last = null;
+          if (!key?.active) return of(null);
+          if (key.draft) return of({ uid: key.uid, voters: [], stale: false, confirming: false });
+          let attempts = 0;
+          const browser = isPlatformBrowser(this.platformId);
+          const transient = (error: unknown): boolean =>
+            error instanceof HttpErrorResponse && (error.status === 0 || (error.status >= 500 && error.status < 600));
+          const load = () => this.voteService.getVoteVoters(key.uid);
+          const requests = browser
+            ? createVisibilityPoll(this.document, load, VOTE_DETAIL_RESULTS_POLL_OPTIONS)
+            : load().pipe(
+                map((value) => ({ kind: 'ok' as const, value })),
+                catchError((error: unknown) => of({ kind: 'error' as const, error }))
+              );
+          return requests.pipe(
+            takeWhile((event) => {
+              attempts++;
+              const withinBudget = !key.closed || attempts < VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS;
+              return withinBudget && (event.kind === 'ok' || transient(event.error));
+            }, true),
+            map((event) => {
+              const confirming = browser && key.closed && attempts < VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS;
+              if (event.kind === 'ok') {
+                last = { uid: key.uid, voters: event.value.filter((voter): voter is VoteVoter => 'uid' in voter), stale: false, confirming };
+                return last;
+              }
+              console.error('Failed to load Condorcet ballots', { status: event.error instanceof HttpErrorResponse ? event.error.status : undefined });
+              const voters = last?.uid === key.uid ? last.voters : null;
+              return { uid: key.uid, voters, stale: voters !== null, confirming: confirming && transient(event.error) };
+            })
+          );
+        })
+      ),
+      { initialValue: null }
+    );
   }
 
   /** A failed results fetch suppresses comments entirely, so a load failure never reads as "no responses yet". */

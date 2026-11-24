@@ -47,6 +47,7 @@ import {
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
+  getPublicProjectCalendarPath,
   hasMeetingEnded,
   isMeetingAccepted,
   isMeetingHiddenAsDeclined,
@@ -575,7 +576,7 @@ export class MeetingsDashboardComponent {
       if (!slug || (lens !== 'foundation' && lens !== 'project')) {
         return null;
       }
-      return `/projects/${encodeURIComponent(slug)}/calendar`;
+      return getPublicProjectCalendarPath(slug);
     });
   }
 

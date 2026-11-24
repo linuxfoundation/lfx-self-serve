@@ -4,7 +4,7 @@ description: How to add, organize, and find files and links for a meeting in LFX
 audience: [all]
 product_area: Meetings
 tags: [meetings, materials, files, links, documents, attachments, agenda]
-last_updated: 2026-10-28
+last_updated: 2026-11-23
 intercom_collection: Meetings
 ---
 
@@ -67,7 +67,7 @@ The materials appear only on that date's card and page. The meeting editor can't
 
 On a recurring meeting, materials apply to **one occurrence** or to **all occurrences**:
 
-- Under **Applies to**, choose **This occurrence** or **All occurrences** (every date in the series) before you add files or links. New materials default to all occurrences.
+- Under **Applies to**, choose **This occurrence** or **All occurrences** (every date in the series) before you add files or links. New materials default to the current occurrence when the picker is available; choose **All occurrences** explicitly to apply them series-wide.
 - Each existing item shows a **This occurrence** or **All occurrences** label. Use **Limit to this occurrence** or **Apply to all occurrences** to change it, then **Save Changes**.
 - Materials for one occurrence appear only on that date's card and page, and only registrants of that date are notified of them. Materials for all occurrences appear on every date.
 - You can limit materials only to an upcoming occurrence that hasn't been cancelled. If an occurrence is rescheduled, its materials move with it.
