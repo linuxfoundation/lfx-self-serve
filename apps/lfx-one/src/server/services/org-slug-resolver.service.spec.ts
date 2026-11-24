@@ -331,6 +331,14 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
     });
   });
 
+  it('resolves the employee company by its id but not by a slug address, because a membership carries no slug (known limit)', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+    resolveEmployeeView.mockResolvedValue({ eligible: true, org: { orgUid: UID_A, orgName: 'Acme Motors', orgSlug: null } });
+
+    await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ outcome: 'hit', org: { uid: UID_A, employeeView: true } });
+    await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).resolves.toMatchObject({ outcome: 'miss' });
+  });
+
   it('resolves the slug of the employee company when query-service hides it, and never caches that answer', async () => {
     proxyRequest.mockResolvedValue(page([]));
     resolveEmployeeView.mockResolvedValue(eligible);
