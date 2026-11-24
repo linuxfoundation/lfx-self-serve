@@ -240,9 +240,13 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
       path: '/api/campaigns/create',
     } as unknown as Request;
 
-    await expect(new CampaignController().createCampaign(req, res, next)).resolves.toBeUndefined();
-    const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as { statusCode?: number } | undefined;
-    expect(error?.statusCode ?? 200).not.toBe(500);
+    await new CampaignController().createCampaign(req, res, next);
+    // An error with no status is what the error handler answers as a 500 (a TypeError from `in` on a primitive).
+    const error = vi.mocked(next).mock.calls[0]?.[0] as unknown;
+    if (error !== undefined) {
+      expect(error).not.toBeInstanceOf(TypeError);
+      expect((error as { statusCode?: number }).statusCode).toBeLessThan(500);
+    }
   });
 
   it('hands the legacy creator the corrected Germany while the cutover is dark', async () => {
