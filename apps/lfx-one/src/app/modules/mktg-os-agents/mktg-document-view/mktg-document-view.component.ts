@@ -1777,7 +1777,10 @@ export class MktgDocumentViewComponent {
       if (!view) {
         const type = this.runDetail()?.type;
         // A confirmed run with no revision can name its asset; never guess from route params.
-        if (!type || type.agentKey === 'member-360') return '';
+        if (!type) return '';
+        // A Member 360 title waits for its period, which a discarded or superseded run never gets: name the type
+        // instead, so the title placeholder (announced as "Loading…") does not stay over the closure message.
+        if (type.agentKey === 'member-360') return this.closedRun() ? type.label : '';
         const label = mktgKitAssetLabel(type.agentKey) ?? type.itemLabel;
         return `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim();
       }
