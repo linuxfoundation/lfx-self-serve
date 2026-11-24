@@ -238,6 +238,45 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(failing.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
   });
 
+  it('serves the previous membership index while an expired one refreshes, and never waits on the refresh', async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, proxy } = build();
+      await svc.resolve(req(), ORG_UID);
+
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      let release: (value: unknown) => void = () => undefined;
+      proxy.proxyRequest.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+      getEffectiveUsername.mockReturnValue('colleague');
+
+      await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+      expect(proxy.proxyRequest).toHaveBeenCalledTimes(2);
+
+      release(page([[ORG_UID, acme]]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps serving the previous index when a refresh fails, until it is too old', async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, proxy } = build();
+      await svc.resolve(req(), ORG_UID);
+
+      proxy.proxyRequest.mockRejectedValue(new Error('query-service down'));
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      getEffectiveUsername.mockReturnValue('colleague');
+      await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+
+      vi.setSystemTime(Date.now() + 61 * 60 * 1000);
+      getEffectiveUsername.mockReturnValue('third');
+      await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('re-checks every returned membership, and ignores one that is not an active membership', async () => {
     const unrelated = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: 'unrelated.example' }]] });
     await expect(unrelated.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
