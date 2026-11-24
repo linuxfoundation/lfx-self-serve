@@ -391,6 +391,25 @@ describe('publicApiRateLimiter skip (#5964)', () => {
     expect(rejected.statusCode).toBe(429);
   });
 
+  it('does not count share kit reads, which SSR sends over loopback for every visitor', async () => {
+    const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
+    const path = '/events/example-summit-2027/share-kit';
+    for (let attempt = 0; attempt <= PUBLIC_API_LIMIT; attempt++) {
+      expect((await request({ ip, path, method: 'GET' }, publicApiRateLimiter)).allowed, `share kit read ${attempt}`).toBe(true);
+    }
+  });
+
+  it.each([
+    ['POST', '/events/example-summit-2027/share-kit'],
+    ['GET', '/events/example-summit-2027/share-kit/extra'],
+  ])('still counts %s %s', async (method, path) => {
+    const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
+    for (let attempt = 0; attempt < PUBLIC_API_LIMIT; attempt++) {
+      expect((await request({ ip, path, method }, publicApiRateLimiter)).allowed, `public call ${attempt}`).toBe(true);
+    }
+    expect((await request({ ip, path, method }, publicApiRateLimiter)).allowed).toBe(false);
+  });
+
   it('still counts other public routes, such as the project-summary branding lookup', async () => {
     const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
     const path = '/projects/x/summary';

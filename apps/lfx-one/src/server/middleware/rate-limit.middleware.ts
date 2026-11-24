@@ -18,6 +18,7 @@ import {
   SELF_RESEND_INVITE_RATE_LIMIT_WINDOW_MS,
   VOTE_LINK_RATE_LIMIT_MAX,
   VOTE_LINK_RATE_LIMIT_WINDOW_MS,
+  SHARE_KIT_PUBLIC_READ_PATTERN,
   VOTE_LINK_RATE_LIMITED_REQUESTS,
 } from '@lfx-one/shared/constants';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -52,13 +53,19 @@ export const apiRateLimiter = rateLimit({
  *
  * Skips the vote-link routes (#5964): `voteLinkRateLimiter` meters those instead, so a shared office
  * voting by link does not exhaust this budget. `req.path` is mount-relative here (`app.use('/public/api/', …)`).
+ *
+ * Also skips the share kit read (`GET /events/:eventSlug/share-kit`): the page's SSR fetch arrives over loopback, so
+ * every visitor would share one 127.0.0.1 budget and a busy launch would render the kit unavailable for everyone.
+ * The read is an in-memory lookup of repo-owned content.
  */
 export const publicApiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window
   max: 100, // limit each IP to 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => VOTE_LINK_RATE_LIMITED_REQUESTS.some((request) => request === `${req.method} ${req.path}`),
+  skip: (req) =>
+    VOTE_LINK_RATE_LIMITED_REQUESTS.some((request) => request === `${req.method} ${req.path}`) ||
+    ((req.method === 'GET' || req.method === 'HEAD') && SHARE_KIT_PUBLIC_READ_PATTERN.test(req.path)),
 });
 
 /**

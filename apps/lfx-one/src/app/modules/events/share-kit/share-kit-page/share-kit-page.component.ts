@@ -127,6 +127,11 @@ export class ShareKitPageComponent {
     this.track(SHARE_KIT_EVENTS.cfpClick, { foundation: this.kit()?.foundationSlug, link });
   }
 
+  /** `download` only works for same-origin files: graphics on another host open in a new tab instead. */
+  protected isLocalGraphic(graphic: ShareKitGraphic): boolean {
+    return graphic.url.startsWith('/');
+  }
+
   protected onGraphicDownload(graphic: ShareKitGraphic): void {
     this.track(SHARE_KIT_EVENTS.graphicDownload, { foundation: this.kit()?.foundationSlug, label: graphic.label });
   }
@@ -157,6 +162,10 @@ export class ShareKitPageComponent {
                 this.transferState.set(this.stateKey, state);
                 if (state.notFound && this.reqContext) {
                   this.reqContext.notFound = true;
+                }
+                // Error HTML is served with a 5xx so crawlers don't index the unavailable page as the kit.
+                if (state.error && this.reqContext) {
+                  this.reqContext.unavailable = true;
                 }
               }
             }),
