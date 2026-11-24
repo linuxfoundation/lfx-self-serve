@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { TagComponent } from '@components/tag/tag.component';
 import { VoteOverviewOutcome } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -128,5 +130,18 @@ describe('VoteOverviewOutcomeComponent (#6124)', () => {
     expect(byTestId('vote-overview-outcome-explanation')).toBeNull();
     expect(fixture.nativeElement.querySelector('ol')).toBeNull();
     expect(byTestId('vote-overview-outcome-more')).toBeNull();
+  });
+
+  it.each([
+    { result: 'winner', label: 'Winner', winnerTexts: ['Option D'], severity: 'success', icon: 'fa-trophy' },
+    { result: 'tie', label: 'Tied', winnerTexts: ['Option A', 'Option B'], severity: 'secondary', icon: 'fa-scale-balanced' },
+    { result: 'none', label: 'No winner', winnerTexts: [], severity: 'secondary', icon: 'fa-circle-question' },
+  ] as const)('gives a compact $result line a $severity tag and its own icon', ({ result, label, winnerTexts, severity, icon }) => {
+    const section = render(outcome({ result, label, winnerTexts: [...winnerTexts] }), 'compact');
+    const tag = fixture.debugElement.query(By.directive(TagComponent)).componentInstance as TagComponent;
+
+    expect(tag.value()).toBe(label);
+    expect(tag.severity()).toBe(severity);
+    expect(section.querySelector('i')?.classList).toContain(icon);
   });
 });

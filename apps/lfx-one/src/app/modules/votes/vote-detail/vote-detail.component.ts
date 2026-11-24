@@ -842,6 +842,8 @@ export class VoteDetailComponent {
       if (this.isEnded() && !this.isVoteClosed()) {
         return { value: 'Totals pending', severity: 'secondary' };
       } else if (!this.resultsHeld() && this.isVoteClosed()) {
+        // An active vote at 100% participation can still change, so only an ended vote reads as complete (#6124).
+        if (!this.isEnded()) return { value: 'Final results', severity: 'secondary' };
         return { value: 'Final results', severity: 'success', icon: 'fa-light fa-circle-check' };
       }
       if (this.isActive()) return { value: 'Voting in progress', severity: 'success' };

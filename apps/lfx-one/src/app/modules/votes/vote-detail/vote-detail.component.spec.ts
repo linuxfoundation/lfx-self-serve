@@ -3985,6 +3985,25 @@ describe('VoteDetailComponent', () => {
       );
     });
 
+    it.each([
+      { name: 'a manager on a pseudo-anonymous vote', writer: true, pseudoAnonymity: true },
+      { name: 'an invited voter on a named vote', writer: false, pseudoAnonymity: false },
+    ])('shows abstentions as plain text without a voters link for $name', async ({ writer, pseudoAnonymity }) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer } as Project));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.fetchVote.mockReturnValue(
+        of(makeVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE, status: PollStatus.ENDED, allow_abstain: true, pseudo_anonymity: pseudoAnonymity }))
+      );
+      voteService.getVoteResults.mockReturnValue(of(rankedFinalResults()));
+      const fixture = await setupOutcome();
+      const abstain = testId(fixture, 'vote-detail-overview-abstain');
+
+      expect(outcomes(fixture).size).toBe(1);
+      expect(abstain?.tagName).toBe('P');
+      expect(squashed(abstain)).toBe('1 abstention · 33%');
+      expect(testId(fixture, 'vote-detail-overview-abstain-view-voters')).toBeNull();
+    });
+
     it('keeps the first-choice line and the live abstain bar on an active ranked vote', async () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE, allow_abstain: true })));
       voteService.getVoteResults.mockReturnValue(of(rankedFinalResults()));
@@ -4005,6 +4024,15 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-overview-bars')).not.toBeNull();
       expect(testId(fixture, 'vote-detail-overview-abstain')?.querySelector('.bg-slate-300')).not.toBeNull();
       expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'success', icon: 'fa-light fa-circle-check' });
+    });
+
+    it('keeps the neutral final tag on an active vote at full participation', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote()));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeMethodResults(), num_votes_cast: 4 }));
+      const fixture = await setup();
+
+      expect(read(fixture, 'isVoteClosed')).toBe(true);
+      expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'secondary' });
     });
   });
 
