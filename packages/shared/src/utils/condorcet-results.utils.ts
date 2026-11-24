@@ -16,10 +16,15 @@ import type {
   RankedOutcome,
   VoteOverviewOutcome,
   VoteResultsResponse,
-  VoteResultsSummaryLine,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { buildCondorcetSurvivorTiebreaker, buildOverviewOutcome, joinNames, overviewStandingDetail, rankedAnswerChoices, resolveCondorcetOutcome } from './vote-results.utils';
+import {
+  buildCondorcetSurvivorTiebreaker,
+  buildOverviewOutcome,
+  overviewStandingDetail,
+  rankedAnswerChoices,
+  resolveCondorcetOutcome,
+} from './vote-results.utils';
 
 /**
  * Builds the Condorcet IRV results view for each question (#5969), a port of PCC's condorcet-poll-result derivations
@@ -64,28 +69,9 @@ export function condorcetBallotsMatchResults(results: VoteResultsResponse, ballo
 }
 
 /**
- * Builds the vote detail Overview line for each closed Condorcet IRV question (#5969)
- * @param views - Views from `buildCondorcetQuestionViews`
- * @param isClosed - Whether the vote is finalized
- * @returns "Winner: X", "Tied: A and B" or "No winner" per question; empty while the vote is open, so the caller keeps its live summary
- */
-export function buildCondorcetSummaryLines(views: CondorcetQuestionView[], isClosed: boolean): VoteResultsSummaryLine[] {
-  if (!isClosed) return [];
-  return views.map((view) => {
-    let text = 'No winner';
-    if (view.outcome === CondorcetOutcome.CONDORCET_WINNER || view.outcome === CondorcetOutcome.IRV_WINNER) {
-      text = `Winner: ${view.winnerNames[0]}`;
-    } else if (view.outcome === CondorcetOutcome.TIE) {
-      text = `Tied: ${joinNames(view.winnerNames)}`;
-    }
-    return { questionId: view.questionId, question: view.prompt, text };
-  });
-}
-
-/**
  * Builds the vote detail Overview outcome for a closed Condorcet IRV question (#6124)
- * @description Mirrors the Results tab banner of `lfx-vote-condorcet-results` in shorter Overview copy: a Condorcet
- * winner beat every other option head-to-head; an IRV winner came from the instant-runoff fallback (`usedIrv`).
+ * @description Mirrors the Results tab banner of `lfx-vote-condorcet-results` in the same words: a Condorcet winner was
+ * preferred over every other option head-to-head; an IRV winner came from the instant-runoff fallback (`usedIrv`).
  * Standings keep the non-winning rows, capped to `VOTE_OVERVIEW_STANDINGS_LIMIT`.
  * @param view - A view from `buildCondorcetQuestionViews`
  */

@@ -105,7 +105,7 @@ describe('VoteRankedQuestionResultsComponent', () => {
 
       expect(banner(el)?.getAttribute('role')).toBe('status');
       expect(banner(el)?.querySelector('strong')?.textContent).toBe('Candidate One');
-      expect(bannerText(el)).toBe('Candidate One is the winner, having defeated every other candidate in head-to-head matchups.');
+      expect(bannerText(el)).toBe('Candidate One is the winner. Preferred over every other option in head-to-head comparisons.');
       expect(banner(el)?.querySelector('.fa-trophy')).toBeTruthy();
       expect(text(el.querySelector('[data-testid="vote-results-ranked-standing-c1"]'))).toBe(
         squash('1st Candidate One Won 1 out of 1 possible head-to-head matchup Winner')
@@ -127,7 +127,7 @@ describe('VoteRankedQuestionResultsComponent', () => {
       [outcome({ kind: 'irv' }), 'Candidate One is the winner, with a majority of continuing ballots.'],
       [
         outcome({ kind: 'irv', roundCount: 2, condorcetFallback: true }),
-        'No candidate beat every other candidate head-to-head, so the vote went to instant-runoff elimination. Candidate One is the winner after 2 rounds.',
+        'No option beat every other option head-to-head, so instant-runoff elimination decided the result. Candidate One is the winner after 2 rounds.',
       ],
       [outcome({ kind: 'meek_stv', winnerTexts: ['Candidate One'] }), 'Candidate One was elected using Meek STV proportional counting.'],
       [

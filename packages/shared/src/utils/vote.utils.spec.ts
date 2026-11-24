@@ -1709,9 +1709,11 @@ describe('buildRankedOverviewOutcome (#6124)', () => {
   });
 
   it('explains a Condorcet winner and a Condorcet IRV fallback', () => {
-    expect(buildRankedOverviewOutcome(view(irv({ kind: 'condorcet', roundCount: 0 })))?.explanation).toBe('Beat every other option head-to-head.');
+    expect(buildRankedOverviewOutcome(view(irv({ kind: 'condorcet', roundCount: 0 })))?.explanation).toBe(
+      'Preferred over every other option in head-to-head comparisons.'
+    );
     expect(buildRankedOverviewOutcome(view(irv({ condorcetFallback: true })))?.explanation).toBe(
-      'No option beat every other head-to-head, so instant-runoff elimination decided the result.'
+      'No option beat every other option head-to-head, so instant-runoff elimination decided the result.'
     );
   });
 
@@ -1766,7 +1768,7 @@ describe('buildRankedOverviewOutcome (#6124)', () => {
         standing('d', 4, 'eliminated'),
       ])
     );
-    expect(outcome?.standings.map((row) => row.detail)).toEqual(['Won 1 of 3 head-to-head matchups', 'Eliminated in round 2', 'Eliminated']);
+    expect(outcome?.standings.map((row) => row.detail)).toEqual(['Won 1 out of 3 possible head-to-head matchups', 'Eliminated in round 2', 'Eliminated']);
     expect(buildRankedOverviewOutcome(view(irv(), [standing('a', 1, 'winner'), standing('b', 2, 'survivor')]))?.standings[0].detail).toBeNull();
   });
 });
@@ -1881,23 +1883,9 @@ describe('buildVoteResultsSummary (#4450)', () => {
       ...overrides,
     });
 
-    it.each([
-      [outcome({}), 'Candidate D won'],
-      [outcome({ kind: 'irv', roundCount: 3 }), 'Candidate D won'],
-      [outcome({ result: 'tie', winnerTexts: ['Candidate A', 'Candidate B'] }), 'Tied: Candidate A and Candidate B'],
-      [outcome({ kind: 'meek_stv', winnerTexts: ['Candidate A', 'Candidate B', 'Candidate C'] }), 'Elected: Candidate A, Candidate B and Candidate C'],
-      [outcome({ result: 'none', winnerTexts: [] }), 'No winner could be determined'],
-    ])('names the final outcome (%#)', (final, text) => {
-      expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 }, final)], false, true, true)[0].text).toBe(text);
-    });
-
-    it('keeps the first-choice leader before the results are final', () => {
+    it('keeps the first-choice leader, leaving the final outcome to the Overview outcome card (#6124)', () => {
       expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 }, outcome({}))], false, true)[0].text).toBe('Most first choices: a (5 voters)');
-      expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 }, outcome({}))], false, true, false)[0].text).toBe('Most first choices: a (5 voters)');
-    });
-
-    it('keeps the first-choice leader when a final question has no outcome', () => {
-      expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 })], false, true, true)[0].text).toBe('Most first choices: a (5 voters)');
+      expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 })], false, true)[0].text).toBe('Most first choices: a (5 voters)');
     });
   });
 

@@ -1092,7 +1092,7 @@ export interface VoteResultsQuestion {
 /**
  * One-line results summary for a question
  * @description Built by `buildVoteResultsSummary` for the vote detail Overview card, which shows the leading choice
- * (or, for an ended ranked vote, its final outcome) instead of the full breakdown.
+ * instead of the full breakdown; an ended ranked vote's final outcome uses `VoteOverviewOutcome` instead (#6124).
  */
 export interface VoteResultsSummaryLine {
   /** Question identifier */
@@ -1109,7 +1109,7 @@ export interface VoteOverviewStanding {
   choiceText: string;
   /** Competition rank, rendered as an ordinal */
   rank: number;
-  /** e.g. "Won 2 of 3 head-to-head matchups", "Eliminated in round 1" or "Not elected" */
+  /** e.g. "Won 2 out of 3 possible head-to-head matchups", "Eliminated in round 1" or "Not elected" */
   detail: string | null;
 }
 

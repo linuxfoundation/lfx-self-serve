@@ -1043,7 +1043,9 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-overview-summary-question-1')).toBeNull();
       expect(squashed(outcome?.querySelector('[data-testid="vote-overview-outcome-label"]'))).toBe('Winner');
       expect(squashed(outcome?.querySelector('[data-testid="vote-overview-outcome-names"]'))).toBe('Candidate C');
-      expect(squashed(outcome?.querySelector('[data-testid="vote-overview-outcome-explanation"]'))).toBe('Beat every other option head-to-head.');
+      expect(squashed(outcome?.querySelector('[data-testid="vote-overview-outcome-explanation"]'))).toBe(
+        'Preferred over every other option in head-to-head comparisons.'
+      );
       expect(outcome?.querySelectorAll('li')).toHaveLength(2);
       expect(read<{ value: string; severity: string }>(fixture, 'resultsStatusTag')).toMatchObject({ value: 'Final results', severity: 'success' });
     });
@@ -1103,7 +1105,6 @@ describe('VoteDetailComponent', () => {
         expect(read(fixture, 'isVoteClosed')).toBe(true);
         expect(squashed(testId(fixture, 'vote-condorcet-outcome-heading'))).toBe('Candidate C won');
         expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe('Preferred over every other option in head-to-head comparisons.');
-        expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Winner: Candidate C');
         expect(read<Map<string, VoteOverviewOutcome>>(fixture, 'overviewOutcomes').get('question-1')).toMatchObject({ result: 'winner' });
       });
     });

@@ -16,9 +16,9 @@ function outcome(overrides: Partial<VoteOverviewOutcome> = {}): VoteOverviewOutc
     result: 'winner',
     label: 'Winner',
     winnerTexts: ['Option D'],
-    explanation: 'Beat every other option head-to-head.',
+    explanation: 'Preferred over every other option in head-to-head comparisons.',
     standings: [
-      { choiceId: 'a', choiceText: 'Option A', rank: 2, detail: 'Won 2 of 3 head-to-head matchups' },
+      { choiceId: 'a', choiceText: 'Option A', rank: 2, detail: 'Won 2 out of 3 possible head-to-head matchups' },
       { choiceId: 'b', choiceText: 'Option B', rank: 3, detail: null },
     ],
     hiddenCount: 0,
@@ -58,7 +58,7 @@ describe('VoteOverviewOutcomeComponent (#6124)', () => {
     expect(text(byTestId('vote-overview-outcome-label'))).toBe('Winner');
     expect(text(byTestId('vote-overview-outcome-names'))).toBe('Option D');
     expect(byTestId('vote-overview-outcome-names')?.classList).toContain('text-lg');
-    expect(text(byTestId('vote-overview-outcome-explanation'))).toBe('Beat every other option head-to-head.');
+    expect(text(byTestId('vote-overview-outcome-explanation'))).toBe('Preferred over every other option in head-to-head comparisons.');
     const icon = section.querySelector('i');
     expect(icon?.classList).toContain('fa-trophy');
     expect(icon?.getAttribute('aria-hidden')).toBe('true');
@@ -68,7 +68,7 @@ describe('VoteOverviewOutcomeComponent (#6124)', () => {
     render(outcome());
 
     expect(fixture.nativeElement.querySelector('ol')).toBeTruthy();
-    expect(cells('a')).toEqual(['2nd', 'Option A', 'Won 2 of 3 head-to-head matchups']);
+    expect(cells('a')).toEqual(['2nd', 'Option A', 'Won 2 out of 3 possible head-to-head matchups']);
     expect(cells('b')).toEqual(['3rd', 'Option B']);
     expect(byTestId('vote-overview-outcome-more')).toBeNull();
   });

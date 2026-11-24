@@ -14,12 +14,7 @@ import type {
   VoteResultsResponse,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import {
-  buildCondorcetOverviewOutcome,
-  buildCondorcetQuestionViews,
-  buildCondorcetSummaryLines,
-  condorcetBallotsMatchResults,
-} from './condorcet-results.utils';
+import { buildCondorcetOverviewOutcome, buildCondorcetQuestionViews, condorcetBallotsMatchResults } from './condorcet-results.utils';
 import { buildRankedQuestionViews } from './vote-results.utils';
 
 const CHOICES = [
@@ -138,7 +133,7 @@ describe('buildCondorcetQuestionViews', () => {
     );
     expect(v.outcome).toBe(outcome);
     expect(v.winnerNames).toEqual([label]);
-    expect(buildCondorcetSummaryLines([v], true)[0].text).toBe(`Winner: ${label}`);
+    expect(buildCondorcetOverviewOutcome(v)).toMatchObject({ result: 'winner', label: 'Winner', winnerTexts: [label] });
     expect(v.candidates.map((candidate) => candidate.choiceId)).toEqual(['a', 'b', 'c']);
     expect(v.rankSummary).toHaveLength(3);
     expect(v.pairwise).toHaveLength(3);
@@ -183,7 +178,7 @@ describe('buildCondorcetQuestionViews', () => {
     expect(detail.outcome).toBe(CondorcetOutcome.TIE);
     expect(detail.winnerNames).toEqual(['Candidate A', 'Candidate C']);
     expect(detail.candidates.map(({ choiceId }) => choiceId)).toEqual(['a', 'b']);
-    expect(buildCondorcetSummaryLines([detail], true)[0].text).toBe('Tied: Candidate A and Candidate C');
+    expect(buildCondorcetOverviewOutcome(detail)).toMatchObject({ result: 'tie', label: 'Tied', winnerTexts: ['Candidate A', 'Candidate C'] });
     expect(present.outcome?.result).toBe('tie');
     expect(present.outcome?.winnerTexts).toEqual(detail.winnerNames);
     expect(present.standings.filter(({ label }) => label === 'tied').map(({ choiceId }) => choiceId)).toEqual(['a', 'c']);
@@ -197,7 +192,7 @@ describe('buildCondorcetQuestionViews', () => {
     expect(detail.standings[0].choiceText).toBe('Candidate A');
     expect(detail.candidates[0].choiceText).toBe('Candidate A');
     expect(detail.ballotPatterns?.[0].ranking).toEqual(['Candidate A', 'Candidate B']);
-    expect(buildCondorcetSummaryLines([detail], true)[0].text).toBe('Winner: Candidate A');
+    expect(buildCondorcetOverviewOutcome(detail).winnerTexts).toEqual(['Candidate A']);
     expect(present.outcome?.winnerTexts).toEqual(detail.winnerNames);
   });
 
@@ -540,7 +535,8 @@ describe('buildCondorcetQuestionViews', () => {
     expect(present.standings.map(({ choiceId, rank, label }) => ({ choiceId, rank, label }))).toEqual(
       detail.standings.map(({ choiceId, rank }) => ({ choiceId, rank, label: null }))
     );
-    expect(buildCondorcetSummaryLines([detail], true)[0].text).toBe('No winner');
+    // The Overview reads the same outcome as the presenter, never "tied" (#6124).
+    expect(buildCondorcetOverviewOutcome(detail)).toMatchObject({ result: present.outcome?.result, label: 'No winner', winnerTexts: [] });
   });
 
   it.each([
@@ -557,22 +553,6 @@ describe('buildCondorcetQuestionViews', () => {
   it('marks ballot patterns unavailable when no ballots are provided', () => {
     expect(view(question(), null).ballotPatterns).toBeNull();
     expect(view(question(), []).ballotPatterns).toEqual([]);
-  });
-});
-
-describe('buildCondorcetSummaryLines', () => {
-  it('returns nothing while the vote is open', () => {
-    expect(buildCondorcetSummaryLines(buildCondorcetQuestionViews(results(question()), null), false)).toEqual([]);
-  });
-
-  it.each([
-    { name: 'a winner', info: winners(['a']), text: 'Winner: Candidate A' },
-    { name: 'an IRV winner', info: winners(['c'], true), text: 'Winner: Candidate C' },
-    { name: 'a tie', info: winners(['a', 'b'], true), text: 'Tied: Candidate A and Candidate B' },
-    { name: 'no winner', info: winners([], true), text: 'No winner' },
-  ])('reads $name once closed', ({ info, text }) => {
-    const views = buildCondorcetQuestionViews(results(question({ ranked_choice_winner_info: info })), null);
-    expect(buildCondorcetSummaryLines(views, true)).toEqual([{ questionId: 'q1', question: 'Who should chair the board?', text }]);
   });
 });
 
@@ -618,10 +598,10 @@ describe('buildCondorcetOverviewOutcome (#6124)', () => {
       result: 'winner',
       label: 'Winner',
       winnerTexts: ['Candidate A'],
-      explanation: 'Beat every other option head-to-head.',
+      explanation: 'Preferred over every other option in head-to-head comparisons.',
       standings: [
-        { choiceId: 'b', choiceText: 'Candidate B', rank: 2, detail: 'Won 2 of 3 head-to-head matchups' },
-        { choiceId: 'c', choiceText: 'Candidate C', rank: 3, detail: 'Won 1 of 3 head-to-head matchups' },
+        { choiceId: 'b', choiceText: 'Candidate B', rank: 2, detail: 'Won 2 out of 3 possible head-to-head matchups' },
+        { choiceId: 'c', choiceText: 'Candidate C', rank: 3, detail: 'Won 1 out of 3 possible head-to-head matchups' },
       ],
       hiddenCount: 0,
     });
@@ -637,9 +617,9 @@ describe('buildCondorcetOverviewOutcome (#6124)', () => {
     expect(outcome).toMatchObject({
       result: 'winner',
       label: 'Winner',
-      explanation: 'No option beat every other head-to-head, so instant-runoff elimination decided the result.',
+      explanation: 'No option beat every other option head-to-head, so instant-runoff elimination decided the result.',
     });
-    expect(outcome.standings.map((standing) => standing.detail)).toEqual(['Won 1 of 3 head-to-head matchups', 'Eliminated in round 1']);
+    expect(outcome.standings.map((standing) => standing.detail)).toEqual(['Won 1 out of 3 possible head-to-head matchups', 'Eliminated in round 1']);
   });
 
   it('keeps a tie neutral and excludes the tied options from the standings', () => {

@@ -58,7 +58,6 @@ import {
   buildCondorcetOverviewOutcome,
   buildCondorcetQuestionViews,
   condorcetBallotsMatchResults,
-  buildCondorcetSummaryLines,
   buildRankedOverviewOutcome,
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
@@ -354,8 +353,10 @@ export class VoteDetailComponent {
   protected readonly condorcetQuestions: Signal<CondorcetQuestionView[]> = computed(() =>
     buildCondorcetQuestionViews(this.voteResults(), this.condorcetBallots())
   );
-  /** One leader/winner line per question for the Overview results card; the full breakdown stays on the Results tab. */
-  protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = this.initOverviewSummary();
+  /** One leader line per question for the Overview results card; `overviewOutcomes` replaces it once a ranked vote is final (#6124). */
+  protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = computed(() =>
+    buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed())
+  );
   /** Final ranked outcomes for the Overview results card by question id (#6124); empty until the vote has ended with final results. */
   protected readonly overviewOutcomes: Signal<Map<string, VoteOverviewOutcome>> = this.initOverviewOutcomes();
   /** The lone generic question that renders as bars on the Overview results card; null for ranked and multi-question votes (#4769). */
@@ -848,17 +849,6 @@ export class VoteDetailComponent {
       }
       if (this.isActive()) return { value: 'Voting in progress', severity: 'success' };
       return { value: 'Not open yet', severity: 'secondary' };
-    });
-  }
-
-  /** Final Condorcet summaries wait for ended status and released totals, matching main's ranked outcome gate. */
-  private initOverviewSummary(): Signal<VoteResultsSummaryLine[]> {
-    return computed(() => {
-      if (this.isCondorcetPoll() && this.showRankedOutcome()) {
-        const lines = buildCondorcetSummaryLines(this.condorcetQuestions(), true);
-        if (lines.length) return lines;
-      }
-      return buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed(), this.showRankedOutcome());
     });
   }
 

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VOTE_OVERVIEW_STANDINGS_LIMIT } from '../constants/vote.constants';
+import { VOTE_OVERVIEW_STANDINGS_LIMIT, VOTE_RANKED_OUTCOME_EXPLANATIONS } from '../constants/vote.constants';
 import { CondorcetOutcome, PollType } from '../enums/poll.enum';
 import type {
   IndexedPollAnswer,
@@ -448,19 +448,8 @@ export function joinNames(names: string[]): string {
 }
 
 /**
- * Overview line for a ranked question's final outcome: "{X} won", "Tied: {A and B}", "Elected: {A and B}" (Meek STV)
- * or "No winner could be determined"
- */
-function rankedOutcomeSummary(outcome: RankedOutcome): string {
-  if (outcome.result === 'none') return 'No winner could be determined';
-  if (outcome.kind === 'meek_stv') return `Elected: ${joinNames(outcome.winnerTexts)}`;
-  if (outcome.result === 'tie') return `Tied: ${joinNames(outcome.winnerTexts)}`;
-  return `${outcome.winnerTexts[0]} won`;
-}
-
-/**
  * Builds the vote detail Overview outcome for an IRV or Meek STV question (#6124)
- * @description Mirrors the Results tab banner of `lfx-vote-ranked-question-results` in shorter Overview copy. Standings
+ * @description Mirrors the Results tab banner of `lfx-vote-ranked-question-results`, without repeating the names the Overview shows above. Standings
  * keep only the rows after the winners, capped to `VOTE_OVERVIEW_STANDINGS_LIMIT`.
  * @param view - A view from `buildRankedQuestionViews`
  * @returns The outcome, or null when the question has no final outcome
@@ -501,11 +490,11 @@ export function buildOverviewOutcome(questionId: string, prompt: string, outcome
 
 /**
  * Overview standings detail (#6124): "Eliminated in round N" (or "Eliminated") for an eliminated option, otherwise
- * "Won X of Y head-to-head matchups" when head-to-head data exists, otherwise null.
+ * "Won X out of Y possible head-to-head matchups" (the Results tab's wording) when head-to-head data exists, otherwise null.
  */
 export function overviewStandingDetail(eliminated: boolean, round: number | null, headToHeadWins: number, headToHeadTotal: number): string | null {
   if (eliminated) return round !== null ? `Eliminated in round ${round}` : 'Eliminated';
-  if (headToHeadTotal > 0) return `Won ${headToHeadWins} of ${headToHeadTotal} head-to-head ${headToHeadTotal === 1 ? 'matchup' : 'matchups'}`;
+  if (headToHeadTotal > 0) return `Won ${headToHeadWins} out of ${headToHeadTotal} possible head-to-head ${headToHeadTotal === 1 ? 'matchup' : 'matchups'}`;
   return null;
 }
 
@@ -516,42 +505,36 @@ function overviewLabel(outcome: RankedOutcome): VoteOverviewOutcome['label'] {
   return 'Winner';
 }
 
-/** How the outcome was decided, in Overview copy; null for no winner. */
+/** How the outcome was decided, in the Results tab's words; null for no winner, whose names line already says so. */
 function overviewExplanation(outcome: RankedOutcome): string | null {
   if (outcome.result === 'none') return null;
   if (outcome.kind === 'meek_stv') return 'Elected using Meek STV proportional counting.';
-  if (outcome.result === 'tie') return 'No single winner could be determined.';
-  if (outcome.kind === 'condorcet') return 'Beat every other option head-to-head.';
-  if (outcome.condorcetFallback) return 'No option beat every other head-to-head, so instant-runoff elimination decided the result.';
+  if (outcome.result === 'tie') return VOTE_RANKED_OUTCOME_EXPLANATIONS.tie;
+  if (outcome.kind === 'condorcet') return VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetWinner;
+  if (outcome.condorcetFallback) return VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetIrvFallback;
   return outcome.roundCount > 0 ? `Won a majority of continuing ballots in round ${outcome.roundCount}.` : 'Won a majority of continuing ballots.';
 }
 
 /**
  * Builds the one-line-per-question results summary shown on the vote detail Overview
  * @description Generic and majority votes read the leader/tie markers from `questions` without declaring an elected
- * winner or inferring quorum/threshold rules. Ranked votes name the server-computed outcome once the vote has ended and
- * its results are final (`rankedOutcomeFinal`); before that they use the choice(s) with the most rank-1 votes.
- * Abstentions are not part of the summary.
+ * winner or inferring quorum/threshold rules. Ranked votes use the choice(s) with the most rank-1 votes; once a ranked
+ * vote has ended with final results, the Overview shows its outcome from `buildRankedOverviewOutcome` or
+ * `buildCondorcetOverviewOutcome` instead of this line (#6124). Abstentions are not part of the summary.
  * @param questions - Processed plurality questions from `buildVoteResultsQuestions`
  * @param rankedQuestions - Ranked views from `buildRankedQuestionViews`
  * @param isGeneric - Whether the vote renders the plurality layout (otherwise the ranked views are summarised)
  * @param isClosed - Whether the vote is finalized
- * @param rankedOutcomeFinal - Whether the vote has ended with final results, so a ranked question's outcome can be named
  * @returns One VoteResultsSummaryLine per question, in API order
  */
 export function buildVoteResultsSummary(
   questions: VoteResultsQuestion[],
   rankedQuestions: RankedQuestionView[],
   isGeneric: boolean,
-  isClosed: boolean,
-  rankedOutcomeFinal = false
+  isClosed: boolean
 ): VoteResultsSummaryLine[] {
   if (!isGeneric) {
     return rankedQuestions.map((question) => {
-      if (rankedOutcomeFinal && question.outcome) {
-        return { questionId: question.questionId, question: question.prompt, text: rankedOutcomeSummary(question.outcome) };
-      }
-
       const firstChoiceCounts = question.choiceDistributions.map((row) => ({
         text: row.choiceText,
         count: row.rankCounts.find((rc) => rc.rank === 1)?.count ?? 0,

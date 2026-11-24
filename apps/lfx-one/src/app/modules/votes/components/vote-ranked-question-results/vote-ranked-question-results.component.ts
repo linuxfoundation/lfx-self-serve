@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, output, Signal } from '@angular/core';
+import { VOTE_RANKED_OUTCOME_EXPLANATIONS } from '@lfx-one/shared/constants';
 import { RankedOutcomeCopy, RankedQuestionView, RankedStanding, RankedStandingRow } from '@lfx-one/shared/interfaces';
 import { joinNames } from '@lfx-one/shared/utils';
 
@@ -52,16 +53,17 @@ export class VoteRankedQuestionResultsComponent {
       const names = joinNames(outcome.winnerTexts);
       const rounds = outcome.roundCount;
       const roundsText = rounds === 1 ? '1 round' : `${rounds} rounds`;
-      if (outcome.result === 'none') return { lead: 'No winner could be determined.', names: '', tail: '' };
+      if (outcome.result === 'none') return { lead: VOTE_RANKED_OUTCOME_EXPLANATIONS.noWinner, names: '', tail: '' };
       if (outcome.kind === 'meek_stv') {
         const verb = outcome.winnerTexts.length === 1 ? 'was' : 'were';
         return { lead: '', names, tail: ` ${verb} elected using Meek STV proportional counting.` };
       }
-      if (outcome.result === 'tie') return { lead: '', names, tail: ' are tied. No single winner could be determined.' };
-      if (outcome.kind === 'condorcet') return { lead: '', names, tail: ' is the winner, having defeated every other candidate in head-to-head matchups.' };
+      // Condorcet IRV sentences match its Results tab and the Overview word for word (#6124).
+      if (outcome.result === 'tie') return { lead: '', names, tail: ` are tied. ${VOTE_RANKED_OUTCOME_EXPLANATIONS.tie}` };
+      if (outcome.kind === 'condorcet') return { lead: '', names, tail: ` is the winner. ${VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetWinner}` };
       if (outcome.condorcetFallback) {
         return {
-          lead: 'No candidate beat every other candidate head-to-head, so the vote went to instant-runoff elimination. ',
+          lead: `${VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetIrvFallback} `,
           names,
           tail: rounds > 0 ? ` is the winner after ${roundsText}.` : ' is the winner.',
         };

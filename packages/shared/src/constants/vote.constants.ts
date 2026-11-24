@@ -59,6 +59,17 @@ export const VOTE_CONDORCET_RANK_COLORS = [
 export const VOTE_OVERVIEW_STANDINGS_LIMIT = 3;
 
 /**
+ * How a ranked result was decided, worded once for the Results tab, the Overview and the presenter view (#6124), which
+ * must describe the same outcome in the same words.
+ */
+export const VOTE_RANKED_OUTCOME_EXPLANATIONS = {
+  condorcetWinner: 'Preferred over every other option in head-to-head comparisons.',
+  condorcetIrvFallback: 'No option beat every other option head-to-head, so instant-runoff elimination decided the result.',
+  tie: 'No single winner could be determined.',
+  noWinner: 'No winner could be determined.',
+} as const;
+
+/**
  * Response header carrying the BFF-stamped create-completion time (epoch ms) on POST /api/votes (GH-2826);
  * the client echoes it verbatim as `create_completed_at` — the enable route's FGA tuple-propagation grace hint.
  */
