@@ -5,6 +5,7 @@ import {
   ACCOUNT_BASE_PATH,
   ACCOUNT_IDENTITIES_PATH,
   ACCOUNT_LINUX_EMAIL_PATH,
+  ACCOUNT_PERSONAL_INFORMATION_PATH,
   ALLOWED_AVATAR_MIME_TYPES,
   AUTH0_LINKED_ONLY_IDENTITY_COMBOS,
   AUTH0_TO_CDP_PROVIDER_MAP,
@@ -141,6 +142,7 @@ export class ProfileController {
     // Account & Settings pages that start Flow C from their own address (the redesign flag, #6067).
     ACCOUNT_IDENTITIES_PATH,
     ACCOUNT_LINUX_EMAIL_PATH,
+    ACCOUNT_PERSONAL_INFORMATION_PATH,
   ]);
 
   private auth0Service: Auth0Service = new Auth0Service();
@@ -353,7 +355,7 @@ export class ProfileController {
           res.status(403).json({
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: '/api/profile/auth/start?returnTo=/profile',
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.personalInformationReturnTo(req, ProfileController.profileDefaultReturnTo))}`,
           });
           return;
         }
@@ -480,7 +482,7 @@ export class ProfileController {
           res.status(403).json({
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: '/api/profile/auth/start?returnTo=/profile',
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.personalInformationReturnTo(req, ProfileController.profileDefaultReturnTo))}`,
           });
           return;
         }
@@ -652,9 +654,9 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to change the primary email',
-          // Static legacy path (not `referer`, which is the settings page itself and carries no
-          // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_EMAILS_PATH)}`,
+          // From the settings page, a static legacy path (its `referer` carries no fragment): profile.routes.ts's
+          // redirectTo re-attaches #email-settings on return. From Personal information, that page.
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(this.personalInformationReturnTo(req, PROFILE_EMAILS_PATH))}`,
         });
         return;
       }
@@ -3103,6 +3105,14 @@ export class ProfileController {
       default:
         return { status: 502, message: 'Failed to claim the alias. Please try again.' };
     }
+  }
+
+  /**
+   * Where a Flow C round trip for a profile save, photo upload or primary email change returns: the Account & Settings Personal
+   * information page when it started there (#6072), otherwise the page that hosted the change before.
+   */
+  private personalInformationReturnTo(req: Request, fallback: string): string {
+    return this.normalizeReturnTo(req.headers['referer'], fallback) === ACCOUNT_PERSONAL_INFORMATION_PATH ? ACCOUNT_PERSONAL_INFORMATION_PATH : fallback;
   }
 
   private normalizeProfileReturnTo(raw: unknown): string {

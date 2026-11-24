@@ -34,6 +34,8 @@ export class UiChoiceboxGroupComponent implements ControlValueAccessor {
   public readonly type = input<UiChoiceboxType>('radio');
   /** Equal-width columns of tiles. */
   public readonly columns = input<UiChoiceboxColumns>(1);
+  /** Stacks the tiles as one list that shares edges, with only its outer corners rounded, such as a list of addresses. Ignores `columns`. */
+  public readonly joined = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native `name` shared by the radio tiles. Defaults to a unique generated name, so several groups on a page stay independent. */
   public readonly name = input<string>('');
   /** Disables every tile. With reactive forms, disable the control instead (Angular warns when `[disabled]` sits next to `formControl`). */
@@ -115,6 +117,10 @@ export class UiChoiceboxGroupComponent implements ControlValueAccessor {
     return computed(() => {
       // Exact px, not rem: 14px root. 12px between tiles (library spacing-3); minmax(0, 1fr) is what `grid-cols-*` emits.
       const columns = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' };
+      if (this.joined()) {
+        // Tiles overlap by 1px so neighbouring rings draw one line; a hovered or chosen tile sits on top so its whole ring shows.
+        return 'grid grid-cols-1 gap-0 [&>*+*]:-mt-px [&>*:not(:first-child)>label]:rounded-t-none [&>*:not(:last-child)>label]:rounded-b-none [&>*>label:has(:checked)]:z-[1] [&>*>label:hover]:z-[1]';
+      }
       return `grid gap-[12px] ${columns[this.columns()]}`;
     });
   }

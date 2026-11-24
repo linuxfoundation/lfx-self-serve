@@ -21,6 +21,10 @@ import {
  * layout, the profile-edit dialog, and the settings feature.
  */
 export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
+/** Session key for a primary email chosen on Personal information when its save left for Flow C; the page restores it on return. */
+export const PENDING_PRIMARY_EMAIL_KEY = 'lfx_profile_pending_primary_email';
+/** How long a kept primary email choice stays usable, the same as a pending profile save. */
+export const PENDING_PRIMARY_EMAIL_TTL_MS = 10 * 60 * 1000;
 
 /** Opaque one-shot handle for an already-linked callback's private support context; never an email. */
 export const EMAIL_LINKED_SUPPORT_CONTEXT_PARAM = 'email_support_context';
@@ -356,6 +360,33 @@ export const ACCOUNT_BASE_PATH = '/account';
 /** Account & Settings pages that start Flow C from their own address, so the server accepts them as a return path. */
 export const ACCOUNT_IDENTITIES_PATH = '/account/identities';
 export const ACCOUNT_LINUX_EMAIL_PATH = '/account/linux-email';
+export const ACCOUNT_PERSONAL_INFORMATION_PATH = '/account/personal-information';
+
+/** Copy for the Account & Settings Personal information page (#6072). */
+export const PERSONAL_INFORMATION_COPY = {
+  infoSubtitle:
+    'A complete profile helps community members identify and connect with you, enables event organizers to plan in-person meetups, and ensures you receive contributor recognition.',
+  photoHint: 'PNG, JPEG, or WEBP. Max 2MB.',
+  companyHelp: 'Companies in this list come from your work history. Add one there to choose a new company. A company you saved before may still appear.',
+  emailSubtitle: 'The address we send notifications, meeting invites and account messages to. You can choose any verified email on your account.',
+  phoneHint: 'Optional. Only used for urgent event notifications and swag delivery.',
+  tshirtSubtitle: 'We use it to send you swag, like the t-shirts given to speakers, maintainers and event attendees.',
+  saved: 'Personal information updated',
+} as const;
+
+/** Length limits of the Personal information fields; the server rejects longer values. */
+export const PERSONAL_INFORMATION_FIELD_LIMITS = {
+  given_name: 50,
+  family_name: 50,
+  organization: 200,
+  job_title: 100,
+  country: 50,
+  state_province: 50,
+  city: 50,
+  postal_code: 20,
+  address: 200,
+  phone_number: 20,
+} as const;
 
 export const ACCOUNT_SETTINGS_TITLE = 'Account & Settings';
 export const ACCOUNT_DISCARD_CHANGES_TITLE = 'Discard unsaved changes?';

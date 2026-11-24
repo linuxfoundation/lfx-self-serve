@@ -15,6 +15,7 @@ import {
   NAVBAR_MOBILE_TOP_BAR_MEDIA_QUERY,
 } from '@lfx-one/shared/constants';
 import { AccountSettingsNavGroup } from '@lfx-one/shared/interfaces';
+import { AccountProfileService } from '@services/account-profile.service';
 import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { LinkedEmailSupportToastComponent } from '@components/linked-email-support-toast/linked-email-support-toast.component';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
@@ -30,7 +31,7 @@ import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 @Component({
   selector: 'lfx-account-layout',
   imports: [RouterOutlet, RouterLink, RouterLinkActive, LinkedEmailSupportToastComponent, UiButtonComponent],
-  providers: [ProfileAuthReturnService],
+  providers: [ProfileAuthReturnService, AccountProfileService],
   templateUrl: './account-layout.component.html',
   // Negative margins cancel main-layout's page padding, so the white page and its sticky header run edge to edge.
   host: { class: 'block -mx-5 -my-6 md:-mx-8', '(window:scroll)': 'onScroll()', '(window:resize)': 'measureHeader()' },
@@ -39,6 +40,7 @@ export class AccountLayoutComponent {
   private readonly userService = inject(UserService);
   private readonly navbarCollapse = inject(NavbarCollapseService);
   private readonly authReturn = inject(ProfileAuthReturnService);
+  private readonly accountProfile = inject(AccountProfileService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly belowLg = injectIsMobileViewport(NAVBAR_MOBILE_TOP_BAR_MEDIA_QUERY);
   private readonly destroyRef = inject(DestroyRef);
@@ -72,9 +74,8 @@ export class AccountLayoutComponent {
   protected readonly navTopPx: Signal<number> = computed(() => this.headerTopPx() + this.headerHeightPx() + 20);
 
   public constructor() {
-    // A profile save stashed before a Flow C redirect is only written by the hub's edit drawer, which returns to the hub,
-    // so nothing here shows it; the save itself still lands.
-    this.authReturn.listen(() => undefined);
+    // A profile save stashed before a Flow C redirect from Personal information is replayed here, and the page shows it.
+    this.authReturn.listen((metadata) => this.accountProfile.applySaved(metadata));
     // Save or Revert clears the changes and the bar goes with the button that had focus; focus moves to the heading rather
     // than falling back to the page body.
     toObservable(this.showSaveBar)

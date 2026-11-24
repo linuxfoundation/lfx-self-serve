@@ -146,6 +146,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   ACCOUNT_BASE_PATH: '/account',
   ACCOUNT_IDENTITIES_PATH: '/account/identities',
   ACCOUNT_LINUX_EMAIL_PATH: '/account/linux-email',
+  ACCOUNT_PERSONAL_INFORMATION_PATH: '/account/personal-information',
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
   AUTH0_LINKED_ONLY_IDENTITY_COMBOS: new Set(['gitlab+username']),
   AUTH0_TO_CDP_PROVIDER_MAP: auth0ToCdpProviderMap,
@@ -393,11 +394,27 @@ describe('ProfileController.uploadProfilePicture', () => {
     expect(res.json).toHaveBeenCalledWith({
       error: 'management_token_required',
       message: 'Profile authorization required',
-      authorize_url: '/api/profile/auth/start?returnTo=/profile',
+      authorize_url: '/api/profile/auth/start?returnTo=%2Fprofile',
     });
     expect(objectStoreSvc.uploadProfilePicture).not.toHaveBeenCalled();
     expect(userSvc.updateUserMetadata).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the Personal information page', 'https://app.example/account/personal-information', '/account/personal-information'],
+    ['a hub tab', 'https://app.example/profile/identities', '/profile'],
+    ['another allowlisted page', 'https://app.example/account/identities', '/profile'],
+    ['another host', 'https://evil.example/account/personal-information?next=//evil.example', '/account/personal-information'],
+    ['a malformed referer', 'http://[::1', '/profile'],
+  ])('returns Flow C from %s to the page that hosts the profile form', async (_page, referer, returnTo) => {
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+
+    await controller.uploadProfilePicture(buildReq({ headers: { 'content-type': 'image/png', 'content-length': '3', referer } }), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(returnTo)}` }));
   });
 
   it('propagates an object-store upload failure via next(error)', async () => {
@@ -1129,6 +1146,16 @@ describe('ProfileController.setPrimaryEmail', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('returns Flow C to Personal information when the change started there', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+    const req = buildReq({ params: { emailId: 'user@example.com' }, headers: { referer: 'https://app.example/account/personal-information' } });
+
+    await controller.setPrimaryEmail(req, res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ authorize_url: '/api/profile/auth/start?returnTo=%2Faccount%2Fpersonal-information' }));
+  });
+
   // Meeting invites stick to an address, not the primary role (#3983).
   describe('meeting-invite pin', () => {
     const OLD_PRIMARY = 'old-primary@example.com';
@@ -1319,14 +1346,17 @@ describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it.each(['/account/identities', '/account/linux-email'])('keeps the Account & Settings page %s as an allowed returnTo', async (returnTo) => {
-    const res = buildRes();
-    const next = vi.fn();
+  it.each(['/account/identities', '/account/linux-email', '/account/personal-information'])(
+    'keeps the Account & Settings page %s as an allowed returnTo',
+    async (returnTo) => {
+      const res = buildRes();
+      const next = vi.fn();
 
-    await controller.startProfileAuth(buildReq({ query: { returnTo } }), res, next);
+      await controller.startProfileAuth(buildReq({ query: { returnTo } }), res, next);
 
-    expect(res.redirect).toHaveBeenCalledWith(`${returnTo}?error=profile_auth_not_configured`);
-  });
+      expect(res.redirect).toHaveBeenCalledWith(`${returnTo}?error=profile_auth_not_configured`);
+    }
+  );
 
   it('forwards a rejected getAuthorizationUrl to next instead of leaving it unhandled', async () => {
     profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);

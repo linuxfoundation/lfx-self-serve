@@ -38,8 +38,11 @@ export const ACCOUNT_ROUTES: Routes = [
         title: 'Account & Settings',
         loadComponent: () => import('./landing/account-landing.component').then((m) => m.AccountLandingComponent),
       },
-      // Personal information is still the hub's Edit profile drawer until #6072.
-      { path: 'personal-information', redirectTo: '/profile' },
+      {
+        path: 'personal-information',
+        title: 'Personal information',
+        loadComponent: () => import('./personal-information/account-personal-information.component').then((m) => m.AccountPersonalInformationComponent),
+      },
       {
         path: 'work-history',
         title: 'Work history & Affiliations',

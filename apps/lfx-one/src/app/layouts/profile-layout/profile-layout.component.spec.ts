@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, NO_ERRORS_SCHEMA, PLATFORM_ID, signal, TransferState, WritableSignal } from '@angular/core';
+import { Component, computed, NO_ERRORS_SCHEMA, PLATFORM_ID, signal, TransferState, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Toast, ToastModule } from 'primeng/toast';
 import { LinkedEmailSupportToastComponent } from '@components/linked-email-support-toast/linked-email-support-toast.component';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@shared/providers/runtime-config.provider';
+import { PROFILE_REDESIGN_KEY } from '@shared/utils/profile-redesign.util';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
@@ -30,6 +31,9 @@ import { MessageService } from 'primeng/api';
 import { EMPTY, Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ProfileAuthReturnService } from '@services/profile-auth-return.service';
+import { ProfileEditDrawerService } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.service';
+import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfileLayoutComponent } from './profile-layout.component';
 
 // MentorshipService reaches HttpClient, which no setup here provides.
@@ -214,6 +218,64 @@ describe('ProfileLayoutComponent — member-since wiring (#2837)', () => {
     const fixture = await setup({});
 
     expect(fixture.componentInstance.memberSince()).toBe('');
+  });
+});
+
+/** State-only hub: no template, so these tests cost no render. Providers are not inherited, so the layout's own are repeated. */
+@Component({
+  selector: 'lfx-test-profile-layout',
+  template: '',
+  providers: [ProfileEditDrawerService, ProfileVisibilityDrawerService, ProfileAuthReturnService],
+})
+class StateProfileLayoutComponent extends ProfileLayoutComponent {}
+
+describe('ProfileLayoutComponent — Edit profile with the profile redesign (#6072)', () => {
+  async function setup(redesign: boolean) {
+    const navigateByUrl = vi.fn();
+    const profile = { user: { first_name: 'Ada', username: 'ada' }, profile: {} } as unknown as CombinedProfile;
+    TestBed.configureTestingModule({
+      providers: [
+        mentorshipServiceStub(),
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl } },
+        {
+          provide: UserService,
+          useValue: {
+            user: signal({ user_id: 'u1' } as unknown as User),
+            impersonating: signal(false),
+            uploadedAvatarUrl: signal<string | null>(null),
+            effectiveAvatarUrl: computed(() => ''),
+            identitiesRefresh$: EMPTY,
+            getCurrentUserProfile: vi.fn(() => of(profile)),
+            getIdentities: vi.fn(() => of([])),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    TestBed.inject(TransferState).set(PROFILE_REDESIGN_KEY, redesign);
+    const fixture = TestBed.createComponent(StateProfileLayoutComponent);
+    await fixture.whenStable();
+    return { fixture, navigateByUrl, editDrawer: fixture.debugElement.injector.get(ProfileEditDrawerService) };
+  }
+
+  beforeEach(() => TestBed.resetTestingModule());
+
+  it('opens Account & Settings › Personal information instead of the drawer', async () => {
+    const { fixture, navigateByUrl, editDrawer } = await setup(true);
+    fixture.componentInstance.openEditDrawer();
+
+    expect(navigateByUrl).toHaveBeenCalledWith('/account/personal-information');
+    expect(editDrawer.isOpen()).toBe(false);
+  });
+
+  it('still opens the drawer with the flag off', async () => {
+    const { fixture, navigateByUrl, editDrawer } = await setup(false);
+    fixture.componentInstance.openEditDrawer();
+
+    expect(navigateByUrl).not.toHaveBeenCalled();
+    expect(editDrawer.isOpen()).toBe(true);
   });
 });
 
