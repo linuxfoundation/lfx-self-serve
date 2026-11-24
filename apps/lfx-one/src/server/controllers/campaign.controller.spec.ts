@@ -2668,10 +2668,6 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * The Meta Instant Form of a `leads` create (#5940): refused with a 400 while its flag is off (never
-   * dropped), checked by the tab's own rules, answered on `global_marketing_ops`, and sent trimmed.
-   */
-  /**
    * The Meta ad schedule and frequency cap (#5904 row 5), one flag each: refused with a 400 while the flag is off or
    * under another spelling of the key (never dropped), checked by the tab's own rules, and forwarded as checked.
    */
@@ -2735,6 +2731,10 @@ describe('CampaignController.createCampaign cutover', () => {
     });
   });
 
+  /**
+   * The Meta Instant Form of a `leads` create (#5940): refused with a 400 while its flag is off (never
+   * dropped), checked by the tab's own rules, answered on `global_marketing_ops`, and sent trimmed.
+   */
   describe('meta lead form', () => {
     async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
       createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });

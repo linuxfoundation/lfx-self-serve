@@ -37,14 +37,23 @@ function isWholeNumber(value: unknown): value is number {
 }
 
 /**
+ * A key as Go's `encoding/json` matches it: Unicode case folding, under which `ſ` (U+017F) is `s` and the Kelvin sign
+ * is `k`. Upper-casing first catches both, where lower-casing alone does not.
+ */
+function foldKey(key: string): string {
+  return key.toUpperCase().toLowerCase();
+}
+
+/**
  * The delivery field `raw` sends under another spelling of its key, or `null`. campaign-service decodes keys ignoring
- * case, so `AdSchedule` would reach it past every check here; the create route refuses it whatever the flag.
+ * case (Unicode folding), so `AdSchedule` would reach it past every check here; the create route refuses it whatever
+ * the flag.
  */
 export function metaDeliveryKeyVariant(raw: unknown): (typeof KEYS)[number] | null {
   const record = metaConfigRecord(raw);
   if (!record) return null;
   for (const key of Object.keys(record)) {
-    const match = KEYS.find((known) => key !== known && key.toLowerCase() === known.toLowerCase());
+    const match = KEYS.find((known) => key !== known && foldKey(key) === foldKey(known));
     if (match) return match;
   }
   return null;
@@ -82,7 +91,7 @@ export function metaAdScheduleRefusal(raw: unknown): MetaConfigRefusal | null {
   const start = schedule['startMinute'];
   const end = schedule['endMinute'];
   if (!isWholeNumber(start) || !isWholeNumber(end) || start < 0 || end > META_AD_SCHEDULE_MINUTES_PER_DAY || start >= end) {
-    return { field, message: 'The ad schedule must start before it ends, within the day.' };
+    return { field, message: 'The ad schedule needs a start and an end, the start before the end, within the day.' };
   }
   if (start % META_AD_SCHEDULE_STEP_MINUTES !== 0 || end % META_AD_SCHEDULE_STEP_MINUTES !== 0) {
     return { field, message: 'The ad schedule must start and end on the hour.' };

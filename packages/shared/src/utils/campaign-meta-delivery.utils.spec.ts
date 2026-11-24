@@ -19,6 +19,8 @@ describe('metaDeliveryKeyVariant', () => {
     [{ adSchedule: WEEKDAYS }, null],
     [{ AdSchedule: WEEKDAYS }, 'adSchedule'],
     [{ frequencycap: {} }, 'frequencyCap'],
+    // Go folds U+017F (long s) to s, which lower-casing alone misses.
+    [{ ['ad\u017Fchedule']: WEEKDAYS }, 'adSchedule'],
     [{ budgetUsd: 1 }, null],
     [null, null],
   ])('finds another spelling in %j', (raw, expected) => {
@@ -50,9 +52,10 @@ describe('metaAdScheduleRefusal', () => {
     ['no days', lifetime({ ...WEEKDAYS, days: [] }), 'at least one day'],
     ['a day past Saturday', lifetime({ ...WEEKDAYS, days: [7] }), '0 (Sunday) to 6 (Saturday)'],
     ['a fractional day', lifetime({ ...WEEKDAYS, days: [1.5] }), '0 (Sunday) to 6 (Saturday)'],
-    ['an end before the start', lifetime({ ...WEEKDAYS, startMinute: 600, endMinute: 540 }), 'start before it ends'],
-    ['an end past midnight', lifetime({ ...WEEKDAYS, endMinute: 1500 }), 'start before it ends'],
-    ['a text minute', lifetime({ ...WEEKDAYS, startMinute: '540' }), 'start before it ends'],
+    ['an end before the start', lifetime({ ...WEEKDAYS, startMinute: 600, endMinute: 540 }), 'the start before the end'],
+    ['an end past midnight', lifetime({ ...WEEKDAYS, endMinute: 1500 }), 'the start before the end'],
+    ['a text minute', lifetime({ ...WEEKDAYS, startMinute: '540' }), 'the start before the end'],
+    ['no end', lifetime({ days: [1], startMinute: 540 }), 'a start and an end'],
     ['a half hour', lifetime({ ...WEEKDAYS, startMinute: 570 }), 'on the hour'],
   ])('answers %s', (_case, raw, message) => {
     const refusal = metaAdScheduleRefusal(raw);

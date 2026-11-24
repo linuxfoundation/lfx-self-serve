@@ -1318,10 +1318,11 @@ export class CampaignController {
       const metaTargeting = await this.metaTargetingToForward(req, projectSlug, body);
       // The Meta call to action, conversion event and optimization goal (#5934). See `metaAdOptionsToForward`.
       const metaAdOptions = this.metaAdOptionsToForward(body);
+      // The Meta ad schedule and frequency cap (#5904 row 5), checked here, before the lead form's upstream reads,
+      // so a bad one fails fast. See `metaDeliveryOptionsToForward`.
+      const metaDelivery = this.metaDeliveryOptionsToForward(body);
       // The Meta Instant Form of a `leads` create (#5940), or none. See `metaLeadFormToForward`.
       const metaLeadFormIdToSend = await this.metaLeadFormToForward(req, projectSlug, body);
-      // The Meta ad schedule and frequency cap (#5904 row 5). See `metaDeliveryOptionsToForward`.
-      const metaDelivery = this.metaDeliveryOptionsToForward(body);
       const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
 
       // The channel the Google config resolved to, read ONCE for every channel fence below rather
