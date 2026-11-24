@@ -132,6 +132,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
   private readonly loadingInvites = signal(false);
   private readonly loadingImportInvites = signal(false);
+  private readonly loadingSelfInvites = signal(false);
   private readonly importInvites = signal<MemberPendingChanges['importInvites']>(undefined);
 
   // Simple computed signals
@@ -148,7 +149,13 @@ export class CommitteeMembersManagerComponent implements OnInit {
   /** Gates every action that stages/mutates member or invite state — load-in-progress, load-failed, or an active flush. */
   public readonly mutationsDisabled = computed(
     () =>
-      this.loading() || this.committeeLoading() || this.membersLoadFailed() || this.committeeLoadFailed() || this.submitting() || this.loadingImportInvites()
+      this.loading() ||
+      this.committeeLoading() ||
+      this.membersLoadFailed() ||
+      this.committeeLoadFailed() ||
+      this.submitting() ||
+      this.loadingImportInvites() ||
+      this.loadingSelfInvites()
   );
 
   // The signed-in user as a member request for "Add myself" — null without a session email.
@@ -289,7 +296,17 @@ export class CommitteeMembersManagerComponent implements OnInit {
       });
   }
 
-  public openAddMemberDialog(prefill?: Pick<CreateCommitteeMemberRequest, 'email' | 'first_name' | 'last_name'>): void {
+  /**
+   * `prefill` is the signed-in user from addMyself(). When the submitted email is still theirs, the
+   * result is staged like the one-click add: silent, and revoking `selfInviteUids` once created.
+   */
+  public openAddMemberDialog(prefill?: Pick<CreateCommitteeMemberRequest, 'email' | 'first_name' | 'last_name'>, selfInviteUids: string[] = []): void {
+    // Overlay the live Step 3 draft so the form requires what Done/Update is about to save,
+    // matching openCollectInviteDialog() (see the organizationRequirements input).
+    const committee = this.committee();
+    const orgOverrides = this.organizationRequirements();
+    const effectiveCommittee = committee && orgOverrides ? { ...committee, ...orgOverrides } : committee;
+
     const dialogRef = this.dialogService.open(MemberFormComponent, {
       header: 'Add Member',
       width: '700px',
@@ -298,23 +315,26 @@ export class CommitteeMembersManagerComponent implements OnInit {
       data: {
         isEditing: false,
         wizardMode: true, // Don't call API, return data instead
-        committee: this.committee(),
+        committee: effectiveCommittee,
         prefill,
       },
     }) as DynamicDialogRef;
 
     dialogRef.onClose.pipe(take(1)).subscribe((result: CreateCommitteeMemberRequest | undefined) => {
-      if (result) {
-        this.handleAddMemberResult(result);
+      if (!result) {
+        return;
       }
+      const isSelf = !!prefill && result.email.trim().toLowerCase() === prefill.email.trim().toLowerCase();
+      this.handleAddMemberResult(isSelf ? this.toSelfStagedRequest(result, selfInviteUids) : result);
     });
   }
 
   /**
    * Stages the signed-in user as a new member in one click. When the group or the user's profile
    * needs more than a name and email (voting, a business email, or a missing name), opens Add with
-   * details prefilled instead, since the member form requires those fields. No createOptions are
-   * passed, so no notification email goes to the user themselves (#6117).
+   * details prefilled instead, since the member form requires those fields. The member is created
+   * with skipNotification, so the user gets no email about adding themselves, and any invitation
+   * still pending for them on a saved group is revoked once they're created, as CSV import does (#6117).
    */
   public addMyself(): void {
     const request = this.selfMemberRequest();
@@ -322,19 +342,45 @@ export class CommitteeMembersManagerComponent implements OnInit {
       return;
     }
 
-    // Live Step 3 draft overrides the persisted snapshot, mirroring votingEnabled.
-    const businessEmailRequired = this.organizationRequirements()?.business_email_required ?? this.committee()?.business_email_required ?? false;
-    if (selfMemberNeedsDetails(request, { business_email_required: businessEmailRequired, enable_voting: this.votingEnabled() })) {
-      this.openAddMemberDialog(request);
+    const committeeId = this.committeeId();
+    const committeeUid = this.committee()?.uid;
+    if (!committeeId || !committeeUid) {
+      // No saved group yet, so no invitation to the user can exist.
+      this.stageSelf(request, []);
       return;
     }
 
-    this.handleAddMemberResult(request);
-    this.messageService.add({
-      severity: 'success',
-      summary: 'Added to members',
-      detail: "You're on the member list. Select Done or Update Group to save.",
-    });
+    this.loadingSelfInvites.set(true);
+    this.committeeService
+      .getCommitteeInvites(committeeUid, new HttpParams().set('require_complete', 'true'))
+      .pipe(
+        take(1),
+        finalize(() => this.loadingSelfInvites.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (invites) => {
+          this.loadingSelfInvites.set(false);
+          if (this.mutationsDisabled() || !this.canAddSelf() || this.committeeId() !== committeeId || this.committee()?.uid !== committeeUid) {
+            return;
+          }
+          const email = request.email.toLowerCase();
+          const inviteUids = invites
+            .filter((invite) => (invite.status ?? '').toLowerCase() === 'pending' && (invite.invitee_email ?? '').trim().toLowerCase() === email)
+            .map((invite) => invite.uid);
+          this.stageSelf(request, inviteUids);
+        },
+        // Staging without the check could leave a pending invitation next to the new membership.
+        error: (error: { status?: number }) => {
+          console.error('Failed to load invitations for Add myself', { status: error.status });
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Add You',
+            detail: 'Could not check your existing invitations. Please try again.',
+            life: 6000,
+          });
+        },
+      });
   }
 
   public openEditMemberDialog(member: CommitteeMemberWithState): void {
@@ -561,6 +607,31 @@ export class CommitteeMembersManagerComponent implements OnInit {
   private handleAddMemberResult(memberData: StagedCommitteeMemberRequest): void {
     this.membersWithState.update((members) => [...members, this.createPendingMember(memberData)]);
     this.emitMemberUpdates();
+  }
+
+  /** Stages the signed-in user in one click, or opens Add with details prefilled when the form needs more. */
+  private stageSelf(request: Pick<CreateCommitteeMemberRequest, 'email' | 'first_name' | 'last_name'>, selfInviteUids: string[]): void {
+    // Live Step 3 draft overrides the persisted snapshot, mirroring votingEnabled.
+    const businessEmailRequired = this.organizationRequirements()?.business_email_required ?? this.committee()?.business_email_required ?? false;
+    if (selfMemberNeedsDetails(request, { business_email_required: businessEmailRequired, enable_voting: this.votingEnabled() })) {
+      this.openAddMemberDialog(request, selfInviteUids);
+      return;
+    }
+
+    this.handleAddMemberResult(this.toSelfStagedRequest(request, selfInviteUids));
+    this.messageService.add({
+      severity: 'success',
+      summary: 'Added to members',
+      detail: "You're on the member list. Select Done or Update Group to save.",
+    });
+  }
+
+  private toSelfStagedRequest(request: CreateCommitteeMemberRequest, selfInviteUids: string[]): StagedCommitteeMemberRequest {
+    return {
+      ...request,
+      createOptions: { skipNotification: true },
+      ...(selfInviteUids.length > 0 ? { pendingInviteUids: selfInviteUids } : {}),
+    };
   }
 
   private createPendingMember(memberData: StagedCommitteeMemberRequest): CommitteeMemberWithState {
