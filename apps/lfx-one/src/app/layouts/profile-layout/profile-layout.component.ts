@@ -280,9 +280,10 @@ export class ProfileLayoutComponent {
    * it differs from the one saved before; with no profile loaded yet it is sent as saved. The picture is sent only when this
    * save uploaded one, so an unchanged save never replaces a photo kept in Mentorship with the avatar shown here.
    *
-   * The BFF does nothing for a user with no mentorship record. A failure is only logged, since the LFX profile did save. The
-   * saved name is merged locally either way, so a later save here copies only a name or picture that changes again; a save
-   * from a Mentorship page, whose profile card sends every field, repairs the rows.
+   * Copies are queued on `MentorshipService`, which sends them one at a time in save order, so a quick second save cannot be
+   * overtaken by the first. The BFF does nothing for a user with no mentorship record. A failure is only logged, since the
+   * LFX profile did save. The saved name is merged locally either way, so a later save here copies only a name or picture
+   * that changes again; a save from a Mentorship page, whose profile card sends every field, repairs the rows.
    */
   private syncMentorshipProfiles(metadata: Partial<UserMetadata>): void {
     if (this.impersonating()) return;
@@ -295,9 +296,7 @@ export class ProfileLayoutComponent {
     });
     if (Object.keys(fields).length === 0) return;
 
-    this.mentorshipService.syncLfxProfileFields(fields).subscribe({
-      error: (error: unknown) => console.error('profile-layout: copying the LFX profile onto the mentorship profiles failed', error),
-    });
+    this.mentorshipService.queueLfxProfileSync(fields);
   }
 
   // After a GET populates combinedProfile, re-apply a save that was stashed because no base profile

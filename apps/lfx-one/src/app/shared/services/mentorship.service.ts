@@ -18,7 +18,7 @@ import {
   MentorshipTaskCreateResponse,
   MentorshipTaskUpdate,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take, throwError } from 'rxjs';
+import { catchError, concatMap, EMPTY, Observable, of, Subject, take, throwError } from 'rxjs';
 
 import { strictHttpParams } from '../utils/http-params.utils';
 
@@ -34,6 +34,24 @@ import { strictHttpParams } from '../utils/http-params.utils';
 @Injectable({ providedIn: 'root' })
 export class MentorshipService {
   private readonly http = inject(HttpClient);
+
+  // Profile & Account's copies onto the mentorship profiles, sent one at a time in save order (see `queueLfxProfileSync`).
+  private readonly lfxProfileCopies = new Subject<MentorshipLfxProfileFields>();
+
+  public constructor() {
+    this.lfxProfileCopies
+      .pipe(
+        concatMap((fields) =>
+          this.syncLfxProfileFields(fields).pipe(
+            catchError((error: unknown) => {
+              console.error('[MentorshipService] copying the LFX profile onto the mentorship profiles failed', error);
+              return EMPTY;
+            })
+          )
+        )
+      )
+      .subscribe();
+  }
 
   /** `excludeProgramId` leaves that program out, so the edit wizard does not report a program's own name as taken. */
   public isProgramNameAvailable(name: string, excludeProgramId = ''): Observable<MentorshipNameAvailability> {
@@ -77,11 +95,21 @@ export class MentorshipService {
 
   /**
    * Copies the LFX profile's name, email, logo and GitHub link onto the caller's mentor and mentee
-   * profiles; the BFF resolves the email and the link. Not caught here: each caller logs the failure, and the profile card
-   * also tells the user, while Profile & Account (which sends only the name parts or picture a save changed) does not.
+   * profiles; the BFF resolves the email and the link. Not caught here: the profile card logs the failure and tells the user.
+   * Profile & Account goes through `queueLfxProfileSync` instead.
    */
   public syncLfxProfileFields(fields: MentorshipLfxProfileFields): Observable<void> {
     return this.http.patch<void>('/api/mentorship/me/lfx-profile', fields).pipe(take(1));
+  }
+
+  /**
+   * `syncLfxProfileFields` for Profile & Account, where saves can follow each other faster than the copies finish. Copies are
+   * sent one at a time in the order queued, so an older copy can never land after a newer one and leave Mentorship on the
+   * previous name or picture. The queue lives with this root service, so a copy still runs after the user leaves the page. A
+   * failed copy is logged and does not stop the next one.
+   */
+  public queueLfxProfileSync(fields: MentorshipLfxProfileFields): void {
+    this.lfxProfileCopies.next(fields);
   }
 
   /**

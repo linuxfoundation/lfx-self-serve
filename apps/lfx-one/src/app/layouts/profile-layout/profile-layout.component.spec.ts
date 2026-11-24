@@ -27,14 +27,14 @@ import { IntercomService } from '@services/intercom.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
+import { EMPTY, Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileLayoutComponent } from './profile-layout.component';
 
 // MentorshipService reaches HttpClient, which no setup here provides.
 function mentorshipServiceStub() {
-  return { provide: MentorshipService, useValue: { syncLfxProfileFields: vi.fn(() => of(undefined)) } };
+  return { provide: MentorshipService, useValue: { queueLfxProfileSync: vi.fn() } };
 }
 
 /**
@@ -1036,13 +1036,12 @@ describe('ProfileLayoutComponent — rendered linked-email callback support (#55
 describe('ProfileLayoutComponent — copy to Mentorship (lfx-mentorship#466)', () => {
   const PICTURE = 'https://cdn.example.com/avatars/new.png';
 
-  async function setup(options: { impersonating?: boolean; sync?: () => Observable<void>; queryParams?: Record<string, string> } = {}) {
+  async function setup(options: { impersonating?: boolean; queryParams?: Record<string, string> } = {}) {
     const profile = {
       user: { first_name: 'Ada', last_name: 'Lovelace', username: 'ada', email: 'ada@example.com' },
       profile: { bio: 'OLD BIO' },
     } as unknown as CombinedProfile;
-    const syncLfxProfileFields = vi.fn(options.sync ?? (() => of(undefined)));
-    const add = vi.fn();
+    const queueLfxProfileSync = vi.fn();
 
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
@@ -1064,8 +1063,8 @@ describe('ProfileLayoutComponent — copy to Mentorship (lfx-mentorship#466)', (
             applyDisplayName: vi.fn(),
           },
         },
-        { provide: MessageService, useValue: { add } },
-        { provide: MentorshipService, useValue: { syncLfxProfileFields } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MentorshipService, useValue: { queueLfxProfileSync } },
       ],
     });
     TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
@@ -1073,7 +1072,7 @@ describe('ProfileLayoutComponent — copy to Mentorship (lfx-mentorship#466)', (
     const fixture = TestBed.createComponent(ProfileLayoutComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-    return { fixture, syncLfxProfileFields, add };
+    return { fixture, queueLfxProfileSync };
   }
 
   beforeEach(() => {
@@ -1082,63 +1081,51 @@ describe('ProfileLayoutComponent — copy to Mentorship (lfx-mentorship#466)', (
   });
 
   it('copies an uploaded picture, and nothing else', async () => {
-    const { fixture, syncLfxProfileFields } = await setup();
+    const { fixture, queueLfxProfileSync } = await setup();
 
     fixture.componentInstance.onProfileSaved({ picture: PICTURE });
 
-    expect(syncLfxProfileFields).toHaveBeenCalledExactlyOnceWith({ logoUrl: PICTURE });
+    expect(queueLfxProfileSync).toHaveBeenCalledExactlyOnceWith({ logoUrl: PICTURE });
   });
 
   it('sends nothing for a save that changes neither the picture nor the name', async () => {
-    const { fixture, syncLfxProfileFields } = await setup();
+    const { fixture, queueLfxProfileSync } = await setup();
 
     fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Lovelace', bio: 'NEW BIO' });
 
-    expect(syncLfxProfileFields).not.toHaveBeenCalled();
+    expect(queueLfxProfileSync).not.toHaveBeenCalled();
   });
 
   it('copies only the part of the name that changed, without a picture', async () => {
-    const { fixture, syncLfxProfileFields } = await setup();
+    const { fixture, queueLfxProfileSync } = await setup();
 
     fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron', bio: 'NEW BIO' });
 
-    expect(syncLfxProfileFields).toHaveBeenCalledExactlyOnceWith({ lastName: 'Byron' });
+    expect(queueLfxProfileSync).toHaveBeenCalledExactlyOnceWith({ lastName: 'Byron' });
   });
 
   it('compares a later save with the name saved before it, not the name first loaded', async () => {
-    const { fixture, syncLfxProfileFields } = await setup();
+    const { fixture, queueLfxProfileSync } = await setup();
 
     fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron' });
     fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron', bio: 'NEW BIO' });
 
-    expect(syncLfxProfileFields).toHaveBeenCalledOnce();
+    expect(queueLfxProfileSync).toHaveBeenCalledOnce();
   });
 
   it('sends nothing while impersonating', async () => {
-    const { fixture, syncLfxProfileFields } = await setup({ impersonating: true });
+    const { fixture, queueLfxProfileSync } = await setup({ impersonating: true });
 
     fixture.componentInstance.onProfileSaved({ picture: PICTURE });
 
-    expect(syncLfxProfileFields).not.toHaveBeenCalled();
-  });
-
-  it('logs a failed copy without telling the user', async () => {
-    const failure = new Error('mentorship down');
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { fixture, add } = await setup({ sync: () => throwError(() => failure) });
-
-    fixture.componentInstance.onProfileSaved({ picture: PICTURE });
-
-    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('mentorship'), failure);
-    expect(add).not.toHaveBeenCalled();
-    consoleError.mockRestore();
+    expect(queueLfxProfileSync).not.toHaveBeenCalled();
   });
 
   // The replay runs before the first profile GET lands, so there is no saved name to compare with: the name goes as saved.
   it('copies the name of a save replayed after the Flow C authorization', async () => {
     sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), userMetadata: { given_name: 'Augusta', family_name: 'Lovelace' } }));
-    const { syncLfxProfileFields } = await setup({ queryParams: { success: 'profile_token_obtained' } });
+    const { queueLfxProfileSync } = await setup({ queryParams: { success: 'profile_token_obtained' } });
 
-    expect(syncLfxProfileFields).toHaveBeenCalledExactlyOnceWith({ firstName: 'Augusta', lastName: 'Lovelace' });
+    expect(queueLfxProfileSync).toHaveBeenCalledExactlyOnceWith({ firstName: 'Augusta', lastName: 'Lovelace' });
   });
 });
