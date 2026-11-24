@@ -38,7 +38,8 @@ export type OrgLensClaQualification = OrgLensReadQualification | 'cla-manager-sc
 export async function assertOrgLensClaRead(req: Request, orgUid: string, operation: string): Promise<OrgLensClaQualification> {
   let readGateError: unknown;
   try {
-    const qualification = await assertOrgLensRead(req, orgUid, operation);
+    // The employee view is refused here whatever it finds, so the gate is told not to try it: no lookup for a CLA Manager to wait on.
+    const qualification = await assertOrgLensRead(req, orgUid, operation, undefined, undefined, { employeeView: false });
     if (qualification !== 'employee-view') {
       return qualification;
     }

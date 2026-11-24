@@ -42,6 +42,14 @@ describe('assertOrgLensClaRead: employee-view is not admitted', () => {
     await expect(assertOrgLensClaRead(req(method), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
   });
 
+  it('tells the read gate not to try the employee view, so a CLA Manager never waits on that lookup', async () => {
+    mocks.assertOrgLensRead.mockResolvedValue('org-grant');
+
+    await assertOrgLensClaRead(req('GET'), ORG_UID, 'op');
+
+    expect(mocks.assertOrgLensRead).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'op', undefined, undefined, { employeeView: false });
+  });
+
   it('still admits a CLA Manager of the company through the CLA scope', async () => {
     mocks.assertOrgLensRead.mockResolvedValue('employee-view');
     mocks.getScopes.mockResolvedValue(new Set([ORG_UID]));
