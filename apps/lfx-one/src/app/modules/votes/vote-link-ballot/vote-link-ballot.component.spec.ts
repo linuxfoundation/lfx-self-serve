@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { VOTE_LAST_VOTER_CONFIRMATION } from '@lfx-one/shared/constants';
+import { VOTE_LAST_VOTER_CONFIRMATION, VOTE_LINK_RATE_LIMITED_READ_MESSAGE, VOTE_RATE_LIMITED_MESSAGE } from '@lfx-one/shared/constants';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { Confirmation, ConfirmationService } from 'primeng/api';
@@ -356,6 +356,29 @@ describe('VoteLinkBallotComponent (#4363)', () => {
 
     expect(state()).toBe('ready');
     expect(testId('vote-link-inline-error')?.textContent).toContain('choice is not valid');
+  });
+
+  it('asks the voter to reopen their link when the initial ballot read is throttled (#5964)', async () => {
+    await open(throwError(() => httpError(429, 'Too many requests, please try again later.')));
+    fixture.detectChanges();
+
+    expect(state()).toBe('error');
+    expect(window.location.hash).toBe('');
+    expect(testId('vote-link-ballot-form')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(VOTE_LINK_RATE_LIMITED_READ_MESSAGE);
+  });
+
+  it('keeps the form with the rate-limit message when a first submission is throttled (#5964)', async () => {
+    submitLinkResponse.mockReturnValue(throwError(() => httpError(429, 'Too many requests, please try again later.')));
+    await open(of(BALLOT));
+    submit();
+    fixture.detectChanges();
+
+    expect(submitLinkResponse).toHaveBeenCalledOnce();
+    expect(state()).toBe('ready');
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+    expect(testId('vote-link-ballot-form')).not.toBeNull();
+    expect(testId('vote-link-inline-error')?.textContent).toContain(VOTE_RATE_LIMITED_MESSAGE);
   });
 
   it('replaces the previous token, ballot and in-flight request when another link is opened on the same route', async () => {

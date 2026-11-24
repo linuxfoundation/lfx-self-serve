@@ -9,7 +9,13 @@ import {
   META_CUSTOM_AUDIENCE_ID_PATTERN,
   META_MAX_CUSTOM_AUDIENCES,
 } from '../constants/campaign.constants';
-import type { MetaAudienceGender, MetaAudienceTargeting, MetaConfigRefusal } from '../interfaces/campaign.interface';
+import type {
+  CampaignMetaAudienceTargetingBlock,
+  MetaAudienceGender,
+  MetaAudienceTargeting,
+  MetaAudienceTargetingBlockInput,
+  MetaConfigRefusal,
+} from '../interfaces/campaign.interface';
 
 /**
  * Meta ad set audience targeting (#5905), `metaConfig.targeting`. One set of rules for the Implement
@@ -120,4 +126,59 @@ function metaGender(value: string): MetaAudienceGender | null {
 
 function distinctIds(ids: readonly string[]): string[] {
   return [...new Set(ids.map((id) => id.trim()))];
+}
+
+/**
+ * The Meta audience-targeting capabilities as the Implement tab acts on them: each only on an explicit yes,
+ * so an unanswered (`null`) read withholds it like a no. Custom audiences also need targeting itself.
+ */
+export function metaAudienceTargetingCapabilities(
+  targetingEnabled: boolean | null,
+  customAudiencesEnabled: boolean | null
+): { targetingAvailable: boolean; customAudiencesAvailable: boolean } {
+  const targetingAvailable = targetingEnabled === true;
+  return { targetingAvailable, customAudiencesAvailable: targetingAvailable && customAudiencesEnabled === true };
+}
+
+/**
+ * Why Create is held for Meta audience targeting the draft holds but the request cannot carry, or `null`.
+ * Held rather than dropped, because targeting changes who the campaign reaches. `unsupported` (the
+ * deployment answered no) offers Clear, since the section is hidden; `restricted` and every unanswered
+ * state for custom audiences leave the audiences listed with Remove. While the answer is out or failed,
+ * Create waits or offers Retry.
+ */
+export function metaAudienceTargetingBlock(input: MetaAudienceTargetingBlockInput): CampaignMetaAudienceTargetingBlock | null {
+  const chosen = compactMetaAudienceTargeting(input.targeting);
+  if (chosen === null) return null;
+  const { targetingAvailable, customAudiencesAvailable } = metaAudienceTargetingCapabilities(input.targetingEnabled, input.customAudiencesEnabled);
+  const deploymentUnanswered = !targetingAvailable;
+  if (!deploymentUnanswered && (!metaTargetingNamesCustomAudiences(chosen) || customAudiencesAvailable)) return null;
+  if (deploymentUnanswered && input.targetingEnabled === false) {
+    return {
+      kind: 'unsupported',
+      message: 'Meta audience targeting is not available on this deployment, so the targeting on this brief cannot be sent. Clear it to create the campaign.',
+    };
+  }
+  if (!deploymentUnanswered && input.customAudiencesEnabled === false) {
+    return {
+      kind: 'restricted',
+      message:
+        'Only the LF marketing team can use Meta custom audiences, because every foundation shares one Meta ad account. Remove them to create the campaign.',
+    };
+  }
+  const subject = deploymentUnanswered ? 'Meta audience targeting' : 'Meta custom audiences';
+  const orRemove = deploymentUnanswered ? '' : ', or remove them';
+  if (input.createCapabilityRead === 'pending') {
+    return {
+      kind: 'pending',
+      message: `Checking whether you can send ${subject}. Create waits for the answer so the targeting on this brief is not dropped.`,
+    };
+  }
+  if (!input.briefId) {
+    return { kind: 'unsaved', message: `${subject} can't be checked until this brief is saved. Save the brief${orRemove}.` };
+  }
+  return {
+    kind: 'failed',
+    message: `Could not confirm that you can send ${subject}, so Create waits rather than dropping the targeting on this brief. Retry the check${orRemove}.`,
+  };
 }

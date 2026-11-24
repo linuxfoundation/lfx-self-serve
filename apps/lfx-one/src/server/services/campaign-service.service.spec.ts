@@ -4818,6 +4818,13 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCallToActionEnabled: false,
       metaConversionEventEnabled: false,
       metaOptimizationGoalEnabled: false,
+      metaInterestTargetingEnabled: false,
+      metaBehaviorTargetingEnabled: false,
+      metaLocaleTargetingEnabled: false,
+      metaDeviceTargetingEnabled: false,
+      metaOsTargetingEnabled: false,
+      metaAdScheduleEnabled: false,
+      metaFrequencyCapEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -5050,6 +5057,42 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
       expect([result.metaCallToActionEnabled, result.metaConversionEventEnabled, result.metaOptimizationGoalEnabled]).toEqual([expected, expected, expected]);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  it.each([
+    [{ cutover: true, own: true }, true],
+    [{ cutover: true, own: false }, false],
+    [{ cutover: false, own: true }, false],
+  ])('reports each meta device and OS capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
+    const own = [ServerFeatureFlag.CampaignServiceMetaDeviceTargeting, ServerFeatureFlag.CampaignServiceMetaOsTargeting];
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (own.includes(flag as ServerFeatureFlag) ? flags.own : flags.cutover));
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect([result.metaDeviceTargetingEnabled, result.metaOsTargetingEnabled]).toEqual([expected, expected]);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  it.each([
+    [{ cutover: true, own: true }, true],
+    [{ cutover: true, own: false }, false],
+    [{ cutover: false, own: true }, false],
+  ])('reports each meta delivery capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
+    const own = [ServerFeatureFlag.CampaignServiceMetaAdSchedule, ServerFeatureFlag.CampaignServiceMetaFrequencyCap];
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (own.includes(flag as ServerFeatureFlag) ? flags.own : flags.cutover));
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect([result.metaAdScheduleEnabled, result.metaFrequencyCapEnabled]).toEqual([expected, expected]);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -5472,6 +5515,13 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCallToActionEnabled: false,
       metaConversionEventEnabled: false,
       metaOptimizationGoalEnabled: false,
+      metaInterestTargetingEnabled: false,
+      metaBehaviorTargetingEnabled: false,
+      metaLocaleTargetingEnabled: false,
+      metaDeviceTargetingEnabled: false,
+      metaOsTargetingEnabled: false,
+      metaAdScheduleEnabled: false,
+      metaFrequencyCapEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -6386,6 +6436,45 @@ describe('CampaignServiceClient.listMetaCustomAudiences', () => {
     expect(caught).toBeInstanceOf(ServiceValidationError);
     expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignServiceClient.listMetaLeadForms', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's lead form read, the project encoded", async () => {
+    const forms = { page_id: '104000000000001', forms: [], form_count: 0 };
+    proxyRequest.mockResolvedValueOnce(forms);
+
+    expect(await new CampaignServiceClient().listMetaLeadForms(req, 'lf/ai')).toBe(forms);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/meta-ads/lead-forms', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listMetaLeadForms(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignServiceClient.searchMetaTargetingOptions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's targeting search with the kind and query, the project encoded", async () => {
+    const answer = { type: 'interest', options: [], option_count: 0 };
+    proxyRequest.mockResolvedValueOnce(answer);
+
+    expect(await new CampaignServiceClient().searchMetaTargetingOptions(req, 'lf/ai', 'interest', 'kubernetes')).toBe(answer);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/meta-ads/targeting-search', 'GET', {
+      type: 'interest',
+      query: 'kubernetes',
+    });
   });
 });
 

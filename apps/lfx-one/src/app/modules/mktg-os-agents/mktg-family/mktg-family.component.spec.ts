@@ -15,6 +15,7 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_KIT_FAMILIES,
   MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse, MktgRevisionRef } from '@lfx-one/shared/interfaces';
@@ -35,6 +36,7 @@ describe('Marketing family page', () => {
   const families = signal(resolveMktgKit({ project: 'synthetic', groups: [] }));
   const loading = signal(false);
   const error = signal('');
+  const retrying = signal(false);
   const accessDenied = signal(false);
   const refreshDenied = signal(false);
   const projectSlug = signal('synthetic');
@@ -81,12 +83,13 @@ describe('Marketing family page', () => {
     );
     loading.set(false);
     error.set('');
+    retrying.set(false);
     accessDenied.set(false);
     refreshDenied.set(false);
     TestBed.configureTestingModule({
       providers: [
         { provide: DATE_PIPE_DEFAULT_OPTIONS, useValue: { timezone: 'UTC' } },
-        { provide: MktgRebuildService, useValue: { run } },
+        { provide: MktgRebuildService, useValue: { run, retrying: signal(false) } },
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-writer' }), impersonating: signal(false) } },
         {
           provide: ProjectContextService,
@@ -109,6 +112,7 @@ describe('Marketing family page', () => {
               families,
               loading,
               error,
+              retrying,
               accessDenied,
               refreshDenied,
               projectUid: signal('synthetic'),
@@ -705,7 +709,7 @@ describe('Marketing family page', () => {
     expect(root?.querySelector('[data-testid="mktg-family-actions"]')).toBeNull();
     expect(root?.querySelector('[data-testid="mktg-family-assets"]')).toBeNull();
     accessDenied.set(false);
-    error.set('The Marketing kit could not be loaded.');
+    error.set('The Marketing kit is not available.');
     await harness.fixture.whenStable();
     expect(root?.querySelector('[data-testid="mktg-family-actions"]')).toBeNull();
   });
@@ -803,7 +807,7 @@ describe('Marketing family page', () => {
     loading.set(true);
     await harness.fixture.whenStable();
     loading.set(false);
-    error.set(denied ? 'You need write access.' : 'The Marketing kit could not be loaded.');
+    error.set(denied ? 'You need write access.' : 'The Marketing kit is not available.');
     accessDenied.set(denied);
     await harness.fixture.whenStable();
     expect(documents()).not.toBeNull();
@@ -895,5 +899,37 @@ describe('Marketing family page', () => {
     expect(harness.routeNativeElement?.querySelector('[role="alert"]')?.textContent).toContain('write access');
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-assets"]')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-actions"]')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-error-retry"]')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-error"]')?.className).toContain('text-red-700');
+  });
+
+  it('keeps the loaded family usable under one grey line while the server cannot be reached, with no alert and no button', async () => {
+    retrying.set(true);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
+    const root = harness.routeNativeElement;
+    const line = root?.querySelector('[data-testid="mktg-family-retrying"]');
+    expect(line?.textContent?.trim()).toBe(MKTG_POLL_RETRYING_TEXT);
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.className).toContain('text-gray-500');
+    expect(root?.querySelector('[data-testid="mktg-family-assets"]')).not.toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-error"]')).toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-error-retry"]')).toBeNull();
+    retrying.set(false);
+    await harness.fixture.whenStable();
+    expect(root?.querySelector('[data-testid="mktg-family-retrying"]')).toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-assets"]')).not.toBeNull();
+  });
+
+  it('shows the grey line over the loading skeleton when the family is opened offline', async () => {
+    documents.set(null);
+    loading.set(true);
+    retrying.set(true);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
+    const root = harness.routeNativeElement;
+    expect(root?.querySelector('[data-testid="mktg-family-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(root?.querySelector('[data-testid="mktg-family-content-loading"]')).not.toBeNull();
+    expect(root?.querySelector('[role="alert"]')).toBeNull();
   });
 });

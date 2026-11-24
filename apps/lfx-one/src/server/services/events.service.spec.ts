@@ -17,8 +17,8 @@ const snowflakeMocks = vi.hoisted(() => ({
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => {
-  // Use the real travel fund aggregates and request tables so the SQL assertions can't drift from the source of truth.
-  const { EVENT_REQUEST_SOURCE_TABLES, TRAVEL_FUND_OFFERED_AGG, TRAVEL_FUND_OPEN_ENDED_AGG, TRAVEL_FUND_LATEST_DEADLINE_AGG } = await vi.importActual<
+  // Use the real travel fund and request tables so the SQL assertions can't drift from the source of truth.
+  const { EVENT_REQUEST_SOURCE_TABLES, TRAVEL_FUND_EVENTS_TABLE, TRAVEL_FUND_EVENT_STATUSES } = await vi.importActual<
     typeof import('../../../../../packages/shared/src/constants/events.constants')
   >('../../../../../packages/shared/src/constants/events.constants');
 
@@ -29,9 +29,8 @@ vi.mock('@lfx-one/shared/constants', async () => {
     EVENT_REQUEST_SOURCE_TABLES,
     EVENT_SOURCE_BACKFILL: 'backfill',
     MY_EVENT_STATUS: { ATTENDED: 'Attended', REGISTERED: 'Registered', NOT_REGISTERED: 'Not Registered' },
-    TRAVEL_FUND_OFFERED_AGG,
-    TRAVEL_FUND_OPEN_ENDED_AGG,
-    TRAVEL_FUND_LATEST_DEADLINE_AGG,
+    TRAVEL_FUND_EVENTS_TABLE,
+    TRAVEL_FUND_EVENT_STATUSES,
     VALID_EVENT_SORT_FIELDS: new Set(['EVENT_NAME', 'PROJECT_NAME', 'EVENT_START_DATE', 'EVENT_CITY']),
     VALID_VISA_REQUEST_SORT_FIELDS: new Set(['EVENT_NAME', 'EVENT_CITY', 'APPLICATION_DATE']),
     WHOLE_NUMBER_PATTERN: /^\d+$/,
@@ -439,19 +438,23 @@ describe('EventsService.getTravelFundEvents', () => {
     const [sql, binds] = await callFor();
 
     expect(sql).not.toContain('USER_EMAIL');
-    expect(sql).toContain('BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)');
-    expect(sql).toContain('IS NULL OR');
-    expect(sql).toContain('>= CURRENT_TIMESTAMP()');
-    expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1');
+    expect(sql).toContain('IS_TRAVEL_FUND_ACCEPTED = TRUE');
+    expect(sql).toContain('EVENT_IS_PAST = FALSE');
+    expect(sql).toContain('TRAVEL_FUND_END_TS IS NULL OR TRAVEL_FUND_END_TS >= CURRENT_TIMESTAMP()');
     expect(binds).not.toContain(USER_EMAIL);
   });
 
-  it('treats an open-ended flagged row as an open deadline even when another flagged row has expired', async () => {
+  it('reads the events table so an event with no registrations still qualifies', async () => {
     const [sql] = await callFor();
 
-    expect(sql).toContain(
-      'IFF(BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL) OVER (PARTITION BY EVENT_ID), NULL, MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL)) OVER (PARTITION BY EVENT_ID))'
-    );
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.EVENTS');
+    expect(sql).not.toContain('EVENT_REGISTRATIONS');
+  });
+
+  it('lists Active and Pending events only, which excludes Cancelled and Completed', async () => {
+    const [sql] = await callFor();
+
+    expect(sql).toContain("EVENT_STATUS IN ('Active', 'Pending')");
   });
 
   it('maps rows to events with the travel fund deadline and no registration', async () => {
@@ -515,6 +518,16 @@ describe('EventsService filter options use the same past-event predicate', () =>
 
     expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
     expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
+    expect(lastSql()).toContain("AND NULLIF(TRIM(EVENT_COUNTRY), '') IS NOT NULL");
+  });
+
+  it('lists travel fund countries from the same events and rule as the picker', async () => {
+    await service.getUpcomingCountries({} as never, 'travel-fund');
+
+    expect(lastSql()).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.EVENTS');
+    expect(lastSql()).not.toContain('EVENT_REGISTRATIONS');
+    expect(lastSql()).toContain("EVENT_STATUS IN ('Active', 'Pending')");
+    expect(lastSql()).toContain("AND NULLIF(TRIM(EVENT_COUNTRY), '') IS NOT NULL");
   });
 });
 
@@ -655,11 +668,12 @@ describe('EventsService.isEligibleForEventRequest', () => {
 
     const [sql, binds] = lastCall();
     expect(sql).not.toContain('USER_EMAIL');
-    expect(sql).toContain('BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)');
-    expect(sql).toContain(
-      'IFF(BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL), NULL, MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL)))'
-    );
-    expect(sql).toContain('>= CURRENT_TIMESTAMP()');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.EVENTS');
+    expect(sql).not.toContain('EVENT_REGISTRATIONS');
+    expect(sql).toContain('IS_TRAVEL_FUND_ACCEPTED = TRUE');
+    expect(sql).toContain("EVENT_STATUS IN ('Active', 'Pending')");
+    expect(sql).toContain('EVENT_IS_PAST = FALSE');
+    expect(sql).toContain('TRAVEL_FUND_END_TS IS NULL OR TRAVEL_FUND_END_TS >= CURRENT_TIMESTAMP()');
     expect(binds).toEqual(['evt-1']);
   });
 

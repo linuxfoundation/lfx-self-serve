@@ -4,7 +4,7 @@ description: How to create a group (committee) in LFX Self Serve with the four-s
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, create, wizard, join-mode, governance]
-last_updated: 2026-11-23
+last_updated: 2026-11-24
 intercom_collection: Committees
 ---
 
@@ -52,14 +52,22 @@ Choose **Newsletter** for a group that receives a newsletter. A newsletter can o
 
 Select **Create Group**. The group is saved at this point, before you add members.
 
+**Add Members** uses the settings saved when you select **Create Group**. Unsaved changes to earlier **Settings** fields do not change the member requirements.
+
 ### Step 4: Add Members
 
 Add the first members, or skip this step. You can invite by email, add people with details, or import a CSV. See [Import members from a CSV](../manage-committees/#import-members-from-a-csv). Nothing you stage here is saved until you select **Done**.
+
+**Add with details** and CSV imports require a first and last name for each new member; empty or whitespace-only names are not accepted. CSV files must include the `first_name` and `last_name` columns. **Invite by email** does not require names because it stages invitations rather than creating members immediately.
+
+Creating a group doesn't make you a member of it. To join, select **Add myself**, to the right of the add buttons. It stages you as a member using the name and email from your profile, and it's saved with the others when you select **Done** (or **Update Group** when editing). If the group has voting or requires a business email, or your profile is missing your first or last name, **Add myself** opens **Add with details** with your name and email already filled in, so you can complete the remaining fields. You don't get a notification email about adding yourself; if you edit the staged row to another person's email, they receive the normal notification instead. If an invitation to the group is still pending for you, it's withdrawn once you're saved as a member. The button disappears once you're on the member list or have a staged invitation. It's also available in **Edit Group** on the **Add Members** step.
 
 - **Done** saves the staged members and takes you back to the Groups page.
 - **Skip For Now** leaves without adding anyone. The group already exists, and you can add members later.
 
 If some members fail to save, you stay on the step so you can retry rather than lose them.
+
+Before saving staged additions, the wizard checks the group's required company and voting details. If anything is missing, a message identifies the member to edit on **Add Members**, and your staged changes are kept. Complete the required details before selecting **Done** again.
 
 ## After creation
 

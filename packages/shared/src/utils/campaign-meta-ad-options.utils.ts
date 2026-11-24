@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { DEFAULT_META_OBJECTIVE, META_AD_OPTION_FIELDS } from '../constants/campaign.constants';
-import type { MetaAdOptionField, MetaAdOptions, MetaConfigRefusal } from '../interfaces/campaign.interface';
+import type {
+  CampaignBiddingCapabilityBlock,
+  CampaignCapabilityReadState,
+  MetaAdOptionField,
+  MetaAdOptionKey,
+  MetaAdOptions,
+  MetaAdOptionsEnabled,
+  MetaConfigRefusal,
+} from '../interfaces/campaign.interface';
 
 /**
  * The Meta call to action, conversion event and optimization goal (#5934): `metaConfig.callToAction`,
@@ -19,6 +27,56 @@ export function metaAdOptionApplies(field: MetaAdOptionField, objective: unknown
 /** `raw` as a key-value record when it is a plain object, else `undefined`: the untrusted request body narrowed at runtime, not cast. */
 export function metaConfigRecord(raw: unknown): Record<string, unknown> | undefined {
   return typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
+}
+
+/** The `metaConfig` keys the create route reads or rebuilds by their exact spelling. */
+const META_CONFIG_EXACT_KEYS = [
+  'targeting',
+  'objective',
+  'placements',
+  'lifetimeBudget',
+  'leadFormId',
+  'adSchedule',
+  'frequencyCap',
+  'callToAction',
+  'conversionEvent',
+  'optimizationGoal',
+  'bidding',
+  'budget',
+  'budgetUsd',
+] as const;
+/** The `metaConfig.placements` keys, which the device rules read by their exact spelling. */
+const META_PLACEMENT_KEYS = ['facebookFeed', 'instagramFeed', 'stories', 'reels', 'audienceNetwork', 'messengerInbox'] as const;
+
+/** A key as Go's `encoding/json` matches it: Unicode case folding, which upper-casing first catches (`ſ` is `s`). */
+function foldKey(key: string): string {
+  return key.toUpperCase().toLowerCase();
+}
+
+/** The known key `record` sends under another spelling, or `null`. */
+function keyVariantIn(record: Record<string, unknown>, known: readonly string[]): string | null {
+  for (const key of Object.keys(record)) {
+    const match = known.find((k) => key !== k && foldKey(key) === foldKey(k));
+    if (match) return match;
+  }
+  return null;
+}
+
+/**
+ * The `metaConfig` field `raw` sends under another spelling of its key, or `null` (#5904 row 6 review). campaign-service
+ * decodes keys ignoring case (Unicode folding), but the create route reads and rebuilds each by its exact spelling and
+ * forwards the rest untouched, so `Targeting` would reach campaign-service past every targeting gate here, and a
+ * differently cased `objective` or `placements.audienceNetwork` past the rules that read them. The route refuses any
+ * such key whatever the flags, naming the field it folds to.
+ */
+export function metaConfigKeyVariant(raw: unknown): string | null {
+  const record = metaConfigRecord(raw);
+  if (!record) return null;
+  const top = keyVariantIn(record, META_CONFIG_EXACT_KEYS);
+  if (top !== null) return `metaConfig.${top}`;
+  const placements = metaConfigRecord(record['placements']);
+  const placement = placements ? keyVariantIn(placements, META_PLACEMENT_KEYS) : null;
+  return placement === null ? null : `metaConfig.placements.${placement}`;
 }
 
 /**
@@ -69,4 +127,55 @@ export function metaAdOptionOffMessage(field: MetaAdOptionField): string {
 export function metaAdOptionLabel(value: string): string {
   const words = value.toLowerCase().replace(/_/g, ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The Meta ad choices a create sends: compacted, and each only on an explicit yes. "Not set" is never sent. */
+export function metaAdOptionsForCreate(options: MetaAdOptions, enabled: MetaAdOptionsEnabled): MetaAdOptions {
+  return Object.fromEntries(Object.entries(compactMetaAdOptions(options)).filter(([key]) => enabled[key as MetaAdOptionKey] === true));
+}
+
+/** The choices after one dropdown change: an empty value ("Not set") removes the key. */
+export function metaAdOptionsWithChoice(options: MetaAdOptions, key: MetaAdOptionKey, value: string | null): MetaAdOptions {
+  const next = { ...options };
+  if (!value) delete next[key];
+  else next[key] = value;
+  return next;
+}
+
+/** The choices the objective still takes; the rest are cleared when the objective changes or a draft is restored. */
+export function metaAdOptionsForObjective(options: MetaAdOptions, objective: string): MetaAdOptions {
+  return Object.fromEntries(Object.entries(options).filter(([key]) => META_AD_OPTION_FIELDS.some((f) => f.key === key && metaAdOptionApplies(f, objective))));
+}
+
+/** The choices without those this deployment answered no to: the way past an `unsupported` {@link metaAdOptionsBlock}. */
+export function metaAdOptionsWithoutUnsupported(options: MetaAdOptions, enabled: MetaAdOptionsEnabled): MetaAdOptions {
+  return Object.fromEntries(Object.entries(options).filter(([key]) => enabled[key as MetaAdOptionKey] !== false));
+}
+
+/**
+ * Why Create is held for a Meta ad choice the draft holds but this deployment has not confirmed, or `null`.
+ * Held rather than dropped, since the choice changes the ads. Only an explicit no on every held choice
+ * (`unsupported`) offers Clear; while an answer is out or failed, Create waits or offers Retry.
+ */
+export function metaAdOptionsBlock(
+  options: MetaAdOptions,
+  enabled: MetaAdOptionsEnabled,
+  createCapabilityRead: CampaignCapabilityReadState,
+  briefId: string | null
+): CampaignBiddingCapabilityBlock | null {
+  const held = Object.keys(compactMetaAdOptions(options)).filter((key) => enabled[key as MetaAdOptionKey] !== true);
+  if (held.length === 0) return null;
+  const labels = META_AD_OPTION_FIELDS.filter((field) => held.includes(field.key))
+    .map((field) => field.label.toLowerCase())
+    .join(', ');
+  if (held.every((key) => enabled[key as MetaAdOptionKey] === false)) {
+    return { kind: 'unsupported', message: `This deployment cannot send the Meta ${labels} on this brief. Clear it to create the campaign.` };
+  }
+  if (createCapabilityRead === 'pending') {
+    return { kind: 'pending', message: `Checking whether the Meta ${labels} can be sent. Create waits so it is not dropped.` };
+  }
+  if (!briefId) {
+    return { kind: 'unsaved', message: `The Meta ${labels} can't be checked until this brief is saved. Save the brief.` };
+  }
+  return { kind: 'failed', message: `Could not confirm that the Meta ${labels} can be sent, so Create waits rather than dropping it. Retry the check.` };
 }

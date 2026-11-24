@@ -227,19 +227,22 @@ describe('HealthMetricsOverviewService.getChurn', () => {
 });
 
 describe('HealthMetricsOverviewService.getOutstandingBalance', () => {
-  it('maps the one row, and reports an unmeasured foundation without one', async () => {
+  it('reads every period from the one row, and reports an unmeasured foundation without one', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        {
-          OUTSTANDING_BALANCE_USD: '1105250.00',
-          OVERDUE_MEMBERS_COUNT: 20,
-          HIGH_RISK_BALANCE_USD: '1083250.00',
-          HIGH_RISK_MEMBERS_COUNT: 18,
-          HIGH_RISK_BALANCE_SHARE_PCT: '0.98',
-          MEDIUM_RISK_BALANCE_USD: '22000.00',
-          MEDIUM_RISK_MEMBERS_COUNT: 2,
-          MEDIUM_RISK_BALANCE_SHARE_PCT: '0.02',
-        },
+        wide(
+          {
+            OUTSTANDING_BALANCE_USD: '1105250.00',
+            OVERDUE_MEMBERS_COUNT: 20,
+            HIGH_RISK_BALANCE_USD: '1083250.00',
+            HIGH_RISK_MEMBERS_COUNT: 18,
+            HIGH_RISK_BALANCE_SHARE_PCT: '0.98',
+            MEDIUM_RISK_BALANCE_USD: '22000.00',
+            MEDIUM_RISK_MEMBERS_COUNT: 2,
+            MEDIUM_RISK_BALANCE_SHARE_PCT: '0.02',
+          },
+          { OUTSTANDING_BALANCE_USD_COMPLETED_YEAR_2: 0, HIGH_RISK_MEMBERS_COUNT_COMPLETED_YEAR_2: 0 }
+        ),
       ],
     });
     execute.mockResolvedValueOnce({ rows: [] });
@@ -249,8 +252,10 @@ describe('HealthMetricsOverviewService.getOutstandingBalance', () => {
     const missing = await service.getOutstandingBalance(req, query);
 
     expectBinds(0, ['acme']);
-    expect(balance).toEqual({
-      measured: true,
+    expect(sql()).toContain('outstanding_balance_usd_ytd AS outstanding_balance_usd_YTD');
+    expect(sql()).toContain('medium_risk_balance_share_pct_3rd_last_completed_year AS medium_risk_balance_share_pct_COMPLETED_YEAR_3');
+    expect(balance.measured).toBe(true);
+    expect(balance.periods.YTD).toEqual({
       outstandingUsd: 1105250,
       overdueMembers: 20,
       highRiskUsd: 1083250,
@@ -260,8 +265,9 @@ describe('HealthMetricsOverviewService.getOutstandingBalance', () => {
       mediumRiskMembers: 2,
       mediumRiskSharePct: 0.02,
     });
+    expect(balance.periods.COMPLETED_YEAR_2).toMatchObject({ outstandingUsd: 0, highRiskMembers: 0 });
     expect(missing.measured).toBe(false);
-    expect(missing.outstandingUsd).toBeNull();
+    expect(missing.periods.YTD.outstandingUsd).toBeNull();
   });
 });
 
@@ -276,6 +282,7 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       REGISTRATIONS: 313,
       REGISTRATIONS_GOAL: 700,
       COMP_SCORE: 'High',
+      PROPOSALS_COMP_SCORE: 'Low',
       ACCEPTED_TALKS: 0,
       TOTAL_PROPOSALS: 185,
       CFP_STATUS: 'Review Complete',
@@ -324,6 +331,7 @@ describe('HealthMetricsOverviewService.getEvents', () => {
     const index = readIndex('upcoming');
     expect(sql(index)).toContain('INNER JOIN foundation f ON r.project_id = f.foundation_id');
     expect(sql(index)).toContain('AND r.event_is_past = FALSE');
+    expect(sql(index)).toContain("NULLIF(TRIM(r.proposals_comp_score), '') AS proposals_comp_score");
     expect(sql(index)).toContain('ORDER BY r.event_start_date ASC NULLS LAST');
     expect(sql(index)).toContain(`LIMIT ${HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1}`);
     expectBinds(index, ['acme']);
@@ -343,7 +351,10 @@ describe('HealthMetricsOverviewService.getEvents', () => {
   });
 
   it("maps an upcoming event's goal and pace, treating a zero goal as none", async () => {
-    mockReads([upcoming({}), upcoming({ EVENT_ID: 'e2', EVENT_NAME: null, REGISTRATIONS_GOAL: 0, COMP_SCORE: null, EVENT_CITY: null })], []);
+    mockReads(
+      [upcoming({}), upcoming({ EVENT_ID: 'e2', EVENT_NAME: null, REGISTRATIONS_GOAL: 0, COMP_SCORE: null, PROPOSALS_COMP_SCORE: null, EVENT_CITY: null })],
+      []
+    );
 
     const events = await new HealthMetricsOverviewService().getEvents(req, query);
 
@@ -356,12 +367,13 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       registrations: 313,
       registrationsGoal: 700,
       compScore: 'high',
+      proposalsCompScore: 'low',
       acceptedTalks: 0,
       totalProposals: 185,
       cfpStatus: 'Review Complete',
       ranges: [],
     });
-    expect(events.upcoming[1]).toMatchObject({ eventName: 'e2', registrationsGoal: null, compScore: null, city: null });
+    expect(events.upcoming[1]).toMatchObject({ eventName: 'e2', registrationsGoal: null, compScore: null, proposalsCompScore: null, city: null });
     expect(events.truncated).toBe(false);
   });
 
@@ -375,6 +387,7 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       registrations: 900,
       registrationsGoal: 800,
       compScore: null,
+      proposalsCompScore: null,
       ranges: ['COMPLETED_YEAR'],
     });
     expect(rows[1]).toMatchObject({ eventId: 'p2', registrationsGoal: null, ranges: ['COMPLETED_YEAR', 'YTD'] });
@@ -404,6 +417,7 @@ describe('HealthMetricsOverviewService.getBoard', () => {
       PERSON_JOB_TITLE: 'CTO',
       ACCOUNT_NAME: 'Acme Corp',
       LOGO_URL: 'https://logos.example/acme.png',
+      PERSON_PHOTO_URL: 'https://photos.example/pat.jpg',
       LAST_ATTENDED_DATE: '2026-09-03',
       ...wide({ MEETINGS_INVITED_COUNT: 0, MEETINGS_ATTENDED_COUNT: 0, ATTENDANCE_PCT: 0 }),
       ...overrides,
@@ -424,6 +438,7 @@ describe('HealthMetricsOverviewService.getBoard', () => {
     expectBinds(summarySql, ['acme', 'board']);
     expectBinds(membersSql, ['acme']);
     for (const [, suffix] of SUFFIXES) expect(sql(membersSql)).toContain(`meetings_invited_count_${suffix} > 0`);
+    expect(sql(membersSql)).toContain("NULLIF(TRIM(person_photo_url), '') AS person_photo_url");
     expect(sql(membersSql)).toContain(`LIMIT ${HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP + 1}`);
   });
 
@@ -439,7 +454,14 @@ describe('HealthMetricsOverviewService.getBoard', () => {
       ],
       [
         member({ MEETINGS_INVITED_COUNT_YTD: 3, MEETINGS_ATTENDED_COUNT_YTD: 2, ATTENDANCE_PCT_YTD: '0.666667' }),
-        member({ MEMBER_KEY: 'k2', PERSON_JOB_TITLE: 'Unavailable', LOGO_URL: null, LAST_ATTENDED_DATE: null, MEETINGS_INVITED_COUNT_COMPLETED_YEAR: 4 }),
+        member({
+          MEMBER_KEY: 'k2',
+          PERSON_JOB_TITLE: 'Unavailable',
+          LOGO_URL: null,
+          PERSON_PHOTO_URL: null,
+          LAST_ATTENDED_DATE: null,
+          MEETINGS_INVITED_COUNT_COMPLETED_YEAR: 4,
+        }),
       ]
     );
 
@@ -452,12 +474,14 @@ describe('HealthMetricsOverviewService.getBoard', () => {
       jobTitle: 'CTO',
       organization: 'Acme Corp',
       logoUrl: 'https://logos.example/acme.png',
+      photoUrl: 'https://photos.example/pat.jpg',
       lastAttendedDate: '2026-09-03',
       attendance: { YTD: { invited: 3, attended: 2, attendancePct: 0.666667 } },
     });
     expect(board.members[1]).toMatchObject({
       jobTitle: null,
       logoUrl: null,
+      photoUrl: null,
       lastAttendedDate: null,
       attendance: { COMPLETED_YEAR: { invited: 4, attended: 0, attendancePct: 0 } },
     });

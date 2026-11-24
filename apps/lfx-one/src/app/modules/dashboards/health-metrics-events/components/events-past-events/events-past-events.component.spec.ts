@@ -146,6 +146,25 @@ describe('EventsPastEventsComponent', () => {
     expect(rows()).toBe(2);
   });
 
+  it('opens on the latest event with the Event arrow, and sorts the whole list from page 1 on a picked column', async () => {
+    const events = Array.from({ length: 12 }, (_, index) =>
+      pastEvent({ eventId: `evt-${index}`, eventStartDate: `2026-0${(index % 9) + 1}-01`, revenueUsd: index === 11 ? 999999 : 1000 })
+    );
+    await render(past({ events }));
+    const header = (key: string): HTMLElement => query(`events-past-events-sort-${key}`) as HTMLElement;
+    const firstRow = (): string | null | undefined =>
+      fixture.nativeElement.querySelector('tr[data-testid^="events-past-events-row-"]')?.getAttribute('data-testid');
+
+    expect(header('event').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    fixture.componentInstance['page'].set(1);
+    await settle();
+
+    (header('revenue').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(fixture.componentInstance['page']()).toBe(0);
+    expect(firstRow()).toBe('events-past-events-row-evt-11');
+  });
+
   it('settles once the list lands', async () => {
     await render();
 

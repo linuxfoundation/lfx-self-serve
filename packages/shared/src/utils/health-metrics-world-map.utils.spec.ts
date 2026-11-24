@@ -4,7 +4,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { HEALTH_METRICS_WORLD_MAP_EMPTY_FILL, HEALTH_METRICS_WORLD_MAP_RAMP } from '../constants/health-metrics-world-map.constants';
-import { buildHealthMetricsWorldMapView, formatHealthMetricsCountryFlag, healthMetricsWorldMapFill } from './health-metrics-world-map.utils';
+import {
+  buildHealthMetricsWorldMapView,
+  formatHealthMetricsCountryFlag,
+  formatHealthMetricsCountryName,
+  healthMetricsWorldMapFill,
+} from './health-metrics-world-map.utils';
 
 import type { HealthMetricsWorldGeometry } from '../interfaces/health-metrics-world-map.interface';
 
@@ -76,5 +81,21 @@ describe('formatHealthMetricsCountryFlag', () => {
     expect(formatHealthMetricsCountryFlag('XK')).toBe('🇽🇰');
     expect(formatHealthMetricsCountryFlag(null)).toBe('');
     expect(formatHealthMetricsCountryFlag('usa')).toBe('');
+  });
+});
+
+describe('formatHealthMetricsCountryName', () => {
+  it('names a known code by its standard English name, Kosovo included, whatever the data writes', () => {
+    expect(formatHealthMetricsCountryName('US', 'us')).toBe('United States');
+    expect(formatHealthMetricsCountryName('GB', 'united_kingdom')).toBe('United Kingdom');
+    expect(formatHealthMetricsCountryName('KR', 'korea')).toBe('South Korea');
+    expect(formatHealthMetricsCountryName('XK', 'kosovo')).toBe('Kosovo');
+  });
+
+  it('reads a name with no known code as words, underscores as spaces and each word capitalised', () => {
+    expect(formatHealthMetricsCountryName(null, 'united_kingdom')).toBe('United Kingdom');
+    expect(formatHealthMetricsCountryName(null, '  brazil ')).toBe('Brazil');
+    expect(formatHealthMetricsCountryName(null, 'DRC')).toBe('DRC');
+    expect(formatHealthMetricsCountryName('ZZ', 'europe')).toBe('Europe');
   });
 });

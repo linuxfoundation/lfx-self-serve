@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HealthMetricsBarFillRule } from '../interfaces/health-metrics-table.interface';
+import type { HealthMetricsBarFillRule, HealthMetricsSortHeaderView } from '../interfaces/health-metrics-table.interface';
 
 // ── Table layout and cells ─────────────────────────────────────────────────
 
@@ -57,3 +57,6 @@ export const HEALTH_METRICS_TRUNCATION_TIP_GAP_PX = 6;
 
 /** Overflow in px still counted as fitting: `scrollWidth` and `clientWidth` round fractional widths apart by up to 1px. */
 export const HEALTH_METRICS_TRUNCATION_TIP_TOLERANCE_PX = 1;
+
+/** A header the table's sort does not know, such as a column added after the sort was set up: shown unsorted. */
+export const HEALTH_METRICS_SORT_HEADER_UNSORTED: HealthMetricsSortHeaderView = { state: 'none', ariaSort: 'none' };

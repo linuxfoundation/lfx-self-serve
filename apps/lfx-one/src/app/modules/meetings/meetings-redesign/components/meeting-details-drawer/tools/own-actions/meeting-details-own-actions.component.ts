@@ -15,6 +15,7 @@ import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { finalize, take } from 'rxjs';
 
 import { MeetingDetailsContext } from '../../meeting-details.context';
+import { MeetingDetailsSource } from '../../meeting-details.source';
 
 /** The viewer's own Resend Invite and Remove Myself in the meeting details drawer, with the legacy meeting page's gates and copy; on phones the header's ⋯ menu shows them. */
 @Component({
@@ -30,6 +31,7 @@ export class MeetingDetailsOwnActionsComponent {
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
   private readonly context = inject(MeetingDetailsContext);
+  private readonly source = inject(MeetingDetailsSource, { optional: true });
   private readonly removeDialog = viewChild.required<TemplateRef<unknown>>('removeDialog');
   private readonly resendDialog = viewChild.required<TemplateRef<unknown>>('resendDialog');
   private dialogRef: DialogRef | null = null;
@@ -42,7 +44,9 @@ export class MeetingDetailsOwnActionsComponent {
     () => this.context.state() !== 'ended' && this.context.invited() && (!this.context.organizer() || this.hasOwnRegistration())
   );
   /** A resend goes to the viewer's own registrant row, so one must exist (legacy `canResendInvite`). */
-  public readonly canResend: Signal<boolean> = computed(() => this.canRemove() && this.hasOwnRegistration());
+  public readonly canResend: Signal<boolean> = computed(
+    () => this.canRemove() && this.hasOwnRegistration() && this.source?.selfInviteOf?.(this.context.meeting().id) === undefined
+  );
   protected readonly removalQuestion: Signal<string> = computed(() => getMeetingSelfRemovalQuestion(this.context.shownRow().title));
   protected readonly resendQuestion: Signal<string> = computed(() => getMeetingOwnResendQuestion(this.context.shownRow().title));
   protected readonly removalNotes: Signal<string[]> = computed(() =>
@@ -80,6 +84,10 @@ export class MeetingDetailsOwnActionsComponent {
   protected resend(): void {
     // A second click can land before the button renders as loading.
     if (this.resending()) return;
+    if (!this.canResend()) {
+      this.dialogRef?.close();
+      return;
+    }
     const ref = this.dialogRef;
     this.inviteResend
       .resendOwn$(this.context.meeting().id, this.context.shownRow().occurrenceId)

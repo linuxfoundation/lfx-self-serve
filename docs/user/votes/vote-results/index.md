@@ -3,8 +3,8 @@ title: Vote Results
 description: How to see live and final results, abstentions, ranked questions, comments, and voters for a vote in LFX Self Serve.
 audience: [all]
 product_area: Votes
-tags: [votes, results, abstain, comments, ranked, tallies, voters]
-last_updated: 2026-11-12
+tags: [votes, results, abstain, comments, ranked, condorcet, tallies, voters]
+last_updated: 2026-11-24
 intercom_collection: Votes
 ---
 
@@ -40,7 +40,7 @@ The vote's description keeps its paragraphs, line breaks, and lists, the same as
 
 The page opens on the **Overview** tab and has these tabs:
 
-- **Overview** shows the vote's description, a results card with recent comments. For a vote with one question (not ranked), the card shows a bar for each option with its vote count and percentage. The bars follow the order of the options on the ballot, not the vote counts, and keep that order as figures refresh. For a ranked vote or a vote with several questions, it shows a short summary line per question instead. All these layouts include an **Abstain** row, after the options, when abstaining is allowed or anyone abstained. While a manager views an active vote in a visible browser tab, results refresh about every five seconds after each request finishes; returning to the tab refreshes them immediately. Once the vote closes and its results are successfully refreshed, the winning option is marked **Winner**, or tied options are marked **Tied**. Select **View full results** to open the Results tab. When recent comments appear under **What voters are saying**, a single comment question appears once below the heading and above the comments. With multiple comment questions, each previewed comment shows the question it answers. On a named vote, you can open a voter's ballot by selecting the commenter's name or the comment row outside its text. The comment text stays selectable for copying.
+- **Overview** shows the vote's description, a results card with recent comments. For a vote with one question (not ranked), the card shows a bar for each option with its vote count and percentage. The bars follow the order of the options on the ballot, not the vote counts, and keep that order as figures refresh. For a ranked vote or a vote with several questions, it shows a short summary line per question instead. A ranked question's line reads **Most first choices:** followed by the option most voters ranked first while voting is open. After ending and loading final results, Instant Runoff summaries name the winner or tie, and Meek STV summaries name the elected options. Condorcet IRV summaries use **Winner:**, **Tied:** or **No winner**. All these layouts include an **Abstain** row, after the options, when abstaining is allowed or anyone abstained. While a manager views an active vote in a visible browser tab, results refresh about every five seconds after each request finishes; returning to the tab refreshes them immediately. Once the vote closes and its results are successfully refreshed, the winning option is marked **Winner**, or tied options are marked **Tied**. Select **View full results** to open the Results tab. When recent comments appear under **What voters are saying**, a single comment question appears once below the heading and above the comments. With multiple comment questions, each previewed comment shows the question it answers. On a named vote, you can open a voter's ballot by selecting the commenter's name or the comment row outside its text. The comment text stays selectable for copying.
 - **Results** shows each question's tallies. The **Overview** tab's status tag reads **Voting in progress** while the vote is active and **Final results** after a successful results refresh following closure. While that final read is pending, the tag reads **Totals pending**. For each non-ranked question, every option shows its count and share of the votes, listed in ballot order rather than by vote count. A vote with several questions lists each question separately as **Q1**, **Q2**, and so on. **Abstain**, when the vote allowed abstaining or anyone abstained, comes after the options and shows how many people abstained. Abstentions count as ballots cast but not in any option's tally.
 - **Comments** appears when the vote has comment questions. With a single comment question, its heading, comment count, and comments appear directly—there is no accordion. With two or more questions, each has a collapsible panel showing its full question text and comment count. Panels start collapsed so you can see every question immediately. Select a question's header to show or hide its comments. Panels open independently. An expanded panel lists all comments returned by the results service, without page controls. Up to 200 comments are returned per question; if there are more, a notice tells you how many are displayed out of the total. Your panel choices stay in place when switching tabs or refreshing results within the same vote, and reset when you open another vote. On a named vote, managers also see who wrote each comment and when, with **View ballot** links. The tab shows a count of the comments once results load. On a pseudo-anonymous vote the count stays hidden until comments are released after the vote closes.
 - **Voters** appears for active and ended votes, and lists each invited voter with their status. On a named vote it also shows their choices, in the columns **Voter**, **Choice**, **Role** and **Submitted**, and you can open a voter's ballot. On a pseudo-anonymous vote it shows only who has responded, never how anyone voted. The tab shows a count of the invited voters.
@@ -70,7 +70,33 @@ The buttons at the top right depend on the vote's status:
 
 ### Ranked questions
 
-Some votes rank their options instead of counting one choice. For those, each option shows how many voters ranked it and how many placed it at each rank (**Rank 1**, **Rank 2**, and so on), with a percentage. The Results tab explains the voting method at the top. Round-by-round detail isn't shown yet. If no one has ranked yet, it says **No rankings recorded yet.**
+Some votes rank their options instead of counting one choice. On an Instant Runoff or Meek STV vote, every option is listed by name, with how many voters ranked it and how many placed it at each rank (**Rank 1**, **Rank 2**, and so on). The Results tab explains the voting method. If no one has ranked yet, it says **No rankings recorded yet.**
+
+The outcome is hidden while voting is open. After the vote ends and final results load:
+
+- A banner names the winner, tied options, or **No winner could be determined.** Instant Runoff says the winner had a majority of continuing ballots in the final round; Meek STV names the options elected through proportional counting.
+- **Standings** list options in finishing order, marking winners **Winner** or **Tied**. Instant Runoff shows **Eliminated in round 2**, for example. Meek STV shows **Elected in round 3** or **Not elected**.
+- The per-rank breakdown follows under **Rank distribution**.
+
+Managers, invited voters with access to final results, and the **Present** view show ranked outcomes. The dedicated Condorcet vote-detail tables below are not part of the Present view. Round-by-round vote counts are not shown.
+
+### Condorcet IRV results
+
+A Condorcet IRV vote shows its own results for each question. The winner comes from the voting service; it is not simply the candidate with the most first choices. The final outcome and Overview summary use the service's winner name even if that candidate is missing from the results tables. If no name is available, they show the candidate's choice ID instead.
+
+- **Final Voting Outcome** says how the result was decided. If one candidate beat every other candidate head-to-head, the heading reads **Condorcet IRV – Final Voting Outcome** and names that candidate as the winner. If no candidate did, the heading reads **Instant Runoff Voting (IRV) – Final Voting Outcome** and explains that instant-runoff elimination decided the winner. A tie names the tied candidates and says no single winner can be determined. If no winner could be determined, it says so.
+- **Standings** lists every candidate in order, with the winner marked **Winner** and tied winners marked **Tied**. When head-to-head wins decided the result, each candidate shows how many head-to-head matchups they won. When instant-runoff elimination decided it, eliminated candidates show the round they were eliminated in, latest first.
+- **Pairwise Comparison** compares every pair of candidates. Each cell shows two numbers: how many voters ranked the row candidate above the column candidate, then how many ranked the column candidate above the row candidate. An icon marks a win, a loss or a tie for the row candidate. On a narrow screen, scroll the table sideways; the candidate names stay in view, with long names wrapping inside their column.
+- **Ballot Ranking Distribution** shows each distinct order in which voters ranked the candidates, and how many ballots used it, most common first. Only managers of a named vote see this table. On a pseudo-anonymous vote, or for voters, it says **Ballot-by-ballot rankings aren't available for this vote.**
+- **Candidate Rank Summary** shows how many voters placed each candidate at each rank (**1st**, **2nd**, and so on). Its counts are not links to individual ballots. Managers of a named vote can still view individual ballots on the **Voters** tab.
+
+Before opening, the outcome and standings show **This vote hasn't opened yet. Results will appear once voting starts.** During voting they show **The vote is currently in progress. Final results will be available once voting has ended.** Ended votes waiting for totals show **Voting has ended. The final outcome will appear once the final totals are confirmed.**
+
+While voting is active and Results is visible, ballot rankings refresh about every five seconds after each request finishes—even at 100% participation or when aggregate counts stay the same. Leaving Results or hiding the browser tab pauses reads; returning reads again.
+
+After voting ends and final totals arrive, **Ballot rankings are being confirmed.** appears during a 12-attempt refresh window. Successful reads do not end the window early, because ballot data can arrive later than totals. Returning to a hidden browser tab does not reset the limit. If ballot counts or ranks still differ at the end, **Ballot rankings may be out of date. They do not match the final totals.** appears. Leave and reopen Results or reload to try again.
+
+Temporary connection or server failures retry with increasing delays, up to 30 seconds. Previously loaded rankings remain visible with **Ballot rankings may be out of date. The latest refresh failed.**; success clears that failure notice. If ballots have never loaded, the unavailable note appears instead. Access errors stop automatic retries.
 
 ### Pseudo-anonymous votes
 

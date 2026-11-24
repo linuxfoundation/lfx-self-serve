@@ -36,7 +36,15 @@ import { InsightsTokensComponent } from '../components/insights-tokens/insights-
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
 import { extractErrorMessage, serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { ChangePasswordRequest, EmailManagementData, EmailSettingsState, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
+import {
+  AccountSettingsSection,
+  ChangePasswordRequest,
+  EmailManagementData,
+  EmailSettingsState,
+  MeetingInviteEmail,
+  PasswordStrength,
+  UserEmail,
+} from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -86,6 +94,9 @@ export class AccountSettingsComponent {
 
   // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
   public readonly embedded = this.route.snapshot.data['embedded'] === true;
+  // One section alone (route data `section`) on its own Account & Settings page; null shows all three with the contents list.
+  public readonly section: AccountSettingsSection | null = (this.route.snapshot.data['section'] as AccountSettingsSection | undefined) ?? null;
+  protected readonly sections = ACCOUNT_SETTINGS_SECTIONS;
   // Latched in afterNextRender (a no-op on the server): the non-production localStorage override in
   // FeatureFlagService reads synchronously, so without it a pre-seeded `true` would render the group on
   // the first client pass and mismatch the SSR DOM (same fix as health-metrics-gate.component.ts).
@@ -274,7 +285,8 @@ export class AccountSettingsComponent {
     // Skip the developer-token fetch while impersonating — the server suppresses it (403) so the
     // impersonator can't read the target's live bearer token. Clear the loading flag so the UI
     // shows the read-only state instead of an indefinite spinner.
-    if (this.impersonating()) {
+    // A single-section page other than Developer settings never shows the token, so it skips the fetch too.
+    if (this.impersonating() || !this.showsSection(ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS)) {
       this.loadingToken.set(false);
     } else {
       this.loadDeveloperToken();
@@ -724,6 +736,10 @@ export class AccountSettingsComponent {
    * selection — long enough to delete the newly chosen invite address and orphan the preference.
    */
   private initEmailState(): Signal<EmailSettingsState> {
+    // Only Email settings shows these; Password and Developer settings on their own pages skip the fetch.
+    if (!this.showsSection(ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS)) {
+      return signal<EmailSettingsState>({ emails: null, invite: null, inviteLoadFailed: false });
+    }
     return toSignal(
       this.emailRefresh.pipe(
         switchMap((): Observable<EmailSettingsState> => {
@@ -805,6 +821,11 @@ export class AccountSettingsComponent {
       return 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.';
     }
     return null;
+  }
+
+  // True when the page shows this section: always on the combined page, and on a single-section page for its own.
+  private showsSection(section: AccountSettingsSection): boolean {
+    return this.section === null || this.section === section;
   }
 
   private loadDeveloperToken(): void {

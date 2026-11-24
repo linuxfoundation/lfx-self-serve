@@ -123,9 +123,10 @@ export class MentorshipController {
 
   // PATCH /api/mentorship/me/lfx-profile
   // Auth: logged-in user required (401 otherwise); refused while impersonating by the route. The
-  // body is the name and logo the profile card shows after an Edit LFX Profile save, or empty after
-  // a Connect, checked with the rules the browser applies (400 with per-field errors); any email or
-  // link in it is ignored. Copies them, with the caller's verified primary email and connected
+  // body is the name and logo the profile card shows after an Edit LFX Profile save, empty after a
+  // Connect, or, from Profile & Account, only the name parts or picture that save changed. It is
+  // checked with the rules the browser applies (400 with per-field errors); any email or link in
+  // it is ignored. Copies them, with the caller's verified primary email and connected
   // GitHub link, onto every mentor and mentee profile the caller holds; 204 whether or not there
   // were any.
   public async syncLfxProfile(req: Request, res: Response, next: NextFunction): Promise<void> {

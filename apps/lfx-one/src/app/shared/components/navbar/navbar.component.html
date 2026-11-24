@@ -182,12 +182,25 @@
           }
 
           <span class="lfxn__me-actions">
-            <!-- Profile, account and settings live on one hub: active on every /profile/* page. -->
-            <a routerLink="/profile" routerLinkActive="is-active" class="lfxn__me-action" data-testid="me-card-link">
-              <i class="fa-light fa-square-user" aria-hidden="true"></i>
-              <span class="lfxn__me-action-label">Profile &amp; Account</span>
-              <i class="fa-light fa-arrow-up-right lfxn__me-action-trail" aria-hidden="true"></i>
-            </a>
+            @if (profileRedesignEnabled()) {
+              <!-- The profile redesign splits the hub: Profile, then Account & Settings, each active on its own pages. -->
+              <a routerLink="/profile" routerLinkActive="is-active" class="lfxn__me-action lfxn__me-action--split" data-testid="me-card-profile-link">
+                <i class="fa-light fa-circle-user" aria-hidden="true"></i>
+                <span class="lfxn__me-action-label">Profile</span>
+              </a>
+              <span class="lfxn__me-sep" aria-hidden="true"></span>
+              <a [routerLink]="accountPath" routerLinkActive="is-active" class="lfxn__me-action lfxn__me-action--split" data-testid="me-card-account-link">
+                <i class="fa-light fa-gear" aria-hidden="true"></i>
+                <span class="lfxn__me-action-label">Account &amp; Settings</span>
+              </a>
+            } @else {
+              <!-- Profile, account and settings live on one hub: active on every /profile/* page. -->
+              <a routerLink="/profile" routerLinkActive="is-active" class="lfxn__me-action" data-testid="me-card-link">
+                <i class="fa-light fa-square-user" aria-hidden="true"></i>
+                <span class="lfxn__me-action-label">Profile &amp; Account</span>
+                <i class="fa-light fa-arrow-up-right lfxn__me-action-trail" aria-hidden="true"></i>
+              </a>
+            }
           </span>
         </div>
       </div>

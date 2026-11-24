@@ -5,7 +5,7 @@ import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Meeting, MeetingRegistrant, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { attachRsvpsToRegistrants } from '../../../../../server/helpers/meeting-rsvp.helper';
@@ -107,6 +107,146 @@ describe('MeetingRsvpDetailsComponent', () => {
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect(fixture.componentInstance.meetingRegistrantCount()).toBe(11);
+  });
+
+  it.each([
+    { uid: '', supplied: true },
+    { uid: '', supplied: false },
+    { uid: 'optimistic-rejoin', supplied: true },
+    { uid: 'optimistic-rejoin', supplied: false },
+  ])('does not acknowledge a re-invitation against a known deleted row: %j', async ({ uid, supplied }) => {
+    const old = buildRegistrant({ uid: 'deleted-self', email: 'self@example.com' });
+    const rejoined = { ...old, uid };
+    const indexed = { ...old, uid: 'new-self' };
+    const roster$ = new BehaviorSubject<MeetingRegistrant[]>([old]);
+    getMeetingRegistrants.mockReturnValue(roster$);
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting());
+    if (supplied) fixture.componentRef.setInput('initialRegistrants', [old]);
+    await fixture.whenStable();
+
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['deleted-self']);
+    fixture.componentRef.setInput('confirmedRegistrants', [rejoined]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([rejoined]);
+
+    if (supplied) fixture.componentRef.setInput('initialRegistrants', [old, indexed]);
+    else roster$.next([old, indexed]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([indexed]);
+    if (supplied) fixture.componentRef.setInput('initialRegistrants', [old]);
+    else roster$.next([old]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+    roster$.complete();
+  });
+
+  it.each(['', 'optimistic-self'])('retires a fallback confirmation after its indexed row appears then disappears: %j', async (uid) => {
+    const fallback = buildRegistrant({ uid, email: 'self@example.com' });
+    const indexed = { ...fallback, uid: 'indexed-self', email: ' SELF@example.com ' };
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting());
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.componentRef.setInput('confirmedRegistrants', [fallback]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([fallback]);
+    fixture.componentRef.setInput('initialRegistrants', [indexed]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([indexed]);
+    fixture.componentRef.setInput('initialRegistrants', []);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+    const reinvited = { ...fallback };
+    fixture.componentRef.setInput('confirmedRegistrants', [reinvited]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([reinvited]);
+  });
+
+  it('does not retire a fallback for another invitation scope with the same email', async () => {
+    const allDates = buildRegistrant({ uid: '', email: 'self@example.com', occurrence_id: null });
+    const singleDate = { ...allDates, occurrence_id: '4071031200' };
+    const indexed = { ...allDates, uid: 'indexed-self' };
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting());
+    fixture.componentRef.setInput('initialRegistrants', [indexed]);
+    fixture.componentRef.setInput('confirmedRegistrants', [allDates, singleDate]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual(expect.arrayContaining([indexed, singleDate]));
+    fixture.componentRef.setInput('initialRegistrants', []);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.registrants()).toEqual([singleDate]);
+  });
+
+  it('reconciles an unindexed self-add and its removal without doubling fallback totals', async () => {
+    const other = buildRegistrant({ uid: 'other', email: 'other@example.com' });
+    const saved = buildRegistrant({ uid: 'saved-self', email: 'self@example.com' });
+    const roster$ = new BehaviorSubject<MeetingRegistrant[]>([other]);
+    getMeetingRegistrants.mockReturnValue(roster$);
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting({ is_invite_responses_enabled: true }));
+    fixture.componentRef.setInput('confirmedRegistrants', [saved]);
+    fixture.componentRef.setInput('confirmedCountAdjustment', 1);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.meetingRegistrantCount()).toBe(2);
+    expect(fixture.componentInstance.previewPeople().map((person) => person.key)).toContain('saved-self');
+    expect(fixture.componentInstance.acceptedCount()).toBe(0);
+
+    roster$.next([other, saved]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.meetingRegistrantCount()).toBe(2);
+    expect(fixture.componentInstance.registrants().filter((row) => row.uid === saved.uid)).toHaveLength(1);
+    fixture.componentRef.setInput('confirmedRegistrants', []);
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['saved-self']);
+    fixture.componentRef.setInput('confirmedCountAdjustment', 0);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.meetingRegistrantCount()).toBe(1);
+    expect(fixture.componentInstance.previewPeople().map((person) => person.key)).not.toContain('saved-self');
+    roster$.complete();
+  });
+
+  it.each(['roster', 'rsvps'] as const)('removes stale self responses and previews without hiding other guests from %s data', async (source) => {
+    const selfRsvp = {
+      id: 'self-answer',
+      meeting_id: MEETING_ID,
+      registrant_id: 'saved-self',
+      email: 'self@example.com',
+      username: 'synthetic-self',
+      first_name: 'Self',
+      last_name: 'Guest',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-11-19T10:00:00Z',
+    } as MeetingRsvp;
+    const otherRsvp = { ...selfRsvp, id: 'other-answer', registrant_id: 'other', email: 'other@example.com', response_type: 'maybe' } as MeetingRsvp;
+    const saved = buildRegistrant({ uid: 'saved-self', email: 'self@example.com', rsvp: selfRsvp });
+    const other = buildRegistrant({ uid: 'other', email: 'other@example.com', rsvp: otherRsvp });
+    getMeetingRegistrants.mockReturnValue(of([saved, other]));
+    getMeetingRsvps.mockReturnValue(of([selfRsvp, otherRsvp]));
+    const fixture = createComponent();
+    fixture.componentRef.setInput(
+      'meeting',
+      buildMeeting({ is_invite_responses_enabled: true, ...(source === 'rsvps' ? { individual_registrants_count: 2 } : {}) })
+    );
+    fixture.componentRef.setInput('confirmedRemovedRegistrantIds', ['saved-self']);
+    fixture.componentRef.setInput('confirmedCountAdjustment', -1);
+    fixture.componentRef.setInput('confirmedRsvps', [selfRsvp]);
+    const pending = buildRegistrant({ uid: 'pending', email: 'pending@example.com', rsvp: null });
+    fixture.componentRef.setInput('confirmedRegistrants', [pending]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.acceptedCount()).toBe(0);
+    expect(fixture.componentInstance.maybeCount()).toBe(1);
+    expect(fixture.componentInstance.previewPeople().map((person) => person.key)).toEqual(expect.arrayContaining(['other', 'pending']));
+    expect(fixture.componentInstance.previewPeople().map((person) => person.key)).not.toContain('saved-self');
+  });
+
+  it('uses the live drawer roster without adding its already-included numeric adjustment', async () => {
+    const roster = [buildRegistrant(), buildRegistrant()];
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting({ individual_registrants_count: 3 }));
+    fixture.componentRef.setInput('initialRegistrants', roster);
+    fixture.componentRef.setInput('confirmedCountAdjustment', -1);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.meetingRegistrantCount()).toBe(2);
   });
 
   it('derives response counts from the supplied registrants', async () => {

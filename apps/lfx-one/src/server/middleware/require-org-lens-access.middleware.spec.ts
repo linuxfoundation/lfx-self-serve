@@ -347,6 +347,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
       rootUid: ROOT,
       members: [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
       complete: true,
+      excludedCount: 0,
     });
     expect(toRollUpSet).toHaveBeenCalledTimes(1);
   });
@@ -371,6 +372,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
       rootUid: ROOT,
       members: [org(ROOT, 'Parent Co')],
       complete: false,
+      excludedCount: 0,
     });
   });
 
@@ -390,7 +392,9 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     const { next } = await runRollUp(req);
 
     expect(statusOf(next)).toBe('allow');
-    expect((await resolveOrgLensRollUp(req, ROLL_UP, 'handler')).members).toEqual([org(ROOT, 'Parent Co')]);
+    const scope = await resolveOrgLensRollUp(req, ROLL_UP, 'handler');
+    expect(scope.members).toEqual([org(ROOT, 'Parent Co')]);
+    expect(scope.excludedCount).toBe(1);
     expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: SUBSIDIARY, access: 'auditor' });
   });
 
@@ -535,6 +539,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
         rootUid: ROOT,
         members: [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
         complete: true,
+        excludedCount: 0,
       });
     });
 
@@ -634,6 +639,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
           rootUid: ROOT,
           members: [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
           complete: true,
+          excludedCount: 0,
         });
       });
 
@@ -643,7 +649,9 @@ describe('requireOrgLensAccess — family roll-up key', () => {
 
         await runRollUp(req);
 
-        expect((await resolveOrgLensRollUp(req, ROLL_UP, 'handler')).members).toEqual([org(ROOT, 'Parent Co')]);
+        const scope = await resolveOrgLensRollUp(req, ROLL_UP, 'handler');
+        expect(scope.members).toEqual([org(ROOT, 'Parent Co')]);
+        expect(scope.excludedCount).toBe(1);
       });
 
       it('serves the grant family, marked incomplete, when the family lookup fails', async () => {

@@ -30,7 +30,7 @@ import { HEALTH_METRICS_TABLE_DASH, HEALTH_METRICS_VALUE_BAR_FILL } from '../con
 import { formatIsoDateLabel } from './date-time.utils';
 import { buildHealthMetricsLineChart, healthMetricsLineChartCountCeiling } from './health-metrics-line-chart.utils';
 import { formatHealthMetricsNewsletterGrowthSince } from './health-metrics-overview.utils';
-import { healthMetricsBarFillClass, healthMetricsTierSortRank } from './health-metrics-table.utils';
+import { formatHealthMetricsPercent, healthMetricsBarFillClass, healthMetricsShownPercent, healthMetricsTierSortRank } from './health-metrics-table.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
@@ -87,7 +87,7 @@ export function formatHealthMetricsEngagementAttendance(fraction: number | null,
     return 'No data';
   }
 
-  return `${Math.round(fraction * 100)}%`;
+  return formatHealthMetricsPercent(fraction * 100);
 }
 
 /** A count cell: "—" when unmeasured, else the count with its locale pinned so SSR and hydration agree. */
@@ -156,6 +156,7 @@ export function buildHealthMetricsEngagementGroupRowView(row: HealthMetricsEngag
   const period = selectPeriod(row.periods, range);
   const meetings = period?.meetingsHeld ?? null;
   const pct = ratedAttendancePct(period?.attendancePct ?? null, meetings);
+  const rateLabel = pct === null ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsPercent((period?.attendancePct ?? 0) * 100);
 
   return {
     key: row.committeeId,
@@ -164,7 +165,7 @@ export function buildHealthMetricsEngagementGroupRowView(row: HealthMetricsEngag
     meetings: meetings ? formatHealthMetricsEngagementCount(meetings) : HEALTH_METRICS_TABLE_DASH,
     lastMetLabel: row.lastMetDate ? formatIsoDateLabel(row.lastMetDate) : HEALTH_METRICS_TABLE_DASH,
     dormant: period?.dormant ?? false,
-    attendanceLabel: pct === null ? HEALTH_METRICS_TABLE_DASH : `${pct}%`,
+    attendanceLabel: rateLabel,
     attendancePct: pct,
   };
 }
@@ -215,10 +216,15 @@ export function buildHealthMetricsEngagementParticipationRowView(
     description: row.governance ? HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_DESCRIPTION : '',
     governance: row.governance,
     meetings: formatHealthMetricsEngagementCount(period?.meetingsHeld ?? null),
-    attendanceLabel: pct === null ? HEALTH_METRICS_TABLE_DASH : `${pct}%`,
+    attendanceLabel: pct === null ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsPercent((period?.attendancePct ?? 0) * 100),
     attendancePct: pct,
     fillRule: Object.hasOwn(fills, group) ? fills[group] : HEALTH_METRICS_VALUE_BAR_FILL,
-    sortValues: { type: group || row.label, meetings: period?.meetingsHeld ?? null, attendance: pct },
+    // Attendance sorts on the percent its cell shows.
+    sortValues: {
+      type: group || row.label,
+      meetings: period?.meetingsHeld ?? null,
+      attendance: pct === null ? null : healthMetricsShownPercent((period?.attendancePct ?? 0) * 100),
+    },
   };
 }
 
@@ -347,7 +353,7 @@ export function buildHealthMetricsEngagementOrgRowView(row: HealthMetricsEngagem
     attendedLabel:
       share === null
         ? HEALTH_METRICS_TABLE_DASH
-        : `${formatHealthMetricsEngagementCount(attended)} of ${formatHealthMetricsEngagementCount(total)} (${share}%)`,
+        : `${formatHealthMetricsEngagementCount(attended)} of ${formatHealthMetricsEngagementCount(total)} (${formatHealthMetricsPercent((fraction ?? 0) * 100)})`,
     attendedPct: share,
     attendedFillClass: share === null ? '' : healthMetricsBarFillClass(share),
     avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
@@ -356,7 +362,8 @@ export function buildHealthMetricsEngagementOrgRowView(row: HealthMetricsEngagem
       company: row.accountName,
       // A non-member ranks lowest; a member with a blank tier shows "—", so it is empty and sorts last.
       membership: row.isMember ? healthMetricsTierSortRank(tierName) : 0,
-      attended: share,
+      // The share its cell shows; the bar keeps the whole percent.
+      attended: share === null ? null : healthMetricsShownPercent((fraction ?? 0) * 100),
       reps: period?.avgReps ?? null,
       last: row.lastEngagedDate,
     },
@@ -626,7 +633,7 @@ export function buildHealthMetricsEngagementNewsletterChart(
       })),
       ariaLabel: audience ? 'Recipients and unique opens by newsletter' : 'Open, click and click-to-open rate by newsletter',
     }),
-    legend: series.map((line) => ({ key: line.key, label: line.label, color: line.color })),
+    legend: series.map((line) => ({ key: line.key, label: line.label, color: line.color, dashed: line.dashed === true })),
   };
 }
 
@@ -757,7 +764,7 @@ function attendanceMonthName(month: HealthMetricsEngagementAttendanceMonth): str
   return MONTH_NAMES[Number(month.monthStartDate.slice(5, 7)) - 1] ?? month.monthStartDate.slice(0, 7);
 }
 
-/** A rated month's rate as a whole percent, the number every label shows. */
+/** A rated month's rate as a whole percent: changes stay in whole points, as the design writes trends; labels format the rate. */
 function attendanceWholePct(month: HealthMetricsEngagementAttendanceMonth): number {
   return Math.round((month.attendancePct as number) * 100);
 }
@@ -821,7 +828,7 @@ function buildAttendanceTrendMetrics(
   const latest: HealthMetricsMetricItem = {
     key: 'latest',
     label: inProgress ? `Previous month (${headName.slice(0, 3)} ${year})` : `${headName} ${year}`,
-    value: headRated ? `${attendanceWholePct(head)}%` : 'No data',
+    value: headRated ? formatHealthMetricsPercent((head.attendancePct as number) * 100) : 'No data',
   };
   const previous = window[lastFull - 1];
   if (headRated && previous && isRatedAttendanceMonth(previous)) {
@@ -847,11 +854,21 @@ function buildAttendanceTrendMetrics(
       key: 'change',
       label: `Change since ${startName}`,
       value: formatAttendanceTrendPp(attendanceWholePct(end) - attendanceWholePct(start)),
-      description: `${attendanceWholePct(start)}% in ${startName.slice(0, 3)} → ${attendanceWholePct(end)}% in ${endName.slice(0, 3)}`,
+      description: `${formatHealthMetricsPercent((start.attendancePct as number) * 100)} in ${startName.slice(0, 3)} → ${formatHealthMetricsPercent((end.attendancePct as number) * 100)} in ${endName.slice(0, 3)}`,
       tip: `Difference in attendance rate between ${startName} and ${end === head ? 'the last full month' : endName} of the selected year, in percentage points.`,
     },
-    { key: 'high', label: 'Highest rate', value: `${attendanceWholePct(high)}%`, description: `${attendanceMonthName(high)} ${year}` },
-    { key: 'low', label: 'Lowest rate', value: `${attendanceWholePct(low)}%`, description: `${attendanceMonthName(low)} ${year}` },
+    {
+      key: 'high',
+      label: 'Highest rate',
+      value: formatHealthMetricsPercent((high.attendancePct as number) * 100),
+      description: `${attendanceMonthName(high)} ${year}`,
+    },
+    {
+      key: 'low',
+      label: 'Lowest rate',
+      value: formatHealthMetricsPercent((low.attendancePct as number) * 100),
+      description: `${attendanceMonthName(low)} ${year}`,
+    },
   ];
 }
 
@@ -892,14 +909,19 @@ function buildAttendanceTrendChart(
   });
 }
 
-/** A 0–100 percentage, whole; "—" when there is none. */
+/** A 0–100 percentage, whole from 1% and at 0, one decimal under 1%; "—" when there is none. */
 function formatNewsletterPct(value: number | null): string {
-  return value === null ? HEALTH_METRICS_TABLE_DASH : `${Math.round(value)}%`;
+  return value === null ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsPercent(value);
 }
 
-/** A 0–1 rate as a percentage, whole unless `digits` asks for more. */
+/**
+ * A 0–1 rate as a percentage: whole from 1% and at 0, one decimal under 1%. With `digits`, it keeps that many decimals
+ * throughout, never reading "0.0%" above zero.
+ */
 function formatNewsletterRate(value: number | null, digits = 0): string {
-  return value === null || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(digits)}%`;
+  if (value === null || !Number.isFinite(value)) return '—';
+  if (digits === 0) return formatHealthMetricsPercent(value * 100);
+  return value > 0 && value * 100 < 0.1 ? `${(0.1).toFixed(digits)}%` : `${(value * 100).toFixed(digits)}%`;
 }
 
 function buildNewsletterRow(newsletter: HealthMetricsEngagementNewsletter): HealthMetricsEngagementNewsletterRowView {

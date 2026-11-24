@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentor, invitation, accept, decline, email]
 last_generated: 2026-10-26
-last_updated: 2026-11-16
+last_updated: 2026-11-23
 intercom_collection: Mentorship
 ---
 
@@ -36,12 +36,12 @@ You can also answer from **Mentor Profile → Edit Mentor Profile**, where the i
 
 ## Troubleshooting
 
-| What you see                                 | What it means                                                                                                                                                                                                                          |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "This invitation is for a different account" | You are signed in with a different LF ID from the one the email was sent to, or, for an invitation sent to an email address, with an LF account that doesn't use that address. Sign in with the right account and open the link again. |
-| "This invitation link can't be used"         | The invitation was already answered or revoked. Ask the Program Admin to invite you again.                                                                                                                                             |
-| "You're viewing as another user"             | You are in a view-as session. Leave it, then open the link again.                                                                                                                                                                      |
-| "Something went wrong"                       | Your answer was not recorded. Select **Try again**.                                                                                                                                                                                    |
+| What you see                                 | What it means                                                                                                                                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "This invitation is for a different account" | You are signed in with a different LF account from the one the email was sent to, or, for an invitation sent to an email address, with an LF account that doesn't use that address. Sign in with the right account and open the link again. |
+| "This invitation link can't be used"         | The invitation was already answered or revoked. Ask the Program Admin to invite you again.                                                                                                                                                  |
+| "You're viewing as another user"             | You are in a view-as session. Leave it, then open the link again.                                                                                                                                                                           |
+| "Something went wrong"                       | Your answer was not recorded. Select **Try again**.                                                                                                                                                                                         |
 
 ## Related
 

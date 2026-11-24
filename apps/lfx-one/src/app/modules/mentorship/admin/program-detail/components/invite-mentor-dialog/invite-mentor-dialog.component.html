@@ -54,7 +54,13 @@
           <p class="text-sm text-gray-900">
             Invite <span class="break-all font-semibold">{{ email }}</span> by email
           </p>
-          <ol class="flex list-inside list-decimal flex-col gap-0.5 text-xs text-gray-700" data-testid="mentorship-mentors-email-invite-steps">
+          <p id="mentorship-mentors-email-invite-steps-intro" class="text-xs text-gray-600" data-testid="mentorship-mentors-email-invite-steps-intro">
+            {{ emailInviteStepsIntro }}
+          </p>
+          <ol
+            class="flex list-inside list-decimal flex-col gap-0.5 text-xs text-gray-700"
+            aria-labelledby="mentorship-mentors-email-invite-steps-intro"
+            data-testid="mentorship-mentors-email-invite-steps">
             @for (step of emailInviteSteps; track step) {
               <li>{{ step }}</li>
             }

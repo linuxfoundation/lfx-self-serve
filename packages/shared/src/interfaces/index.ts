@@ -214,6 +214,7 @@ export * from './health-metrics-events.interface';
 export * from './health-metrics-l2.interface';
 
 // Health Metrics shared line chart
+export * from './health-metrics-bar-chart.interface';
 export * from './health-metrics-column-chart.interface';
 export * from './health-metrics-world-map.interface';
 export * from './health-metrics-line-chart.interface';

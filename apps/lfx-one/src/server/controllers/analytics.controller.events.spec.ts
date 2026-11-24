@@ -462,6 +462,7 @@ describe('AnalyticsController.getEventsOrganizations', () => {
       search: '',
       offset: 0,
       pageSize: 10,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED);
   });
@@ -475,6 +476,8 @@ describe('AnalyticsController.getEventsOrganizations', () => {
       search,
       offset: '50',
       pageSize: '25',
+      sortKey: 'membership',
+      sortDir: 'desc',
     });
     await promise;
 
@@ -485,7 +488,21 @@ describe('AnalyticsController.getEventsOrganizations', () => {
       search: 'a'.repeat(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH),
       offset: 50,
       pageSize: 25,
+      sort: { key: 'membership', direction: 'desc' },
     });
+  });
+
+  it("keeps the view's rank for a sort column or direction the table does not allow", async () => {
+    for (const [sortKey, sortDir] of [
+      ['account_name; DROP TABLE x', 'asc'],
+      ['registrations', 'sideways'],
+      ['__proto__', 'asc'],
+    ]) {
+      getOrganizations.mockClear();
+      const { promise } = call('getEventsOrganizations', { foundationSlug: 'acme', sortKey, sortDir });
+      await promise;
+      expect(getOrganizations).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
+    }
   });
 
   it.each([
@@ -534,6 +551,7 @@ describe('AnalyticsController.getEventsSpeakerProposals', () => {
       offset: 0,
       pageSize: 25,
       includeEvents: false,
+      sort: null,
     });
     expect(res.json).toHaveBeenCalledWith(page);
   });
@@ -547,6 +565,8 @@ describe('AnalyticsController.getEventsSpeakerProposals', () => {
       offset: '25',
       pageSize: '25',
       includeEvents: 'true',
+      sortKey: 'speaker',
+      sortDir: 'asc',
     });
     await promise;
 
@@ -558,7 +578,21 @@ describe('AnalyticsController.getEventsSpeakerProposals', () => {
       offset: 25,
       pageSize: 25,
       includeEvents: true,
+      sort: { key: 'speaker', direction: 'asc' },
     });
+  });
+
+  it('keeps the most recent first for a sort column or direction the table does not allow', async () => {
+    for (const [sortKey, sortDir] of [
+      ['job_title; DROP TABLE x', 'asc'],
+      ['submitted', 'up'],
+      ['constructor', 'desc'],
+    ]) {
+      getSpeakerProposalsPage.mockClear();
+      const { promise } = call('getEventsSpeakerProposals', { foundationSlug: 'acme', sortKey, sortDir });
+      await promise;
+      expect(getSpeakerProposalsPage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sort: null }));
+    }
   });
 
   it.each([

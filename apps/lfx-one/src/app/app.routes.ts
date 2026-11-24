@@ -49,6 +49,7 @@ import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { openprofileMeLensGuard } from './shared/guards/openprofile-me-lens.guard';
+import { profileRedesignEnabledGuard } from './shared/guards/profile-redesign.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
@@ -915,6 +916,14 @@ export const routes: Routes = [
         title: 'Profile',
         data: { lens: 'me' },
         loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),
+      },
+      {
+        // Account & Settings (#6067): the hub's account tabs behind the profile redesign flag, a Me page like /profile.
+        path: 'account',
+        title: 'Account & Settings',
+        data: { lens: 'me' },
+        canMatch: [profileRedesignEnabledGuard],
+        loadChildren: () => import('./modules/account/account.routes').then((m) => m.ACCOUNT_ROUTES),
       },
       {
         path: 'me/training',

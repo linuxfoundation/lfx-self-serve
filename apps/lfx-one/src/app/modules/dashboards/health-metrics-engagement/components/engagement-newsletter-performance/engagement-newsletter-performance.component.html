@@ -29,9 +29,23 @@
         <lfx-health-metrics-line-chart [chart]="chart().chart" testId="engagement-newsletter-performance-chart" />
         <div class="flex flex-wrap justify-center gap-x-[16px] gap-y-[6px]" aria-hidden="true" data-testid="engagement-newsletter-performance-legend">
           @for (item of chart().legend; track item.key) {
-            <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-              ><span class="h-[3px] w-[14px] rounded-full" [style.background]="item.color"></span>{{ item.label }}</span
-            >
+            <span
+              class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+              [attr.data-testid]="'engagement-newsletter-performance-legend-' + item.key">
+              <!-- A dashed series gets the event trend's dashed Predicted swatch. -->
+              @if (item.dashed) {
+                <span
+                  class="h-0 w-[14px] border-t-2 border-dashed"
+                  [style.border-top-color]="item.color"
+                  data-testid="engagement-newsletter-performance-legend-swatch-dashed"></span>
+              } @else {
+                <span
+                  class="h-[3px] w-[14px] rounded-full"
+                  [style.background]="item.color"
+                  data-testid="engagement-newsletter-performance-legend-swatch"></span>
+              }
+              {{ item.label }}
+            </span>
           }
         </div>
       </div>

@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED, lfxColors } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -25,11 +25,17 @@ const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
     { deliveryType: 'Bundle', isListed: false, isListedRevenue: true, enrollments: 0, revenueUsd: 400000 },
   ],
 };
+const GOALS = { enrollments: 150000, revenueUsd: 5000000, enrollmentsProgress: null, revenueProgress: null };
 const ENROLLMENT: HealthMetricsTrainingEnrollment = {
   measured: true,
   periods: { YTD: PERIOD, COMPLETED_YEAR: PERIOD, COMPLETED_YEAR_2: PERIOD, COMPLETED_YEAR_3: PERIOD },
   trend: [],
-  goals: { enrollments: 150000, revenueUsd: 5000000, enrollmentsProgressYtd: null, revenueProgressYtd: null },
+  goals: {
+    YTD: GOALS,
+    COMPLETED_YEAR: { enrollments: 100000, revenueUsd: null, enrollmentsProgress: 1, revenueProgress: null },
+    COMPLETED_YEAR_2: HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED.goals.COMPLETED_YEAR_2,
+    COMPLETED_YEAR_3: HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED.goals.COMPLETED_YEAR_3,
+  },
 };
 
 describe('OverviewTrainingCardComponent', () => {
@@ -89,18 +95,22 @@ describe('OverviewTrainingCardComponent', () => {
     expect(option('revenue')?.checked).toBe(true);
   });
 
-  it('drops the goal outside YTD', async () => {
+  it("reads a past year's own goal, and says none is set for a year without one", async () => {
     await render();
+    const chrome = TestBed.inject(HealthMetricsChromeService);
 
-    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    chrome.selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
+    expect(query('overview-training-goal')?.textContent?.trim()).toBe('100% of 100K goal');
 
-    expect(query('overview-training-goal')).toBeNull();
-    expect(arcStrokes()).toEqual([`${lfxColors.gray[100]}/8`]);
+    chrome.selectedRange.set('COMPLETED_YEAR_2');
+    fixture.detectChanges();
+    expect(query('overview-training-goal')?.textContent?.trim()).toBe('No goal set');
+    expect(arcStrokes()).toEqual([`${lfxColors.gray[200]}/8`, `${lfxColors.white}/6`]);
   });
 
   it('outlines the track and says no goal is set when YTD has none', async () => {
-    await render({ ...ENROLLMENT, goals: { ...ENROLLMENT.goals, enrollments: null } });
+    await render({ ...ENROLLMENT, goals: { ...ENROLLMENT.goals, YTD: { ...GOALS, enrollments: null } } });
 
     expect(query('overview-training-goal')?.textContent?.trim()).toBe('No goal set');
     expect(arcStrokes()).toEqual([`${lfxColors.gray[200]}/8`, `${lfxColors.white}/6`]);

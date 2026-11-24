@@ -6,13 +6,15 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { GROUPS_VIEW_MODE_STORAGE_KEY } from '@lfx-one/shared/constants';
 import { MyCommittee } from '@lfx-one/shared/interfaces';
+import { CommitteeMemberImportDialogService } from '@services/committee-member-import-dialog.service';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
 import { UserService } from '@services/user.service';
-import { of, Subject } from 'rxjs';
+import { EMPTY, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GroupsRedesignComponent } from './groups-redesign.component';
@@ -67,6 +69,8 @@ describe('GroupsRedesignComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: CommitteeService, useValue: { getMyCommitteesOrError: () => groups$, getGroupsEngagementStats: vi.fn(), getMyApplications: () => of([]) } },
+        { provide: CommitteeMemberImportService, useValue: { viewerSubject: signal('synthetic-manager'), getSummary: () => undefined, settlements$: EMPTY } },
+        { provide: CommitteeMemberImportDialogService, useValue: { accessByUid: signal(new Map()), probeAccess: () => EMPTY, openRun: vi.fn() } },
         {
           provide: InvitationService,
           useValue: { pendingInvitations: signal([]), resolvedInviteUids: signal(new Set()), loadPendingInvitations: () => of([]) },

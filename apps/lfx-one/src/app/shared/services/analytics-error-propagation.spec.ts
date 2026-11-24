@@ -140,14 +140,23 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getEventsOrganizations',
       url: '/api/analytics/events-organizations',
       // A swallowed failure would read as a foundation with no organizations at its events.
-      call: () => service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25 }),
+      call: () => service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25, sort: null }),
     },
     {
       name: 'getEventsSpeakerProposals',
       url: '/api/analytics/events-speaker-proposals',
       // A swallowed failure would read as no proposal matching the drawer's filters.
       call: () =>
-        service.getEventsSpeakerProposals({ foundationSlug: 'aaif', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25, includeEvents: true }),
+        service.getEventsSpeakerProposals({
+          foundationSlug: 'aaif',
+          range: 'YTD',
+          eventId: '',
+          status: null,
+          offset: 0,
+          pageSize: 25,
+          includeEvents: true,
+          sort: null,
+        }),
     },
     {
       name: 'getEventsSponsorship',
@@ -177,7 +186,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getMembersDirectory',
       url: '/api/analytics/members-directory',
       // A swallowed failure would read as a foundation with no members.
-      call: () => service.getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: '', nps: '', search: '', offset: 0, pageSize: 10 }),
+      call: () => service.getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: '', nps: '', search: '', offset: 0, pageSize: 10, sort: null }),
     },
     {
       name: 'getMembersDirectoryTiers',
@@ -189,19 +198,19 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getMembersAtRisk',
       url: '/api/analytics/members-at-risk',
       // A swallowed failure would read as a foundation with no members at risk.
-      call: () => service.getMembersAtRisk({ foundationSlug: 'aaif', bucket: 'all', offset: 0, pageSize: 10 }),
+      call: () => service.getMembersAtRisk({ foundationSlug: 'aaif', bucket: 'all', offset: 0, pageSize: 10, sort: null }),
     },
     {
       name: 'getMembersRenewals',
       url: '/api/analytics/members-renewals',
       // A swallowed failure would read as a foundation with no renewals due.
-      call: () => service.getMembersRenewals({ foundationSlug: 'aaif', window: '90_days', offset: 0, pageSize: 10 }),
+      call: () => service.getMembersRenewals({ foundationSlug: 'aaif', window: '90_days', offset: 0, pageSize: 10, sort: null }),
     },
     {
       name: 'getMembersBoardAttendance',
       url: '/api/analytics/members-board-attendance',
       // A swallowed failure would read as a board that met with no one attending.
-      call: () => service.getMembersBoardAttendance({ foundationSlug: 'aaif', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10 }),
+      call: () => service.getMembersBoardAttendance({ foundationSlug: 'aaif', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10, sort: null }),
     },
     {
       name: 'getMembersNps',
@@ -219,19 +228,19 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getMembersChurnDepartures',
       url: '/api/analytics/members-churn-departures',
       // A swallowed failure would read as a year in which no membership lapsed.
-      call: () => service.getMembersChurnDepartures({ foundationSlug: 'aaif', year: 2026, offset: 0, pageSize: 25 }),
+      call: () => service.getMembersChurnDepartures({ foundationSlug: 'aaif', year: 2026, offset: 0, pageSize: 25, sort: null }),
     },
     {
       name: 'getNonMembersOrgs',
       url: '/api/analytics/non-members-orgs',
       // A swallowed failure would read as a foundation no non-member organization engages with.
-      call: () => service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10 }),
+      call: () => service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10, sort: null }),
     },
     {
       name: 'getNonMembersPeople',
       url: '/api/analytics/non-members-people',
       // A swallowed failure would read as a foundation no non-member individual attended.
-      call: () => service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: '', offset: 0, pageSize: 10 }),
+      call: () => service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: '', offset: 0, pageSize: 10, sort: null }),
     },
     {
       name: 'getNonMembersConversion',
@@ -249,7 +258,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getTrainingCourses',
       url: '/api/analytics/training-courses',
       // A swallowed failure would read as a foundation with no courses.
-      call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }),
+      call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25, sort: null }),
     },
     {
       name: 'getOverviewParticipatingOrgs',
@@ -340,7 +349,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
 
   // Angular's default codec leaves `+` bare, which Express's query parser reads as a space.
   it('getEventsOrganizations sends a typed plus sign encoded, not as a space', () => {
-    service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: 'A+E', offset: 0, pageSize: 25 }).subscribe();
+    service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: 'A+E', offset: 0, pageSize: 25, sort: null }).subscribe();
 
     const req = http.expectOne((request) => request.url === '/api/analytics/events-organizations');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
@@ -357,10 +366,11 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
         offset: 25,
         pageSize: 25,
         includeEvents: true,
+        sort: null,
       })
       .subscribe();
     service
-      .getEventsSpeakerProposals({ foundationSlug: 'aaif', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25, includeEvents: false })
+      .getEventsSpeakerProposals({ foundationSlug: 'aaif', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25, includeEvents: false, sort: null })
       .subscribe();
 
     const [filtered, unfiltered] = http.match((request) => request.url === '/api/analytics/events-speaker-proposals');
@@ -376,44 +386,94 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     unfiltered.flush({ rows: [], totalRecords: 0, events: [] });
   });
 
-  it('getTrainingCourses sends a typed plus sign encoded and leaves an empty search out', () => {
-    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: 'C++', offset: 0, pageSize: 25 }).subscribe();
-    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }).subscribe();
+  it('getTrainingCourses sends a typed plus sign encoded and a picked sort, and leaves an empty search and the default order out', () => {
+    service
+      .getTrainingCourses({
+        foundationSlug: 'aaif',
+        range: 'YTD',
+        type: 'all',
+        search: 'C++',
+        offset: 0,
+        pageSize: 25,
+        sort: { key: 'revenue', direction: 'asc' },
+      })
+      .subscribe();
+    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25, sort: null }).subscribe();
 
     const [withSearch, withoutSearch] = http.match((request) => request.url === '/api/analytics/training-courses');
     expect(withSearch.request.urlWithParams).toContain('search=C%2B%2B');
+    expect(withSearch.request.params.get('sortKey')).toBe('revenue');
+    expect(withSearch.request.params.get('sortDir')).toBe('asc');
     expect(withoutSearch.request.params.has('search')).toBe(false);
+    expect(withoutSearch.request.params.has('sortKey')).toBe(false);
     withSearch.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
     withoutSearch.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 
   it('getMembersDirectory sends a typed plus sign encoded and leaves empty filters out', () => {
-    service.getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: 'Gold+', nps: '', search: 'A+E', offset: 0, pageSize: 10 }).subscribe();
+    service
+      .getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: 'Gold+', nps: '', search: 'A+E', offset: 0, pageSize: 10, sort: null })
+      .subscribe();
 
     const req = http.expectOne((request) => request.url === '/api/analytics/members-directory');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
     expect(req.request.urlWithParams).toContain('tier=Gold%2B');
     expect(req.request.params.has('nps')).toBe(false);
-    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, atRiskCount: 0 });
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
+  it('getMembersDirectory sends a picked sort, and none for the default order', () => {
+    service
+      .getMembersDirectory({
+        foundationSlug: 'aaif',
+        range: 'YTD',
+        tier: '',
+        nps: '',
+        search: '',
+        offset: 0,
+        pageSize: 10,
+        sort: { key: 'renewal', direction: 'asc' },
+      })
+      .subscribe();
+    service.getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: '', nps: '', search: '', offset: 10, pageSize: 10, sort: null }).subscribe();
+
+    const [sorted, unsorted] = http.match((request) => request.url === '/api/analytics/members-directory');
+    expect(sorted.request.params.get('sortKey')).toBe('renewal');
+    expect(sorted.request.params.get('sortDir')).toBe('asc');
+    expect(unsorted.request.params.has('sortKey')).toBe(false);
+    sorted.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+    unsorted.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 
   it('getNonMembersOrgs sends a typed plus sign encoded and leaves the default filter out', () => {
-    service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: 'A+E', offset: 0, pageSize: 10 }).subscribe();
+    service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: 'A+E', offset: 0, pageSize: 10, sort: null }).subscribe();
 
     const req = http.expectOne((request) => request.url === '/api/analytics/non-members-orgs');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
     expect(req.request.params.has('filter')).toBe(false);
-    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, newCount: 0 });
+    expect(req.request.params.has('sortKey')).toBe(false);
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
+  it('getNonMembersOrgs sends a picked sort as its key and direction', () => {
+    service
+      .getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10, sort: { key: 'fit', direction: 'asc' } })
+      .subscribe();
+
+    const req = http.expectOne((request) => request.url === '/api/analytics/non-members-orgs');
+    expect(req.request.params.get('sortKey')).toBe('fit');
+    expect(req.request.params.get('sortDir')).toBe('asc');
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 
   it('getNonMembersPeople sends a typed plus sign encoded and leaves an empty search out', () => {
-    service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: 'A+E', offset: 0, pageSize: 10 }).subscribe();
+    service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: 'A+E', offset: 0, pageSize: 10, sort: null }).subscribe();
 
     const req = http.expectOne((request) => request.url === '/api/analytics/non-members-people');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
     req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
 
-    service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: '', offset: 0, pageSize: 10 }).subscribe();
+    service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: '', offset: 0, pageSize: 10, sort: null }).subscribe();
     const unsearched = http.expectOne((request) => request.url === '/api/analytics/non-members-people');
     expect(unsearched.request.params.has('search')).toBe(false);
     unsearched.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });

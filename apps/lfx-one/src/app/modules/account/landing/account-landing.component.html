@@ -1,0 +1,33 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<div class="flex flex-col gap-[28px] pt-[8px]" data-testid="account-landing">
+  @for (group of navGroups; track group.id) {
+    <section class="flex flex-col gap-[8px]" [attr.aria-labelledby]="'account-landing-' + group.id" [attr.data-testid]="'account-landing-group-' + group.id">
+      <div class="flex flex-row items-center gap-[12px]">
+        <h2 class="m-0 flex-none text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600" [id]="'account-landing-' + group.id">
+          {{ group.label }}
+        </h2>
+        <span class="h-px flex-1 bg-gray-200" aria-hidden="true"></span>
+      </div>
+      <!-- Two columns, three from 1280px, one at 860px and below. -->
+      <div class="grid grid-cols-2 gap-x-[24px] gap-y-[4px] min-[1280px]:grid-cols-3 max-[860px]:grid-cols-1">
+        @for (item of group.items; track item.route) {
+          <a
+            [routerLink]="item.route"
+            class="flex flex-row items-start gap-[14px] rounded-[8px] p-[12px] text-left no-underline hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            [attr.data-testid]="'account-landing-row-' + item.route">
+            <span class="grid size-[40px] flex-none place-items-center rounded-[8px] bg-white text-gray-900 shadow-small" aria-hidden="true">
+              <i class="text-[16px] {{ item.icon }}"></i>
+            </span>
+            <span class="flex min-w-0 flex-1 flex-col gap-[2px]">
+              <span class="text-[14px] font-semibold leading-[20px] text-gray-900">{{ item.label }}</span>
+              <span class="text-[12px] leading-[16px] text-gray-500">{{ item.blurb }}</span>
+            </span>
+          </a>
+        }
+      </div>
+    </section>
+  }
+</div>

@@ -75,6 +75,7 @@ function speakers(overrides: Partial<HealthMetricsEventsSpeakers> = {}): HealthM
 describe('EventsSpeakersComponent', () => {
   let fixture: ComponentFixture<EventsSpeakersComponent>;
   let getEventsSpeakers: ReturnType<typeof vi.fn>;
+  let getEventsSpeakerProposals: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
   let verdicts: boolean[];
@@ -84,13 +85,20 @@ describe('EventsSpeakersComponent', () => {
 
   async function render(payload: HealthMetricsEventsSpeakers | Error = speakers()): Promise<void> {
     getEventsSpeakers = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
+    getEventsSpeakerProposals = vi.fn().mockReturnValue(
+      of({
+        rows: [proposal({ proposalKey: 'p-9', jobTitle: 'Architect' }), proposal({ proposalKey: 'p-8', jobTitle: 'Builder' })],
+        totalRecords: 2,
+        events: null,
+      })
+    );
 
     await TestBed.configureTestingModule({
       imports: [EventsSpeakersComponent],
       providers: [
         provideRouter([]),
         HealthMetricsChromeService,
-        { provide: AnalyticsService, useValue: { getEventsSpeakers } },
+        { provide: AnalyticsService, useValue: { getEventsSpeakers, getEventsSpeakerProposals } },
         { provide: UiDrawerService, useValue: { open: openDrawer } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
@@ -132,6 +140,60 @@ describe('EventsSpeakersComponent', () => {
     TestBed.inject(HealthMetricsChromeService).selectedRange.set(range);
     await settle();
   }
+
+  it('opens on the most recent first from the section read, and reads the whole period in a picked order', async () => {
+    await render();
+    const header = (key: string): HTMLElement => query(`events-speakers-sort-${key}`) as HTMLElement;
+    expect(header('submitted').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    expect(getEventsSpeakerProposals).not.toHaveBeenCalled();
+    expect(rowKeys()).toEqual(['p-1', 'p-2']);
+
+    (header('speaker').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(getEventsSpeakerProposals).toHaveBeenCalledWith({
+      foundationSlug: 'acme',
+      range: 'YTD',
+      eventId: '',
+      status: null,
+      offset: 0,
+      pageSize: 10,
+      includeEvents: false,
+      sort: { key: 'speaker', direction: 'asc' },
+    });
+    expect(rowKeys()).toEqual(['p-9', 'p-8']);
+    expect(header('speaker').closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+  });
+
+  it("never shows another period's sorted rows: a period change shows that period's own rows until its read lands", async () => {
+    await render();
+    const pending = new Subject<unknown>();
+    (query('events-speakers-sort-speaker')?.querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(rowKeys()).toEqual(['p-9', 'p-8']);
+
+    getEventsSpeakerProposals.mockReturnValue(pending);
+    await pickRange('COMPLETED_YEAR');
+    expect(rowKeys()).toEqual(['p-3']);
+    expect(getEventsSpeakerProposals).toHaveBeenLastCalledWith(
+      expect.objectContaining({ range: 'COMPLETED_YEAR', sort: { key: 'speaker', direction: 'asc' } })
+    );
+
+    pending.next({ rows: [proposal({ proposalKey: 'p-7', range: 'COMPLETED_YEAR' })], totalRecords: 1, events: null });
+    await settle();
+    expect(rowKeys()).toEqual(['p-7']);
+  });
+
+  it('falls back to the most recent first, arrow included, when the sorted read fails', async () => {
+    await render();
+    getEventsSpeakerProposals.mockReturnValue(throwError(() => new Error('down')));
+    const header = (key: string): HTMLElement => query(`events-speakers-sort-${key}`) as HTMLElement;
+
+    (header('company').querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(rowKeys()).toEqual(['p-1', 'p-2']);
+    expect(header('submitted').closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    expect(header('company').closest('th')?.getAttribute('aria-sort')).toBe('none');
+  });
 
   beforeEach(() => {
     vi.restoreAllMocks();

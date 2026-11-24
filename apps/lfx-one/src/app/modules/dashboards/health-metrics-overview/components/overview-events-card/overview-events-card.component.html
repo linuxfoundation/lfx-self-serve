@@ -242,6 +242,9 @@
                   } @else {
                     <span class="hidden text-[13px] text-gray-400 @[561px]/evtbl:inline">{{ row.talks.note }}</span>
                   }
+                  @if (row.talks.statusLabel; as status) {
+                    <span class="sr-only">Status: {{ status }}</span>
+                  }
                 </div>
 
                 <!-- Two pairs, so the first label shortens with the table's width, not a measured one. -->

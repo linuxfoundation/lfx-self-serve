@@ -2,8 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { inject } from '@angular/core';
-import { Router, Routes } from '@angular/router';
+import { CanActivateFn, Router, Routes } from '@angular/router';
 import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_SETTINGS_PATH } from '@lfx-one/shared/constants';
+
+import { profileRedesignRedirectGuard } from '../../shared/guards/profile-redesign.guard';
+
+// Tabs that move to Account & Settings carry profileRedesignRedirectGuard, which sends them there once the profile
+// redesign flag is on (#6067); the old Settings aliases reach it through the Settings tab.
+
+/** The old Linux.com email tab now opens Identities, which holds it, keeping the query a Flow C return carries. */
+const linuxEmailToIdentities: CanActivateFn = (route) => inject(Router).createUrlTree(['/profile/identities'], { queryParams: route.queryParams });
 
 export const PROFILE_ROUTES: Routes = [
   {
@@ -24,6 +32,7 @@ export const PROFILE_ROUTES: Routes = [
       {
         path: 'identities',
         title: 'Identities',
+        canActivate: [profileRedesignRedirectGuard],
         loadComponent: () => import('./identities/profile-identities.component').then((m) => m.ProfileIdentitiesComponent),
       },
 
@@ -31,6 +40,7 @@ export const PROFILE_ROUTES: Routes = [
       {
         path: 'individual-enrollment',
         title: 'Individual Enrollment',
+        canActivate: [profileRedesignRedirectGuard],
         loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
       },
 
@@ -38,6 +48,7 @@ export const PROFILE_ROUTES: Routes = [
       {
         path: 'clas',
         title: 'CLAs',
+        canActivate: [profileRedesignRedirectGuard],
         loadComponent: () => import('./clas/profile-clas.component').then((m) => m.ProfileClasComponent),
       },
 
@@ -46,6 +57,7 @@ export const PROFILE_ROUTES: Routes = [
       {
         path: 'transactions',
         title: 'Transactions',
+        canActivate: [profileRedesignRedirectGuard],
         data: { embedded: true },
         loadComponent: () => import('../transactions/transactions-dashboard/transactions-dashboard.component').then((m) => m.TransactionsDashboardComponent),
       },
@@ -55,12 +67,18 @@ export const PROFILE_ROUTES: Routes = [
       {
         path: 'settings',
         title: 'Settings',
+        canActivate: [profileRedesignRedirectGuard],
         data: { embedded: true },
         loadComponent: () => import('../settings/account-settings/account-settings.component').then((m) => m.AccountSettingsComponent),
       },
 
-      // linux-email is now embedded in the Identities tab — redirect for backward compat
-      { path: 'linux-email', redirectTo: 'identities' },
+      // linux-email is embedded in the Identities tab. A redirect route can't carry a guard, so this is an empty
+      // route whose guards run in order: the redesign one first, then the redirect to Identities.
+      {
+        path: 'linux-email',
+        canActivate: [profileRedesignRedirectGuard, linuxEmailToIdentities],
+        children: [],
+      },
 
       // Redirect the old standalone email/password pages into the Settings tab section.
       // Functional redirectTo (not a string) is required to attach the #fragment — a string

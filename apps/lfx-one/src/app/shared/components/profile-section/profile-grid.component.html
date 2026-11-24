@@ -1,0 +1,23 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<div class="relative">
+  <div [id]="gridId" class="grid grid-cols-1 gap-[16px] @[480px]:grid-cols-2 @[720px]:grid-cols-3" [attr.data-testid]="testId()">
+    <ng-content />
+  </div>
+  @if (faded()) {
+    <!-- Fades into the page surface, which a page can set with --lfx-profile-surface. -->
+    <div
+      class="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-[140px] bg-[linear-gradient(to_bottom,transparent_0%,var(--lfx-profile-surface,theme(colors.white))_92%)]"
+      aria-hidden="true"
+      [attr.data-testid]="testId() + '-fade'"></div>
+  }
+</div>
+@if (hasMore()) {
+  <div class="mt-[16px] flex justify-center">
+    <lfx-ui-button variant="secondary" [ariaExpanded]="expanded()" [ariaControls]="gridId" (click)="toggle()" [attr.data-testid]="testId() + '-toggle'">
+      {{ toggleLabel() }}
+    </lfx-ui-button>
+  </div>
+}

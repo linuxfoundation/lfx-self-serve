@@ -3,6 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { expectRetryingLine } from './helpers/mktg-os-outage.helper';
 import { openStaleness, setupStaleness, STALENESS_ASSET_URL, STALENESS_FAMILY_URL, STALENESS_KIT_URL, upstreamRef } from './helpers/mktg-os-staleness.helper';
 
 test.describe('Marketing OS current-revision staleness and rebuild', () => {
@@ -99,11 +100,12 @@ test.describe('Marketing OS current-revision staleness and rebuild', () => {
     // Rebuild is offered only when something is stale.
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
   });
-  test('shows listing errors separately from Missing and offers retry', async ({ page }) => {
+  test('shows a listing that cannot be reached separately from Missing: one grey line, no error box and no button', async ({ page }) => {
     await setupStaleness(page, { listError: true });
     await openStaleness(page);
-    await expect(page.getByTestId('mktg-family-error')).toContainText('could not be loaded');
-    await expect(page.getByTestId('mktg-family-error-retry')).toBeVisible();
+    await expectRetryingLine(page, page.getByTestId('mktg-family-retrying'));
+    await expect(page.getByTestId('mktg-family-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-error-retry')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-assets')).toHaveCount(0);
     // Rebuild is offered only when something is stale.
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);

@@ -64,14 +64,27 @@ describe('MktgKitService project-scoped reads', () => {
     expect(kit.projectQueryParams()).toEqual({ project: null });
     expect(kit.loading()).toBe(false);
   });
-  it('keeps failures distinct from absence, permits retries and distinguishes 403', () => {
+  it('keeps a connection failure distinct from a final refusal and from absence, and distinguishes 403', () => {
     const kit = TestBed.inject(MktgKitService);
     context.set({ uid: 'one', slug: 'one', name: 'Synthetic One' });
     TestBed.tick();
     reads[0].error(new HttpErrorResponse({ status: 500 }));
-    expect(kit.error()).toContain('could not be loaded');
+    // Opened while the server cannot be reached: no error, the skeleton stays under the one grey line.
+    expect(kit.error()).toBe('');
+    expect(kit.retrying()).toBe(true);
+    expect(kit.loading()).toBe(true);
     expect(kit.accessDenied()).toBe(false);
     expect(kit.documents()).toBeNull();
+    kit.retry();
+    TestBed.tick();
+    expect(kit.retrying()).toBe(false);
+    reads[1].error(new HttpErrorResponse({ status: 404 }));
+    // A final refusal names what is not available; nothing retries it into a different answer.
+    expect(kit.error()).toBe('The Marketing kit is not available.');
+    expect(kit.retrying()).toBe(false);
+    expect(kit.loading()).toBe(false);
+    expect(kit.accessDenied()).toBe(false);
+    reads.splice(1, 1);
     kit.retry();
     TestBed.tick();
     expect(kit.error()).toBe('');
@@ -118,8 +131,11 @@ describe('MktgKitService project-scoped reads', () => {
     expect(kit.loading()).toBe(true);
     expect(kit.documents()).toBe(known);
     reads[1].error(new HttpErrorResponse({ status: 503 }));
+    // The loaded kit stays usable: no error and no loading state, only the one grey line.
     expect(kit.documents()).toBe(known);
-    expect(kit.error()).toContain('could not be loaded');
+    expect(kit.error()).toBe('');
+    expect(kit.retrying()).toBe(true);
+    expect(kit.loading()).toBe(false);
     kit.retry();
     TestBed.tick();
     reads[2].error(new HttpErrorResponse({ status: 403 }));
@@ -213,15 +229,44 @@ describe('MktgKitService project-scoped reads', () => {
     expect(kit.documents()?.runs).toEqual([]);
   });
 
-  it('keeps the last good listing without a notice on refresh error and can re-read later', () => {
+  it('keeps the last good listing under the one grey line on a refresh that cannot reach the server, and clears it on the next good read', () => {
     const { kit, listing } = loadedKit();
-    kit.refresh().subscribe();
+    const failed = vi.fn();
+    kit.refresh().subscribe({ error: failed });
     reads[1].error(new HttpErrorResponse({ status: 503 }));
+    // Rethrown, so the shared poller backs off with jitter instead of polling at the healthy cadence.
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining({ status: 503 }));
     expect(kit.documents()).toBe(listing);
     expect(kit.error()).toBe('');
+    expect(kit.retrying()).toBe(true);
     expect(kit.loading()).toBe(false);
     kit.refresh().subscribe();
     expect(listDocuments).toHaveBeenCalledTimes(3);
+    reads[2].next(listing);
+    expect(kit.retrying()).toBe(false);
+    expect(kit.error()).toBe('');
+  });
+
+  it('opened offline: the poller’s first good read ends the skeleton, and its refusal is the final red line', () => {
+    const kit = TestBed.inject(MktgKitService);
+    context.set({ uid: 'one', slug: 'one', name: 'Synthetic One' });
+    TestBed.tick();
+    reads[0].error(new HttpErrorResponse({ status: 0 }));
+    expect([kit.loading(), kit.retrying(), kit.error()]).toEqual([true, true, '']);
+    kit.refresh(true).subscribe();
+    reads[1].next(empty('one'));
+    expect([kit.loading(), kit.retrying(), kit.error()]).toEqual([false, false, '']);
+    expect(kit.documents()?.project).toBe('one');
+
+    kit.retry();
+    context.set({ uid: 'two', slug: 'two', name: 'Synthetic Two' });
+    TestBed.tick();
+    reads.at(-1)?.error(new HttpErrorResponse({ status: 0 }));
+    expect([kit.loading(), kit.retrying()]).toEqual([true, true]);
+    kit.refresh(true).subscribe();
+    reads.at(-1)?.error(new HttpErrorResponse({ status: 403 }));
+    expect([kit.loading(), kit.retrying(), kit.accessDenied()]).toEqual([false, false, true]);
+    expect(kit.error()).toContain('write access');
   });
 
   it('shares one in-flight request across refresh callers and the initial reader', () => {

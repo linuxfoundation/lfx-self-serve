@@ -4,8 +4,10 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import { MktgPublicRunAnswersResponse, MktgRunAnswersRequest, MktgRunAnsweredNotice, MktgDocumentRunProgress } from '@lfx-one/shared/interfaces';
+import { MKTG_RUN_ANSWERED_WRITING_CLAUSE } from '@lfx-one/shared/constants';
 import { mktgRunAnsweredBy } from '@lfx-one/shared/utils';
 import { catchError, Observable, ReplaySubject, share, take, throwError } from 'rxjs';
+
 import { UserService } from './user.service';
 
 /** Writer-authorized continuation without a private session or owner token. Never retries a POST. */
@@ -73,7 +75,7 @@ export class MktgRunAnswersService {
             this.remember(request.project, target.agentKey, target.documentId, {
               runId,
               questionsId: request.questionsId,
-              message: `${name} already answered these — the agent is writing.`,
+              message: `${name} already answered these${MKTG_RUN_ANSWERED_WRITING_CLAUSE}`,
             });
         }
         return throwError(() => error);

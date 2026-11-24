@@ -54,24 +54,27 @@
 }
 
 <!-- The map's figures for screen readers, which cannot hover a country. -->
-<table class="sr-only" [attr.data-testid]="testId() + '-table'">
-  <caption>
-    {{
-      ariaLabel()
-    }}
-  </caption>
-  <thead>
-    <tr>
-      <th scope="col">Country</th>
-      <th scope="col">{{ label() }}</th>
-    </tr>
-  </thead>
-  <tbody>
-    @for (country of countries(); track country.code ?? country.name) {
+<!-- sr-only sits on a wrapper: a table ignores its 1px height and overflow, so it would keep its full height and stretch the page. -->
+<div class="sr-only">
+  <table [attr.data-testid]="testId() + '-table'">
+    <caption>
+      {{
+        ariaLabel()
+      }}
+    </caption>
+    <thead>
       <tr>
-        <th scope="row">{{ country.name }}</th>
-        <td>{{ country.valueLabel }}</td>
+        <th scope="col">Country</th>
+        <th scope="col">{{ label() }}</th>
       </tr>
-    }
-  </tbody>
-</table>
+    </thead>
+    <tbody>
+      @for (country of countries(); track country.code ?? country.name) {
+        <tr>
+          <th scope="row">{{ country.name }}</th>
+          <td>{{ country.valueLabel }}</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

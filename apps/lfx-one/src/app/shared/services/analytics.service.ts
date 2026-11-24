@@ -1315,6 +1315,7 @@ export class AnalyticsService {
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsEventsOrganizations>('/api/analytics/events-organizations', { params }).pipe(
@@ -1336,6 +1337,7 @@ export class AnalyticsService {
     if (query.eventId) params = params.set('eventId', query.eventId);
     if (query.status) params = params.set('status', query.status);
     if (query.includeEvents) params = params.set('includeEvents', 'true');
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the drawer shows its error state, not "no proposals".
     return this.http.get<HealthMetricsEventsSpeakerProposals>('/api/analytics/events-speaker-proposals', { params }).pipe(
@@ -1386,6 +1388,7 @@ export class AnalyticsService {
     if (query.tier) params = params.set('tier', query.tier);
     if (query.nps) params = params.set('nps', query.nps);
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsMembersDirectory>('/api/analytics/members-directory', { params }).pipe(
@@ -1410,6 +1413,7 @@ export class AnalyticsService {
   public getMembersAtRisk(query: HealthMetricsMembersAtRiskQuery): Observable<HealthMetricsMembersAtRisk> {
     let params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('offset', String(query.offset)).set('pageSize', String(query.pageSize));
     if (query.bucket !== 'all') params = params.set('bucket', query.bucket);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state rather than an empty one.
     return this.http.get<HealthMetricsMembersAtRisk>('/api/analytics/members-at-risk', { params }).pipe(
@@ -1421,11 +1425,12 @@ export class AnalyticsService {
   }
 
   public getMembersRenewals(query: HealthMetricsMembersRenewalsQuery): Observable<HealthMetricsMembersRenewals> {
-    const params = strictHttpParams()
+    let params = strictHttpParams()
       .set('foundationSlug', query.foundationSlug)
       .set('window', query.window)
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state rather than an empty one.
     return this.http.get<HealthMetricsMembersRenewals>('/api/analytics/members-renewals', { params }).pipe(
@@ -1437,12 +1442,13 @@ export class AnalyticsService {
   }
 
   public getMembersBoardAttendance(query: HealthMetricsMembersBoardAttendanceQuery): Observable<HealthMetricsMembersBoardAttendance> {
-    const params = strictHttpParams()
+    let params = strictHttpParams()
       .set('foundationSlug', query.foundationSlug)
       .set('range', query.range)
       .set('cohort', query.cohort)
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state rather than an empty one.
     return this.http.get<HealthMetricsMembersBoardAttendance>('/api/analytics/members-board-attendance', { params }).pipe(
@@ -1479,11 +1485,12 @@ export class AnalyticsService {
   }
 
   public getMembersChurnDepartures(query: HealthMetricsMembersChurnDeparturesQuery): Observable<HealthMetricsMembersChurnDepartures> {
-    const params = strictHttpParams()
+    let params = strictHttpParams()
       .set('foundationSlug', query.foundationSlug)
       .set('year', String(query.year))
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the table shows its error state rather than an empty list of departures.
     return this.http.get<HealthMetricsMembersChurnDepartures>('/api/analytics/members-churn-departures', { params }).pipe(
@@ -1503,6 +1510,7 @@ export class AnalyticsService {
       .set('pageSize', String(query.pageSize));
     if (query.filter !== 'all') params = params.set('filter', query.filter);
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsNonMembersOrgs>('/api/analytics/non-members-orgs', { params }).pipe(
@@ -1522,6 +1530,7 @@ export class AnalyticsService {
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsNonMembersPeople>('/api/analytics/non-members-people', { params }).pipe(
@@ -1568,6 +1577,7 @@ export class AnalyticsService {
       .set('offset', String(query.offset))
       .set('pageSize', String(query.pageSize));
     if (query.search) params = params.set('search', query.search);
+    if (query.sort) params = params.set('sortKey', query.sort.key).set('sortDir', query.sort.direction);
 
     // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
     return this.http.get<HealthMetricsTrainingCourses>('/api/analytics/training-courses', { params }).pipe(

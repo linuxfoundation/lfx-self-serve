@@ -125,6 +125,7 @@ describe('EventsSpeakerProposalsDrawerComponent', () => {
       offset: 0,
       pageSize: 25,
       includeEvents: true,
+      sort: null,
     });
     expect(text('ui-drawer-title')).toBe('All speaker proposals');
     expect(text('ui-drawer-subtitle')).toBe(`2 proposals · ${new Date().getFullYear()} (YTD)`);

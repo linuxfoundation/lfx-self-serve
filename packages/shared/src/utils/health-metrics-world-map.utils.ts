@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_METRICS_WORLD_MAP_EMPTY_FILL, HEALTH_METRICS_WORLD_MAP_RAMP } from '../constants/health-metrics-world-map.constants';
+import { COUNTRIES } from '../constants/countries.constants';
+import {
+  HEALTH_METRICS_COUNTRY_NAME_EXTRAS,
+  HEALTH_METRICS_WORLD_MAP_EMPTY_FILL,
+  HEALTH_METRICS_WORLD_MAP_RAMP,
+} from '../constants/health-metrics-world-map.constants';
 
 import type { HealthMetricsWorldGeometry, HealthMetricsWorldMapCountry, HealthMetricsWorldMapView } from '../interfaces/health-metrics-world-map.interface';
 
@@ -52,4 +57,26 @@ export function healthMetricsWorldMapFill(value: number, max: number): string {
 export function formatHealthMetricsCountryFlag(code: string | null): string {
   if (!code || !/^[A-Z]{2}$/.test(code)) return '';
   return String.fromCodePoint(...[...code].map((letter) => 0x1f1e6 + letter.charCodeAt(0) - 65));
+}
+
+/** Every assigned code's English name, built once: the shared country list, plus the map's extra codes. */
+const COUNTRY_NAMES_BY_CODE = new Map<string, string>([
+  ...COUNTRIES.map((country) => [country.value, country.label] as const),
+  ...Object.entries(HEALTH_METRICS_COUNTRY_NAME_EXTRAS),
+]);
+
+/**
+ * A country's display name: the standard English name for a known code, else the data's own name read as words, with
+ * underscores as spaces and each word capitalised ("united_kingdom" reads "United Kingdom").
+ */
+export function formatHealthMetricsCountryName(code: string | null, raw: string): string {
+  const named = code ? COUNTRY_NAMES_BY_CODE.get(code) : undefined;
+  if (named) return named;
+
+  return raw
+    .replace(/_/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }

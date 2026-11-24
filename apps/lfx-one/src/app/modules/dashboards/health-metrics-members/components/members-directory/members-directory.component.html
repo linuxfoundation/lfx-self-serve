@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="members-directory">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[12px]" data-testid="members-directory">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -13,186 +13,139 @@
   } @else if (empty()) {
     <!-- The shell shows the section's empty state. -->
   } @else {
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-testid="members-directory-controls">
-      <div class="w-full sm:w-64">
-        <label class="sr-only" for="members-directory-search">Search members</label>
-        <lfx-input-text
-          [form]="filterForm"
-          control="search"
-          inputId="members-directory-search"
-          [placeholder]="searchPlaceholder()"
-          icon="fa-light fa-search"
-          size="small"
-          styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
-          dataTest="members-directory-search" />
-      </div>
-      <lfx-select
-        [form]="filterForm"
-        control="tier"
-        [options]="tierOptions()"
-        optionLabel="label"
-        optionValue="value"
-        ariaLabel="Filter by membership level"
-        styleClass="w-full sm:w-48"
-        data-testid="members-directory-tier" />
-      <lfx-select
-        [form]="filterForm"
-        control="nps"
-        [options]="npsOptions"
-        optionLabel="label"
-        optionValue="value"
-        ariaLabel="Filter by NPS"
-        styleClass="w-full sm:w-40"
-        data-testid="members-directory-nps" />
+    <!-- The search fills the row from 240px; on phones it takes the whole row and the selects wrap below at full width. -->
+    <div class="flex flex-wrap items-center gap-[10px]" data-testid="members-directory-controls">
+      <lfx-ui-search-input
+        class="min-w-[240px] flex-[1_1_240px] max-[640px]:min-w-0 max-[640px]:basis-full"
+        placeholder="Search members..."
+        ariaLabel="Search members"
+        [maxlength]="maxSearchLength"
+        [(value)]="searchText"
+        data-testid="members-directory-search" />
+      <lfx-ui-select class="max-[640px]:basis-full" size="small" ariaLabel="Membership tier" [(value)]="tierValue" data-testid="members-directory-tier">
+        @for (option of tierOptions(); track option.value) {
+          <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="option.disabled ?? false" />
+        }
+      </lfx-ui-select>
+      <lfx-ui-select class="max-[640px]:basis-full" size="small" ariaLabel="NPS category" [(value)]="npsValue" data-testid="members-directory-nps">
+        @for (option of npsOptions; track option.value) {
+          <lfx-ui-option [value]="option.value" [label]="option.label" />
+        }
+      </lfx-ui-select>
     </div>
 
-    <p class="text-[13px] text-gray-500" data-testid="members-directory-count">
-      @if (loading()) {
-        &mdash;
-      } @else if (filtered()) {
-        <strong class="font-semibold text-gray-900">{{ totalRecordsLabel() }}</strong> of {{ scopeTotalLabel() }} members match &middot;
-        <button type="button" class="text-blue-600 hover:underline" (click)="clearFilters()" data-testid="members-directory-clear">clear</button>
-      } @else {
-        {{ summary() }}
-      }
-    </p>
+    @if (!loading() && totalRecords() === 0) {
+      <lfx-empty-state
+        variant="compact"
+        icon="fa-light fa-magnifying-glass"
+        title="No matching members"
+        subtitle="No member matches this search or filter. Clear the search or pick another tier."
+        [resettable]="true"
+        (resetFilters)="onResetFilters()"
+        data-testid="members-directory-no-match" />
+    } @else {
+      <!-- The design's 760px minimum; a narrower card scrolls the table sideways. -->
+      <lfx-table
+        styleClass="hm-table"
+        [rowHover]="false"
+        [value]="rowViews()"
+        [loading]="loading()"
+        [paginator]="false"
+        [tableStyle]="{ 'min-width': '760px' }"
+        data-testid="members-directory-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col" [attr.aria-sort]="sorting.headers().name.ariaSort">
+              <lfx-health-metrics-th
+                label="Name"
+                [sort]="sorting.headers().name.state"
+                (sorted)="sorting.toggle('name')"
+                data-testid="members-directory-sort-name" />
+            </th>
+            <!-- Exact %: the design's 0.8 / 0.8 / 0.6 / 0.8 shares of its 4.6fr row. -->
+            <th scope="col" class="w-[17%]" [attr.aria-sort]="sorting.headers().membership.ariaSort">
+              <lfx-health-metrics-th
+                label="Membership"
+                [sort]="sorting.headers().membership.state"
+                (sorted)="sorting.toggle('membership')"
+                data-testid="members-directory-sort-membership" />
+            </th>
+            <th scope="col" class="w-[17%] text-right" [attr.aria-sort]="sorting.headers().renewal.ariaSort">
+              <lfx-health-metrics-th
+                label="Renewal"
+                [sort]="sorting.headers().renewal.state"
+                (sorted)="sorting.toggle('renewal')"
+                data-testid="members-directory-sort-renewal" />
+            </th>
+            <th scope="col" class="w-[13%] text-right" [attr.aria-sort]="sorting.headers().sponsorship.ariaSort">
+              <lfx-health-metrics-th
+                label="Sponsorship"
+                [sort]="sorting.headers().sponsorship.state"
+                (sorted)="sorting.toggle('sponsorship')"
+                data-testid="members-directory-sort-sponsorship" />
+            </th>
+            <th scope="col" class="w-[17%]" [attr.aria-sort]="sorting.headers().engagement.ariaSort">
+              <lfx-health-metrics-th
+                label="Engagement"
+                [sort]="sorting.headers().engagement.state"
+                (sorted)="sorting.toggle('engagement')"
+                data-testid="members-directory-sort-engagement" />
+            </th>
+          </tr>
+        </ng-template>
 
-    <lfx-table
-      styleClass="hm-table"
-      [rowHover]="false"
-      [value]="rowViews()"
-      [loading]="loading()"
-      [lazy]="true"
-      [lazyLoadOnInit]="false"
-      [paginator]="totalRecords() > pageSizeOptions[0]"
-      [rows]="size()"
-      [first]="first()"
-      [totalRecords]="totalRecords()"
-      [rowsPerPageOptions]="pageSizeOptions"
-      [showCurrentPageReport]="true"
-      [showFirstLastIcon]="false"
-      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-      [scrollable]="true"
-      [tableStyle]="{ 'min-width': '1000px' }"
-      (onPage)="onTablePage($event)"
-      data-testid="members-directory-table">
-      <ng-template #header>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Membership level</th>
-          <th scope="col">Engagement</th>
-          <th scope="col" class="text-right">Score</th>
-          <th scope="col">Renews</th>
-          <th scope="col" class="text-right">Renewal dues</th>
-          <th scope="col" class="text-right">Contribution</th>
-          <th scope="col" class="text-right">Sponsorship</th>
-          <th scope="col" class="text-right">Training</th>
-          <th scope="col" class="text-right">Events</th>
-          <th scope="col">Last engaged</th>
-        </tr>
-      </ng-template>
-
-      <ng-template #body let-view>
-        <tr [attr.data-testid]="'members-directory-row-' + view.accountId">
-          <td>
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="text-[13px] font-semibold text-gray-900" [attr.data-testid]="'members-directory-row-' + view.accountId + '-name'">{{
-                view.accountName
-              }}</span>
-              @if (view.npsLabel) {
-                <span
-                  class="rounded-[4px] px-[6px] py-[2px] text-[10px] font-bold uppercase tracking-[0.03em]"
-                  [class]="view.npsClass"
-                  [attr.data-testid]="'members-directory-row-' + view.accountId + '-nps'"
-                  >{{ view.npsLabel }}</span
-                >
-              }
-              @if (view.isAtRisk) {
-                <span
-                  class="rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700"
-                  [attr.data-testid]="'members-directory-row-' + view.accountId + '-at-risk'"
-                  >At risk</span
-                >
-              }
-            </div>
-          </td>
-          <td>
-            <span class="inline-flex flex-wrap items-center gap-1.5 lg:flex-nowrap lg:whitespace-nowrap">
-              <span
-                class="rounded-full px-2 py-0.5 text-[12px] font-medium"
-                [class]="tierPillClass"
-                [attr.data-testid]="'members-directory-row-' + view.accountId + '-tier'"
-                >{{ view.tierLabel }}</span
-              >
-              <span class="text-[13px] tabular-nums text-gray-400" [attr.data-testid]="'members-directory-row-' + view.accountId + '-dues'">{{
-                view.duesLabel
-              }}</span>
-            </span>
-          </td>
-          <td>
-            <span
-              class="inline-flex items-center gap-1.5 text-[13px] text-gray-900"
-              [attr.data-testid]="'members-directory-row-' + view.accountId + '-engagement'">
-              @if (view.engagementDotClass) {
-                <span class="h-2 w-2 rounded-full" [class]="view.engagementDotClass" aria-hidden="true"></span>
-              }
-              {{ view.engagementLabel }}
-            </span>
-          </td>
-          <td class="text-right">
-            <span class="text-[13px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'members-directory-row-' + view.accountId + '-score'">{{
-              view.scoreLabel
-            }}</span>
-          </td>
-          <td>
-            <span class="text-[13px] tabular-nums text-gray-900" [attr.data-testid]="'members-directory-row-' + view.accountId + '-renews'">{{
-              view.renewsLabel
-            }}</span>
-          </td>
-          <td class="text-right">
-            <span class="text-[13px] tabular-nums text-gray-900" [attr.data-testid]="'members-directory-row-' + view.accountId + '-renewal-dues'">{{
-              view.renewalDuesLabel
-            }}</span>
-          </td>
-          @for (cell of view.activity; track cell.key) {
-            <td class="text-right">
-              <span
-                class="text-[13px] tabular-nums"
-                [class.text-gray-900]="cell.tracked"
-                [class.text-gray-400]="!cell.tracked"
-                [attr.title]="cell.tracked ? null : notTracked"
-                [attr.data-testid]="'members-directory-row-' + view.accountId + '-' + cell.key">
-                @if (cell.tracked) {
-                  {{ cell.label }}
-                } @else {
-                  <!-- The hover title is mouse-only, so screen readers get the reason as text instead of a bare dash. -->
-                  <span aria-hidden="true">{{ cell.label }}</span>
-                  <span class="sr-only">{{ notTracked }}</span>
+        <ng-template #body let-view>
+          <tr [attr.data-testid]="'members-directory-row-' + view.accountId">
+            <td>
+              <lfx-health-metrics-cell
+                [text]="view.name"
+                [lead]="{ kind: 'company', name: view.name, logoUrl: view.logoUrl }"
+                [description]="view.npsLabel"
+                [descriptionIcon]="view.npsIconClass"
+                [attr.data-testid]="'members-directory-row-' + view.accountId + '-name'">
+                @if (view.isAtRisk) {
+                  <!-- Exact px: the design's 20px chip at 11px/500. -->
+                  <span
+                    class="inline-flex h-[20px] flex-none items-center rounded-[4px] bg-red-50 px-[6px] text-[11px] font-medium leading-[14px] text-red-700"
+                    [attr.data-testid]="'members-directory-row-' + view.accountId + '-at-risk'"
+                    >At risk</span
+                  >
                 }
-              </span>
+              </lfx-health-metrics-cell>
             </td>
-          }
-          <td>
-            <span
-              class="text-[13px] tabular-nums"
-              [class.text-amber-700]="view.isAtRisk"
-              [class.text-gray-900]="!view.isAtRisk"
-              [attr.data-testid]="'members-directory-row-' + view.accountId + '-last-engaged'"
-              >{{ view.lastEngagedLabel }}</span
-            >
-          </td>
-        </tr>
-      </ng-template>
+            <td>
+              <lfx-health-metrics-cell
+                textClass="text-gray-900"
+                [text]="view.membershipLabel"
+                [tier]="view.tier"
+                [attr.data-testid]="'members-directory-row-' + view.accountId + '-membership'" />
+            </td>
+            <td>
+              <lfx-health-metrics-cell
+                class="items-end"
+                textClass="font-normal"
+                [text]="view.renewalLabel"
+                [description]="view.renewalDuesLabel"
+                [attr.data-testid]="'members-directory-row-' + view.accountId + '-renewal'" />
+            </td>
+            <td>
+              <lfx-health-metrics-cell
+                class="items-end"
+                [text]="view.sponsorshipLabel"
+                [attr.data-testid]="'members-directory-row-' + view.accountId + '-sponsorship'" />
+            </td>
+            <td [attr.data-testid]="'members-directory-row-' + view.accountId + '-engagement'">
+              @if (view.engagement; as engagement) {
+                <lfx-members-engagement-badge [engagement]="engagement" />
+              } @else {
+                <lfx-health-metrics-cell text="—" />
+              }
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
 
-      <ng-template #emptymessage>
-        <tr>
-          <td colspan="11" class="py-6 text-center text-[13px] text-gray-500" data-testid="members-directory-no-match">
-            @if (!loading()) {
-              {{ noMatchLabel() }}
-            }
-          </td>
-        </tr>
-      </ng-template>
-    </lfx-table>
+      <lfx-ui-pagination [total]="totalRecords()" [pageSize]="size" [(page)]="page" />
+    }
   }
 </div>

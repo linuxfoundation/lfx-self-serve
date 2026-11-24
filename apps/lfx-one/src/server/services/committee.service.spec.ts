@@ -706,6 +706,24 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
         err: expect.any(Error),
       });
     });
+
+    it('resolves writer with the strict check when strictWriter is requested (#5731)', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+      checkSingleAccessStrict.mockResolvedValueOnce(false);
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { strictWriter: true });
+
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'committee', id: COMMITTEE_UID, access: 'writer' });
+      expect(addAccessToResource).not.toHaveBeenCalled();
+      expect(result.writer).toBe(false);
+    });
+
+    it('propagates a strict writer-check failure instead of answering writer: false (#5731)', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+      checkSingleAccessStrict.mockRejectedValueOnce(new Error('fga unavailable'));
+
+      await expect(service.getCommitteeById(req, COMMITTEE_UID, { strictWriter: true })).rejects.toThrow('fga unavailable');
+    });
   });
 
   describe('resolveCommitteeUid', () => {

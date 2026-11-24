@@ -810,6 +810,71 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_OPTIMIZATION_GOAL:
     value:
 
+  # Opens the Meta lead form read (`GET /api/campaigns/meta/lead-forms`) and accepts `metaConfig.leadFormId`
+  # on create (#5940), so campaign-service creates a lead ad (OUTCOME_LEADS) instead of a website-traffic
+  # campaign. The Implement tab offers `leads` with a form picker once the UI change lands; until then this
+  # flag opens the server half only. Forms are made in Meta Ads Manager; LFX never creates one.
+  #
+  # A CAPABILITY flag of the Bidding kind. REQUIRES campaign-service v1.0.38 DEPLOYED with
+  # META_LEAD_FORMS_ENABLED="true": campaign-service refuses the read and `leadFormId` with a 400 otherwise.
+  # It also needs the create pipeline (CREATE, BRIEFS, JOBS) on. Only `global_marketing_ops` may read the
+  # forms or send one (403 otherwise, 503 when that cannot be checked): a project without its own Meta
+  # connection uses the shared LF Page, which holds every foundation's forms.
+  #
+  # Off (the default), `leads` stays hidden, the read answers 404 and the create route refuses a
+  # `leadFormId` with a 400, so a tab opened while the flag was on must reload. Turning it back off strands
+  # nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same accepted values as
+  # the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_LEAD_FORMS:
+    value:
+
+  # Meta detailed targeting (#5904 row 4), one flag each: `..._META_INTEREST_TARGETING` accepts
+  # `metaConfig.targeting.interests`, `..._META_BEHAVIOR_TARGETING` accepts `behaviors` and `workPositions`
+  # (job titles), and `..._META_LOCALE_TARGETING` accepts `locales` (languages). The targeting search
+  # (`GET /api/campaigns/meta/targeting-search`) answers each kind only while that kind's flag is on:
+  # `type=interest` on the interest flag, `type=behavior` and `type=work_position` on the behavior flag.
+  #
+  # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+  # `META_INTEREST_TARGETING_ENABLED`, `META_BEHAVIOR_TARGETING_ENABLED` or `META_LOCALE_TARGETING_ENABLED` on,
+  # plus `META_TARGETING_SEARCH_ENABLED` for the search, and the create pipeline on. Off (the default), the
+  # create route refuses the field with a 400, never dropping it, and the search answers 404. A field and a
+  # read only, so turning one back off strands nothing. Order: set campaign-service's flag and pass its live
+  # probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING:
+    value:
+
+  # Meta device and operating-system targeting (#5904 row 6), one flag each: `..._META_DEVICE_TARGETING`
+  # accepts `metaConfig.targeting.devicePlatforms` (mobile, desktop), and `..._META_OS_TARGETING` accepts
+  # `metaConfig.targeting.userOs` (iOS, Android, optionally with a listed minimum version or version range).
+  #
+  # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+  # `META_DEVICE_TARGETING_ENABLED` or `META_OS_TARGETING_ENABLED` on, and the create pipeline on. Off (the
+  # default), the create route refuses the field with a 400, never dropping it. A field only, so turning one
+  # back off strands nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_OS_TARGETING:
+    value:
+
+  # Meta delivery options (#5904 row 5), one flag each: `..._META_AD_SCHEDULE` accepts `metaConfig.adSchedule`
+  # (the days and whole hours a lifetime-budget ad set runs, in the Meta ad account's time zone), and
+  # `..._META_FREQUENCY_CAP` accepts `metaConfig.frequencyCap` (impressions per person on an awareness ad set).
+  #
+  # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+  # `META_AD_SCHEDULE_ENABLED` or `META_FREQUENCY_CAP_ENABLED` on, and the create pipeline on. Off (the
+  # default), the create route refuses the field with a 400, never dropping it. A field only, so turning one
+  # back off strands nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_FREQUENCY_CAP:
+    value:
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the

@@ -56,7 +56,7 @@ independently, so a failure in one does not prevent the others from reporting:
   E2E collection (no browser execution).
 - `build`: the full `yarn build`.
 - `unit-tests`: a server/shared matrix with `fail-fast: false`.
-- `frontend-tests`: an app-spec matrix of shards 1–4, also with `fail-fast: false`. Each shard
+- `frontend-tests`: an app-spec matrix of shards 1–30, also with `fail-fast: false`. Each shard
   builds the shared package and runs `docs:build` before executing its app specs.
 
 The final `quality-checks` job retains the check name **Code Quality Checks**. It runs with
@@ -103,6 +103,76 @@ balancing: checked-in historical timing weights in `scripts/frontend-test-durati
 weights, with a one-second default for other or new specs. Every shard validates that the whole
 plan is exhaustive, disjoint, and nonempty. Invalid arguments fail, as does a change to the
 Angular test configuration's include/exclude discovery contract that the runner does not support.
+
+A spec file is the smallest unit a shard can hold, and one file runs serially on one worker, so a
+single long file sets the floor for its shard no matter how many shards exist. Keep each app spec
+within the runtime budget below; split a longer one by top-level `describe` into
+`<name>.component.<group>.spec.ts` files, with shared setup in a `<name>.spec-helper.ts` beside
+them.
+
+### Per-file runtime budget
+
+After its specs finish, each shard reads Vitest's per-file lines
+(`✓ lfx-one spec-app-….spec.js (74 tests) 5735ms`) and fails if a file breaks the budget
+(`scripts/lib/check-spec-budget.mjs`, #5980):
+
+| Rule                                                        | Budget | CI fails above |
+| ----------------------------------------------------------- | -----: | -------------: |
+| Total time per spec file                                    |   20 s |           40 s |
+| Average per test, for files that run 3 s or longer in total | 150 ms |         300 ms |
+
+- **Noise margin.** CI fails only at 2× a limit. Shards run files in parallel on a shared runner,
+  and files with the same test count varied by up to 1.8× between two main runs (p90 1.48×); one
+  unchanged file reached 2.06× its recorded time in a merge queue run. A tighter line would fail PRs
+  that did not touch the file.
+- **Pull requests only.** The budget fails pull request runs (and local runs). On merge queue and
+  `main` runs a violation is a warning annotation, so a noisy runner never drops an unrelated PR from
+  the queue; the PR that slowed a file is the one that gets stopped.
+- **Ratchet baseline.** `scripts/spec-budget-baseline.json` lists every file whose time plus 25%
+  headroom exceeded a budget on main run 45292906999, at that time plus 25%. A listed file is held
+  to the larger of the budget and its own entry, so it fails only when it gets slower than it was:
+  2.5× its recorded time once the noise margin applies. Nothing on main fails today.
+- **Tighten, never loosen.** When you speed up a listed file, lower or delete its entry in the same
+  PR. Do not raise an entry to make a slower spec pass. `--write-budget-baseline` on the refresh
+  script below regenerates the whole file from one run, which resets the ratchet; use it only when
+  the budget itself changes.
+
+When a shard fails with `Spec runtime budget: <file> took …`:
+
+1. Reproduce locally with `yarn ng test --watch=false --include=<file>` and look for the slow
+   tests, usually full renders, real timers or a large `TestBed` setup repeated per test.
+2. Move logic tests to the cheapest test that proves them (see
+   [Choose the cheapest test](#choose-the-cheapest-test-that-proves-the-behaviour)): a pure function,
+   then the state-only fixture, and a full render only for DOM behaviour. Replace real waits with
+   fake timers.
+3. If the file is simply large, split it by top-level `describe` as above.
+4. If a runner was unusually slow, the other files in that shard will show it too; re-run the job.
+
+Static Checks also **warns** (an annotation, never a failure) when a PR adds more than 300 net lines
+to campaign specs (`modules/dashboards/campaigns/**/*.spec.ts`), or adds a
+`TestBed.createComponent(` with no `STATE_ONLY` test, `StateOnly*` subclass or `*ComponentUnderTest()`
+helper within 10 lines (`scripts/check-campaign-spec-growth.mjs`).
+
+### Shard weights
+
+`scripts/frontend-test-durations.json` holds the seconds of every spec that ran for 3 s or longer in
+one green main run, rounded to 0.1 s. `scripts/refresh-test-durations.mjs` rebuilds it from that
+run's Frontend Tests job logs and reports how far the weights moved (the summed change over the
+summed old weight, counting a file under 3 s as one unit, as the planner does).
+
+The **Frontend Test Weights** workflow (`.github/workflows/frontend-test-weights.yml`) runs it every
+Monday and on demand against the latest green push to main. When the weights moved more than 20% it
+goes red, and its summary and `frontend-test-durations` artifact hold the new file. It does not open
+the PR itself: a PR pushed with `GITHUB_TOKEN` does not trigger the required Quality Checks, and
+commits here must be signed by a person. To refresh, from `apps/lfx-one`:
+
+```bash
+node scripts/refresh-test-durations.mjs --run <quality-checks-run-id>          # report the drift only
+node scripts/refresh-test-durations.mjs --run <quality-checks-run-id> --write  # rewrite the file
+```
+
+Then commit the file with `git commit -S --signoff` and open a `test(ci): …` PR. Refresh by hand too
+after splitting or adding a large spec, so the plan stays balanced before the next scheduled run.
 
 Execution still uses the Angular unit-test builder, with an explicit `--include` per assigned
 file and `--watch=false`, not vanilla Vitest. The Angular builder does not support native
@@ -190,11 +260,55 @@ clock. Attach the promise's rejection assertion before asynchronous timer advanc
 rejection cannot become unhandled. Keep boundary cases and read-count assertions intact. Destroy
 fixtures or reset TestBed before restoring real timers, and clear pending virtual timers in teardown.
 
-For state-only component cases, an explicit empty-template fixture can retain the real component,
-forms, services, and signals without repeatedly mounting unrelated children. Keep real templates
-for DOM, child-binding, lazy-panel, and handoff assertions. Similarly, expensive module initialization
-can be shared within a fixed-configuration suite while stdout spies, mutable state, environment
-restoration, and filesystem scratch directories remain isolated per test.
+Expensive module initialization can be shared within a fixed-configuration suite while stdout
+spies, mutable state, environment restoration, and filesystem scratch directories remain isolated
+per test.
+
+### Choose the cheapest test that proves the behaviour
+
+A full render of a large component costs hundreds of milliseconds per test; a pure function costs
+well under one. Pick the first of these that can prove what the test is about:
+
+1. **A pure function.** Rule logic (validation, payload building, draft mapping) belongs in
+   `packages/shared/src/utils/` or a plain function beside the component, tested as table rows.
+2. **An empty-template subclass** for state on a component: form validity, computed signals,
+   request payloads, draft and persistence state. The subclass keeps the real inputs, forms,
+   services, signals and effects, and `detectChanges()` still runs the same change-detection and
+   effect cycles; only the DOM is gone.
+3. **A full render** only for DOM behaviour: rendered text, aria, focus, child bindings, lazy
+   panels, handoffs, and anything that queries `nativeElement` or `debugElement`.
+
+The recipe for step 2, as the campaign implementation tab does it in
+`implementation-tab.spec-helper.ts` (#5980):
+
+```ts
+@Component({ selector: 'lfx-implementation-tab-state-only', template: '', providers: [DialogService] })
+export class StateOnlyImplementationTab extends ImplementationTabComponent {}
+
+// in the spec: mount through the helper, and mark each state-only test
+trackStateOnlyTests();
+beforeEach(async () => {
+  fixture = TestBed.createComponent(tabComponentUnderTest());
+  // …
+});
+it('refuses a malformed conversion action', STATE_ONLY, () => {
+  /* assertions on signals and forms only */
+});
+```
+
+The campaigns page has the same fixture in `campaigns.spec-helper.ts`: `StateOnlyCampaignsComponent`,
+its own `STATE_ONLY`, `trackStateOnlyTests()` and `campaignsComponentUnderTest()`.
+
+- **Subclass, never `TestBed.overrideTemplate` on the component itself.** TestBed drops overrides
+  after each test, so the whole template recompiles every time (about 250 ms a test); the subclass
+  compiles once. `@Component` metadata is not inherited, so redeclare any component-scoped
+  `providers`.
+- **A test on the empty template must not touch the DOM**, directly or through a helper.
+- **An absence check is trivially true with no DOM.** A test asserting that something is _not_
+  rendered (`querySelector(...)` is `null`, a count of zero) passes on the empty template whether or
+  not the rule holds, so it stays on the full render even though it goes green on the subclass.
+- **Prove the fixture runs the logic:** break a rule the state-only tests cover and confirm they
+  fail before relying on them.
 
 ## Writing an app spec
 

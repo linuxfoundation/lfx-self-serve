@@ -52,6 +52,10 @@
         (filterChange)="selectFilter($event)" />
     </div>
   </div>
+  @if (kit.retrying()) {
+    <!-- One quiet connection-state line where the kit is read; whatever is loaded below stays usable. -->
+    <p role="status" class="text-xs text-gray-500" data-testid="mktg-kit-retrying">{{ retryingText }}</p>
+  }
   @if (kit.loading()) {
     <div role="status" class="grid grid-cols-1 gap-4 @[700px]:grid-cols-2 @[980px]:grid-cols-3" data-testid="mktg-kit-loading">
       <span class="sr-only">Loading Marketing kit…</span>
@@ -69,10 +73,7 @@
       }
     </div>
   } @else if (kit.error()) {
-    <div role="alert" class="flex flex-col items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-5" data-testid="mktg-kit-error">
-      <p>{{ kit.error() }}</p>
-      <lfx-button label="Try again" [outlined]="true" (onClick)="kit.retry()" data-testid="mktg-kit-error-retry" />
-    </div>
+    <p role="alert" class="text-sm text-red-700" data-testid="mktg-kit-error">{{ kit.error() }}</p>
   } @else if (kit.documents()) {
     @if (nextStep(); as step) {
       <!-- Exact board spacing and typography; the app's 14px root otherwise undershoots these sizes. -->

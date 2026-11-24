@@ -1,0 +1,495 @@
+{
+  "contract": "messaging-framework-output/v1",
+  "kind": "messaging-framework",
+  "project": "agentic-ai-foundation",
+  "project_name": "Agentic AI Foundation",
+  "version": 1,
+  "mode": "draft",
+  "content": {
+    "mf": {
+      "vision": "Every team can search its data in the open, without lock-in.",
+      "mission": "Build and steward an agentic AI suite anyone can run anywhere.",
+      "positioning": "The search layer of the open cloud is open: Agentic AI Foundation is the only Apache 2.0 search suite under governance no vendor controls.",
+      "tagline": "Search, in the open.",
+      "goals": [
+        {
+          "id": "events",
+          "n": 1,
+          "t": "Events",
+          "vp": "Meet the people who build and run agentic AI, in one room.",
+          "key": "MCP Dev Summit is where agentic AI decides what is next.",
+          "proof": [
+            [
+              "More than 10,000 published MCP servers",
+              "Press release"
+            ],
+            [
+              "AGENTS.md adopted by more than 60,000 open source projects",
+              "Press release"
+            ]
+          ],
+          "bite": "Where agentic AI decides what's next.",
+          "icps": [
+            "platform-teams",
+            "search-engineers"
+          ]
+        },
+        {
+          "id": "adoption",
+          "n": 2,
+          "t": "Adoption",
+          "vp": "One suite for search, analytics and observability, with no license surprises.",
+          "key": "The market can standardize on Agentic AI Foundation: neutral, Apache 2.0 and complete.",
+          "proof": [
+            [
+              "Open governance under the Linux Foundation",
+              "Website"
+            ],
+            [
+              "MCP, goose and AGENTS.md are the founding projects",
+              "Press release"
+            ]
+          ],
+          "bite": "Nobody gets locked in on AAIF.",
+          "icps": [
+            "platform-teams",
+            "sre-teams"
+          ]
+        },
+        {
+          "id": "community",
+          "n": 3,
+          "t": "Community",
+          "vp": "Contribute where the roadmap is public and the maintainers answer.",
+          "key": "Skills and contributions come from the source, from first PR to maintainer.",
+          "proof": [
+            [
+              "MCP servers reach Fortune 500 deployments",
+              "Press release"
+            ],
+            [
+              "The next MCP Dev Summit is in New York in 2026",
+              "Press release"
+            ]
+          ],
+          "bite": "From first PR to maintainer.",
+          "icps": [
+            "search-engineers"
+          ]
+        },
+        {
+          "id": "membership",
+          "n": 4,
+          "t": "Membership",
+          "vp": "A seat at the table where the suite your product depends on is governed.",
+          "key": "Members sustain and steer the project they standardize on.",
+          "proof": [
+            [
+              "24 member organizations",
+              "LFX field"
+            ],
+            [
+              "Eight Platinum members named in the launch release",
+              "Press release"
+            ]
+          ],
+          "bite": "Your search stack is built here.",
+          "icps": [
+            "vendors"
+          ]
+        }
+      ],
+      "crosscut": "Goal 5 (grow our audience) has no column of its own: every column grows the audience when members amplify it.",
+      "say": [
+        "Agentic AI Foundation",
+        "agentic AI suite",
+        "vendor-neutral governance",
+        "Apache 2.0"
+      ],
+      "avoid": [
+        [
+          "Elastic-compatible",
+          "Lucene-based agentic AI"
+        ],
+        [
+          "the only agentic AI",
+          "an agentic AI suite"
+        ],
+        [
+          "cheaper than",
+          "no license fee"
+        ]
+      ],
+      "anchor": [
+        "Which goal does this serve?",
+        "Which segment is it for?",
+        "Which key message does it carry?"
+      ],
+      "notes": "The vision is the site's own wording; the tagline is the line in use on the home page."
+    },
+    "icp": [
+      {
+        "id": "platform-teams",
+        "name": "Platform engineering teams",
+        "kind": "Organization",
+        "who": "Teams that run shared search and log infrastructure for their company.",
+        "goals": [
+          "events",
+          "adoption"
+        ],
+        "need": "A search and analytics suite they can run anywhere without a license change.",
+        "value": "One suite, Apache 2.0, with a public roadmap.",
+        "lead": "The market can standardize on Agentic AI Foundation: neutral, Apache 2.0 and complete.",
+        "proof": [
+          [
+            "Open governance under the Linux Foundation",
+            "Website"
+          ]
+        ],
+        "cta": "Download and run the quick start.",
+        "channels": [
+          "Docs",
+          "MCP Dev Summit",
+          "Slack"
+        ],
+        "objection": [
+          "Is it just a fork?",
+          "It began as one; it has governed itself since 2024."
+        ],
+        "personas": [
+          [
+            "Platform lead",
+            "Cost, control and a predictable license"
+          ]
+        ],
+        "basis": "Website"
+      },
+      {
+        "id": "search-engineers",
+        "name": "Search and relevance engineers",
+        "kind": "Individual",
+        "who": "Engineers who tune relevance, vector and hybrid search in production.",
+        "goals": [
+          "events",
+          "community"
+        ],
+        "need": "Vector and hybrid search without a second system.",
+        "value": "Vector search in the core and a community that merges their PRs.",
+        "lead": "Skills and contributions come from the source, from first PR to maintainer.",
+        "proof": [
+          [
+            "MCP, goose and AGENTS.md are the founding projects",
+            "Press release"
+          ]
+        ],
+        "cta": "Join the weekly community meeting.",
+        "channels": [
+          "GitHub",
+          "Slack"
+        ],
+        "objection": [
+          "Will my PR be reviewed?",
+          null
+        ],
+        "personas": [
+          [
+            "Relevance engineer",
+            "Result quality and hybrid search"
+          ]
+        ],
+        "basis": "Press release"
+      },
+      {
+        "id": "sre-teams",
+        "name": "SRE and DevOps teams",
+        "kind": "Organization",
+        "who": "Teams that run observability at scale on open components.",
+        "goals": [
+          "adoption"
+        ],
+        "need": "Log analytics that scales without per-node pricing.",
+        "value": "Observability on the same suite as search.",
+        "lead": "The market can standardize on Agentic AI Foundation: neutral, Apache 2.0 and complete.",
+        "proof": [
+          [
+            "Open governance under the Linux Foundation",
+            "Website"
+          ]
+        ],
+        "cta": "Read the observability guide.",
+        "channels": [
+          "Docs",
+          "Blog"
+        ],
+        "objection": [
+          "Can it keep pace with managed suites?",
+          null
+        ],
+        "personas": [
+          [
+            "SRE lead",
+            "Uptime and cost per gigabyte"
+          ]
+        ],
+        "basis": "Inferred"
+      },
+      {
+        "id": "vendors",
+        "name": "Vendors building on Agentic AI Foundation",
+        "kind": "Organization",
+        "who": "Companies that sell products or managed services built on the suite.",
+        "goals": [
+          "membership"
+        ],
+        "need": "A say in the roadmap of the suite their product depends on.",
+        "value": "A seat at the table and a neutral mark to build under.",
+        "lead": "Members sustain and steer the project they standardize on.",
+        "proof": [
+          [
+            "24 member organizations",
+            "LFX field"
+          ]
+        ],
+        "cta": "Talk to us about membership.",
+        "channels": [
+          "Members page",
+          "MCP Dev Summit"
+        ],
+        "objection": [
+          "Why pay for an open project?",
+          "Dues fund what is not code."
+        ],
+        "personas": [
+          [
+            "Head of product",
+            "Roadmap influence and the brand"
+          ]
+        ],
+        "basis": "Press release"
+      }
+    ],
+    "mh": {
+      "umbrella": "Agentic AI Foundation is the agentic AI suite the cloud standardizes on, under governance no vendor controls.",
+      "line": "Search, in the open.",
+      "pillars": [
+        {
+          "t": "Open by license and governance",
+          "m": "Apache 2.0 and vendor-neutral governance mean no one company controls the roadmap.",
+          "p": [
+            [
+              "Open governance under the Linux Foundation",
+              "Website"
+            ],
+            [
+              "24 member organizations",
+              "LFX field"
+            ],
+            [
+              "Eight Platinum members named in the launch release",
+              "Press release"
+            ]
+          ]
+        },
+        {
+          "t": "One suite, search to observability",
+          "m": "Search, analytics and observability ship together, with vector search in the core.",
+          "p": [
+            [
+              "MCP, goose and AGENTS.md are the founding projects",
+              "Press release"
+            ],
+            [
+              "More than 10,000 published MCP servers",
+              "Press release"
+            ],
+            [
+              "AGENTS.md adopted by more than 60,000 open source projects",
+              "Press release"
+            ]
+          ]
+        },
+        {
+          "t": "Built where the community is",
+          "m": "Contributions come from the source, from first PR to maintainer.",
+          "p": [
+            [
+              "MCP servers reach Fortune 500 deployments",
+              "Press release"
+            ],
+            [
+              "The next MCP Dev Summit is in New York in 2026",
+              "Press release"
+            ],
+            [
+              "More than 10,000 published MCP servers",
+              "Press release"
+            ]
+          ]
+        }
+      ],
+      "found": "Teams want search and observability they can run anywhere, and the suites they used have changed licenses twice.",
+      "aud": [
+        [
+          "Platform engineering teams",
+          "The market can standardize on Agentic AI Foundation: neutral, Apache 2.0 and complete."
+        ],
+        [
+          "Search and relevance engineers",
+          "Skills and contributions come from the source, from first PR to maintainer."
+        ],
+        [
+          "SRE and DevOps teams",
+          "The market can standardize on Agentic AI Foundation: neutral, Apache 2.0 and complete."
+        ],
+        [
+          "Vendors building on Agentic AI Foundation",
+          "Members sustain and steer the project they standardize on."
+        ]
+      ]
+    },
+    "nums": [
+      [
+        "24",
+        "member organizations"
+      ],
+      [
+        "10,000",
+        "published MCP servers"
+      ],
+      [
+        "60,000",
+        "projects adopting AGENTS.md"
+      ]
+    ]
+  },
+  "content_sha256": "c479bcf19a2d400021e9845e668058d4a28a60337a32ea30cead3ca0e0fb5cb1",
+  "report": {
+    "sources_read": [
+      "https://aaif.io/",
+      "https://aaif.io/members",
+      "https://aaif.io/projects",
+      "LF press release: formation of the Agentic AI Foundation",
+      "LFX record: Agentic AI Foundation (agentic-ai-foundation)"
+    ],
+    "sources_failed": [
+      {
+        "name": "https://aaif.io/press",
+        "reason": "HTTP 404"
+      }
+    ],
+    "gaps": [],
+    "notes": "The member organization count comes from LFX; the pages state no figure to check it against.",
+    "version": 2,
+    "findings": {
+      "sources_failed": [
+        {
+          "source": "https://aaif.io/press",
+          "kind": "link",
+          "reason": "This page does not exist on the site (the server answered 404).",
+          "detail": "HTTP 404"
+        }
+      ],
+      "missing_assets": [],
+      "warnings": []
+    }
+  },
+  "checks": {
+    "findings": []
+  },
+  "inputs_record": {
+    "date_read": "2026-10-16",
+    "website": {
+      "url": "https://aaif.io/",
+      "read": true
+    },
+    "links": [
+      {
+        "url": "https://aaif.io/members",
+        "read": true
+      },
+      {
+        "url": "https://aaif.io/projects",
+        "read": true
+      },
+      {
+        "url": "https://aaif.io/press",
+        "read": false
+      }
+    ],
+    "documents": [
+      {
+        "title": "LF press release: formation of the Agentic AI Foundation",
+        "kind": "press",
+        "url": "https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation",
+        "text_supplied": false,
+        "read": true
+      }
+    ],
+    "notes_given": true,
+    "lfx_records": [
+      {
+        "slug": "agentic-ai-foundation",
+        "uid": "00000000-0000-4000-8000-00000005717e",
+        "name": "Agentic AI Foundation",
+        "date_read": "2026-10-16"
+      }
+    ],
+    "questions_asked": [
+      {
+        "id": "ranked-goals",
+        "question": "Which goals is the foundation working on this year, in rank order?",
+        "why": "The site states no plan.",
+        "suggested_answer": "Adoption, community, membership, events.",
+        "basis": "inferred",
+        "answered": true
+      }
+    ],
+    "answers": [
+      {
+        "id": "ranked-goals",
+        "question": "Which goals is the foundation working on this year, in rank order?",
+        "answer": "Adoption, community, membership, events.",
+        "origin": "accepted",
+        "date": "2026-10-16"
+      }
+    ],
+    "web_searches": [],
+    "fetched": [
+      {
+        "url": "https://aaif.io/",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/members",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/projects",
+        "ok": true
+      },
+      {
+        "url": "https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/press",
+        "ok": false
+      }
+    ]
+  },
+  "intake": {
+    "mode": "form",
+    "completed_at": "2026-11-09T18:00:00Z"
+  },
+  "revision": null,
+  "capabilities": {
+    "web_fetch": true,
+    "lfx_mcp": true
+  },
+  "generated_at": "2026-11-09T18:00:00Z",
+  "agent": {
+    "identifier": "linux-foundation~foundation-message",
+    "agent_version": "4.2.0",
+    "prompt_manifest_sha256": "cbe7525b33c657a728338b9d4e032daa3782cd5a8624b38d8b04c69b67376b03"
+  }
+}
