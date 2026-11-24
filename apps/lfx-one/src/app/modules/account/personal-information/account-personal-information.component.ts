@@ -52,8 +52,6 @@ import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { stripAuthPrefixOrNull } from '@shared/utils/strip-auth-prefix.util';
 import { catchError, filter, finalize, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
-const LIMITS = PERSONAL_INFORMATION_FIELD_LIMITS;
-
 /**
  * Account & Settings › Personal information (#6072, behind the profile redesign flag). It holds the fields of the hub's Edit
  * profile drawer, which it replaces, and saves them through the header save bar: the profile fields, then the primary email.
@@ -94,18 +92,18 @@ export class AccountPersonalInformationComponent {
   // Forms
   // Each limit mirrors the server's; the company is chosen from the work history.
   public readonly form = this.fb.nonNullable.group({
-    given_name: ['', [Validators.maxLength(LIMITS.given_name)]],
-    family_name: ['', [Validators.maxLength(LIMITS.family_name)]],
+    given_name: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.given_name)]],
+    family_name: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.family_name)]],
     // A code-point cap, not Validators.maxLength (UTF-16 units), to match the auth-service 2000-rune limit.
     bio: ['', [maxCodePointsValidator(PROFILE_BIO_MAX_LENGTH)]],
-    organization: ['', [Validators.maxLength(LIMITS.organization)]],
-    job_title: ['', [Validators.maxLength(LIMITS.job_title)]],
-    country: ['', [Validators.maxLength(LIMITS.country)]],
-    state_province: ['', [Validators.maxLength(LIMITS.state_province)]],
-    city: ['', [Validators.maxLength(LIMITS.city)]],
-    postal_code: ['', [Validators.maxLength(LIMITS.postal_code)]],
-    address: ['', [Validators.maxLength(LIMITS.address)]],
-    phone_number: ['', [Validators.maxLength(LIMITS.phone_number)]],
+    organization: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.organization)]],
+    job_title: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.job_title)]],
+    country: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.country)]],
+    state_province: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.state_province)]],
+    city: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.city)]],
+    postal_code: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.postal_code)]],
+    address: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.address)]],
+    phone_number: ['', [Validators.maxLength(PERSONAL_INFORMATION_FIELD_LIMITS.phone_number)]],
     t_shirt_size: [''],
   });
 
@@ -286,7 +284,8 @@ export class AccountPersonalInformationComponent {
         error: (error: HttpErrorResponse) => {
           // Flow C: a File can't survive the redirect, so the user picks it again once back; unsaved field edits go along.
           const pending = this.form.dirty ? { userMetadata: this.buildUserMetadataPayload() } : {};
-          if (this.redirectForAuthorization(error, { avatarPending: true, ...pending }, null)) return;
+          const primary = this.primaryEmailChanged() ? this.selectedPrimaryEmail() : null;
+          if (this.redirectForAuthorization(error, { avatarPending: true, ...pending }, primary)) return;
           if (this.toastIfImpersonationReadOnly(error)) return;
           this.toast.show({ variant: 'error', message: 'Failed to upload profile picture. Please try again.' });
         },
@@ -302,7 +301,7 @@ export class AccountPersonalInformationComponent {
     return computed(() => {
       this.formEvents();
       const errors: Partial<Record<PersonalInformationLimitedField, string>> = {};
-      for (const [name, limit] of Object.entries(LIMITS) as [PersonalInformationLimitedField, number][]) {
+      for (const [name, limit] of Object.entries(PERSONAL_INFORMATION_FIELD_LIMITS) as [PersonalInformationLimitedField, number][]) {
         const control = this.form.controls[name];
         if (control.invalid && control.touched) errors[name] = `Must be ${limit} characters or fewer`;
       }
@@ -385,12 +384,14 @@ export class AccountPersonalInformationComponent {
       });
   }
 
+  // Saves are laid over the profile even with no record yet, so after one the fields show, and Revert returns to, what was saved.
   private seed(profile: CombinedProfile): void {
-    const details = profile.profile;
+    const saved = this.accountProfile.savedFields();
+    const details: Partial<UserMetadata> = { ...(profile.profile ?? {}), ...saved };
     this.form.reset(
       {
-        given_name: profile.user.first_name || '',
-        family_name: profile.user.last_name || '',
+        given_name: saved.given_name ?? (profile.user.first_name || ''),
+        family_name: saved.family_name ?? (profile.user.last_name || ''),
         bio: details?.bio || '',
         // Trimmed to match the trimmed company options.
         organization: (details?.organization || '').trim(),
@@ -413,7 +414,9 @@ export class AccountPersonalInformationComponent {
   }
 
   // Editable once the profile has loaded, and never while impersonating.
+  // A save in flight keeps the fields locked until it ends, when finalize calls this again.
   private syncEnabled(): void {
+    if (this.saving()) return;
     if (this.impersonating() || !this.profile()) {
       this.form.disable({ emitEvent: false });
       return;
@@ -426,14 +429,17 @@ export class AccountPersonalInformationComponent {
   // differs only in case is matched to its option, so it shows as chosen.
   private syncCompanyControl(): void {
     const control = this.form.controls.organization;
-    if (this.impersonating() || !this.profile() || this.companyOptions().length === 0) {
-      control.disable({ emitEvent: false });
-      return;
-    }
-    control.enable({ emitEvent: false });
+    // Matched even while read-only, so the company still shows when impersonating.
     const current = control.value;
     const match = current ? this.companyOptions().find((option) => option.toLowerCase() === current.toLowerCase()) : undefined;
     if (match && match !== current) control.setValue(match, { emitEvent: false });
+
+    if (this.saving()) return;
+    if (this.impersonating() || !this.profile() || this.companyOptions().length === 0) {
+      control.disable({ emitEvent: false });
+    } else {
+      control.enable({ emitEvent: false });
+    }
   }
 
   // After a save, the saved values become the form's baseline and reach the rest of the app.

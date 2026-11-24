@@ -182,6 +182,16 @@ describe('AccountPersonalInformationComponent', () => {
       expect(page.selectedPrimaryEmail()).toBe('ada@example.com');
     });
 
+    it('shows the saved company in its option case while read-only', async () => {
+      configure();
+      impersonating.set(true);
+      const fixture = TestBed.createComponent(StatePageComponent);
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.form.controls.organization.value).toBe('Acme Motors');
+      expect(fixture.componentInstance.form.controls.organization.disabled).toBe(true);
+    });
+
     it('is read-only while impersonating', async () => {
       const page = await createState();
       impersonating.set(true);
@@ -260,6 +270,47 @@ describe('AccountPersonalInformationComponent', () => {
       expect(page.form.controls.job_title.value).toBe('Maintainer');
     });
 
+    it('keeps the fields locked when the companies land mid-save', async () => {
+      const companies = new Subject<WorkExperienceEntry[]>();
+      const pending = new Subject<unknown>();
+      const page = await createState({ getWorkExperiences: () => companies, updateUserProfile: () => pending });
+      editJobTitle(page, 'Maintainer');
+      page.save();
+
+      companies.next(EXPERIENCES);
+      expect(page.form.controls.organization.disabled).toBe(true);
+
+      pending.next({});
+      pending.complete();
+      expect(page.form.controls.organization.enabled).toBe(true);
+    });
+
+    it('keeps the fields locked until the primary email change after them ends', async () => {
+      const email = new Subject<{ message: string }>();
+      const page = await createState({ setPrimaryEmail: () => email });
+      editJobTitle(page, 'Maintainer');
+      page.selectedPrimaryEmail.set('ada@work.example');
+      page.save();
+      TestBed.tick();
+
+      expect(page.form.disabled).toBe(true);
+      email.next({ message: 'ok' });
+      email.complete();
+      expect(page.form.enabled).toBe(true);
+    });
+
+    it('reverts to a save even when the profile has no record yet', async () => {
+      const page = await createState({ getCurrentUserProfile: () => of({ ...PROFILE, profile: null }) });
+      editJobTitle(page, 'Maintainer');
+      page.save();
+      TestBed.tick();
+      page.form.controls.city.setValue('Paris');
+      page.revert();
+
+      expect(page.form.controls.job_title.value).toBe('Maintainer');
+      expect(page.form.controls.city.value).toBe('');
+    });
+
     it('keeps the email choice and goes to authorize when the primary email change needs Flow C', async () => {
       const page = await createState({ setPrimaryEmail: () => forbidden({ error: 'management_token_required', authorize_url: '#authorize' }) });
       page.selectedPrimaryEmail.set('ada@work.example');
@@ -332,6 +383,14 @@ describe('AccountPersonalInformationComponent', () => {
       const pending = JSON.parse(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY) ?? '{}');
       expect(pending.avatarPending).toBe(true);
       expect(pending.userMetadata).toEqual(expect.objectContaining({ city: 'Paris' }));
+    });
+
+    it('keeps an unsaved primary email choice when the photo needs Flow C', async () => {
+      const page = await createState({ uploadProfilePicture: () => forbidden({ error: 'management_token_required', authorize_url: '#authorize' }) });
+      page.selectedPrimaryEmail.set('ada@work.example');
+      choose(page, image());
+
+      expect(JSON.parse(sessionStorage.getItem(PENDING_PRIMARY_EMAIL_KEY) ?? '{}').email).toBe('ada@work.example');
     });
   });
 });

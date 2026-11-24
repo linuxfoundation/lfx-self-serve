@@ -25,6 +25,8 @@ export class AccountProfileService {
 
   public readonly loading = signal(false);
   public readonly failed = signal(false);
+  /** Every field saved since the shell opened, newest value each. */
+  public readonly savedFields: Signal<Partial<UserMetadata>> = this.saved.asReadonly();
   /** The fetched profile with every save made since laid over it; `null` until the first fetch lands. */
   public readonly profile: Signal<CombinedProfile | null> = computed(() => this.withSaves(this.fetched(), this.saved()));
 
@@ -61,6 +63,8 @@ export class AccountProfileService {
     // Keys left undefined were not sent, so the stored value stands; a cleared field is '' and is kept.
     const defined = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
     this.saved.update((saved) => ({ ...saved, ...defined }));
+    // A save creates the record the last fetch lacked, so fetch it; the saves stay laid over the response.
+    if (this.fetched() && this.fetched()?.profile == null) this.load();
   }
 
   // With no profile record yet, laying saves over it would invent one, so they wait for a fetch that has a record.

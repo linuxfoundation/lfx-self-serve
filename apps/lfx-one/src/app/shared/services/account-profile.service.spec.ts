@@ -56,11 +56,14 @@ describe('AccountProfileService', () => {
     expect(apply).toHaveBeenCalledWith({ given_name: 'Augusta' }, PROFILE.user);
   });
 
-  it('keeps a save for a user with no profile record until a fetch has one', () => {
-    getCurrentUserProfile.mockReturnValueOnce(of({ ...PROFILE, profile: null }));
+  it('keeps a save for a user with no profile record, and fetches the record the save created', () => {
+    getCurrentUserProfile.mockReturnValueOnce(of({ ...PROFILE, profile: null })).mockReturnValueOnce(of({ ...PROFILE, profile: null }));
     service.load();
     service.applySaved({ job_title: 'Analyst' });
+
+    expect(getCurrentUserProfile).toHaveBeenCalledTimes(2);
     expect(service.profile()?.profile).toBeNull();
+    expect(service.savedFields()).toEqual({ job_title: 'Analyst' });
 
     service.load();
     expect(service.profile()?.profile?.job_title).toBe('Analyst');
