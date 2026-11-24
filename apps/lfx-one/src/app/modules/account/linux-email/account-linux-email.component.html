@@ -1,0 +1,138 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. Field labels take the design's darker, medium weight. -->
+<lfx-account-card
+  heading="Linux.com email"
+  [subtitle]="subtitle()"
+  testId="account-linux-email"
+  class="[&_label.label-13]:font-medium [&_label.label-13]:text-ui-neutral-900">
+  @if (state() === 'claimed') {
+    <lfx-ui-badge accountCardTitleSuffix tone="success" variant="line" size="sm" data-testid="account-linux-email-active">Active</lfx-ui-badge>
+  }
+
+  @if (loading() && !data()) {
+    <div class="flex flex-col gap-[12px]" aria-hidden="true" data-testid="account-linux-email-loading">
+      <lfx-ui-skeleton width="60%" />
+      <lfx-ui-skeleton width="100%" height="36px" />
+    </div>
+  } @else {
+    @switch (state()) {
+      @case ('service_unavailable') {
+        <lfx-ui-note variant="error" data-testid="account-linux-email-unavailable">
+          We couldn't reach the Linux.com email service right now. Please try again in a moment.
+          <lfx-ui-button note-action variant="secondary" size="tiny" (click)="retry()" data-testid="account-linux-email-retry">Retry</lfx-ui-button>
+        </lfx-ui-note>
+      }
+
+      @case ('not_purchased') {
+        <lfx-ui-empty-state size="small" icon="fa-light fa-at" [heading]="copy.emptyTitle" [description]="emptyText()" data-testid="account-linux-email-empty">
+          <lfx-ui-button
+            empty-state-action
+            icon="fa-light fa-cart-shopping"
+            [disabled]="impersonating()"
+            (click)="purchase()"
+            data-testid="account-linux-email-purchase">
+            Purchase email
+          </lfx-ui-button>
+        </lfx-ui-empty-state>
+      }
+
+      @case ('purchased_unclaimed') {
+        <div class="flex flex-col gap-[16px]" data-testid="account-linux-email-claim">
+          <lfx-ui-note variant="success" size="small">{{ copy.claimNote }}</lfx-ui-note>
+          <div class="@container">
+            <div class="grid grid-cols-1 items-start gap-[16px] @[480px]:grid-cols-2" [formGroup]="claimForm">
+              <lfx-ui-input
+                label="Alias"
+                placeholder="your.name"
+                [suffixText]="'@' + domain()"
+                affixStyled
+                formControlName="alias"
+                [error]="aliasError()"
+                data-testid="account-linux-email-alias" />
+              @if (forwardOptions().length) {
+                <lfx-ui-select
+                  label="Forward to"
+                  placeholder="Choose a forwarding address"
+                  formControlName="forwardTo"
+                  [error]="claimForwardError()"
+                  data-testid="account-linux-email-claim-forward">
+                  @for (option of forwardOptions(); track option.value) {
+                    <lfx-ui-option [value]="option.value" [label]="option.label" />
+                  }
+                </lfx-ui-select>
+              } @else {
+                <lfx-ui-note variant="warning" size="small" data-testid="account-linux-email-no-forward">{{ copy.noVerifiedEmail }}</lfx-ui-note>
+              }
+            </div>
+          </div>
+          <div class="flex flex-row justify-end">
+            <lfx-ui-button
+              [loading]="claiming()"
+              [disabled]="claimForm.invalid || claiming() || impersonating()"
+              (click)="confirmClaim()"
+              data-testid="account-linux-email-claim-button">
+              Claim alias
+            </lfx-ui-button>
+          </div>
+        </div>
+      }
+
+      @case ('claimed') {
+        <div class="@container" data-testid="account-linux-email-claimed">
+          <div class="grid grid-cols-1 items-start gap-[16px] @[480px]:grid-cols-2">
+            <lfx-ui-input label="Your alias" [value]="email() ?? ''" [disabled]="true" [hint]="copy.aliasHint" data-testid="account-linux-email-address" />
+            @if (forwardReauthRequired()) {
+              <lfx-ui-note variant="warning" size="small" label="Forwarding address unavailable" data-testid="account-linux-email-reauth">
+                @if (forwardAuthorizeUrl()) {
+                  We couldn't read your current forwarding address. Re-authorize to view and change it.
+                } @else {
+                  We couldn't read your current forwarding address, and re-authorization isn't available right now. Please try again later.
+                }
+                @if (forwardAuthorizeUrl()) {
+                  <lfx-ui-button
+                    note-action
+                    variant="secondary"
+                    size="tiny"
+                    [disabled]="impersonating()"
+                    (click)="reauthorizeForward()"
+                    data-testid="account-linux-email-reauth-button">
+                    Re-authorize
+                  </lfx-ui-button>
+                }
+              </lfx-ui-note>
+            } @else if (forwardOptions().length) {
+              <lfx-ui-select
+                label="Forward to"
+                placeholder="Choose a forwarding address"
+                [formControl]="editForm.controls.forwardTo"
+                [hint]="forwardHint()"
+                data-testid="account-linux-email-forward">
+                @for (option of forwardOptions(); track option.value) {
+                  <lfx-ui-option [value]="option.value" [label]="option.label" />
+                }
+              </lfx-ui-select>
+            } @else {
+              <lfx-ui-note variant="warning" size="small" data-testid="account-linux-email-no-forward">{{ copy.noVerifiedEmail }}</lfx-ui-note>
+            }
+          </div>
+        </div>
+      }
+    }
+  }
+</lfx-account-card>
+
+<ng-template #claimDialog let-ref="dialogRef">
+  <lfx-ui-modal [heading]="'Claim ' + pendingClaim().address + '?'" [width]="480" closable data-testid="account-linux-email-claim-dialog">
+    <p class="m-0 text-[14px] leading-[1.6] text-ui-neutral-700" data-testid="account-linux-email-claim-text">
+      Email sent to <strong class="font-semibold text-ui-neutral-900">{{ pendingClaim().address }}</strong> will be forwarded to
+      <strong class="font-semibold text-ui-neutral-900">{{ pendingClaim().forwardTo }}</strong
+      >. You can change the forwarding address later, but not the alias.
+    </p>
+    <ng-container modalActions>
+      <lfx-ui-button data-autofocus variant="secondary" (click)="ref.close(false)" data-testid="account-linux-email-claim-cancel">Cancel</lfx-ui-button>
+      <lfx-ui-button (click)="ref.close(true)" data-testid="account-linux-email-claim-confirm">Claim alias</lfx-ui-button>
+    </ng-container>
+  </lfx-ui-modal>
+</ng-template>

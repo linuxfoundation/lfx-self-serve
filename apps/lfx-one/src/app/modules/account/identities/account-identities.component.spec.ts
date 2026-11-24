@@ -44,7 +44,6 @@ describe('AccountIdentitiesComponent', () => {
       identitiesRefresh$: EMPTY,
       getIdentities: vi.fn(() => of(identities)),
       getMeetingInviteEmail: vi.fn(() => invite$),
-      getLinuxAlias: vi.fn(() => EMPTY),
       refreshUserIdentities: vi.fn(),
       rejectIdentity: vi.fn(() => of({})),
     };
@@ -69,7 +68,7 @@ describe('AccountIdentitiesComponent', () => {
     return { fixture, host, query, click, open, closed, userService };
   }
 
-  it('groups the identities, flags the primary one, and keeps Linux.com email below for now', async () => {
+  it('groups the identities and flags the primary one', async () => {
     const { query } = await render();
 
     expect(query('account-identities-unverified')?.textContent).toContain('Unverified identities');
@@ -77,7 +76,7 @@ describe('AccountIdentitiesComponent', () => {
     expect(query('account-identities-row-gitlab')?.textContent).toContain('This is not me');
     expect(query('account-identities-row-primary')?.querySelector('[data-testid="account-identities-primary-badge"]')).not.toBeNull();
     expect(query('account-identities-add')).not.toBeNull();
-    expect(query('account-identities-linux-email-title')?.textContent?.trim()).toBe('Linux.com email');
+    expect(query('account-identities-linux-email')).toBeNull();
   });
 
   it('explains why the primary and meeting-invite emails cannot be removed', async () => {
