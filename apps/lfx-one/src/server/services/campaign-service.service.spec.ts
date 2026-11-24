@@ -4818,6 +4818,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCallToActionEnabled: false,
       metaConversionEventEnabled: false,
       metaOptimizationGoalEnabled: false,
+      metaInterestTargetingEnabled: false,
+      metaBehaviorTargetingEnabled: false,
+      metaLocaleTargetingEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -5472,6 +5475,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCallToActionEnabled: false,
       metaConversionEventEnabled: false,
       metaOptimizationGoalEnabled: false,
+      metaInterestTargetingEnabled: false,
+      metaBehaviorTargetingEnabled: false,
+      metaLocaleTargetingEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -6408,6 +6414,23 @@ describe('CampaignServiceClient.listMetaLeadForms', () => {
     expect(caught).toBeInstanceOf(ServiceValidationError);
     expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignServiceClient.searchMetaTargetingOptions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's targeting search with the kind and query, the project encoded", async () => {
+    const answer = { type: 'interest', options: [], option_count: 0 };
+    proxyRequest.mockResolvedValueOnce(answer);
+
+    expect(await new CampaignServiceClient().searchMetaTargetingOptions(req, 'lf/ai', 'interest', 'kubernetes')).toBe(answer);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/meta-ads/targeting-search', 'GET', {
+      type: 'interest',
+      query: 'kubernetes',
+    });
   });
 });
 

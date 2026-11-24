@@ -2416,11 +2416,14 @@ export interface MetaCampaignCreateRequest {
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
   /**
-   * Ad set audience targeting (#5905; linuxfoundation/lfx-v2-campaign-service#550). Sent ONLY when
-   * `CampaignListResult.metaAudienceTargetingEnabled` is an explicit yes; the create route refuses it with a
-   * 400 otherwise, so a tab opened while the capability was on must reload.
+   * Ad set targeting: the audience fields (#5905; linuxfoundation/lfx-v2-campaign-service#550) and the detailed
+   * fields (#5904 row 4; campaign-service #612), each sent ONLY when its own capability is an explicit yes:
+   * `metaAudienceTargetingEnabled` for age, gender, custom audiences and Advantage+, `metaInterestTargetingEnabled`
+   * for `interests`, `metaBehaviorTargetingEnabled` for `behaviors` and `workPositions`, `metaLocaleTargetingEnabled`
+   * for `locales`. The create route refuses a field whose capability is off with a 400, so a tab opened while it
+   * was on must reload. A block with only detailed fields needs no audience capability.
    */
-  targeting?: MetaAudienceTargeting;
+  targeting?: MetaTargeting;
   /**
    * The button on every ad (#5934; campaign-service #550), one of `META_CALL_TO_ACTIONS`. Absent means
    * campaign-service's default, LEARN_MORE. Sent ONLY when `CampaignListResult.metaCallToActionEnabled` is
@@ -2486,6 +2489,67 @@ export interface MetaAudienceTargeting {
    * always sends 0 and `true` sends 1. So an explicit `false` is an instruction, never a default.
    */
   advantageAudience?: boolean;
+}
+
+/**
+ * Meta detailed targeting (#5904 row 4; linuxfoundation/lfx-v2-campaign-service#612), carried in the same
+ * `metaConfig.targeting` block as {@link MetaAudienceTargeting}. Interests, behaviors and work positions are
+ * Meta taxonomy ids from the targeting search, sent as one `flexible_spec` entry (a person matching any one
+ * qualifies); locales are Meta `adlocale` keys, a hard constraint. Each field has its own campaign-service flag.
+ */
+export interface MetaDetailedTargeting {
+  interests?: string[];
+  behaviors?: string[];
+  workPositions?: string[];
+  locales?: number[];
+}
+
+/** The whole `metaConfig.targeting` block a Meta create may send: the audience fields and the detailed ones. */
+export type MetaTargeting = MetaAudienceTargeting & MetaDetailedTargeting;
+
+/** Which Meta targeting fields this deployment accepts on create, one answer per campaign-service flag. */
+export interface MetaTargetingFlags {
+  audience: boolean;
+  interest: boolean;
+  behavior: boolean;
+  locale: boolean;
+}
+
+/** A kind the Meta targeting search answers (`GET /api/campaigns/meta/targeting-search?type=`). */
+export type MetaTargetingSearchType = 'interest' | 'behavior' | 'work_position';
+
+/** One option of the Meta targeting search, camel-cased from campaign-service's answer. */
+export interface MetaTargetingSearchOption {
+  id: string;
+  name: string;
+  /** The taxonomy path, e.g. ["Interests", "Technology"]; empty when Meta gives none. */
+  path: string[];
+  description?: string;
+  audienceSizeLowerBound?: number;
+  audienceSizeUpperBound?: number;
+  /** Set for work positions only. */
+  coverage?: number;
+}
+
+/** The BFF's answer for a Meta targeting search. */
+export interface MetaTargetingSearchResult {
+  type: MetaTargetingSearchType;
+  options: MetaTargetingSearchOption[];
+}
+
+/** campaign-service's raw answer for `search-meta-targeting-options` (snake_case, as on the wire). */
+export interface CampaignServiceMetaTargetingSearch {
+  type?: string;
+  options?: {
+    id?: unknown;
+    name?: unknown;
+    path?: unknown;
+    description?: unknown;
+    audience_size_lower_bound?: unknown;
+    audience_size_upper_bound?: unknown;
+    coverage?: unknown;
+  }[];
+  option_count?: number;
 }
 
 /**
@@ -7380,6 +7444,15 @@ export interface CampaignListResult {
   metaCallToActionEnabled?: boolean;
   metaConversionEventEnabled?: boolean;
   metaOptimizationGoalEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.targeting.interests`, `behaviors` with `workPositions`, and
+   * `locales` (#5904 row 4), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING`,
+   * `..._META_BEHAVIOR_TARGETING`, `..._META_LOCALE_TARGETING`. Deployment-wide (Meta taxonomy, no account
+   * resource). Optional, so a BFF that predates them reads as unanswered.
+   */
+  metaInterestTargetingEnabled?: boolean;
+  metaBehaviorTargetingEnabled?: boolean;
+  metaLocaleTargetingEnabled?: boolean;
   /**
    * Whether THIS caller may offer the `leads` objective with an Instant Form, through
    * `GET /api/campaigns/meta/lead-forms`, and send `metaConfig.leadFormId` (#5940): `cutoverOwnsCreate()` AND
