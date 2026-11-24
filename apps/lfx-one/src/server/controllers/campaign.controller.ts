@@ -1335,8 +1335,11 @@ export class CampaignController {
       }
       // Germany and the United Kingdom as the old shared map resolved them, corrected in the request itself (LFXV2-2665),
       // so the legacy creator, which is handed `req.body` while the cutover is off, targets the right country too.
-      if (body?.linkedInConfig && 'geoTargets' in body.linkedInConfig) {
-        body.linkedInConfig.geoTargets = correctLinkedInGeoTargets(body.linkedInConfig.geoTargets);
+      // An object only: `in` throws on a primitive, which campaign-service refuses on its own.
+      const linkedInConfigBody: unknown = body?.linkedInConfig;
+      if (linkedInConfigBody !== null && typeof linkedInConfigBody === 'object' && !Array.isArray(linkedInConfigBody) && 'geoTargets' in linkedInConfigBody) {
+        const config = linkedInConfigBody as { geoTargets: unknown };
+        config.geoTargets = correctLinkedInGeoTargets(config.geoTargets);
       }
       // A variant's ad name, description and call to action (#5764 rows 16–17): refused, never dropped, while this
       // deployment cannot send them, and held to campaign-service's rules. See `linkedInVariantFieldsRefusal`.

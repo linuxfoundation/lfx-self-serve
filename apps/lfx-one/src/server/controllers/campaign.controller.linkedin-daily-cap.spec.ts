@@ -231,6 +231,20 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     ]);
   });
 
+  it('does not throw on a linkedInConfig that is not an object', async () => {
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+    const req = {
+      body: { platforms: ['linkedin-ads'], linkedInConfig: true },
+      query: { project: 'tlf', brief_id: 'b-1' },
+      path: '/api/campaigns/create',
+    } as unknown as Request;
+
+    await expect(new CampaignController().createCampaign(req, res, next)).resolves.toBeUndefined();
+    const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as { statusCode?: number } | undefined;
+    expect(error?.statusCode ?? 200).not.toBe(500);
+  });
+
   it('hands the legacy creator the corrected Germany while the cutover is dark', async () => {
     isServerFeatureEnabled.mockImplementation((flag) => !(CUTOVER_FLAGS as unknown[]).includes(flag));
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
