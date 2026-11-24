@@ -59,6 +59,18 @@ describe('ProfileLinuxEmailComponent — forward re-auth state (#1935)', () => {
     primaryEmail: 'jsmith@example.org',
   };
 
+  // lfx-self-serve-ops#2006: a null forwardTo suppressed for impersonation, not a genuinely unset
+  // or unreadable one. forwardAuthRequired is deliberately absent here — the BFF never sets both.
+  const claimedUnavailableDuringImpersonation: LinuxAliasData = {
+    state: 'claimed',
+    domain: 'linux.com',
+    alias: 'jsmith',
+    email: 'jsmith@linux.com',
+    forwardTo: null,
+    primaryEmail: 'jsmith@example.org',
+    forwardUnavailableDuringImpersonation: true,
+  };
+
   async function setup(alias: LinuxAliasData): Promise<{ fixture: ComponentFixture<ProfileLinuxEmailComponent>; locationHref: () => string }> {
     const hrefState = { value: 'https://app.dev.lfx.dev/profile/identities' };
     // jsdom throws on a bare `window.location.href = …` navigation; stub the setter so the
@@ -196,5 +208,23 @@ describe('ProfileLinuxEmailComponent — forward re-auth state (#1935)', () => {
     expect(component.forwardNotSet()).toBe(false);
     expect(component.editForm.controls.forwardTo.value).toBe('jsmith@example.org');
     expect(component.forwardDirty()).toBe(false);
+  });
+
+  // lfx-self-serve-ops#2006: a null forwardTo suppressed for impersonation must not be read as
+  // "genuinely unset" (which would show the wrong hint and no indication anything is suppressed)
+  // or trigger the re-auth redirect (which would rewrite the impersonator's own session).
+  it('shows the impersonation-specific hint, not "not set" or a re-auth redirect, when forwardUnavailableDuringImpersonation is set', async () => {
+    const { fixture, locationHref } = await setup(claimedUnavailableDuringImpersonation);
+    const component = fixture.componentInstance;
+
+    expect(component.forwardUnavailableDuringImpersonation()).toBe(true);
+    expect(component.forwardNotSet()).toBe(false);
+    expect(component.forwardReauthRequired()).toBe(false);
+    // No automatic Flow C redirect — that would rewrite the impersonator's own session, not the target's.
+    expect(locationHref()).toBe('https://app.dev.lfx.dev/profile/identities');
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain("Forwarding details aren't available while impersonating.");
+    expect(compiled.textContent).not.toContain("Forwarding isn't set yet");
   });
 });

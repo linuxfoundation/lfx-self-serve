@@ -968,6 +968,12 @@ export class ProfileController {
         // Re-authorization is only offered when Flow C is actually configured; otherwise there's no
         // authorizeUrl to send the client to and it falls back to the "try again later" copy.
         const canReauth = forwardAuthRequired && this.profileAuthService.isProfileAuthConfigured();
+        // A null forwardTo during impersonation is this handler's own choice (above), not a read
+        // failure or a genuinely unset forward — say so explicitly in the response rather than
+        // relying solely on the client's separately-sourced impersonation signal to tell the two
+        // apart. An admin inspecting this response directly (as happened in
+        // linuxfoundation/lfx-self-serve-ops#2006) has no other way to know why forwardTo is null.
+        const forwardUnavailableDuringImpersonation = isImpersonating(req);
 
         logger.success(req, 'get_linux_alias', startTime, { state: 'claimed' });
         res.json({
@@ -977,6 +983,7 @@ export class ProfileController {
           email,
           forwardTo: forward?.target_email ?? null,
           primaryEmail,
+          ...(forwardUnavailableDuringImpersonation ? { forwardUnavailableDuringImpersonation: true } : {}),
           ...(forwardAuthRequired
             ? {
                 forwardAuthRequired: true,
