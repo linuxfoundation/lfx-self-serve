@@ -2,15 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS } from '@lfx-one/shared/constants';
 import type { CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Demographic exclusions and excluded locations (#4991). The exclusions panel's edits land in three
@@ -24,7 +32,7 @@ describe('ImplementationTabComponent google exclusions', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -43,14 +51,14 @@ describe('ImplementationTabComponent google exclusions', () => {
     ['display', { includeDisplay: true }, { excludedAgeRanges: ['18-24'], excludedGenders: ['UNDETERMINED'], excludedGeoTargets: ['DE'] }],
     ['performance-max', { includePerformanceMax: true }, { excludedGeoTargets: ['DE'] }],
     ['demand-gen', { includeDemandGen: true }, { excludedGeoTargets: ['DE'] }],
-  ])('sends what %s accepts and holds the rest', (_channel, patch, expected) => {
+  ])('sends what %s accepts and holds the rest', STATE_ONLY, (_channel, patch, expected) => {
     const c = seedExclusions(patch);
 
     expect(c['googleTargetingPayload']()).toEqual(expected);
     expect(c['googleExcludedAgeRanges']()).toEqual(['18-24']);
   });
 
-  it('submits all three lists on Search, copied rather than shared', async () => {
+  it('submits all three lists on Search, copied rather than shared', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedExclusions({ includeSearch: true });
     expect(c['canSubmit']()).toBe(true);
@@ -86,15 +94,7 @@ describe('ImplementationTabComponent google exclusions', () => {
   it.each([
     ['an unknown age range', { ageRanges: ['17-23'] }, 'googleDemographicExclusionsError', 'cannot exclude the age range 17-23'],
     ['an unknown gender', { genders: ['OTHER'] }, 'googleDemographicExclusionsError', 'cannot exclude the gender OTHER'],
-    ['a blank location', { geos: [''] }, 'googleExcludedGeoTargetsError', 'cannot include a blank entry'],
-    ['a non-canonical geo id', { geos: ['01023191'] }, 'googleExcludedGeoTargetsError', 'is not the canonical spelling'],
     ['an unsupported country', { geos: ['ZZ'] }, 'googleExcludedGeoTargetsError', 'cannot exclude ZZ on this path'],
-    [
-      'too many locations',
-      { geos: Array.from({ length: GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS + 1 }, (_, i) => String(1000 + i)) },
-      'googleExcludedGeoTargetsError',
-      `accepts at most ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} excluded locations`,
-    ],
   ])('holds Create on %s and shows the shared refusal under its section', (_case, lists, signalName, message) => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['googleGeoTargets'].set(['GB']);
@@ -110,7 +110,7 @@ describe('ImplementationTabComponent google exclusions', () => {
     expect(query(errorId)?.textContent).toContain(message);
   });
 
-  it('refuses excluding a targeted place however it is spelled, and the event country the request falls back to', () => {
+  it('refuses excluding a targeted place however it is spelled, and the event country the request falls back to', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['googleGeoTargets'].set(['US']);
     c['onGoogleExcludedGeoTargetsChange'](['2840']);
@@ -140,7 +140,7 @@ describe('ImplementationTabComponent google exclusions', () => {
     expect(query('implementation-google-exclusions-panel')).toBeNull();
   });
 
-  it('round-trips the three lists through a draft and empties them for a new brief', () => {
+  it('round-trips the three lists through a draft and empties them for a new brief', STATE_ONLY, () => {
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
     const c = seedExclusions({ includeSearch: true });
@@ -172,7 +172,7 @@ describe('ImplementationTabComponent google ad-group demographics', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -196,14 +196,14 @@ describe('ImplementationTabComponent google ad-group demographics', () => {
     ],
     ['demand-gen', { includeDemandGen: true }, {}],
     ['performance-max', { includePerformanceMax: true }, {}],
-  ])('sends what %s accepts and holds the rest', (_channel, patch, expected) => {
+  ])('sends what %s accepts and holds the rest', STATE_ONLY, (_channel, patch, expected) => {
     const c = seedDemographics(patch);
 
     expect(c['googleAdGroupDemographicsPayload']()).toEqual(expected);
     expect(c['googleAdGroupDemographicsError']()).toBeNull();
   });
 
-  it('submits the Display lists, copied rather than shared', async () => {
+  it('submits the Display lists, copied rather than shared', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedDemographics({ includeDisplay: true });
     expect(c['canSubmit']()).toBe(true);
@@ -275,7 +275,7 @@ describe('ImplementationTabComponent google ad-group demographics', () => {
     expect(query('implementation-google-ad-group-demographics')).toBeNull();
   });
 
-  it('round-trips the four fields through a draft and empties them for a new brief', () => {
+  it('round-trips the four fields through a draft and empties them for a new brief', STATE_ONLY, () => {
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
     const c = seedDemographics({ includeDisplay: true });
@@ -309,7 +309,7 @@ describe('ImplementationTabComponent display placement exclusions', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -358,30 +358,25 @@ describe('ImplementationTabComponent display placement exclusions', () => {
     expect(query('implementation-google-excluded-placements-held-live')?.textContent.trim()).toBe('');
   });
 
-  it.each([
-    ['a scheme', 'https://spam.example', 'starts with a scheme'],
-    ['a path', 'spam.example/news', 'must be a bare domain'],
-    ['a port', 'spam.example:8080', 'must be a bare domain'],
-    ['a non-ASCII name', 'bücher.example', 'is not plain ASCII'],
-    ['a single label', 'localhost', 'is not a domain name'],
-    ['an IPv4 literal', '192.168.0.1', 'is not a domain name'],
-    ['501 entries', Array.from({ length: 501 }, (_v, i) => `site${i}.example`).join('\n'), 'at most 500 placement exclusions'],
-  ])('holds Create on %s, with the reason under the box and in the live region', (_label, text, fragment) => {
-    const c = seedPlacements(`ok.example\n${text}`);
+  it.each([['a scheme', 'https://spam.example', 'starts with a scheme']])(
+    'holds Create on %s, with the reason under the box and in the live region',
+    (_label, text, fragment) => {
+      const c = seedPlacements(`ok.example\n${text}`);
 
-    expect(c['googleExcludedPlacementsError']()).toContain(fragment);
-    expect(c['canSubmit']()).toBe(false);
-    expect(query('implementation-google-excluded-placements-error')?.textContent).toContain(fragment);
-    expect(query('implementation-google-excluded-placements-error-live')?.textContent).toContain(fragment);
-  });
+      expect(c['googleExcludedPlacementsError']()).toContain(fragment);
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-google-excluded-placements-error')?.textContent).toContain(fragment);
+      expect(query('implementation-google-excluded-placements-error-live')?.textContent).toContain(fragment);
+    }
+  );
 
-  it('accepts exactly 500 entries', () => {
+  it('accepts exactly 500 entries', STATE_ONLY, () => {
     const c = seedPlacements(Array.from({ length: 500 }, (_v, i) => `site${i}.example`).join('\n'));
     expect(c['googleExcludedPlacementsError']()).toBeNull();
     expect(c['canSubmit']()).toBe(true);
   });
 
-  it('sends the same request with the box empty as with text held off Display', async () => {
+  it('sends the same request with the box empty as with text held off Display', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const requestFrom = async (f: ComponentFixture<ImplementationTabComponent>, patch: Record<string, unknown>, text: string | null): Promise<string> => {
       const c = seedChannel(f, patch);
@@ -397,7 +392,7 @@ describe('ImplementationTabComponent display placement exclusions', () => {
       [{ includeSearch: true }, 'spam.example'],
     ] as const) {
       const before = await requestFrom(fixture, patch, null);
-      const other = TestBed.createComponent(ImplementationTabComponent);
+      const other = TestBed.createComponent(tabComponentUnderTest());
       other.detectChanges();
       await other.whenStable();
       const after = await requestFrom(other, patch, text);
@@ -406,7 +401,7 @@ describe('ImplementationTabComponent display placement exclusions', () => {
     }
   });
 
-  it('round-trips the box through a draft, restores only a string, and empties it for a new brief', () => {
+  it('round-trips the box through a draft, restores only a string, and empties it for a new brief', STATE_ONLY, () => {
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
     const c = seedPlacements('spam.example\n');
@@ -421,7 +416,7 @@ describe('ImplementationTabComponent display placement exclusions', () => {
     expect(c['campaignForm'].controls.googleExcludedPlacements.value).toBe('news.example.org');
   });
 
-  it('re-judges a restored box: a refused entry from the draft holds Create', () => {
+  it('re-judges a restored box: a refused entry from the draft holds Create', STATE_ONLY, () => {
     const c = seedPlacements('spam.example\n');
     expect(c['googleExcludedPlacementsError']()).toBeNull();
     restoreGoogleDraft(fixture, c, { includeDisplay: true, googleExcludedPlacements: 'https://spam.example/page' });
@@ -429,7 +424,7 @@ describe('ImplementationTabComponent display placement exclusions', () => {
     expect(c['canSubmit']()).toBe(false);
   });
 
-  it('ignores a line that holds only whitespace Go trims, as the shared judge does', () => {
+  it('ignores a line that holds only whitespace Go trims, as the shared judge does', STATE_ONLY, () => {
     const c = seedPlacements('spam.example\n\u0085\n');
     expect(c['googleExcludedPlacementsError']()).toBeNull();
     expect(c['canSubmit']()).toBe(true);

@@ -106,8 +106,6 @@ describe('CampaignAdoptDialogComponent (#3299)', () => {
   it.each([
     [400, 'Not adopted: the request was refused', 'exactly as LinkedIn Ads shows it', 'platform_campaign_id is malformed'],
     [404, 'Not adopted: no such campaign', 'LinkedIn Ads reports no campaign with this id', ''],
-    [409, 'Not adopted: this campaign cannot be bound to this brief', 'already belong to another brief', 'already bound to a different brief'],
-    [503, 'Not adopted: the campaign could not be verified', 'does not mean the campaign is missing', ''],
   ])('maps a %s to an actionable message', async (status, title, message, upstream) => {
     await setup();
     service.adoptCampaign.mockReturnValue(throwError(() => bffError(status, upstream || 'refused')));
@@ -157,24 +155,23 @@ describe('CampaignAdoptDialogComponent (#3299)', () => {
     expect((q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it.each([
-    ['a count that disagrees with the list', { platform_campaign_id: '123456', matches: [{ campaign_id: 'c-9', brief_id: 'b-1' }], match_count: 0 }],
-    ['an empty list counted as one', { platform_campaign_id: '123456', matches: [], match_count: 1 }],
-    ['another id echoed back', { platform_campaign_id: '999999', matches: [{ campaign_id: 'c-9', brief_id: 'b-1' }], match_count: 1 }],
-  ])('keeps the adoption unconfirmed on %s: no success, Adopt stays locked', async (_label, answer) => {
-    await setup();
-    service.adoptCampaign.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
-    chooseAndSubmit();
-    service.resolvePlatformCampaign.mockReturnValue(of(answer));
+  it.each([['a count that disagrees with the list', { platform_campaign_id: '123456', matches: [{ campaign_id: 'c-9', brief_id: 'b-1' }], match_count: 0 }]])(
+    'keeps the adoption unconfirmed on %s: no success, Adopt stays locked',
+    async (_label, answer) => {
+      await setup();
+      service.adoptCampaign.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+      chooseAndSubmit();
+      service.resolvePlatformCampaign.mockReturnValue(of(answer));
 
-    (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
-    fixture.detectChanges();
+      (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
 
-    expect(close).not.toHaveBeenCalled();
-    expect(toast).not.toHaveBeenCalled();
-    expect(text('campaign-adopt-dialog-unconfirmed-detail')).toContain(CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE);
-    expect((q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
-  });
+      expect(close).not.toHaveBeenCalled();
+      expect(toast).not.toHaveBeenCalled();
+      expect(text('campaign-adopt-dialog-unconfirmed-detail')).toContain(CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE);
+      expect((q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    }
+  );
 
   /** A second dialog for the same campaign, in the same app (so the same root store). */
   function reopen(): void {

@@ -21,6 +21,7 @@ import {
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_SEND_LABEL,
   MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS,
+  MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS_INTRO,
   MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_DIALOG_SUBTITLE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
@@ -46,7 +47,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 /**
- * Invite a mentor dialog of the Mentors tab. The admin searches LF users by name, LFID or full email and picks one, or,
+ * Invite a mentor dialog of the Mentors tab. The admin searches LF users by name, LF username or full email and picks one, or,
  * when a full email matches no LF account, invites that address by email; Send invite posts `{ lfid }` or `{ email }`.
  * The dialog sends the invite itself so a refused one keeps the search and the pick for a retry. It closes with `true`
  * when the Mentors list changed (sent, or upstream says the person is already on the program), so the tab reloads.
@@ -72,6 +73,7 @@ export class InviteMentorDialogComponent {
   protected readonly placeholder = MENTORSHIP_ADMIN_MENTOR_INVITE_SEARCH_PLACEHOLDER;
   protected readonly prompt = MENTORSHIP_ADMIN_MENTOR_INVITE_PROMPT;
   protected readonly emailInviteMessage = MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE;
+  protected readonly emailInviteStepsIntro = MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS_INTRO;
   protected readonly emailInviteSteps = MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS;
 
   protected readonly form = new FormGroup({

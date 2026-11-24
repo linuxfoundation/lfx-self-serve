@@ -10,9 +10,10 @@ import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * #1614 (F7). The Demand Gen image ad and the responsive display ad are seeded from the brief on
@@ -94,12 +95,12 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('fills the Demand Gen image ad: fitting Demand Gen headlines then Search ones, descriptions and business name', () => {
+  it('fills the Demand Gen image ad: fitting Demand Gen headlines then Search ones, descriptions and business name', STATE_ONLY, () => {
     seed(brief(generated));
 
     // The 39-wide headline is left out, not cut to 30; the Search headlines fill the slots it leaves.
@@ -117,7 +118,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
   });
 
   /** campaign-service refuses two lines equal after trim and lower-casing (`validateCreativeText`). */
-  it('drops lines that differ only in case or spacing, keeping the first spelling, in every seeded list (PR #5387 review)', () => {
+  it('drops lines that differ only in case or spacing, keeping the first spelling, in every seeded list (PR #5387 review)', STATE_ONLY, () => {
     seed(
       brief({
         google_search: {
@@ -137,7 +138,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
   });
 
   /** PR #5389 review: the payload trims a leading U+FEFF, so the seed must de-duplicate on what is sent. */
-  it('seeds one line for two that become the same once serialized, a leading U+FEFF included', () => {
+  it('seeds one line for two that become the same once serialized, a leading U+FEFF included', STATE_ONLY, () => {
     seed(brief({ google_search: { headlines: ['Join us', '\uFEFFJoin us', 'Register now'], descriptions: [] } }));
     show('includeDemandGen');
 
@@ -167,7 +168,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(lines(pmax['headlines'])).toEqual(['Join us', 'Register now']);
   });
 
-  it('skips a long headline candidate that repeats a seeded line once Go trims a U+0085', () => {
+  it('skips a long headline candidate that repeats a seeded line once Go trims a U+0085', STATE_ONLY, () => {
     const descriptions = ['D1', 'D2', 'D3', 'D4', 'D5', 'Join us\u0085', 'D7'];
     seed(brief({ google_search: { headlines: [], descriptions }, google_display: { headlines: ['Join us'] } }));
 
@@ -184,7 +185,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(group('displayCreative')['longHeadline']).toBe('D7');
   });
 
-  it('skips a long headline candidate that repeats a seeded line in another case', () => {
+  it('skips a long headline candidate that repeats a seeded line in another case', STATE_ONLY, () => {
     // The five descriptions take D1-D5; "join us" repeats the seeded headline "Join us" in another case.
     const descriptions = ['D1', 'D2', 'D3', 'D4', 'D5', 'join us', 'D7'];
     seed(brief({ google_search: { headlines: [], descriptions }, google_display: { headlines: ['Join us'] } }));
@@ -192,7 +193,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(group('displayCreative')['longHeadline']).toBe('D7');
   });
 
-  it('caps each Demand Gen list at its field max and drops duplicates', () => {
+  it('caps each Demand Gen list at its field max and drops duplicates', STATE_ONLY, () => {
     const headlines = ['Headline 0', 'Headline 0', ...Array.from({ length: 6 }, (_, i) => `Headline ${i + 1}`)];
     seed(brief({ google_display: { headlines, descriptions: [] }, google_search: { headlines: ['Headline 0'] } }));
 
@@ -200,7 +201,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(seeded).toEqual(['Headline 0', 'Headline 1', 'Headline 2', 'Headline 3', 'Headline 4']);
   });
 
-  it('does not seed a business name or call to action wider than its field', () => {
+  it('does not seed a business name or call to action wider than its field', STATE_ONLY, () => {
     seed(brief({ google_display: { headlines: ['Join us'], business_name: 'x'.repeat(26), call_to_action: 'y'.repeat(31) } }));
 
     expect(group('demandGenCreative')['businessName']).toBe('');
@@ -235,7 +236,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(component()['googleCreativeWirePayload']()).toEqual({});
   });
 
-  it('fills the display ad, taking as long headline the first Demand Gen headline the headlines did not take', () => {
+  it('fills the display ad, taking as long headline the first Demand Gen headline the headlines did not take', STATE_ONLY, () => {
     seed(brief(generated));
 
     expect(lines(group('displayCreative')['headlines'])).toEqual([
@@ -252,14 +253,14 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(prefilled('display')).toBe(true);
   });
 
-  it("seeds a listed call to action in the list's own spelling on Display and on Demand Gen", () => {
+  it("seeds a listed call to action in the list's own spelling on Display and on Demand Gen", STATE_ONLY, () => {
     seed(brief({ google_display: { headlines: ['Join us'], call_to_action: 'learn more' } }));
 
     expect(group('displayCreative')['callToActionText']).toBe('Learn More');
     expect(group('demandGenCreative')['callToActionText']).toBe('Learn More');
   });
 
-  it('seeds a call to action only on the ad whose list carries it', () => {
+  it('seeds a call to action only on the ad whose list carries it', STATE_ONLY, () => {
     seed(brief({ google_display: { headlines: ['Join us'], call_to_action: 'Install' } }));
 
     // Install was accepted on the responsive display ad and refused on the Demand Gen image ad.
@@ -267,7 +268,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(group('demandGenCreative')['callToActionText']).toBe('');
   });
 
-  it('falls back to a Search description the descriptions did not take for the long headline', () => {
+  it('falls back to a Search description the descriptions did not take for the long headline', STATE_ONLY, () => {
     const descriptions = Array.from({ length: 6 }, (_, i) => `Search description ${i + 1}`);
     seed(brief({ google_search: { headlines: ['Join KubeCon EU'], descriptions }, google_display: { headlines: ['Short one'] } }));
 
@@ -275,14 +276,14 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(group('displayCreative')['longHeadline']).toBe('Search description 6');
   });
 
-  it('leaves the long headline empty when every candidate is already seeded elsewhere', () => {
+  it('leaves the long headline empty when every candidate is already seeded elsewhere', STATE_ONLY, () => {
     seed(brief({ google_search: { headlines: [], descriptions: ['Only description'] }, google_display: { headlines: ['Only headline'] } }));
 
     expect(group('displayCreative')['longHeadline']).toBe('');
     expect(lines(group('displayCreative')['headlines'])).toEqual(['Only headline']);
   });
 
-  it('leaves both creatives empty, with no notice, when the brief has no generated copy', () => {
+  it('leaves both creatives empty, with no notice, when the brief has no generated copy', STATE_ONLY, () => {
     seed(brief(undefined));
 
     expect(group('demandGenCreative')['headlines']).toBe('');
@@ -291,7 +292,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(prefilled('display')).toBe(false);
   });
 
-  it('clears both seeds when a brief without copy replaces one with it', () => {
+  it('clears both seeds when a brief without copy replaces one with it', STATE_ONLY, () => {
     seed(brief(generated));
     seed(brief(undefined));
 
@@ -301,7 +302,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(prefilled('display')).toBe(false);
   });
 
-  it('lets a restored draft win over both seeds', () => {
+  it('lets a restored draft win over both seeds', STATE_ONLY, () => {
     const draft = {
       eventSlug: 'kubecon-eu-2026',
       eventName: 'KubeCon EU 2026',
@@ -322,7 +323,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(prefilled('display')).toBe(false);
   });
 
-  it('drops the Demand Gen notice once the operator rewrites the seeded copy', () => {
+  it('drops the Demand Gen notice once the operator rewrites the seeded copy', STATE_ONLY, () => {
     seed(brief(generated));
     component()['campaignForm'].controls['demandGenCreative'].patchValue({
       headlines: 'Mine',
@@ -379,7 +380,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     ['displayCreative', 'callToActionText', 'Register'],
     ['demandGenCreative', 'callToActionText', 'Register'],
     ['demandGenVideoCreative', 'callToAction', 'REGISTER'],
-  ])('refuses a restored %s call to action outside its list, and says why without waiting for a touch', (groupName, control, value) => {
+  ])('refuses a restored %s call to action outside its list, and says why without waiting for a touch', STATE_ONLY, (groupName, control, value) => {
     seed(brief(undefined), draftWithCreatives({ [groupName]: { [control]: value } }));
     showGroup(groupName);
 
@@ -395,14 +396,14 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     ['demandGenVideoCreative', 'callToAction', 'SIGN_UP'],
     ['demandGenCreative', 'callToActionText', 'Donate Now'],
     ['demandGenCreative', 'callToActionText', ''],
-  ])('accepts a listed %s call to action, or none', (groupName, control, value) => {
+  ])('accepts a listed %s call to action, or none', STATE_ONLY, (groupName, control, value) => {
     seed(brief(undefined), draftWithCreatives({ [groupName]: { [control]: value } }));
     showGroup(groupName);
 
     expect(component()['campaignForm'].get([groupName, control]).errors).toBeNull();
   });
 
-  it('renders the Display call to action as a select of the documented values with None first', () => {
+  it('renders the Display call to action as a select of the documented values with None first', STATE_ONLY, () => {
     seed(brief(generated));
     show('includeDisplay');
 

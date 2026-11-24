@@ -56,6 +56,8 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly readonly = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native `autocomplete` token, for example `email`. Empty leaves the browser default, so autofill and password managers keep working. */
   public readonly autocomplete = input<string>('');
+  /** Native `maxlength`, capping what can be typed or pasted; `null` leaves the field uncapped. */
+  public readonly maxlength = input<number | null>(null);
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-link`. */
   public readonly prefixIcon = input<string>('');
   /** Leading text such as `https://`. Shown after the icon when both are set. */

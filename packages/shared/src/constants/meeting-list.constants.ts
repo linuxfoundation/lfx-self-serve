@@ -2,14 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibilityKind } from '../enums';
+import { RECURRENCE_DAYS_OF_WEEK } from './meeting.constants';
 import type {
+  MeetingCalendarTypeColor,
   MeetingDetailsFeature,
+  MeetingGroupTypePattern,
   MeetingHomeArtifact,
   MeetingHomeAttendanceKind,
   MeetingJoinLink,
   MeetingResponseFilterOption,
   MeetingRsvpChoice,
   MeetingsHomeFilters,
+  MeetingsHomePastFilters,
   MeetingVisibilityInfo,
   UiBadgeTone,
 } from '../interfaces';
@@ -26,15 +30,23 @@ export const MEETINGS_HOME_PAGE_SIZE = 20;
 /** Gap in px between the tabs rule and a day heading; must match the day-group separator's -mt-[20px] and pt-[20px]. */
 export const MEETINGS_HOME_DAY_HEADING_GAP_PX = 20;
 
+/** How long the meetings home search field takes to collapse back into its button; must match its closing animation. */
+export const MEETINGS_HOME_SEARCH_CLOSE_MS = 180;
+
 /** Filters with nothing applied. */
 export const MEETINGS_HOME_DEFAULT_FILTERS: MeetingsHomeFilters = {
   foundation: null,
   project: null,
+  group: null,
+  groupType: null,
   meetingType: null,
   rsvp: 'all',
   organizedByMe: false,
   hideDeclined: false,
 };
+
+/** A paged past feed with no filters applied on the server. */
+export const MEETINGS_HOME_NO_PAST_FILTERS: MeetingsHomePastFilters = { projectUid: null, committeeUid: null, groupType: null, meetingType: null };
 
 /** RSVP filter choices, in menu order. */
 export const MEETINGS_HOME_RSVP_FILTER_OPTIONS: readonly MeetingResponseFilterOption[] = [
@@ -56,11 +68,26 @@ export const MEETINGS_HOME_RSVP_CHOICES: readonly MeetingRsvpChoice[] = [
 export const MEETINGS_HOME_FILTER_CHIP_LABELS = {
   foundation: 'Foundation',
   project: 'Project',
+  group: 'Group',
+  groupType: 'Group type',
   meetingType: 'Meeting type',
   rsvp: 'RSVP',
   organizedByMe: 'Organized by me',
   hideDeclined: 'Hiding declined series',
 } as const;
+
+/** Group types read from a group's name when it has no category, first match wins. */
+export const MEETING_GROUP_TYPE_PATTERNS: readonly MeetingGroupTypePattern[] = [
+  { pattern: /\bBoard\b/i, type: 'Board' },
+  { pattern: /\bWG\b|\bWorking Group\b|\bWorkstreams?\b/i, type: 'Working Group' },
+  { pattern: /\bSIG\b|\bSpecial Interest\b/i, type: 'Special Interest Group' },
+  { pattern: /\b(?:TAC|TOC)\b|\bTechnical\b|\bSteering\b/i, type: 'Technical Advisory Committee' },
+  { pattern: /\bCommittee\b|\bCouncil\b/i, type: 'Committee' },
+  { pattern: /\bAmbassadors?\b/i, type: 'Ambassador' },
+];
+
+/** Type of a group without a category whose name matches no {@link MEETING_GROUP_TYPE_PATTERNS}. */
+export const MEETING_GROUP_TYPE_OTHER = 'Other';
 
 /** Tailwind fill of a visibility badge per kind. */
 export const MEETING_VISIBILITY_BG_CLASSES: Record<MeetingVisibilityKind, string> = {
@@ -155,3 +182,55 @@ export const MEETINGS_HOME_PROJECT_PAST_PAGE_SIZE = 50;
 
 /** Most max-size pages a project's meetings home reads for its upcoming feed, as the legacy calendar does. */
 export const MEETINGS_HOME_PROJECT_MAX_UPCOMING_PAGES = 10;
+
+/** Weekday initials of the meetings home calendars, Sunday first. */
+export const MEETINGS_HOME_CALENDAR_WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
+
+/** Most dots a mini calendar day shows, one per meeting. */
+export const MEETINGS_HOME_MINI_CALENDAR_MAX_DOTS = 3;
+
+/** Most meetings a mini calendar day's tooltip lists before "+N more". */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_ITEMS = 6;
+
+/** Tooltip centre never closer than this to the window's right edge (half its 280px width plus a margin). */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_EDGE_PX = 152;
+
+/** Room a full mini calendar tooltip needs above its day; with less, and more room below, it opens below the day. */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_MAX_HEIGHT_PX = 220;
+
+/** Room a calendar dialog chip tooltip (title and detail) needs above its chip; with less it opens below. */
+export const MEETINGS_HOME_CALENDAR_CHIP_TOOLTIP_HEIGHT_PX = 72;
+
+/** Delay before a mini calendar tooltip closes once the pointer leaves its day, so the pointer can move onto it. */
+export const MEETINGS_HOME_MINI_CALENDAR_TOOLTIP_HIDE_MS = 120;
+
+/** Gap between the sticky tabs bar and the first row of a day picked on the calendar. */
+export const MEETINGS_HOME_DAY_SCROLL_OFFSET_PX = 36;
+
+/** Wait before scrolling to a picked day, so its rows have rendered. */
+export const MEETINGS_HOME_DAY_SCROLL_DELAY_MS = 120;
+
+/** Meeting types of the calendar dialog's legend, in order, with their chip colour; any other type uses the last. */
+export const MEETINGS_HOME_CALENDAR_TYPE_COLORS: readonly MeetingCalendarTypeColor[] = [
+  { type: 'Board', color: 'var(--ui-danger-500)' },
+  { type: 'Maintainers', color: 'var(--ui-accent-500)' },
+  { type: 'Marketing', color: 'var(--ui-success-500)' },
+  { type: 'Technical', color: 'var(--ui-feature-500)' },
+  { type: 'Legal', color: 'var(--ui-warning-500)' },
+  { type: 'Other', color: 'var(--ui-neutral-500)' },
+];
+
+/** Weekday names of the calendar dialog, Sunday first. */
+export const MEETINGS_HOME_CALENDAR_WEEKDAY_NAMES: readonly string[] = RECURRENCE_DAYS_OF_WEEK.map((day) => day.label);
+
+/** Height of one hour in the calendar dialog's week view. */
+export const MEETINGS_HOME_CALENDAR_HOUR_PX = 48;
+
+/** Least height a week view event is drawn at, so its time stays readable. */
+export const MEETINGS_HOME_CALENDAR_EVENT_MIN_HEIGHT_PX = 22;
+
+/** Hour the week view opens scrolled to. */
+export const MEETINGS_HOME_CALENDAR_START_HOUR = 8;
+
+/** Chips a month view cell shows before "+N more". */
+export const MEETINGS_HOME_CALENDAR_MONTH_CHIPS = 3;

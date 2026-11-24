@@ -4,7 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_META_AUDIENCE_TARGETING } from '../constants/campaign.constants';
-import { compactMetaAudienceTargeting, metaAudienceTargetingRefusal, metaTargetingNamesCustomAudiences } from './campaign-meta-audience-targeting.utils';
+import type { MetaAudienceTargetingBlockInput } from '../interfaces/campaign.interface';
+import {
+  compactMetaAudienceTargeting,
+  metaAudienceTargetingBlock,
+  metaAudienceTargetingCapabilities,
+  metaAudienceTargetingRefusal,
+  metaTargetingNamesCustomAudiences,
+} from './campaign-meta-audience-targeting.utils';
 
 const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => String(1000 + i));
 
@@ -71,5 +78,63 @@ describe('compactMetaAudienceTargeting', () => {
   it('reports whether a custom audience is named', () => {
     expect(metaTargetingNamesCustomAudiences(compactMetaAudienceTargeting({ excludedCustomAudiences: ['1001'] }))).toBe(true);
     expect(metaTargetingNamesCustomAudiences(compactMetaAudienceTargeting({ ageMin: 30 }))).toBe(false);
+  });
+});
+
+describe('metaAudienceTargetingCapabilities', () => {
+  it.each([
+    // Only an explicit yes offers targeting; custom audiences also need targeting itself.
+    [null, null, false, false],
+    [false, true, false, false],
+    [null, true, false, false],
+    [true, null, true, false],
+    [true, false, true, false],
+    [true, true, true, true],
+  ])('targeting %s, custom audiences %s: %s, %s', (targeting, custom, targetingAvailable, customAudiencesAvailable) => {
+    expect(metaAudienceTargetingCapabilities(targeting, custom)).toEqual({ targetingAvailable, customAudiencesAvailable });
+  });
+});
+
+describe('metaAudienceTargetingBlock', () => {
+  const ages = { ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 25 };
+  const custom = { ...DEFAULT_META_AUDIENCE_TARGETING, customAudiences: ['1001'] };
+  const base: MetaAudienceTargetingBlockInput = {
+    targeting: ages,
+    targetingEnabled: true,
+    customAudiencesEnabled: true,
+    createCapabilityRead: 'ready',
+    briefId: 'brief-1',
+  };
+  const kind = (overrides: Partial<MetaAudienceTargetingBlockInput>) => metaAudienceTargetingBlock({ ...base, ...overrides })?.kind ?? null;
+
+  it.each([
+    // Nothing chosen (defaults only) never holds Create, whatever the deployment says.
+    [{ targeting: DEFAULT_META_AUDIENCE_TARGETING, targetingEnabled: false }, null],
+    [{ targeting: null, targetingEnabled: null }, null],
+    // Sendable: targeting on, and custom audiences either unused or allowed.
+    [{}, null],
+    [{ targeting: custom }, null],
+    [{ targetingEnabled: true, customAudiencesEnabled: false }, null],
+    // Targeting answered no: Clear.
+    [{ targetingEnabled: false }, 'unsupported'],
+    // Custom audiences answered no for this caller: Remove.
+    [{ targeting: custom, customAudiencesEnabled: false }, 'restricted'],
+    // Unanswered: wait, save first, or Retry.
+    [{ targetingEnabled: null, createCapabilityRead: 'pending' }, 'pending'],
+    [{ targetingEnabled: null, briefId: null }, 'unsaved'],
+    [{ targetingEnabled: null, createCapabilityRead: 'failed' }, 'failed'],
+    [{ targeting: custom, customAudiencesEnabled: null, createCapabilityRead: 'pending' }, 'pending'],
+    [{ targeting: custom, customAudiencesEnabled: null, createCapabilityRead: 'failed' }, 'failed'],
+  ] as [Partial<MetaAudienceTargetingBlockInput>, string | null][])('%j holds as %j', (overrides, expected) => {
+    expect(kind(overrides)).toBe(expected);
+  });
+
+  it('names custom audiences, and offers Remove, once targeting itself is sendable', () => {
+    expect(metaAudienceTargetingBlock({ ...base, targeting: custom, customAudiencesEnabled: null, createCapabilityRead: 'failed' })?.message).toBe(
+      'Could not confirm that you can send Meta custom audiences, so Create waits rather than dropping the targeting on this brief. Retry the check, or remove them.'
+    );
+    expect(metaAudienceTargetingBlock({ ...base, targetingEnabled: null, briefId: null })?.message).toBe(
+      "Meta audience targeting can't be checked until this brief is saved. Save the brief."
+    );
   });
 });

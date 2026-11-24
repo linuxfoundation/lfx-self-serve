@@ -29,6 +29,7 @@ import { isMktgDocumentCommentAnchor } from '@lfx-one/shared/utils';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { frameworkReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import { NEVER, of } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
@@ -375,6 +376,34 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-report-notes')?.textContent).toContain('Check the dates.');
     expect(query('mktg-framework-view-findings')?.textContent).toContain('nums has 2 numbers');
     expect(query('mktg-framework-view-tab-sources')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('shows the agent’s real v2 report on the Sources tab as the Brand Kit does: the failed source in the agent’s words with its detail, then the Missing assets and Warnings cards saying nothing is missing and no warning', async () => {
+    host.asset.set({ ...ASSET, report: frameworkReportV2Fixture() });
+    host.state.set('ready');
+    await fixture.whenStable();
+    await tab('sources');
+    const failed = query('mktg-framework-view-sources-failed');
+    expect(failed?.querySelectorAll('li')).toHaveLength(1);
+    expect(failed?.textContent).toContain('https://aaif.io/press');
+    expect(failed?.textContent).toContain('This page does not exist on the site (the server answered 404).');
+    expect(query('mktg-framework-view-sources-failed-detail')?.textContent).toBe('HTTP 404');
+    expect(query('mktg-framework-view-sources-failed-empty')).toBeNull();
+    expect(query('mktg-report-findings-missing-item')).toBeNull();
+    expect(query('mktg-report-findings-missing-empty')?.textContent?.trim()).toBe('Nothing is missing.');
+    expect(query('mktg-report-findings-warnings-item')).toBeNull();
+    expect(query('mktg-report-findings-warnings-empty')?.textContent?.trim()).toBe('No warnings.');
+  });
+
+  it('adds no findings card for a v1 report, whose failed sources list as before', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    await tab('sources');
+    expect(query('mktg-framework-view-sources-failed')?.textContent).toContain('https://blog.example.org');
+    expect(query('mktg-framework-view-sources-failed-detail')).toBeNull();
+    expect(query('mktg-report-findings-missing')).toBeNull();
+    expect(query('mktg-report-findings-warnings')).toBeNull();
   });
 
   it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {

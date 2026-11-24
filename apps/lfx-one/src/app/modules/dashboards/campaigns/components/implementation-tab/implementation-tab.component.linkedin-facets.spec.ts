@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The LinkedIn targeting profile's facets (#5546): shown under the profile picker, each member group
@@ -60,7 +61,7 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     edit?: boolean | null;
     briefData?: CampaignBriefOutput;
   }): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (options.draft) f.componentRef.setInput('draft', options.draft);
@@ -202,7 +203,7 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:102']);
   });
 
-  it('sends exactly what it always did when nothing was removed', async () => {
+  it('sends exactly what it always did when nothing was removed', STATE_ONLY, async () => {
     const { fixture } = await mount({});
     makeSubmittable(fixture);
     at(fixture).submit();
@@ -276,7 +277,7 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.');
   });
 
-  it('never blocks an unedited campaign on the capability, whatever it says', async () => {
+  it('never blocks an unedited campaign on the capability, whatever it says', STATE_ONLY, async () => {
     for (const edit of [null, false, true]) {
       const { fixture } = await mount({ edit });
       makeSubmittable(fixture);

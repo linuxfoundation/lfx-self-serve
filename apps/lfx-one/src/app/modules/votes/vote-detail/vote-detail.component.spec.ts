@@ -718,6 +718,135 @@ describe('VoteDetailComponent', () => {
     });
   });
 
+  describe('ranked outcome (lfx-self-serve-ops#2005)', () => {
+    const squashed = (el: Element | null | undefined): string => el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    /** A Condorcet result whose winner info lists only the winner, as upstream sends it; C beats A beats B, while A has the most first choices. */
+    function condorcetResults(overrides: Partial<VoteResultsResponse> = {}): VoteResultsResponse {
+      const ids = ['choice-a', 'choice-b', 'choice-c'];
+      const strength = ['choice-c', 'choice-a', 'choice-b'];
+      const firstChoices: Record<string, number> = { 'choice-a': 3, 'choice-b': 0, 'choice-c': 1 };
+      return {
+        ...makeResults(),
+        poll_results: [
+          {
+            question: {
+              question_id: 'question-1',
+              prompt: 'Elect the synthetic chair',
+              type: 'single_choice',
+              choices: ids.map((id) => ({ choice_id: id, choice_text: `Candidate ${id.slice(-1).toUpperCase()}` })),
+            },
+            ranked_choice_votes: ids.map((id) => ({
+              choice_id: id,
+              rank_counts: [{ rank: 1, count: firstChoices[id] }],
+              condorcet_matrix: ids
+                .filter((other) => other !== id)
+                .map((other) => {
+                  const wins = strength.indexOf(id) < strength.indexOf(other) ? 3 : 1;
+                  return { choice_id: id, other_choice_id: other, choice_id_wins: wins, other_choice_id_wins: 4 - wins, result: `${wins}(${4 - wins})` };
+                }),
+            })),
+            ranked_choice_winner_info: { poll_choices: [{ choice_id: 'choice-c', choice_text: 'Candidate C' }], condorcet_irv_used_for_eliminations: false },
+          },
+        ],
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+    });
+
+    it('names every candidate and shows the winner banner and standings once the vote has ended', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValue(of(condorcetResults()));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+
+      expect(squashed(testId(fixture, 'vote-condorcet-outcome-heading'))).toBe('Candidate C won');
+      expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe('Preferred over every other option in head-to-head comparisons.');
+      // Angular drops inter-element whitespace, so standings rows compare with all whitespace removed.
+      const compact = (value: string): string => value.replace(/\s+/g, '');
+      expect(['choice-c', 'choice-a', 'choice-b'].map((id) => compact(squashed(testId(fixture, `vote-condorcet-standing-${id}`))))).toEqual(
+        [
+          '1st Candidate C Winner Won 2 out of 2 possible head-to-head matchups',
+          '2nd Candidate A Won 1 out of 2 possible head-to-head matchups',
+          '3rd Candidate B Won 0 out of 2 possible head-to-head matchups',
+        ].map(compact)
+      );
+      expect(squashed(testId(fixture, 'vote-condorcet-preference-choice-a'))).toContain('Candidate A');
+      expect(fixture.nativeElement.querySelector('lfx-vote-condorcet-results')?.textContent).not.toMatch(/choice-[abc]/);
+    });
+
+    it('names the winner on the Overview once the vote has ended', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValue(of(condorcetResults()));
+      const fixture = await setup();
+
+      expect(squashed(testId(fixture, 'vote-detail-overview-summary-question-1'))).toBe('Winner: Candidate C');
+    });
+
+    it('keeps the outcome hidden on an active vote, even at full participation', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV })));
+      voteService.getVoteResults.mockReturnValue(of(condorcetResults({ num_recipients: 4, num_votes_cast: 4 })));
+      const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+      await fixture.whenStable();
+
+      expect(read(fixture, 'isVoteClosed')).toBe(true);
+      expect(testId(fixture, 'vote-condorcet-preference-choice-a')).not.toBeNull();
+      expect(testId(fixture, 'vote-condorcet-in-progress')).not.toBeNull();
+      expect(testId(fixture, 'vote-condorcet-outcome-message')).toBeNull();
+      expect(testId(fixture, 'vote-condorcet-standings')).toBeNull();
+      expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Most first choices: Candidate A (3 voters)');
+    });
+
+    describe('remote closure', () => {
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      });
+
+      afterEach(() => {
+        TestBed.resetTestingModule();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+      });
+
+      it('keeps the outcome hidden after the vote ends until its final results load', async () => {
+        const pending = new Subject<VoteResultsResponse>();
+        queryParamMap.next(convertToParamMap({ tab: 'results' }));
+        voteService.fetchVote
+          .mockReturnValueOnce(of(makeVote({ poll_type: PollType.CONDORCET_IRV })))
+          .mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED })));
+        voteService.getVoteResults.mockReturnValueOnce(of(condorcetResults())).mockReturnValueOnce(pending);
+        const fixture = await setup('browser', [VoteCondorcetResultsComponent]);
+
+        await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+        TestBed.tick();
+        fixture.detectChanges();
+        expect(read(fixture, 'isEnded')).toBe(true);
+        expect(read(fixture, 'isVoteClosed')).toBe(false);
+        expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Totals pending');
+        expect(testId(fixture, 'vote-condorcet-preference-choice-a')).not.toBeNull();
+        expect(testId(fixture, 'vote-condorcet-finalizing')).not.toBeNull();
+        expect(testId(fixture, 'vote-condorcet-outcome-message')).toBeNull();
+        expect(testId(fixture, 'vote-condorcet-standings')).toBeNull();
+        expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Most first choices: Candidate A (3 voters)');
+
+        pending.next(condorcetResults());
+        pending.complete();
+        TestBed.tick();
+        fixture.detectChanges();
+        expect(read(fixture, 'isVoteClosed')).toBe(true);
+        expect(squashed(testId(fixture, 'vote-condorcet-outcome-heading'))).toBe('Candidate C won');
+        expect(squashed(testId(fixture, 'vote-condorcet-outcome-message'))).toBe('Preferred over every other option in head-to-head comparisons.');
+        expect(read<{ text: string }[]>(fixture, 'overviewSummary')[0].text).toBe('Winner: Candidate C');
+      });
+    });
+  });
+
   describe('voter results', () => {
     it('never fetches results while the vote is open', async () => {
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
@@ -918,11 +1047,35 @@ describe('VoteDetailComponent', () => {
     projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
     voteService.fetchVote.mockReturnValue(of(makeVote({ allow_vote_change: true })));
     voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
-    const fixture = await setup();
+    const ballot: MyVoteBallot = {
+      vote_response_uid: 'resp-1',
+      vote_uid: 'vote-1',
+      abstained: false,
+      poll_answers: [],
+      comment_responses: [],
+      can_change_vote: true,
+    };
+    voteService.getMyVoteBallot.mockReturnValue(of(ballot));
+    const fixture = await setup('browser', [VoteDetailHeaderComponent]);
 
-    expect(testId(fixture, 'vote-detail-manager-ballot')).toBeNull();
-    expect(testId(fixture, 'vote-detail-manager-change-vote')).toBeNull();
-    expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+    expect(fixture.debugElement.query(By.directive(VoteDetailHeaderComponent))).not.toBeNull();
+    if (manager) {
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    } else {
+      expect(testId(fixture, 'vote-detail-my-ballot')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot-error')).toBeNull();
+    }
+    // The drawer stays schema-stripped, so any [changeMode] binding lands in its properties and fails this test.
+    const drawer = fixture.debugElement.query(By.css('lfx-vote-cast-drawer'));
+    expect(drawer).not.toBeNull();
+    expect(drawer.properties['changeMode']).toBeUndefined();
+    expect(voteService.updateMyResponse).not.toHaveBeenCalled();
+    // Static `label="…"` lands in attributes and bound `[label]` in properties; check both.
+    const buttonLabels = [
+      ...fixture.debugElement.queryAll(By.css('lfx-button')).map((button) => String(button.properties['label'] ?? button.attributes['label'] ?? '')),
+      ...fixture.debugElement.queryAll(By.css('button')).map((button) => (button.nativeElement as HTMLElement).textContent ?? ''),
+    ];
+    expect(buttonLabels.filter((label) => /update/i.test(label))).toEqual([]);
     expect(read(fixture, 'castDrawerVisible')).toBe(false);
   });
 

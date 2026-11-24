@@ -13,9 +13,19 @@ import { CampaignService } from '@services/campaign.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { SEED_KEYWORD, configureGoogleTab, restoreGoogleDraft, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  SEED_KEYWORD,
+  configureGoogleTab,
+  restoreGoogleDraft,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Seeding the two extension editors from the brief the Planning tab generated.
@@ -30,7 +40,7 @@ describe('ImplementationTabComponent google extension seeding', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -45,7 +55,7 @@ describe('ImplementationTabComponent google extension seeding', () => {
     fixture.detectChanges();
   }
 
-  it('seeds both editors from a brief that carries the generated lists', () => {
+  it('seeds both editors from a brief that carries the generated lists', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     remountBrief({
@@ -59,7 +69,7 @@ describe('ImplementationTabComponent google extension seeding', () => {
 
   // A re-emit of the SAME brief must not lose typed entries. The live draft is fed back as the parent
   // does (`draftChange` -> `implementationDraft`), and `applyDraft` restores both lists over the reset (#4624).
-  it('keeps hand-typed entries across a re-emit of the same brief that carries no lists', () => {
+  it('keeps hand-typed entries across a re-emit of the same brief that carries no lists', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const held: { draft: CampaignImplementationDraft | null } = { draft: null };
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (held.draft = d));
@@ -169,7 +179,7 @@ describe('ImplementationTabComponent google extension seeding', () => {
     }
 
     // A first mount of the new brief, with the same capabilities, is the baseline for the draft and the create.
-    const fresh = TestBed.createComponent(ImplementationTabComponent);
+    const fresh = TestBed.createComponent(tabComponentUnderTest());
     const freshHeld: { draft: CampaignImplementationDraft | null } = { draft: null };
     fresh.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (freshHeld.draft = d));
     for (const capability of ['demandGenEnabled', 'googleChannelsEnabled', 'googleCreativeEnabled'] as const) fresh.componentRef.setInput(capability, true);
@@ -194,7 +204,7 @@ describe('ImplementationTabComponent google extension seeding', () => {
 
   // A brief that DID carry a list is copied, not shared: editing the chips must not reach back
   // into the parent's array, which the Planning tab still holds and re-emits.
-  it('does not share the seeded arrays with the brief', () => {
+  it('does not share the seeded arrays with the brief', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const sitelinks = [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }];
     remountBrief({ googleCallouts: ['Free To Attend'], googleSitelinks: sitelinks });
@@ -216,12 +226,12 @@ describe('ImplementationTabComponent google callouts', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it('trims an added callout and refuses a blank', () => {
+  it('trims an added callout and refuses a blank', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleCallout']('  Free shipping  ')).toBe(true);
@@ -235,7 +245,7 @@ describe('ImplementationTabComponent google callouts', () => {
    * the whole create rather than de-duplicating. Two chips differing only in case would be one
    * callout upstream and a campaign that never gets created.
    */
-  it('refuses a callout that repeats an existing one in a different case', () => {
+  it('refuses a callout that repeats an existing one in a different case', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleCallout']('Free Shipping');
 
@@ -243,7 +253,7 @@ describe('ImplementationTabComponent google callouts', () => {
     expect(c['googleCallouts']()).toEqual(['Free Shipping']);
   });
 
-  it('refuses an add at the cap', () => {
+  it('refuses an add at the cap', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     for (let i = 0; i < GOOGLE_ADS_MAX_CALLOUTS; i++) c['addGoogleCallout'](`Callout ${i + 1}`);
 
@@ -256,7 +266,7 @@ describe('ImplementationTabComponent google callouts', () => {
    * characters are a callout upstream accepts — counted with `.length` they would be 50 and this
    * add would be refused for no reason, which is the over-refusal these mirrors exist to avoid.
    */
-  it('accepts a 25-emoji callout and refuses a 26-character one', () => {
+  it('accepts a 25-emoji callout and refuses a 26-character one', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['addGoogleCallout']('🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES))).toBe(true);
@@ -266,7 +276,7 @@ describe('ImplementationTabComponent google callouts', () => {
   });
 
   /** The live warnings describe what is IN THE BOX, which is why the draft text is a signal. */
-  it('warns on the in-progress text by rune count and by case-folded repeat', () => {
+  it('warns on the in-progress text by rune count and by case-folded repeat', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleCallout']('Free Shipping');
 
@@ -305,7 +315,7 @@ describe('ImplementationTabComponent google callouts', () => {
     expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('removes a chip by index', () => {
+  it('removes a chip by index', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleCallout']('First');
     c['addGoogleCallout']('Second');
@@ -320,7 +330,7 @@ describe('ImplementationTabComponent google callouts', () => {
    * extension set on any other channel at preflight, before the budget mutate, so forwarding a
    * list typed under Search and then abandoned would cost the operator the entire campaign.
    */
-  it('offers callouts on Search and withholds them on a non-Search channel', () => {
+  it('offers callouts on Search and withholds them on a non-Search channel', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     expect(c['googleCalloutsAvailable']()).toBe(true);
     c['addGoogleCallout']('Free shipping');
@@ -336,13 +346,13 @@ describe('ImplementationTabComponent google callouts', () => {
   });
 
   /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
-  it('omits the callouts key when nothing was added', () => {
+  it('omits the callouts key when nothing was added', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['googleCalloutsPayload']()).toEqual({});
   });
 
-  it('round-trips the chips through a draft', () => {
+  it('round-trips the chips through a draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -357,7 +367,7 @@ describe('ImplementationTabComponent google callouts', () => {
   });
 
   /** COPIED out of the draft, so the parent's array cannot be mutated through the chips. */
-  it('does not share the restored array with the draft', () => {
+  it('does not share the restored array with the draft', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const saved = ['Free shipping'];
 
@@ -375,7 +385,7 @@ describe('ImplementationTabComponent google callouts', () => {
   it.each([
     ['a trailing U+0085', 'Free shipping', 'free shipping\u0085'],
     ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
-  ])('refuses a repeat hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+  ])('refuses a repeat hidden by %s, on the add and in the live warning', STATE_ONLY, (_label, first, repeat) => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleCallout'](first);
 
@@ -418,7 +428,7 @@ describe('ImplementationTabComponent google callouts', () => {
    * never be sent and nothing on screen saying so — the capability block stays silent here too,
    * because retrying the check could not rescue the list.
    */
-  it('still names the channel while the capability answer has not come back', () => {
+  it('still names the channel while the capability answer has not come back', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleCallout']('Free shipping');
     c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
@@ -435,7 +445,7 @@ describe('ImplementationTabComponent google callouts', () => {
    * capability unanswered it would put "Search campaigns do not take callouts" on screen — a
    * sentence about Search that is simply untrue. The capability block owns this state.
    */
-  it('never tells Search it takes no callouts while the capability is unanswered', () => {
+  it('never tells Search it takes no callouts while the capability is unanswered', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleCallout']('Free shipping');
     fixture.componentRef.setInput('googleCreativeEnabled', null);
@@ -452,7 +462,7 @@ describe('ImplementationTabComponent google callouts', () => {
   it.each([
     ['Search', { includeSearch: true }, ['Free shipping']],
     ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
-  ])('sends the callouts on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+  ])('sends the callouts on a submitted %s create only when the channel takes them', STATE_ONLY, async (_label, channel, expected) => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleCallout']('Free shipping');
@@ -468,7 +478,7 @@ describe('ImplementationTabComponent google callouts', () => {
   });
 
   /** A draft saved before this section shipped carries no key, and must not clear the chips. */
-  it('leaves the chips alone when the draft carries no callouts key', () => {
+  it('leaves the chips alone when the draft carries no callouts key', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleCallout']('Free shipping');
 
@@ -493,7 +503,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -577,7 +587,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
     expect(find('implementation-google-extensions-capability-live')?.textContent?.trim()).toBe('');
   });
 
-  it('says nothing when there are no extensions to withhold', () => {
+  it('says nothing when there are no extensions to withhold', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     fixture.componentRef.setInput('googleCreativeEnabled', null);
     fixture.detectChanges();
@@ -591,7 +601,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
    * so the block holds its tongue. Silent, but not silence: the channel warning is already telling
    * the true reason, which is asserted here so the pair can never both go quiet.
    */
-  it.each([['includeDisplay']])('says nothing on %s, where the answer would change nothing', (channel) => {
+  it.each([['includeDisplay']])('says nothing on %s, where the answer would change nothing', STATE_ONLY, (channel) => {
     const c = seedWithheld(null, 'failed', 'brief-1');
     c['campaignForm'].patchValue({ includeSearch: false, [channel]: true });
     fixture.detectChanges();
@@ -605,7 +615,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
    * Demand Gen splits the two reasons by kind: the sitelinks would go out once the check passes, so
    * the block counts them; the callout would not, so the block leaves it to the callout warning.
    */
-  it('counts only the sitelinks on Demand Gen, and leaves the callout to its channel warning', () => {
+  it('counts only the sitelinks on Demand Gen, and leaves the callout to its channel warning', STATE_ONLY, () => {
     const c = seedWithheld(null, 'failed', 'brief-1');
     c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
     fixture.detectChanges();
@@ -618,7 +628,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
   });
 
   /** Performance Max takes sitelinks and callouts (#5262), so the block counts both there. */
-  it('counts the sitelinks and the callout on Performance Max, where the answer would send them', () => {
+  it('counts the sitelinks and the callout on Performance Max, where the answer would send them', STATE_ONLY, () => {
     const c = seedWithheld(null, 'failed', 'brief-1');
     c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
     fixture.detectChanges();
@@ -628,7 +638,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
     expect(c['googleSitelinksWithheldWarning']()).toBeNull();
   });
 
-  it('says nothing while no Google channel is ticked', () => {
+  it('says nothing while no Google channel is ticked', STATE_ONLY, () => {
     const c = seedWithheld(null, 'failed', 'brief-1');
     c['campaignForm'].patchValue({ includeSearch: false });
     fixture.detectChanges();
@@ -636,7 +646,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
     expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
   });
 
-  it('says nothing when Google is not one of the selected platforms', () => {
+  it('says nothing when Google is not one of the selected platforms', STATE_ONLY, () => {
     const c = seedWithheld(null, 'failed', 'brief-1');
     c['selectedPlatforms'].set([]);
     fixture.detectChanges();
@@ -649,7 +659,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
    * manual bid changes what the campaign does; withheld extensions cost only the extensions, so the
    * create goes ahead and the block says what was left out.
    */
-  it('does not block Create', () => {
+  it('does not block Create', STATE_ONLY, () => {
     const c = seedWithheld(null, 'failed', 'brief-1');
 
     expect(c['googleExtensionsCapabilityBlock']()).not.toBeNull();
@@ -688,7 +698,7 @@ describe('ImplementationTabComponent google extensions on performance max', () =
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -764,7 +774,7 @@ describe('ImplementationTabComponent google extensions on performance max', () =
   });
 
   /** A Performance Max create with no extension entered is byte-identical to one built before they reached it. */
-  it('builds a byte-identical Performance Max request when no extension is entered, with a call extension held', async () => {
+  it('builds a byte-identical Performance Max request when no extension is entered, with a call extension held', STATE_ONLY, async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includePerformanceMax: true });
     c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);

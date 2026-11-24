@@ -319,8 +319,10 @@ export class VoteDetailComponent {
   /** Overview results tag — a draft reads "Not open yet", never "Voting in progress". */
   protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary' }> = this.initResultsStatusTag();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
-  protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
-  /** Condorcet IRV gets its own results layout (#5969); Instant Runoff and Meek STV keep the ranked distributions. */
+  protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults(), this.vote()?.poll_type));
+  /** Ranked outcomes and standings wait for an ended vote's final results, even at 100% participation. */
+  protected readonly showRankedOutcome: Signal<boolean> = computed(() => this.isEnded() && this.isVoteClosed());
+  /** Condorcet IRV gets its own results layout (#5969); Instant Runoff and Meek STV keep their ranked results. */
   protected readonly isCondorcetPoll: Signal<boolean> = computed(() => this.vote()?.poll_type === PollType.CONDORCET_IRV);
   /** Which vote's named ballots to read for the Condorcet ballot ranking distribution — a manager on a named vote only (#5969). */
   private readonly condorcetBallotsKey: Signal<CondorcetBallotsKey | null> = this.initCondorcetBallotsKey();
@@ -836,11 +838,11 @@ export class VoteDetailComponent {
   /** A closed Condorcet vote names the voting service's winner; anything else (and an open Condorcet vote) keeps the leader summary. */
   private initOverviewSummary(): Signal<VoteResultsSummaryLine[]> {
     return computed(() => {
-      if (this.isCondorcetPoll() && this.isVoteClosed()) {
+      if (this.isCondorcetPoll() && this.showRankedOutcome()) {
         const lines = buildCondorcetSummaryLines(this.condorcetQuestions(), true);
         if (lines.length) return lines;
       }
-      return buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed());
+      return buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed(), this.showRankedOutcome());
     });
   }
 

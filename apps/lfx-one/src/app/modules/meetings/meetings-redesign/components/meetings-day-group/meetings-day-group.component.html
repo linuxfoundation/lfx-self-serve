@@ -15,7 +15,7 @@
 </div>
 <ul class="flex flex-col">
   @for (row of group().rows; track row.key) {
-    <li class="border-b border-gray-200 last:border-b-0" data-testid="meetings-home-day-group-row">
+    <li class="border-b border-gray-200 last:border-b-0" [attr.data-day]="rowDays()[$index]" data-testid="meetings-home-day-group-row">
       <lfx-meeting-home-row [row]="row" [view]="view()" />
     </li>
   }

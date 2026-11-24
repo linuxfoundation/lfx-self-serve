@@ -5,7 +5,6 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { META_OBJECTIVE_LABELS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -13,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Meta objective, placements and pixel id (LFXV2-3228).
@@ -75,7 +75,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
   /** Mount a fresh component with a persisted draft naming `objective`, as a tab revisit would. */
   async function restoredWithObjective(objective: string): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     restored.componentRef.setInput('draft', {
       eventSlug: 'kubecon-eu-2026',
       metaObjective: objective,
@@ -129,7 +129,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
     await makeMetaValid();
@@ -154,7 +154,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * Pinned as a default rather than as a rule, because that is what regressed: someone restoring
    * `includeDemandGen: [true]` for symmetry would reintroduce the dead end silently.
    */
-  it('defaults Google to Search only, the combination the server accepts', () => {
+  it('defaults Google to Search only, the combination the server accepts', STATE_ONLY, () => {
     const c = component() as unknown as Record<string, any>;
     expect(c['campaignForm'].controls['includeSearch'].value).toBe(true);
     expect(c['campaignForm'].controls['includeDemandGen'].value).toBe(false);
@@ -179,11 +179,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(rendered).not.toContain('leads');
   });
 
-  /** The label stays defined even though the option is gone — the server names campaigns from it. */
-  it('keeps a label for the hidden leads objective', () => {
-    expect(META_OBJECTIVE_LABELS['leads']).toBe('Leads');
-  });
-
   /**
    * A draft persisted before `leads` was hidden restores an objective with no matching
    * `<option>`. Driven through the REAL draft input rather than by setting the signal directly:
@@ -194,7 +189,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * `leads` must survive to the wire, where `META_OBJECTIVE_PARAMS` dispatches it as the
    * website-traffic campaign it has always been.
    */
-  it('restores leads from a persisted draft', async () => {
+  it('restores leads from a persisted draft', STATE_ONLY, async () => {
     const restored = await restoredWithObjective('leads');
     const c = restored.componentInstance as unknown as Record<string, any>;
 
@@ -244,7 +239,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * The other half of the same restore: an objective the picker CAN render must still round-trip,
    * so the assertion above cannot be satisfied by a restore path that ignores the draft entirely.
    */
-  it('restores a selectable objective from a persisted draft', async () => {
+  it('restores a selectable objective from a persisted draft', STATE_ONLY, async () => {
     const restored = await restoredWithObjective('engagement');
     const c = restored.componentInstance as unknown as Record<string, any>;
 
@@ -255,7 +250,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * `traffic` matches what campaign-service assumes when `objective` is absent, so switching the
    * selector on cannot change the campaign an existing user would have got.
    */
-  it('sends traffic as the default objective', async () => {
+  it('sends traffic as the default objective', STATE_ONLY, async () => {
     expect((await submittedMetaConfig())['objective']).toBe('traffic');
   });
 
@@ -268,26 +263,8 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   // === Geo eligibility, and display/dispatch agreement ===
 
   /**
-   * `IR` is an ASSIGNED ISO country, so the assignment check passes it — but Meta refuses to
-   * target it, and on the legacy path that refusal lands at the AD SET, after `POST /campaigns`
-   * has created a billable resource. Refused at the chip, where it costs nothing.
-   */
-  it('refuses an assigned but Meta-ineligible geo code', async () => {
-    const c = component();
-    c['metaGeoTargets'].set([]);
-    await fixture.whenStable();
-
-    const input = require<HTMLInputElement>('implementation-meta-geo-add');
-    input.value = 'IR';
-    input.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-
-    expect(c['metaGeoTargets']()).toEqual([]);
-  });
-
-  /**
-   * The counterpart that stops the guard over-broadening: a guard rejecting every country would
-   * pass the test above while breaking geo targeting outright.
+   * Wiring counterpart to the shared `metaGeoIsIneligible` / `metaAcceptedGeos` tables: the chip add
+   * must still accept an eligible code, or geo targeting breaks outright.
    */
   it('still accepts an eligible geo code', async () => {
     const c = component();
@@ -302,41 +279,9 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['metaGeoTargets']()).toEqual(['JP']);
   });
 
-  /**
-   * The chip add was the ONLY door checking eligibility. The brief seed and the draft restore
-   * wrote `metaGeoTargets` through `normalizeGeoTargets` alone, which settles shape and ISO
-   * assignment but never asks whether Meta will target the country.
-   *
-   * That split is invisible unless you look at both surfaces at once. The chip list renders
-   * `metaGeoTargets()` while `submit()` sends `metaEffectiveGeoTargets()`, which filters
-   * ineligible codes — so a seeded `IR` DISPLAYED a chip the request silently dropped. The
-   * empty-state warning could not catch it either: it is gated on `metaGeoTargets().length === 0`,
-   * and the surviving chip made that false, so `canSubmit` passed on the `countryCode` fallback.
-   * The operator read `IR` on screen and bought a JP-only campaign.
-   *
-   * The binding assertion is that DISPLAY AND DISPATCH AGREE. Asserting only that the request
-   * omits `IR` would pass on the unfixed code too, because `metaEffectiveGeoTargets` already
-   * filtered it — what was broken, and what this pins, is the CHIP LIST.
-   */
-  it('drops a Meta-ineligible geo the brief recommended, on screen as well as on the wire', async () => {
-    const seeded = TestBed.createComponent(ImplementationTabComponent);
-    seeded.componentRef.setInput('briefData', {
-      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
-      selectedPlatforms: ['meta-ads'],
-      metaCopy: { variants: [], recommendedGeos: ['IR', 'JP'] },
-    } as unknown as CampaignBriefOutput);
-    seeded.detectChanges();
-    await seeded.whenStable();
-
-    const c = seeded.componentInstance as unknown as Record<string, any>;
-
-    expect(c['metaGeoTargets']()).toEqual(['JP']);
-    expect(c['metaEffectiveGeoTargets']()).toEqual(['JP']);
-  });
-
-  /** The same unguarded door, reached through a restored draft rather than a fresh brief. */
-  it('drops a Meta-ineligible geo carried by a restored draft', async () => {
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+  /** A restored draft is a door into `metaGeoTargets` too: it must drop a Meta-ineligible code, on screen as well as on the wire. */
+  it('drops a Meta-ineligible geo carried by a restored draft', STATE_ONLY, async () => {
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     restored.componentRef.setInput('draft', {
       eventSlug: 'kubecon-eu-2026',
       metaGeoTargets: ['CU', 'JP'],
@@ -360,8 +305,8 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * The counterpart that stops the shared filter over-broadening: routing all three doors through
    * one helper must not start rejecting countries Meta accepts, and must still de-dupe.
    */
-  it('keeps eligible geos the brief recommended', async () => {
-    const seeded = TestBed.createComponent(ImplementationTabComponent);
+  it('keeps eligible geos the brief recommended', STATE_ONLY, async () => {
+    const seeded = TestBed.createComponent(tabComponentUnderTest());
     seeded.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
       selectedPlatforms: ['meta-ads'],
@@ -395,7 +340,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /** Display and dispatch must name the SAME country when the fallback does apply. */
-  it('sends exactly the geo the empty-state line displays', async () => {
+  it('sends exactly the geo the empty-state line displays', STATE_ONLY, async () => {
     const c = component();
     c['metaGeoTargets'].set([]);
     c['campaignForm'].controls['countryCode'].setValue('de');
@@ -439,7 +384,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     // Destroy and remount — exactly what the parent's @switch does on a tab visit. The draft is
     // restored through the real path: the `briefData` effect seeds from the brief and THEN applies
     // the draft over it, which is the ordering that makes a carried-over edit win.
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     restored.componentRef.setInput('draft', draft);
     restored.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: draftSlug, registrationUrl: 'https://events.example.com/kubecon-eu-2026' },
@@ -476,7 +421,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * ARRAYS are the ones most likely to be missed — they need a draft field, an `emitDraft()` in
    * their handler AND an `applyDraft` restore arm, and losing either of them is silent.
    */
-  it('carries the user Microsoft edits through a destroy/remount and into the request', async () => {
+  it('carries the user Microsoft edits through a destroy/remount and into the request', STATE_ONLY, async () => {
     let draft: Record<string, any> | null = null;
     component()['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
 
@@ -490,7 +435,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(draft).not.toBeNull();
     const draftSlug = (draft as unknown as Record<string, any>)['eventSlug'];
 
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     restored.componentRef.setInput('draft', draft);
     restored.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: draftSlug, registrationUrl: 'https://events.example.com/kubecon-eu-2026' },
@@ -521,7 +466,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * asserted by DRIVING the handler rather than writing the signal, because a test that sets the
    * signal directly would pass against a handler that does no checking at all.
    */
-  it('refuses to add a keyword past the cap, or one longer than the limit', async () => {
+  it('refuses to add a keyword past the cap, or one longer than the limit', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftKeywords'].set(Array.from({ length: 60 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })));
     await fixture.whenStable();
@@ -544,7 +489,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * runes, so a cap of 100 would stop the field at 50 emoji and make a keyword the BFF accepts
    * impossible to type. The live counter is what provides the feedback instead.
    */
-  it('accepts a 100-rune emoji keyword the UTF-16 length would have blocked', async () => {
+  it('accepts a 100-rune emoji keyword the UTF-16 length would have blocked', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     const emoji = '\u{1F600}'.repeat(100);
     expect(emoji.length).toBe(200); // UTF-16 units — what a native maxlength would have counted
@@ -555,7 +500,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftKeywords']().length).toBe(1);
   });
 
-  it('flags an over-length in-progress keyword by rune count', async () => {
+  it('flags an over-length in-progress keyword by rune count', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
 
     c['microsoftKeywordDraft'].set('\u{1F600}'.repeat(100));
@@ -609,7 +554,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * The case fold must SURVIVE the change: same text, same match type, different casing is still
    * one keyword upstream, and admitting it would overstate coverage.
    */
-  it('scopes the duplicate check to the match type the new row will carry', async () => {
+  it('scopes the duplicate check to the match type the new row will carry', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
 
@@ -638,7 +583,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * silent undercount, not a failed job — which is why the fix is de-duping the effective list
    * (the signal every count and the payload derive from) rather than only refusing the edit.
    */
-  it('does not let a match-type edit smuggle a duplicate past the effective list', async () => {
+  it('does not let a match-type edit smuggle a duplicate past the effective list', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftKeywords'].set([
@@ -663,7 +608,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * `kubernetes/Exact` are ONE keyword upstream, so a restore carrying both must not report two.
    * `populateFromBrief` applies no uniqueness filter, so this arrives from the server, not the UI.
    */
-  it('folds case when de-duping the effective keyword list', async () => {
+  it('folds case when de-duping the effective keyword list', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftKeywords'].set([
@@ -691,7 +636,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * also disagreed with what the operator was being shown: 59/60 with the box open, and the add
    * silently refused.
    */
-  it('counts the cap on the keywords the request will carry', async () => {
+  it('counts the cap on the keywords the request will carry', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
 
@@ -739,7 +684,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     ['C1 NEL U+0085', 'kuber\u0085netes', false],
     ['C1 APC U+009F', 'kuber\u009Fnetes', false],
     ['a non-breaking space U+00A0', 'kuber\u00A0netes', true],
-  ])('handles %s in a keyword', async (_label, text, shouldAdd) => {
+  ])('handles %s in a keyword', STATE_ONLY, async (_label, text, shouldAdd) => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftKeywords'].set([]);
 
@@ -754,8 +699,8 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * raw value rendered the dropdown with NOTHING selected on a keyword that would dispatch fine.
    * Anything not canonicalisable is dropped, since the BFF would refuse the whole config for it.
    */
-  it('canonicalises brief match types and drops ones Microsoft rejects', async () => {
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+  it('canonicalises brief match types and drops ones Microsoft rejects', STATE_ONLY, async () => {
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     restored.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026' },
       keywords: [

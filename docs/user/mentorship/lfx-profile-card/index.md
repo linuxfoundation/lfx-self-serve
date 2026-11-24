@@ -5,11 +5,11 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, mentor, profile, lfx-profile, github, linkedin, identities]
 last_generated: 2026-10-30
-last_updated: 2026-10-30
+last_updated: 2026-11-23
 intercom_collection: Mentorship
 ---
 
-The **From Your LFX Profile** card shows the account details your mentorship profiles use. You do not type them into the mentorship forms. They come from your LFX account, and you fix them from the card.
+The **From Your LFX Profile** card shows the account details your mentorship profiles use. You do not type them into the mentorship forms. They come from your LFX profile, and you fix them from the card.
 
 ## Where you see it
 

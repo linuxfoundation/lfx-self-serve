@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants/mktg-run.constants';
+import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES, MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 import type { MktgRunResultResponse, MktgRunSessionResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
 import { DOCUMENT_PROJECT, DOCUMENT_TYPE, documentFixture, fulfillDocumentJson, setupDocuments } from './helpers/mktg-os-documents.helper';
 import { ASSET_FAILURE, ASSET_PROJECT, DATA_LOAD_TIMEOUT, assetRevision, setupAsset } from './helpers/mktg-os-assets.helper';
@@ -157,9 +157,10 @@ test.describe('Marketing OS runs land on assets', () => {
     await page.route(/\/api\/mktg-agents\/documents\/[^/]+\/living\?/, (route) =>
       new URL(route.request().url()).searchParams.get('poll') === '1' ? fulfillDocumentJson(route, { code: 'SYNTHETIC_UNAVAILABLE' }, 503) : route.fallback()
     );
-    await expect(page.getByTestId('mktg-run-progress-status')).toContainText('last loaded', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-run-progress-status')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-document-view-refresh-progress').getByRole('button')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-refresh-progress')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-run-progress-live').getByRole('button', { name: 'Refresh' })).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-error')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('transient-run-progress-warning.png'), fullPage: true });
   });
@@ -171,8 +172,10 @@ test.describe('Marketing OS runs land on assets', () => {
     await expect(page.getByTestId('mktg-document-view-title-loading')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-action-loading')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-title-loading').getByRole('status')).toHaveAttribute('aria-busy', 'true');
+    // The loading element is the status itself (no child with the role).
     await expect(page.getByTestId('mktg-document-view-loading')).toHaveText('Loading the document…');
-    await expect(page.getByTestId('mktg-document-view-loading').getByRole('status')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-loading')).toHaveAttribute('role', 'status');
+    await expect(page.getByTestId('mktg-document-view-loading')).toBeVisible();
     fixture.finish();
     await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.screenshot({ path: test.info().outputPath('loading-settled.png'), fullPage: true });
@@ -223,19 +226,33 @@ test.describe('Marketing OS runs land on assets', () => {
     await page.screenshot({ path: test.info().outputPath('empty-documents.png'), fullPage: true });
   });
 
-  for (const [label, options, text] of [
-    ['unavailable', { mode: 'error' as const }, 'could not be loaded'],
-    ['no-access', { writer: false }, 'write access'],
-  ] as const) {
-    test(`${label} is explicit instead of rendering another asset or claiming it is empty`, async ({ page }) => {
-      await suppressCookieBanner(page);
-      const fixture = await setupAsset(page, options);
-      await fixture.open();
-      await expect(page.getByTestId('mktg-document-view-error')).toContainText(text);
-      await expect(page.getByTestId('mktg-document-view-framework')).toHaveCount(0);
-      await page.screenshot({ path: test.info().outputPath(`${label}.png`), fullPage: true });
-    });
-  }
+  test('no-access is explicit instead of rendering another asset or claiming it is empty', async ({ page }) => {
+    await suppressCookieBanner(page);
+    const fixture = await setupAsset(page, { writer: false });
+    await fixture.open();
+    await expect(page.getByTestId('mktg-document-view-error')).toContainText('write access');
+    await expect(page.getByTestId('mktg-document-view-framework')).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('no-access.png'), fullPage: true });
+  });
+
+  test('an unavailable asset shows the one status line, renders no other asset, and arrives on its own', async ({ page }) => {
+    await suppressCookieBanner(page);
+    const fixture = await setupAsset(page, { mode: 'error' });
+    await fixture.open();
+    const line = page.getByTestId('mktg-document-view-refresh-warning');
+    await expect(line).toHaveText(MKTG_POLL_RETRYING_TEXT);
+    await expect(line).toHaveAttribute('role', 'status');
+    await expect(page.getByTestId('mktg-document-view-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-framework')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-document')).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('unavailable.png'), fullPage: true });
+    // The outage ends: the poller's first retry (≤ 10 s backoff) renders this asset, and the line goes.
+    fixture.state.mode = 'ready';
+    await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(line).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-error')).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('unavailable-recovered.png'), fullPage: true });
+  });
 
   test('leaving and returning without local run state uses server progress and no creator result/generate POST', async ({ page }) => {
     await suppressCookieBanner(page);

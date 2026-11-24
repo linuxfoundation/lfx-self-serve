@@ -266,7 +266,7 @@
             <lfx-vote-condorcet-results
               [question]="question"
               [questionNumber]="condorcetQuestions().length > 1 ? idx + 1 : undefined"
-              [isClosed]="isVoteClosed()"
+              [isClosed]="showRankedOutcome()"
               [isEnded]="isEnded()"
               [ballotsLoading]="condorcetBallotsLoading()" />
           }
@@ -277,6 +277,7 @@
               [questionNumber]="rankedQuestions().length > 1 ? idx + 1 : undefined"
               [variant]="audience()"
               [showVoterLinks]="showNamedBallotLinks()"
+              [showOutcome]="showRankedOutcome()"
               (viewVoters)="onViewVoters($event)" />
           }
         }

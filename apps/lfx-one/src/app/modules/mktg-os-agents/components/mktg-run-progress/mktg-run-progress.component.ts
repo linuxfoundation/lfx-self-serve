@@ -13,6 +13,7 @@ import {
   MKTG_DOCUMENT_PROGRESS_POLL,
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_DOCUMENT_TYPES,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_REVISION_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
@@ -26,6 +27,8 @@ import {
   MktgRunActivity,
   MktgRunAnswer,
   MktgRunAnsweredNotice,
+  MktgRunKeptDraft,
+  MktgRunQuestionDraft,
 } from '@lfx-one/shared/interfaces';
 import {
   findMktgRunIntake,
@@ -33,6 +36,8 @@ import {
   mktgKitRootPath,
   mktgRunRouteFor,
   mktgRunAnsweredBy,
+  mktgRunHoldsQuestions,
+  mktgRunMovedPast,
   mktgSentenceCaseLabel,
   readMktgRetiredRunHint,
 } from '@lfx-one/shared/utils';
@@ -41,8 +46,25 @@ import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
-import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
-import { catchError, defer, distinctUntilChanged, EMPTY, exhaustMap, expand, finalize, map, of, Subject, switchMap, tap, throwError, timer } from 'rxjs';
+import { mktgRunAnsweredElsewhereNotice } from '@shared/utils/mktg-run-answered-notice.utils';
+import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibility-poll.util';
+import {
+  catchError,
+  defer,
+  distinctUntilChanged,
+  EMPTY,
+  exhaustMap,
+  expand,
+  finalize,
+  map,
+  Observable,
+  of,
+  Subject,
+  switchMap,
+  tap,
+  throwError,
+  timer,
+} from 'rxjs';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 import { MktgClosedRunMessageComponent } from '../mktg-closed-run-message/mktg-closed-run-message.component';
@@ -123,9 +145,17 @@ export class MktgRunProgressComponent {
   public readonly retry = output<void>();
   public readonly openIntake = output<void>();
   public readonly refresh = output<void>();
+  /**
+   * `true` while a read of the current request is failing on a transient error and the poller keeps retrying it, `false`
+   * once a read lands or fails for good. Emitted on transitions only, so a host that renders this reader headless (the
+   * living document view, the run page while it checks the run) can show the one quiet connection-state line itself.
+   */
+  public readonly readRetrying = output<boolean>();
 
   private readonly loaded = signal<MktgDocumentDetailResponse | null>(null);
   private readonly loadedSubject = signal('');
+  /** Last `readRetrying` value emitted; the output fires on transitions only. */
+  private readRetryingOn = false;
   private readonly loadedSelector = signal('');
   private readonly lastSelectedRunId = signal('');
   private readonly lastSelectedStartedAt = signal('');
@@ -146,6 +176,17 @@ export class MktgRunProgressComponent {
   private readonly answeredRunId = signal('');
   private readonly answeredQuestionsId = signal('');
   private readonly answersDenied = signal(false);
+  /** The public form's live draft with its block: only a typed one hears that someone else answered, and the kept copy is read-only. */
+  private readonly publicDraft = signal<MktgRunKeptDraft | null>(null);
+  /** The draft kept read-only under the answered notice, until a newer block, another run or leaving. */
+  private readonly keptDraft = signal<MktgRunKeptDraft | null>(null);
+  protected readonly keptBlock = computed(() => {
+    if (!this.visibleAnswersNotice()) return null;
+    const kept = this.keptDraft();
+    if (kept && kept.questionsId === this.answeredQuestionsId()) return kept;
+    // The private run page keeps its block with the notice it retains, so both pages draw the draft right under the line.
+    return this.retainedAnswersNotice()?.kept ?? null;
+  });
   protected readonly publicQuestions = this.initPublicQuestions();
 
   protected readonly detail = computed(() => {
@@ -256,6 +297,8 @@ export class MktgRunProgressComponent {
           this.answersNotice.set('');
           this.answeredRunId.set('');
           this.answeredQuestionsId.set('');
+          this.keptDraft.set(null);
+          this.publicDraft.set(null);
           return this.answerRequests.pipe(
             exhaustMap((answers) => {
               const run = this.selectedRun();
@@ -282,7 +325,7 @@ export class MktgRunProgressComponent {
                       );
                     } else if (error.status === 409 || error.status === 412) {
                       const answered = this.answeredConflict(error, run.runId, pending.questionsId);
-                      if (answered) this.acknowledgeAnswers(pending.questionsId, `${answered} already answered these — the agent is writing.`, run.runId);
+                      if (answered) this.acknowledgeAnswers(pending.questionsId, mktgRunAnsweredElsewhereNotice(answered), run.runId);
                       else this.onRefreshProgress();
                     } else {
                       this.answersError.set('Your answers could not be sent. Check the current run before trying again.');
@@ -324,6 +367,7 @@ export class MktgRunProgressComponent {
           readerScope = key;
           this.warning.set('');
           this.readFailure.set('');
+          this.setRetrying(false);
           if (!isPlatformBrowser(this.platformId) || !request.polling || !request.project || !request.agentKey || !request.documentId) return EMPTY;
           if (request.runId && !MKTG_STARTED_RUN_ID_REGEX.test(request.runId)) {
             this.readFailure.set('This run could not be found. Open Documents to choose a started run.');
@@ -340,14 +384,16 @@ export class MktgRunProgressComponent {
           if (!known && retained) known = { detail: retained, view: null };
           if (!known && this.expectedPending() && type)
             known = { detail: { project: request.project, type, documentId: request.documentId, revisions: [], approvedCurrent: null, runs: [] }, view: null };
-          let unavailableSince: number | null = null;
           let unavailableCount = 0;
           let refreshedFailure = false;
           let terminal = '';
+          // A refused read (401/403) latches this request: no poll or wake sends the same credentials again (RFC 9110 §15.5.4).
+          let denied = false;
+          // One plain connection-state line while a check fails; it clears on the next good read and the loaded content stays.
           const unavailable = () => {
-            unavailableSince ??= Date.now();
             unavailableCount++;
-            this.warning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
+            this.warning.set(MKTG_POLL_RETRYING_TEXT);
+            this.setRetrying(true);
           };
           const read = (poll: boolean) => {
             // Switching body/metadata mode is not a new identity or an immediate extra read.
@@ -418,9 +464,10 @@ export class MktgRunProgressComponent {
                 known = cycle;
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) unavailable();
                 else {
-                  unavailableSince = null;
                   unavailableCount = 0;
                   this.warning.set('');
+                  this.readFailure.set('');
+                  this.setRetrying(false);
                 }
               }),
               catchError((error: unknown) => {
@@ -434,6 +481,8 @@ export class MktgRunProgressComponent {
                 if (request.subject && request.subject !== this.user.user()?.sub) return;
                 if (readerSubject && readerSubject !== this.user.user()?.sub) return;
                 const previous = this.loaded();
+                const shown = this.publicQuestions();
+                const answeredElsewhere: { runId: string; questionsId: string; landed: boolean }[] = [];
                 this.loadedSelector.set(request.runId);
                 // A poll of the same block must not reset the stepper or overwrite unsent edits.
                 this.loaded.set({
@@ -445,13 +494,31 @@ export class MktgRunProgressComponent {
                       this.answersNotice.set('');
                       this.answeredRunId.set('');
                       this.answeredQuestionsId.set('');
+                      this.keptDraft.set(null);
                     }
                     const prior = previous?.runs?.find((entry) => entry.runId === row.runId);
-                    if (row.pendingQuestions && prior?.pendingQuestions?.questionsId === row.pendingQuestions.questionsId)
+                    // The same block keeps its object (no stepper reset); a questions row without its block keeps the held one.
+                    if (prior?.pendingQuestions && mktgRunHoldsQuestions(row, prior.pendingQuestions.questionsId))
                       return { ...row, pendingQuestions: prior.pendingQuestions };
+                    // The read-time half of the answers conflict: the shown block moved past its questions without this
+                    // browser's answer. A typed draft hears it as the send-time 409 does; an untouched form moves on quietly.
+                    // Not while this browser's own send is open: the server claims the block before it replies, so a poll
+                    // landing then shows writing for an answer that is ours (the reply, or its 409, settles it).
+                    const held = prior?.pendingQuestions?.questionsId;
+                    if (
+                      held &&
+                      held === shown?.questionsId &&
+                      !this.answersSending() &&
+                      this.answeredQuestionsId() !== held &&
+                      this.publicDraftTyped(held) &&
+                      mktgRunMovedPast(row)
+                    )
+                      answeredElsewhere.push({ runId: row.runId, questionsId: held, landed: row.state === 'completed' });
                     return row;
                   }),
                 });
+                // Collected inside the map, acted on after it: the notice must not re-enter the state being set.
+                for (const { runId, questionsId, landed } of answeredElsewhere) this.noticeAnsweredElsewhere(runId, questionsId, landed);
                 this.loadedSubject.set(readerSubject);
                 this.observed.emit({ ...cycle, detail: this.loaded() ?? cycle.detail });
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) return;
@@ -471,40 +538,44 @@ export class MktgRunProgressComponent {
               })
             );
           };
-          const observe = () =>
-            read(false).pipe(
+          /** The surface's own interval while healthy; after a partial read, capped jittered backoff floored at that interval — never a stop. (A thrown read is the shared poller's retry, floored at `MKTG_RUN_POLL.intervalMs`.) */
+          const nextDelay = (base: number) => (unavailableCount ? pollBackoffDelayMs(unavailableCount, base, MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs) : base);
+          const observe = (poll = false): Observable<MktgDocumentReadCycle> => {
+            if (denied) return EMPTY;
+            return read(poll).pipe(
               expand((cycle) => {
                 if (readMktgRetiredRunHint(cycle.detail.runs?.find((row) => row.runId === this.runId()))) return EMPTY;
-                const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
-                if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
-                  this.warning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
-                  return EMPTY;
-                }
                 const active =
                   this.runState() === 'writing' ||
                   this.runState() === 'storing' ||
                   cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-                const questions = this.runPage() && (this.selectedRun()?.state === 'questions' || this.watchQuestions());
+                // The waiting state polls on every surface (run page and document card), so a second browser sees new questions or writing without a click.
+                const questions = this.selectedRun()?.state === 'questions' || this.watchQuestions();
                 const local = this.localProgress();
-                if (!active && !questions && !request.continuous && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
-                let delay: number = questions ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
-                if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
-                if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
-                return timer(delay).pipe(switchMap(() => read(true)));
+                if (!active && !questions && !request.continuous && local !== 'writing' && local !== 'storing' && !unavailableCount) return EMPTY;
+                return timer(nextDelay(questions ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs)).pipe(switchMap(() => read(true)));
               }),
               catchError((error: HttpErrorResponse) => {
+                console.error('Marketing OS run progress read failed', { status: error.status });
+                // A transient failure (network, 408, 429, 5xx) is the shared poller's to retry on its capped backoff: the error
+                // reaches it, so no retry nests inside the last (RFC 9110 for the transient set).
+                if (isTransientHttpError(error)) {
+                  unavailable();
+                  return throwError(() => error);
+                }
+                denied = error.status === 401 || error.status === 403;
+                // A final failure ends the retries, so the retrying line goes with them: no later read would clear it.
+                this.warning.set('');
+                this.setRetrying(false);
                 this.loaded.set(null);
-                this.readFailure.set(
-                  error.status === 401 || error.status === 403
-                    ? 'You need write access to this project to see its Marketing OS documents.'
-                    : 'This run could not be loaded. Try again in a moment.'
-                );
                 this.readError.emit(error);
+                this.readFailure.set(denied ? 'You need write access to this project to see its Marketing OS documents.' : 'This run could not be loaded.');
                 return EMPTY;
               })
             );
-          // The shared helper owns visibility/focus cancellation; this reader retains its
-          // per-state cadence and bounded availability budget inside that visible session.
+          };
+          // The shared poller owns hidden-tab cancellation, the wakes (visible, focus, online) and the retry of a failed first
+          // read; this reader keeps its per-state cadence and its own backoff after a partial read inside that visible session.
           return createVisibilityPoll(this.document, observe, {
             intervalMs: MKTG_RUN_POLL.intervalMs,
             backoffBaseMs: MKTG_RUN_POLL.intervalMs,
@@ -524,9 +595,12 @@ export class MktgRunProgressComponent {
     if (!runId || (this.runId() && this.runId() !== runId) || (this.selectedRun() && this.selectedRun()?.runId !== runId)) return;
     this.answersError.set('');
     this.answersNotice.set(notice);
-    if (notice) this.alreadyAnswered.emit({ runId, questionsId, message: notice });
+    // A send that lost keeps what was typed, read-only, under the notice; an accepted send keeps nothing.
+    const kept = notice ? this.publicDraft() : null;
+    if (notice) this.alreadyAnswered.emit({ runId, questionsId, message: notice, ...(kept && { kept }) });
     this.answeredRunId.set(runId);
     this.answeredQuestionsId.set(questionsId);
+    this.keptDraft.set(kept);
     this.loaded.update(
       (detail) =>
         detail && { ...detail, runs: detail.runs?.map((row) => (row.runId === runId ? { ...row, state: 'writing', pendingQuestions: undefined } : row)) }
@@ -554,10 +628,48 @@ export class MktgRunProgressComponent {
     this.answerRequests.next(answers);
   }
 
+  protected onPublicDraft(draft: MktgRunQuestionDraft): void {
+    const shown = this.publicQuestions();
+    this.publicDraft.set(shown ? { questionsId: shown.questionsId, questions: shown.questions, draft } : null);
+  }
+
   protected onRefreshProgress(): void {
     if (this.submittingGeneration()) return;
     if (this.polling()) this.reload.update((count) => count + 1);
     else this.refresh.emit();
+  }
+
+  /** Emits `readRetrying` on transitions only. */
+  private setRetrying(on: boolean): void {
+    if (this.readRetryingOn === on) return;
+    this.readRetryingOn = on;
+    this.readRetrying.emit(on);
+  }
+
+  /** Whether the live public draft for this block differs from what its form opened with. */
+  private publicDraftTyped(questionsId: string): boolean {
+    const kept = this.publicDraft();
+    return kept?.questionsId === questionsId && kept.draft.dirty === true;
+  }
+
+  /**
+   * The read-time half of the answers conflict, learnt from a poll: the shown block moved past its questions without this
+   * browser's answer. The same words and channel as a send that lost: the notice, the answered ids and the kept draft are
+   * set and `alreadyAnswered` is emitted; the run row is not rewritten to writing (it already says so) and nothing is
+   * re-read. The name is "another window" when this profile's stored attempt shows the block answered there, else the
+   * conflict fallback; a run the poll found already completed says the asset is ready rather than being written.
+   */
+  private noticeAnsweredElsewhere(runId: string, questionsId: string, landed: boolean): void {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === this.agentKey());
+    const sameProfile = !!type?.catalogAgentId && this.attempts.answeredInAnotherWindow(this.project(), type.catalogAgentId, questionsId);
+    const notice = mktgRunAnsweredElsewhereNotice(null, sameProfile, landed);
+    const kept = this.publicDraft();
+    this.answersError.set('');
+    this.answersNotice.set(notice);
+    this.alreadyAnswered.emit({ runId, questionsId, message: notice, ...(kept && { kept }) });
+    this.answeredRunId.set(runId);
+    this.answeredQuestionsId.set(questionsId);
+    this.keptDraft.set(kept);
   }
 
   /** Only the exact scoped server conflict can retire this browser's answer form. */

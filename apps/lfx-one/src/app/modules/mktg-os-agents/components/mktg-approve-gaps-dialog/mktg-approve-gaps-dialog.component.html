@@ -4,8 +4,9 @@
 <div #root class="flex flex-col gap-4 outline-none" tabindex="-1" data-testid="mktg-document-view-approve-confirm">
   @if (report; as data) {
     @if (showsFindings) {
-      <!-- A v2 report: what the agent could not read and did not find, in the Sources tab's words and shape; the gaps bullets of a v1 report are not
-           repeated here: Missing assets stands for them. A v2 report with nothing in either group falls through to the list below, so leftover gaps still show. -->
+      <!-- A v2 report: what the agent could not read and did not find, in the Sources tab's words and shape; a gap a missing asset mirrors is not
+           repeated, and another agent's gaps no missing asset stands for follow under Gaps. A v2 report with nothing in either group falls
+           through to the list below, so leftover gaps still show. -->
       @if (findings.failed.length) {
         <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-failed">
           <h3 class="text-sm font-semibold text-gray-900">{{ groupTitles.failed }}</h3>
@@ -34,6 +35,16 @@
                   <span class="text-xs text-gray-700" data-testid="mktg-document-view-approve-missing-item-fix">{{ fixPrefix }}{{ missing.fix }}</span>
                 }
               </li>
+            }
+          </ul>
+        </section>
+      }
+      @if (gaps.length) {
+        <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-gaps">
+          <h3 class="text-sm font-semibold text-gray-900">{{ gapsTitle }}</h3>
+          <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-700">
+            @for (gap of gaps; track $index) {
+              <li data-testid="mktg-document-view-approve-gaps-item">{{ gap }}</li>
             }
           </ul>
         </section>

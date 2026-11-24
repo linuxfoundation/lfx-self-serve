@@ -12,9 +12,17 @@ import {
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { configureGoogleTab, seedChannel, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import {
+  configureGoogleTab,
+  seedChannel,
+  stubCreativeLibraryUpload,
+  STATE_ONLY,
+  tabComponentUnderTest,
+  trackStateOnlyTests,
+} from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * The Search-copy gate.
@@ -31,12 +39,12 @@ describe('ImplementationTabComponent google search-copy gate', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
 
-  it.each([['includeSearch'], ['includeDemandGen']])('asks for the ad copy on %s', (control) => {
+  it.each([['includeSearch'], ['includeDemandGen']])('asks for the ad copy on %s', STATE_ONLY, (control) => {
     const c = seedChannel(fixture, { [control]: true });
 
     expect(c['searchCopyApplies']()).toBe(true);
@@ -51,7 +59,7 @@ describe('ImplementationTabComponent google search-copy gate', () => {
    * The other direction, which is the regression this gate exists for. The same empty copy must
    * leave a Display campaign submittable — its ad lives in `displayCreative`.
    */
-  it.each([['includePerformanceMax'], ['includeDisplay']])('does not ask for the ad copy on %s', (control) => {
+  it.each([['includePerformanceMax'], ['includeDisplay']])('does not ask for the ad copy on %s', STATE_ONLY, (control) => {
     const c = seedChannel(fixture, { [control]: true });
     c['campaignForm'].controls.headlines.at(0).setValue('');
     c['campaignForm'].controls.descriptions.at(0).setValue('');
@@ -69,7 +77,7 @@ describe('ImplementationTabComponent google search-copy gate', () => {
    * The `detectChanges` is load-bearing: an effect settles on the next flush, where the
    * `valueChanges` subscription this replaced ran synchronously on the tick.
    */
-  it('revalidates the copy arrays when the channel changes under them', () => {
+  it('revalidates the copy arrays when the channel changes under them', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.headlines.at(0).setValue('');
     expect(c['campaignForm'].controls.headlines.valid).toBe(true);
@@ -86,7 +94,7 @@ describe('ImplementationTabComponent google search-copy gate', () => {
    * `selectedPlatforms`, a signal input — dropping Google in the parent makes the copy stop being
    * required without either checkbox emitting, which the `valueChanges` pair this replaced missed.
    */
-  it('revalidates the copy arrays when google leaves the selected platforms', () => {
+  it('revalidates the copy arrays when google leaves the selected platforms', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['campaignForm'].controls.headlines.at(0).setValue('');
     expect(c['campaignForm'].controls.headlines.invalid).toBe(true);
@@ -114,7 +122,7 @@ describe('ImplementationTabComponent google creative sections', () => {
 
   beforeEach(async () => {
     await configureGoogleTab();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -124,7 +132,7 @@ describe('ImplementationTabComponent google creative sections', () => {
     ['includePerformanceMax', 'performance-max'],
     ['includeDisplay', 'display'],
     ['includeSearch', 'search'],
-  ])('renders the %s section', (control, channel) => {
+  ])('renders the %s section', STATE_ONLY, (control, channel) => {
     const c = seedChannel(fixture, { [control]: true });
     const sections = c['googleCreativeSections']();
 
@@ -138,7 +146,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * #5262: Search's section collects its campaign assets, not its copy (the two shared arrays), and is
    * sent as `searchAssets` with each list split one per line, as every creative is.
    */
-  it('sends the Search assets under searchAssets, one entry per line', () => {
+  it('sends the Search assets under searchAssets, one entry per line', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['campaignForm'].controls.searchAssets.patchValue({
       businessName: ' Example Foundation ',
@@ -166,7 +174,7 @@ describe('ImplementationTabComponent google creative sections', () => {
     expect(notice('display')).toBe(GOOGLE_CREATIVE_REQUIRED_NOTICE);
   });
 
-  it('renders no section when Google is not a selected platform', () => {
+  it('renders no section when Google is not a selected platform', STATE_ONLY, () => {
     const c = fixture.componentInstance as unknown as Record<string, any>;
 
     expect(c['googleCreativeSections']()).toEqual([]);
@@ -177,7 +185,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * in-process creator sends no creative object at all — rendering the fields there would collect
    * copy the create then silently drops. `null` is the "not known yet" state and withholds too.
    */
-  it.each([[null], [false]])('renders no section while googleCreativeEnabled is %s', (capability) => {
+  it.each([[null], [false]])('renders no section while googleCreativeEnabled is %s', STATE_ONLY, (capability) => {
     const c = seedChannel(fixture, { includeDisplay: true });
     fixture.componentRef.setInput('googleCreativeEnabled', capability);
     fixture.detectChanges();
@@ -190,7 +198,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * sends no `googleCreative` at all. Leaving the Demand Gen section up alongside Search would
    * collect creative the request then drops, so Search takes the section down.
    */
-  it('drops the demand gen section when search is ticked alongside it', () => {
+  it('drops the demand gen section when search is ticked alongside it', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeSearch: true, includeDemandGen: true, includeDisplay: true });
 
     expect(c['googleCreativeSections']().map((section: { channel: string }) => section.channel)).toEqual(['display', 'search']);
@@ -201,7 +209,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * `FormGroup` nobody can reach, and an enabled invalid group holds `campaignForm.invalid` true
    * with no control on screen to fix. Only the rendered groups stay enabled.
    */
-  it('enables only the creative groups it renders', () => {
+  it('enables only the creative groups it renders', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
 
     expect(c['campaignForm'].controls.displayCreative.enabled).toBe(true);
@@ -220,7 +228,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * Disabling a group must not change what the payload, the snapshot or a restore can see.
    * `getRawValue()` reports disabled controls, which is why none of those three needed a change.
    */
-  it('still reads a disabled creative group through getRawValue', () => {
+  it('still reads a disabled creative group through getRawValue', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.displayCreative.controls.longHeadline.setValue('Still here');
 
@@ -236,7 +244,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * conventions, trimmed, empties dropped — a trailing newline must not become an entry that
    * counts against the cap or reaches Google as an empty image URL.
    */
-  it('splits a list field on either newline convention, trimming and dropping empties', () => {
+  it('splits a list field on either newline convention, trimming and dropping empties', STATE_ONLY, () => {
     const c = fixture.componentInstance as unknown as Record<string, any>;
 
     expect(c['splitCreativeLines']('one\r\n  two  \n\n\nthree\n')).toEqual(['one', 'two', 'three']);
@@ -251,7 +259,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * together. Both assertions are needed — the first alone passes against a `maxLength` on the raw
    * control.
    */
-  it('bounds a list field per entry, not on the whole control', () => {
+  it('bounds a list field per entry, not on the whole control', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const headlines = c['campaignForm'].controls.displayCreative.controls.headlines;
     const spec = GOOGLE_CREATIVE_FIELD_SPECS.display[0];
@@ -276,7 +284,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * the one thing no guard on this road may do. The second assertion is what keeps this from
    * being a bound that no longer bounds anything.
    */
-  it('bounds a text field on its trimmed value, not the raw control', () => {
+  it('bounds a text field on its trimmed value, not the raw control', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const spec = GOOGLE_CREATIVE_FIELD_SPECS.display[1];
     const longHeadline = c['campaignForm'].controls.displayCreative.controls.longHeadline;
@@ -306,7 +314,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * The over-the-bound half keeps this from being a test that no longer tests anything, and
    * `actualLength` proves the error reports runes too, not units.
    */
-  it('bounds text and list fields in code points, not UTF-16 units', () => {
+  it('bounds text and list fields in code points, not UTF-16 units', STATE_ONLY, () => {
     const emoji = '\u{1F600}';
     const c = seedChannel(fixture, { includeDemandGen: true, includeDisplay: true });
 
@@ -338,7 +346,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * (what this tab measured before #5219's review) accepts it and upstream refuses it after the
    * budget. Both list call sites and the scalar one are pinned.
    */
-  it('bounds headlines, descriptions and business names by display width, CJK counting double', () => {
+  it('bounds headlines, descriptions and business names by display width, CJK counting double', STATE_ONLY, () => {
     const cjk = '会';
     const c = seedChannel(fixture, { includeDemandGen: true, includeDisplay: true, includePerformanceMax: true });
 
@@ -366,7 +374,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * list after the campaign exists. The rune-count bound campaign-service applies
    * (`maxDisplayCallToActionRunes`) still stands beside it, so text past 30 runes carries both.
    */
-  it('holds the call to action to its list, beside the rune-count bound campaign-service applies', () => {
+  it('holds the call to action to its list, beside the rune-count bound campaign-service applies', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const cta = c['campaignForm'].controls.displayCreative.controls.callToActionText;
 
@@ -391,7 +399,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * number sits there unused. 256 is `maxAssetGroupNameRunes` upstream, counted on the trimmed
    * value, which is why the over-the-bound case uses a trailing space.
    */
-  it('bounds the asset group name at the width the catalogue carries', () => {
+  it('bounds the asset group name at the width the catalogue carries', STATE_ONLY, () => {
     const spec = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'].find((field) => field.control === 'assetGroupName');
     expect(spec?.width).toBe(256);
 
@@ -412,7 +420,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * channel with no creative at all is a create campaign-service makes. The floor is enforced at
    * submit instead, where the whole creative is in view; `googleCreativeError` below is that half.
    */
-  it('does not enforce a list field minimum on the control', () => {
+  it('does not enforce a list field minimum on the control', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includePerformanceMax: true });
     const headlines = c['campaignForm'].controls.performanceMaxCreative.controls.headlines;
 
@@ -424,7 +432,7 @@ describe('ImplementationTabComponent google creative sections', () => {
   });
 
   /** All four bound combinations a guidance sentence is assembled from, plus the catalogue's own note. */
-  it('states a field’s bounds in its guidance', () => {
+  it('states a field’s bounds in its guidance', STATE_ONLY, () => {
     const c = fixture.componentInstance as unknown as Record<string, any>;
 
     expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'list', min: 1, max: 5, width: 30 })).toBe(
@@ -442,7 +450,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * The template reads `field.guidance`, not a method — the sentence is assembled once when the
    * section resolves instead of on every change-detection pass. This pins the two together.
    */
-  it('carries each field’s guidance on the resolved section', () => {
+  it('carries each field’s guidance on the resolved section', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const section = c['googleCreativeSections']().find((entry: { groupName: string }) => entry.groupName === 'displayCreative');
 
@@ -456,7 +464,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * The error line stays silent until the field is touched — every one of these controls starts
    * empty and valid, and an untouched field has nothing to report.
    */
-  it('reports a field error only once the field is touched', () => {
+  it('reports a field error only once the field is touched', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const spec = GOOGLE_CREATIVE_FIELD_SPECS.display[0];
     const headlines = c['campaignForm'].controls.displayCreative.controls.headlines;
@@ -471,7 +479,7 @@ describe('ImplementationTabComponent google creative sections', () => {
     expect(c['creativeFieldErrors']()[`displayCreative.${spec.control}`]).toBe(`At most ${spec.max} entries — ${spec.max + 1} given.`);
   });
 
-  it('reports the width and maxlength errors in the field’s own words', () => {
+  it('reports the width and maxlength errors in the field’s own words', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const listSpec = GOOGLE_CREATIVE_FIELD_SPECS.display[0];
     const textSpec = GOOGLE_CREATIVE_FIELD_SPECS.display[1];
@@ -492,7 +500,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * key at all — an empty array is a positive statement ("no images") where absence means "none
    * asked for", and upstream treats the two differently on the reciprocal image fields.
    */
-  it('omits empty creative fields and empty creatives entirely', () => {
+  it('omits empty creative fields and empty creatives entirely', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
 
     expect(c['googleCreativePayload']()).toEqual({});
@@ -512,7 +520,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * SELECTED, not by what the caller passes. A filled-in creative left behind by a since-unticked
    * channel must not reach the wire.
    */
-  it('sends no creative for an unselected channel', () => {
+  it('sends no creative for an unselected channel', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'One' });
     expect(c['googleCreativePayload']()).toEqual({ displayCreative: { headlines: ['One'] } });
@@ -528,7 +536,7 @@ describe('ImplementationTabComponent google creative sections', () => {
    * JSON, and Angular throws on a `patchValue` naming a control that is not there — so one stale
    * key must not take the whole restore down with it.
    */
-  it('round-trips the creative text through a draft, skipping a stale key', () => {
+  it('round-trips the creative text through a draft, skipping a stale key', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'One\nTwo', businessName: 'Acme' });
 
@@ -542,7 +550,7 @@ describe('ImplementationTabComponent google creative sections', () => {
   });
 
   /** The snapshot is a copy, not a live view of a form this component is about to destroy. */
-  it('snapshots the creative groups by value', () => {
+  it('snapshots the creative groups by value', STATE_ONLY, () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'One' });
 

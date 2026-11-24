@@ -2537,6 +2537,66 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
+   * Meta detailed targeting (#5904 row 4; linuxfoundation/lfx-v2-campaign-service#612): each field on its own flag,
+   * as campaign-service's `checkMetaTargeting`, so a block with only detailed fields passes while audience targeting
+   * is off; checked and compacted by the shared rules; merged with the audience fields into one `targeting`.
+   */
+  describe('meta detailed targeting', () => {
+    const flagsOff = (...off: ServerFeatureFlag[]): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => !off.includes(flag as ServerFeatureFlag));
+    };
+    async function sendWith(targeting: unknown): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: [{ primaryText: 'p', headline: 'h' }],
+        targeting,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+    const refusal = (): unknown => vi.mocked(next).mock.calls[0]?.[0];
+    const refusedField = (): string | undefined => (refusal() as ServiceValidationError).toResponse()['errors'][0].field;
+
+    beforeEach(() => {
+      flagsOff();
+      vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValue(true);
+    });
+
+    it('forwards a detailed-only block, compacted, while audience targeting is off', async () => {
+      flagsOff(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
+
+      expect((await sendWith({ interests: [' 6003020834693', '6003020834693'], locales: [6] }))?.['targeting']).toEqual({
+        interests: ['6003020834693'],
+        locales: [6],
+      });
+    });
+
+    it('merges the audience and detailed fields into one block', async () => {
+      expect((await sendWith({ ageMin: 25, workPositions: ['105'] }))?.['targeting']).toEqual({ ageMin: 25, workPositions: ['105'] });
+    });
+
+    it.each([
+      [ServerFeatureFlag.CampaignServiceMetaInterestTargeting, { interests: ['6003020834693'] }, 'metaConfig.targeting.interests'],
+      [ServerFeatureFlag.CampaignServiceMetaBehaviorTargeting, { workPositions: ['105'] }, 'metaConfig.targeting.workPositions'],
+    ])('refuses a field whose flag (%s) is off with a 400, rather than dropping it', async (flag, targeting, field) => {
+      flagsOff(flag);
+
+      expect(await sendWith(targeting)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
+
+    it('refuses an id a create would refuse upstream with a 400 naming the field', async () => {
+      expect(await sendWith({ behaviors: ['06004'] })).toBeNull();
+      expect(refusedField()).toBe('metaConfig.targeting.behaviors');
+    });
+  });
+
+  /**
    * The Meta call to action, conversion event and optimization goal (#5934), one flag each: refused with a
    * 400 while their flag is off (never dropped), checked by the tab's own rules, and sent upper-cased.
    */

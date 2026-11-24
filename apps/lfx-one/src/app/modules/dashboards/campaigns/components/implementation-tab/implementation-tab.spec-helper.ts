@@ -3,17 +3,80 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { EnvironmentProviders, Provider } from '@angular/core';
+import { Component, EnvironmentProviders, Provider, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefOutput, CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER } from 'rxjs';
 import { beforeEach, vi } from 'vitest';
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { ImplementationTabComponent } from './implementation-tab.component';
+
+/**
+ * The real tab with no DOM, for state-only tests (#5980).
+ *
+ * It is the same class, so every input, form, service, signal, computed and effect runs exactly as
+ * it does on the full template, and `fixture.detectChanges()` still drives the same change-detection
+ * and effect cycles. Only the template is gone, so a test here must assert on state (form validity,
+ * computed signals, payloads, draft and persistence), never on the DOM.
+ *
+ * A subclass with its own `@Component`, not `TestBed.overrideTemplate` on the tab: an override is
+ * dropped after every test and forces the whole tab to recompile each time (about 250 ms per test),
+ * while this empty template compiles once. `@Component` metadata is not inherited, so the tab's own
+ * component-scoped `DialogService` is declared again.
+ *
+ * Keep DOM tests on `ImplementationTabComponent`. With no DOM, an "is absent" or "is null" query is
+ * trivially true, so a test that asserts something is NOT rendered must stay on the full template.
+ */
+@Component({
+  selector: 'lfx-implementation-tab-state-only',
+  template: '',
+  providers: [DialogService],
+})
+export class StateOnlyImplementationTab extends ImplementationTabComponent {}
+
+/**
+ * Test option that mounts {@link StateOnlyImplementationTab} for that test: `it('…', STATE_ONLY, () => …)`.
+ *
+ * Marked per test rather than per describe so a converted test keeps its place, its name and its
+ * setup. Only a test that asserts on state belongs here: no `nativeElement`, `debugElement`, query,
+ * text or aria check, directly or through a helper, and no "is absent" check on the DOM.
+ */
+export const STATE_ONLY = { meta: { stateOnlyTab: true } } as const;
+
+let stateOnlyTest = false;
+
+/**
+ * Records whether the running test is marked {@link STATE_ONLY}; call once at the top of a spec file
+ * that marks any. A root `beforeEach` runs before every `describe`'s own, so the suites' setup can
+ * call {@link tabComponentUnderTest} without being handed the test.
+ */
+export function trackStateOnlyTests(): void {
+  beforeEach(({ task }) => {
+    stateOnlyTest = task.meta.stateOnlyTab === true;
+  });
+}
+
+/**
+ * The tab class the running test mounts: the empty-template subclass under {@link STATE_ONLY}, otherwise the real tab.
+ * Component-level overrides (`overrideComponent(..., { set: { providers } })`) must target this class, not
+ * `ImplementationTabComponent`: the subclass declares its own providers, so an override on the real tab leaves it with
+ * the real service and a test can pass without reaching the fake.
+ */
+export function tabComponentUnderTest(): Type<ImplementationTabComponent> {
+  return stateOnlyTest ? StateOnlyImplementationTab : ImplementationTabComponent;
+}
+
+declare module 'vitest' {
+  interface TaskMeta {
+    /** Set by {@link STATE_ONLY}. */
+    stateOnlyTab?: boolean;
+  }
+}
 
 /** One usable keyword, so a Search create is not held for having none (#4848). */
 export const SEED_KEYWORD = { term: 'cloud native conference', matchType: 'Phrase', intentLevel: 'High', notes: '' };

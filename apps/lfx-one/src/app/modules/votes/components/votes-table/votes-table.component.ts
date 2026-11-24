@@ -19,7 +19,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
+import { VOTE_CANCEL_CONFIRMATION, VOTE_CLOSE_CONFIRMATION, VOTE_DELETE_ENDED, VOTE_DELETE_ENDED_MESSAGE } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
@@ -36,6 +36,7 @@ import {
   buildMailtoHref,
   buildVoteMailingListReminder,
   computeVoteRowParticipation,
+  escapeHtml,
   getEntityCommands,
   getMailingListEmail,
   getUserTimezone,
@@ -59,7 +60,7 @@ import { VoteSummarySendService } from '@services/vote-summary-send.service';
 import { VoteService } from '@services/vote.service';
 import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
-import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService, type ToastMessageOptions } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -146,6 +147,8 @@ export class VotesTableComponent {
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
   // Group links carry state so the group page returns to this list instead of Groups, and restores the Me lens when that is where the user was.
   public readonly isMeLens = input<boolean>(false);
+  /** Opt-in: show ⋮ → Cancel vote to the vote's writers. Project/foundation lens Votes page and group Votes tab only; never the Me lens (#5968). */
+  public readonly canCancelVotes = input<boolean>(false);
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
   public readonly scopeActive = input<boolean>(false);
@@ -208,6 +211,8 @@ export class VotesTableComponent {
    * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
    */
   private readonly closingUids = signal<Set<string>>(new Set());
+  /** Service-owned pending IDs survive destroying and recreating this table (#5968). */
+  private readonly cancellingUids = this.voteService.cancellingVoteUids;
   private readonly closedVotes = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
   /**
    * Overlays a just-extended deadline onto its row (GH-3661) — `extendVote()`'s success response lands
@@ -370,6 +375,16 @@ export class VotesTableComponent {
         command: () => this.sendMailingListReminder(vote),
       });
       items.push({ label: 'Close vote', icon: 'fa-light fa-lock', command: () => this.onCloseVote(vote) });
+      // Cancel deletes the open vote and every response (#5968); only hosts that opt in offer it, never the Me lens.
+      if (this.canCancelVotes()) {
+        items.push({
+          label: 'Cancel vote',
+          icon: 'fa-light fa-trash',
+          styleClass: 'text-red-500',
+          disabled: this.cancellingUids().has(vote.uid),
+          command: () => this.onCancelVote(vote),
+        });
+      }
     }
     // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
     if (vote.writer === true && vote.status === PollStatus.ENDED) {
@@ -563,6 +578,32 @@ export class VotesTableComponent {
     });
   }
 
+  /** Cancel from the row menu (#5968): asks first, explains confirmed ended state, and ignores unknown rows that have left the list. */
+  protected onCancelVote(vote: Vote): void {
+    const uid = vote.uid;
+    this.confirmationService.confirm({
+      ...VOTE_CANCEL_CONFIRMATION,
+      // The dialog renders message as HTML, so the name is escaped to show exactly as typed.
+      message: `Cancel the vote "${escapeHtml(vote.name)}"? The vote and all responses will be permanently deleted, and invited voters will be notified that it was cancelled. This can't be undone.`,
+      accept: () => {
+        // Duplicate in-flight accepts stay silent, even if the row has since ended.
+        if (this.cancellingUids().has(uid)) return;
+        // Status filters can hide a newly ended row; inspect current input and the confirmed Close overlay first.
+        const current = this.votes().find((r) => r.uid === uid);
+        const status = this.closedVotes().get(uid)?.status ?? current?.status;
+        if (status === PollStatus.ENDED) {
+          this.voteService.markVoteEnded(uid);
+          this.messageService.add({ severity: 'warn', summary: 'Vote already ended', detail: VOTE_DELETE_ENDED_MESSAGE, life: 8000 });
+          this.refresh.emit();
+          return;
+        }
+        const row = this.displayedVotes().find((r) => r.uid === uid);
+        if (row?.status !== PollStatus.ACTIVE) return;
+        this.cancelVote(uid);
+      },
+    });
+  }
+
   // === Private Initializers ===
   private initGroupLinkState(): Signal<GroupLinkState> {
     return computed(() => ({ backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: this.isMeLens() }));
@@ -711,6 +752,35 @@ export class VotesTableComponent {
           });
         },
       });
+  }
+
+  /** The service owns the write, duplicate guard and host refresh; this view presents its outcome. */
+  private cancelVote(uid: string): void {
+    this.voteService
+      .cancelVote(uid)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Vote cancelled' });
+        },
+        error: (error: unknown) => {
+          this.messageService.add(this.cancelErrorToast(error));
+        },
+      });
+  }
+
+  /** Toast for a failed cancel: an ended vote and a removed vote are explained; anything else is an actionable error. */
+  private cancelErrorToast(error: unknown): ToastMessageOptions {
+    const status = error instanceof HttpErrorResponse ? error.status : null;
+    const body = error instanceof HttpErrorResponse ? (error.error as { error?: unknown; code?: unknown } | null) : null;
+    const serverMessage = typeof body?.error === 'string' && body.error ? body.error : null;
+    if (status === 409 && body?.code === VOTE_DELETE_ENDED) {
+      return { severity: 'warn', summary: 'Vote already ended', detail: serverMessage ?? VOTE_DELETE_ENDED_MESSAGE, life: 8000 };
+    }
+    if (status === 404) {
+      return { severity: 'info', summary: 'Vote already removed', detail: 'This vote no longer exists. The list has been refreshed.' };
+    }
+    return { severity: 'error', summary: 'Unable to cancel the vote', detail: serverMessage ?? "We couldn't cancel the vote. Please try again.", life: 8000 };
   }
 
   /** The upstream message when the BFF passed one through (409 not started, 400 past its end time), else a plain fallback. */

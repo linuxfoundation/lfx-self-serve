@@ -33,6 +33,7 @@ import {
   validateFoundationMessageIntakeAnswers,
 } from './foundation-message.utils';
 import { extractMktgAgentTexts } from './mktg-session-event.utils';
+import { frameworkReportV2Envelope } from './__fixtures__/mktg-report-v2.fixture';
 
 /**
  * Forms as the agent's OWN renderFormMessage (marketing-os-agents
@@ -638,6 +639,19 @@ describe('the questions turn', () => {
 describe('validateFoundationMessageEnvelope', () => {
   it('accepts a contract-true envelope', () => {
     expect(validateFoundationMessageEnvelope(buildEnvelope())).toEqual({ valid: true, errors: [] });
+  });
+
+  it('accepts the agent’s real v2 report (version and findings) and rejects a malformed present findings field with the kit’s message shape', () => {
+    const v2 = frameworkReportV2Envelope();
+    expect(validateFoundationMessageEnvelope(v2)).toEqual({ valid: true, errors: [] });
+    const findings = v2.report.findings;
+    expect(validateFoundationMessageEnvelope({ ...v2, report: { ...v2.report, version: 1 } }).errors).toEqual(['report.version must be 2 when present']);
+    expect(validateFoundationMessageEnvelope({ ...v2, report: { ...v2.report, findings: { ...findings, warnings: 'none' } } }).errors).toEqual([
+      'report.findings.warnings must be a list of { code, text, source? }',
+    ]);
+    // The asset reads the findings through untouched.
+    const { content, ...sidecar } = v2;
+    expect(foundationMessageAssetOfRevision(JSON.stringify(content), sidecar)?.report?.findings).toEqual(findings);
   });
 
   it('rejects the previous contract outright', () => {

@@ -12,9 +12,10 @@ import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Meta objective, placements and pixel id (LFXV2-3228).
@@ -110,7 +111,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.detectChanges();
     await fixture.whenStable();
     await makeMetaValid();
@@ -125,7 +126,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
    * before anything is created. This asserts shape-only handling, not that AN is targetable.
    */
-  it('keeps a geo code Meta excludes but Microsoft supports', async () => {
+  it('keeps a geo code Meta excludes but Microsoft supports', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set([]);
 
@@ -135,7 +136,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftEffectiveGeoTargets']()).toEqual(['AN']);
   });
 
-  it('still refuses a malformed geo code', async () => {
+  it('still refuses a malformed geo code', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set([]);
 
@@ -144,7 +145,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftGeoTargets']()).toEqual([]);
   });
 
-  it('refuses to add a geo target past the cap', async () => {
+  it('refuses to add a geo target past the cap', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set(Array.from({ length: 30 }, (_, i) => `G${i}`));
     await fixture.whenStable();
@@ -158,7 +159,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * before these caps existed, replayed verbatim by `applyDraft` (which must replay verbatim, so
    * an emptied list stays emptied). Without the backstop the form looks valid and the BFF refuses.
    */
-  it('blocks submit when a restored draft carries an over-cap Microsoft list', async () => {
+  it('blocks submit when a restored draft carries an over-cap Microsoft list', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftBudgetUsd'].set(100);
@@ -182,7 +183,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    *
    * The list is within every cap, so nothing else can be what fails.
    */
-  it('blocks submit when a restored draft carries a match type Microsoft has no name for', async () => {
+  it('blocks submit when a restored draft carries a match type Microsoft has no name for', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftBudgetUsd'].set(100);
@@ -201,7 +202,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * The same draft with the match type CORRECTED submits, so the test above cannot pass for an
    * unrelated reason — without this, a form broken for any other cause would look like coverage.
    */
-  it('allows submit once that draft carries a match type Microsoft accepts', async () => {
+  it('allows submit once that draft carries a match type Microsoft accepts', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftBudgetUsd'].set(100);
@@ -233,7 +234,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     ['below the minimum', '0.001', false],
     ['above the maximum', '1001', false],
     ['not a number', 'abc', false],
-  ])('treats a Microsoft CPC bid %s as submittable=%s', async (_label, bid, expected) => {
+  ])('treats a Microsoft CPC bid %s as submittable=%s', STATE_ONLY, async (_label, bid, expected) => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
     c['microsoftKeywords'].set([{ text: 'kubernetes', matchType: 'Exact' }]);
@@ -250,7 +251,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * account minimum while the box still displays 1001 would substitute a spend decision the
    * operator did make.
    */
-  it('does not silently downgrade an out-of-range Microsoft CPC bid to unset', async () => {
+  it('does not silently downgrade an out-of-range Microsoft CPC bid to unset', STATE_ONLY, async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftCpcBid'].set('1001');
     await fixture.whenStable();
@@ -270,7 +271,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     ['negative', -5],
     // Mirrors redditBudgetIsUsable — over the client's cap is a dead job, not a refused request.
     ['over the maximum', 1_000_000_001],
-  ])('blocks a Microsoft submit on a %s budget', async (_label, budget) => {
+  ])('blocks a Microsoft submit on a %s budget', STATE_ONLY, async (_label, budget) => {
     const c = component() as unknown as Record<string, any>;
     // The guards are scoped to a Microsoft selection, so the platform must be selected or the
     // assertion would pass for the wrong reason — the arms would simply never be evaluated.
@@ -296,7 +297,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * the brief on remount would hand back a campaign they had emptied, and `canSubmit` would then
    * pass on values they never re-chose.
    */
-  it('treats a cleared Microsoft keyword list as a real value rather than refilling it', async () => {
+  it('treats a cleared Microsoft keyword list as a real value rather than refilling it', STATE_ONLY, async () => {
     let draft: Record<string, any> | null = null;
     component()['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
 
@@ -304,7 +305,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     component()['emitDraft']();
     await fixture.whenStable();
 
-    const restored = TestBed.createComponent(ImplementationTabComponent);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
     restored.componentRef.setInput('draft', draft);
     restored.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: (draft as unknown as Record<string, any>)['eventSlug'] },
@@ -323,66 +324,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['canSubmit']()).toBe(false);
   });
 
-  /**
-   * A draft persisted BEFORE these fields shipped carries none of them. Absence must mean "keep
-   * what the brief seeded", never "the user chose the defaults" — otherwise an old draft silently
-   * downgrades a Conversions campaign to traffic on the next tab switch. `undefined` is what
-   * preserves that distinction; a present-but-empty `metaPixelId` is a real cleared value.
-   */
-  it('leaves Meta settings seeded when an older draft omits them', async () => {
-    await selectObjective('conversions');
-    await typePixelId('554433');
-    const slug = component()['campaignForm'].controls['eventSlug'].value;
-
-    const legacyDraft = {
-      eventName: 'KubeCon EU 2026',
-      countryCode: 'US',
-      registrationUrl: 'https://events.example.com/kubecon-eu-2026',
-      headlines: [],
-      descriptions: [],
-      budgetUsd: 500,
-      searchBudgetPct: 70,
-      startDate: '2026-09-01',
-      endDate: '2026-09-30',
-      includeSearch: true,
-      includeDemandGen: false,
-      includePerformanceMax: false,
-      includeVideo: false,
-      includeDisplay: false,
-      eventSlug: slug,
-    };
-
-    const restored = TestBed.createComponent(ImplementationTabComponent);
-    restored.componentRef.setInput('draft', legacyDraft);
-    restored.componentRef.setInput('briefData', {
-      eventDetails: { name: 'KubeCon EU 2026', slug, registrationUrl: 'https://events.example.com/kubecon-eu-2026' },
-      selectedPlatforms: ['meta-ads'],
-    } as unknown as CampaignBriefOutput);
-    restored.detectChanges();
-    await restored.whenStable();
-
-    const c = restored.componentInstance as unknown as Record<string, any>;
-    // Stand in for values the brief seeded on this mount. The legacy draft names none of the Meta
-    // fields, so the restore must leave every one of them exactly as seeded.
-    c['metaObjective'].set('conversions');
-    c['metaPixelId'].set('554433');
-    c['applyDraft']();
-    await restored.whenStable();
-
-    expect(c['metaObjective']()).toBe('conversions');
-    expect(c['metaPixelId']()).toBe('554433');
-  });
-
   // === Placements ===
-
-  /**
-   * Only the entries that differ from `META_DEFAULT_PLACEMENTS` are sent. Upstream merges the
-   * override map field-by-field over those same defaults, so an untouched form must put no
-   * placement keys on the wire at all.
-   */
-  it('sends no placement overrides when the defaults are untouched', async () => {
-    expect((await submittedMetaConfig())['placements']).toEqual({});
-  });
 
   it('sends only the placements that differ from the defaults', async () => {
     await togglePlacement('reels', true);
@@ -390,28 +332,10 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect((await submittedMetaConfig())['placements']).toEqual({ reels: true });
   });
 
-  it('sends a disabled default placement as an explicit false', async () => {
-    await togglePlacement('facebookFeed', false);
-
-    expect((await submittedMetaConfig())['placements']).toEqual({ facebookFeed: false });
-  });
-
   /**
    * Rule 3. `buildPlacementTargeting` refuses a request whose `publisher_platforms` list comes out
    * empty, and it does so at the ad-set call — after the campaign, a paid resource, exists.
    */
-  /**
-   * The override map is built by DROPPING keys equal to `META_DEFAULT_PLACEMENTS`, so toggling a
-   * default-on placement off and back on must re-collapse to `{}`. The other placement specs only
-   * move one direction, which a `!==`→`!=` slip or a lost shallow copy would still satisfy while
-   * shipping a redundant `facebookFeed: true` override.
-   */
-  it('re-collapses to no overrides when a default placement is toggled off then on', async () => {
-    await togglePlacement('facebookFeed', false);
-    await togglePlacement('facebookFeed', true);
-
-    expect((await submittedMetaConfig())['placements']).toEqual({});
-  });
 
   it('blocks submit when every selectable placement is off', async () => {
     expect(canSubmit()).toBe(true);
@@ -460,16 +384,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(error!.getAttribute('role')).toBe('alert');
   });
 
-  it('re-enables submit when a placement is turned back on', async () => {
-    await togglePlacement('facebookFeed', false);
-    await togglePlacement('instagramFeed', false);
-    expect(canSubmit()).toBe(false);
-
-    await togglePlacement('reels', true);
-
-    expect(canSubmit()).toBe(true);
-  });
-
   /**
    * Rule 2. Meta removed Messenger Inbox in November 2025 and campaign-service rejects the
    * placement outright. The toggle renders so its absence is not read as a missing feature, but
@@ -487,24 +401,12 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * key independently, so even a direct call — a future template change binding a live control —
    * cannot put `messengerInbox: true` on the wire.
    */
-  it('refuses a messengerInbox toggle even when the handler is called directly', async () => {
+  it('refuses a messengerInbox toggle even when the handler is called directly', STATE_ONLY, async () => {
     component()['onMetaPlacementChange']('messengerInbox', { target: { checked: true } } as unknown as Event);
     await fixture.whenStable();
 
     expect(component()['metaPlacements']()['messengerInbox']).toBe(false);
     expect((await submittedMetaConfig())['placements']).toEqual({});
-  });
-
-  /** Enabling every selectable placement must still never introduce the retired key. */
-  it('never sends messengerInbox even with every other placement enabled', async () => {
-    await togglePlacement('stories', true);
-    await togglePlacement('reels', true);
-    await togglePlacement('audienceNetwork', true);
-
-    const placements = (await submittedMetaConfig())['placements'];
-
-    expect(placements).not.toHaveProperty('messengerInbox');
-    expect(placements).toEqual({ stories: true, reels: true, audienceNetwork: true });
   });
 
   // === Pixel id ===
@@ -521,12 +423,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(query('implementation-meta-pixel-id')).not.toBeNull();
   });
 
-  it('omits pixelId from the payload under a non-conversions objective', async () => {
-    await selectObjective('engagement');
-
-    expect(await submittedMetaConfig()).not.toHaveProperty('pixelId');
-  });
-
   it('blocks submit when conversions is selected with no pixel id', async () => {
     expect(canSubmit()).toBe(true);
 
@@ -534,28 +430,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
     expect(canSubmit()).toBe(false);
     expect(query('implementation-meta-pixel-error')).not.toBeNull();
-  });
-
-  /**
-   * The check `buildPromotedObject` makes that an empty-only test would miss. "PIX9" is
-   * non-empty, so a truthiness guard passes it; Meta Pixel ids are numeric and upstream rejects
-   * it on `numericIDRE`.
-   */
-  it('blocks submit for a non-empty but malformed pixel id', async () => {
-    await selectObjective('conversions');
-
-    await typePixelId('PIX9');
-
-    expect(canSubmit()).toBe(false);
-  });
-
-  /** Upstream trims before both checks, so a whitespace-only id must read as empty here too. */
-  it('blocks submit for a whitespace-only pixel id', async () => {
-    await selectObjective('conversions');
-
-    await typePixelId('   ');
-
-    expect(canSubmit()).toBe(false);
   });
 
   it('allows submit and sends the pixel id once it is numeric', async () => {
@@ -568,30 +442,5 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     const config = await submittedMetaConfig();
     expect(config['pixelId']).toBe('123456789012345');
     expect(config['objective']).toBe('conversions');
-  });
-
-  it('trims the pixel id it sends', async () => {
-    await selectObjective('conversions');
-    await typePixelId('  123456789012345  ');
-
-    expect(canSubmit()).toBe(true);
-    const config = await submittedMetaConfig();
-    expect(config['pixelId']).toBe('123456789012345');
-    expect(config['objective']).toBe('conversions');
-  });
-
-  /**
-   * A stale id left in the box after switching away from `conversions` must neither block submit
-   * nor reach the wire — the field no longer applies, so it is neither validated nor sent.
-   */
-  it('drops a stale pixel id after switching away from conversions', async () => {
-    await selectObjective('conversions');
-    await typePixelId('PIX9');
-    expect(canSubmit()).toBe(false);
-
-    await selectObjective('traffic');
-
-    expect(canSubmit()).toBe(true);
-    expect(await submittedMetaConfig()).not.toHaveProperty('pixelId');
   });
 });

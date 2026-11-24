@@ -63,8 +63,8 @@ export const MEMBER_IMPORT_COLUMNS = [
 /** Template guidance derives accepted values from the same configured options used by validation. */
 export const MEMBER_IMPORT_FIELDS: readonly MemberImportFieldDefinition[] = [
   { column: 'email', requiredWhen: 'always', votingOnly: false, description: 'Email address of the person to add.' },
-  { column: 'first_name', requiredWhen: 'never', votingOnly: false, description: 'Up to 100 characters.' },
-  { column: 'last_name', requiredWhen: 'never', votingOnly: false, description: 'Up to 100 characters.' },
+  { column: 'first_name', requiredWhen: 'always', votingOnly: false, description: 'Up to 100 characters.' },
+  { column: 'last_name', requiredWhen: 'always', votingOnly: false, description: 'Up to 100 characters.' },
   { column: 'job_title', requiredWhen: 'never', votingOnly: false, description: 'Up to 200 characters.' },
   { column: 'linkedin_profile', requiredWhen: 'never', votingOnly: false, description: 'Full LinkedIn profile URL, e.g. https://www.linkedin.com/in/…' },
   { column: 'organization_name', requiredWhen: 'organization', votingOnly: false, description: 'Up to 200 characters. Provide together with the website.' },

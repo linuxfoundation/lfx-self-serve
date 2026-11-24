@@ -81,6 +81,20 @@ describe('buildHealthMetricsColumnChart', () => {
 
     expect(view.columns[0]).toMatchObject({ total: '', segments: [], tip: { title: '2024 · no events recorded', rows: [] } });
   });
+
+  it("takes a column's own popup rows in place of the series rows and Total, and names it by them", () => {
+    const rows = [{ label: 'Accepted', value: '250 · 23%', color: '#009AFF', separated: false }];
+    const chart = buildHealthMetricsColumnChart(input({ columns: [{ ...input().columns[0], tipRows: rows }] }));
+
+    expect(chart.columns[0].tip.rows).toEqual(rows);
+    expect(chart.columns[0].ariaLabel).toBe('2025, Accepted 250 · 23%');
+  });
+
+  it('labels the y axis with a given format', () => {
+    const chart = buildHealthMetricsColumnChart(input({ formatTick: (value) => `USD ${value}` }));
+
+    expect(chart.yTicks).toEqual(['USD 1600', 'USD 1200', 'USD 800', 'USD 400', 'USD 0']);
+  });
 });
 
 describe('healthMetricsColumnChartCeiling', () => {

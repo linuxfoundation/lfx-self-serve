@@ -20,9 +20,10 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { SEED_KEYWORD, stubCreativeLibraryUpload } from './implementation-tab.spec-helper';
+import { SEED_KEYWORD, stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
+trackStateOnlyTests();
 
 /**
  * Microsoft flight dates, behind `microsoftScheduleEnabled`
@@ -61,7 +62,7 @@ describe('ImplementationTabComponent microsoft flight dates', () => {
   }
 
   async function mount(schedule: boolean | null | undefined): Promise<ComponentFixture<ImplementationTabComponent>> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     if (schedule !== undefined) f.componentRef.setInput('microsoftScheduleEnabled', schedule);
     f.componentRef.setInput('briefData', brief());
     f.detectChanges();
@@ -135,7 +136,7 @@ describe('ImplementationTabComponent microsoft flight dates', () => {
       expect(query('implementation-microsoft-flight')?.textContent).toContain('The flight dates above are applied to the Microsoft ad group.');
     });
 
-    it('sends the form flight dates on microsoftConfig exactly as metaConfig carries them', async () => {
+    it('sends the form flight dates on microsoftConfig exactly as metaConfig carries them', STATE_ONLY, async () => {
       fixture = await mount(true);
 
       const request = await submitted();
@@ -205,7 +206,7 @@ describe('ImplementationTabComponent microsoft image extension', () => {
     upload: boolean | null,
     draft: CampaignImplementationDraft | null = null
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
-    const f = TestBed.createComponent(ImplementationTabComponent);
+    const f = TestBed.createComponent(tabComponentUnderTest());
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);
@@ -617,7 +618,7 @@ describe('ImplementationTabComponent already created for this event', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.componentRef.setInput('briefData', brief);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -694,7 +695,7 @@ describe('ImplementationTabComponent already created for this event', () => {
         { provide: PLATFORM_ID, useValue: 'server' },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.componentRef.setInput('briefData', brief);
     setList([{ ...doc('g2', 'google-ads', 'active', 2), variant: 'default', funnel_stage: 'lower', created_at: '2026-11-02T12:00:00Z' }]);
 
@@ -764,7 +765,7 @@ describe('ImplementationTabComponent already created for this event', () => {
     ['an outcome', (): Observable<CampaignJobOutcome | null> => of({ campaigns: [], platformResults: [], errors: [] } as unknown as CampaignJobOutcome)],
     ['a lost poll', (): Observable<CampaignJobOutcome | null> => throwError(() => new Error('lost'))],
     ['a poll that runs out', (): Observable<CampaignJobOutcome | null> => EMPTY],
-  ])('asks the parent to re-read the list once when a create job settles with %s', (_label, answer) => {
+  ])('asks the parent to re-read the list once when a create job settles with %s', STATE_ONLY, (_label, answer) => {
     vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(answer());
     (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('creating');
     const settled = vi.fn();
@@ -852,10 +853,10 @@ describe('ImplementationTabComponent create another campaign', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     })
-      .overrideComponent(ImplementationTabComponent, { set: { providers: [{ provide: DialogService, useValue: { open: dialogOpen } }] } })
+      .overrideComponent(tabComponentUnderTest(), { set: { providers: [{ provide: DialogService, useValue: { open: dialogOpen } }] } })
       .compileComponents();
     createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(NEVER);
-    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture = TestBed.createComponent(tabComponentUnderTest());
     fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true } as CampaignBriefPersistenceState);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -908,7 +909,7 @@ describe('ImplementationTabComponent create another campaign', () => {
     expect(createCampaign.mock.calls[0][0].another).toEqual({ funnelStage: 'mid', tactic: 'retargeting', expectedSlotVersions: { 'google-ads': 2 } });
   });
 
-  it('sends nothing when the confirmation is dismissed', () => {
+  it('sends nothing when the confirmation is dismissed', STATE_ONLY, () => {
     setLists([doc('g1', 1)], ['google-ads']);
     c().anotherForm.controls.stage.setValue('top');
     fixture.detectChanges();
@@ -961,7 +962,7 @@ describe('ImplementationTabComponent create another campaign', () => {
     expect(q('implementation-create-another'), "another brief's slot was treated as this one's").toBeNull();
   });
 
-  it('heads the results as returned, not created, when every campaign came back existing', () => {
+  it('heads the results as returned, not created, when every campaign came back existing', STATE_ONLY, () => {
     c().step.set('results');
     c().platformResults.set([{ platform: 'google-ads', ok: true, campaignId: '9', reused: true }]);
     fixture.detectChanges();
@@ -969,7 +970,7 @@ describe('ImplementationTabComponent create another campaign', () => {
     expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).toBe('Existing Campaigns Returned');
   });
 
-  it('does not head a reused row beside an unconfirmed one as if every campaign already existed', () => {
+  it('does not head a reused row beside an unconfirmed one as if every campaign already existed', STATE_ONLY, () => {
     c().step.set('results');
     c().platformResults.set([
       { platform: 'google-ads', ok: true, campaignId: '9', reused: true },
@@ -991,7 +992,7 @@ describe('ImplementationTabComponent create another campaign', () => {
     expect(existing.find((row) => row.slot === '2')?.labels).toEqual({ channel: 'Search', stage: 'Mid funnel', tactic: 'Keyword', created: '—' });
   });
 
-  it('heads a reused row beside a proven pre-create failure as both, not as unconfirmed', () => {
+  it('heads a reused row beside a proven pre-create failure as both, not as unconfirmed', STATE_ONLY, () => {
     c().step.set('results');
     c().platformResults.set([
       { platform: 'google-ads', ok: true, campaignId: '9', reused: true },

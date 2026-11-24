@@ -363,7 +363,10 @@ current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including
 the existing schema and acquire the field on their next observed question turn. Question-body writes
 retain the existing transition predicate and use the same conditional record replacement as result transitions.
 Any typed one-off turn supplied by its domain adapter shares this private capture, including turns
-with an empty basis; only living-kit writer progress exposes the payload. One-offs retain their dedicated creator path.
+with an empty basis; only living-kit writer progress exposes the payload. That writer check is strict: when it cannot
+be completed (project or access-check outage), the row is returned without the block and the read is marked
+`progressUnavailable`, logged as `mktg_run_questions_access`, so clients keep the questions they already hold rather
+than reading "no questions"; only a verified non-writer gets a complete answer without the block. One-offs retain their dedicated creator path.
 The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
@@ -484,8 +487,8 @@ rows leave the BFF, never coverage IDs/counts or private sessions. A real lookup
 failure adds `progressUnavailable` so clients can warn/retry even with no row;
 intentional window coverage alone never manufactures active work or endless retries.
 Window-skipped unfinished writing/storing snapshots are last-known, not fresh
-liveness: poll reads mark them unavailable, so the client's existing bounded
-availability budget stops automatic checks. Closed-history coverage is not flagged.
+liveness: poll reads mark them unavailable, so the client keeps checking on its
+capped jittered backoff (floored at its base interval) behind one connection-state line. Closed-history coverage is not flagged.
 Explicit detail navigation may pass `refreshRun` to refresh ONE scoped failed run;
 timer reads reject that selector. A stale/foreign selector or transient tracking
 error retains the stored document/known rows with an availability warning, never
@@ -494,16 +497,18 @@ is visible. Retry POSTs recheck the stored session, never submit Generate or mov
 the approved-current pointer. Overview polls cancel on project/effective-subject
 changes and destruction. Same-scope reloads and polls retain last loaded documents
 on transient errors; 401/403 clears inaccessible data. Consecutive unavailable
-reads back off to eight intervals and stop after the normal poll timeout, leaving
-a warning/manual refresh; healthy reads reset the budget. Questions-only rows do
-not start automatic polling. Unavailable tracking retains missing same-scope
+reads never stop: they retry on the capped jittered backoff (cap
+`MKTG_POLL_MAX_BACKOFF_MS`, floored at the base interval) behind the one
+connection-state line, with no manual refresh; a healthy read resets the backoff
+and clears the line. The overview polls whatever its rows' states, questions-only
+rows included. Unavailable tracking retains missing same-scope
 run rows and suppresses absence claims, without hiding a known stored-current badge.
 
 Document navigation keeps `?generation=` (single-use in-memory prepared intake)
 separate from `?run=` (durable selected run). Only a fresh prepared proof can
 submit Generate; restored intake needs explicit action. Metadata/body failures
-share one bounded read budget and manual refresh, without hiding an acknowledged
-current-pointer write. Structured views come from the document/intake registry;
+share that one capped backoff and connection-state line and are retried
+automatically, without hiding an acknowledged current-pointer write. Structured views come from the document/intake registry;
 malformed structured assets are unsupported, never Markdown fallback. ICP is unchanged.
 
 Persistence receipts carry the exact `document_location` with `agent_key`,

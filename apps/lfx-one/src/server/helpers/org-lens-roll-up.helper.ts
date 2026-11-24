@@ -140,11 +140,12 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     throw forbidden();
   }
 
-  if (members.length < family.orgs.length) {
+  const excludedCount = family.orgs.length - members.length;
+  if (excludedCount > 0) {
     logger.debug(req, operation, 'Left organizations the caller cannot read out of the roll-up', {
       roll_up_key: rollUpKey,
       member_count: members.length,
-      excluded_count: family.orgs.length - members.length,
+      excluded_count: excludedCount,
     });
   }
 
@@ -155,7 +156,7 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
       member_count: members.length,
     });
   }
-  return { rollUpKey, rootUid, members, complete };
+  return { rollUpKey, rootUid, members, complete, excludedCount };
 }
 
 function batchAuditorChecks(req: Request, orgUids: string[]): (orgUid: string) => Promise<boolean> {
