@@ -417,15 +417,10 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    * the true state, instead of a create that fails somewhere they cannot see.
    */
   /**
-   * The two windows `ngOnInit`'s reconciliation cannot cover.
-   *
-   * It only runs on a SUCCESSFUL response, so a restored id sits unverified on the form both
-   * before the request returns and permanently if it fails — with `linkedInAccounts()` empty in
-   * each case. Without a submit gate a create would dispatch an account nothing confirmed and the
-   * selector is not showing, which is the divergence the reconciliation exists to prevent,
-   * reached where it does not run.
-   *
-   * `canSubmit` therefore requires catalog MEMBERSHIP rather than a non-empty id.
+   * The catalog membership gate, wired: before the account request returns, a restored id sits
+   * unverified on the form with `linkedInAccounts()` empty, so `canSubmit` holds the create. The rule
+   * itself (membership, not a non-empty id, and skipped when the connection decides the account) is
+   * the `linkedInCreateRefusal` table in `campaign-linkedin-form.utils.spec.ts` (#5980).
    */
   it('blocks a linkedin create while the account catalog is still loading', STATE_ONLY, async () => {
     const f = TestBed.createComponent(tabComponentUnderTest());
@@ -442,9 +437,8 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
 
   /**
    * #5809: when campaign-service owns the create, the connection decides the LinkedIn account and
-   * `adAccountId` is dropped server-side, so the selector is replaced with a read-only line and an
-   * unavailable account catalog no longer blocks a create it has no part in. Unknown or `false`
-   * keeps the selector and the gate, because the legacy creator still reads the chosen account.
+   * `adAccountId` is dropped server-side, so the selector is replaced with a read-only line. Unknown
+   * or `false` keeps the selector, because the legacy creator still reads the chosen account.
    */
   it.each([
     [true, true, false],
@@ -478,6 +472,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       canChoose: true,
       accounts: [DEFAULT_ACCOUNT, GRANT],
     };
+    const viewer = { ...chooser, canChoose: false, accounts: [DEFAULT_ACCOUNT] };
 
     let createAccountSubject: Subject<typeof chooser>;
     let createAccountCalls: string[];
@@ -600,7 +595,26 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       expect(sent).not.toHaveProperty('adAccountId');
     });
 
-    // The ED 403: while campaign-service's selection is on, naming the default needs global_marketing_ops too.
+    it('shows anyone who cannot choose the default read-only and sends no account', async () => {
+      const f = await mountWithSelection(true);
+      await answer(f, viewer);
+
+      expect(el(f, 'implementation-linkedin-create-account-select')).toBeNull();
+      expect(el(f, 'implementation-linkedin-create-account-default')?.textContent).toContain('Shared system account (100000001)');
+      // Not the legacy linkedin.json id the form still carries either.
+      expectNoAccountSent(submitAndRead(f));
+    });
+
+    it('lets a create through to the default when the account read fails', async () => {
+      const f = await mountWithSelection(true);
+      createAccountSubject.error(new Error('create-account unavailable'));
+      f.detectChanges();
+      await f.whenStable();
+
+      expect(el(f, 'implementation-linkedin-create-account-failed')).not.toBeNull();
+      expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(true);
+      expectNoAccountSent(submitAndRead(f));
+    });
   });
 
   /**

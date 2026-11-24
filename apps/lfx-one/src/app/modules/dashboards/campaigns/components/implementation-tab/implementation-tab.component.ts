@@ -6852,7 +6852,7 @@ export class ImplementationTabComponent implements OnInit {
               targetingProfile: this.linkedInTargetingProfile(),
               // Only when something was removed, so an untouched profile sends what it always did.
               ...this.linkedInTargetingEditField(),
-              variants: this.linkedInVariantsForCreate(),
+              variants: this.linkedInVariantsSent(),
               // The legacy creator reads the form's account. When the connection decides it, only a
               // chosen non-default account is sent, as `selectedAdAccountId` (#5809).
               ...this.linkedInAccountFieldsNow(),
@@ -7741,7 +7741,7 @@ export class ImplementationTabComponent implements OnInit {
    * since campaign-service refuses a variant carrying both; a variant with neither sends no image
    * field. The tab-only fields (`key`, the asset's name and brief) are never sent.
    */
-  private linkedInVariantsForCreate(): LinkedInCreativeVariant[] {
+  private linkedInVariantsSent(): LinkedInCreativeVariant[] {
     return linkedInVariantsForCreate(this.linkedInVariants(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
   }
 

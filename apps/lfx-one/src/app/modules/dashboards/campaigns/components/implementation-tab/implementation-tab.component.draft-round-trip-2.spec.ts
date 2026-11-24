@@ -574,7 +574,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   });
 
   it.each([
-    // Unknown (null) is the same rule, a table row in `campaign-linkedin-form.utils.spec.ts` (#5980).
+    ['unknown (null)', null],
     ['off', false],
   ])('withholds the daily cap, and sends none, while the deployment capability is %s', async (_name, enabled) => {
     const { fixture } = await mount(null);
