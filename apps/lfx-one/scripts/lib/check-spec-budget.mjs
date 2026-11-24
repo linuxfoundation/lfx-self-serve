@@ -12,15 +12,27 @@ export const SPEC_BUDGET_DOC = 'docs/architecture/testing/unit-testing.md#per-fi
  *   average is dominated by one-off TestBed and compile cost, and the file barely moves a shard.
  * - `noiseTolerance`: a file fails only when it exceeds its limit by this factor. Shards run files
  *   in parallel on a shared runner, so files with the same test count varied up to 1.8x (p90 1.48x)
- *   between two main runs (45257334939 and 45292906999). The baseline's 25% headroom plus this
- *   factor puts a listed file's failure point at 1.875x its recorded time.
+ *   between two main runs (45257334939 and 45292906999), and one unchanged file reached 2.06x its
+ *   recorded time in merge queue run 45324459716. The baseline's 25% headroom plus this factor puts
+ *   a listed file's failure point at 2.5x its recorded time.
  */
 export const SPEC_BUDGET = Object.freeze({
   maxSeconds: 20,
   maxMsPerTest: 150,
   perTestMinSeconds: 3,
-  noiseTolerance: 1.5,
+  noiseTolerance: 2,
 });
+
+/**
+ * Whether a budget violation fails this run. Only pull requests (and local runs) fail: the change
+ * that slowed a file is caught there, and a noisy runner must not drop an unrelated PR from the merge
+ * queue or turn main red. Other events still annotate the violation as a warning.
+ *
+ * @param {string | undefined} eventName - `GITHUB_EVENT_NAME`.
+ */
+export function budgetBlocks(eventName) {
+  return !eventName || eventName === 'pull_request';
+}
 
 /** Headroom recorded in the baseline over a file's measured time. */
 export const BASELINE_HEADROOM = 1.25;

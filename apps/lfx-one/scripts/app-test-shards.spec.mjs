@@ -165,9 +165,17 @@ describe('shard CLI', () => {
       expect(process.exitCode).toBe(0);
       expect(log).toHaveBeenCalledWith(expect.stringContaining('all within budget'));
 
-      await run({ status: 0, ms: 31_000 });
+      vi.stubEnv('GITHUB_EVENT_NAME', 'pull_request');
+      await run({ status: 0, ms: 41_000 });
       expect(process.exitCode).toBe(1);
-      expect(errorLog).toHaveBeenCalledWith(expect.stringMatching(/Spec runtime budget: src\/app\/.+ took 31\.0s, over .+unit-testing\.md/));
+      expect(errorLog).toHaveBeenCalledWith(expect.stringMatching(/Spec runtime budget: src\/app\/.+ took 41\.0s, over .+unit-testing\.md/));
+
+      // The same violation on a merge queue run is only a warning.
+      vi.stubEnv('GITHUB_EVENT_NAME', 'merge_group');
+      await run({ status: 0, ms: 41_000 });
+      expect(process.exitCode).toBe(0);
+      expect(errorLog).toHaveBeenCalledWith(expect.stringMatching(/Spec runtime budget \(warning only on merge_group runs\): src\/app\/.+ took 41\.0s/));
+      vi.unstubAllEnvs();
 
       await run({ status: 0, ms: null });
       expect(process.exitCode).toBe(1);
@@ -183,6 +191,7 @@ describe('shard CLI', () => {
     } finally {
       process.argv = argv;
       process.exitCode = exitCode;
+      vi.unstubAllEnvs();
       log.mockRestore();
       errorLog.mockRestore();
       write.mockRestore();

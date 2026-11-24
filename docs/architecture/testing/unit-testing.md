@@ -118,16 +118,20 @@ After its specs finish, each shard reads Vitest's per-file lines
 
 | Rule                                                        | Budget | CI fails above |
 | ----------------------------------------------------------- | -----: | -------------: |
-| Total time per spec file                                    |   20 s |           30 s |
-| Average per test, for files that run 3 s or longer in total | 150 ms |         225 ms |
+| Total time per spec file                                    |   20 s |           40 s |
+| Average per test, for files that run 3 s or longer in total | 150 ms |         300 ms |
 
-- **Noise margin.** CI fails only at 1.5× a limit. Shards run files in parallel on a shared runner,
-  and files with the same test count varied by up to 1.8× between two main runs (p90 1.48×), so a
-  tighter line would fail PRs that did not touch the file.
+- **Noise margin.** CI fails only at 2× a limit. Shards run files in parallel on a shared runner,
+  and files with the same test count varied by up to 1.8× between two main runs (p90 1.48×); one
+  unchanged file reached 2.06× its recorded time in a merge queue run. A tighter line would fail PRs
+  that did not touch the file.
+- **Pull requests only.** The budget fails pull request runs (and local runs). On merge queue and
+  `main` runs a violation is a warning annotation, so a noisy runner never drops an unrelated PR from
+  the queue; the PR that slowed a file is the one that gets stopped.
 - **Ratchet baseline.** `scripts/spec-budget-baseline.json` lists every file whose time plus 25%
   headroom exceeded a budget on main run 45292906999, at that time plus 25%. A listed file is held
   to the larger of the budget and its own entry, so it fails only when it gets slower than it was:
-  about 1.9× its recorded time once the noise margin applies. Nothing on main fails today.
+  2.5× its recorded time once the noise margin applies. Nothing on main fails today.
 - **Tighten, never loosen.** When you speed up a listed file, lower or delete its entry in the same
   PR. Do not raise an entry to make a slower spec pass. `--write-budget-baseline` on the refresh
   script below regenerates the whole file from one run, which resets the ratchet; use it only when

@@ -4,36 +4,48 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { buildSpecBudgetBaseline, checkSpecBudget, formatViolation, SPEC_BUDGET } from './check-spec-budget.mjs';
+import { budgetBlocks, buildSpecBudgetBaseline, checkSpecBudget, formatViolation, SPEC_BUDGET } from './check-spec-budget.mjs';
 
 const FILE = 'src/app/x.spec.ts';
 const timing = (ms, tests) => [{ file: FILE, tests, ms }];
 
 describe('checkSpecBudget', () => {
-  // Budget 20 s and 150 ms per test, failing above 1.5x: 30 s and 225 ms per test unlisted.
+  // Budget 20 s and 150 ms per test, failing above 2x: 40 s and 300 ms per test unlisted.
   it.each([
     ['fast file', timing(5_000, 100), {}, []],
-    ['over budget but inside the noise tolerance', timing(29_000, 1_000), {}, []],
-    ['over the total, unlisted', timing(31_000, 1_000), {}, [['seconds', 31, 20, 30, false]]],
-    ['slow per test, unlisted', timing(4_600, 20), {}, [['msPerTest', 230, 150, 225, false]]],
+    ['over budget but inside the noise tolerance', timing(39_000, 1_000), {}, []],
+    ['over the total, unlisted', timing(41_000, 1_000), {}, [['seconds', 41, 20, 40, false]]],
+    ['slow per test, unlisted', timing(6_100, 20), {}, [['msPerTest', 305, 150, 300, false]]],
     ['slow per test, but under the per-test floor', timing(2_900, 1), {}, []],
     ['zero tests run (all skipped)', timing(4_000, 0), {}, []],
     ['listed and within its baseline', timing(40_000, 100), { [FILE]: { seconds: 30, msPerTest: 400 } }, []],
-    ['listed and slower than its baseline', timing(46_000, 100), { [FILE]: { seconds: 30, msPerTest: 400 } }, [['seconds', 46, 30, 45, true]]],
-    ['a baseline below the budget never tightens it', timing(29_000, 1_000), { [FILE]: { seconds: 10 } }, []],
+    ['listed and slower than its baseline', timing(61_000, 100), { [FILE]: { seconds: 30, msPerTest: 400 } }, [['seconds', 61, 30, 60, true]]],
+    ['a baseline below the budget never tightens it', timing(39_000, 1_000), { [FILE]: { seconds: 10 } }, []],
     // Listed for seconds only, so a per-test failure is against the global budget, not a baseline.
-    ['listed for one metric only', timing(10_000, 20), { [FILE]: { seconds: 25 } }, [['msPerTest', 500, 150, 225, false]]],
-    ['a baseline for another file does not apply', timing(31_000, 1_000), { 'src/app/other.spec.ts': { seconds: 60 } }, [['seconds', 31, 20, 30, false]]],
+    ['listed for one metric only', timing(10_000, 20), { [FILE]: { seconds: 25 } }, [['msPerTest', 500, 150, 300, false]]],
+    ['a baseline for another file does not apply', timing(41_000, 1_000), { 'src/app/other.spec.ts': { seconds: 60 } }, [['seconds', 41, 20, 40, false]]],
   ])('%s', (_, timings, baseline, expected) => {
     const actual = checkSpecBudget(timings, baseline).map(({ metric, measured, limit, failAt, listed }) => [metric, measured, limit, failAt, listed]);
     expect(actual).toEqual(expected);
   });
 
   it('names the file, its time, the limit and the doc', () => {
-    const [violation] = checkSpecBudget(timing(31_000, 1_000), {});
+    const [violation] = checkSpecBudget(timing(41_000, 1_000), {});
     expect(formatViolation(violation)).toBe(
-      'src/app/x.spec.ts took 31.0s, over the budget of 20.0s (fails above 30.0s, 1.5x for CI noise). See docs/architecture/testing/unit-testing.md#per-file-runtime-budget.'
+      'src/app/x.spec.ts took 41.0s, over the budget of 20.0s (fails above 40.0s, 2x for CI noise). See docs/architecture/testing/unit-testing.md#per-file-runtime-budget.'
     );
+  });
+});
+
+describe('budgetBlocks', () => {
+  it.each([
+    [undefined, true],
+    ['pull_request', true],
+    ['merge_group', false],
+    ['push', false],
+    ['workflow_dispatch', false],
+  ])('%s blocks: %s', (eventName, expected) => {
+    expect(budgetBlocks(eventName)).toBe(expected);
   });
 });
 

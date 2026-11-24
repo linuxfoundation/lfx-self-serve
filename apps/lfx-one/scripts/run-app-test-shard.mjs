@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createAppTestShards, discoverSpecs, parseShard } from './lib/app-test-shards.mjs';
-import { checkSpecBudget, formatViolation } from './lib/check-spec-budget.mjs';
+import { budgetBlocks, checkSpecBudget, formatViolation } from './lib/check-spec-budget.mjs';
 import { attachSpecPaths, missingSpecs, parseVitestFileLines } from './lib/spec-timings.mjs';
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -80,7 +80,7 @@ function runShard(selected, label) {
   });
 }
 
-/** Returns true when the shard must fail on the per-file runtime budget (#5980). */
+/** Returns true when the shard must fail on the per-file runtime budget (#5980); see budgetBlocks. */
 function checkBudget(output, selected) {
   const { matched, unknown } = attachSpecPaths(parseVitestFileLines(output), selected);
   if (unknown.length > 0) console.log(`[test:app] timings for specs outside this shard were ignored: ${unknown.join(', ')}`);
@@ -99,11 +99,12 @@ function checkBudget(output, selected) {
   }
   const { files: baseline } = JSON.parse(readFileSync(join(APP_ROOT, 'scripts/spec-budget-baseline.json'), 'utf8'));
   const violations = checkSpecBudget(matched, baseline);
+  const blocks = budgetBlocks(process.env.GITHUB_EVENT_NAME);
   for (const violation of violations) {
     const message = formatViolation(violation);
-    console.error(`[test:app] Spec runtime budget: ${message}`);
-    if (process.env.GITHUB_ACTIONS) console.log(`::error file=apps/lfx-one/${violation.file},title=Spec runtime budget::${message}`);
+    console.error(`[test:app] Spec runtime budget${blocks ? '' : ` (warning only on ${process.env.GITHUB_EVENT_NAME} runs)`}: ${message}`);
+    if (process.env.GITHUB_ACTIONS) console.log(`::${blocks ? 'error' : 'warning'} file=apps/lfx-one/${violation.file},title=Spec runtime budget::${message}`);
   }
   if (violations.length === 0) console.log(`[test:app] Spec runtime budget: ${matched.length} spec files checked, all within budget.`);
-  return violations.length > 0;
+  return blocks && violations.length > 0;
 }
