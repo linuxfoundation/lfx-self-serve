@@ -348,7 +348,9 @@ export class ProjectService {
     changes: UpdateDocumentRequest
   ): Observable<ProjectDocument> {
     const params = new HttpParams().set('type', documentType);
-    return this.http.patch<ProjectDocument>(`/api/projects/${projectUid}/documents/${documentId}`, changes, { params }).pipe(take(1));
+    return this.http
+      .patch<ProjectDocument>(`/api/projects/${encodeURIComponent(projectUid)}/documents/${encodeURIComponent(documentId)}`, changes, { params })
+      .pipe(take(1));
   }
 
   /**

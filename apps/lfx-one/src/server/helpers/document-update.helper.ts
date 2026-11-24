@@ -17,7 +17,8 @@ export function parseDocumentUpdateRequest(
   nameMaxLength: number
 ): { request: UpdateDocumentRequest; fieldErrors: Record<string, string> } {
   const request: UpdateDocumentRequest = {};
-  const fieldErrors: Record<string, string> = {};
+  // Keys come from the client, so the map has no prototype: a `__proto__` key must be recorded like any other, not swallowed.
+  const fieldErrors: Record<string, string> = Object.create(null);
 
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     return { request, fieldErrors: { body: 'Request body must be a JSON object' } };

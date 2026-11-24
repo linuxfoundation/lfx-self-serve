@@ -2082,44 +2082,13 @@ export class CommitteeService {
     ]);
 
     // Normalize folders → CommitteeDocument
-    const folderDocs: CommitteeDocument[] = (folders || []).map((f) => ({
-      uid: f.uid,
-      type: 'folder' as const,
-      name: f.name,
-      created_at: f.created_at,
-      updated_at: f.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.created_by_username),
-      committee_uid: f.committee_uid,
-    }));
+    const folderDocs: CommitteeDocument[] = (folders || []).map((f) => this.toFolderDocument(f));
 
     // Normalize links → CommitteeDocument
-    const linkDocs: CommitteeDocument[] = (links || []).map((l) => ({
-      uid: l.uid,
-      type: 'link' as const,
-      name: l.name,
-      url: l.url,
-      description: l.description,
-      created_at: l.created_at,
-      updated_at: l.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(l.created_by, l.created_by_username),
-      parent_uid: l.folder_uid,
-      committee_uid: l.committee_uid,
-    }));
+    const linkDocs: CommitteeDocument[] = (links || []).map((l) => this.toLinkDocument(l));
 
     // Normalize uploaded files → CommitteeDocument
-    const fileDocs: CommitteeDocument[] = (files || []).map((f) => ({
-      uid: f.uid,
-      type: 'file' as const,
-      name: f.name,
-      description: f.description,
-      file_size: f.file_size,
-      mime_type: f.content_type,
-      created_at: f.created_at,
-      updated_at: f.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
-      parent_uid: f.folder_uid,
-      committee_uid: f.committee_uid,
-    }));
+    const fileDocs: CommitteeDocument[] = (files || []).map((f) => this.toFileDocument(f));
 
     return [...folderDocs, ...linkDocs, ...fileDocs];
   }
@@ -2150,15 +2119,7 @@ export class CommitteeService {
         folder_uid: folder.uid,
       });
 
-      return {
-        uid: folder.uid,
-        type: 'folder',
-        name: folder.name,
-        created_at: folder.created_at,
-        updated_at: folder.updated_at,
-        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
-        committee_uid: folder.committee_uid,
-      };
+      return this.toFolderDocument(folder);
     }
 
     // Link
@@ -2181,18 +2142,7 @@ export class CommitteeService {
       link_uid: link.uid,
     });
 
-    return {
-      uid: link.uid,
-      type: 'link',
-      name: link.name,
-      url: link.url,
-      description: link.description,
-      created_at: link.created_at,
-      updated_at: link.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
-      parent_uid: link.folder_uid,
-      committee_uid: link.committee_uid,
-    };
+    return this.toLinkDocument(link);
   }
 
   /**
@@ -2422,7 +2372,13 @@ export class CommitteeService {
       document_type: documentType,
     });
 
-    return this.toUpdatedCommitteeDocument(documentType, updated);
+    if (documentType === 'folder') {
+      return this.toFolderDocument(updated as CommitteeFolder);
+    }
+    if (documentType === 'link') {
+      return this.toLinkDocument(updated as CommitteeLink);
+    }
+    return this.toFileDocument(updated as CommitteeDocumentUpstreamResponse);
   }
 
   /**
@@ -3076,41 +3032,37 @@ export class CommitteeService {
     return pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
   }
 
-  /** Maps the record an upstream update returns to the shape the Documents tab lists, by the type that was updated. */
-  private toUpdatedCommitteeDocument(
-    documentType: ProjectDocumentType,
-    updated: CommitteeFolder | CommitteeLink | CommitteeDocumentUpstreamResponse
-  ): CommitteeDocument {
-    if (documentType === 'folder') {
-      const folder = updated as CommitteeFolder;
-      return {
-        uid: folder.uid,
-        type: 'folder',
-        name: folder.name,
-        created_at: folder.created_at,
-        updated_at: folder.updated_at,
-        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
-        committee_uid: folder.committee_uid,
-      };
-    }
+  /** Maps an upstream folder to the shape the Documents tab lists. */
+  private toFolderDocument(folder: CommitteeFolder): CommitteeDocument {
+    return {
+      uid: folder.uid,
+      type: 'folder',
+      name: folder.name,
+      created_at: folder.created_at,
+      updated_at: folder.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
+      committee_uid: folder.committee_uid,
+    };
+  }
 
-    if (documentType === 'link') {
-      const link = updated as CommitteeLink;
-      return {
-        uid: link.uid,
-        type: 'link',
-        name: link.name,
-        url: link.url,
-        description: link.description,
-        created_at: link.created_at,
-        updated_at: link.updated_at,
-        uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
-        parent_uid: link.folder_uid,
-        committee_uid: link.committee_uid,
-      };
-    }
+  /** Maps an upstream link to the shape the Documents tab lists. */
+  private toLinkDocument(link: CommitteeLink): CommitteeDocument {
+    return {
+      uid: link.uid,
+      type: 'link',
+      name: link.name,
+      url: link.url,
+      description: link.description,
+      created_at: link.created_at,
+      updated_at: link.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
+      parent_uid: link.folder_uid,
+      committee_uid: link.committee_uid,
+    };
+  }
 
-    const file = updated as CommitteeDocumentUpstreamResponse;
+  /** Maps an upstream uploaded file, from the upstream or the indexer, to the shape the Documents tab lists. */
+  private toFileDocument(file: CommitteeDocumentQueryResult): CommitteeDocument {
     return {
       uid: file.uid,
       type: 'file',

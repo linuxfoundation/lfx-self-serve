@@ -543,17 +543,21 @@ describe('CommitteeService — updateCommitteeDocument', () => {
     expect(file).toMatchObject({ type: 'file', name: 'Charter', file_size: 12, mime_type: 'application/pdf', parent_uid: FOLDER_B });
   });
 
-  it('passes a conflict (a name another record holds, or a stale ETag) on as it is', async () => {
+  it.each([
+    [403, 'not a writer on the group'],
+    [404, 'document or folder not found'],
+    [409, 'a name another record holds, or a stale ETag'],
+  ])('passes an upstream %i (%s) on from the write as it is', async (statusCode, message) => {
     fetchWithETag.mockResolvedValue({ data: { name: 'Old' }, etag: 'etag-1' });
-    updateWithETag.mockRejectedValue({ statusCode: 409, message: 'document with the same name already exists for this committee' });
+    updateWithETag.mockRejectedValue({ statusCode, message });
 
-    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { name: 'Taken' })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { name: 'Taken' })).rejects.toMatchObject({ statusCode, message });
   });
 
-  it('does not write when the record cannot be read', async () => {
-    fetchWithETag.mockRejectedValue({ statusCode: 404 });
+  it.each([403, 404])('does not write when the read comes back %i', async (statusCode) => {
+    fetchWithETag.mockRejectedValue({ statusCode });
 
-    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { name: 'New' })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { name: 'New' })).rejects.toMatchObject({ statusCode });
     expect(updateWithETag).not.toHaveBeenCalled();
   });
 

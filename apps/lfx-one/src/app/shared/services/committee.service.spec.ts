@@ -233,6 +233,12 @@ describe('CommitteeService.updateCommitteeDocument', () => {
     expect(result).toEqual({ uid: 'doc-1', type: 'link', name: 'Renamed' });
   });
 
+  it('encodes the ids it puts in the path', () => {
+    service.updateCommitteeDocument('a/b', 'c d?e', 'file', { name: 'Renamed' }).subscribe();
+
+    expect(patch.mock.calls[0][0]).toBe('/api/committees/a%2Fb/documents/c%20d%3Fe');
+  });
+
   it('sends a move to the root as a null folder', () => {
     service.updateCommitteeDocument('committee-1', 'doc-1', 'file', { parent_uid: null }).subscribe();
 

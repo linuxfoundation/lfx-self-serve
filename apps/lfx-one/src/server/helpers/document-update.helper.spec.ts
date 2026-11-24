@@ -57,6 +57,13 @@ describe('parseDocumentUpdateRequest', () => {
     expect(fieldErrors).toEqual(expectedErrors);
   });
 
+  it('refuses a __proto__ key like any other field that cannot be edited', () => {
+    const { request, fieldErrors } = parseDocumentUpdateRequest(JSON.parse('{"__proto__": 1, "name": "Ok"}'), 'file', 200);
+
+    expect(Object.keys(fieldErrors)).toEqual(['__proto__']);
+    expect(request).toEqual({ name: 'Ok' });
+  });
+
   it('keeps what was valid next to what was not, so the caller can report every problem', () => {
     const { request, fieldErrors } = parseDocumentUpdateRequest({ name: 'Ok', parent_uid: 'nope' }, 'file', 200);
 

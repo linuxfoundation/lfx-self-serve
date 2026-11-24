@@ -3327,17 +3327,18 @@ describe('ProjectService.updateProjectDocument', () => {
     ['link', '/projects/project-1/links/doc-1', { name: 'Old', url: 'https://example.com', description: 'A link', folder_uid: FOLDER_A }],
     ['file', '/projects/project-1/documents/doc-1', { name: 'Old', description: 'A file', folder_uid: FOLDER_A }],
     ['folder', '/projects/project-1/folders/doc-1', { name: 'Old' }],
-  ] as const)('renames a %s through its own upstream path, with the fetched ETag and X-Sync', async (type, path, current) => {
-    fetchWithETag.mockResolvedValue({ data: current, etag: 'etag-1' });
+  ] as const)(
+    'renames a %s through its own upstream path, with the fetched ETag and no X-Sync (the project service ignores it)',
+    async (type, path, current) => {
+      fetchWithETag.mockResolvedValue({ data: current, etag: 'etag-1' });
 
-    await service.updateProjectDocument(req, 'project-1', 'doc-1', type, { name: 'New' });
+      await service.updateProjectDocument(req, 'project-1', 'doc-1', type, { name: 'New' });
 
-    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'update_project_document');
-    expect(updateWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', expect.objectContaining({ name: 'New' }), 'update_project_document', {
-      'X-Sync': 'true',
-    });
-    expect(proxyRequest).not.toHaveBeenCalled();
-  });
+      expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'update_project_document');
+      expect(updateWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', expect.objectContaining({ name: 'New' }), 'update_project_document');
+      expect(proxyRequest).not.toHaveBeenCalled();
+    }
+  );
 
   it('carries the description, url and folder over on a link rename', async () => {
     fetchWithETag.mockResolvedValue({ data: { name: 'Old', url: 'https://example.com', description: 'A link', folder_uid: FOLDER_A }, etag: 'etag-1' });
@@ -3390,17 +3391,21 @@ describe('ProjectService.updateProjectDocument', () => {
     expect(file).toMatchObject({ type: 'file', name: 'Charter', file_size: 12, mime_type: 'application/pdf', parent_uid: FOLDER_B });
   });
 
-  it('passes a conflict (a name another record holds, or a stale ETag) on as it is', async () => {
+  it.each([
+    [403, 'not a writer on the project'],
+    [404, 'document or folder not found'],
+    [409, 'a name another record holds, or a stale ETag'],
+  ])('passes an upstream %i (%s) on from the write as it is', async (statusCode, message) => {
     fetchWithETag.mockResolvedValue({ data: { name: 'Old' }, etag: 'etag-1' });
-    updateWithETag.mockRejectedValue({ statusCode: 409, message: 'document with the same name already exists for this project' });
+    updateWithETag.mockRejectedValue({ statusCode, message });
 
-    await expect(service.updateProjectDocument(req, 'project-1', 'doc-1', 'file', { name: 'Taken' })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(service.updateProjectDocument(req, 'project-1', 'doc-1', 'file', { name: 'Taken' })).rejects.toMatchObject({ statusCode, message });
   });
 
-  it('does not write when the record cannot be read', async () => {
-    fetchWithETag.mockRejectedValue({ statusCode: 404 });
+  it.each([403, 404])('does not write when the read comes back %i', async (statusCode) => {
+    fetchWithETag.mockRejectedValue({ statusCode });
 
-    await expect(service.updateProjectDocument(req, 'project-1', 'doc-1', 'file', { name: 'New' })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.updateProjectDocument(req, 'project-1', 'doc-1', 'file', { name: 'New' })).rejects.toMatchObject({ statusCode });
     expect(updateWithETag).not.toHaveBeenCalled();
   });
 

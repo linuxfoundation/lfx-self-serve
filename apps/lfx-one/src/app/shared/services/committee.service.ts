@@ -463,7 +463,9 @@ export class CommitteeService {
     changes: UpdateDocumentRequest
   ): Observable<CommitteeDocument> {
     const params = new HttpParams().set('type', documentType);
-    return this.http.patch<CommitteeDocument>(`/api/committees/${committeeId}/documents/${documentId}`, changes, { params }).pipe(take(1));
+    return this.http
+      .patch<CommitteeDocument>(`/api/committees/${encodeURIComponent(committeeId)}/documents/${encodeURIComponent(documentId)}`, changes, { params })
+      .pipe(take(1));
   }
 
   // ── My Committees ─────────────────────────────────────────────────────────

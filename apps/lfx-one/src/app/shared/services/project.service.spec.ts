@@ -384,6 +384,12 @@ describe('ProjectService.updateProjectDocument', () => {
     expect(result).toEqual({ uid: 'doc-1', type: 'file', name: 'Renamed' });
   });
 
+  it('encodes the ids it puts in the path', () => {
+    service.updateProjectDocument('a/b', 'c d?e', 'file', { name: 'Renamed' }).subscribe();
+
+    expect(patch.mock.calls[0][0]).toBe('/api/projects/a%2Fb/documents/c%20d%3Fe');
+  });
+
   it('sends a move into a folder and a move to the root as given', () => {
     service.updateProjectDocument('project-1', 'doc-1', 'link', { parent_uid: '3f2a8c1e-5b7d-4e69-9a0f-1c2d3e4f5a6b' }).subscribe();
     service.updateProjectDocument('project-1', 'doc-1', 'link', { parent_uid: null }).subscribe();
