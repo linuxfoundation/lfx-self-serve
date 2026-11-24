@@ -76,7 +76,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     '../../../../../packages/shared/src/constants/documents.constants'
   );
   return {
-    COMMITTEE_DOCUMENT_DELETE_TYPES: documentConstants.COMMITTEE_DOCUMENT_DELETE_TYPES,
+    DOCUMENT_DELETE_TYPES: documentConstants.DOCUMENT_DELETE_TYPES,
     DOCUMENT_UPDATE_TYPES: documentConstants.DOCUMENT_UPDATE_TYPES,
     DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
@@ -419,19 +419,12 @@ describe('CommitteeService — deleteCommitteeDocument', () => {
   it.each([
     ['link', '/committees/committee-1/links/doc-1'],
     ['file', '/committees/committee-1/documents/doc-1'],
+    ['folder', '/committees/committee-1/folders/doc-1'],
   ] as const)('deletes a %s through its own upstream path with the fetched ETag', async (type, path) => {
     await service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', type);
 
     expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'delete_committee_document');
     expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', 'delete_committee_document');
-    expect(proxyRequest).not.toHaveBeenCalled();
-    expect(fetchAllQueryResources).not.toHaveBeenCalled();
-  });
-
-  it('rejects a folder before any upstream call: group folder delete is not available until the upstream guard is deployed', async () => {
-    await expect(service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 400 });
-    expect(fetchWithETag).not.toHaveBeenCalled();
-    expect(deleteWithETag).not.toHaveBeenCalled();
     expect(proxyRequest).not.toHaveBeenCalled();
     expect(fetchAllQueryResources).not.toHaveBeenCalled();
   });

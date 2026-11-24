@@ -511,8 +511,7 @@ export class CommitteeDocumentsComponent {
       isChild,
       downloadUrl: isFile && ownerCommitteeUid ? `/api/committees/${ownerCommitteeUid}/documents/${doc.uid}/download` : undefined,
       uploadedBy: doc.uploaded_by,
-      // Folders have no delete yet (see COMMITTEE_DOCUMENT_DELETE_TYPES), so their rows get no actions menu.
-      manageableType: doc.type === 'folder' ? undefined : doc.type,
+      manageableType: doc.type,
     };
   }
 
