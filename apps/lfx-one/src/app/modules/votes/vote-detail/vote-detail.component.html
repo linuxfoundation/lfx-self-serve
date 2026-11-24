@@ -269,7 +269,8 @@
               [isClosed]="isVoteClosed()"
               [isEnded]="isEnded()"
               [isActive]="isActive()"
-              [ballotsLoading]="condorcetBallotsLoading()" />
+              [ballotsLoading]="condorcetBallotsLoading()"
+              [ballotsStale]="condorcetBallotsStale()" />
           }
         } @else {
           @for (question of rankedQuestions(); track question.questionId; let idx = $index) {

@@ -12,7 +12,7 @@ import type {
   VoteResultsResponse,
   VoteVoter,
 } from '../interfaces/poll.interface';
-import { buildCondorcetQuestionViews, buildCondorcetRankingsSignature, buildCondorcetSummaryLines } from './condorcet-results.utils';
+import { buildCondorcetQuestionViews, buildCondorcetSummaryLines } from './condorcet-results.utils';
 
 const CHOICES = [
   { choice_id: 'a', choice_text: 'Candidate A' },
@@ -366,29 +366,6 @@ describe('buildCondorcetQuestionViews', () => {
   it('marks ballot patterns unavailable when no ballots are provided', () => {
     expect(view(question(), null).ballotPatterns).toBeNull();
     expect(view(question(), []).ballotPatterns).toEqual([]);
-  });
-});
-
-describe('buildCondorcetRankingsSignature', () => {
-  it('ignores the order ranked_choice_votes arrive in', () => {
-    const q = question();
-    const reordered = question({ ranked_choice_votes: [...(q.ranked_choice_votes ?? [])].reverse() });
-    expect(buildCondorcetRankingsSignature(results(reordered))).toBe(buildCondorcetRankingsSignature(results(q)));
-  });
-
-  it('changes when a revised ranking moves rank counts without changing the ballot count', () => {
-    // One voter moves A from 2nd to 1st and B from 1st to 2nd; num_votes_cast stays 5.
-    const revised = question({
-      ranked_choice_votes: rankedVotes(
-        [
-          ['a', 'b', 4, 1],
-          ['a', 'c', 4, 1],
-          ['b', 'c', 3, 2],
-        ],
-        { a: [2, 3, 0], b: [2, 2, 1], c: [1, 0, 4] }
-      ),
-    });
-    expect(buildCondorcetRankingsSignature(results(revised))).not.toBe(buildCondorcetRankingsSignature(results(question())));
   });
 });
 

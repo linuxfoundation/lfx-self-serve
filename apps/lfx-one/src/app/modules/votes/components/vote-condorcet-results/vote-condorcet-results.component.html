@@ -137,6 +137,11 @@
   <section class="flex flex-col gap-2 border-t border-slate-200 pt-4" data-testid="vote-condorcet-ballots">
     <h5 class="text-sm font-semibold text-gray-900">Ballot Ranking Distribution</h5>
     @if (q.ballotPatterns; as patterns) {
+      @if (ballotsStale()) {
+        <p class="text-sm text-amber-700" role="status" data-testid="vote-condorcet-ballots-stale">
+          Ballot rankings may be out of date. The latest refresh failed.
+        </p>
+      }
       @if (patterns.length > 0) {
         <div class="relative overflow-x-auto rounded-lg border border-gray-200">
           <table class="w-full border-collapse text-xs">

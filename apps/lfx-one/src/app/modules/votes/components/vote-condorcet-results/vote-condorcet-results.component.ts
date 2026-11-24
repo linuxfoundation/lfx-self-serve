@@ -32,6 +32,8 @@ export class VoteCondorcetResultsComponent {
   public readonly isActive = input<boolean>(true);
   /** Named ballots are still loading, so the ballot section waits instead of saying they aren't available. */
   public readonly ballotsLoading = input<boolean>(false);
+  /** A failed refresh retained previously loaded ballots, which may no longer match the latest results. */
+  public readonly ballotsStale = input<boolean>(false);
 
   // === Computed Signals ===
   protected readonly outcomeMessage: Signal<string> = this.initOutcomeMessage();

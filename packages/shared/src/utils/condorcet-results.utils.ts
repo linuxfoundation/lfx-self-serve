@@ -53,25 +53,6 @@ export function buildCondorcetSummaryLines(views: CondorcetQuestionView[], isClo
   });
 }
 
-/**
- * A stable signature of every question's per-choice rank counts (#5969)
- * @description A voter who revises a ranking leaves `num_votes_cast` unchanged but moves at least one rank count, so
- * this tells a caller when named ballots must be read again. Choices are sorted, because upstream's
- * `ranked_choice_votes` order is unstable.
- * @param results - VoteResultsResponse from the results API
- * @returns The same string for the same rank counts
- */
-export function buildCondorcetRankingsSignature(results: VoteResultsResponse): string {
-  return (results.poll_results ?? [])
-    .map((pr) => {
-      const choices = (pr.ranked_choice_votes ?? [])
-        .map((rcv) => `${rcv.choice_id}=${(rcv.rank_counts ?? []).map((rc) => `${rc.rank}:${rc.count}`).join(',')}`)
-        .sort();
-      return `${pr.question.question_id}(${choices.join(';')})`;
-    })
-    .join('|');
-}
-
 function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null): CondorcetQuestionView {
   const rankedVotes = pr.ranked_choice_votes ?? [];
   const textById = new Map((pr.question.choices ?? []).map((choice) => [choice.choice_id, choice.choice_text]));

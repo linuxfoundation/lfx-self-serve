@@ -53,7 +53,6 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildCondorcetQuestionViews,
-  buildCondorcetRankingsSignature,
   buildCondorcetSummaryLines,
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
@@ -322,10 +321,9 @@ export class VoteDetailComponent {
   /** Condorcet IRV gets its own results layout (#5969); Instant Runoff and Meek STV keep the ranked distributions. */
   protected readonly isCondorcetPoll: Signal<boolean> = computed(() => this.vote()?.poll_type === PollType.CONDORCET_IRV);
   /** Which vote's named ballots to read for the Condorcet ballot ranking distribution — a manager on a named vote only (#5969). */
-  private readonly condorcetBallotsKey: Signal<{ uid: string; tick: number; votesCast: number; rankings: string; closed: boolean; draft: boolean } | null> =
-    this.initCondorcetBallotsKey();
-  /** The latest ballots read and the vote it belongs to; `voters` is null when the read failed. */
-  private readonly condorcetBallotsRead: Signal<{ uid: string; voters: VoteVoter[] | null } | null> = this.initCondorcetBallotsRead();
+  private readonly condorcetBallotsKey: Signal<{ uid: string; tick: number; closed: boolean; draft: boolean } | null> = this.initCondorcetBallotsKey();
+  /** The latest ballot read; failed refreshes retain same-vote ballots and mark them stale. */
+  private readonly condorcetBallotsRead: Signal<{ uid: string; voters: VoteVoter[] | null; stale: boolean } | null> = this.initCondorcetBallotsRead();
   /** Ballots for the current vote; null hides the table behind the "not available" note. */
   private readonly condorcetBallots: Signal<VoteVoter[] | null> = computed(() => {
     const read = this.condorcetBallotsRead();
@@ -337,6 +335,7 @@ export class VoteDetailComponent {
     const key = this.condorcetBallotsKey();
     return !!key && this.condorcetBallotsRead()?.uid !== key.uid;
   });
+  protected readonly condorcetBallotsStale: Signal<boolean> = computed(() => this.condorcetBallots() !== null && this.condorcetBallotsRead()?.stale === true);
   protected readonly condorcetQuestions: Signal<CondorcetQuestionView[]> = computed(() =>
     buildCondorcetQuestionViews(this.voteResults(), this.condorcetBallots())
   );
@@ -845,20 +844,15 @@ export class VoteDetailComponent {
   }
 
   /**
-   * A manager of a named Condorcet vote reads the voters list on the Results tab once its results load, again whenever
-   * the results poll reports a different ballot count or different rank counts (a revised ranking keeps the count) or
-   * the vote finalizes, and after a ballot from this page, so its ballot orderings match its other tables.
-   * Pseudo-anonymous votes return participation-only rows, and voters can't read ballots at all, so neither gets a key
-   * and the table gives way to a note (#5969). A draft has no ballots and GET /api/votes/:uid/voters refuses it (409),
-   * so it skips the read, just as `showVotersTab` hides the Voters tab.
+   * Only managers of named Condorcet votes on Results can read ballots (#5969). A draft skips the voters endpoint
+   * (409). Aggregate counts cannot identify all revised ballot patterns, so eligible live ballots poll independently.
    */
-  private initCondorcetBallotsKey(): Signal<{ uid: string; tick: number; votesCast: number; rankings: string; closed: boolean; draft: boolean } | null> {
+  private initCondorcetBallotsKey(): Signal<{ uid: string; tick: number; closed: boolean; draft: boolean } | null> {
     return computed(() => {
       const uid = this.vote()?.uid;
-      const results = this.voteResults();
       if (
         !uid ||
-        !results ||
+        !this.voteResults() ||
         !this.isCondorcetPoll() ||
         this.audience() !== 'creator' ||
         this.isPseudoAnonymous() ||
@@ -866,48 +860,49 @@ export class VoteDetailComponent {
         this.activeTab() !== 'results'
       )
         return null;
-      return {
-        uid,
-        tick: this.refreshTick(),
-        votesCast: results.num_votes_cast,
-        rankings: buildCondorcetRankingsSignature(results),
-        closed: this.isVoteClosed(),
-        draft: !this.showVotersTab(),
-      };
+      return { uid, tick: this.refreshTick(), closed: this.isVoteClosed(), draft: !this.showVotersTab() };
     });
   }
 
   /**
-   * A failed first read settles with null voters, so it ends the loading state and shows the "not available" note;
-   * a failed re-read of the same vote keeps its last ballots. Leaving the Results tab (a null key) keeps them too, so a
-   * failed read on returning still has them.
+   * Visible-tab, sequential reads catch revisions even when aggregate counts cancel out. Temporary failures retry
+   * with capped backoff and retain same-vote ballots with a stale notice. Finalized votes stop after success or 12
+   * settled attempts, including across visibility wakes. Tab/access/route changes and destruction cancel the loop.
    */
-  private initCondorcetBallotsRead(): Signal<{ uid: string; voters: VoteVoter[] | null } | null> {
-    let last: { uid: string; voters: VoteVoter[] | null } | null = null;
+  private initCondorcetBallotsRead(): Signal<{ uid: string; voters: VoteVoter[] | null; stale: boolean } | null> {
+    let last: { uid: string; voters: VoteVoter[] } | null = null;
     return toSignal(
       toObservable(this.condorcetBallotsKey).pipe(
-        distinctUntilChanged(
-          (a, b) =>
-            a?.uid === b?.uid &&
-            a?.tick === b?.tick &&
-            a?.votesCast === b?.votesCast &&
-            a?.rankings === b?.rankings &&
-            a?.closed === b?.closed &&
-            a?.draft === b?.draft
-        ),
+        distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.tick === b?.tick && a?.closed === b?.closed && a?.draft === b?.draft),
         switchMap((key) => {
           if (!key) return of(null);
-          if (key.draft) return of({ uid: key.uid, voters: [] });
-          return this.voteService.getVoteVoters(key.uid).pipe(
-            map((voters) => ({ uid: key.uid, voters: voters.filter((voter): voter is VoteVoter => 'uid' in voter) })),
-            catchError((error) => {
-              console.error('Failed to load Condorcet ballots', { status: error?.status });
-              return of({ uid: key.uid, voters: last?.uid === key.uid ? last.voters : null });
+          if (key.draft) return of({ uid: key.uid, voters: [], stale: false });
+          let attempts = 0;
+          const load = () => this.voteService.getVoteVoters(key.uid);
+          const requests = isPlatformBrowser(this.platformId)
+            ? createVisibilityPoll(this.document, load, { ...VOTE_DETAIL_RESULTS_POLL_OPTIONS, shouldContinue: () => !key.closed })
+            : load().pipe(
+                map((value) => ({ kind: 'ok' as const, value })),
+                catchError((error: unknown) => of({ kind: 'error' as const, error }))
+              );
+          return requests.pipe(
+            takeWhile((event) => {
+              attempts++;
+              if (event.kind === 'ok') return !key.closed;
+              const error = event.error;
+              const transient = error instanceof HttpErrorResponse && (error.status === 0 || (error.status >= 500 && error.status < 600));
+              return transient && (!key.closed || attempts < VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS);
+            }, true),
+            map((event) => {
+              if (event.kind === 'ok') {
+                last = { uid: key.uid, voters: event.value.filter((voter): voter is VoteVoter => 'uid' in voter) };
+                return { ...last, stale: false };
+              }
+              console.error('Failed to load Condorcet ballots', { status: event.error instanceof HttpErrorResponse ? event.error.status : undefined });
+              const voters = last?.uid === key.uid ? last.voters : null;
+              return { uid: key.uid, voters, stale: voters !== null };
             })
           );
-        }),
-        tap((read) => {
-          if (read) last = read;
         })
       ),
       { initialValue: null }
