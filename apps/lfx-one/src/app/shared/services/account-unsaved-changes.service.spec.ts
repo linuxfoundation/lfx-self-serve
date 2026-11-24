@@ -132,5 +132,11 @@ describe('AccountUnsavedChangesService', () => {
     expect(event.defaultPrevented).toBe(false);
     expect(window.location.hash).toBe('#authorize');
     window.location.hash = '';
+
+    // The next page to register asks again.
+    service.register(page, destroyRef);
+    const next = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(next);
+    expect(next.defaultPrevented).toBe(true);
   });
 });

@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, Signal, signal, TemplateRef, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, TemplateRef, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule } from '@angular/forms';
 import { AccountCardComponent } from '@components/account-card/account-card.component';
-import { ACCOUNT_LINUX_EMAIL_COPY } from '@lfx-one/shared/constants';
+import { ACCOUNT_LINUX_EMAIL_COPY, PENDING_LINUX_FORWARD_KEY, PENDING_LINUX_FORWARD_TTL_MS } from '@lfx-one/shared/constants';
+import { PendingLinuxForward } from '@lfx-one/shared/interfaces';
 import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -48,6 +50,9 @@ export class AccountLinuxEmailComponent extends ProfileLinuxEmailComponent {
   private readonly modal = inject(UiModalService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly unsavedChanges = inject(AccountUnsavedChangesService);
+  private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
+  // A forwarding address kept across Flow C, waiting until it can be chosen again.
+  private pendingForward: string | null = this.takePendingForward();
   private readonly claimDialog = viewChild.required<TemplateRef<unknown>>('claimDialog');
 
   protected readonly copy = ACCOUNT_LINUX_EMAIL_COPY;
@@ -75,6 +80,26 @@ export class AccountLinuxEmailComponent extends ProfileLinuxEmailComponent {
       { dirty: this.forwardChanged, saving: this.savingForward, save: () => this.updateForward(), revert: () => this.revertForward() },
       this.destroyRef
     );
+
+    // A save or the refresh after it writes the select, so it is locked until both are done and an edit made then isn't lost.
+    toObservable(computed(() => this.savingForward() || this.loading()))
+      .pipe(takeUntilDestroyed())
+      .subscribe((busy) => {
+        const control = this.editForm.controls.forwardTo;
+        if (busy) control.disable({ emitEvent: false });
+        else control.enable({ emitEvent: false });
+      });
+
+    // Back from Flow C, a forwarding address chosen before it is chosen again, unsaved, once the current one has loaded and the
+    // addresses offered, which load separately, include it.
+    toObservable(computed(() => ({ editable: this.state() === 'claimed' && !this.forwardReauthRequired(), options: this.forwardOptions() })))
+      .pipe(takeUntilDestroyed())
+      .subscribe(({ editable, options }) => {
+        const pending = this.pendingForward;
+        if (!pending || !editable || this.impersonating() || !options.some((option) => option.value === pending)) return;
+        this.pendingForward = null;
+        this.editForm.controls.forwardTo.setValue(pending);
+      });
   }
 
   /** Checks the form, then asks before claiming: the alias can't be changed afterwards. */
@@ -90,15 +115,20 @@ export class AccountLinuxEmailComponent extends ProfileLinuxEmailComponent {
     this.pendingClaim.set({ address: `${(this.claimForm.value.alias ?? '').trim().toLowerCase()}@${this.domain()}`, forwardTo: label ?? forwardTo });
     this.modal
       .open<boolean>(this.claimDialog(), { autoFocus: '[data-autofocus] button' })
-      .closed.pipe(take(1))
+      .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((confirmed) => {
         if (confirmed) this.claim();
       });
   }
 
-  // Flow C goes through the save bar's service, so a forwarding change in progress doesn't raise the browser's leave prompt.
+  // Flow C goes through the save bar's service, so the browser's leave prompt doesn't fire; a forwarding change is kept and
+  // chosen again on return.
   protected override handleError(err: HttpErrorResponse, fallback: string): void {
     if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
+      const forwardTo = (this.editForm.getRawValue().forwardTo ?? '').trim();
+      if (this.browser && this.forwardChanged() && forwardTo) {
+        sessionStorage.setItem(PENDING_LINUX_FORWARD_KEY, JSON.stringify({ savedAt: Date.now(), forwardTo } satisfies PendingLinuxForward));
+      }
       this.unsavedChanges.leaveForAuthorization(err.error.authorize_url);
       return;
     }
@@ -123,6 +153,21 @@ export class AccountLinuxEmailComponent extends ProfileLinuxEmailComponent {
       if (this.forwardNotSet()) return 'Forwarding isn’t set yet. Choose an address.';
       return ACCOUNT_LINUX_EMAIL_COPY.forwardHint;
     });
+  }
+
+  // Reads the kept address once, so a later visit doesn't pick it again. Only a recent one counts.
+  private takePendingForward(): string | null {
+    if (!this.browser) return null;
+    const stored = sessionStorage.getItem(PENDING_LINUX_FORWARD_KEY);
+    if (!stored) return null;
+    sessionStorage.removeItem(PENDING_LINUX_FORWARD_KEY);
+    try {
+      const pending = JSON.parse(stored) as Partial<PendingLinuxForward>;
+      const fresh = typeof pending.savedAt === 'number' && Date.now() - pending.savedAt <= PENDING_LINUX_FORWARD_TTL_MS;
+      return fresh && pending.forwardTo ? pending.forwardTo.toLowerCase().trim() : null;
+    } catch {
+      return null;
+    }
   }
 
   private revertForward(): void {

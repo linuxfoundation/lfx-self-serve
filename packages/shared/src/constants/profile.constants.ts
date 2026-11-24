@@ -23,6 +23,10 @@ import {
 export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
 /** Session key for a primary email chosen on Personal information when its save left for Flow C; the page restores it on return. */
 export const PENDING_PRIMARY_EMAIL_KEY = 'lfx_profile_pending_primary_email';
+/** Session key for a Linux.com forwarding address chosen on Account & Settings when its save left for Flow C (#6075). */
+export const PENDING_LINUX_FORWARD_KEY = 'lfx_profile_pending_linux_forward';
+/** How long a kept forwarding address stays usable, the same as a pending profile save. */
+export const PENDING_LINUX_FORWARD_TTL_MS = 10 * 60 * 1000;
 /** How long a kept primary email choice stays usable, the same as a pending profile save. */
 export const PENDING_PRIMARY_EMAIL_TTL_MS = 10 * 60 * 1000;
 

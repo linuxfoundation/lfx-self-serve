@@ -47,6 +47,12 @@ export interface PendingProfileSave {
   avatarPending?: boolean;
 }
 
+/** A Linux.com forwarding address chosen on Account & Settings, kept while its save leaves for Flow C. */
+export interface PendingLinuxForward {
+  savedAt: number;
+  forwardTo: string;
+}
+
 /** A Personal information field that has a length limit. */
 export type PersonalInformationLimitedField = keyof typeof PERSONAL_INFORMATION_FIELD_LIMITS;
 

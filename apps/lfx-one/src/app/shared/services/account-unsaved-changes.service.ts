@@ -24,14 +24,25 @@ export class AccountUnsavedChangesService {
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   private readonly page = signal<AccountPageForm | null>(null);
-  // Set while the page sends the browser to Flow C itself, which keeps its changes across the round trip or asks again on return.
+
+  // Set while the page sends the browser to Flow C itself; the page keeps its changes across the round trip.
   private leavingForAuthorization = false;
 
   public readonly dirty = computed(() => this.page()?.dirty() ?? false);
   public readonly saving = computed(() => this.page()?.saving() ?? false);
 
+  public constructor() {
+    // A page restored from the back/forward cache is not leaving any more, so its prompt applies again.
+    if (this.isBrowser) {
+      this.document.defaultView?.addEventListener('pageshow', (event: PageTransitionEvent) => {
+        if (event.persisted) this.leavingForAuthorization = false;
+      });
+    }
+  }
+
   /** Registers the shown page until `destroyRef` ends, normally the page component's own. */
   public register(page: AccountPageForm, destroyRef: DestroyRef): void {
+    this.leavingForAuthorization = false;
     this.page.set(page);
     if (this.isBrowser) this.document.defaultView?.addEventListener('beforeunload', this.onBeforeUnload);
     destroyRef.onDestroy(() => {

@@ -4,14 +4,16 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { PENDING_LINUX_FORWARD_KEY } from '@lfx-one/shared/constants';
 import { AccountPageForm, EnrichedIdentity, LinuxAliasData } from '@lfx-one/shared/interfaces';
 import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { MessageService } from 'primeng/api';
-import { EMPTY, of, throwError } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountLinuxEmailPageComponent } from './account-linux-email-page.component';
 import { AccountLinuxEmailComponent } from './account-linux-email.component';
@@ -31,14 +33,17 @@ const WORK_EMAIL = { type: 'email', value: 'ada@work.example', displayState: 've
 class StateLinuxEmailComponent extends AccountLinuxEmailComponent {}
 
 describe('Account & Settings › Linux.com email', () => {
-  function setup(alias: Partial<LinuxAliasData>, identities: EnrichedIdentity[] = [WORK_EMAIL]) {
+  afterEach(() => sessionStorage.clear());
+
+  function setup(alias: Partial<LinuxAliasData>, identities: EnrichedIdentity[] | Observable<EnrichedIdentity[]> = [WORK_EMAIL]) {
     const registered: { page?: AccountPageForm } = {};
     const leaveForAuthorization = vi.fn();
     const confirm = vi.fn(() => ({ closed: of(true) }));
     const userService = {
       impersonating: signal(false),
       identitiesRefresh$: EMPTY,
-      getIdentities: vi.fn(() => of(identities)),
+      getIdentities: vi.fn(() => (Array.isArray(identities) ? of(identities) : identities)),
+      refreshUserIdentities: vi.fn(),
       getLinuxAlias: vi.fn(() => of({ ...BASE, ...alias })),
       claimLinuxAlias: vi.fn(() => of({})),
       updateLinuxForward: vi.fn(() => of({})),
@@ -60,7 +65,7 @@ describe('Account & Settings › Linux.com email', () => {
     const fixture = TestBed.createComponent(AccountLinuxEmailPageComponent);
     await fixture.whenStable();
     const host = fixture.nativeElement as HTMLElement;
-    const card = fixture.debugElement.children[0].componentInstance as AccountLinuxEmailComponent;
+    const card = fixture.debugElement.query(By.directive(AccountLinuxEmailComponent)).componentInstance as AccountLinuxEmailComponent;
     return { fixture, card, query: (testId: string) => host.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null };
   }
 
@@ -137,6 +142,54 @@ describe('Account & Settings › Linux.com email', () => {
     page().save();
 
     expect(leaveForAuthorization).toHaveBeenCalledWith('#authorize');
+  });
+
+  it('keeps a forwarding choice across Flow C and picks it again, unsaved, on return', async () => {
+    const { userService } = setup({});
+    userService.updateLinuxForward.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'management_token_required', authorize_url: '#authorize' } }))
+    );
+    const card = await createCard();
+    card.editForm.controls.forwardTo.setValue('ada@work.example');
+    card.updateForward();
+    expect(JSON.parse(sessionStorage.getItem(PENDING_LINUX_FORWARD_KEY) ?? '{}').forwardTo).toBe('ada@work.example');
+
+    TestBed.resetTestingModule();
+    const back = setup({});
+    const returned = await createCard();
+    expect(returned.editForm.controls.forwardTo.value).toBe('ada@work.example');
+    expect(back.page().dirty()).toBe(true);
+    expect(sessionStorage.getItem(PENDING_LINUX_FORWARD_KEY)).toBeNull();
+  });
+
+  it('locks the forwarding select while a save and the refresh after it run', async () => {
+    const { userService } = setup({});
+    const saved = new Subject<object>();
+    userService.updateLinuxForward.mockReturnValueOnce(saved);
+    const card = await createCard();
+    card.editForm.controls.forwardTo.setValue('ada@work.example');
+    card.updateForward();
+    TestBed.tick();
+    expect(card.editForm.controls.forwardTo.disabled).toBe(true);
+
+    saved.next({});
+    saved.complete();
+    TestBed.tick();
+    expect(card.editForm.controls.forwardTo.enabled).toBe(true);
+  });
+
+  it('warns, with a retry, when the verified addresses fail to load', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { userService } = setup(
+      {},
+      throwError(() => new Error('down'))
+    );
+    const { query } = await renderPage();
+
+    expect(query('account-linux-email-identities-error')).not.toBeNull();
+    query('account-linux-email-identities-retry')?.querySelector('button')?.click();
+    expect(userService.refreshUserIdentities).toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it('has nothing to save while the forwarding address cannot be read', async () => {
