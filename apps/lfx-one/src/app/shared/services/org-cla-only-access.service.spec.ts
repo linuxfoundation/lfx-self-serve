@@ -44,6 +44,11 @@ describe('OrgClaOnlyAccessService', () => {
             inheritedAuditorSet,
             employeeViewOrgUids,
             fullAccessOrgUids,
+            // Mirrors the real service: a CLA-only answer drops the company from both reduced-mode sets.
+            clearReducedModes: (uid: string) => {
+              employeeViewOrgUids.set(new Set([...employeeViewOrgUids()].filter((value) => value !== uid)));
+              fullAccessOrgUids.set(new Set([...fullAccessOrgUids()].filter((value) => value !== uid)));
+            },
           },
         },
       ],
@@ -109,6 +114,19 @@ describe('OrgClaOnlyAccessService', () => {
 
       expect(service.isClaOnly(ADDRESSED)).toBe(true);
       expect(service.claOnlyOrgUids().size).toBe(0);
+    });
+
+    it('becomes CLA-only even if an earlier role-grants answer had it as an employee-view or full-access company', () => {
+      employeeViewOrgUids.set(new Set([ADDRESSED]));
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
+
+      service.noteAddressed(ADDRESSED, true);
+      expect(service.isClaOnly(ADDRESSED)).toBe(true);
+
+      fullAccessOrgUids.set(new Set([ADDRESSED]));
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
+      service.noteAddressed(ADDRESSED, true);
+      expect(service.isClaOnly(ADDRESSED)).toBe(true);
     });
 
     it('stops being CLA-only once a later resolve says otherwise', () => {

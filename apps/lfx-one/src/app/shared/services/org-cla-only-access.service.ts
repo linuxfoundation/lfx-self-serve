@@ -42,6 +42,8 @@ export class OrgClaOnlyAccessService {
 
   /** Records the resolver's answer for an addressed organization; a later non-CLA-only answer clears it. */
   public noteAddressed(uid: string, claOnly: boolean): void {
+    // CLA-only is the server's later, authoritative answer: it clears any employee-view or full-access mode still held for the company.
+    if (claOnly) this.orgRoleGrants.clearReducedModes(uid);
     const current = this.addressedClaOnlyUids();
     if (current.has(uid) === claOnly) return;
     const next = new Set(current);

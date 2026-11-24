@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP, ORG_CATALOGUE_SEARCH_MIN_CHARS, ORG_LENS_ROLLUP_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import {
+  ORG_AFFILIATION_LOOKUP_TIMEOUT_MS,
+  ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP,
+  ORG_CATALOGUE_SEARCH_MIN_CHARS,
+  ORG_LENS_ROLLUP_ENABLED_FLAG,
+} from '@lfx-one/shared/constants';
 import {
   B2bOrgIndexedDoc,
   GetOrgItemsParams,
@@ -16,6 +21,7 @@ import { filterOrgItemsByName, sortOrgItemsByName } from '@lfx-one/shared/utils/
 import { Request } from 'express';
 
 import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
+import { MicroserviceError } from '../errors/microservice.error';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
@@ -194,8 +200,25 @@ export class OrgNavigationService {
     if (!isOrgLensEmployeeViewEnabled(req)) {
       return { item: null, failed: false };
     }
+    let timer: NodeJS.Timeout | undefined;
     try {
-      const verdict = await this.employeeView.resolveReduced(req);
+      // Bounded like the role-grants lookup: this rides the selector list the page waits for, so a cold membership index or a slow
+      // work-history read must not hold CLA-only rows that are already resolved. The lookup keeps running (and stays cached) for a retry.
+      const verdict = await Promise.race([
+        this.employeeView.resolveReduced(req),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new MicroserviceError(`Employee-view lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
+                  operation: 'build_org_items',
+                  service: 'LFX_V2_SERVICE',
+                })
+              ),
+            ORG_AFFILIATION_LOOKUP_TIMEOUT_MS
+          );
+        }),
+      ]);
       // An authorizer-only reader who also qualifies is listed as a FULL company (`fullAccess`), never employee-view and never
       // CLA-only: the client cannot see authorizer entitlements, so the row is how it learns the company opens in full.
       const listed = verdict.eligible || verdict.reason === 'holds-full-access';
@@ -222,6 +245,8 @@ export class OrgNavigationService {
     } catch (error) {
       logger.warning(req, 'build_org_items', 'Employee-view lookup failed; listing no employee-view company', { err: error });
       return { item: null, failed: true };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
