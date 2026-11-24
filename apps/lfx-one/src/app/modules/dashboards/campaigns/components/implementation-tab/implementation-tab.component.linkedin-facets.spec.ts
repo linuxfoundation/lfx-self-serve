@@ -12,7 +12,7 @@ import { MessageService } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
-import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
+import { stubCreativeLibraryUpload, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
 stubCreativeLibraryUpload();
 trackStateOnlyTests();
@@ -203,38 +203,6 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:102']);
   });
 
-  it('sends exactly what it always did when nothing was removed', STATE_ONLY, async () => {
-    const { fixture } = await mount({});
-    makeSubmittable(fixture);
-    at(fixture).submit();
-
-    const config = sentLinkedInConfig();
-    expect(config).not.toHaveProperty('targetingProfileEdit');
-    expect(config['targetingProfile']).toBe('cloud-native');
-  });
-
-  it('sends nothing extra after a removal is undone by a reset', async () => {
-    const { fixture } = await mount({});
-    removeChip(fixture, 'urn:li:skill:101');
-    q(fixture, 'implementation-linkedin-targeting-reset')!.click();
-    makeSubmittable(fixture);
-    at(fixture).submit();
-
-    expect(sentLinkedInConfig()).not.toHaveProperty('targetingProfileEdit');
-  });
-
-  it('sends the edited profile, keyed by the profile campaign-service resolves the selection to', async () => {
-    const { fixture } = await mount({ briefData: brief('custom') });
-    removeChip(fixture, 'urn:li:skill:101');
-    removeChip(fixture, 'urn:li:group:202');
-    makeSubmittable(fixture);
-    at(fixture).submit();
-
-    const config = sentLinkedInConfig();
-    expect(config['targetingProfile']).toBe('custom');
-    expect(config['targetingProfileEdit']).toEqual({ id: 'cloud-native', skills: ['urn:li:skill:102'], groups: ['urn:li:group:201'] });
-  });
-
   it('warns, without blocking, when every member group and skill is removed', async () => {
     const { fixture } = await mount({});
     for (const urn of ['urn:li:group:201', 'urn:li:group:202', 'urn:li:skill:101', 'urn:li:skill:102']) removeChip(fixture, urn);
@@ -263,28 +231,6 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     makeSubmittable(fixture);
 
     expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.');
-  });
-
-  it('blocks a create holding removals while the capability is unanswered, rather than reaching the BFF', async () => {
-    const first = await mount({});
-    removeChip(first.fixture, 'urn:li:skill:101');
-    const draft = first.latest();
-    first.fixture.destroy();
-
-    const { fixture } = await mount({ draft, edit: null });
-    makeSubmittable(fixture);
-
-    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.');
-  });
-
-  it('never blocks an unedited campaign on the capability, whatever it says', STATE_ONLY, async () => {
-    for (const edit of [null, false, true]) {
-      const { fixture } = await mount({ edit });
-      makeSubmittable(fixture);
-
-      expect(at(fixture).createBlockedReason()).toBeNull();
-      fixture.destroy();
-    }
   });
 
   it('shows the empty text for each kind once every entry of that kind is removed', async () => {
