@@ -125,6 +125,36 @@ describe('VoteBallotFormComponent (#4363)', () => {
     expect((byId('vote-link-rank-down-c-c') as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('routes disabled edge-arrow presses through an enabled drag guard', async () => {
+    await render(baseBallot({ poll_type: 'condorcet_irv' }));
+
+    for (const [choiceId, direction] of [
+      ['c-a', 'up'],
+      ['c-c', 'down'],
+    ]) {
+      const card = byId(`vote-link-rank-${choiceId}`) as HTMLElement;
+      const button = byId(`vote-link-rank-${direction}-${choiceId}`) as HTMLButtonElement;
+      const controls = byId(`vote-link-rank-controls-${choiceId}`) as HTMLElement;
+      expect(button.disabled).toBe(true);
+      expect(button.classList.contains('disabled:pointer-events-none')).toBe(true);
+      expect(button.parentElement).toBe(controls);
+
+      const cardPress = vi.fn();
+      card.addEventListener('mousedown', cardPress);
+      card.addEventListener('touchstart', cardPress);
+      // jsdom cannot hit-test: pin the disabled-control CSS and simulate the guarded targets.
+      for (const target of [controls, button, button.querySelector('i')!]) {
+        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        target.dispatchEvent(new Event('touchstart', { bubbles: true }));
+      }
+      button.click();
+      expect(cardPress).not.toHaveBeenCalled();
+
+      card.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      expect(cardPress).toHaveBeenCalledOnce();
+    }
+  });
+
   it('enables whole-card ranked drag, guards arrow presses and locks on abstain', async () => {
     await render(baseBallot({ poll_type: 'condorcet_irv' }));
 
@@ -140,8 +170,10 @@ describe('VoteBallotFormComponent (#4363)', () => {
     card.addEventListener('touchstart', cardPress);
     for (const dir of ['up', 'down']) {
       const button = byId(`vote-link-rank-${dir}-c-b`) as HTMLElement;
-      button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      button.dispatchEvent(new Event('touchstart', { bubbles: true }));
+      for (const target of [button, button.querySelector('i')!]) {
+        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        target.dispatchEvent(new Event('touchstart', { bubbles: true }));
+      }
     }
     expect(cardPress).not.toHaveBeenCalled();
 
