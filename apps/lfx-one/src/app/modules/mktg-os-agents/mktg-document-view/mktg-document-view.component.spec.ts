@@ -3295,7 +3295,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-viewed-make-current')?.textContent).toContain('Make current');
     query('mktg-document-view-viewed-make-current')?.click();
     await settle();
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id, {
+      expectedCurrentId: current.revisionId,
+      expectedCurrentChangedAt: current.changedAt,
+    });
     expect(query('mktg-document-view-viewed-make-current')).toBeNull();
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current.');
@@ -3935,7 +3938,7 @@ describe('MktgDocumentViewComponent', () => {
     );
     expect(store.approveRevision).not.toHaveBeenCalled();
     closed.next(true);
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
   });
 
   it('asks under the open-gaps header when only the v2 findings carry a failed source and the legacy fields are empty', async () => {
@@ -3988,7 +3991,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).not.toHaveBeenCalled();
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
   });
 
   it('allows another approval attempt after the gaps dialog is dismissed', async () => {
@@ -4008,8 +4011,256 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.approveRevision).not.toHaveBeenCalled();
     approve?.click();
     expect(dialog.open).toHaveBeenCalledTimes(2);
+    // Another writer's selection is merged in behind the open dialog: confirming still sends what the reader reviewed.
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const viewed = component['view']();
+    if (!viewed) throw new Error('Missing synthetic FAQ view');
+    const moved = {
+      ...viewed,
+      revisions: viewed.revisions.map((entry) => ({ ...entry, latest: entry.id === OLDER.id })),
+      current: { revisionId: OLDER.id, changedAt: '2026-10-29T12:50:00Z', changedBy: null },
+    };
+    progressReader().observed.emit({ detail: moved, view: moved });
+    await settle();
+    expect(component['view']()?.current?.revisionId).toBe(OLDER.id);
     closed.next(true);
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
+  });
+
+  it.each([
+    {
+      action: 'approve',
+      name: 'Synthetic reviewer',
+      expected: 'Synthetic reviewer approved v3 a moment ago. Check v3 before you approve a different version.',
+    },
+    { action: 'restore', name: 'Synthetic reviewer', expected: 'Synthetic reviewer made v3 the current version a moment ago. Check it before you switch.' },
+    { action: 'approve', name: null, expected: 'Someone just approved a newer version. Check it before you approve this one.' },
+    { action: 'restore', name: null, expected: 'Someone just changed the current version. Check it before you switch.' },
+  ] as const)(
+    're-reads after stale $action (name=$name) with approved copy and an exact revision link, without replacing the view',
+    async ({ action, name, expected }) => {
+      useFrameworkRevision(true);
+      const comments = TestBed.inject(MktgDocumentCommentsService);
+      vi.spyOn(comments, 'loaded').mockReturnValue(true);
+      vi.spyOn(comments, 'selectedScope').mockReturnValue({
+        projectUid: PROJECT.uid,
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        revisionId: LATEST.id,
+      });
+      await render('/documents/foundation-message/living?tab=numbers');
+      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+      const loaded = component['view']();
+      if (!loaded) throw new Error('Missing synthetic framework draft');
+      expect(component['railReady']()).toBe(true);
+      const ids = ['mktg-document-view-title', 'mktg-document-view-content', 'mktg-framework-view-tab-numbers', 'mktg-document-view-revisions'];
+      const nodes = ids.map(query);
+      const approval = { approvedAt: '2026-10-29T12:50:00Z', approvedBy: { name } };
+      const winner = revision(3, { latest: true, approval });
+      const refreshed = {
+        ...loaded,
+        revisions: [winner, { ...loaded.revision, latest: false }, OLDER],
+        current: { revisionId: winner.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+        approvedCurrent: { revisionId: winner.id, number: 3 },
+      };
+      const pending = new Subject<MktgDocumentDetailResponse>();
+      store.getDocument.mockReturnValue(pending);
+      const failure = new HttpErrorResponse({
+        status: 409,
+        error: {
+          code: 'MKTG_APPROVED_CURRENT_CHANGED',
+          current: {
+            revisionId: winner.id,
+            number: 3,
+            approvedBy: name,
+            approvedAt: approval.approvedAt,
+            selectedBy: name,
+            selectedAt: approval.approvedAt,
+          },
+        },
+      });
+      const write = action === 'approve' ? store.approveRevision : store.restoreRevision;
+      write.mockReturnValue(throwError(() => failure));
+      const reads = store.getDocument.mock.calls.length;
+      if (action === 'approve') component['onApprove']();
+      else component['onRestore'](OLDER);
+      await settle();
+      expect(write).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'foundation-message', 'living', action === 'approve' ? loaded.revision.id : OLDER.id, {
+        expectedCurrentId: loaded.revision.id,
+      });
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      expect(query('mktg-document-view-current-conflict-open')?.textContent?.trim()).toBe(name ? 'Open v3' : 'Open the latest version');
+      const href = query('mktg-document-view-current-conflict-open')?.getAttribute('href');
+      expect(href).toContain(`revision=${winner.id}`);
+      expect(href).toContain('tab=numbers');
+      expect(query('mktg-document-view-current-conflict')?.textContent).not.toContain('12:50');
+      // A poll that started before the conflict answers after it, with the selection from before: it neither retires
+      // the notice nor outdates the re-read still in flight.
+      const earlier = { ...loaded, current: { revisionId: loaded.revision.id, changedAt: '2026-10-29T12:00:00Z', changedBy: null } };
+      progressReader().observed.emit({ detail: earlier, view: earlier });
+      await settle();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      pending.next(refreshed);
+      pending.complete();
+      await settle();
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(component['view']()?.revision.id).toBe(loaded.revision.id);
+      expect(component['view']()?.markdown).toBe(loaded.markdown);
+      expect(query('mktg-document-view-current-3')).not.toBeNull();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      ids.forEach((id, index) => expect(query(id)).toBe(nodes[index]));
+      expect(component['railReady']()).toBe(true);
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-approval-error')).toBeNull();
+      // The same earlier read answering after the re-read was applied does not put the superseded current back.
+      progressReader().observed.emit({ detail: earlier, view: earlier });
+      await settle();
+      expect(query('mktg-document-view-current-3')).not.toBeNull();
+      expect(component['view']()?.current?.revisionId).toBe(winner.id);
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      // The page polls continuously: a read that still shows the named current keeps the notice on screen.
+      progressReader().observed.emit({ detail: refreshed, view: { ...loaded, revisions: refreshed.revisions } });
+      await settle();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      // A failed poll replays what the reader last knew, here the current from before the conflict: that is not a
+      // read of the server, so it neither retires the notice nor counts as one.
+      const replayed = { ...loaded, progressUnavailable: true };
+      progressReader().observed.emit({ detail: replayed, view: replayed });
+      await settle();
+      expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(expected);
+      // A read where the current moved again retires it: the notice would name the wrong revision.
+      const moved = { ...refreshed, current: { revisionId: OLDER.id, changedAt: '2026-10-29T12:55:00Z', changedBy: null } };
+      // The body on screen may carry an earlier partial read's flag, which a metadata-only cycle keeps; the fresh
+      // metadata decides.
+      const onScreen = component['view']();
+      if (!onScreen) throw new Error('Missing synthetic framework view');
+      component['view'].set({ ...onScreen, progressUnavailable: true });
+      progressReader().observed.emit({ detail: moved, view: { ...loaded, revisions: moved.revisions, current: moved.current } });
+      await settle();
+      expect(query('mktg-document-view-current-conflict')).toBeNull();
+    }
+  );
+
+  it('clears the conflict on revision navigation and ignores a late conflict detail response', async () => {
+    const response = faqResponse();
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render('/documents/faq/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(component['view']()?.type.agentKey).toBe('faq');
+    const pending = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(pending);
+    store.approveRevision.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: {
+              code: 'MKTG_APPROVED_CURRENT_CHANGED',
+              current: { revisionId: OLDER.id, number: 1, approvedBy: null, approvedAt: null, selectedBy: null, selectedAt: null },
+            },
+          })
+      )
+    );
+    component['onApprove']();
+    await settle();
+    // No approval is reported for the current, so the notice claims none.
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(
+      'Someone just changed the current version. Check it before you switch.'
+    );
+    expect(query('mktg-document-view-current-conflict-open')?.textContent?.trim()).toBe('Open the latest version');
+    expect(query('mktg-document-view-current-conflict-open')?.getAttribute('href')).toContain(`revision=${OLDER.id}`);
+    store.getRevision.mockReturnValue(of({ ...response, revision: OLDER }));
+    query('mktg-document-view-current-conflict-open')?.click();
+    await settle();
+    expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
+    pending.next(response);
+    pending.complete();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+    expect(component['view']()?.revision.id).toBe(OLDER.id);
+  });
+
+  it('ignores a late conflict re-read once a landed write or a newer read has replaced what it describes', async () => {
+    const response = faqResponse();
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render('/documents/faq/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const selectedAt = '2026-10-29T12:50:00Z';
+    const conflict = new HttpErrorResponse({
+      status: 409,
+      error: {
+        code: 'MKTG_APPROVED_CURRENT_CHANGED',
+        current: { revisionId: OLDER.id, number: 1, approvedBy: null, approvedAt: null, selectedBy: 'Synthetic selector', selectedAt },
+      },
+    });
+    const notice = 'Synthetic selector made v1 the current version a moment ago. Check it before you switch.';
+    // What the conflict re-read answers: v1 is current.
+    const older: MktgDocumentDetailResponse = {
+      ...response,
+      revisions: response.revisions.map((entry) => ({ ...entry, latest: entry.id === OLDER.id })),
+      current: { revisionId: OLDER.id, changedAt: selectedAt, changedBy: { name: 'Synthetic selector' } },
+    };
+
+    // 1. The reader's next approval lands before the re-read answers.
+    const first = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(first);
+    store.approveRevision.mockReturnValue(throwError(() => conflict));
+    component['onApprove']();
+    await settle();
+    // An approve attempt against a current nobody approved: the notice claims a selection, not an approval.
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    const approval = { approvedAt: '2026-10-29T12:55:00Z', approvedBy: { name: 'Project writer' } };
+    const approved: MktgRevisionResponse = {
+      ...response,
+      approval,
+      revision: { ...response.revision, approval },
+      revisions: response.revisions.map((entry) => ({ ...entry, approval: entry.id === LATEST.id ? approval : null })),
+      current: { revisionId: LATEST.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: LATEST.id, number: 2 },
+    };
+    store.approveRevision.mockReturnValue(of(approved));
+    component['onApprove']();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+    first.next(older);
+    first.complete();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+    expect(component['view']()?.current?.revisionId).toBe(LATEST.id);
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Approved');
+
+    // 2. The poller reads newer metadata (same current, one more revision) before the re-read answers.
+    const second = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(second);
+    store.restoreRevision.mockReturnValue(throwError(() => conflict));
+    component['onRestore'](OLDER);
+    await settle();
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    const newer = { ...older, revisions: [revision(3, { latest: false }), ...older.revisions] };
+    progressReader().observed.emit({ detail: newer, view: { ...approved, revisions: newer.revisions, current: newer.current, approvedCurrent: null } });
+    await settle();
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    expect(component['view']()?.revisions).toHaveLength(newer.revisions.length);
+    second.next(older);
+    second.complete();
+    await settle();
+    expect(component['view']()?.revisions).toHaveLength(newer.revisions.length);
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+
+    // 3. The re-read itself already shows a selection after the one the 409 named: no notice pointing at a superseded one.
+    const third = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(third);
+    component['onRestore'](OLDER);
+    await settle();
+    expect(query('mktg-document-view-current-conflict-message')?.textContent?.trim()).toBe(notice);
+    third.next({ ...approved, revisions: newer.revisions.map((entry) => ({ ...entry, latest: entry.id === LATEST.id })) });
+    third.complete();
+    await settle();
+    expect(component['view']()?.current?.revisionId).toBe(LATEST.id);
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
   });
 
   it('approves directly without confirmation and updates saving/state metadata', async () => {
@@ -4027,7 +4278,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-saving-status')).toBe(status);
     expect(dialog.open).not.toHaveBeenCalled();
     expect(status?.textContent).toBe('Approving revision 2…');
-    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id, { expectedCurrentId: LATEST.id });
     expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(true);
     const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Project writer' } };
     pending.next({
@@ -4170,7 +4421,9 @@ describe('MktgDocumentViewComponent', () => {
     store.approveRevision.mockReturnValue(of(approved));
     component['onApprove']();
     await settle();
-    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'foundation-message', 'living', loaded.revision.id);
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'foundation-message', 'living', loaded.revision.id, {
+      expectedCurrentId: loaded.revision.id,
+    });
     expect(listing.observed).toBe(true);
     store.getDocument.mockReturnValue(of(approved));
     store.getRevision.mockReturnValue(of(approved));
@@ -4892,7 +5145,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     query('mktg-document-view-restore-1')?.click();
     await settle();
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, { expectedCurrentId: LATEST.id });
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain(status);
     expect(query('mktg-document-view-revision-chip')?.textContent).not.toContain('Current');
   });
@@ -4929,7 +5182,7 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-viewed-make-current')?.click();
     await settle();
 
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, { expectedCurrentId: LATEST.id });
     expect(TestBed.inject(MktgDependencyService).notifyDocumentsChanged).toHaveBeenCalledWith(PROJECT.uid);
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');

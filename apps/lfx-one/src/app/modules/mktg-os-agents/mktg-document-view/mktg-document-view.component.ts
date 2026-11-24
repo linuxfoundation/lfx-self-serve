@@ -39,6 +39,7 @@ import {
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
+  MKTG_APPROVED_CURRENT_CHANGED,
   MKTG_DOCUMENT_MAKE_CURRENT_HINT,
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
@@ -72,7 +73,11 @@ import {
   MktgRevisionSummary,
   MktgSlidesExportTarget,
   MktgApprovedRevisionState,
+  MktgApproveRevisionRequest,
   MktgDocumentDetailResponse,
+  MktgDocumentCurrentConflictResponse,
+  MktgDocumentCurrentConflictAction,
+  MktgDocumentCurrentConflictNotice,
   MktgDocumentReadCycle,
   MktgDocumentLocalProgress,
   MktgDocumentRunProgress,
@@ -87,6 +92,7 @@ import {
 import {
   boilerplatesAssetOfRevision,
   describeMktgAssetReadiness,
+  describeMktgCurrentConflict,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
   findMktgRunIntake,
@@ -276,6 +282,7 @@ export class MktgDocumentViewComponent {
   private readonly confirmingApproval = signal(false);
   protected readonly approvingId = signal<string | null>(null);
   protected readonly approvalError = signal('');
+  protected readonly currentConflict = signal<MktgDocumentCurrentConflictNotice | null>(null);
   protected readonly approvedReadIsExplicit = signal(true);
   protected readonly approvalAnnouncement = signal('');
   protected readonly editingLink = signal(false);
@@ -307,6 +314,9 @@ export class MktgDocumentViewComponent {
   private readonly refreshedFailures = new Set<string>();
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
+  private documentReads = 0;
+  /** Server instant of the selection the notice on screen names; reads of an earlier selection predate the conflict. */
+  private conflictSelectedAt: string | null = null;
   private loadedScope = '';
   private readonly concurrentAnswers = inject(MktgRunAnswersService);
   protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
@@ -730,6 +740,7 @@ export class MktgDocumentViewComponent {
               this.errorText.set('');
               this.notice.set('');
               this.runHistory.set([]);
+              this.currentConflict.set(null);
               this.historyError.set('');
               this.runFailed.set(false);
               this.failureDetails.set('');
@@ -945,6 +956,7 @@ export class MktgDocumentViewComponent {
                     unavailableCount = 0;
                     this.refreshWarning.set('');
                   }
+                  this.retireCurrentConflict(cycle);
                   this.runDetail.set(cycle.detail);
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
@@ -981,6 +993,7 @@ export class MktgDocumentViewComponent {
                         cycle.detail.documentId === request.documentId
                     ),
                     tap((cycle) => {
+                      this.retireCurrentConflict(cycle);
                       this.runDetail.set(cycle.detail);
                       if (this.closedRun()) {
                         closedAttempt$.next();
@@ -1090,6 +1103,12 @@ export class MktgDocumentViewComponent {
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
+    // A poll that started before a conflict, or the reader's replay of one, answers with the selection from before
+    // it: older than what the page already shows. Merging it would mark the superseded revision current again.
+    if (this.predatesConflict(cycle.detail)) {
+      if (cycle.detail.progressUnavailable && this.publicProgressPolling()) this.refreshWarning.set(MKTG_POLL_RETRYING_TEXT);
+      return;
+    }
     const viewed = this.view();
     // False once the cycle's view is the body already on screen with fresh metadata merged in: its flags are an earlier read's.
     let viewRead = true;
@@ -1384,6 +1403,8 @@ export class MktgDocumentViewComponent {
     const selection = this.revisionParam();
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
+    // The reader confirms what was current when the dialog opened; a read merged behind it must not move the expectation.
+    const reviewed = this.reviewedCurrent(view);
     const data: MktgApproveGapsDialogData = { report, brandKit: view.type.agentKey === BRAND_KIT_INTAKE.agentId };
     const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
       header: mktgReportHasOpenGaps(report) ? MKTG_APPROVE_HEADER_GAPS : MKTG_APPROVE_HEADER,
@@ -1411,11 +1432,11 @@ export class MktgDocumentViewComponent {
       )
       .subscribe((confirmed: unknown) => {
         if (confirmed === true && epoch === this.restoreEpoch && subject === this.userService.user()?.sub && this.sameView(project, view, selection))
-          this.onApprove();
+          this.onApprove(reviewed);
       });
   }
 
-  protected onApprove(): void {
+  protected onApprove(reviewed?: MktgApproveRevisionRequest): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
     if (!view || !project || view.project !== project || this.loading() || !this.mayApprove() || this.writePending()) {
@@ -1428,18 +1449,20 @@ export class MktgDocumentViewComponent {
     const epoch = this.restoreEpoch;
     // The one-shot write outlives navigation; only its presentation is view-scoped.
     this.documentStore
-      .approveRevision(project, view.type.agentKey, view.documentId, view.revision.id)
+      .approveRevision(project, view.type.agentKey, view.documentId, view.revision.id, reviewed ?? this.reviewedCurrent(view))
       .pipe(finalize(() => this.approvingId.update((id) => (id === view.revision.id ? null : id))))
       .subscribe({
         next: (approved) => {
           this.dependencyService.notifyDocumentsChanged(project);
           if (epoch === this.restoreEpoch && this.sameView(project, view, selection)) {
+            this.currentConflict.set(null);
             this.view.set(approved);
             this.approvalAnnouncement.set(`Revision ${view.revision.number} is approved and current.`);
           }
         },
         error: (error: unknown) => {
           if (epoch === this.restoreEpoch && this.sameView(project, view, selection)) {
+            if (this.refreshCurrentConflict(error, view, selection, 'approve')) return;
             const message = extractErrorMessage(error, 'The approval could not be confirmed. Reload to see the current state before trying again.');
             this.approvalError.set(message);
             this.approvalAnnouncement.set(message);
@@ -1536,7 +1559,7 @@ export class MktgDocumentViewComponent {
     // This one-shot write outlives the page. Only its presentation is scoped to
     // the initiating project/revision, so navigation cannot cancel the save.
     this.documentStore
-      .restoreRevision(project, view.type.agentKey, view.documentId, revision.id)
+      .restoreRevision(project, view.type.agentKey, view.documentId, revision.id, this.reviewedCurrent(view))
       .pipe(finalize(() => this.restoringId.update((id) => (id === revision.id ? null : id))))
       .subscribe({
         next: (restored) => {
@@ -1551,10 +1574,12 @@ export class MktgDocumentViewComponent {
             approval,
             revision: { ...view.revision, latest: view.revision.id === restored.revision.id, approval },
           });
+          this.currentConflict.set(null);
           this.notice.set(`Revision ${revision.number} is now current. No revision was added.`);
         },
         error: (error: HttpErrorResponse) => {
           if (epoch !== this.restoreEpoch || this.userService.user()?.sub !== subject || !this.sameView(project, view, selection)) return;
+          if (this.refreshCurrentConflict(error, view, selection, 'restore')) return;
           this.errorText.set(this.writeErrorText(error));
         },
       });
@@ -1775,6 +1800,82 @@ export class MktgDocumentViewComponent {
       this.view()?.revision.id === view.revision.id &&
       this.revisionParam() === selection
     );
+  }
+
+  private expectedCurrentId(view: MktgDocumentDetailResponse): string | undefined {
+    return view.current?.revisionId ?? view.revisions.find((revision) => revision.latest)?.id;
+  }
+
+  /** What the reader has reviewed as current: the selected revision and the instant it was selected. */
+  private reviewedCurrent(view: MktgDocumentDetailResponse): MktgApproveRevisionRequest {
+    const expectedCurrentId = this.expectedCurrentId(view);
+    const expectedCurrentChangedAt = view.current?.changedAt;
+    return { ...(expectedCurrentId ? { expectedCurrentId } : {}), ...(expectedCurrentChangedAt ? { expectedCurrentChangedAt } : {}) };
+  }
+
+  /**
+   * The page reads continuously (one visibility poller), so a read alone must not take the notice away: it stays until
+   * the reader moves, a write of theirs lands, or a read shows the current moved again past the revision it names.
+   * Only metadata read from the server counts. The reader's fallback for a failed poll replays the last known detail
+   * (flagged unavailable), and a poll that started before the conflict can answer after it: both carry the selection
+   * from before the conflict. Each counted read also outdates a conflict re-read still in flight.
+   */
+  private retireCurrentConflict(cycle: MktgDocumentReadCycle): void {
+    // The detail alone decides: a metadata-only cycle carries the body on screen, whose flag is an earlier read's.
+    if (cycle.detail.progressUnavailable) return;
+    if (this.predatesConflict(cycle.detail)) return;
+    this.documentReads++;
+    this.settleCurrentConflict(cycle.detail);
+  }
+
+  /** While a notice is up: whether this detail carries a selection made before the one the conflict named. */
+  private predatesConflict(detail: MktgDocumentDetailResponse): boolean {
+    const selectedAt = detail.current?.changedAt;
+    return !!this.currentConflict() && !!this.conflictSelectedAt && !!selectedAt && selectedAt < this.conflictSelectedAt;
+  }
+
+  /** Complete the notice's link from a read, or retire a notice that names a selection the read shows superseded. */
+  private settleCurrentConflict(detail: MktgDocumentDetailResponse): void {
+    const notice = this.currentConflict();
+    if (!notice) return;
+    const current = this.expectedCurrentId(detail) ?? null;
+    if (!notice.revisionId) this.currentConflict.set({ ...notice, revisionId: current });
+    else if (notice.revisionId !== current) this.currentConflict.set(null);
+  }
+
+  /** A rejected selection is never automatically replayed. Refresh metadata, not the viewed bytes. */
+  private refreshCurrentConflict(error: unknown, viewed: MktgRevisionResponse, selection: string, action: MktgDocumentCurrentConflictAction): boolean {
+    if (!(error instanceof HttpErrorResponse) || error.status !== 409 || error.error?.code !== MKTG_APPROVED_CURRENT_CHANGED) return false;
+    const epoch = this.restoreEpoch;
+    const subject = this.userService.user()?.sub;
+    const body = error.error as MktgDocumentCurrentConflictResponse;
+    const notice = describeMktgCurrentConflict(body.current, action);
+    this.approvalError.set('');
+    this.approvalAnnouncement.set('');
+    this.currentConflict.set(notice);
+    this.conflictSelectedAt = typeof body.current?.selectedAt === 'string' ? body.current.selectedAt : null;
+    const reads = this.documentReads;
+    this.documentStore
+      .getDocument(viewed.project, viewed.type.agentKey, viewed.documentId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (detail) => {
+          if (epoch !== this.restoreEpoch || subject !== this.userService.user()?.sub || !this.sameView(viewed.project, viewed, selection)) return;
+          if (detail.project !== viewed.project || detail.type.agentKey !== viewed.type.agentKey || detail.documentId !== viewed.documentId) return;
+          // Late answer: the notice was retired or replaced (a write landed, the current moved on), or the poller has
+          // read since. Applying it would put older metadata and a cleared notice back.
+          if (this.currentConflict() !== notice || reads !== this.documentReads) return;
+          const view = this.view();
+          if (!view) return;
+          this.view.set(this.mergeDocumentMetadata(view, detail));
+          this.runDetail.set(detail);
+          // This re-read can already show a selection after the one the 409 named: the same rule as any other read.
+          this.settleCurrentConflict(detail);
+        },
+        // Keep the conflict and existing content on a failed metadata refresh; never ask for a page reload.
+        error: () => undefined,
+      });
+    return true;
   }
 
   private writeErrorText(error: HttpErrorResponse): string {
