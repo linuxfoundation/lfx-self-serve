@@ -193,3 +193,23 @@ describe('CampaignController LinkedIn daily cap (#5774)', () => {
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job_1' });
   });
 });
+
+// The key allow-list (#5764): a `linkedInConfig` key the route does not check never reaches campaign-service.
+describe('CampaignController LinkedIn config keys (#5764)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    linkedInConfig.current = CONFIG;
+    isServerFeatureEnabled.mockImplementation(() => true);
+    loadBriefById.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-1', error: null });
+  });
+
+  it('refuses a key it does not check before anything is created', async () => {
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', objective: 'conversions' });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig');
+  });
+});

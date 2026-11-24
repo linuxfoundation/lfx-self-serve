@@ -10,6 +10,7 @@ import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
+import { linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
 import {
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -1319,6 +1320,16 @@ export class CampaignController {
         return;
       }
 
+      // Any LinkedIn key the create route does not check is refused first, whatever the flags (#5764):
+      // `buildLinkedInConfig` forwards the rest of `linkedInConfig` as it comes, and campaign-service decodes
+      // keys ignoring case. See `linkedInConfigKeyRefusal`.
+      const linkedInKeyRefusal = linkedInConfigKeyRefusal(body?.linkedInConfig);
+      if (linkedInKeyRefusal !== null) {
+        throw ServiceValidationError.forField(linkedInKeyRefusal.field, linkedInKeyRefusal.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
       // The LinkedIn ad account to name: only the picker's explicit choice, checked against
       // campaign-service's own list (#5809) and refused when it cannot be honoured. See
       // `linkedInAdAccountToForward`.
@@ -9641,6 +9652,9 @@ export class CampaignController {
    *    removal only by `linkedInTargetingEditRefusal` in `createCampaign` — it narrows that one
    *    profile in the catalogue and is then dropped. Absent, the catalogue goes out exactly as
    *    configured, as before.
+   *
+   * 4. Every other key goes out as it came, which is safe only because `createCampaign` has already refused any key
+   *    outside `LINKEDIN_CONFIG_REQUEST_KEYS` (`linkedInConfigKeyRefusal`, #5764).
    */
   private buildLinkedInConfig(body: CampaignCreateRequest, adAccountId: string | null = null): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
