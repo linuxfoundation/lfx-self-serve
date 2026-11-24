@@ -713,6 +713,26 @@ describe('getDefaultVoteCloseDate (#6104)', () => {
     expect(calendarDay(closeDate)).toBe(expected);
     expect(closeDate.getHours()).toBe(12);
   });
+
+  it.each([
+    ['2026-03-03T00:30:00Z', '2026-03-10', 'spring forward'],
+    ['2026-10-27T23:30:00Z', '2026-11-03', 'fall back'],
+  ])('keeps seven UTC calendar days from %s through %s across %s DST', (now, expected) => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      const closeDate = getDefaultVoteCloseDate(Date.parse(now), 'UTC');
+
+      expect(calendarDay(closeDate)).toBe(expected);
+      expect(closeDate.getHours()).toBe(12);
+    } finally {
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
 });
 
 describe('buildVoteBasicsDefaults (#6104)', () => {

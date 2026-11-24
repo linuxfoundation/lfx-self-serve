@@ -331,7 +331,7 @@ export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), 
  * @returns Date carrier (local noon) on the default close day, as the form's `close_date` control expects
  */
 export function getDefaultVoteCloseDate(nowMs: number, timezone: string): Date {
-  const closeDate = toZonedDateCarrier(addDays(new Date(nowMs), VOTE_DEFAULT_CLOSE_DAYS), timezone);
+  const closeDate = addDays(toZonedDateCarrier(new Date(nowMs), timezone), VOTE_DEFAULT_CLOSE_DAYS);
   const weekday = closeDate.getDay();
   if (weekday === 6) {
     return addDays(closeDate, 2);

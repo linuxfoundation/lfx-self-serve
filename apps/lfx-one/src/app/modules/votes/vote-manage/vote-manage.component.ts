@@ -1096,7 +1096,8 @@ export class VoteManageComponent {
   }
 
   private markAllFormControlsAsTouched(): void {
-    markFormControlsAsTouched(this.form());
+    // Validation must not turn untouched defaults into organizer edits.
+    markFormControlsAsTouched(this.form(), false, false, false);
   }
 
   /** Touch only the fields gated by `isDraftSavable` so missing-value errors render under the right inputs. */

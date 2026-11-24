@@ -1040,6 +1040,81 @@ describe('VoteManageComponent', () => {
       expect(titleWrites).toEqual(['Committee A Vote', 'Committee B Vote']);
     });
 
+    it.each(['review', 'confirmation'] as const)('keeps untouched seeds following group changes after the deadline expires on %s', async (phase) => {
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      const fixture = await createStateOnlyComponent();
+      const component = fixture.componentInstance;
+      const form = component.form();
+      await selectCommittee(fixture, COMMITTEE_A);
+      const question = (form.get('questions') as FormArray).at(0) as FormGroup;
+      question.get('question')?.setValue('Approve the proposed budget?');
+      (question.get('options') as FormArray).at(0).setValue('Yes');
+      (question.get('options') as FormArray).at(1).setValue('No');
+      const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      form.get('close_date')?.setValue(futureDate);
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(form.valid).toBe(true);
+      component.nextStep();
+      await TestBed.inject(ApplicationRef).whenStable();
+      component.nextStep();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(component.currentStep()).toBe(3);
+      const confirm = vi.spyOn(TestBed.inject(ConfirmationService), 'confirm');
+      if (phase === 'confirmation') {
+        component.onSubmit();
+        expect(confirm).toHaveBeenCalledTimes(1);
+      }
+
+      form.get('close_date')?.setValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
+      if (phase === 'confirmation') {
+        confirm.mock.calls[0][0].accept?.();
+      } else {
+        component.onSubmit();
+      }
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Deadline expired' }));
+      expect(component.currentStep()).toBe(1);
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      expect(form.get('title')?.touched).toBe(true);
+      expect(form.get('description')?.touched).toBe(true);
+      expect(question.get('question')?.touched).toBe(true);
+      expect(form.get('title')?.pristine).toBe(true);
+      expect(form.get('description')?.pristine).toBe(true);
+
+      form.get('close_date')?.setValue(futureDate);
+      await selectCommittee(fixture, COMMITTEE_B);
+      expect(form.get('title')?.value).toBe('Committee B Vote');
+      expect(form.get('description')?.value).toBe(descriptionFor('Committee B'));
+      await selectCommittee(fixture, null);
+      expect(form.get('title')?.value).toBe('');
+      expect(form.get('description')?.value).toBe('');
+    });
+
+    it('preserves genuine edits and deliberate clearing after failed-submit validation', async () => {
+      const fixture = await createStateOnlyComponent();
+      const form = fixture.componentInstance.form();
+      await selectCommittee(fixture, COMMITTEE_A);
+      form.get('title')?.setValue('Approve the 2027 budget');
+      form.get('title')?.markAsDirty();
+      form.get('description')?.setValue('');
+      form.get('description')?.markAsDirty();
+      form.get('close_date')?.setValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+      fixture.componentInstance.onSubmit();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Deadline expired' }));
+      expect(form.get('title')?.dirty).toBe(true);
+      expect(form.get('description')?.dirty).toBe(true);
+      await selectCommittee(fixture, COMMITTEE_B);
+      expect(form.get('title')?.value).toBe('Approve the 2027 budget');
+      expect(form.get('description')?.value).toBe('');
+      await selectCommittee(fixture, null);
+      expect(form.get('title')?.value).toBe('Approve the 2027 budget');
+      expect(form.get('description')?.value).toBe('');
+    });
+
     it("keeps an organizer's edited title on a group switch while the unedited description re-seeds", async () => {
       const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
