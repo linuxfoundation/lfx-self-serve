@@ -9,11 +9,28 @@ import {
   META_LOCALE_TARGETING_OFF_MESSAGE,
   META_MAX_DETAILED_TARGETING_IDS,
   META_MAX_LOCALES,
+  META_TARGETING_KINDS,
   META_TARGETING_QUERY_MAX_LENGTH,
   META_TARGETING_QUERY_MIN_LENGTH,
+  META_TARGETING_SEARCH_BUSY_MESSAGE,
+  META_TARGETING_SEARCH_FAILED_MESSAGE,
+  META_TARGETING_SEARCH_NO_MATCH_MESSAGE,
+  META_TARGETING_SEARCH_PENDING_MESSAGE,
+  META_TARGETING_SEARCH_TOO_SHORT_MESSAGE,
   META_TARGETING_SEARCH_TYPES,
+  META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE,
 } from '../constants/campaign.constants';
-import type { MetaConfigRefusal, MetaDetailedTargeting, MetaTargetingFlags, MetaTargetingSearchType } from '../interfaces/campaign.interface';
+import type {
+  MetaConfigRefusal,
+  MetaDetailedTargeting,
+  MetaDetailedTargetingPicks,
+  MetaTargetingFlags,
+  MetaTargetingKind,
+  MetaTargetingPick,
+  MetaTargetingSearchChoice,
+  MetaTargetingSearchOption,
+  MetaTargetingSearchType,
+} from '../interfaces/campaign.interface';
 import { metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
@@ -137,4 +154,61 @@ export function metaTargetingQueryRefusal(type: unknown, query: unknown): string
 /** Narrows a checked search type ({@link metaTargetingQueryRefusal} is `null`). */
 export function isMetaTargetingSearchType(value: unknown): value is MetaTargetingSearchType {
   return typeof value === 'string' && (META_TARGETING_SEARCH_TYPES as readonly string[]).includes(value);
+}
+
+/** No picks in any list: a fresh object each time, so one caller's edit never reaches another's. */
+export function emptyMetaDetailedTargetingPicks(): MetaDetailedTargetingPicks {
+  return { interests: [], behaviors: [], workPositions: [] };
+}
+
+/** The lists the picker shows for this deployment: interests on the interest flag, behaviors and job titles on the behavior flag. */
+export function metaTargetingKindsShown(flags: Pick<MetaTargetingFlags, 'interest' | 'behavior'>): MetaTargetingKind[] {
+  return META_TARGETING_KINDS.filter((kind) => (kind.type === 'interest' ? flags.interest : flags.behavior));
+}
+
+/**
+ * What the picker sends for a typed query: trimmed and cut to the upstream maximum (in code points), or `''`,
+ * meaning "do not search", while it is shorter than the minimum or holds a control character.
+ */
+export function metaTargetingSearchQuery(raw: string): string {
+  const query = [...raw.trim()].slice(0, META_TARGETING_QUERY_MAX_LENGTH).join('').trim();
+  return metaTargetingQueryRefusal(META_TARGETING_SEARCH_TYPES[0], query) === null ? query : '';
+}
+
+/** `picks` with `option` added at the end; the same array when it is already there, the list is full, or its id is not a Meta id. */
+export function metaTargetingPicksWith(picks: MetaTargetingPick[], option: Pick<MetaTargetingSearchOption, 'id' | 'name'>): MetaTargetingPick[] {
+  const id = option.id.trim();
+  if (!META_CUSTOM_AUDIENCE_ID_PATTERN.test(id) || picks.length >= META_MAX_DETAILED_TARGETING_IDS || picks.some((pick) => pick.id === id)) return picks;
+  return [...picks, { id, name: option.name.trim() || id }];
+}
+
+/** `picks` without the one whose id is `id`. */
+export function metaTargetingPicksWithout(picks: MetaTargetingPick[], id: string): MetaTargetingPick[] {
+  return picks.filter((pick) => pick.id !== id);
+}
+
+/** The search rows as the picker lists them: an already-picked row, or any row once the list is full, is shown but disabled. */
+export function metaTargetingSearchChoices(options: MetaTargetingSearchOption[], picks: MetaTargetingPick[]): MetaTargetingSearchChoice[] {
+  const picked = new Set(picks.map((pick) => pick.id));
+  const full = picks.length >= META_MAX_DETAILED_TARGETING_IDS;
+  return options.map((option) => ({ ...option, disabled: full || picked.has(option.id) }));
+}
+
+/** What a failed targeting search tells the user, from its HTTP status (`0` when there is none). */
+export function metaTargetingSearchFailure(status: number): string {
+  if (status === 503) return META_TARGETING_SEARCH_BUSY_MESSAGE;
+  if (status === 404) return META_TARGETING_SEARCH_UNAVAILABLE_MESSAGE;
+  return META_TARGETING_SEARCH_FAILED_MESSAGE;
+}
+
+/**
+ * What a list's search popup says while it has no rows: that it is searching, why the search failed, that the
+ * typed text cannot be searched (`refused`: too short after trimming, or holding a control character), or that
+ * nothing matched.
+ */
+export function metaTargetingSearchEmptyMessage(refused: boolean, pending: boolean, failure: string | null): string {
+  if (pending) return META_TARGETING_SEARCH_PENDING_MESSAGE;
+  if (failure !== null) return failure;
+  if (refused) return META_TARGETING_SEARCH_TOO_SHORT_MESSAGE;
+  return META_TARGETING_SEARCH_NO_MATCH_MESSAGE;
 }
