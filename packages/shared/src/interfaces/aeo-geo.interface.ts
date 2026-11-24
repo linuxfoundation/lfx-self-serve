@@ -46,6 +46,8 @@ export interface AeoGeoFormPayload {
   /** Optional LFX context, rendered as the 2.0 agent's LFX SCOPE line. */
   project_name?: string;
   project_uid?: string;
+  /** Optional audience, comparison targets and audit context; rendered last as the agent's guarded NOTES block. */
+  notes?: string;
 }
 
 export interface AeoGeoValidationResult {

@@ -295,12 +295,37 @@ describe('AeoGeoRunComponent', () => {
     expect(start).toHaveBeenCalledWith(AEO_GEO_INTAKE, 'project-1', {
       domain: 'https://project.example/',
       key_pages: '',
+      notes: '',
       project_name: 'Synthetic Project',
       project_uid: 'project-1',
     });
     expect(navigate).toHaveBeenCalledWith(
       ['..', 'documents', 'aeo-geo', 'run-012345678901234567890123'],
       expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { mode: null } })
+    );
+  });
+  it('offers an optional Notes field last in the form, described by its hint, and sends what was typed', async () => {
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render();
+    const notes = query('mktg-aeo-notes') as HTMLTextAreaElement;
+    expect(notes.tagName).toBe('TEXTAREA');
+    expect(notes.id).toBe('mktg-aeo-notes');
+    expect(notes.getAttribute('maxlength')).toBe('10000');
+    expect(notes.getAttribute('aria-required')).toBeNull();
+    expect(fixture.nativeElement.querySelector('label[for="mktg-aeo-notes"]').textContent.replace(/\s+/g, ' ').trim()).toBe('Notes optional');
+    const hint = fixture.nativeElement.querySelector(`#${notes.getAttribute('aria-describedby')}`);
+    expect(hint.textContent.trim()).toBe('Read as context for the audit, never as instructions.');
+    // After the website and the key pages, inside the same card.
+    const fields = Array.from<HTMLElement>(query('mktg-aeo-run-form').querySelectorAll('input, textarea'));
+    expect(fields.at(-1)).toBe(notes);
+    expect(notes.closest('section')).toBe(query('mktg-aeo-domain').closest('section'));
+    await fill('mktg-aeo-notes', 'Audience: maintainers.\nCompare against other.example.');
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    expect(start).toHaveBeenCalledWith(
+      AEO_GEO_INTAKE,
+      'project-1',
+      expect.objectContaining({ domain: 'https://project.example/', notes: 'Audience: maintainers.\nCompare against other.example.' })
     );
   });
   it('recovers a cancelled document handoff without discarding its writing capability', async () => {

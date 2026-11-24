@@ -129,6 +129,22 @@
               }
               <p id="mktg-aeo-pages-error" class="text-sm text-red-600" role="alert" data-testid="mktg-aeo-run-pages-error">{{ pagesError() }}</p>
             </fieldset>
+            @if (notesField(); as notes) {
+              <div class="flex flex-col gap-2">
+                <label for="mktg-aeo-notes" class="font-semibold">{{ notes.question }} <span class="text-sm font-normal text-gray-500">optional</span></label>
+                <lfx-textarea
+                  inputId="mktg-aeo-notes"
+                  [form]="form"
+                  control="notes"
+                  [rows]="notes.rows ?? 3"
+                  [placeholder]="notes.placeholder ?? ''"
+                  [maxlength]="notesMaxChars"
+                  styleClass="w-full min-h-20 resize-y"
+                  ariaDescribedBy="mktg-aeo-notes-hint"
+                  dataTest="mktg-aeo-notes" />
+                <p id="mktg-aeo-notes-hint" class="text-sm text-gray-500">{{ notes.hint }}</p>
+              </div>
+            }
           </section>
           <p class="text-sm text-gray-500" data-testid="mktg-aeo-run-method">
             <span class="font-semibold text-gray-600">What the agent does:</span>

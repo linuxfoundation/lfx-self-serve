@@ -10,9 +10,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   AEO_GEO_INTAKE_ERRORS,
   AEO_GEO_KEY_PAGE_FIELDS,
+  AEO_GEO_NOTES_MAX_CHARS,
   AEO_GEO_RECENT_RUNS_LIMIT,
   AEO_GEO_QUESTION_KEY_PREFIX,
   AEO_GEO_TIMEOUT_MESSAGE,
@@ -73,6 +75,7 @@ import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-que
     ButtonComponent,
     InputTextComponent,
     MessageComponent,
+    TextareaComponent,
     MktgRunActivityComponent,
     MktgRunQuestionsComponent,
     MktgBreadcrumbComponent,
@@ -94,7 +97,9 @@ export class AeoGeoRunComponent {
 
   public readonly intake = input.required<MktgAgentIntake>();
   protected readonly form = new FormGroup(
-    Object.fromEntries(['domain', ...AEO_GEO_KEY_PAGE_FIELDS.map((field) => field.key)].map((key) => [key, new FormControl('', { nonNullable: true })]))
+    Object.fromEntries(
+      ['domain', ...AEO_GEO_KEY_PAGE_FIELDS.map((field) => field.key), 'notes'].map((key) => [key, new FormControl('', { nonNullable: true })])
+    )
   );
   protected readonly loading = signal(true);
   protected readonly writer = signal(false);
@@ -104,6 +109,9 @@ export class AeoGeoRunComponent {
   /** The project read is failing transiently and the poller is retrying it: one quiet status line, nothing else changes. */
   protected readonly retrying = signal(false);
   protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
+  protected readonly notesMaxChars = AEO_GEO_NOTES_MAX_CHARS;
+  /** The catalog's Notes field: its label, placeholder, hint and rows are declared once, with the family's other forms. */
+  protected readonly notesField = computed(() => this.intake().fields.find((field) => field.key === 'notes'));
   protected readonly documentLink = signal<string[] | null>(null);
   protected readonly previousError = signal('');
   protected readonly previousLoading = signal(true);
@@ -387,7 +395,7 @@ export class AeoGeoRunComponent {
       .subscribe();
   }
 
-  private initAnswers(): Signal<Record<'domain' | 'key_pages', string>> {
+  private initAnswers(): Signal<Record<'domain' | 'key_pages' | 'notes', string>> {
     return computed(() => {
       const values = this.values();
       return {
@@ -395,6 +403,7 @@ export class AeoGeoRunComponent {
         key_pages: AEO_GEO_KEY_PAGE_FIELDS.map((field) => values[field.key]?.trim() ?? '')
           .filter(Boolean)
           .join('\n'),
+        notes: values['notes'] ?? '',
       };
     });
   }
