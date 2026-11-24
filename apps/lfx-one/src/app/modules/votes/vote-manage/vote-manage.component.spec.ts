@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApplicationRef, PLATFORM_ID, signal } from '@angular/core';
+import { ApplicationRef, ChangeDetectionStrategy, Component, PLATFORM_ID, signal } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormGroup } from '@angular/forms';
@@ -23,6 +23,10 @@ import { VoteManageComponent } from './vote-manage.component';
 import type { Confirmation } from 'primeng/api';
 import type { ParamMap } from '@angular/router';
 import type { Observable } from 'rxjs';
+
+/** Runs the real vote form/signals without rendering the stepper; #6104 assertions are state-only. */
+@Component({ selector: 'lfx-vote-manage-state-only', template: '', changeDetection: ChangeDetectionStrategy.OnPush })
+class StateOnlyVoteManageComponent extends VoteManageComponent {}
 
 // Regression coverage for the relation-gated-null → uncached-detail context fallback (GH-1568):
 // when the by-uid project lookup is relation-gated into null for an organizer without a viewer
@@ -974,12 +978,18 @@ describe('VoteManageComponent', () => {
   });
 
   describe('create defaults (#6104)', () => {
+    const createStateOnlyComponent = async () => {
+      const fixture = TestBed.createComponent(StateOnlyVoteManageComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture;
+    };
+
     const COMMITTEE_A = { uid: 'committee-uid-a', name: 'Committee A' };
     const COMMITTEE_B = { uid: 'committee-uid-b', name: 'Committee B' };
     const descriptionFor = (name: string) =>
       `Members of the ${name} are asked to vote on the question(s) below. Please review the options and cast your ballot before the vote closes.`;
 
-    const selectCommittee = async (fixture: Awaited<ReturnType<typeof createComponent>>, committee: { uid: string; name: string } | null) => {
+    const selectCommittee = async (fixture: Awaited<ReturnType<typeof createStateOnlyComponent>>, committee: { uid: string; name: string } | null) => {
       fixture.componentInstance.form().get('committee')?.setValue(committee);
       await TestBed.inject(ApplicationRef).whenStable();
     };
@@ -996,7 +1006,7 @@ describe('VoteManageComponent', () => {
     });
 
     it("starts a new vote with 'all' eligibility and a weekday close date 7 days out, with title and description empty", async () => {
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
 
       expect(form.get('eligible_participants')?.value).toBe('all');
@@ -1009,7 +1019,7 @@ describe('VoteManageComponent', () => {
     });
 
     it('seeds the title and description once per group pick, keeps them pristine, and re-seeds on a group switch', async () => {
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
       const titleWrites: unknown[] = [];
       form.get('title')?.valueChanges.subscribe((value) => titleWrites.push(value));
@@ -1031,7 +1041,7 @@ describe('VoteManageComponent', () => {
     });
 
     it("keeps an organizer's edited title on a group switch while the unedited description re-seeds", async () => {
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
       await selectCommittee(fixture, COMMITTEE_A);
 
@@ -1046,7 +1056,7 @@ describe('VoteManageComponent', () => {
     });
 
     it('clears only the unedited seed when the group is cleared', async () => {
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
       await selectCommittee(fixture, COMMITTEE_A);
 
@@ -1060,7 +1070,7 @@ describe('VoteManageComponent', () => {
     });
 
     it('keeps a description the organizer cleared when the group changes', async () => {
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
       await selectCommittee(fixture, COMMITTEE_A);
 
@@ -1075,7 +1085,7 @@ describe('VoteManageComponent', () => {
     it('seeds the title and description from a ?committee_uid= locked group', async () => {
       routeMock.queryParamMap = of(convertToParamMap({ committee_uid: COMMITTEE_A.uid }));
       getCommittee.mockReturnValue(of(COMMITTEE_A));
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
 
       expect(form.get('committee')?.disabled).toBe(true);
@@ -1096,7 +1106,7 @@ describe('VoteManageComponent', () => {
           end_time_timezone: 'UTC',
         } as Vote)
       );
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
 
       expect(form.get('title')?.value).toBe('Saved draft');
@@ -1121,7 +1131,7 @@ describe('VoteManageComponent', () => {
           end_time: '2099-01-01T00:00:00Z',
         } as Vote)
       );
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
 
       expect(form.get('title')?.value).toBe('Copy of Original board election');
@@ -1148,7 +1158,7 @@ describe('VoteManageComponent', () => {
       routeMock.queryParamMap = of(convertToParamMap({ clone: 'vote-uid-source' }));
       routeMock.snapshot.queryParamMap = convertToParamMap({ clone: 'vote-uid-source' });
       fetchVote.mockReturnValue(source());
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       const form = fixture.componentInstance.form();
       expect(form.get('title')?.value).toBe('');
 
@@ -1172,7 +1182,7 @@ describe('VoteManageComponent', () => {
           end_time: '2099-01-01T00:00:00Z',
         } as Vote)
       );
-      const fixture = await createComponent();
+      const fixture = await createStateOnlyComponent();
       await selectCommittee(fixture, COMMITTEE_A);
       routeMock.snapshot.queryParamMap = convertToParamMap({ clone: 'vote-uid-source' });
       queryParams$.next(convertToParamMap({ clone: 'vote-uid-source' }));
