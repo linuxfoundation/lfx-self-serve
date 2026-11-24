@@ -57,6 +57,7 @@ import type {
   KeywordActionPlatform,
   LinkedInCallToActionOption,
   LinkedInGeoTarget,
+  LinkedInGeoUrnCorrection,
   LinkedInTargetingProfile,
   MetaAdOptionField,
   MetaAdSchedule,
@@ -3828,9 +3829,22 @@ export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget
   'hong kong': { label: 'Hong Kong', urn: 'urn:li:geo:103291313' },
   'united states': { label: 'United States', urn: 'urn:li:geo:103644278' },
   usa: { label: 'United States', urn: 'urn:li:geo:103644278' },
-  germany: { label: 'Germany', urn: 'urn:li:geo:101165590' },
-  'united kingdom': { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+  // Corrected (campaign-service LFXV2-2665): 101165590 is the United Kingdom and 106693272 Switzerland, which this map
+  // used to send for Germany and the United Kingdom. `LINKEDIN_GEO_URN_CORRECTIONS` fixes briefs and drafts saved before.
+  germany: { label: 'Germany', urn: 'urn:li:geo:101282230' },
+  'united kingdom': { label: 'United Kingdom', urn: 'urn:li:geo:101165590' },
 } as const;
+
+/**
+ * The LinkedIn geo targets `LINKEDIN_GEO_RESOLVE_MAP` used to resolve wrongly, by label and URN, and the URN each
+ * should send. A brief or draft saved before the fix still carries them, so the create route corrects them
+ * (`correctLinkedInGeoTargets`). Keyed on the pair, so a genuine United Kingdom (101165590) or Switzerland (106693272)
+ * target is left alone.
+ */
+export const LINKEDIN_GEO_URN_CORRECTIONS: readonly LinkedInGeoUrnCorrection[] = [
+  { label: 'Germany', from: 'urn:li:geo:101165590', to: 'urn:li:geo:101282230' },
+  { label: 'United Kingdom', from: 'urn:li:geo:106693272', to: 'urn:li:geo:101165590' },
+];
 
 // ---------------------------------------------------------------------------
 // Reddit Ads — Objective Parameters

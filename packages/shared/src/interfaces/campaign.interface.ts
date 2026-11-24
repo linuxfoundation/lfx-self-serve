@@ -1894,6 +1894,13 @@ export interface LinkedInGeoTarget {
   urn: string;
 }
 
+/** A LinkedIn geo target the old shared map resolved wrongly: its label, the URN it sent, and the URN it should send. */
+export interface LinkedInGeoUrnCorrection {
+  label: string;
+  from: string;
+  to: string;
+}
+
 export interface LinkedInCreativeVariant {
   introText: string;
   headline: string;

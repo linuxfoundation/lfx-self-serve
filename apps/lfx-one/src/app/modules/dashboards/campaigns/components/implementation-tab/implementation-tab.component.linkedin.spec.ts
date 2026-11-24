@@ -29,7 +29,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
 
   /** Two real URNs from the shared resolve map, so `addGeoTarget` can find them. */
   const US_GEO = { urn: 'urn:li:geo:103644278', label: 'United States' };
-  const DE_GEO = { urn: 'urn:li:geo:101165590', label: 'Germany' };
+  const DE_GEO = { urn: 'urn:li:geo:101282230', label: 'Germany' };
 
   const brief = (): CampaignBriefOutput =>
     ({
@@ -114,6 +114,20 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
    * neither the brief's recommendation (`[US]`) nor the empty default. Only a working restore can
    * produce it.
    */
+  // The rule is table rows in `campaign-linkedin-config.utils.spec.ts` (LFXV2-2665); this proves the restore applies it.
+  it('restores a Germany saved with the old shared map as the real Germany', STATE_ONLY, async () => {
+    const first = await mount(null);
+    // Any edit emits the draft; the saved Germany below is what a draft written before the fix carries.
+    at(first.fixture).addGeoTarget(DE_GEO.urn);
+    first.fixture.detectChanges();
+    const saved = { ...(first.latest() as CampaignImplementationDraft), linkedInGeoTargets: [{ label: 'Germany', urn: 'urn:li:geo:101165590' }] };
+    first.fixture.destroy();
+
+    const second = await mount(saved);
+
+    expect(at(second.fixture).linkedInGeoTargets()).toEqual([DE_GEO]);
+  });
+
   it('keeps a removed geo target removed after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
     at(first.fixture).addGeoTarget(DE_GEO.urn);

@@ -214,6 +214,55 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     expect(refusal(next).field).toBe('linkedInConfig');
   });
 
+  it('forwards Germany and the United Kingdom with the corrected URNs when a saved brief carries the old ones', async () => {
+    const { next } = await create({
+      lifetimeBudget: false,
+      targetingProfile: 'cloud-native',
+      geoTargets: [
+        { label: 'Germany', urn: 'urn:li:geo:101165590' },
+        { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+      ],
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()['geoTargets']).toEqual([
+      { label: 'Germany', urn: 'urn:li:geo:101282230' },
+      { label: 'United Kingdom', urn: 'urn:li:geo:101165590' },
+    ]);
+  });
+
+  it('does not throw on a linkedInConfig that is not an object', async () => {
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+    const req = {
+      body: { platforms: ['linkedin-ads'], linkedInConfig: true },
+      query: { project: 'tlf', brief_id: 'b-1' },
+      path: '/api/campaigns/create',
+    } as unknown as Request;
+
+    await new CampaignController().createCampaign(req, res, next);
+    // An error with no status is what the error handler answers as a 500 (a TypeError from `in` on a primitive).
+    const error = vi.mocked(next).mock.calls[0]?.[0] as unknown;
+    if (error !== undefined) {
+      expect(error).not.toBeInstanceOf(TypeError);
+      expect((error as { statusCode?: number }).statusCode).toBeLessThan(500);
+    }
+  });
+
+  it('hands the legacy creator the corrected Germany while the cutover is dark', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => !(CUTOVER_FLAGS as unknown[]).includes(flag));
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', geoTargets: [{ label: 'Germany', urn: 'urn:li:geo:101165590' }] });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect((legacyCreate.mock.calls[0][1] as { linkedInConfig: { geoTargets: unknown } }).linkedInConfig.geoTargets).toEqual([
+      { label: 'Germany', urn: 'urn:li:geo:101282230' },
+    ]);
+  });
+
   // A variant's ad name, description and call to action (#5764 rows 16–17); the rules are table rows in
   // `campaign-linkedin-variant-fields.utils.spec.ts`.
   const variant = { introText: 'Join us', headline: 'Summit' };
