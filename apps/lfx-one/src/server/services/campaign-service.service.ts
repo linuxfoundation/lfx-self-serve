@@ -854,6 +854,17 @@ export function canSetMetaLocaleTargeting(): boolean {
 }
 
 /**
+ * Whether a Meta create may carry `metaConfig.targeting.devicePlatforms` and `userOs` (#5904 row 6), one flag each,
+ * each also needing the campaign-service create path: the legacy creator never reads them.
+ */
+export function canSetMetaDeviceTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaDeviceTargeting);
+}
+export function canSetMetaOsTargeting(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaOsTargeting);
+}
+
+/**
  * Whether a Meta create may carry `metaConfig.adSchedule` and `frequencyCap` (#5904 row 5), one flag each, each also
  * needing the campaign-service create path: the legacy creator never reads them.
  */
@@ -1130,6 +1141,8 @@ export class CampaignServiceClient {
         metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
         metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
         metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+        metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
+        metaOsTargetingEnabled: canSetMetaOsTargeting(),
         metaAdScheduleEnabled: canSetMetaAdSchedule(),
         metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
@@ -1213,6 +1226,8 @@ export class CampaignServiceClient {
       metaInterestTargetingEnabled: canSetMetaInterestTargeting(),
       metaBehaviorTargetingEnabled: canSetMetaBehaviorTargeting(),
       metaLocaleTargetingEnabled: canSetMetaLocaleTargeting(),
+      metaDeviceTargetingEnabled: canSetMetaDeviceTargeting(),
+      metaOsTargetingEnabled: canSetMetaOsTargeting(),
       metaAdScheduleEnabled: canSetMetaAdSchedule(),
       metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.

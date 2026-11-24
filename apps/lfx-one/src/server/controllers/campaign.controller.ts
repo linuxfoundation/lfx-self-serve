@@ -73,6 +73,7 @@ import {
   compactMetaDetailedTargeting,
   isMetaTargetingSearchType,
   metaDetailedTargetingRefusal,
+  metaDeviceOsRefusal,
   metaTargetingFlagRefusal,
   metaTargetingQueryRefusal,
 } from '@lfx-one/shared/utils/campaign-meta-detailed-targeting.utils';
@@ -417,6 +418,8 @@ import {
   canSetMetaBehaviorTargeting,
   canSetMetaInterestTargeting,
   canSetMetaLocaleTargeting,
+  canSetMetaDeviceTargeting,
+  canSetMetaOsTargeting,
   canSetMetaAdSchedule,
   canSetMetaFrequencyCap,
   canSetMetaOptimizationGoal,
@@ -9863,8 +9866,8 @@ export class CampaignController {
    *   detailed fields passes while audience targeting is off. The form never sends a field that is off, so a block
    *   here comes from a tab opened while the flag was on (a rollout or a rollback); dropping it would create the
    *   campaign without the audience the operator chose;
-   * - a block that breaks campaign-service's rules (`metaAudienceTargetingRefusal`, `metaDetailedTargetingRefusal`):
-   *   400 naming the field;
+   * - a block that breaks campaign-service's rules (`metaAudienceTargetingRefusal`, `metaDetailedTargetingRefusal`,
+   *   and `metaDeviceOsRefusal` for devices and operating systems, #5904 row 6): 400 naming the field;
    * - a block naming custom audiences from a caller without `global_marketing_ops` on the project: 403;
    *   a check that cannot be made: 503 — the Meta ad account is shared by every foundation, and
    *   campaign-service checks the same relation (lfx-v2-campaign-service#550). Detailed fields are Meta taxonomy,
@@ -9880,11 +9883,16 @@ export class CampaignController {
       interest: canSetMetaInterestTargeting(),
       behavior: canSetMetaBehaviorTargeting(),
       locale: canSetMetaLocaleTargeting(),
+      device: canSetMetaDeviceTargeting(),
+      os: canSetMetaOsTargeting(),
     });
     if (flagRefusal !== null) {
       throw ServiceValidationError.forField(flagRefusal.field, flagRefusal.message, { operation, service: 'campaign_controller' });
     }
-    const refusal = metaAudienceTargetingRefusal(raw) ?? metaDetailedTargetingRefusal(raw);
+    const refusal =
+      metaAudienceTargetingRefusal(raw) ??
+      metaDetailedTargetingRefusal(raw) ??
+      metaDeviceOsRefusal(raw, body.metaConfig?.objective, body.metaConfig?.placements);
     if (refusal !== null) {
       throw ServiceValidationError.forField(refusal.field, refusal.message, { operation, service: 'campaign_controller' });
     }

@@ -2594,6 +2594,27 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(await sendWith({ behaviors: ['06004'] })).toBeNull();
       expect(refusedField()).toBe('metaConfig.targeting.behaviors');
     });
+
+    // Devices and operating systems (#5904 row 6): their own flags, campaign-service's rules, Meta's spelling.
+    it('forwards devices and operating systems, normalized, while audience targeting is off', async () => {
+      flagsOff(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
+
+      expect((await sendWith({ devicePlatforms: ['Mobile'], userOs: ['ios_ver_8.0_and_above'] }))?.['targeting']).toEqual({
+        devicePlatforms: ['mobile'],
+        userOs: ['iOS_ver_8.0_and_above'],
+      });
+    });
+
+    it.each([
+      ['device targeting off', [ServerFeatureFlag.CampaignServiceMetaDeviceTargeting], { devicePlatforms: ['mobile'] }, 'metaConfig.targeting.devicePlatforms'],
+      ['OS targeting off', [ServerFeatureFlag.CampaignServiceMetaOsTargeting], { userOs: ['iOS'] }, 'metaConfig.targeting.userOs'],
+      ['an OS with desktop only', [], { devicePlatforms: ['desktop'], userOs: ['Android'] }, 'metaConfig.targeting.userOs'],
+    ])('refuses %s with a 400 naming the field', async (_case, off, targeting, field) => {
+      flagsOff(...off);
+
+      expect(await sendWith(targeting)).toBeNull();
+      expect(refusedField()).toBe(field);
+    });
   });
 
   /**

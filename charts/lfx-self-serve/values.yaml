@@ -847,6 +847,20 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING:
     value:
 
+  # Meta device and operating-system targeting (#5904 row 6), one flag each: `..._META_DEVICE_TARGETING`
+  # accepts `metaConfig.targeting.devicePlatforms` (mobile, desktop), and `..._META_OS_TARGETING` accepts
+  # `metaConfig.targeting.userOs` (iOS, Android, optionally with a listed minimum version or version range).
+  #
+  # CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+  # `META_DEVICE_TARGETING_ENABLED` or `META_OS_TARGETING_ENABLED` on, and the create pipeline on. Off (the
+  # default), the create route refuses the field with a 400, never dropping it. A field only, so turning one
+  # back off strands nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING:
+    value:
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_OS_TARGETING:
+    value:
+
   # Meta delivery options (#5904 row 5), one flag each: `..._META_AD_SCHEDULE` accepts `metaConfig.adSchedule`
   # (the days and whole hours a lifetime-budget ad set runs, in the Meta ad account's time zone), and
   # `..._META_FREQUENCY_CAP` accepts `metaConfig.frequencyCap` (impressions per person on an awareness ad set).
