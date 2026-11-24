@@ -2898,6 +2898,21 @@ export interface MetaDraftRestore {
   lifetimeBudget?: boolean;
 }
 
+/** The LinkedIn keys of the Implement tab draft that `linkedInDraftRestore` reads (#5980). Every one is optional. */
+export type LinkedInDraftSnapshot = Pick<
+  CampaignImplementationDraft,
+  | 'linkedInTargetingRemovals'
+  | 'linkedInBudgetUsd'
+  | 'linkedInLifetimeBudget'
+  | 'linkedInDailyCapUsd'
+  | 'linkedInVariants'
+  | 'linkedInImageUploadVariantKey'
+  | 'linkedInImageUploadPendingName'
+  | 'linkedInImageUploadPendingBriefId'
+  | 'linkedInImageUploadFailedMessage'
+  | 'linkedInImageUploadFailedBriefId'
+>;
+
 /** The LinkedIn signals `linkedInDraftFields` snapshots into the draft (#5980): budget, cap, variants and the upload slot. */
 export interface LinkedInDraftState {
   budgetUsd: number;

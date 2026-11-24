@@ -3,7 +3,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { CampaignImplementationDraft, LinkedInBriefCopy, LinkedInDraftState, LinkedInVariantDraft } from '../interfaces/campaign.interface';
+import type {
+  LinkedInBriefCopy,
+  LinkedInDraftSnapshot,
+  LinkedInDraftState,
+  LinkedInTargetingStrategy,
+  LinkedInVariantDraft,
+} from '../interfaces/campaign.interface';
 import { linkedInBriefSeed, linkedInDraftFields, linkedInDraftRestore, newLinkedInVariantDraft } from './campaign-linkedin-draft.utils';
 
 const variant = (key: string, over: Partial<LinkedInVariantDraft> = {}): LinkedInVariantDraft => ({
@@ -15,7 +21,7 @@ const variant = (key: string, over: Partial<LinkedInVariantDraft> = {}): LinkedI
   imageAssetBriefId: '',
   ...over,
 });
-const draft = (over: Partial<CampaignImplementationDraft>): CampaignImplementationDraft => over as CampaignImplementationDraft;
+const draft = (over: LinkedInDraftSnapshot): LinkedInDraftSnapshot => over;
 
 describe('newLinkedInVariantDraft', () => {
   it('keeps the copy and image URN, with no upload', () => {
@@ -124,16 +130,36 @@ describe('linkedInBriefSeed', () => {
     expect(seed?.lifetimeBudgetUsd).toBeUndefined();
   });
 
+  const strategy = (lifetimeBudgetUsd: number): LinkedInTargetingStrategy => ({
+    targetingProfile: 'mcp',
+    targetingRationale: '',
+    recommendedSkills: [],
+    recommendedGroups: [],
+    recommendedJobFunctions: [],
+    geoTargets: [],
+    budgetRecommendation: { dailyBudgetUsd: 50, lifetimeBudgetUsd, rationale: '' },
+    audienceEstimate: '',
+    campaignStructureNotes: '',
+  });
+
   it.each([
     [1500, 1500],
     [Number.NaN, undefined],
-    ['1500', undefined],
   ])("seeds the strategy's lifetime budget %j as %j", (budget, expected) => {
-    const strategy = { budgetRecommendation: { lifetimeBudgetUsd: budget } } as unknown as LinkedInBriefCopy['strategy'];
-    expect(linkedInBriefSeed({ ...copy, strategy }, nextKey)?.lifetimeBudgetUsd).toBe(expected);
+    expect(linkedInBriefSeed({ ...copy, strategy: strategy(budget) }, nextKey)?.lifetimeBudgetUsd).toBe(expected);
   });
 
-  it('survives a strategy without a budget recommendation', () => {
-    expect(linkedInBriefSeed({ ...copy, strategy: {} as LinkedInBriefCopy['strategy'] }, nextKey)?.lifetimeBudgetUsd).toBeUndefined();
+  it('ignores a lifetime budget a restored brief stored as text', () => {
+    const stored = strategy(1500);
+    // @ts-expect-error -- a restored brief is replayed from stored JSON whose inner shape is not validated
+    stored.budgetRecommendation.lifetimeBudgetUsd = '1500';
+    expect(linkedInBriefSeed({ ...copy, strategy: stored }, nextKey)?.lifetimeBudgetUsd).toBeUndefined();
+  });
+
+  it('survives a restored strategy without a budget recommendation', () => {
+    const stored = strategy(1500);
+    // @ts-expect-error -- an old or hand-edited brief can lack this required field
+    delete stored.budgetRecommendation;
+    expect(linkedInBriefSeed({ ...copy, strategy: stored }, nextKey)?.lifetimeBudgetUsd).toBeUndefined();
   });
 });

@@ -7,6 +7,7 @@ import type {
   LinkedInBriefSeed,
   LinkedInCreativeVariant,
   LinkedInDraftRestore,
+  LinkedInDraftSnapshot,
   LinkedInDraftState,
   LinkedInVariantDraft,
 } from '../interfaces/campaign.interface';
@@ -65,7 +66,7 @@ export function linkedInDraftFields(
  * leaves the brief's seed standing, so a draft written by an older build replays nothing stale. An unparsable cap (NaN)
  * restores as no cap, since the remounted box starts empty. A failed upload is shown only with the brief it failed for.
  */
-export function linkedInDraftRestore(draft: CampaignImplementationDraft): LinkedInDraftRestore {
+export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraftRestore {
   const restore: LinkedInDraftRestore = {
     targetingRemovals: draft.linkedInTargetingRemovals ?? { skills: [], groups: [] },
     uploadVariantKey: draft.linkedInImageUploadVariantKey ?? '',
