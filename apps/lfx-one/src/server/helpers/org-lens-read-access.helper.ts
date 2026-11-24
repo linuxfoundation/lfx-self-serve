@@ -12,7 +12,7 @@ import { logger } from '../services/logger.service';
 import { OrgEmployeeViewService } from '../services/org-employee-view.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
-import { isServerFeatureEnabled, ServerFeatureFlag } from './server-feature-flag.helper';
+import { isOrgLensEmployeeViewEnabled } from './org-lens-employee-view-flag.helper';
 
 const roleGrants = new OrgRoleGrantsService();
 const accessCheck = new AccessCheckService();
@@ -234,12 +234,12 @@ async function resolveOrgLensRead(
   // so no existing path could have admitted them. A roll-up check passes `roster`; a roll-up never admits the employee
   // view, so it is not even asked. Off by default until every page story has redacted its endpoint.
   // An unread staff check leaves "not staff" unproven: retriable 503 (as `resolveReduced` answers), never a 403 for an eligible employee.
-  if (!roster && staffCheckFailed && isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+  if (!roster && staffCheckFailed && isOrgLensEmployeeViewEnabled(req)) {
     throw unavailable(undefined);
   }
 
   // One rule for who enters, shared with the selector and the slug resolver: no grants and not staff.
-  if (!roster && isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView) && !isStaff && !staffCheckFailed && grantedOrgCount === 0) {
+  if (!roster && isOrgLensEmployeeViewEnabled(req) && !isStaff && !staffCheckFailed && grantedOrgCount === 0) {
     let verdict: Awaited<ReturnType<OrgEmployeeViewService['resolve']>>;
     try {
       verdict = await employeeView.resolve(req, orgUid);

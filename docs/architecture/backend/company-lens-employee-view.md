@@ -34,7 +34,9 @@ Employee access supersedes CLA-only classification for the same company (selecto
 
 Roll-up segments never qualify: the roll-up gate shares a roster, which skips the employee-view attempt, and drops any company that comes back `employee-view`.
 
-**Rollout flag.** `LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED` (`ServerFeatureFlag.OrgLensEmployeeView`) is OFF by default and a complete no-op when off. Turn it on only after every page story has applied the tools below; until then an employee-view caller would read pages that are not yet redacted.
+**Rollout flags.** `LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED` (`ServerFeatureFlag.OrgLensEmployeeView`) is OFF by default and a complete no-op when off. Turn it on only after every page story has applied the tools below; until then an employee-view caller would read pages that are not yet redacted.
+
+**Staff preview.** `LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY` (`ServerFeatureFlag.OrgLensEmployeeViewImpersonationOnly`) opens the view only for a request made under an active impersonation session, so LF staff can impersonate an employee and see what that employee would see in production while no real employee is let in. Real callers are answered exactly as when both flags are off. Every place that opens the view asks `isOrgLensEmployeeViewEnabled(req)` (`org-lens-employee-view-flag.helper.ts`), so the two flags have one definition. Impersonation itself needs the `can_impersonate` claim (see [User Impersonation](./impersonation.md)), so no separate staff check is added. The impersonated user is judged by every rule on this page: no grants, not staff, a validated email on a member company's domain, and that company as a current employer. The staff preview is for pages that have already shipped their redaction; it does not make an unredacted page safe, so keep it off until the page stories you want to check are deployed.
 
 ## The mode, for server handlers
 

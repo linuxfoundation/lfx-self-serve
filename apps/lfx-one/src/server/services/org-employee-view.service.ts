@@ -21,7 +21,7 @@ import { candidateMemberDomains, emailDomain, isPersonalEmailDomain, normalizeDo
 import type { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
 import { MicroserviceError } from '../errors/microservice.error';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -232,7 +232,7 @@ export class OrgEmployeeViewService {
     req: Request,
     grants: RoleGrantsResponse
   ): Promise<Pick<RoleGrantsResponse, 'employeeView' | 'fullAccessOrgUid' | 'employeeViewLookup'>> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+    if (!isOrgLensEmployeeViewEnabled(req)) {
       return {};
     }
     const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;

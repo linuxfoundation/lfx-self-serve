@@ -845,6 +845,18 @@ export enum ServerFeatureFlag {
    * has shipped. OFF is a complete no-op: no extra lookup runs and the lens behaves exactly as before.
    */
   OrgLensEmployeeView = 'LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED',
+
+  /**
+   * A staff-only preview of the all employee view (epic #5845): the view opens ONLY for a request made under an active
+   * impersonation session, so LF staff can impersonate an employee and see exactly what that employee would see in
+   * production, while no real employee is ever let in. Real, non-impersonating callers are answered as if the view did
+   * not exist (the ordinary 403 or no row).
+   *
+   * Independent of `OrgLensEmployeeView`, and ignored when that flag is on (it already opens the view for everyone).
+   * Use {@link isOrgLensEmployeeViewEnabled} (`org-lens-employee-view-flag.helper.ts`) rather than reading either flag
+   * directly. OFF by default; same accepted values as the flags above.
+   */
+  OrgLensEmployeeViewImpersonationOnly = 'LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY',
 }
 
 /**

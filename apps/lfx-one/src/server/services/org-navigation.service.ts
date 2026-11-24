@@ -15,7 +15,7 @@ import {
 import { filterOrgItemsByName, sortOrgItemsByName } from '@lfx-one/shared/utils/org-selector.utils';
 import { Request } from 'express';
 
-import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
@@ -191,7 +191,7 @@ export class OrgNavigationService {
    * "could not load" instead of "no companies".
    */
   private async getEmployeeViewItem(req: Request): Promise<{ item: OrgItem | null; failed: boolean }> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+    if (!isOrgLensEmployeeViewEnabled(req)) {
       return { item: null, failed: false };
     }
     try {

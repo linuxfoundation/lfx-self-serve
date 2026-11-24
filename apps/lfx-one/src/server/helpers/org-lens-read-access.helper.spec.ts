@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   checkSingleAccessStrict: vi.fn(),
   resolveEmployeeView: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'employee'),
+  isImpersonating: vi.fn(() => false),
 }));
 
 vi.mock('../services/org-role-grants.service', () => ({
@@ -29,12 +30,13 @@ vi.mock('../services/org-employee-view.service', () => ({
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => mocks.getEffectiveUsername() }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => mocks.getEffectiveUsername(), isImpersonating: () => mocks.isImpersonating() }));
 
 const { assertOrgLensRead, getOrgLensViewMode, resolveOrgLensViewMode } = await import('./org-lens-read-access.helper');
 
 const ORG_UID = '0016100000ACMEAAA1';
 const FLAG = 'LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED';
+const IMPERSONATION_ONLY_FLAG = 'LFX_ORG_LENS_EMPLOYEE_VIEW_IMPERSONATION_ONLY';
 
 const req = (): Request => ({ path: '/api/orgs/x/lens/overview' }) as unknown as Request;
 const roster = (over: Record<string, unknown> = {}) => ({ resolved: new Map(), upstreamFailed: false, degraded: false, ...over });
@@ -43,6 +45,8 @@ const eligible = { eligible: true, org: { orgUid: ORG_UID, orgName: 'Acme Motors
 beforeEach(() => {
   vi.clearAllMocks();
   process.env[FLAG] = 'true';
+  delete process.env[IMPERSONATION_ONLY_FLAG];
+  mocks.isImpersonating.mockReturnValue(false);
   mocks.getEffectiveUsername.mockReturnValue('employee');
   mocks.getAccessAwareOrgs.mockResolvedValue(roster());
   mocks.checkSingleAccessStrict.mockResolvedValue(false);
@@ -133,6 +137,34 @@ describe('assertOrgLensRead: employee-view qualification', () => {
 
     await expect(assertOrgLensRead(req(), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 403 });
     expect(mocks.resolveEmployeeView).not.toHaveBeenCalled();
+  });
+
+  describe('staff preview (impersonation-only)', () => {
+    beforeEach(() => {
+      process.env[FLAG] = '';
+      process.env[IMPERSONATION_ONLY_FLAG] = 'true';
+      mocks.resolveEmployeeView.mockResolvedValue(eligible);
+    });
+
+    it('admits an employee only while staff impersonate them, in the employee mode', async () => {
+      mocks.isImpersonating.mockReturnValue(true);
+      const r = req();
+
+      await expect(assertOrgLensRead(r, ORG_UID, 'op')).resolves.toBe('employee-view');
+      expect(getOrgLensViewMode(r, ORG_UID)).toBe('employee');
+    });
+
+    it('refuses a real employee who is not being impersonated, with no employment lookup', async () => {
+      await expect(assertOrgLensRead(req(), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 403 });
+      expect(mocks.resolveEmployeeView).not.toHaveBeenCalled();
+    });
+
+    it('still refuses an impersonated target who is not eligible', async () => {
+      mocks.isImpersonating.mockReturnValue(true);
+      mocks.resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-verified-company-email' });
+
+      await expect(assertOrgLensRead(req(), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 403 });
+    });
   });
 
   it('resolves for the effective user: an impersonated session is judged as the target, and a missing identity is refused', async () => {

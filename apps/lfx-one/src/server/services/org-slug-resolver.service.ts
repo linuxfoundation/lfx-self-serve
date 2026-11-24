@@ -19,7 +19,7 @@ import { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
-import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -162,7 +162,7 @@ export class OrgSlugResolverService {
    * where the caller's own selection could be the company that could not be checked.
    */
   private async employeeCandidateForSlug(req: Request, slug: string): Promise<{ employee: OrgLensEmployeeViewGrant | null; failed: boolean }> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) return { employee: null, failed: false };
+    if (!isOrgLensEmployeeViewEnabled(req)) return { employee: null, failed: false };
     let timer: NodeJS.Timeout | undefined;
     try {
       const verdict = await Promise.race([
@@ -219,7 +219,7 @@ export class OrgSlugResolverService {
     claOnlyUid: string | null
   ): Promise<OrgResolveResponse | null> {
     let employeeViewError: unknown;
-    if (isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+    if (isOrgLensEmployeeViewEnabled(req)) {
       try {
         const verdict = await this.employeeView.resolveReduced(req);
         if (verdict.eligible && matches(verdict.org)) {
