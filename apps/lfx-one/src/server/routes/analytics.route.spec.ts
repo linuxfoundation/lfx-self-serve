@@ -35,6 +35,7 @@ const checkAccessStrict = vi.fn();
 const checkRootMarketingAuditor = vi.fn();
 const execute = vi.fn();
 const getAccessAwareOrgs = vi.fn();
+const resolveEmployeeView = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 
 vi.mock('../utils/persona-helper', () => ({
@@ -45,6 +46,11 @@ vi.mock('../utils/persona-helper', () => ({
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+  },
+}));
+vi.mock('../services/org-employee-view.service', () => ({
+  OrgEmployeeViewService: class {
+    public resolve = resolveEmployeeView;
   },
 }));
 vi.mock('../services/access-check.service', () => ({
@@ -125,6 +131,7 @@ beforeEach(() => {
   checkAccessStrict.mockImplementation(
     async (_req: unknown, resources: { id: string; access: string }[]) => new Map(resources.map((r) => [`${r.id}#${r.access}`, false]))
   );
+  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-employer' });
 });
 
 describe.each([
@@ -542,5 +549,43 @@ describe('analytics router — org-lens-account-context resolves only accounts t
 
     expect(res.status).toBe(503);
     expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+// The all employee view (epic #5845): an employee with no grant on the company. Only the four Overview involvement rows
+// return aggregate counts and opt in; every other org-scoped analytics row must keep refusing them (it would answer unredacted).
+const EMPLOYEE_VIEW_ROWS = new Set([
+  '/org-foundation-coverage',
+  '/org-involvement-contributors-monthly',
+  '/org-involvement-maintainers-monthly',
+  '/org-involvement-event-attendance-monthly',
+]);
+
+describe('analytics router — the all employee view is admitted only on the Overview involvement rows', () => {
+  beforeEach(() => {
+    process.env[ServerFeatureFlag.OrgLensEmployeeView] = 'true';
+    caller({});
+    resolveEmployeeView.mockResolvedValue({ eligible: true });
+  });
+
+  afterEach(() => {
+    delete process.env[ServerFeatureFlag.OrgLensEmployeeView];
+  });
+
+  it('lists only rows the router actually serves', () => {
+    expect(routePaths).toEqual(expect.arrayContaining([...EMPLOYEE_VIEW_ROWS]));
+  });
+
+  it.each(routePaths.filter((path) => ORG_SCOPED_ROWS.has(path) && path !== '/org-lens-account-context'))('%s: employee view', async (path) => {
+    const res = await fetch(`${baseUrl}/api/analytics${path}?accountId=${OWN}&foundationSlug=cncf&projectSlug=cncf`);
+    await res.arrayBuffer();
+
+    if (EMPLOYEE_VIEW_ROWS.has(path)) {
+      expect(res.status).not.toBe(403);
+      expect(queried(OWN)).toBe(true);
+    } else {
+      expect(res.status).toBe(403);
+      expect(queried(OWN)).toBe(false);
+    }
   });
 });

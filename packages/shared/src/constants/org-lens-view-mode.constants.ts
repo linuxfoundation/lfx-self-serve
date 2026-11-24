@@ -25,7 +25,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS_BY_PAGE: Readonly<Record<strin
   // Shared shell data several pages read (company scope, no people).
   shared: [/^\/org-scope\/?$/],
   // overview
-  overview: [],
+  overview: [/^\/foundations-and-projects\/?$/],
   // projects
   projects: [],
   // project-detail
