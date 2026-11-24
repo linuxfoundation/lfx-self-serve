@@ -969,6 +969,15 @@ export const META_CUSTOM_AUDIENCE_ID_PATTERN = /^[1-9][0-9]*$/;
 export const META_MAX_DETAILED_TARGETING_IDS = 25;
 /** At most this many distinct `locales` (Meta `adlocale` keys). */
 export const META_MAX_LOCALES = 50;
+/** The Meta device platforms a create may name (#5904 row 6; campaign-service#612). */
+export const META_DEVICE_PLATFORMS = ['mobile', 'desktop'] as const;
+/** At most this many distinct Meta `user_os` values. */
+export const META_MAX_USER_OS = 10;
+/** The OS versions Meta's Advanced Targeting reference lists, per family, as campaign-service checks them. */
+export const META_USER_OS_VERSIONS: Readonly<Record<'iOS' | 'Android', readonly string[]>> = {
+  iOS: ['2.0', '3.0', '4.0', '4.3', '5.0', '6.0', '7.0', '8.0', '9.0'],
+  Android: ['2.0', '2.1', '2.2', '2.3', '3.0', '3.1', '3.2', '4.0', '4.1', '4.2', '4.3', '4.4', '5.0', '5.1', '6.0', '7.0', '7.1', '8.0'],
+};
 /** A Meta frequency cap's impressions and days are each 1–90, as Meta documents them (#5904 row 5; campaign-service#612). */
 export const META_FREQUENCY_CAP_MIN = 1;
 export const META_FREQUENCY_CAP_MAX = 90;
@@ -1716,6 +1725,11 @@ export const META_BEHAVIOR_TARGETING_OFF_MESSAGE =
   'Meta behavior and job title targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta languages while language targeting is off on this deployment. */
 export const META_LOCALE_TARGETING_OFF_MESSAGE = 'Meta language targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for Meta device targeting while it is off on this deployment. */
+export const META_DEVICE_TARGETING_OFF_MESSAGE = 'Meta device targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for Meta operating-system targeting while it is off on this deployment. */
+export const META_OS_TARGETING_OFF_MESSAGE =
+  'Meta operating system targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for a Meta ad schedule while scheduling is off on this deployment. */
 export const META_AD_SCHEDULE_OFF_MESSAGE = 'Meta ad scheduling is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for a Meta frequency cap while it is off on this deployment. */

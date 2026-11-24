@@ -4821,6 +4821,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaInterestTargetingEnabled: false,
       metaBehaviorTargetingEnabled: false,
       metaLocaleTargetingEnabled: false,
+      metaDeviceTargetingEnabled: false,
+      metaOsTargetingEnabled: false,
       metaAdScheduleEnabled: false,
       metaFrequencyCapEnabled: false,
       googleAudienceSegmentsEnabled: false,
@@ -5055,6 +5057,24 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
       expect([result.metaCallToActionEnabled, result.metaConversionEventEnabled, result.metaOptimizationGoalEnabled]).toEqual([expected, expected, expected]);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  it.each([
+    [{ cutover: true, own: true }, true],
+    [{ cutover: true, own: false }, false],
+    [{ cutover: false, own: true }, false],
+  ])('reports each meta device and OS capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
+    const own = [ServerFeatureFlag.CampaignServiceMetaDeviceTargeting, ServerFeatureFlag.CampaignServiceMetaOsTargeting];
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (own.includes(flag as ServerFeatureFlag) ? flags.own : flags.cutover));
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect([result.metaDeviceTargetingEnabled, result.metaOsTargetingEnabled]).toEqual([expected, expected]);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -5498,6 +5518,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaInterestTargetingEnabled: false,
       metaBehaviorTargetingEnabled: false,
       metaLocaleTargetingEnabled: false,
+      metaDeviceTargetingEnabled: false,
+      metaOsTargetingEnabled: false,
       metaAdScheduleEnabled: false,
       metaFrequencyCapEnabled: false,
       googleAudienceSegmentsEnabled: false,

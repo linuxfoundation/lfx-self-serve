@@ -29,6 +29,56 @@ export function metaConfigRecord(raw: unknown): Record<string, unknown> | undefi
   return typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
 }
 
+/** The `metaConfig` keys the create route reads or rebuilds by their exact spelling. */
+const META_CONFIG_EXACT_KEYS = [
+  'targeting',
+  'objective',
+  'placements',
+  'lifetimeBudget',
+  'leadFormId',
+  'adSchedule',
+  'frequencyCap',
+  'callToAction',
+  'conversionEvent',
+  'optimizationGoal',
+  'bidding',
+  'budget',
+  'budgetUsd',
+] as const;
+/** The `metaConfig.placements` keys, which the device rules read by their exact spelling. */
+const META_PLACEMENT_KEYS = ['facebookFeed', 'instagramFeed', 'stories', 'reels', 'audienceNetwork', 'messengerInbox'] as const;
+
+/** A key as Go's `encoding/json` matches it: Unicode case folding, which upper-casing first catches (`ſ` is `s`). */
+function foldKey(key: string): string {
+  return key.toUpperCase().toLowerCase();
+}
+
+/** The known key `record` sends under another spelling, or `null`. */
+function keyVariantIn(record: Record<string, unknown>, known: readonly string[]): string | null {
+  for (const key of Object.keys(record)) {
+    const match = known.find((k) => key !== k && foldKey(key) === foldKey(k));
+    if (match) return match;
+  }
+  return null;
+}
+
+/**
+ * The `metaConfig` field `raw` sends under another spelling of its key, or `null` (#5904 row 6 review). campaign-service
+ * decodes keys ignoring case (Unicode folding), but the create route reads and rebuilds each by its exact spelling and
+ * forwards the rest untouched, so `Targeting` would reach campaign-service past every targeting gate here, and a
+ * differently cased `objective` or `placements.audienceNetwork` past the rules that read them. The route refuses any
+ * such key whatever the flags, naming the field it folds to.
+ */
+export function metaConfigKeyVariant(raw: unknown): string | null {
+  const record = metaConfigRecord(raw);
+  if (!record) return null;
+  const top = keyVariantIn(record, META_CONFIG_EXACT_KEYS);
+  if (top !== null) return `metaConfig.${top}`;
+  const placements = metaConfigRecord(record['placements']);
+  const placement = placements ? keyVariantIn(placements, META_PLACEMENT_KEYS) : null;
+  return placement === null ? null : `metaConfig.placements.${placement}`;
+}
+
 /**
  * Why `raw`'s Meta ad choices cannot be sent with this objective, or `null`. Typed runtime checks, since the
  * create route has no body validator: an absent, null or blank key is "Not set". Values are matched ignoring

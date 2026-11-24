@@ -468,6 +468,19 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaLocaleTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING',
 
   /**
+   * Meta device and operating-system targeting (#5904 row 6): accept `metaConfig.targeting.devicePlatforms` and
+   * `metaConfig.targeting.userOs` on create, one flag each.
+   *
+   * CAPABILITY flags of the Bidding kind: each REQUIRES campaign-service v1.0.37 DEPLOYED with its own
+   * `META_DEVICE_TARGETING_ENABLED` or `META_OS_TARGETING_ENABLED` on, since campaign-service refuses the field with a
+   * 400 otherwise, and is only meaningful while the create cutover is on (`cutoverOwnsCreate`). Off (the default), the
+   * create route refuses the field with a 400, never dropping it. A request field only, so flipping one back strands
+   * nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaDeviceTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING',
+  CampaignServiceMetaOsTargeting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_OS_TARGETING',
+
+  /**
    * Meta delivery options (#5904 row 5): accept `metaConfig.adSchedule` (a lifetime-budget ad set's hours) and
    * `metaConfig.frequencyCap` (an awareness ad set's impressions per person), one flag each.
    *

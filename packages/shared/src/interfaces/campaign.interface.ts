@@ -2526,6 +2526,10 @@ export interface MetaDetailedTargeting {
   behaviors?: string[];
   workPositions?: string[];
   locales?: number[];
+  /** `mobile` and/or `desktop` (#5904 row 6); one device restricts the ad set, both or none is Meta's default. */
+  devicePlatforms?: string[];
+  /** Meta `user_os` values (#5904 row 6): `iOS`, `Android`, or either with a listed minimum version or version range. */
+  userOs?: string[];
 }
 
 /** The whole `metaConfig.targeting` block a Meta create may send: the audience fields and the detailed ones. */
@@ -2537,6 +2541,15 @@ export interface MetaTargetingFlags {
   interest: boolean;
   behavior: boolean;
   locale: boolean;
+  device: boolean;
+  os: boolean;
+}
+
+/** One Meta `user_os` value, parsed: its spelling as Meta takes it, its family, and whether it names a version. */
+export interface MetaUserOsValue {
+  canonical: string;
+  family: 'iOS' | 'Android';
+  versioned: boolean;
 }
 
 /** A kind the Meta targeting search answers (`GET /api/campaigns/meta/targeting-search?type=`). */
@@ -7603,6 +7616,12 @@ export interface CampaignListResult {
   metaInterestTargetingEnabled?: boolean;
   metaBehaviorTargetingEnabled?: boolean;
   metaLocaleTargetingEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.targeting.devicePlatforms` and `userOs` (#5904 row 6), one flag each:
+   * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_DEVICE_TARGETING` / `..._META_OS_TARGETING`.
+   */
+  metaDeviceTargetingEnabled?: boolean;
+  metaOsTargetingEnabled?: boolean;
   /**
    * Whether a Meta create may carry `metaConfig.adSchedule` and `frequencyCap` (#5904 row 5), one flag each:
    * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE` / `..._META_FREQUENCY_CAP`. Deployment-wide.
