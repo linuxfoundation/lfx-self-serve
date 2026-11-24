@@ -2,12 +2,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createAppTestShards, parseShard } from './lib/app-test-shards.mjs';
+import { createAppTestShards, discoverSpecs, parseShard } from './lib/app-test-shards.mjs';
+import { checkSpecBudget, formatViolation } from './lib/check-spec-budget.mjs';
+import { attachSpecPaths, parseVitestFileLines } from './lib/spec-timings.mjs';
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -29,7 +31,7 @@ try {
   ) {
     throw new Error('Angular test discovery changed; update shard discovery to match before running CI.');
   }
-  const files = discoverSpecs(join(APP_ROOT, 'src/app'));
+  const files = discoverSpecs(join(APP_ROOT, 'src/app'), APP_ROOT);
   const { files: durations } = JSON.parse(readFileSync(join(APP_ROOT, 'scripts/frontend-test-durations.json'), 'utf8'));
   const shards = createAppTestShards(files, count, durations);
   for (const [offset, shard] of shards.entries()) {
@@ -39,26 +41,57 @@ try {
   if (options.includes('--list')) {
     console.log(selected.join('\n'));
   } else {
-    // Keep Angular compilation and TestBed initialization. Plain Vitest cannot run these specs.
-    const { status, signal, error } = spawnSync('yarn', ['test:app', '--watch=false', ...selected.map((file) => `--include=${file}`)], {
-      cwd: APP_ROOT,
-      stdio: 'inherit',
-      shell: false,
-    });
-    if (error) throw error;
-    if (signal) console.error(`[test:app] shard ${index}/${count} was killed by ${signal}.`);
-    process.exitCode = status ?? 1;
+    const { status, output } = await runShard(selected, `${index}/${count}`);
+    const budgetFailed = checkBudget(output, selected);
+    process.exitCode = status === 0 && budgetFailed ? 1 : (status ?? 1);
   }
 } catch (error) {
   console.error(`[test:app] ${error.message}`);
   process.exitCode = 1;
 }
 
-function discoverSpecs(directory) {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(directory, entry.name);
-    if (entry.isDirectory()) return discoverSpecs(full);
-    if (entry.isFile() && entry.name.endsWith('.spec.ts')) return [relative(APP_ROOT, full).split(sep).join('/')];
-    return [];
+/**
+ * Keep Angular compilation and TestBed initialization; plain Vitest cannot run these specs.
+ * Stdout is mirrored live and kept, so the per-file timing lines can be checked afterwards.
+ */
+function runShard(selected, label) {
+  return new Promise((resolvePromise, reject) => {
+    // Piping stdout would otherwise turn colours off for a developer running a shard locally.
+    const env = process.stdout.isTTY && !('FORCE_COLOR' in process.env) ? { ...process.env, FORCE_COLOR: '1' } : process.env;
+    const child = spawn('yarn', ['test:app', '--watch=false', ...selected.map((file) => `--include=${file}`)], {
+      cwd: APP_ROOT,
+      env,
+      stdio: ['inherit', 'pipe', 'inherit'],
+      shell: false,
+    });
+    const chunks = [];
+    child.stdout.on('data', (chunk) => {
+      chunks.push(chunk);
+      process.stdout.write(chunk);
+    });
+    child.on('error', reject);
+    child.on('close', (status, signal) => {
+      if (signal) console.error(`[test:app] shard ${label} was killed by ${signal}.`);
+      resolvePromise({ status, output: Buffer.concat(chunks).toString('utf8') });
+    });
   });
+}
+
+/** Returns true when the shard must fail on the per-file runtime budget (#5980). */
+function checkBudget(output, selected) {
+  const { matched, unknown } = attachSpecPaths(parseVitestFileLines(output), selected);
+  if (unknown.length > 0) console.log(`[test:app] timings for specs outside this shard were ignored: ${unknown.join(', ')}`);
+  if (matched.length === 0) {
+    console.error('[test:app] Found no per-file Vitest timings in the shard output, so the runtime budget could not be checked. Update scripts/lib/spec-timings.mjs to match the new output.');
+    return true;
+  }
+  const { files: baseline } = JSON.parse(readFileSync(join(APP_ROOT, 'scripts/spec-budget-baseline.json'), 'utf8'));
+  const violations = checkSpecBudget(matched, baseline);
+  for (const violation of violations) {
+    const message = formatViolation(violation);
+    console.error(`[test:app] Spec runtime budget: ${message}`);
+    if (process.env.GITHUB_ACTIONS) console.log(`::error file=apps/lfx-one/${violation.file},title=Spec runtime budget::${message}`);
+  }
+  if (violations.length === 0) console.log(`[test:app] Spec runtime budget: ${matched.length} spec files checked, all within budget.`);
+  return violations.length > 0;
 }

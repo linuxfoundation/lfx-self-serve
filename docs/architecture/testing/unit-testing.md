@@ -106,10 +106,69 @@ Angular test configuration's include/exclude discovery contract that the runner 
 
 A spec file is the smallest unit a shard can hold, and one file runs serially on one worker, so a
 single long file sets the floor for its shard no matter how many shards exist. Keep each app spec
-under about 45 seconds of CI test time; split a longer one by top-level `describe` into
+within the runtime budget below; split a longer one by top-level `describe` into
 `<name>.component.<group>.spec.ts` files, with shared setup in a `<name>.spec-helper.ts` beside
-them. When a spec is added, split, or grows past a few seconds, refresh its entry in
-`scripts/frontend-test-durations.json` from a recent CI run so the plan stays balanced.
+them.
+
+### Per-file runtime budget
+
+After its specs finish, each shard reads Vitest's per-file lines
+(`✓ lfx-one spec-app-….spec.js (74 tests) 5735ms`) and fails if a file breaks the budget
+(`scripts/lib/check-spec-budget.mjs`, #5980):
+
+| Rule                                                        | Budget | CI fails above |
+| ----------------------------------------------------------- | -----: | -------------: |
+| Total time per spec file                                    |   20 s |           30 s |
+| Average per test, for files that run 3 s or longer in total | 150 ms |         225 ms |
+
+- **Noise margin.** CI fails only at 1.5× a limit. Shards run files in parallel on a shared runner,
+  and files with the same test count varied by up to 1.8× between two main runs (p90 1.48×), so a
+  tighter line would fail PRs that did not touch the file.
+- **Ratchet baseline.** `scripts/spec-budget-baseline.json` lists every file whose time plus 25%
+  headroom exceeded a budget on main run 45292906999, at that time plus 25%. A listed file is held
+  to the larger of the budget and its own entry, so it fails only when it gets slower than it was:
+  about 1.9× its recorded time once the noise margin applies. Nothing on main fails today.
+- **Tighten, never loosen.** When you speed up a listed file, lower or delete its entry in the same
+  PR. Do not raise an entry to make a slower spec pass. `--write-budget-baseline` on the refresh
+  script below regenerates the whole file from one run, which resets the ratchet; use it only when
+  the budget itself changes.
+
+When a shard fails with `Spec runtime budget: <file> took …`:
+
+1. Reproduce locally with `yarn ng test --watch=false --include=<file>` and look for the slow
+   tests, usually full renders, real timers or a large `TestBed` setup repeated per test.
+2. Move logic tests to the cheapest test that proves them (see
+   [Choose the cheapest test](#choose-the-cheapest-test-that-proves-the-behaviour)): a pure function,
+   then the state-only fixture, and a full render only for DOM behaviour. Replace real waits with
+   fake timers.
+3. If the file is simply large, split it by top-level `describe` as above.
+4. If a runner was unusually slow, the other files in that shard will show it too; re-run the job.
+
+Static Checks also **warns** (an annotation, never a failure) when a PR adds more than 300 net lines
+to campaign specs (`modules/dashboards/campaigns/**/*.spec.ts`), or adds a
+`TestBed.createComponent(` with no `STATE_ONLY` test, `StateOnly*` subclass or `*ComponentUnderTest()`
+helper within 10 lines (`scripts/check-campaign-spec-growth.mjs`).
+
+### Shard weights
+
+`scripts/frontend-test-durations.json` holds the seconds of every spec that ran for 3 s or longer in
+one green main run, rounded to 0.1 s. `scripts/refresh-test-durations.mjs` rebuilds it from that
+run's Frontend Tests job logs and reports how far the weights moved (the summed change over the
+summed old weight, counting a file under 3 s as one unit, as the planner does).
+
+The **Frontend Test Weights** workflow (`.github/workflows/frontend-test-weights.yml`) runs it every
+Monday and on demand against the latest green push to main. When the weights moved more than 20% it
+goes red, and its summary and `frontend-test-durations` artifact hold the new file. It does not open
+the PR itself: a PR pushed with `GITHUB_TOKEN` does not trigger the required Quality Checks, and
+commits here must be signed by a person. To refresh, from `apps/lfx-one`:
+
+```bash
+node scripts/refresh-test-durations.mjs --run <quality-checks-run-id>          # report the drift only
+node scripts/refresh-test-durations.mjs --run <quality-checks-run-id> --write  # rewrite the file
+```
+
+Then commit the file with `git commit -S --signoff` and open a `test(ci): …` PR. Refresh by hand too
+after splitting or adding a large spec, so the plan stays balanced before the next scheduled run.
 
 Execution still uses the Angular unit-test builder, with an explicit `--include` per assigned
 file and `--watch=false`, not vanilla Vitest. The Angular builder does not support native
