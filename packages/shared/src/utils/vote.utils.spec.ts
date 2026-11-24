@@ -83,6 +83,8 @@ import {
   truncateVoteTitle,
   votePresenterPath,
   buildVoteAnswerSummary,
+  buildVoteBasicsDefaults,
+  getDefaultVoteCloseDate,
 } from './vote.utils';
 
 /** Minimal VoteFormValue fixture — the request builders only read the fields set here. */
@@ -691,6 +693,64 @@ describe('mapVoteToCloneFormValue', () => {
     expect(cloned.committee?.uid).toBe('committee-uid');
     expect(cloned.eligible_participants).toBe('voting_rep,alternate_voting_rep');
     expect(cloned.questions).toEqual([{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }]);
+  });
+});
+
+describe('getDefaultVoteCloseDate (#6104)', () => {
+  /** Reads the carrier's calendar day as YYYY-MM-DD (the carrier is a local-noon Date). */
+  function calendarDay(date: Date): string {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  it.each([
+    // [now, timezone, expected close day, case]
+    ['2025-05-01T12:00:00Z', 'UTC', '2025-05-08', 'a weekday 7 days out is kept'],
+    ['2025-04-26T12:00:00Z', 'UTC', '2025-05-05', 'a Saturday moves to Monday'],
+    ['2025-04-27T12:00:00Z', 'UTC', '2025-05-05', 'a Sunday moves to Monday'],
+    ['2025-04-25T20:00:00Z', 'UTC', '2025-05-02', 'a Friday in UTC stays Friday'],
+    ['2025-04-25T20:00:00Z', 'Asia/Tokyo', '2025-05-05', 'the same instant is Saturday in Tokyo, so it moves to Monday'],
+  ])('from %s in %s closes on %s (%s)', (now, timezone, expected) => {
+    const closeDate = getDefaultVoteCloseDate(Date.parse(now), timezone);
+
+    expect(calendarDay(closeDate)).toBe(expected);
+    expect(closeDate.getHours()).toBe(12);
+  });
+
+  it.each([
+    ['2026-03-03T00:30:00Z', '2026-03-10', 'spring forward'],
+    ['2026-10-27T23:30:00Z', '2026-11-03', 'fall back'],
+  ])('keeps seven UTC calendar days from %s through %s across %s DST', (now, expected) => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      const closeDate = getDefaultVoteCloseDate(Date.parse(now), 'UTC');
+
+      expect(calendarDay(closeDate)).toBe(expected);
+      expect(closeDate.getHours()).toBe(12);
+    } finally {
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+});
+
+describe('buildVoteBasicsDefaults (#6104)', () => {
+  it('names the group in the title and description', () => {
+    expect(buildVoteBasicsDefaults('Technical Steering Committee')).toEqual({
+      title: 'Technical Steering Committee Vote',
+      description:
+        'Members of the Technical Steering Committee are asked to vote on the question(s) below. Please review the options and cast your ballot before the vote closes.',
+    });
+  });
+
+  it('clamps the title to the 200-character form limit', () => {
+    const { title } = buildVoteBasicsDefaults('G'.repeat(250));
+
+    expect(title.length).toBe(200);
+    expect(title).toBe('G'.repeat(200));
   });
 });
 

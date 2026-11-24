@@ -970,6 +970,18 @@ export interface VoteFormValue {
 }
 
 /**
+ * Title and description a new vote is prefilled with once a group is selected (#6104)
+ * @description Built by `buildVoteBasicsDefaults`; the create form only writes them into fields the
+ * organizer hasn't edited.
+ */
+export interface VoteBasicsDefaults {
+  /** Prefilled vote title */
+  title: string;
+  /** Prefilled vote description */
+  description: string;
+}
+
+/**
  * A voting method offered when creating a vote
  * @description Shared by the Create Vote dropdown and the form's Voting Method select, so adding a
  * method is one entry in `VOTE_METHOD_OPTIONS`.
