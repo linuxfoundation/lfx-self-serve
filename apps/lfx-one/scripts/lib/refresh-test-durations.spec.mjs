@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildTestDurations, latestAttempts, weightDrift } from './refresh-test-durations.mjs';
+import { buildTestDurations, carryOver, latestAttempts, weightDrift } from './refresh-test-durations.mjs';
 
 describe('buildTestDurations', () => {
   it.each([
@@ -50,5 +50,16 @@ describe('latestAttempts', () => {
     ['a later failed attempt wins over an earlier pass', [['Frontend Tests (1)', '1', '10', 'success'], ['Frontend Tests (1)', '2', '20', 'failure']], [['20', 'failure']]],
   ])('%s', (_label, rows, expected) => {
     expect(latestAttempts(rows)).toEqual(expected);
+  });
+});
+
+describe('carryOver', () => {
+  it.each([
+    ['nothing missing', { 'b.spec.ts': 5 }, { 'a.spec.ts': 9 }, [], { 'b.spec.ts': 5 }],
+    ['an unmeasured spec keeps its saved entry', { 'b.spec.ts': 5 }, { 'a.spec.ts': 9 }, ['a.spec.ts'], { 'a.spec.ts': 9, 'b.spec.ts': 5 }],
+    ['a measured spec is never overwritten by its saved entry', { 'a.spec.ts': 4 }, { 'a.spec.ts': 9 }, ['a.spec.ts'], { 'a.spec.ts': 4 }],
+    ['a missing spec with no saved entry is not invented', { 'b.spec.ts': 5 }, {}, ['a.spec.ts'], { 'b.spec.ts': 5 }],
+  ])('%s', (_label, rebuilt, previous, keep, expected) => {
+    expect(carryOver(rebuilt, previous, keep)).toEqual(expected);
   });
 });

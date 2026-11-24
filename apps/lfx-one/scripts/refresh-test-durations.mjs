@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { discoverSpecs } from './lib/app-test-shards.mjs';
 import { buildSpecBudgetBaseline } from './lib/check-spec-budget.mjs';
-import { DRIFT_THRESHOLD, buildTestDurations, latestAttempts, weightDrift } from './lib/refresh-test-durations.mjs';
+import { DRIFT_THRESHOLD, buildTestDurations, carryOver, latestAttempts, weightDrift } from './lib/refresh-test-durations.mjs';
 import { attachSpecPaths, missingSpecs, parseVitestFileLines } from './lib/spec-timings.mjs';
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -50,9 +50,7 @@ try {
   const missing = missingSpecs(matched, discovered);
   const kept = missing.filter((file) => file in current.files);
   if (missing.length > 0) console.log(`[durations] ${missing.length} spec(s) had no timing line; kept the saved weight for ${kept.length}: ${kept.join(', ') || 'none'}`);
-  const files = Object.fromEntries(
-    Object.entries({ ...Object.fromEntries(kept.map((file) => [file, current.files[file]])), ...buildTestDurations(matched) }).sort(([a], [b]) => (a < b ? -1 : Number(a > b)))
-  );
+  const files = carryOver(buildTestDurations(matched), current.files, missing);
   const drift = weightDrift(current.files, files);
   const drifted = drift > DRIFT_THRESHOLD;
   console.log(
@@ -68,7 +66,9 @@ try {
   }
   if (args.includes('--write-budget-baseline')) {
     const note = `Spec files over the runtime budget in the source run, at their measured time plus 25% headroom. A listed file fails only if it gets slower than this. See docs/architecture/testing/unit-testing.md.`;
-    writeFileSync(BASELINE, `${JSON.stringify({ source, note, files: buildSpecBudgetBaseline(matched) }, null, 2)}\n`);
+    const { files: savedBaseline } = JSON.parse(readFileSync(BASELINE, 'utf8'));
+    const baseline = carryOver(buildSpecBudgetBaseline(matched), savedBaseline, missing);
+    writeFileSync(BASELINE, `${JSON.stringify({ source, note, files: baseline }, null, 2)}\n`);
     console.log(`[durations] wrote ${relative(process.cwd(), BASELINE)}`);
   }
 } catch (error) {

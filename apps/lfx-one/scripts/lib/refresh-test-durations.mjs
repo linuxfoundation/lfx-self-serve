@@ -60,3 +60,20 @@ export function latestAttempts(rows) {
   }
   return [...latest.values()].map(({ id, conclusion }) => [id, conclusion]);
 }
+
+/**
+ * `rebuilt` plus the `previous` entries of `keep` (specs with no timing line in the source logs),
+ * sorted by path. Used for both the weights and the budget baseline, so a spec that went
+ * unmeasured keeps what it had instead of losing its weight or its baseline exemption.
+ *
+ * @template T
+ * @param {Record<string, T>} rebuilt
+ * @param {Record<string, T>} previous
+ * @param {string[]} keep
+ * @returns {Record<string, T>}
+ */
+export function carryOver(rebuilt, previous, keep) {
+  const merged = { ...rebuilt };
+  for (const file of keep) if (Object.hasOwn(previous, file) && !Object.hasOwn(merged, file)) merged[file] = previous[file];
+  return Object.fromEntries(Object.entries(merged).sort(([a], [b]) => (a < b ? -1 : Number(a > b))));
+}
