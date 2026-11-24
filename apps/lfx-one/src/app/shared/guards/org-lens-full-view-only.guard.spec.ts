@@ -55,14 +55,30 @@ describe('orgLensFullViewOnlyGuard', () => {
     expect(await verdictFor('/company/people')).toBe('/company/overview');
   });
 
-  it('waits for the role grants before deciding', async () => {
+  it('waits for the role grants before deciding, then redirects once the employee view is known', async () => {
+    // Neither signal is set when the guard starts, so it cannot return at the recorded-mode check and must wait.
     loaded.set(false);
+    isEmployeeView.set(false);
+    const pending = verdictFor('/company/acme-inc/people');
+    let settled = false;
+    void pending.then(() => (settled = true));
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
     isEmployeeView.set(true);
+    loaded.set(true);
+
+    expect(await pending).toBe('/company/acme-inc/overview');
+  });
+
+  it('waits for the role grants and admits the page when the full view is confirmed', async () => {
+    loaded.set(false);
     const pending = verdictFor('/company/acme-inc/people');
 
     loaded.set(true);
 
-    expect(await pending).toBe('/company/acme-inc/overview');
+    expect(await pending).toBe(true);
   });
 
   it('redirects a recorded employee view without waiting for the role grants', async () => {

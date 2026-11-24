@@ -12,12 +12,12 @@ const normalizeKey = (key: string): string => key.toLowerCase().replace(/[_-]/g,
 
 const PERSONAL_FIELD_KEYS: ReadonlySet<string> = new Set(ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS.map(normalizeKey));
 
-// A real address in free text: a local part (any letters, digits and `._%+-`, so `ünal@x.com` and `josé@x.com` go whole), a dotted host and an
+// A real address in free text: a local part (any letters, combining marks, digits and `._%+-`, so `ünal@x.com` and `josé@x.com` go whole), a dotted host and an
 // alphabetic or punycode TLD; the host may be Unicode or punycode. It must not run on into a word, so a version spec (`pkg@1.2.3`) survives.
 // The one ambiguity is unspaced CJK text glued to an ASCII local part (`联系ada@x.com`): {@link splitLeadingCjk} leaves the CJK words and
 // removes only the address. A git SSH remote (`git@github.com:org/repo.git`) is the one address-shaped token kept on purpose, and only by
 // {@link isGitRemote}: an address followed by a path or a colon is otherwise still an address.
-const EMBEDDED_EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_])/gu;
+const EMBEDDED_EMAIL = /[\p{L}\p{M}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_])/gu;
 
 /** Scripts written without spaces, whose words are not part of an address when they sit directly before an ASCII local part. */
 const CJK_THEN_ASCII_LOCAL = /^(.*[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])([A-Za-z0-9._%+-]+)$/u;

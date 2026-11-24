@@ -263,9 +263,10 @@ export interface RoleGrantsResponse {
   /**
    * Epic #5845 — the company the caller may open in the all employee view (read-only, no names or emails):
    * their current employer is an active LF member and they hold a verified email on that company's domain (the website host of its active membership for now).
-   * Computed only when the caller holds no grant and is not staff, like `affiliation`, and only when that
-   * verdict already says the employer is a member. Absent for everyone else, and whenever the lookup could not
-   * prove every condition, so an outage keeps today's empty state. Never widens what a grant holder sees.
+   * Computed only when the caller holds no grant and is not staff, like `affiliation`, but with no affiliation
+   * pre-filter: the strict lookup considers every present employer. Absent for everyone else. A lookup that could
+   * not answer (an error or the lookup budget) is reported as `employeeViewLookup: 'failed'`, the retryable outage
+   * state, never as "not an employee". Never widens what a grant holder sees.
    */
   employeeView?: OrgLensEmployeeViewGrant;
   /**

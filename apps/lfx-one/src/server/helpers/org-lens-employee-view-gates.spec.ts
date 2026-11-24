@@ -6,6 +6,8 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MicroserviceError } from '../errors';
+
 const mocks = vi.hoisted(() => ({
   assertOrgLensRead: vi.fn(),
   getScopes: vi.fn(),
@@ -36,10 +38,10 @@ beforeEach(() => {
 });
 
 describe('assertOrgLensClaRead: employee-view is not admitted', () => {
-  it.each(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])('refuses an employee-only %s with 403 EMPLOYEE_VIEW_FORBIDDEN', async (method) => {
-    mocks.assertOrgLensRead.mockResolvedValue('employee-view');
+  it.each(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])("refuses an ordinary employee %s with the read gate's 403 FORBIDDEN", async (method) => {
+    mocks.assertOrgLensRead.mockRejectedValue(new MicroserviceError('no access', 403, 'FORBIDDEN', { operation: 'op', service: 'svc' }));
 
-    await expect(assertOrgLensClaRead(req(method), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+    await expect(assertOrgLensClaRead(req(method), ORG_UID, 'op')).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
   });
 
   it('tells the read gate not to try the employee view, so a CLA Manager never waits on that lookup', async () => {
@@ -51,7 +53,7 @@ describe('assertOrgLensClaRead: employee-view is not admitted', () => {
   });
 
   it('still admits a CLA Manager of the company through the CLA scope', async () => {
-    mocks.assertOrgLensRead.mockResolvedValue('employee-view');
+    mocks.assertOrgLensRead.mockRejectedValue(new MicroserviceError('no access', 403, 'FORBIDDEN', { operation: 'op', service: 'svc' }));
     mocks.getScopes.mockResolvedValue(new Set([ORG_UID]));
 
     await expect(assertOrgLensClaRead(req('POST'), ORG_UID, 'op')).resolves.toBe('cla-manager-scope');

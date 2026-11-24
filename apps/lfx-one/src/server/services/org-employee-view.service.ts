@@ -141,6 +141,13 @@ export class OrgEmployeeViewService {
   /** Until this time a failed refresh is not retried (the previous index is served meanwhile), so a failing upstream is not re-scanned on every request. */
   private static memberIndexRetryAfter = 0;
 
+  /**
+   * Whether the companies this service finds carry a slug. The interim membership lookup has none (`orgSlug` is always null), so the
+   * address resolver skips the employee lookup for slug segments, which could never match, rather than turn a slug 404 into a 503 when
+   * that lookup fails. The member-service lookup (#6188) returns the slug and sets this true.
+   */
+  public readonly providesSlugs = false;
+
   private readonly workHistory: CdpService;
   private readonly emailVerification: EmailVerificationService;
   private readonly proxy: MicroserviceProxyService;
