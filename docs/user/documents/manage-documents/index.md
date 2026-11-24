@@ -1,10 +1,10 @@
 ---
 title: Manage Documents
-description: How to browse, upload, delete, and organize project documents in LFX Self Serve.
+description: How to browse, upload, rename, move, delete, and organize project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
-tags: [documents, manage, browse, upload, delete, folders, links]
-last_updated: 2026-11-11
+tags: [documents, manage, browse, upload, rename, move, delete, folders, links]
+last_updated: 2026-11-24
 intercom_collection: Documents
 ---
 
@@ -104,14 +104,32 @@ The **Upload Files**, **New Folder**, and **Add Link** buttons appear above the 
 
 If you open a folder first, the upload and link forms start with that folder selected.
 
-## Delete documents
+## Rename, move, or delete documents
 
-If you have write access, files, links, and folders that belong to the project, and files and links that belong to a group on its own **Documents** tab, have a **More actions** button (three dots) at the end of the row. A group's folders don't have it yet. Meeting, recording, transcript, summary, and mailing-list documents don't have it, because they are managed where they come from. On the project Documents page, the same goes for group documents: delete those from the group's own **Documents** tab.
+If you have write access, files, links, and folders that belong to the project, and those that belong to a group on its own **Documents** tab, have a **More actions** button (three dots) at the end of the row. Meeting, recording, transcript, summary, and mailing-list documents don't have it, because they are managed where they come from. On the project Documents page, the same goes for group documents: change those from the group's own **Documents** tab.
+
+### Rename a document
+
+1. Select **More actions** on the row, then **Rename**.
+2. Enter the new name. The name is required, and the **Rename** button stays disabled until it differs from the current one.
+3. Select **Rename**.
+
+If another document or folder already uses that name, LFX shows the reason in the dialog and keeps it open so you can pick a different name.
+
+### Move a file or link into a folder
+
+1. Select **More actions** on the row, then **Move to…**. It appears on files and links, and only when there is a folder to move to.
+2. Choose a folder, or **Documents (root)** to take the file or link out of its folder.
+3. Select **Move**.
+
+Folders can be renamed but not moved.
+
+### Delete a document
 
 1. Select **More actions** on the row, then **Delete**.
 2. Confirm in the dialog. Deleting can't be undone.
 
-A project folder can only be deleted when it's empty. If it still has files or links in it, LFX shows a message instead of deleting it, and nothing changes. Delete what's inside the folder first, then delete the folder.
+A folder can only be deleted when it's empty. If it still has files or links in it, LFX shows a message instead of deleting it, and nothing changes. Delete or move what's inside the folder first, then delete the folder.
 
 ## Switch project context
 
