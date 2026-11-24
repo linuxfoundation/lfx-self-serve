@@ -356,6 +356,19 @@ export const ACCOUNT_BASE_PATH = '/account';
 /** Account & Settings pages that start Flow C from their own address, so the server accepts them as a return path. */
 export const ACCOUNT_IDENTITIES_PATH = '/account/identities';
 export const ACCOUNT_LINUX_EMAIL_PATH = '/account/linux-email';
+export const ACCOUNT_PERSONAL_INFORMATION_PATH = '/account/personal-information';
+
+/** Copy for the Account & Settings Personal information page (#6072). */
+export const PERSONAL_INFORMATION_COPY = {
+  infoSubtitle:
+    'A complete profile helps community members identify and connect with you, enables event organizers to plan in-person meetups, and ensures you receive contributor recognition.',
+  photoHint: 'PNG, JPEG, or WEBP. Max 2MB.',
+  companyHelp: 'Companies in this list come from your work history. Add one there to choose a new company. A company you saved before may still appear.',
+  emailSubtitle: 'The address we send notifications, meeting invites and account messages to. You can choose any verified email on your account.',
+  phoneHint: 'Optional. Only used for urgent event notifications and swag delivery.',
+  tshirtSubtitle: 'We use it to send you swag, like the t-shirts given to speakers, maintainers and event attendees.',
+  saved: 'Personal information updated',
+} as const;
 
 export const ACCOUNT_SETTINGS_TITLE = 'Account & Settings';
 export const ACCOUNT_DISCARD_CHANGES_TITLE = 'Discard unsaved changes?';

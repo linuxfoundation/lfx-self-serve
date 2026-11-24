@@ -17,7 +17,7 @@ const meta: Meta<UiChoiceboxGroupComponent> = {
     columns: { control: 'inline-radio', options: [1, 2, 3] },
   },
   decorators: [moduleMetadata({ imports: [UiChoiceboxComponent, UiBadgeComponent, ReactiveFormsModule] })],
-  args: { label: 'Membership Tier', ariaLabel: '', type: 'radio', columns: 2, name: '', disabled: false, value: 'platinum', values: [] },
+  args: { label: 'Membership Tier', ariaLabel: '', type: 'radio', columns: 2, joined: false, name: '', disabled: false, value: 'platinum', values: [] },
   render: (args) => ({
     props: args,
     template: `
@@ -43,6 +43,8 @@ export const Checkbox: Story = { args: { type: 'checkbox', label: 'Deployment Ta
 export const NothingChosen: Story = { args: { value: null } };
 export const OneColumn: Story = { args: { columns: 1 } };
 export const ThreeColumns: Story = { args: { columns: 3 } };
+/** One list sharing edges, such as a list of addresses. */
+export const Joined: Story = { args: { joined: true } };
 export const DisabledGroup: Story = { args: { disabled: true } };
 export const WithoutLegend: Story = { args: { label: '', ariaLabel: 'Membership tier' } };
 

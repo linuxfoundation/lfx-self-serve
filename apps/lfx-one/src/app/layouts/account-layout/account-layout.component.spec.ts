@@ -6,9 +6,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Event as RouterEvent, NavigationEnd, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { PROFILE_AUTH_ERROR_MESSAGES } from '@lfx-one/shared/constants';
+import { PENDING_PROFILE_SAVE_KEY, PROFILE_AUTH_ERROR_MESSAGES } from '@lfx-one/shared/constants';
+import { AccountProfileService } from '@services/account-profile.service';
 import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
+import { ProfileSaveSyncService } from '@services/profile-save-sync.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject } from 'rxjs';
@@ -21,6 +23,7 @@ describe('AccountLayoutComponent', () => {
   let impersonating: ReturnType<typeof signal<boolean>>;
   let add: ReturnType<typeof vi.fn>;
   let queryParams: Record<string, string>;
+  let updateUserProfile: ReturnType<typeof vi.fn>;
   let childConfig: { path: string };
   let unsaved: {
     dirty: ReturnType<typeof signal<boolean>>;
@@ -39,7 +42,8 @@ describe('AccountLayoutComponent', () => {
         provideNoopAnimations(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams), firstChild: { snapshot: { routeConfig: childConfig } } } },
-        { provide: UserService, useValue: { impersonating, user: signal(null) } },
+        { provide: UserService, useValue: { impersonating, user: signal(null), updateUserProfile } },
+        { provide: ProfileSaveSyncService, useValue: { apply: vi.fn() } },
         { provide: NavbarCollapseService, useValue: { railAtAnyWidth: signal(true) } },
         { provide: MessageService, useValue: { add, messageObserver: of(), clearObserver: of() } },
         { provide: AccountUnsavedChangesService, useValue: unsaved },
@@ -59,6 +63,7 @@ describe('AccountLayoutComponent', () => {
     impersonating = signal(false);
     add = vi.fn();
     queryParams = {};
+    updateUserProfile = vi.fn(() => of({}));
     childConfig = { path: 'identities' };
     unsaved = { dirty: signal(false), saving: signal(false), save: vi.fn(), revert: vi.fn() };
   });
@@ -207,6 +212,17 @@ describe('AccountLayoutComponent', () => {
     expect(fade.classList.contains('opacity-0')).toBe(false);
   });
 
+  it('replays a profile save stashed before Flow C into the profile the pages read', async () => {
+    queryParams = { success: 'profile_token_obtained' };
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), userMetadata: { job_title: 'Maintainer' } }));
+    const applySaved = vi.spyOn(AccountProfileService.prototype, 'applySaved');
+    await setup();
+
+    expect(updateUserProfile).toHaveBeenCalledWith({ user_metadata: { job_title: 'Maintainer' } });
+    expect(applySaved).toHaveBeenCalledWith({ job_title: 'Maintainer' });
+    applySaved.mockRestore();
+  });
+
   it('handles a Flow C error return, as the hub did', async () => {
     queryParams = { error: 'profile_auth_failed' };
     await setup();
@@ -237,6 +253,7 @@ describe('AccountLayoutComponent — with the real router', () => {
         provideNoopAnimations(),
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: UserService, useValue: { impersonating: signal(false), user: signal(null) } },
+        { provide: ProfileSaveSyncService, useValue: { apply: vi.fn() } },
         { provide: NavbarCollapseService, useValue: { railAtAnyWidth: signal(true) } },
         { provide: MessageService, useValue: { add: vi.fn(), messageObserver: of(), clearObserver: of() } },
         { provide: AccountUnsavedChangesService, useValue: { dirty: signal(false), saving: signal(false), save: vi.fn(), revert: vi.fn() } },
