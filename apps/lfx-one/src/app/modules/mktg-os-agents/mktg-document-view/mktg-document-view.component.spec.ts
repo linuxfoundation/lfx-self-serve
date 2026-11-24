@@ -1814,6 +1814,10 @@ describe('MktgDocumentViewComponent', () => {
         : "Member 360 couldn't finish this run.";
     expect(query('mktg-document-view-error')?.textContent).toContain(short);
     expect(query('mktg-document-view-error')?.textContent).not.toContain('Synthetic terminal explanation');
+    // The heading names the run: a failed Member 360 run has no revision, so no period to title it with.
+    expect(query('mktg-document-view-title-loading')).toBeNull();
+    expect(query('mktg-document-view-title')?.tagName).toBe('H1');
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe("The Member 360 run wasn't finished");
     const details = query('member-360-failure-details');
     expect(details?.hasAttribute('open')).toBe(false);
     expect(query('member-360-failure-message')?.textContent?.trim()).toBe('Synthetic terminal explanation.');
