@@ -12,7 +12,8 @@ import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 // The LinkedIn daily cap (#5774): an optional `dailyCapUsd` beside a lifetime budget, forwarded to
 // campaign-service (linuxfoundation/lfx-v2-campaign-service#607) only when its rules hold, and refused
-// rather than dropped when the legacy creator would serve.
+// rather than dropped when the legacy creator would serve. The `linkedInConfig` key allow-list (#5764) shares
+// this harness, in its own describe at the end.
 const { createCampaigns, loadBrief, loadBriefById, legacyCreate, isServerFeatureEnabled, logger, linkedInConfig } = vi.hoisted(() => ({
   createCampaigns: vi.fn(),
   loadBrief: vi.fn(),
@@ -191,5 +192,25 @@ describe('CampaignController LinkedIn daily cap (#5774)', () => {
     expect(next).not.toHaveBeenCalled();
     expect(legacyCreate).toHaveBeenCalledTimes(1);
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job_1' });
+  });
+});
+
+// The key allow-list (#5764): a `linkedInConfig` key the route does not check never reaches campaign-service.
+describe('CampaignController LinkedIn config keys (#5764)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    linkedInConfig.current = CONFIG;
+    isServerFeatureEnabled.mockImplementation(() => true);
+    loadBriefById.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-1', error: null });
+  });
+
+  it('refuses a key it does not check before anything is created', async () => {
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', objective: 'conversions' });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig');
   });
 });

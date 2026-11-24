@@ -534,17 +534,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
   });
 
-  it('judges a half-cent lifetime budget as campaign-service rounds it', async () => {
-    const { fixture } = await mount(null);
-    enableDailyCap(fixture);
-    typeLinkedInBudget(fixture, 100.125);
-    toggleLinkedInLifetimeBudget(fixture, true);
-    typeLinkedInDailyCap(fixture, '100.13');
-
-    const error = fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]') as HTMLElement | null;
-    expect(error?.textContent).toContain("can't be more than the lifetime budget");
-  });
-
   it('treats an emptied daily cap as no cap', async () => {
     const { fixture } = await mount(null);
     enableDailyCap(fixture);
@@ -557,8 +546,8 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   });
 
   it.each([
+    // The rest of the rules are table rows in `campaign-linkedin-form.utils.spec.ts` (#5980).
     ["under LinkedIn's $10 daily minimum", '9.99', 'at least $10'],
-    ['above the lifetime budget', '1500', "can't be more than the lifetime budget"],
   ])('blocks Create, with the reason under the field, for a daily cap %s', async (_name, value, message) => {
     const { fixture } = await mount(null);
     enableDailyCap(fixture);
