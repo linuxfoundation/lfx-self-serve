@@ -492,6 +492,8 @@ describe('AeoGeoRunComponent', () => {
       getProject.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
       await render();
       const reads = getProject.mock.calls.length;
+      // The strict writer check: a check that could not be made is a retried failure, never a 200 with `writer: false`.
+      expect(getProject).toHaveBeenLastCalledWith(expect.any(String), { strictWriter: true });
       expect(query('mktg-aeo-run-retrying').textContent).toContain(MKTG_POLL_RETRYING_TEXT);
       expect(query('mktg-aeo-run-retrying').getAttribute('role')).toBe('status');
       expect(query('mktg-aeo-run-error')).toBeNull();

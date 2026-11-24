@@ -1087,7 +1087,7 @@ describe('LinkedIn profile and post surface', () => {
   it('reads writer access without changing the current project even if loading fails', async () => {
     projects.getProjectStrict.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
     const fixture = await render();
-    expect(projects.getProjectStrict).toHaveBeenCalledWith('example-project');
+    expect(projects.getProjectStrict).toHaveBeenCalledWith('example-project', { strictWriter: true });
     expect(context()?.uid).toBe('project-one');
     expect(fixture.componentInstance['error']()).toBe('');
     expect(fixture.componentInstance['loadRetrying']()).toBe(true);

@@ -276,9 +276,10 @@ export class LinkedinPostRunComponent {
           if (!sub) return EMPTY;
           // The strict read keeps the failure's status, so a connection failure (network, 408, 429, 5xx) on the project, the
           // recorded runs or the profile is tried again by itself behind the one grey line, over the skeleton; only a final
-          // refusal ends the load, in one red line with no Retry.
+          // refusal ends the load, in one red line with no Retry. `strictWriter`: a writer check that could not be made fails
+          // the read (and is retried) instead of answering 200 with `writer: false`, which would be a cached false denial.
           const load = () =>
-            this.projects.getProjectStrict(context.slug).pipe(
+            this.projects.getProjectStrict(context.slug, { strictWriter: true }).pipe(
               switchMap((project) => {
                 this.writer.set(!!project.writer);
                 this.historyGrant.set(project.writer ? JSON.stringify([context.uid, sub]) : '');
