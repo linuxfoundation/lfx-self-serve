@@ -379,6 +379,26 @@ describe('CommitteeSettingsComponent — SSO group name', () => {
     expect(ssoValue()?.classList.contains('italic')).toBe(false);
   });
 
+  it('keeps the full long SSO name and provides shrinkable text beside a fixed-width toggle', async () => {
+    const name = `example-${'a'.repeat(100)}`;
+    await render({ public: true, sso_group_enabled: false }, name);
+
+    const line = ssoLine()!;
+    const text = line.parentElement!;
+    const iconAndText = text.parentElement!;
+    const toggle = fixture.nativeElement.querySelector('[data-testid="toggle-sso_group_enabled"]') as HTMLElement;
+
+    expect(ssoValue()?.textContent?.trim()).toBe(name);
+    // jsdom does not lay out text; these guard the CSS hooks, not measured browser geometry.
+    expect(line.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
+    expect(text.classList.contains('min-w-0')).toBe(true);
+    expect(text.classList.contains('flex-1')).toBe(true);
+    expect(iconAndText.classList.contains('min-w-0')).toBe(true);
+    expect(iconAndText.classList.contains('flex-1')).toBe(true);
+    expect(iconAndText.firstElementChild?.classList.contains('shrink-0')).toBe(true);
+    expect(toggle.classList.contains('shrink-0')).toBe(true);
+  });
+
   it('does not render the line when neither public nor SSO is enabled', async () => {
     await render({ public: false, sso_group_enabled: false }, 'example-wg');
 

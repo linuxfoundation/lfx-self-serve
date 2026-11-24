@@ -252,12 +252,12 @@
 
     @for (feature of features(); track feature.key) {
       <div class="bg-white border border-gray-200 p-4 rounded-lg hover:border-primary transition-colors" [attr.data-testid]="'feature-' + feature.key">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="p-2 rounded-lg" [style.background-color]="feature.color + '15'" [style.color]="feature.color">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex min-w-0 flex-1 items-center gap-3">
+            <div class="shrink-0 p-2 rounded-lg" [style.background-color]="feature.color + '15'" [style.color]="feature.color">
               <i [class]="feature.icon + ' text-sm'"></i>
             </div>
-            <div>
+            <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
                 <label [for]="feature.key" class="text-sm font-semibold text-gray-900 cursor-pointer">{{ feature.title }}</label>
                 @if (feature.recommended) {
@@ -273,7 +273,7 @@
               }
               @if (feature.key === 'sso_group_enabled' && ssoGroupNameDisplay(); as ssoName) {
                 <!-- Read-only display text; 11.5px matches the sibling feature note line above. -->
-                <p class="mt-1 text-[11.5px] text-gray-500" data-testid="settings-sso-group-name">
+                <p class="mt-1 text-[11.5px] text-gray-500 [overflow-wrap:anywhere]" data-testid="settings-sso-group-name">
                   SSO Group Name:
                   <span
                     data-testid="settings-sso-group-name-value"
@@ -286,7 +286,7 @@
               }
             </div>
           </div>
-          <lfx-toggle [form]="form()" [control]="feature.key" [id]="feature.key" [attr.data-testid]="'toggle-' + feature.key"> </lfx-toggle>
+          <lfx-toggle class="shrink-0" [form]="form()" [control]="feature.key" [id]="feature.key" [attr.data-testid]="'toggle-' + feature.key"> </lfx-toggle>
         </div>
       </div>
     }
