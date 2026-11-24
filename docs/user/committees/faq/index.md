@@ -60,6 +60,10 @@ Yes. If you can manage the group's members, use **Import Members** on the group'
 
 **Add Member** is quicker for a few people: you can paste email addresses or import a meeting's registrants, then review each person's first and last name. Available search or meeting names are filled in; complete any missing names before adding people. CSV imports also require both names for every new member, including people with an LF Account. Groups that require a company need one person at a time in **Add Member**. Members who can only send invitations see **Invite Someone** instead and cannot import a CSV; invitations still need only an email address.
 
+## Can I keep using LFX while a CSV import runs?
+
+Yes, for imports started from a group's **Members** tab. Select **Continue in background** and keep working anywhere in LFX in the same browser tab. Progress and the finished report stay available from the group's **Members** tab and under its member count in the Groups list view (not the **Card view**) until you select **Dismiss report**, and a notification tells you when the import finishes. On a redesigned Groups page, select **List view** and look in the **Members** column. Returning after the import finishes still refreshes indexed member counts without restarting the import. Keep the tab open: refreshing or closing it interrupts the import and discards the report, although batches already sent may still be added. Imports while creating or editing a group are different: those members are only staged and are saved when you select **Done** or **Update Group**. See [Keep working while an import runs](../manage-committees/#keep-working-while-an-import-runs).
+
 ## Can I have the same person in multiple groups?
 
 Yes, a single user can be a member of multiple groups within the same project or across different projects.

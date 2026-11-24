@@ -117,7 +117,26 @@
                   </span>
                 </td>
                 <td data-label="Members">
-                  <span class="text-sm text-gray-700">{{ committee.total_members ?? 0 | number }}</span>
+                  <div class="flex flex-col items-start gap-1">
+                    <span class="text-sm text-gray-700">{{ committee.total_members ?? 0 | number }}</span>
+                    @if (importStatusByUid().get(committee.uid); as importStatus) {
+                      <button
+                        type="button"
+                        class="inline-flex min-h-8 items-center gap-1.5 rounded text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                        [attr.aria-label]="importStatus.ariaLabel"
+                        [attr.data-testid]="'committee-import-status-' + committee.uid"
+                        (click)="openImportStatus($event, committee.uid)"
+                        (keydown.enter)="$event.stopPropagation()"
+                        (keydown.space)="$event.stopPropagation()">
+                        @if (importStatus.phase === 'settled') {
+                          <i class="fa-light fa-file-csv" aria-hidden="true"></i>
+                        } @else {
+                          <lfx-ui-spinner [size]="12" tone="current" aria-hidden="true" />
+                        }
+                        <span>{{ importStatus.label }}</span>
+                      </button>
+                    }
+                  </div>
                 </td>
                 <td data-label="Channels">
                   <div class="flex flex-wrap items-center gap-2">
@@ -267,7 +286,26 @@
                   </div>
                 </td>
                 <td>
-                  <span class="text-sm text-gray-700">{{ committee.total_members ?? 0 | number }}</span>
+                  <div class="flex flex-col items-start gap-1">
+                    <span class="text-sm text-gray-700">{{ committee.total_members ?? 0 | number }}</span>
+                    @if (importStatusByUid().get(committee.uid); as importStatus) {
+                      <button
+                        type="button"
+                        class="inline-flex min-h-8 items-center gap-1.5 rounded text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                        [attr.aria-label]="importStatus.ariaLabel"
+                        [attr.data-testid]="'committee-import-status-' + committee.uid"
+                        (click)="openImportStatus($event, committee.uid)"
+                        (keydown.enter)="$event.stopPropagation()"
+                        (keydown.space)="$event.stopPropagation()">
+                        @if (importStatus.phase === 'settled') {
+                          <i class="fa-light fa-file-csv" aria-hidden="true"></i>
+                        } @else {
+                          <lfx-ui-spinner [size]="12" tone="current" aria-hidden="true" />
+                        }
+                        <span>{{ importStatus.label }}</span>
+                      </button>
+                    }
+                  </div>
                 </td>
                 <td>
                   <!-- Channels: mailing_list is the direct email string; has_mailing_list is an enriched boolean from query-service association -->

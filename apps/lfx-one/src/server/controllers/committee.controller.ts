@@ -199,6 +199,7 @@ export class CommitteeController {
         includeInheritedPermissions: true,
         includeMailingListStatus: true,
         includeAuditor: req.query['auditor'] === 'true',
+        strictWriter: req.query['strict_writer'] === 'true',
       });
 
       // Log the success

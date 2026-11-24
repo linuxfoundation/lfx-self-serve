@@ -4,11 +4,12 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { GROUPS_VIEW_MODE_STORAGE_KEY } from '@lfx-one/shared/constants';
-import { GroupsEngagementStats, MyCommittee } from '@lfx-one/shared/interfaces';
+import { GroupsEngagementStats, MemberImportRunSummary, MemberImportSettlement, MyCommittee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { Observable, of, Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GroupsHomeStore } from './groups-home.store';
 
@@ -20,12 +21,20 @@ describe('GroupsHomeStore', () => {
   let stats: GroupsEngagementStats | null;
   let statsFlag: ReturnType<typeof signal<boolean>>;
   let getGroupsEngagementStats: ReturnType<typeof vi.fn>;
+  let getGroups: ReturnType<typeof vi.fn>;
+  let summaries: ReturnType<typeof signal<ReadonlyMap<string, MemberImportRunSummary>>>;
+  let settlements: Subject<MemberImportSettlement>;
+  let owner: ReturnType<typeof signal<string | null>>;
 
   const create = (): GroupsHomeStore => {
     TestBed.configureTestingModule({
       providers: [
         GroupsHomeStore,
-        { provide: CommitteeService, useValue: { getMyCommitteesOrError: () => groups$, getGroupsEngagementStats } },
+        { provide: CommitteeService, useValue: { getMyCommitteesOrError: getGroups, getGroupsEngagementStats } },
+        {
+          provide: CommitteeMemberImportService,
+          useValue: { viewerSubject: owner, getSummary: (uid: string) => summaries().get(uid), settlements$: settlements },
+        },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => statsFlag } },
       ],
     });
@@ -39,6 +48,121 @@ describe('GroupsHomeStore', () => {
     stats = null;
     statsFlag = signal(false);
     getGroupsEngagementStats = vi.fn(() => of(stats));
+    getGroups = vi.fn(() => groups$);
+    summaries = signal<ReadonlyMap<string, MemberImportRunSummary>>(new Map());
+    settlements = new Subject();
+    owner = signal<string | null>('synthetic-manager');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    TestBed.resetTestingModule();
+  });
+
+  function report(): MemberImportRunSummary {
+    return {
+      committeeUid: 'a',
+      committeeName: 'Group a',
+      runId: 'import-1',
+      attempt: 1,
+      phase: 'settled',
+      batchTotal: 2,
+      batchSettled: 2,
+      added: 2,
+      failed: 0,
+      unknown: 0,
+      notSubmitted: 0,
+      retryable: 0,
+      stopReason: null,
+      manualStopRequested: false,
+      baselineMemberCount: 3,
+      reconciliationTarget: 5,
+    };
+  }
+
+  it.each(['before mount', 'during initial loading'])('reconciles reports settled %s without hiding rows or restarting the bounded loop', (when) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const initial = new Subject<MyCommittee[]>();
+    groups$ = initial;
+    if (when === 'before mount') summaries.set(new Map([['a', report()]]));
+    const store = create();
+    if (when === 'during initial loading') {
+      summaries.set(new Map([['a', report()]]));
+      settlements.next({ key: 'import-1:1', summary: report() });
+    }
+    expect(getGroups).toHaveBeenCalledTimes(1);
+    groups$ = of([group('a', 'Board')]);
+    initial.next([group('a', 'Board')]);
+    initial.complete();
+    TestBed.tick();
+    expect(store.loading()).toBe(false);
+    expect(store.groups()[0].total_members).toBe(3);
+    vi.advanceTimersByTime(10_000);
+    TestBed.tick();
+    expect(getGroups).toHaveBeenCalledTimes(1 + 1 + 6 + 1);
+    store.setSearch('Group');
+    store.refresh();
+    TestBed.tick();
+    vi.advanceTimersByTime(10_000);
+    TestBed.tick();
+    expect(getGroups).toHaveBeenCalledTimes(10);
+    expect(store.loading()).toBe(false);
+    expect(store.groups()[0].total_members).toBe(3);
+  });
+
+  it('refreshes skipped-only recovery once without extra polling or optimistic additions', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    groups$ = of([group('a', 'Board')]);
+    const store = create();
+    groups$ = of([group('a', 'Board', { total_members: 5 })]);
+    const skipped = { ...report(), added: 0, unknown: 0, reconciliationTarget: 3 };
+    summaries.set(new Map([['a', skipped]]));
+    settlements.next({ key: 'import-1:1', summary: skipped });
+    TestBed.tick();
+    expect(store.groups()[0].total_members).toBe(5);
+    expect(getGroups).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(10_000);
+    TestBed.tick();
+    expect(getGroups).toHaveBeenCalledTimes(2);
+  });
+
+  it('updates indexed counts in place once the retained import target is reached', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    groups$ = of([group('a', 'Board')]);
+    const store = create();
+    summaries.set(new Map([['a', report()]]));
+    settlements.next({ key: 'import-1:1', summary: report() });
+    TestBed.tick();
+    groups$ = of([group('a', 'Board', { total_members: 5 })]);
+    vi.advanceTimersByTime(400);
+    TestBed.tick();
+    expect(store.groups()[0].total_members).toBe(5);
+    expect(store.loading()).toBe(false);
+    const count = getGroups.mock.calls.length;
+    vi.advanceTimersByTime(10_000);
+    expect(getGroups).toHaveBeenCalledTimes(count);
+  });
+
+  it('counts actual slow refetches and cancels them when the observed owner changes', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    groups$ = of([group('a', 'Board')]);
+    create();
+    summaries.set(new Map([['a', report()]]));
+    settlements.next({ key: 'import-1:1', summary: report() });
+    TestBed.tick();
+    const pending = new Subject<MyCommittee[]>();
+    groups$ = pending;
+    vi.advanceTimersByTime(400);
+    const count = getGroups.mock.calls.length;
+    vi.advanceTimersByTime(4_000);
+    expect(getGroups).toHaveBeenCalledTimes(count);
+    expect(pending.observed).toBe(true);
+    summaries.set(new Map());
+    owner.set('synthetic-replacement');
+    TestBed.tick();
+    expect(pending.observed).toBe(false);
+    vi.advanceTimersByTime(10_000);
+    expect(getGroups).toHaveBeenCalledTimes(count);
   });
 
   it('is loading until the groups arrive', () => {
