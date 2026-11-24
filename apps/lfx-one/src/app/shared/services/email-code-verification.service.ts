@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, DestroyRef, inject, Injectable, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
@@ -23,6 +24,7 @@ import { UserService } from './user.service';
 export class EmailCodeVerificationService {
   private readonly userService = inject(UserService);
   private readonly toast = inject(UiToastService);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly cooldownTimer = useResendCooldown(inject(DestroyRef));
 
   public readonly codeSent = signal(false);
@@ -96,7 +98,7 @@ export class EmailCodeVerificationService {
       error: (err: HttpErrorResponse) => {
         // Flow C: linking needs a management token; the callback replays the verification after authorizing.
         if (err.error?.error === 'management_token_required' && err.error?.authorize_url) {
-          window.location.href = err.error.authorize_url;
+          if (isPlatformBrowser(this.platformId)) window.location.href = err.error.authorize_url;
           return;
         }
         this.verifying.set(false);

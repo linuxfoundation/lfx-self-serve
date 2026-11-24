@@ -99,6 +99,19 @@ describe('EmailCodeVerificationService', () => {
     expect(service.verifying()).toBe(false);
   });
 
+  it('goes to authorize when linking needs Flow C, keeping the dialog busy', () => {
+    service.code.set('123456');
+    verify.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'management_token_required', authorize_url: '#authorize' } }))
+    );
+    service.verify('ada@example.com', vi.fn());
+
+    expect(window.location.hash).toBe('#authorize');
+    expect(service.verifying()).toBe(true);
+    expect(service.error()).toBe('');
+    window.location.hash = '';
+  });
+
   it('goes back to before a code was sent', () => {
     service.send('ada@example.com');
     service.code.set('123456');

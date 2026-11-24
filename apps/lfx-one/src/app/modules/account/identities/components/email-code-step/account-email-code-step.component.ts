@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input, viewChild } from '@angular/core';
 import {
   EMAIL_CODE_NOT_RECEIVED_HINT,
   EMAIL_CODE_NOT_RECEIVED_TITLE,
@@ -27,6 +27,7 @@ import { UiNoteComponent } from '@shared/uikit/note/note.component';
 })
 export class AccountEmailCodeStepComponent {
   protected readonly verification = inject(EmailCodeVerificationService);
+  private readonly codeInput = viewChild.required(UiInputComponent);
 
   /** The address the code was sent to. */
   public readonly email = input.required<string>();
@@ -37,8 +38,10 @@ export class AccountEmailCodeStepComponent {
   protected readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
   protected readonly linkedSupportMessage = computed(() => buildLinkedEmailSupportMessage(this.email()));
 
-  // Digits only, at most six, as typed or pasted.
+  // Digits only, at most six, as typed or pasted. The field is set back too, so a stray letter does not stay on screen.
   protected onCode(value: string): void {
-    this.verification.code.set(value.replace(/\D/g, '').slice(0, 6));
+    const digits = value.replace(/\D/g, '').slice(0, 6);
+    this.verification.code.set(digits);
+    if (digits !== value) this.codeInput().value.set(digits);
   }
 }

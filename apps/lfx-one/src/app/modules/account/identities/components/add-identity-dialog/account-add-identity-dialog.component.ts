@@ -55,7 +55,7 @@ export class AccountAddIdentityDialogComponent {
     }
     // Linking is an OAuth handshake that leaves the page; the server returns here, an allowlisted path.
     if (isPlatformBrowser(this.platformId)) {
-      window.location.href = `/api/profile/identities/social/connect?provider=${provider.id}&returnTo=${encodeURIComponent(ACCOUNT_IDENTITIES_PATH)}`;
+      window.location.href = `/api/profile/identities/social/connect?provider=${encodeURIComponent(provider.id)}&returnTo=${encodeURIComponent(ACCOUNT_IDENTITIES_PATH)}`;
     }
   }
 
@@ -64,7 +64,6 @@ export class AccountAddIdentityDialogComponent {
       this.email.markAsTouched();
       return;
     }
-    this.email.disable({ emitEvent: false });
     this.verification.send(this.email.getRawValue());
   }
 
@@ -78,13 +77,10 @@ export class AccountAddIdentityDialogComponent {
 
   /** From the code step, back to a different address; from the address, back to the providers. */
   protected back(): void {
-    if (this.verification.codeSent()) {
-      this.verification.reset();
-      this.email.enable({ emitEvent: false });
-      return;
-    }
-    this.email.enable({ emitEvent: false });
+    // A send still in flight would land after the reset and open the code step again.
+    if (this.verification.sending() || this.verification.verifying()) return;
+    const fromCode = this.verification.codeSent();
     this.verification.reset();
-    this.stage.set('pick');
+    if (!fromCode) this.stage.set('pick');
   }
 }

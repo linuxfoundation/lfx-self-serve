@@ -41,7 +41,7 @@ export class AccountVerifyIdentityDialogComponent {
 
   protected continueWithProvider(): void {
     if (isPlatformBrowser(this.platformId)) {
-      window.location.href = `/api/profile/identities/social/connect?provider=${this.identity.provider}&returnTo=${encodeURIComponent(ACCOUNT_IDENTITIES_PATH)}`;
+      window.location.href = `/api/profile/identities/social/connect?provider=${encodeURIComponent(this.identity.provider)}&returnTo=${encodeURIComponent(ACCOUNT_IDENTITIES_PATH)}`;
     }
   }
 }

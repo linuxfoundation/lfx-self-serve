@@ -67,6 +67,18 @@ describe('AccountAddIdentityDialogComponent', () => {
     expect(close).toHaveBeenCalledWith(true);
   });
 
+  it('keeps the address editable when the code cannot be sent', async () => {
+    const { query, click, type, userService } = await render();
+    userService.sendEmailVerificationCode.mockReturnValueOnce(of({ success: false, message: 'Too many requests' }));
+    await click('account-add-identity-choose-email');
+    await type('account-add-identity-email', 'ada@example.com');
+    await click('account-add-identity-send');
+
+    const input = query('account-add-identity-email')?.querySelector('input') as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    expect(query('account-add-identity-email')?.textContent).toContain('Too many requests');
+  });
+
   it('goes back from the code to the address, and from the address to the providers', async () => {
     const { query, click, type } = await render();
     await click('account-add-identity-choose-email');

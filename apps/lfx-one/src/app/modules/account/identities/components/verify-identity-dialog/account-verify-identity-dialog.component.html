@@ -11,7 +11,7 @@
       <i class="text-[14px] text-ui-neutral-700" [class]="identity.icon"></i>
     </span>
     <span class="flex min-w-0 flex-col">
-      <span class="truncate text-[14px] font-medium leading-[20px] text-ui-neutral-900">{{ identity.identifier }}</span>
+      <span class="truncate text-[14px] font-medium leading-[20px] text-ui-neutral-900" [title]="identity.identifier">{{ identity.identifier }}</span>
       <span class="text-[12px] leading-[16px] text-ui-neutral-500">{{ providerLabel }}</span>
     </span>
   </div>

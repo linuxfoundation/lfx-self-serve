@@ -76,12 +76,6 @@ export class AccountIdentitiesComponent extends ProfileIdentitiesComponent {
       });
   }
 
-  private refreshOnClose(closed: Observable<boolean | undefined>): void {
-    closed.subscribe((linked) => {
-      if (linked) this.userService.refreshUserIdentities();
-    });
-  }
-
   // The primary email can't go from here: it is the sign-in address and gets meeting invites. The meeting-invite address can't go
   // either, nor any email while that address is unknown; the hub's guard decides those.
   private initRemoveBlockedReasons(): Signal<Map<string, string>> {
@@ -100,6 +94,12 @@ export class AccountIdentitiesComponent extends ProfileIdentitiesComponent {
         }
       }
       return reasons;
+    });
+  }
+
+  private refreshOnClose(closed: Observable<boolean | undefined>): void {
+    closed.subscribe((linked) => {
+      if (linked) this.userService.refreshUserIdentities();
     });
   }
 }

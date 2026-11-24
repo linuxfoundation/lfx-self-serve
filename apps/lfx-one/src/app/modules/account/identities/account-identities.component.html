@@ -27,7 +27,6 @@
         size="small"
         icon="fa-light fa-plus"
         [disabled]="impersonating()"
-        [lfxUiTooltip]="impersonating() ? 'This action is unavailable while impersonating another user' : ''"
         (click)="onAdd()"
         data-testid="account-identities-add">
         Add identity
@@ -173,7 +172,8 @@
     <span class="grid h-[28px] w-[28px] flex-none place-items-center rounded-ui-xs bg-ui-background-100 shadow-small" aria-hidden="true">
       <i class="text-[14px] text-ui-neutral-700" [class]="identity.icon"></i>
     </span>
-    <span class="min-w-0 truncate text-[14px] font-medium leading-[20px] text-ui-neutral-900">{{ identity.identifier }}</span>
+    <!-- Cut short with an ellipsis as in the design; the title shows the whole identifier. -->
+    <span class="min-w-0 truncate text-[14px] font-medium leading-[20px] text-ui-neutral-900" [title]="identity.identifier">{{ identity.identifier }}</span>
     @if (identity.isPrimary) {
       <lfx-ui-badge tone="accent" size="sm" data-testid="account-identities-primary-badge">Primary</lfx-ui-badge>
     }

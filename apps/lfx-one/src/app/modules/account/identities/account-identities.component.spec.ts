@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal } from '@angular/core';
+import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
@@ -10,7 +10,8 @@ import { EnrichedIdentity } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { MessageService } from 'primeng/api';
-import { EMPTY, of, Subject } from 'rxjs';
+import { DialogService } from 'primeng/dynamicdialog';
+import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AccountIdentitiesComponent } from './account-identities.component';
@@ -26,15 +27,23 @@ const IDENTITIES = [
   row({ id: 'gitlab', platform: 'gitlab', value: 'ada-gl', icon: 'fa-brands fa-gitlab', displayState: 'unverified' }),
 ];
 
+/** State-only page: no template, so these tests cost no render. Providers are not inherited, so the page's own is repeated. */
+@Component({ selector: 'lfx-test-account-identities', template: '', providers: [DialogService] })
+class StateIdentitiesComponent extends AccountIdentitiesComponent {}
+
 describe('AccountIdentitiesComponent', () => {
-  async function render(identities: EnrichedIdentity[] = IDENTITIES) {
+  async function render(
+    identities: EnrichedIdentity[] = IDENTITIES,
+    invite$: Observable<unknown> = of({ email_id: 'invite', email: 'invites@example.com' }),
+    state = false
+  ) {
     const closed = new Subject<boolean>();
     const open = vi.fn(() => ({ closed }));
     const userService = {
       impersonating: signal(false),
       identitiesRefresh$: EMPTY,
       getIdentities: vi.fn(() => of(identities)),
-      getMeetingInviteEmail: vi.fn(() => of({ email_id: 'invite', email: 'invites@example.com' })),
+      getMeetingInviteEmail: vi.fn(() => invite$),
       getLinuxAlias: vi.fn(() => EMPTY),
       refreshUserIdentities: vi.fn(),
       rejectIdentity: vi.fn(() => of({})),
@@ -49,7 +58,7 @@ describe('AccountIdentitiesComponent', () => {
         { provide: UiModalService, useValue: { open } },
       ],
     });
-    const fixture = TestBed.createComponent(AccountIdentitiesComponent);
+    const fixture = TestBed.createComponent(state ? StateIdentitiesComponent : AccountIdentitiesComponent);
     await fixture.whenStable();
     const host = fixture.nativeElement as HTMLElement;
     const query = (testId: string) => host.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
@@ -72,11 +81,24 @@ describe('AccountIdentitiesComponent', () => {
   });
 
   it('explains why the primary and meeting-invite emails cannot be removed', async () => {
-    const { fixture } = await render();
+    const { fixture } = await render(IDENTITIES, undefined, true);
     const reasons = fixture.componentInstance['removeBlockedReasons']();
 
     expect(reasons.get('primary')).toBe(ACCOUNT_IDENTITIES_COPY.primaryEmailRemoveReason);
     expect(reasons.get('invite')).toContain('set for meeting invitations');
+    expect(reasons.has('github')).toBe(false);
+  });
+
+  it('blocks every email but the primary one when the meeting-invite address cannot be loaded', async () => {
+    const { fixture } = await render(
+      IDENTITIES,
+      throwError(() => new Error('down')),
+      true
+    );
+    const reasons = fixture.componentInstance['removeBlockedReasons']();
+
+    expect(reasons.get('invite')).toContain('Could not confirm your meeting-invitation email');
+    expect(reasons.get('primary')).toBe(ACCOUNT_IDENTITIES_COPY.primaryEmailRemoveReason);
     expect(reasons.has('github')).toBe(false);
   });
 
