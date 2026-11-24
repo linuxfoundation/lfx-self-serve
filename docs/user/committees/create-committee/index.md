@@ -51,6 +51,8 @@ Choose **Newsletter** for a group that receives a newsletter. A newsletter can o
 
 Select **Create Group**. The group is saved at this point, before you add members.
 
+**Add Members** uses the settings saved when you select **Create Group**. Unsaved changes to earlier **Settings** fields do not change the member requirements.
+
 ### Step 4: Add Members
 
 Add the first members, or skip this step. You can invite by email, add people with details, or import a CSV. See [Import members from a CSV](../manage-committees/#import-members-from-a-csv). Nothing you stage here is saved until you select **Done**.

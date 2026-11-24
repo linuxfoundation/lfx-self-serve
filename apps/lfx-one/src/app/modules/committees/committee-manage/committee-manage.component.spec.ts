@@ -22,6 +22,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeManageComponent } from './committee-manage.component';
 import { CommitteeMembersManagerComponent } from '../components/committee-members-manager/committee-members-manager.component';
+import { MemberFormComponent } from '../components/member-form/member-form.component';
 
 // Regression coverage for the committee edit context-correction flow (GH-1566): an edit payload
 // must select the COMMITTEE's project/tier (not the cookie-restored last-visited project), the
@@ -387,6 +388,7 @@ describe('CommitteeManageComponent', () => {
       TestBed.overrideProvider(CommitteeService, {
         useValue: {
           getCommittee,
+          createCommittee,
           updateCommittee,
           createCommitteeMember,
           revokeCommitteeInvite,
@@ -397,8 +399,11 @@ describe('CommitteeManageComponent', () => {
       // Render the real staging child so partial-save pruning and retry exercise the parent/child contract.
       TestBed.overrideComponent(CommitteeManageComponent, {
         set: {
-          template: `<lfx-committee-members-manager [committeeId]="committeeId()" [memberUpdates]="memberUpdates()"
-            [isEditMode]="isEditMode()" [submitting]="submitting()" (memberUpdatesChange)="onMemberUpdatesChange($event)" />`,
+          template: `@if (committeeId()) {
+            <lfx-committee-members-manager [committeeId]="committeeId()" [memberUpdates]="memberUpdates()"
+              [organizationRequirements]="organizationRequirements()" [isEditMode]="isEditMode()"
+              [submitting]="submitting()" (memberUpdatesChange)="onMemberUpdatesChange($event)" />
+          }`,
         },
       });
     });
@@ -410,6 +415,38 @@ describe('CommitteeManageComponent', () => {
       component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee' });
       await fixture.whenStable();
       return component;
+    }
+
+    async function setupNewGroup(requirements: Pick<Committee, 'enable_voting' | 'business_email_required'>) {
+      const group = { ...enrichedCommittee(), uid: 'new-group-uid', ...requirements };
+      createCommittee.mockReturnValue(of(group));
+      getCommittee.mockReturnValue(of(group));
+      TestBed.overrideProvider(ActivatedRoute, {
+        useValue: {
+          paramMap: of(convertToParamMap({})),
+          queryParamMap: queryParamMap$.asObservable(),
+          snapshot: { paramMap: convertToParamMap({}), queryParamMap: convertToParamMap({}) },
+        },
+      });
+      TestBed.overrideProvider(UserService, { useValue: { user: signal({ email: 'self@example.com', given_name: 'Self', family_name: 'User' }) } });
+      const dialogClose = new Subject();
+      const dialogService = { open: vi.fn(() => ({ onClose: dialogClose })) };
+      TestBed.overrideComponent(CommitteeMembersManagerComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: dialogService }] },
+      });
+      const fixture = TestBed.createComponent(CommitteeManageComponent);
+      const component = fixture.componentInstance;
+      await fixture.whenStable();
+      expect(component.isEditMode()).toBe(false);
+      expect(component.committee()).toBeNull();
+      component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee', ...requirements });
+      component.onSubmit();
+      await fixture.whenStable();
+      expect(createCommittee).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(requirements));
+      expect(component.committeeId()).toBe(group.uid);
+      expect(component.committee()).toBeNull();
+      const manager: CommitteeMembersManagerComponent = fixture.debugElement.query(By.directive(CommitteeMembersManagerComponent)).componentInstance;
+      return { component, fixture, manager, dialogService, group };
     }
 
     it.each(['onDone', 'onSubmitAll'] as const)('blocks %s during roster loading and failure without losing any pending operation', async (submit) => {
@@ -769,14 +806,51 @@ describe('CommitteeManageComponent', () => {
       expect(component.memberUpdates().toAdd).toHaveLength(1);
     });
 
-    it('checks saved group requirements when finishing member additions in create mode', async () => {
-      getCommittee.mockReturnValue(of({ ...enrichedCommittee(), enable_voting: true }));
-      const component = await setupPending([{ email: 'self@example.com' }]);
-      component.mode.set('create');
+    it.each(['enable_voting', 'business_email_required'])('retains saved %s after creating without a route ID', async (field) => {
+      const requirements = { enable_voting: field === 'enable_voting', business_email_required: field === 'business_email_required' };
+      const { component, fixture, manager, dialogService } = await setupNewGroup(requirements);
+      component.form.patchValue({ enable_voting: false, business_email_required: false });
+      await fixture.whenStable();
+
+      expect(component.organizationRequirements()).toEqual(requirements);
+      manager.addMyself();
+      expect(dialogService.open).toHaveBeenCalledWith(
+        MemberFormComponent,
+        expect.objectContaining({ data: expect.objectContaining({ committee: expect.objectContaining(requirements) }) })
+      );
+      expect(component.memberUpdates().toAdd).toEqual([]);
+
+      component.onMemberUpdatesChange({
+        toAdd: [{ email: 'self@example.com', first_name: 'Self', last_name: 'User' }],
+        toUpdate: [],
+        toDelete: [],
+        toInvite: [],
+      });
       component.onDone();
       expect(createCommitteeMember).not.toHaveBeenCalled();
+      expect(revokeCommitteeInvite).not.toHaveBeenCalled();
       expect(component.memberUpdates().toAdd).toHaveLength(1);
       expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+      expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Member Details Required' }));
+    });
+
+    it('does not impose unsaved draft requirements on a newly created open group', async () => {
+      const requirements = { enable_voting: false, business_email_required: false };
+      const { component, fixture, manager, dialogService, group } = await setupNewGroup(requirements);
+      manager.addMyself();
+      expect(component.memberUpdates().toAdd).toHaveLength(1);
+      component.form.patchValue({ enable_voting: true, business_email_required: true });
+      await fixture.whenStable();
+
+      expect(component.organizationRequirements()).toEqual(requirements);
+      expect(dialogService.open).not.toHaveBeenCalled();
+      component.onDone();
+      expect(updateCommittee).not.toHaveBeenCalled();
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(
+        group.uid,
+        expect.objectContaining({ email: 'self@example.com', first_name: 'Self', last_name: 'User' }),
+        { skipNotification: true }
+      );
     });
 
     it('waits for the group update and successful member creation before revoking invitations', async () => {

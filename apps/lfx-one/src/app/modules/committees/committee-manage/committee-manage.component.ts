@@ -83,6 +83,8 @@ export class CommitteeManageComponent {
   public mode = signal<'create' | 'edit'>('create');
   public committeeId = signal<string | null>(null);
   public isEditMode = computed(() => this.mode() === 'edit');
+  // The detail stream observes route IDs only, so retain create-response requirements separately.
+  private readonly createdCommitteeRequirements = signal<Pick<Committee, 'enable_voting' | 'business_email_required'> | null>(null);
 
   // Initialize committee data
   public committee = this.initializeCommittee();
@@ -124,12 +126,16 @@ export class CommitteeManageComponent {
     this.formValue();
     return this.isStepValid(this.currentStep());
   });
-  // Live Step 3 draft, passed down so Step 4's invite dialog validates against what's about to be
-  // saved rather than a possibly-stale persisted committee (LFXV2-2606 review).
-  public readonly organizationRequirements = computed(() => ({
-    enable_voting: !!this.formValue().enable_voting,
-    business_email_required: !!this.formValue().business_email_required,
-  }));
+  // Edit mode saves the live Step 3 draft. Create-mode Done only saves members, so member
+  // dialogs and final validation must keep using the requirements returned by Create Group.
+  public readonly organizationRequirements = computed(() => {
+    const createdRequirements = this.createdCommitteeRequirements();
+    if (!this.isEditMode() && createdRequirements) return createdRequirements;
+    return {
+      enable_voting: !!this.formValue().enable_voting,
+      business_email_required: !!this.formValue().business_email_required,
+    };
+  });
   public readonly canGoNext = computed(() => this.currentStep() + 1 < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly isFirstStep = computed(() => this.currentStep() === 1);
@@ -651,9 +657,7 @@ export class CommitteeManageComponent {
 
   private validateStagedMemberRequirements(): boolean {
     // Edit saves the live draft; Done in create mode only saves members of the already-created group.
-    const requirements = this.isEditMode()
-      ? this.organizationRequirements()
-      : { enable_voting: this.committee()?.enable_voting ?? false, business_email_required: this.committee()?.business_email_required ?? false };
+    const requirements = this.organizationRequirements();
     const invalid = this.memberUpdates()
       .toAdd.map((member) => ({ member, missing: getMissingCommitteeMemberRequirements(member, requirements) }))
       .find(({ missing }) => missing.length > 0);
@@ -684,6 +688,10 @@ export class CommitteeManageComponent {
   }
 
   private handleCreateSuccess(committee: Committee): void {
+    this.createdCommitteeRequirements.set({
+      enable_voting: committee.enable_voting ?? false,
+      business_email_required: committee.business_email_required ?? false,
+    });
     this.submitting.set(false);
     this.committeeId.set(committee.uid);
 
