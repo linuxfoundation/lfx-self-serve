@@ -747,6 +747,9 @@ export class MeetingCardComponent implements OnInit {
     this.dialogService.open(RecordingModalComponent, {
       header: 'Meeting Recording',
       width: '650px',
+      // Keep the dialog inside the viewport on phones (e.g. iPhone 16) and scroll its content if needed
+      style: { maxWidth: 'calc(100vw - 2rem)', maxHeight: 'calc(100dvh - 2rem)' },
+      contentStyle: { overflow: 'auto' },
       modal: true,
       closable: true,
       dismissableMask: true,

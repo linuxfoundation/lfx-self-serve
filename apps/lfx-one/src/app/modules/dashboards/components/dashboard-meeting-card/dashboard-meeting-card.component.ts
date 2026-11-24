@@ -3,7 +3,7 @@
 
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, output, PLATFORM_ID, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Params, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -26,6 +26,7 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -44,6 +45,11 @@ export class DashboardMeetingCardComponent {
   private readonly userService = inject(UserService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly toast = inject(UiToastService);
+  private copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** True for a moment after the meeting link is copied, so the button and tooltip can confirm it. */
+  public readonly linkCopied = signal(false);
 
   public readonly meeting = input.required<Meeting>();
   public readonly occurrence = input<MeetingOccurrence | null>(null);
@@ -156,6 +162,18 @@ export class DashboardMeetingCardComponent {
   }
 
   /** Asks before resending, the same way Remove Myself asks before removing; nothing is sent unless the user confirms. */
+  /** Confirms the copy: swaps the icon for a check for two seconds and shows a toast, or an error if the browser blocked the copy. */
+  public onLinkCopied(copied: boolean): void {
+    if (!copied) {
+      this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Failed to copy meeting link' });
+      return;
+    }
+    this.toast.show({ variant: 'dark', message: 'Meeting link copied' });
+    this.linkCopied.set(true);
+    if (this.copiedTimer) clearTimeout(this.copiedTimer);
+    this.copiedTimer = setTimeout(() => this.linkCopied.set(false), 2000);
+  }
+
   public confirmResendInvite(): void {
     // The date this card shows: the occurrence input when given, else the next occurrence it resolves from the meeting
     // itself (Groups Overview passes only the meeting), so the registration that fits what is on screen is chosen.
