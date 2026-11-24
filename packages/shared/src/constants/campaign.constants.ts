@@ -27,6 +27,9 @@ import type {
   MetaAudienceGender,
   MetaAudienceTargetingDraft,
   MetaCustomAudienceListView,
+  MetaAdSchedule,
+  MetaAdScheduleDayOption,
+  MetaFrequencyCap,
   MetaTargetingKind,
   CampaignKeyword,
   CampaignLabelOption,
@@ -973,6 +976,20 @@ export const META_FREQUENCY_CAP_MAX = 90;
 export const META_AD_SCHEDULE_MINUTES_PER_DAY = 1440;
 export const META_AD_SCHEDULE_STEP_MINUTES = 60;
 export const META_AD_SCHEDULE_MAX_DAY = 6;
+/** The ad schedule's day toggles, in Meta's numbering, Monday first as most calendars show a week. */
+export const META_AD_SCHEDULE_DAY_OPTIONS: readonly MetaAdScheduleDayOption[] = [
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+  { value: 0, label: 'Sun' },
+];
+/** What turning the ad schedule on starts from: weekdays, 09:00 to 17:00. */
+export const DEFAULT_META_AD_SCHEDULE: MetaAdSchedule = { days: [1, 2, 3, 4, 5], startMinute: 540, endMinute: 1020 };
+/** What turning the frequency cap on starts from: 2 impressions per person every 7 days. */
+export const DEFAULT_META_FREQUENCY_CAP: MetaFrequencyCap = { maxImpressions: 2, intervalDays: 7 };
 /** The Meta targeting search's kinds, as campaign-service names them. */
 export const META_TARGETING_SEARCH_TYPES = ['interest', 'behavior', 'work_position'] as const;
 /** A targeting search query is 2–100 characters after trimming, as campaign-service checks it. */

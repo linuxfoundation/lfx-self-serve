@@ -5,6 +5,7 @@ import { DEFAULT_META_AUDIENCE_TARGETING } from '../constants/campaign.constants
 import type {
   MetaDraftSnapshot,
   MetaAudienceTargetingDraft,
+  MetaDeliveryDraft,
   MetaDraftRestore,
   MetaDraftState,
   MetaImageDraftRestore,
@@ -13,6 +14,7 @@ import type {
 } from '../interfaces/campaign.interface';
 import { compactMetaAdOptions, metaAdOptionsForObjective } from './campaign-meta-ad-options.utils';
 import { metaAcceptedGeos } from './campaign-meta-form.utils';
+import { copyMetaDeliveryDraft, metaDeliveryFromDraft } from './campaign-meta-delivery.utils';
 import { copyMetaDetailedTargetingPicks, metaDetailedTargetingPicksFromDraft } from './campaign-meta-detailed-targeting.utils';
 import { metaLeadFormRestore } from './campaign-meta-lead-form.utils';
 
@@ -45,6 +47,8 @@ export function metaDraftFields(
   | 'metaAudienceTargeting'
   | 'metaAudienceTargetingProject'
   | 'metaDetailedTargeting'
+  | 'metaAdSchedule'
+  | 'metaFrequencyCap'
   | 'metaAdOptions'
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
@@ -64,6 +68,7 @@ export function metaDraftFields(
     metaAudienceTargeting: copyMetaAudienceTargeting(s.audienceTargeting),
     metaAudienceTargetingProject: s.foundation,
     metaDetailedTargeting: copyMetaDetailedTargetingPicks(s.detailedTargeting),
+    ...deliveryFields(s.delivery),
     metaAdOptions: { ...s.adOptions },
     metaAdOptionsProject: s.foundation,
     metaLeadFormId: s.leadFormId,
@@ -135,6 +140,18 @@ export function metaPendingDraftFields(pending: MetaDraftSnapshot): Partial<Meta
   return Object.fromEntries(META_FOUNDATION_SCOPED_DRAFT_KEYS.filter((key) => pending[key] !== undefined).map((key) => [key, pending[key]]));
 }
 
+/** The delivery options as the draft saves them: each `null` when unset. */
+function deliveryFields(delivery: MetaDeliveryDraft): Pick<MetaDraftSnapshot, 'metaAdSchedule' | 'metaFrequencyCap'> {
+  const copy = copyMetaDeliveryDraft(delivery);
+  return { metaAdSchedule: copy.adSchedule, metaFrequencyCap: copy.frequencyCap };
+}
+
+/** The delivery options a draft restores, under any foundation, or nothing for a draft saved before row 5. */
+function deliveryRestore(draft: MetaDraftSnapshot): Pick<MetaDraftRestore, 'delivery'> {
+  const delivery = metaDeliveryFromDraft(draft.metaAdSchedule, draft.metaFrequencyCap);
+  return delivery === undefined ? {} : { delivery };
+}
+
 /** The detailed targeting a draft restores, under any foundation (Meta's taxonomy is global), or nothing for a draft without it. */
 function detailedTargetingRestore(raw: unknown): Pick<MetaDraftRestore, 'detailedTargeting'> {
   const picks = metaDetailedTargetingPicksFromDraft(raw);
@@ -161,6 +178,7 @@ export function metaDraftRestore(draft: MetaDraftSnapshot, currentObjective: Met
       ? { audienceTargeting: copyMetaAudienceTargeting({ ...DEFAULT_META_AUDIENCE_TARGETING, ...draft.metaAudienceTargeting }) }
       : {}),
     ...detailedTargetingRestore(draft.metaDetailedTargeting),
+    ...deliveryRestore(draft),
     ...(draft.metaAdOptions !== undefined && draft.metaAdOptionsProject === activeFoundation
       ? { adOptions: metaAdOptionsForObjective(compactMetaAdOptions(draft.metaAdOptions), objective) }
       : {}),

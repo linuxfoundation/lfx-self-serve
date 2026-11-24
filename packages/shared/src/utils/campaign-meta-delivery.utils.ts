@@ -11,12 +11,23 @@ import {
   META_FREQUENCY_CAP_MIN,
   META_FREQUENCY_CAP_OFF_MESSAGE,
 } from '../constants/campaign.constants';
-import type { MetaAdSchedule, MetaConfigRefusal, MetaDeliveryFlags, MetaDeliveryOptions } from '../interfaces/campaign.interface';
+import type {
+  CampaignMetaAudienceTargetingBlock,
+  MetaAdSchedule,
+  MetaAdScheduleHourOption,
+  MetaConfigRefusal,
+  MetaDeliveryBlockInput,
+  MetaDeliveryDraft,
+  MetaDeliveryFlags,
+  MetaDeliveryOptions,
+  MetaFrequencyCap,
+  MetaObjective,
+} from '../interfaces/campaign.interface';
 import { metaConfigRecord } from './campaign-meta-ad-options.utils';
 
 /**
  * Meta delivery options (#5904 row 5): `metaConfig.adSchedule` and `metaConfig.frequencyCap`. One set of rules for the
- * create route (which answers a refusal with a 400) and, later, the Implement tab, mirroring campaign-service's
+ * create route (which answers a refusal with a 400) and the Implement tab, mirroring campaign-service's
  * `NormalizeAdSchedule` and `NormalizeFrequencyCap` (linuxfoundation/lfx-v2-campaign-service#612).
  */
 
@@ -141,4 +152,136 @@ export function compactMetaDeliveryOptions(raw: unknown): MetaDeliveryOptions {
   const cap = metaConfigRecord(record?.['frequencyCap']);
   if (cap) out.frequencyCap = { maxImpressions: cap['maxImpressions'] as number, intervalDays: cap['intervalDays'] as number };
   return out;
+}
+
+/** No schedule and no cap: a fresh object each time. */
+export function emptyMetaDeliveryDraft(): MetaDeliveryDraft {
+  return { adSchedule: null, frequencyCap: null };
+}
+
+/** A copy of `draft`, so the parent's draft never holds a live view of the tab's signal. */
+export function copyMetaDeliveryDraft(draft: MetaDeliveryDraft): MetaDeliveryDraft {
+  return {
+    adSchedule: draft.adSchedule === null ? null : { ...draft.adSchedule, days: [...draft.adSchedule.days] },
+    frequencyCap: draft.frequencyCap === null ? null : { ...draft.frequencyCap },
+  };
+}
+
+/** The hours the schedule's start (00:00–23:00) or end (01:00–24:00) select offers, as minutes of the day. */
+export function metaAdScheduleHourOptions(kind: 'start' | 'end'): MetaAdScheduleHourOption[] {
+  const first = kind === 'start' ? 0 : 1;
+  return Array.from({ length: 24 }, (_, i) => {
+    const hour = i + first;
+    return { value: hour * META_AD_SCHEDULE_STEP_MINUTES, label: `${String(hour).padStart(2, '0')}:00` };
+  });
+}
+
+/** `schedule` with `day` turned on or off, days kept sorted. */
+export function metaAdScheduleWithDay(schedule: MetaAdSchedule, day: number, on: boolean): MetaAdSchedule {
+  const days = new Set(schedule.days);
+  if (on) days.add(day);
+  else days.delete(day);
+  return { ...schedule, days: [...days].sort((a, b) => a - b) };
+}
+
+/**
+ * `draft` without what the current budget mode and objective cannot carry: the schedule off a daily budget, the cap
+ * off any objective but awareness. Cleared rather than kept hidden, as an objective change clears ad options.
+ */
+export function metaDeliveryApplicable(draft: MetaDeliveryDraft, lifetimeBudget: boolean, objective: MetaObjective): MetaDeliveryDraft {
+  return {
+    adSchedule: lifetimeBudget ? draft.adSchedule : null,
+    frequencyCap: objective === 'awareness' ? draft.frequencyCap : null,
+  };
+}
+
+/** A finite number: the only shape a schedule or cap field can be restored as. */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+/**
+ * A schedule a saved draft carries, when it has the schedule's SHAPE (a list of numbers and two numbers), or `null`.
+ * Its values are kept even when the rules refuse them (no day, an end before the start): an edit saved half-done must
+ * come back with its error and keep holding Create, never come back as "no schedule" and let the ads run all day.
+ */
+function scheduleFromDraft(raw: unknown): MetaAdSchedule | null {
+  const record = metaConfigRecord(raw);
+  const days = record?.['days'];
+  const start = record?.['startMinute'];
+  const end = record?.['endMinute'];
+  if (!Array.isArray(days) || !days.every(isFiniteNumber) || !isFiniteNumber(start) || !isFiniteNumber(end)) return null;
+  return { days: [...new Set(days)].sort((a, b) => a - b), startMinute: start, endMinute: end };
+}
+
+/** A cap a saved draft carries, when it has the cap's shape (two numbers), or `null`; refused values are kept, as above. */
+function capFromDraft(raw: unknown): MetaFrequencyCap | null {
+  const record = metaConfigRecord(raw);
+  const maxImpressions = record?.['maxImpressions'];
+  const intervalDays = record?.['intervalDays'];
+  return isFiniteNumber(maxImpressions) && isFiniteNumber(intervalDays) ? { maxImpressions, intervalDays } : null;
+}
+
+/**
+ * The delivery options a saved draft restores, or `undefined` for a draft saved before row 5 (neither key present).
+ * The draft is persisted JSON: a value without the right shape restores as `null` (none); one with the shape but
+ * values the rules refuse restores as saved, so its error still holds Create.
+ */
+export function metaDeliveryFromDraft(adSchedule: unknown, frequencyCap: unknown): MetaDeliveryDraft | undefined {
+  if (adSchedule === undefined && frequencyCap === undefined) return undefined;
+  return { adSchedule: scheduleFromDraft(adSchedule), frequencyCap: capFromDraft(frequencyCap) };
+}
+
+/** The delivery options a Meta create sends: each only on its explicit yes. A set field without one holds Create instead. */
+export function metaDeliveryForCreate(draft: MetaDeliveryDraft, adScheduleEnabled: boolean | null, frequencyCapEnabled: boolean | null): MetaDeliveryOptions {
+  return {
+    ...(draft.adSchedule !== null && adScheduleEnabled === true ? { adSchedule: draft.adSchedule } : {}),
+    ...(draft.frequencyCap !== null && frequencyCapEnabled === true ? { frequencyCap: draft.frequencyCap } : {}),
+  };
+}
+
+/** `draft` with each option this deployment answered no to cleared: the Clear past an `unsupported` block, whose control is hidden. */
+export function metaDeliverySendable(draft: MetaDeliveryDraft, adScheduleEnabled: boolean | null, frequencyCapEnabled: boolean | null): MetaDeliveryDraft {
+  return {
+    adSchedule: adScheduleEnabled === false ? null : draft.adSchedule,
+    frequencyCap: frequencyCapEnabled === false ? null : draft.frequencyCap,
+  };
+}
+
+/**
+ * Why Create is held for a delivery option the draft holds but the request cannot carry, or `null`: the audience
+ * block's states. Held rather than dropped, since a dropped schedule runs the ads around the clock. `unsupported` (a
+ * flag answered no) offers Clear; while an answer is out or failed, only waiting or Retry.
+ */
+export function metaDeliveryBlock(input: MetaDeliveryBlockInput): CampaignMetaAudienceTargetingBlock | null {
+  const held = [input.draft.adSchedule !== null ? input.adScheduleEnabled : true, input.draft.frequencyCap !== null ? input.frequencyCapEnabled : true].filter(
+    (answer) => answer !== true
+  );
+  if (held.length === 0) return null;
+  if (held.includes(false)) {
+    return {
+      kind: 'unsupported',
+      message:
+        'The Meta ad schedule or frequency cap on this brief is not available on this deployment, so it cannot be sent. Clear it to create the campaign.',
+    };
+  }
+  if (input.createCapabilityRead === 'pending') {
+    return {
+      kind: 'pending',
+      message: 'Checking whether you can send the Meta ad schedule or frequency cap. Create waits for the answer so they are not dropped.',
+    };
+  }
+  if (!input.briefId) return { kind: 'unsaved', message: "The Meta ad schedule or frequency cap can't be checked until this brief is saved. Save the brief." };
+  return {
+    kind: 'failed',
+    message: 'Could not confirm that you can send the Meta ad schedule or frequency cap, so Create waits rather than dropping them. Retry the check.',
+  };
+}
+
+/** What the Clear past an `unsupported` {@link metaDeliveryBlock} clears, as its button says it: only the options answered no. */
+export function metaDeliveryClearLabel(draft: MetaDeliveryDraft, adScheduleEnabled: boolean | null, frequencyCapEnabled: boolean | null): string {
+  const schedule = draft.adSchedule !== null && adScheduleEnabled === false;
+  const cap = draft.frequencyCap !== null && frequencyCapEnabled === false;
+  if (schedule && cap) return 'Clear the ad schedule and frequency cap';
+  return schedule ? 'Clear the ad schedule' : 'Clear the frequency cap';
 }
