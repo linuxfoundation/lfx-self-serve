@@ -50,14 +50,22 @@ export function scrubFreeText(text: string): string {
  *
  * Nothing is exposed by default. A field survives only when `ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS` holds an entry for
  * this `page` and that exact field name (an email-shaped value under an excepted key stays too). The list is empty at launch.
+ * A field the route lists in `extraFields` is removed even when an exception names it: the route's explicit removal wins.
  *
  * It removes fields, it does not decide what a page may show: a page story still decides which endpoints to
  * `blockEmployeeView` outright, and whether a count derived from people is itself revealing.
  */
 export function stripPersonalFields<T>(data: T, options: StripPersonalFieldsOptions): T {
   const exceptions = options.exceptions ?? ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS;
-  const allowed = new Set(exceptions.filter((entry) => entry.page === options.page).map((entry) => normalizeKey(entry.field)));
-  const removed = new Set([...PERSONAL_FIELD_KEYS, ...(options.extraFields ?? []).map(normalizeKey)]);
+  // A field a route removes explicitly always wins: a page exception covers the default personal-field list only, never an `extraFields` entry.
+  const routeRemoved = new Set((options.extraFields ?? []).map(normalizeKey));
+  const allowed = new Set(
+    exceptions
+      .filter((entry) => entry.page === options.page)
+      .map((entry) => normalizeKey(entry.field))
+      .filter((key) => !routeRemoved.has(key))
+  );
+  const removed = new Set([...PERSONAL_FIELD_KEYS, ...routeRemoved]);
   for (const key of allowed) removed.delete(key);
   return strip(data, removed, allowed) as T;
 }
