@@ -18,7 +18,12 @@ import {
   ProjectContext,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
-import { canGroupGrantSocialListening, computeIsFoundation, getMissingCommitteeMemberRequirements, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
+import {
+  canGroupGrantSocialListening,
+  computeIsFoundation,
+  getMissingCommitteeMemberRequirements,
+  getSelectableCommitteeCategories,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
