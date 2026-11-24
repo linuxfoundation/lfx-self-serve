@@ -12,15 +12,26 @@ const normalizeKey = (key: string): string => key.toLowerCase().replace(/[_-]/g,
 
 const PERSONAL_FIELD_KEYS: ReadonlySet<string> = new Set(ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS.map(normalizeKey));
 
-// A real address: a local part, a dotted host and an alphabetic or punycode TLD. The local part is either ASCII (so unspaced CJK text before it is never swallowed: in `联系ada@x.com` only `ada@x.com` goes) or a run of letters that ENDS in a non-ASCII letter right before the `@` (`用户@x.com`, whose whole local part is the address); the host may be Unicode or punycode. It must not run on into a word,
-// so a version spec (`pkg@1.2.3`) survives. A git SSH remote (`git@github.com:org/repo.git`) is the one address-shaped
-// token kept on purpose, and only by {@link isGitRemote}: an address followed by a path or a colon is otherwise still an address.
-const EMBEDDED_EMAIL =
-  /(?:[\p{L}\p{N}._%+-]*(?!\p{ASCII})[\p{L}\p{N}]|[A-Za-z0-9._%+-]+)@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_])/gu;
+// A real address in free text: a local part (any letters, digits and `._%+-`, so `ünal@x.com` and `josé@x.com` go whole), a dotted host and an
+// alphabetic or punycode TLD; the host may be Unicode or punycode. It must not run on into a word, so a version spec (`pkg@1.2.3`) survives.
+// The one ambiguity is unspaced CJK text glued to an ASCII local part (`联系ada@x.com`): {@link splitLeadingCjk} leaves the CJK words and
+// removes only the address. A git SSH remote (`git@github.com:org/repo.git`) is the one address-shaped token kept on purpose, and only by
+// {@link isGitRemote}: an address followed by a path or a colon is otherwise still an address.
+const EMBEDDED_EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:xn--[A-Za-z0-9-]{2,}|\p{L}{2,})(?![A-Za-z0-9_-]|\.[\p{L}\p{N}_])/gu;
+
+/** Scripts written without spaces, whose words are not part of an address when they sit directly before an ASCII local part. */
+const CJK_THEN_ASCII_LOCAL = /^(.*[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])([A-Za-z0-9._%+-]+)$/u;
+
+/** Splits a matched address into the CJK words glued in front of an ASCII local part (kept) and the address itself (removed). */
+function splitLeadingCjk(match: string): { keep: string; address: string } {
+  const at = match.indexOf('@');
+  const split = CJK_THEN_ASCII_LOCAL.exec(match.slice(0, at));
+  return split ? { keep: split[1], address: split[2] + match.slice(at) } : { keep: '', address: match };
+}
 
 /** A recognized git remote: the user is exactly `git` and a path follows (`git@host:org/repo.git`, `ssh://git@host/org/repo.git`). */
-function isGitRemote(match: string, following: string): boolean {
-  return match.slice(0, match.indexOf('@')).toLowerCase() === 'git' && /^[:/][\p{L}\p{N}_~]/u.test(following);
+function isGitRemote(address: string, following: string): boolean {
+  return address.slice(0, address.indexOf('@')).toLowerCase() === 'git' && /^[:/][\p{L}\p{N}_~]/u.test(following);
 }
 
 /** A whole value that is an address, by the same rule as {@link EMBEDDED_EMAIL}: `git@git.example.com:org/repo.git` and `pkg@1.2.3` are not. */
@@ -35,11 +46,10 @@ const PERSONAL_URL = /(?:mailto:\S+|https?:\/\/(?:[\w-]+\.)?(?:linkedin\.com\/(?
  * {@link stripPersonalFields} for whole payloads, which applies this to every string value.
  */
 export function scrubFreeText(text: string): string {
-  return text
-    .replace(PERSONAL_URL, '')
-    .replace(EMBEDDED_EMAIL, (match, offset: number, whole: string) =>
-      isGitRemote(match, whole.slice(offset + match.length, offset + match.length + 2)) ? match : ''
-    );
+  return text.replace(PERSONAL_URL, '').replace(EMBEDDED_EMAIL, (match, offset: number, whole: string) => {
+    const { keep, address } = splitLeadingCjk(match);
+    return isGitRemote(address, whole.slice(offset + match.length, offset + match.length + 2)) ? match : keep;
+  });
 }
 
 /**

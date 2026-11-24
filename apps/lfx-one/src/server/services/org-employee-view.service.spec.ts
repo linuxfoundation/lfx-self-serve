@@ -258,6 +258,82 @@ describe('OrgEmployeeViewService.resolve', () => {
     }
   });
 
+  it('indexes a company website only when it is a bare host, never one that names a path on another host', async () => {
+    const bare = ['acme-motors.example', 'https://www.acme-motors.example/', 'HTTP://Acme-Motors.example'];
+    for (const website of bare) {
+      OrgEmployeeViewService.clearCache();
+      const { svc } = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: website }], other] });
+      await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+    }
+
+    for (const website of ['acme-motors.example/en', 'https://acme-motors.example/team?x=1', 'acme-motors.example#about', 'https://acme-motors.example/a/b']) {
+      OrgEmployeeViewService.clearCache();
+      const { svc } = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: website }], other] });
+      await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+    }
+  });
+
+  it('rejects, never denies, when active memberships load but none has a usable company domain', async () => {
+    const { svc } = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true }]] });
+
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toMatchObject({ code: 'EMPLOYEE_VIEW_MEMBER_INDEX_UNAVAILABLE' });
+  });
+
+  it('does not let a slower, older refresh replace a newer index', async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, proxy } = build();
+      await svc.resolve(req(), ORG_UID);
+
+      const releases: ((value: unknown) => void)[] = [];
+      proxy.proxyRequest.mockImplementation(() => new Promise((resolve) => releases.push(resolve)));
+      getEffectiveUsername.mockReturnValue('colleague');
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      await svc.resolve(req(), ORG_UID); // refresh A starts (served stale)
+      getEffectiveUsername.mockReturnValue('third');
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      await svc.resolve(req(), ORG_UID); // refresh B starts, A is still pending
+
+      const newer = page([[ORG_UID, acme], other]);
+      const older = page([[ORG_UID, acme]]);
+      releases[1](newer);
+      await vi.advanceTimersByTimeAsync(0);
+      releases[0](older);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const last = (OrgEmployeeViewService as unknown as { lastGoodIndex: { index: Map<string, unknown> } }).lastGoodIndex;
+      expect([...last.index.keys()].sort()).toEqual(['acme-motors.example', 'other-works.example']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('backs off after a failed refresh instead of re-reading everything on the next request', async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc, proxy } = build();
+      await svc.resolve(req(), ORG_UID);
+
+      proxy.proxyRequest.mockRejectedValue(new Error('query-service down'));
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      getEffectiveUsername.mockReturnValue('colleague');
+      await svc.resolve(req(), ORG_UID);
+      await vi.advanceTimersByTimeAsync(0);
+      const callsAfterFailure = proxy.proxyRequest.mock.calls.length;
+
+      getEffectiveUsername.mockReturnValue('third');
+      await svc.resolve(req(), ORG_UID);
+      expect(proxy.proxyRequest.mock.calls.length).toBe(callsAfterFailure);
+
+      vi.setSystemTime(Date.now() + 31 * 1000);
+      getEffectiveUsername.mockReturnValue('fourth');
+      await svc.resolve(req(), ORG_UID);
+      expect(proxy.proxyRequest.mock.calls.length).toBeGreaterThan(callsAfterFailure);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps serving the previous index when a refresh fails, until it is too old', async () => {
     vi.useFakeTimers();
     try {

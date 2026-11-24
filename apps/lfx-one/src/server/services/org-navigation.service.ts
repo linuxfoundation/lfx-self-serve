@@ -212,7 +212,7 @@ export class OrgNavigationService {
           primaryDomain: null,
           parentName: null,
           status: null,
-          // The company's own slug, so the indexed row never overwrites the slug the resolver already adopted.
+          // The company's slug when known (the interim membership lookup carries none, so this is null and the row is addressed by id).
           slug: org.orgSlug ?? null,
           isAssigned: true,
           ...(verdict.eligible ? { employeeView: true } : { fullAccess: true }),

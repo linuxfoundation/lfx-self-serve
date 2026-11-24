@@ -58,6 +58,9 @@ export const ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS = 60 * 1000;
 /** How long the previous member-company index may be served while a newer one refreshes or keeps failing (the memberships change on a days-long cadence). */
 export const ORG_LENS_EMPLOYEE_VIEW_MEMBER_INDEX_MAX_STALE_MS = 60 * 60 * 1000;
 
+/** After a failed member-index refresh the previous index keeps being served and no new full read starts for this long. */
+export const ORG_LENS_EMPLOYEE_VIEW_MEMBER_INDEX_RETRY_BACKOFF_MS = 30 * 1000;
+
 /** Upper bound on cached employee-view verdicts per server process. */
 export const ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES = 1000;
 
