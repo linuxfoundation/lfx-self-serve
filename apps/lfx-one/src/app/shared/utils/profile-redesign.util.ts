@@ -6,7 +6,10 @@ import { PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 
-/** The server's answer to the profile redesign flag for this visit, set by the redesign guards on `/profile` and `/account` renders. */
+/**
+ * The server's answer to the profile redesign flag for this visit, set when a redesign guard runs on the server: `/account` and the
+ * Profile & Account tabs that move to it. Other renders leave it unset.
+ */
 export const PROFILE_REDESIGN_KEY = makeStateKey<boolean>('profileRedesign');
 
 /**

@@ -4,13 +4,13 @@
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, Event as RouterEvent, NavigationEnd, provideRouter, Router } from '@angular/router';
 import { PROFILE_AUTH_ERROR_MESSAGES } from '@lfx-one/shared/constants';
 import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountLayoutComponent } from './account-layout.component';
@@ -20,7 +20,7 @@ describe('AccountLayoutComponent', () => {
   let impersonating: ReturnType<typeof signal<boolean>>;
   let add: ReturnType<typeof vi.fn>;
   let queryParams: Record<string, string>;
-  let childPath: string;
+  let childConfig: { path: string };
   let unsaved: {
     dirty: ReturnType<typeof signal<boolean>>;
     saving: ReturnType<typeof signal<boolean>>;
@@ -37,7 +37,7 @@ describe('AccountLayoutComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: PLATFORM_ID, useValue: 'browser' },
-        { provide: ActivatedRoute, useValue: { queryParams: of(queryParams), firstChild: { snapshot: { routeConfig: { path: childPath } } } } },
+        { provide: ActivatedRoute, useValue: { queryParams: of(queryParams), firstChild: { snapshot: { routeConfig: childConfig } } } },
         { provide: UserService, useValue: { impersonating, user: signal(null) } },
         { provide: NavbarCollapseService, useValue: { railAtAnyWidth: signal(true) } },
         { provide: MessageService, useValue: { add, messageObserver: of(), clearObserver: of() } },
@@ -58,7 +58,7 @@ describe('AccountLayoutComponent', () => {
     impersonating = signal(false);
     add = vi.fn();
     queryParams = {};
-    childPath = 'identities';
+    childConfig = { path: 'identities' };
     unsaved = { dirty: signal(false), saving: signal(false), save: vi.fn(), revert: vi.fn() };
   });
 
@@ -160,11 +160,24 @@ describe('AccountLayoutComponent', () => {
   });
 
   it('drops the left nav and the header rule on the landing page', async () => {
-    childPath = '';
+    childConfig.path = '';
     await setup();
 
     expect(query('account-layout-nav')).toBeNull();
     expect(query('account-layout-header-rule')?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('adds the nav when a page opens from the landing page, keeping the one content outlet', async () => {
+    childConfig.path = '';
+    await setup();
+    const content = query('account-layout-content');
+
+    childConfig.path = 'transactions';
+    (TestBed.inject(Router).events as Subject<RouterEvent>).next(new NavigationEnd(2, '/account/transactions', '/account/transactions'));
+    fixture.detectChanges();
+
+    expect(query('account-layout-nav')).not.toBeNull();
+    expect(query('account-layout-content')).toBe(content);
   });
 
   it('keeps the left nav and the header rule on a page', async () => {

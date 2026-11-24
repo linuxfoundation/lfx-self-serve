@@ -62,12 +62,10 @@
       </div>
     }
 
-    <!-- The landing page lists every page itself, so it has no left nav. -->
-    @if (isLanding()) {
-      <router-outlet />
-    } @else {
-      <!-- Left nav beside the page; at 860px and below it stacks above the page. -->
-      <div class="flex flex-row items-start gap-[24px] max-[860px]:flex-col">
+    <!-- Left nav beside the page; at 860px and below it stacks above the page. The landing page lists every page itself, so it
+         has none. One outlet in a fixed place, so a page opened from the landing page is built once. -->
+    <div class="flex flex-row items-start gap-[24px] max-[860px]:flex-col">
+      @if (!isLanding()) {
         <nav
           class="min-w-0 flex-[0_0_240px] self-stretch pr-[20px] shadow-[inset_-1px_0_0] shadow-gray-200 max-[860px]:w-full max-[860px]:flex-none max-[860px]:pr-0 max-[860px]:shadow-none"
           aria-label="Account and settings"
@@ -93,11 +91,11 @@
             }
           </div>
         </nav>
+      }
 
-        <div class="flex min-w-0 flex-1 flex-col gap-[20px] max-[860px]:w-full" data-testid="account-layout-content">
-          <router-outlet />
-        </div>
+      <div class="flex min-w-0 flex-1 flex-col gap-[20px] max-[860px]:w-full" data-testid="account-layout-content">
+        <router-outlet />
       </div>
-    }
+    </div>
   </div>
 </div>
