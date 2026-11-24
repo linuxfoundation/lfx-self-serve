@@ -48,6 +48,7 @@
         icon="fa-light fa-user-check"
         severity="secondary"
         [disabled]="mutationsDisabled()"
+        [loading]="loadingSelfInvites()"
         data-testid="add-myself-button"
         (click)="addMyself()">
       </lfx-button>

@@ -132,7 +132,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
   private readonly loadingInvites = signal(false);
   private readonly loadingImportInvites = signal(false);
-  private readonly loadingSelfInvites = signal(false);
+  // Add myself checks the user's pending invitations first; its button spins meanwhile.
+  public readonly loadingSelfInvites = signal(false);
   private readonly importInvites = signal<MemberPendingChanges['importInvites']>(undefined);
 
   // Simple computed signals

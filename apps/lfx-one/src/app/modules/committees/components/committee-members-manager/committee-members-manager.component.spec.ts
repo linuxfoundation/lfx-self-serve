@@ -642,5 +642,19 @@ describe('CommitteeMembersManagerComponent', () => {
       component.addMyself();
       expect(component.membersWithState()).toHaveLength(1);
     });
+
+    it('spins while checking invitations, then hides once the user is added', async () => {
+      await setup();
+      const invites = new Subject<CommitteeInvite[]>();
+      committeeService.getCommitteeInvites.mockReturnValue(invites);
+      expect(query('add-myself-button')?.getAttribute('data-loading')).toBe('false');
+      query('add-myself-button')?.querySelector('button')?.click();
+      await fixture.whenStable();
+      expect(query('add-myself-button')?.getAttribute('data-loading')).toBe('true');
+      expect(query('import-members-csv-btn')?.querySelector('button')?.disabled).toBe(true);
+      invites.next([]);
+      await fixture.whenStable();
+      expect(query('add-myself-button')).toBeNull();
+    });
   });
 });
