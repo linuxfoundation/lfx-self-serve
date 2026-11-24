@@ -801,6 +801,13 @@ describe('EventsService.submitVisaRequestApplication dates', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('rejects an impossible passport expiry instead of sending it as null', async () => {
+    await expect(submit({ birthDate: '1990-05-10', passportExpiryDate: '2030-02-31' })).rejects.toMatchObject({
+      code: 'INVALID_REQUEST_FIELDS',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('still accepts a full timestamp from an older client and warns without logging the value', async () => {
     const body = await submit({ birthDate: '1990-05-09T23:00:00.000Z', passportExpiryDate: null });
 

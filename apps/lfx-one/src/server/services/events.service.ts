@@ -754,6 +754,7 @@ export class EventsService {
 
     // Converted up front so an impossible date (e.g. 1990-02-31) fails here instead of reaching user-service as null.
     const birthDate = this.toUpstreamCalendarDate(req, 'birthDate', applicantInfo.birthDate);
+    const passportExpiryDate = this.toUpstreamCalendarDate(req, 'passportExpiryDate', applicantInfo.passportExpiryDate);
 
     const missingFields: string[] = [];
     if (!applicantInfo.attendeeType) missingFields.push('attendeeType');
@@ -763,8 +764,10 @@ export class EventsService {
     if (!applicantInfo.passportNumber) missingFields.push('passportNumber');
     if (!applicantInfo.organizationID) missingFields.push('organizationID');
     if (!applicantInfo.embassyCity) missingFields.push('embassyCity');
+    // Optional, but a supplied value that doesn't convert is rejected rather than sent as null.
+    if (applicantInfo.passportExpiryDate && !passportExpiryDate) missingFields.push('passportExpiryDate');
     if (missingFields.length > 0) {
-      throw new MicroserviceError(`Missing required visa request fields: ${missingFields.join(', ')}`, 422, 'INVALID_REQUEST_FIELDS', {
+      throw new MicroserviceError(`Missing or invalid visa request fields: ${missingFields.join(', ')}`, 422, 'INVALID_REQUEST_FIELDS', {
         operation: 'submit_visa_request_application',
         errorBody: { missingFields },
       });
@@ -798,9 +801,7 @@ export class EventsService {
       City: applicantInfo.embassyCity,
       ...(applicantInfo.company && { jobTitle: applicantInfo.company }),
       ...(applicantInfo.mailingAddress && { addressLine01: applicantInfo.mailingAddress }),
-      ...(applicantInfo.passportExpiryDate && {
-        passportExpiryDate: this.toUpstreamCalendarDate(req, 'passportExpiryDate', applicantInfo.passportExpiryDate),
-      }),
+      ...(passportExpiryDate && { passportExpiryDate }),
     };
 
     logger.info(req, 'submit_visa_request_application', 'Calling API Gateway visa endpoint', {
