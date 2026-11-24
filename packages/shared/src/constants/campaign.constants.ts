@@ -1027,6 +1027,8 @@ export const META_LEAD_FORM_PICKER_REASONS = {
 /** Why a `leads` draft holding a form is held when lead forms are off for this caller or foundation (#5940). */
 export const META_LEAD_FORM_UNAVAILABLE_REFUSAL = "Lead forms aren't available for this foundation. Choose another objective.";
 export const META_LEAD_FORM_PICKER_LOADING = "Loading the Page's lead forms…";
+/** Why a held lead form (restored, or kept after its status changed) holds Create once the Page's forms show it is not ACTIVE (#6107). */
+export const META_LEAD_FORM_INACTIVE_REFUSAL = 'This lead form is no longer active on the Facebook Page. Choose another one.';
 export const META_LEAD_FORM_PICKER_EMPTY = 'This Facebook Page has no lead forms. Create one in Meta Ads Manager, then reload.';
 
 /**

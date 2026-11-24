@@ -5,6 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { META_LEAD_FORM_INACTIVE_REFUSAL } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignImplementationDraft, ProjectContext } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -21,7 +22,8 @@ trackStateOnlyTests();
  * Wiring only (#5940). Which objectives are offered, when a form holds Create and which call to action a form
  * may carry are rules in `campaign-meta-lead-form.utils.ts`, tested there; the picker is tested in its own spec.
  * Here: the input reaches the objective list, the helper's answer reaches Create and the request, and a foundation
- * switch and a draft restored under another foundation reach the reset.
+ * switch and a draft restored under another foundation reach the reset; a held form the picker reports as inactive
+ * holds Create, and a draft restored before the foundation resolves keeps its form once it does (#6107).
  */
 describe('ImplementationTabComponent meta lead form', () => {
   let createCampaign: ReturnType<typeof vi.fn>;
@@ -74,7 +76,14 @@ describe('ImplementationTabComponent meta lead form', () => {
             getLinkedInAccounts: () => of([]),
             getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
-            getMetaLeadForms: () => of({ pageId: '100000000000001', forms: [{ id: '111', name: 'Registrations', status: 'ACTIVE' }] }),
+            getMetaLeadForms: () =>
+              of({
+                pageId: '100000000000001',
+                forms: [
+                  { id: '111', name: 'Registrations', status: 'ACTIVE' },
+                  { id: '222', name: 'Old form', status: 'ARCHIVED' },
+                ],
+              }),
           },
         },
       ],
@@ -130,6 +139,97 @@ describe('ImplementationTabComponent meta lead form', () => {
     restored.detectChanges();
     await restored.whenStable();
     expect(c(restored)['metaObjective']()).toBe('traffic');
+    expect(c(restored)['metaLeadFormId']()).toBe('');
+  });
+
+  it('holds Create when the picker reports the held form as no longer active', async () => {
+    const f = await mount(true);
+    c(f)['onMetaLeadFormChange']('222');
+    f.detectChanges();
+    await f.whenStable();
+    expect(c(f)['createBlockedReason']()).toContain(META_LEAD_FORM_INACTIVE_REFUSAL);
+  });
+
+  it('keeps Leads and the form of a draft restored before the foundation is known, once it resolves', STATE_ONLY, async () => {
+    const f = await mount(true);
+    let saved: CampaignImplementationDraft | null = null;
+    f.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (saved = d));
+    c(f)['onMetaLeadFormChange']('111');
+    f.detectChanges();
+    await f.whenStable();
+    f.destroy();
+
+    const context = TestBed.inject(ProjectContextService);
+    context.clearFoundation(false);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
+    restored.componentRef.setInput('metaLeadFormsEnabled', true);
+    restored.componentRef.setInput('draft', saved);
+    restored.componentRef.setInput('briefData', brief());
+    let resaved: CampaignImplementationDraft | null = null;
+    restored.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (resaved = d));
+    restored.detectChanges();
+    await restored.whenStable();
+    // Saved meanwhile with its form and stamp, so a tab left before the foundation resolves loses nothing.
+    expect(resaved).toMatchObject({ metaObjective: 'leads', metaLeadFormId: '111', metaLeadFormProject: 'tlf' });
+
+    context.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+    restored.detectChanges();
+    await restored.whenStable();
+    expect(c(restored)['metaObjective']()).toBe('leads');
+    expect(c(restored)['metaLeadFormId']()).toBe('111');
+  });
+
+  it('keeps a form choice made before the foundation is known over the waiting draft', STATE_ONLY, async () => {
+    const f = await mount(true);
+    let saved: CampaignImplementationDraft | null = null;
+    f.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (saved = d));
+    c(f)['onMetaLeadFormChange']('111');
+    f.detectChanges();
+    await f.whenStable();
+    f.destroy();
+
+    const context = TestBed.inject(ProjectContextService);
+    context.clearFoundation(false);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
+    restored.componentRef.setInput('metaLeadFormsEnabled', true);
+    restored.componentRef.setInput('draft', saved);
+    restored.componentRef.setInput('briefData', brief());
+    restored.detectChanges();
+    await restored.whenStable();
+
+    c(restored)['onMetaLeadFormChange']('333');
+    context.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+    restored.detectChanges();
+    await restored.whenStable();
+    expect(c(restored)['metaLeadFormId']()).toBe('333');
+  });
+
+  it('does not carry a draft waiting for the foundation into another brief', STATE_ONLY, async () => {
+    const f = await mount(true);
+    let saved: CampaignImplementationDraft | null = null;
+    f.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (saved = d));
+    c(f)['onMetaLeadFormChange']('111');
+    f.detectChanges();
+    await f.whenStable();
+    f.destroy();
+
+    const context = TestBed.inject(ProjectContextService);
+    context.clearFoundation(false);
+    const restored = TestBed.createComponent(tabComponentUnderTest());
+    restored.componentRef.setInput('metaLeadFormsEnabled', true);
+    restored.componentRef.setInput('draft', saved);
+    restored.componentRef.setInput('briefData', brief());
+    restored.detectChanges();
+    await restored.whenStable();
+
+    restored.componentRef.setInput('draft', null);
+    restored.componentRef.setInput('briefData', { ...brief(), eventDetails: { ...brief().eventDetails, name: 'OSS NA 2026', slug: 'oss-na-2026' } });
+    restored.detectChanges();
+    await restored.whenStable();
+    context.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+    restored.detectChanges();
+    await restored.whenStable();
+    expect(c(restored)['metaObjective']()).not.toBe('leads');
     expect(c(restored)['metaLeadFormId']()).toBe('');
   });
 });

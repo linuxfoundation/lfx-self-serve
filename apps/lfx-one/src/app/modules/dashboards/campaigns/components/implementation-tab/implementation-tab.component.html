@@ -4586,6 +4586,7 @@
               [projectSlug]="activeFoundationSlug()"
               [leadFormId]="metaLeadFormId()"
               (leadFormIdChange)="onMetaLeadFormChange($event)"
+              (heldRefusalChange)="onMetaLeadFormHeldRefusal($event)"
               data-testid="implementation-meta-lead-form" />
           }
           @if (metaLeadFormError(); as error) {
