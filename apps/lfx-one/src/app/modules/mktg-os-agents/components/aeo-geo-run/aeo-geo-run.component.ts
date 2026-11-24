@@ -21,6 +21,7 @@ import {
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
   MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
@@ -200,11 +201,12 @@ export class AeoGeoRunComponent {
           // poller on its capped backoff and on tab return, focus or reconnect, behind one quiet line; a refused or missing
           // project (401/403/404, any other final) is a plain state, latched, so no wake sends the same request again
           // (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry
-          // 401 needs a sign-in, not a poll). No Try again button.
+          // 401 needs a sign-in, not a poll). No Try again button. `strictWriter`: a writer check that could not be made fails
+          // the read (and is retried) instead of answering 200 with `writer: false`, which would be a cached false denial.
           let projectFinal = false;
           const readProject = (): Observable<Project> => {
             if (projectFinal) return EMPTY;
-            return this.projects.getProjectStrict(context.slug).pipe(
+            return this.projects.getProjectStrict(context.slug, { strictWriter: true }).pipe(
               catchError((error: unknown) => {
                 if (isTransientHttpError(error)) return throwError(() => error);
                 projectFinal = true;
@@ -224,7 +226,7 @@ export class AeoGeoRunComponent {
                 this.answerValues.set({});
                 this.busy.set(false);
                 // A refused project is the plain no-access state; anything else final is a plain load error.
-                if (status !== 401 && status !== 403) this.error.set('The project could not be loaded.');
+                if (status !== 401 && status !== 403) this.error.set(MKTG_NOT_AVAILABLE_TEXT.project);
                 return EMPTY;
               })
             );

@@ -1,15 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { MKTG_DOCUMENT_TYPES, MKTG_REBUILD_NAVIGATION_STATE_KEY } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_NOT_AVAILABLE_TEXT, MKTG_POLL_RETRYING_TEXT, MKTG_REBUILD_NAVIGATION_STATE_KEY } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse, MktgRevisionRef } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { UserService } from '@services/user.service';
 import { Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgDownstreamComponent } from './mktg-downstream.component';
 
 const reference: MktgRevisionRef = { agentKey: 'foundation-message', revisionId: `000003-${'c'.repeat(64)}`, revisionNumber: 3, contentSha256: 'd'.repeat(64) };
@@ -37,7 +38,10 @@ describe('Framework Downstream card', () => {
   let fixture: ComponentFixture<MktgDownstreamComponent>;
   let reads: Subject<MktgDocumentsResponse>[];
   const impersonating = signal(false);
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(async () => {
+    // The read goes through the shared poller, which reads only in a visible tab.
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     reads = [];
     impersonating.set(false);
     TestBed.configureTestingModule({
@@ -135,23 +139,29 @@ describe('Framework Downstream card', () => {
     await fixture.whenStable();
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="mktg-downstream-copy"]')).not.toBeNull();
   });
-  it('retains the previous listing after a failed re-read and restores it while retrying without a skeleton', async () => {
+  it('keeps the loaded listing usable under one grey line while a re-read cannot reach the server, with no button', async () => {
     reads[0].next(listing());
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const card = root.querySelector('[data-testid="mktg-downstream-card"]');
     fixture.componentRef.setInput('refreshKey', 'new-approval');
     await fixture.whenStable();
-    reads[1].error(new Error('Synthetic read unavailable'));
+    reads[1].error(new HttpErrorResponse({ status: 503 }));
     await fixture.whenStable();
-    expect(root.querySelector('[data-testid="mktg-downstream-error"]')).not.toBeNull();
-    expect(root.querySelector('[data-testid="mktg-downstream-card"]')).toBe(card);
-    root.querySelector<HTMLButtonElement>('[data-testid="mktg-downstream-retry"] button')?.click();
-    await fixture.whenStable();
-    expect(reads).toHaveLength(3);
-    expect(root.querySelector('[data-testid="mktg-downstream-loading"]')).toBeNull();
+    const line = root.querySelector('[data-testid="mktg-downstream-retrying"]');
+    expect(line?.textContent?.trim()).toBe(MKTG_POLL_RETRYING_TEXT);
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.className).toContain('text-gray-500');
     expect(root.querySelector('[data-testid="mktg-downstream-error"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-downstream-retry"]')).toBeNull();
+    expect(root.textContent).not.toContain('Try again');
+    expect(root.querySelector('[data-testid="mktg-downstream-card"]')).toBe(card);
+    expect(root.querySelector('[data-testid="mktg-downstream-loading"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-downstream-copy"]')?.textContent).toContain('Boilerplates and FAQ were built from v1');
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="mktg-downstream-rebuild"] button')?.disabled).toBe(false);
+    // The network coming back re-reads at once; the good read clears the line by itself.
+    window.dispatchEvent(new Event('online'));
+    expect(reads).toHaveLength(3);
     reads[2].next(listing(false));
     await fixture.whenStable();
     expect(root.children).toHaveLength(0);
@@ -163,22 +173,43 @@ describe('Framework Downstream card', () => {
     const names = data.groups.map((group) => group.type.label);
     expect((fixture.nativeElement as HTMLElement).textContent).toContain(`${names[0]}, ${names[1]}, and ${names[2]} were built from v1`);
   });
-  it('distinguishes loading/error from an empty stale set and retries', async () => {
+  it('opened offline: the grey line sits over the skeleton, the host is told, and the next good read replaces both', async () => {
     const root: HTMLElement = fixture.nativeElement;
+    const settled = vi.fn();
+    fixture.componentInstance.settled.subscribe(settled);
     expect(root.querySelector('[data-testid="mktg-downstream-loading"]')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
     const card = root.querySelector('[data-testid="mktg-downstream-card"]');
     expect(card?.classList.contains('min-h-56')).toBe(true);
-    reads[0].error(new Error('unavailable'));
+    reads[0].error(new HttpErrorResponse({ status: 0 }));
     await fixture.whenStable();
-    expect(root.querySelector('[data-testid="mktg-downstream-error"]')).not.toBeNull();
-    expect(root.querySelector('[data-testid="mktg-downstream-card"]')?.classList.contains('bg-amber-50')).toBe(false);
-    root.querySelector<HTMLButtonElement>('[data-testid="mktg-downstream-retry"] button')?.click();
-    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-downstream-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(root.querySelector('[data-testid="mktg-downstream-loading"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="mktg-downstream-error"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-downstream-retry"]')).toBeNull();
+    // The host's rail does not wait for the server: the card already has its state to show.
+    expect(settled).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new Event('online'));
     reads[1].next(listing());
     await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-downstream-retrying"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-downstream-copy"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="mktg-downstream-card"]')).toBe(card);
     expect(card?.classList.contains('min-h-56')).toBe(false);
+  });
+  it('shows a final refusal as one red line that names what is not available, with no Retry', async () => {
+    const root: HTMLElement = fixture.nativeElement;
+    reads[0].error(new HttpErrorResponse({ status: 404 }));
+    await fixture.whenStable();
+    const alert = root.querySelector('[data-testid="mktg-downstream-error"]');
+    expect(alert?.textContent?.trim()).toBe(MKTG_NOT_AVAILABLE_TEXT.downstream);
+    expect(alert?.getAttribute('role')).toBe('alert');
+    expect(alert?.className).toContain('text-red-700');
+    expect(root.querySelector('[data-testid="mktg-downstream-retrying"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-downstream-retry"]')).toBeNull();
+    expect(root.querySelector('button')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-downstream-card"]')?.classList.contains('bg-amber-50')).toBe(false);
+    window.dispatchEvent(new Event('online'));
+    expect(reads).toHaveLength(1);
   });
   it('disables the action without write access and during impersonation', async () => {
     reads[0].next(listing());

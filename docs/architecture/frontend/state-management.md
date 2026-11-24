@@ -509,17 +509,27 @@ block remains answerable; other 409/412 responses refresh the current row. The w
 checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`), on the run page and on the document card
 alike, and keeps a held block through polls that omit it. The run page, the document card and view, the Documents
 list and the comments panel offer no Refresh button and no re-read Retry (the run-again Retry, which starts a new
-attempt, stays); the re-read buttons that remain on other Marketing OS
-surfaces (the run page's dependency "Try again", the Kit, family, downstream and family-details pages, the LinkedIn
-load retry, and the slides, family-export, AEO/GEO and Member 360 lookups) are tracked as follow-up work under
-lfx-self-serve issue #5058. On the button-free surfaces a failed
+attempt, stays), and neither do the Kit home, the Family page and its details, the framework's Downstream panel, the
+rebuild progress panel, the run page's dependency check and the LinkedIn first load. A connection failure is one
+behaviour everywhere: (A) on an open page, the one grey `role="status"` line in the spot being checked, the loaded
+content still usable; (B) on a screen opened while the server cannot be reached, the same line over the loading
+skeleton. Only a FINAL refusal (400, 404…) is a red `role="alert"` one-liner that names what is not available
+(`MKTG_NOT_AVAILABLE_TEXT`), with no Retry. A refused access names the access needed instead on the page-level reads
+only: the Documents list, the document view and run progress on a 401/403, the Kit and Family pages on a 403 (a 401
+there shows the Kit's not-available line), and the LinkedIn first load as its no-access state on either; family
+details, Downstream and the dependency check show their not-available line for any final refusal, a 401/403 included. A failed user ACTION may still offer "Try
+again": a new export, a run, and a rebuild start that could not reach the server. One-shot reads (family details,
+Downstream, the dependency check, the LinkedIn first load) keep trying through `readUntilReachable`, which runs the
+read on the shared poller and completes on the first good read; the rebuild chain keeps its own sequential loop and
+borrows the poller's backoff and wakes (`pollBackoffDelayMs`, `pollWake`), and a step deadline that passes during an
+outage waits for the next good read. On the button-free surfaces a failed
 or partial read shows one plain line (`MKTG_POLL_RETRYING_TEXT`) while the shared visibility poller
 (`createVisibilityPoll`) retries with uniform jitter in [base, min(cap, base·2^n)] (cap `MKTG_POLL_MAX_BACKOFF_MS`),
 pausing while the tab is hidden and reading at once on tab return, window focus or reconnect; a 401/403 is a plain
 line whose scope the reader latches (the poller's wakes get `EMPTY` for it) — the run progress reader, the agent-run
 persistence watch, the comments service, the Documents list and detail and the document view's stored-report read
-all do; the Kit and Family pages keep polling at `MKTG_RUN_POLL.intervalMs` and the Kit service latches only a 403 —
-and any other final failure is a plain line. Successful Send resumes normal polling. One-off answers remain creator-only.
+all do; the Kit and Family pages poll at `MKTG_RUN_POLL.intervalMs`, back off to the same cap while the read fails
+(`MktgKitService.retrying`) and the Kit service latches only a 403 — and any other final failure is a plain line. Successful Send resumes normal polling. One-off answers remain creator-only.
 Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,
