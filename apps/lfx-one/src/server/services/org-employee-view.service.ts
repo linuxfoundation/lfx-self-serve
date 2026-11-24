@@ -6,13 +6,16 @@ import {
   ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES,
   ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS,
   ORG_LENS_EMPLOYEE_VIEW_CONSUMER_MAIL_DOMAINS,
-  ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS,
+  MEMBER_BENEFIT_ACTIVE_MEMBERSHIP_STATUSES,
+  MEMBER_BENEFIT_ACTIVE_STATUS_FILTERS,
+  MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS,
+  MEMBER_BENEFIT_FOUNDATION_SLUG,
 } from '@lfx-one/shared/constants';
 import type {
-  B2bOrgIndexedDoc,
   OrgEmployeeViewDenial,
   OrgEmployeeViewVerdict,
   OrgLensEmployeeViewGrant,
+  ProjectMembershipDoc,
   QueryServiceResponse,
   RoleGrantsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -99,8 +102,8 @@ function isForwardingAliasDomain(domain: string): boolean {
  * Epic #5845 — decides whether a caller may open the all employee view of a company.
  *
  * To see a company's all employee view, a user must have BOTH:
- *   1. a VALIDATED email on one of the company's domains (member-service `primary_domain` or one of its registered
- *      `domain_aliases`, the Salesforce domain list; a personal mailbox domain never counts), the company being an active LF member;
+ *   1. a VALIDATED email on the registered domain of an active Linux Foundation member company (the `company_domain` recorded on its
+ *      membership; a personal mailbox domain never counts);
  *   2. that company as a PRESENT employer in their individual work history (the list on the profile's Work history tab): an entry
  *      with no end date whose employer name matches the company's name (see {@link normalizeCompanyName}).
  *
@@ -112,8 +115,8 @@ function isForwardingAliasDomain(domain: string): boolean {
  * PRIMARY employer (written through to CDP), it becomes a third requirement; (b) once an email validation has a freshness concept, the
  * view can expand to several companies.
  *
- * The company is found from the validated email (query service `b2b_org` tagged `is_member:true`, matched on those domains), then
- * confirmed against the work history; the URL never names it.
+ * The company is found from the validated email (the active Linux Foundation memberships, matched on the registered domain each
+ * records), then confirmed against the work history; the URL never names it.
  *
  * "Could not check" is different from "checked and no": a work-history, query-service, token or email-lookup failure REJECTS (the
  * gate answers 503 `ROLE_GRANTS_UNAVAILABLE`), so an outage never reads as "you are not an employee". Only a clean negative resolves
@@ -127,6 +130,9 @@ function isForwardingAliasDomain(domain: string): boolean {
 export class OrgEmployeeViewService {
   /** Shared by every instance: the read gate, identity controller, navigation service and slug resolver each construct their own service, and one page's calls must share a single lookup. */
   private static readonly cache = new Map<string, { expiresAt: number; outcome: Promise<EmployeeViewOutcome> }>();
+
+  /** Per process: the active LF member companies by registered domain. Shared by every instance, like {@link cache}. */
+  private static memberIndex: { expiresAt: number; value: Promise<Map<string, OrgLensEmployeeViewGrant[]>> } | null = null;
 
   private readonly workHistory: CdpService;
   private readonly emailVerification: EmailVerificationService;
@@ -153,6 +159,7 @@ export class OrgEmployeeViewService {
   /** Drops every held outcome (tests). */
   public static clearCache(): void {
     OrgEmployeeViewService.cache.clear();
+    OrgEmployeeViewService.memberIndex = null;
   }
 
   /**
@@ -329,88 +336,113 @@ export class OrgEmployeeViewService {
   }
 
   /**
-   * Active-member companies whose `primary_domain` or `domain_aliases` exactly equal one of `domains`, in a stable order (name, then uid).
+   * Active-member companies whose registered domain exactly equals one of `domains`, in a stable order (name, then uid).
    *
-   * Read with the BFF's own machine token, not the caller's: this caller was just refused `b2b_org#auditor`, which the
-   * query service applies per row, so their own token would see no company at all. The token is scoped to this one
-   * lookup, runs only for the effective user's own verified addresses, and nothing of a record beyond its id, name, slug
-   * and domains is read or returned. Every returned record's domains are re-checked, since the query service matches
-   * exactly and case-sensitively. Complete or nothing: a failed or truncated page rejects (a retriable 503 at the gate)
-   * rather than passing a partial set off as every match.
+   * Read from the active Linux Foundation memberships (`project_membership`, project `tlf`), not from `b2b_org`: `b2b_org` is gated
+   * on `auditor`, which the BFF machine client does not hold, and the caller was just refused it, so their own token sees nothing.
+   * Memberships are readable with the machine token (the newsletter member benefit already depends on it) and carry the company's
+   * id, name and one registered domain. The token is scoped to this one read, which holds no personal data, and the answer is
+   * matched only against the caller's own verified domains. Every returned membership is re-checked (project, active status).
+   *
+   * The index is held per process ({@link MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS}); a membership records one domain, so a company
+   * reached only through a domain alias is not matched: that denies, never admits. A failed, malformed or empty read rejects (a
+   * retriable 503 at the gate) rather than passing a partial or empty set off as "no company".
    */
   private async findMemberCompanies(req: Request, domains: string[]): Promise<OrgLensEmployeeViewGrant[]> {
-    // Minted OUTSIDE the lookup: a token failure must reject, never read as "no company matches" and be cached as a denial.
-    const bearerToken = await generateM2MToken(req);
-    // Asked in batches so no candidate domain is ever dropped: truncating would turn a user with many addresses into a cached false denial.
-    const docs: B2bOrgIndexedDoc[] = [];
-    for (let start = 0; start < domains.length; start += ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS) {
-      const filtersOr = domains
-        .slice(start, start + ORG_LENS_EMPLOYEE_VIEW_MAX_CANDIDATE_DOMAINS)
-        .flatMap((domain) => [`primary_domain:${domain}`, `domain_aliases:${domain}`]);
-      docs.push(
-        ...(await fetchAllQueryResources<B2bOrgIndexedDoc>(
-          req,
-          (pageToken) =>
-            this.proxy
-              .proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(
-                req,
-                'LFX_V2_SERVICE',
-                '/query/resources',
-                'GET',
-                { type: 'b2b_org', tags_all: ['is_member:true'], filters_or: filtersOr, page_size: 50, ...(pageToken && { page_token: pageToken }) },
-                undefined,
-                undefined,
-                { bearerToken }
-              )
-              // The canonical account id lives on the query-service wrapper (`resource.id`, `b2b_org:<sfid>`), which flattening drops.
-              .then((page) => {
-                // A confirmed empty page is `resources: []`. A missing or null array is a malformed answer, not "no company": reject it so it
-                // surfaces as the retriable 503 instead of a cached denial or an incomplete company set.
-                if (!Array.isArray(page?.resources)) {
-                  throw new MicroserviceError('Member-company lookup returned an unreadable response', 502, 'EMPLOYEE_VIEW_LOOKUP_INVALID_RESPONSE', {
-                    operation: OPERATION,
-                    service: 'LFX_V2_SERVICE',
-                  });
-                }
-                return page;
-              })
-              .then((page) => ({
-                ...page,
-                resources: page.resources.map((resource) => ({
-                  ...resource,
-                  data: { ...resource.data, uid: bareUid(resource.id) || resource.data?.uid },
-                })),
-              })),
-          { failOnPartial: true }
-        ))
-      );
-    }
-
-    if (docs.length === 0) {
-      // A clean empty answer is indistinguishable from a machine client that cannot read `b2b_org`: log it so a systemic failure is visible.
-      logger.warning(req, OPERATION, 'Member-company lookup returned no rows for the caller’s verified domains', { domain_count: domains.length });
-    }
-
-    const wanted = new Set(domains);
+    const index = await this.getMemberCompanyIndex(req);
     const companies = new Map<string, OrgLensEmployeeViewGrant>();
-    for (const doc of docs) {
-      if (!doc.uid || doc.is_member === false) continue;
-      const own = [doc.primary_domain, ...(doc.domain_aliases ?? [])].map((value) => normalizeDomain(value));
-      if (!own.some((domain) => domain && wanted.has(domain))) continue;
-      companies.set(doc.uid, { orgUid: doc.uid, orgName: doc.name ?? '', orgSlug: doc.slug?.trim().toLowerCase() || null });
+    for (const domain of new Set(domains.map((value) => normalizeDomain(value)))) {
+      if (!domain) continue;
+      for (const company of index.get(domain) ?? []) {
+        companies.set(company.orgUid, company);
+      }
     }
     return [...companies.values()].sort((a, b) => a.orgName.localeCompare(b.orgName) || a.orgUid.localeCompare(b.orgUid));
+  }
+
+  /** The cached domain -> member companies index; concurrent misses share one load and a failure is never kept. */
+  private getMemberCompanyIndex(req: Request): Promise<Map<string, OrgLensEmployeeViewGrant[]>> {
+    const cached = OrgEmployeeViewService.memberIndex;
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    const value = this.loadMemberCompanyIndex(req);
+    const entry = { expiresAt: Date.now() + MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS, value };
+    OrgEmployeeViewService.memberIndex = entry;
+    value.catch(() => {
+      if (OrgEmployeeViewService.memberIndex === entry) OrgEmployeeViewService.memberIndex = null;
+    });
+    return value;
+  }
+
+  private async loadMemberCompanyIndex(req: Request): Promise<Map<string, OrgLensEmployeeViewGrant[]>> {
+    // Minted OUTSIDE the lookup: a token failure must reject, never read as "no company matches" and be cached as a denial.
+    const bearerToken = await generateM2MToken(req);
+    const memberships = await fetchAllQueryResources<ProjectMembershipDoc>(
+      req,
+      (pageToken) =>
+        this.proxy
+          .proxyRequest<QueryServiceResponse<ProjectMembershipDoc>>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources',
+            'GET',
+            {
+              type: 'project_membership',
+              filters_all: `project_slug:${MEMBER_BENEFIT_FOUNDATION_SLUG}`,
+              filters_or: MEMBER_BENEFIT_ACTIVE_STATUS_FILTERS,
+              page_size: 1000,
+              ...(pageToken && { page_token: pageToken }),
+            },
+            undefined,
+            undefined,
+            { bearerToken }
+          )
+          .then((page) => {
+            // A confirmed empty page is `resources: []`. A missing or null array is a malformed answer, not "no company": reject it so it
+            // surfaces as the retriable 503 instead of a cached denial or an incomplete company set.
+            if (!Array.isArray(page?.resources)) {
+              throw new MicroserviceError('Member-company lookup returned an unreadable response', 502, 'EMPLOYEE_VIEW_LOOKUP_INVALID_RESPONSE', {
+                operation: OPERATION,
+                service: 'LFX_V2_SERVICE',
+              });
+            }
+            return page;
+          }),
+      { failOnPartial: true }
+    );
+
+    const byDomain = new Map<string, OrgLensEmployeeViewGrant[]>();
+    const activeOrgUids = new Set<string>();
+    for (const membership of memberships) {
+      if (membership.project_slug !== MEMBER_BENEFIT_FOUNDATION_SLUG) continue;
+      if (!MEMBER_BENEFIT_ACTIVE_MEMBERSHIP_STATUSES.has((membership.status ?? '').toLowerCase())) continue;
+      const orgUid = membership.b2b_org_uid;
+      if (!orgUid) continue;
+      activeOrgUids.add(orgUid);
+
+      const domain = normalizeDomain(membership.company_domain);
+      if (!domain) continue;
+      const companies = byDomain.get(domain) ?? [];
+      if (!companies.some((company) => company.orgUid === orgUid)) {
+        companies.push({ orgUid, orgName: membership.company_name?.trim() ?? '', orgSlug: null });
+        byDomain.set(domain, companies);
+      }
+    }
+
+    // The Linux Foundation always has active members: an empty index means the read was filtered, broken, or keyed on a slug the
+    // memberships do not carry. Rejecting keeps it from being cached as "nobody is a member" and denying every employee.
+    if (activeOrgUids.size === 0) {
+      logger.warning(req, OPERATION, 'Membership read returned no active members; cannot find member companies', { membership_rows: memberships.length });
+      throw new MicroserviceError('Membership data is unavailable', 503, 'EMPLOYEE_VIEW_MEMBER_INDEX_UNAVAILABLE', {
+        operation: OPERATION,
+        service: 'LFX_V2_SERVICE',
+      });
+    }
+    return byDomain;
   }
 
   /** Verified addresses only, read strictly so a failed lookup is an outage rather than the single session email. */
   private getVerifiedEmails(req: Request): Promise<string[]> {
     return resolveVerifiedUserEmails(req, this.emailVerification, { strict: true });
   }
-}
-
-/** The bare id of a query-service resource id (`b2b_org:<sfid>` -> `<sfid>`); '' when absent. */
-function bareUid(resourceId: string | undefined | null): string {
-  if (!resourceId) return '';
-  const colon = resourceId.indexOf(':');
-  return colon === -1 ? resourceId : resourceId.substring(colon + 1);
 }

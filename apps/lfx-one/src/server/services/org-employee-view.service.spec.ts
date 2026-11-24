@@ -41,9 +41,26 @@ function job(organization: string, startDate = 'Jan 2024', endDate?: string) {
 
 const acme: Doc = { name: 'Acme Motors', is_member: true, primary_domain: 'acme-motors.example' };
 
+/** The company fixtures as active (or, for `is_member: false`, expired) Linux Foundation memberships, the shape the index reads. */
 function page(entries: [string, Doc][]) {
-  return { resources: entries.map(([uid, data]) => ({ id: `b2b_org:${uid}`, type: 'b2b_org', data })) };
+  return {
+    resources: entries.map(([uid, doc]) => ({
+      id: `project_membership:m-${uid}`,
+      type: 'project_membership',
+      data: {
+        uid: `m-${uid}`,
+        b2b_org_uid: uid,
+        project_slug: 'tlf',
+        status: doc.is_member === false ? 'expired' : 'active',
+        company_name: doc.name,
+        company_domain: doc.primary_domain,
+      },
+    })),
+  };
 }
+
+/** A second active member, so an index whose only subject is excluded is still a non-empty (valid) index. */
+const other: [string, Doc] = [OTHER_UID, { name: 'Other Works', is_member: true, primary_domain: 'other-works.example' }];
 
 interface Setup {
   /** The individual work history; an Error is an outage. */
@@ -172,15 +189,15 @@ describe('OrgEmployeeViewService.resolve', () => {
   });
 
   it('denies when the email matches no active-member company', async () => {
-    const { svc } = build({ orgs: [] });
+    const { svc } = build({ orgs: [other] });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
   });
 
-  it('asks only for active-member companies matching the address domains', async () => {
+  it('reads the active Linux Foundation memberships and matches the address domain, parent domains included', async () => {
     const { svc, proxy } = build({ emails: ['dev@eng.acme-motors.example'] });
 
-    await svc.resolve(req(), ORG_UID);
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
 
     expect(proxy.proxyRequest).toHaveBeenCalledWith(
       expect.anything(),
@@ -188,14 +205,9 @@ describe('OrgEmployeeViewService.resolve', () => {
       '/query/resources',
       'GET',
       expect.objectContaining({
-        type: 'b2b_org',
-        tags_all: ['is_member:true'],
-        filters_or: [
-          'primary_domain:eng.acme-motors.example',
-          'domain_aliases:eng.acme-motors.example',
-          'primary_domain:acme-motors.example',
-          'domain_aliases:acme-motors.example',
-        ],
+        type: 'project_membership',
+        filters_all: 'project_slug:tlf',
+        filters_or: ['status:Active', 'status:active', 'status:Purchased', 'status:purchased'],
       }),
       undefined,
       undefined,
@@ -203,38 +215,53 @@ describe('OrgEmployeeViewService.resolve', () => {
     );
   });
 
-  it('asks in batches and drops no candidate domain when the caller has many addresses', async () => {
+  it('reads the membership index once for any number of addresses, and drops no candidate domain', async () => {
     const many = Array.from({ length: 25 }, (_v, i) => `dev@corp-${i}.example`);
     const { svc, proxy } = build({ emails: [...many, 'dev@acme-motors.example'] });
-    proxy.proxyRequest.mockImplementation((_r: unknown, _s: string, _p: string, _m: string, params: { filters_or: string[] }) =>
-      Promise.resolve(params.filters_or.includes('primary_domain:acme-motors.example') ? page([[ORG_UID, acme]]) : page([]))
-    );
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
-    // 26 candidate domains in batches of 20, every one asked about.
-    expect(proxy.proxyRequest).toHaveBeenCalledTimes(2);
-    const asked = proxy.proxyRequest.mock.calls
-      .flatMap((call) => (call[4] as { filters_or: string[] }).filters_or)
-      .filter((f: string) => f.startsWith('primary_domain:'));
-    expect(asked).toHaveLength(26);
+    expect(proxy.proxyRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('re-checks every returned record, and ignores one the index marks as a non-member', async () => {
+  it('shares one membership read between different callers, and never keeps a failed one', async () => {
+    const first = build();
+    await first.svc.resolve(req(), ORG_UID);
+    getEffectiveUsername.mockReturnValue('colleague');
+    const second = build();
+    await second.svc.resolve(req(), ORG_UID);
+    expect(second.proxy.proxyRequest).not.toHaveBeenCalled();
+
+    OrgEmployeeViewService.clearCache();
+    const failing = build({ orgs: new Error('query-service down') });
+    getEffectiveUsername.mockReturnValue('third');
+    await expect(failing.svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
+    failing.proxy.proxyRequest.mockResolvedValue(page([[ORG_UID, acme]]));
+    await expect(failing.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('re-checks every returned membership, and ignores one that is not an active Linux Foundation membership', async () => {
     const unrelated = build({ orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: 'unrelated.example' }]] });
     await expect(unrelated.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
 
     OrgEmployeeViewService.clearCache();
-    const lapsed = build({ orgs: [[ORG_UID, { ...acme, is_member: false }]] });
+    const lapsed = build({ orgs: [[ORG_UID, { ...acme, is_member: false }], other] });
     await expect(lapsed.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
+
+    OrgEmployeeViewService.clearCache();
+    const wrongProject = build();
+    wrongProject.proxy.proxyRequest.mockResolvedValue({
+      resources: [
+        ...page([[ORG_UID, acme]]).resources.map((resource) => ({ ...resource, data: { ...resource.data, project_slug: 'cncf' } })),
+        ...page([other]).resources,
+      ],
+    });
+    await expect(wrongProject.svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
   });
 
-  it('matches any registered domain (primary or Salesforce alias) of the company', async () => {
-    const { svc } = build({
-      orgs: [[ORG_UID, { name: 'Acme Motors', is_member: true, primary_domain: 'acme-motors.example', domain_aliases: ['Acme-Group.example', 'bad host'] }]],
-      emails: ['dev@eng.acme-group.example'],
-    });
+  it('matches the registered domain on the membership, and does not match a domain alias (denies, never admits)', async () => {
+    const { svc } = build({ emails: ['dev@eng.acme-group.example'] });
 
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
   });
 
   it('denies a company other than the one the email and profile name, so editing the URL opens nothing', async () => {
@@ -307,10 +334,10 @@ describe('OrgEmployeeViewService.resolve', () => {
     });
   });
 
-  it('reports the company slug so a slug address can resolve', async () => {
-    const { svc } = build({ orgs: [[ORG_UID, { ...acme, slug: 'Acme-Motors' }]] });
+  it('reports no slug (a membership carries none), so the company is reached by its id', async () => {
+    const { svc } = build();
 
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgSlug: 'acme-motors' } });
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID, orgSlug: null } });
   });
 
   it('reads companies with the BFF machine token, not the caller token', async () => {
@@ -354,10 +381,11 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
   });
 
-  it('treats a confirmed empty page as no company, not as a malformed answer', async () => {
+  it('rejects, never denies, when the membership read has no active members at all, and warns', async () => {
     const { svc } = build({ orgs: [] });
 
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: false });
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toMatchObject({ code: 'EMPLOYEE_VIEW_MEMBER_INDEX_UNAVAILABLE' });
+    expect(loggerWarning).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('no active members'), expect.anything());
   });
 
   it('shares ONE lookup between the specific-company and unscoped calls of one page', async () => {
@@ -525,14 +553,6 @@ describe('OrgEmployeeViewService consumer mail and logging', () => {
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
     expect(proxy.proxyRequest).not.toHaveBeenCalled();
-  });
-
-  it('logs a warning when the member-company lookup returns no rows at all', async () => {
-    const { svc } = build({ orgs: [] });
-
-    await svc.resolve(req(), ORG_UID);
-
-    expect(loggerWarning).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('no rows'), expect.anything());
   });
 });
 
