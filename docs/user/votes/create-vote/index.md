@@ -4,7 +4,7 @@ description: How to create a vote in LFX Self Serve with the three-step form, in
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, create, questions, abstain, draft, governance, elections, condorcet, ranked]
-last_updated: 2026-11-19
+last_updated: 2026-11-24
 intercom_collection: Votes
 ---
 
@@ -29,18 +29,18 @@ The form's **Previous**, **Cancel**, **Save as Draft**, and **Next** buttons sta
 
 ## Step 1: Basic Information
 
-| Field                                 | What to enter                                                                                                                                                                     |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Vote Title**                        | Required. At least three characters.                                                                                                                                              |
-| **Description**                       | Optional context shown to voters. It is a plain-text box: line breaks, blank lines, and indentation you type are kept when voters see it. There is no formatting toolbar.         |
-| **Group**                             | Required. The group whose members can vote. Locked when you start from a group's Votes tab.                                                                                       |
-| **Eligible Participants**             | Required. Choose **Voting Reps Only**, **Voting Reps and Alternates**, or **All Members of the Group**.                                                                           |
-| **Voting Method**                     | Required. Preselected from your **Vote type** choice. See [Voting methods](#voting-methods).                                                                                      |
-| **Close Date**                        | Required. The day the vote closes, in the timezone you pick below.                                                                                                                |
-| **Close Time**                        | Required. For example, `11:59 PM`.                                                                                                                                                |
-| **Timezone**                          | Required. The close date and time must be in the future. A time that doesn't exist in that timezone because of a daylight saving change is rejected, so pick another time.        |
-| **Allow Abstain**                     | **Yes** lets voters abstain instead of choosing an option. **No** (the default) means voters must choose.                                                                         |
-| **Allow voters to change their vote** | **Yes** (the default) lets voters change their choices, comment or abstention until the vote ends. **No** makes a submitted ballot final; voters see a notice before they submit. |
+| Field                                 | What to enter                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Vote Title**                        | Required. At least three characters. When you pick a group, it is filled in with the group name followed by "Vote" (for example, **Technical Steering Committee Vote**), with a "Pre-filled" note under it. Change it as you like: once you edit it, switching groups keeps your title.                                                                 |
+| **Description**                       | Optional context shown to voters. When you pick a group, it is filled in with a short note asking the group's members to vote, which you can edit or clear; once you edit it, switching groups keeps your text. It is a plain-text box: line breaks, blank lines, and indentation you type are kept when voters see it. There is no formatting toolbar. |
+| **Group**                             | Required. The group whose members can vote. Locked when you start from a group's Votes tab.                                                                                                                                                                                                                                                             |
+| **Eligible Participants**             | Required. Starts as **All Members of the Group**. Choose **Voting Reps Only**, **Voting Reps and Alternates**, or **All Members of the Group**.                                                                                                                                                                                                         |
+| **Voting Method**                     | Required. Preselected from your **Vote type** choice. See [Voting methods](#voting-methods).                                                                                                                                                                                                                                                            |
+| **Close Date**                        | Required. The day the vote closes, in the timezone you pick below. Starts seven days from today; if that falls on a Saturday or Sunday, it starts on the following Monday instead.                                                                                                                                                                      |
+| **Close Time**                        | Required. For example, `11:59 PM`.                                                                                                                                                                                                                                                                                                                      |
+| **Timezone**                          | Required. The close date and time must be in the future. A time that doesn't exist in that timezone because of a daylight saving change is rejected, so pick another time.                                                                                                                                                                              |
+| **Allow Abstain**                     | **Yes** lets voters abstain instead of choosing an option. **No** (the default) means voters must choose.                                                                                                                                                                                                                                               |
+| **Allow voters to change their vote** | **Yes** (the default) lets voters change their choices, comment or abstention until the vote ends. **No** makes a submitted ballot final; voters see a notice before they submit.                                                                                                                                                                       |
 
 Select **Next** when the required fields are filled in.
 
@@ -99,7 +99,7 @@ To reuse a vote's questions and settings, select **⋮ → Clone** on its row. T
 - The questions, options, comment questions, eligible participants, **Allow Abstain**, and **Allow voters to change their vote** settings are copied. Check **Eligible Participants** before you open the copy: if the original included observers or emeritus members, the clone is set to **All Members of the Group**, which can include more people than the original.
 - If the original deadline is still in the future it is kept. Otherwise the close date is set seven days from today at `11:59 PM` in your timezone.
 
-Ranked-choice votes and secret-ballot votes can't be cloned yet. LFX shows **Cannot clone** and leaves you on a blank **Create Vote** form, so nothing is prefilled.
+Ranked-choice votes and secret-ballot votes can't be cloned yet. LFX shows **Cannot clone** and leaves you on a new **Create Vote** form, with nothing copied from the original.
 
 Review and change anything you like, then open the vote or save it as a draft. **Clone** is covered with the other row actions in [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
 
