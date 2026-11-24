@@ -5,14 +5,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { PENDING_PROFILE_SAVE_KEY, PERSONAL_INFORMATION_COPY, PROFILE_BIO_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { PENDING_PRIMARY_EMAIL_KEY, PENDING_PROFILE_SAVE_KEY, PERSONAL_INFORMATION_COPY, PROFILE_BIO_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { CombinedProfile, EmailManagementData, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { AccountProfileService } from '@services/account-profile.service';
 import { AccountUnsavedChangesService } from '@services/account-unsaved-changes.service';
 import { ProfileSaveSyncService } from '@services/profile-save-sync.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountPersonalInformationComponent } from './account-personal-information.component';
@@ -146,6 +146,42 @@ describe('AccountPersonalInformationComponent', () => {
       expect(page.bioLength()).toBe(PROFILE_BIO_MAX_LENGTH);
     });
 
+    it('shows a length error under a field once it is touched', async () => {
+      const page = await createState();
+      page.form.controls.city.setValue('x'.repeat(51));
+      expect(page['fieldErrors']().city).toBeUndefined();
+
+      page.form.controls.city.markAsTouched();
+      expect(page['fieldErrors']().city).toBe('Must be 50 characters or fewer');
+    });
+
+    it('offers only the sign-in address, unchangeable, when the email list fails to load', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const page = await createState({ getUserEmails: () => throwError(() => new Error('down')) });
+
+      expect(page.emailsFailed()).toBe(true);
+      expect(page.shownPrimaryEmail()).toBe('ada@example.com');
+      expect(page.dirty()).toBe(false);
+      expect(error).toHaveBeenCalled();
+      error.mockRestore();
+    });
+
+    it('picks again a primary email chosen before a Flow C redirect', async () => {
+      sessionStorage.setItem(PENDING_PRIMARY_EMAIL_KEY, JSON.stringify({ savedAt: Date.now(), email: 'ada@work.example' }));
+      const page = await createState();
+
+      expect(page.selectedPrimaryEmail()).toBe('ada@work.example');
+      expect(page.dirty()).toBe(true);
+      expect(sessionStorage.getItem(PENDING_PRIMARY_EMAIL_KEY)).toBeNull();
+    });
+
+    it('ignores a stale or unverified kept primary email', async () => {
+      sessionStorage.setItem(PENDING_PRIMARY_EMAIL_KEY, JSON.stringify({ savedAt: Date.now(), email: 'pending@example.com' }));
+      const page = await createState();
+
+      expect(page.selectedPrimaryEmail()).toBe('ada@example.com');
+    });
+
     it('is read-only while impersonating', async () => {
       const page = await createState();
       impersonating.set(true);
@@ -211,6 +247,49 @@ describe('AccountPersonalInformationComponent', () => {
       expect(show).not.toHaveBeenCalled();
     });
 
+    it('locks the fields while a save is in flight', async () => {
+      const pending = new Subject<unknown>();
+      const page = await createState({ updateUserProfile: () => pending });
+      editJobTitle(page, 'Maintainer');
+      page.save();
+      expect(page.form.disabled).toBe(true);
+
+      pending.next({});
+      pending.complete();
+      expect(page.form.enabled).toBe(true);
+      expect(page.form.controls.job_title.value).toBe('Maintainer');
+    });
+
+    it('keeps the email choice and goes to authorize when the primary email change needs Flow C', async () => {
+      const page = await createState({ setPrimaryEmail: () => forbidden({ error: 'management_token_required', authorize_url: '#authorize' }) });
+      page.selectedPrimaryEmail.set('ada@work.example');
+      page.save();
+
+      expect(JSON.parse(sessionStorage.getItem(PENDING_PRIMARY_EMAIL_KEY) ?? '{}').email).toBe('ada@work.example');
+      expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
+      expect(show).not.toHaveBeenCalled();
+    });
+
+    it('keeps both the fields and the email choice when the fields need Flow C first', async () => {
+      const page = await createState({ updateUserProfile: () => forbidden({ error: 'management_token_required', authorize_url: '#authorize' }) });
+      editJobTitle(page, 'Maintainer');
+      page.selectedPrimaryEmail.set('ada@work.example');
+      page.save();
+
+      expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).not.toBeNull();
+      expect(JSON.parse(sessionStorage.getItem(PENDING_PRIMARY_EMAIL_KEY) ?? '{}').email).toBe('ada@work.example');
+      expect(userService['setPrimaryEmail']).not.toHaveBeenCalled();
+    });
+
+    it('says so when the fields fail to save', async () => {
+      const page = await createState({ updateUserProfile: () => throwError(() => new HttpErrorResponse({ status: 500 })) });
+      editJobTitle(page, 'Maintainer');
+      page.save();
+
+      expect(show).toHaveBeenCalledWith({ variant: 'error', message: 'Failed to save your personal information. Please try again.' });
+      expect(page.dirty()).toBe(true);
+    });
+
     it('does not save an invalid form', async () => {
       const page = await createState();
       editJobTitle(page, 'x'.repeat(101));
@@ -218,6 +297,41 @@ describe('AccountPersonalInformationComponent', () => {
 
       expect(userService['updateUserProfile']).not.toHaveBeenCalled();
       expect(page.form.controls.job_title.touched).toBe(true);
+    });
+  });
+  describe('photo', () => {
+    const choose = (page: AccountPersonalInformationComponent, file: File) =>
+      page['onAvatarFileSelected']({ target: { files: [file], value: '' } } as unknown as Event);
+    const image = (type = 'image/png', size = 3) => new File(['x'.repeat(size)], 'me.png', { type });
+
+    it('uploads a new photo at once and carries it to the rest of the app', async () => {
+      const page = await createState();
+      choose(page, image());
+
+      expect(userService['uploadProfilePicture']).toHaveBeenCalled();
+      expect(apply).toHaveBeenCalledWith({ picture: 'https://cdn.example/a.png' }, PROFILE.user);
+      expect(show).toHaveBeenCalledWith({ variant: 'dark', message: 'Profile picture updated' });
+    });
+
+    it('turns down a file of the wrong type or over 2MB', async () => {
+      const page = await createState();
+      choose(page, image('application/pdf'));
+      choose(page, image('image/png', 2 * 1024 * 1024 + 1));
+
+      expect(userService['uploadProfilePicture']).not.toHaveBeenCalled();
+      expect(show).toHaveBeenCalledWith({ variant: 'error', message: 'Please choose a PNG, JPEG, or WEBP image.' });
+      expect(show).toHaveBeenCalledWith({ variant: 'error', message: 'Image must be 2MB or smaller.' });
+    });
+
+    it('keeps unsaved fields and asks for the photo again after Flow C', async () => {
+      const page = await createState({ uploadProfilePicture: () => forbidden({ error: 'management_token_required', authorize_url: '#authorize' }) });
+      page.form.controls.city.setValue('Paris');
+      page.form.controls.city.markAsDirty();
+      choose(page, image());
+
+      const pending = JSON.parse(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY) ?? '{}');
+      expect(pending.avatarPending).toBe(true);
+      expect(pending.userMetadata).toEqual(expect.objectContaining({ city: 'Paris' }));
     });
   });
 });

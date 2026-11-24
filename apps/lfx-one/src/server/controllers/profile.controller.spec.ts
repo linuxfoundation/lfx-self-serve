@@ -394,7 +394,7 @@ describe('ProfileController.uploadProfilePicture', () => {
     expect(res.json).toHaveBeenCalledWith({
       error: 'management_token_required',
       message: 'Profile authorization required',
-      authorize_url: '/api/profile/auth/start?returnTo=/profile',
+      authorize_url: '/api/profile/auth/start?returnTo=%2Fprofile',
     });
     expect(objectStoreSvc.uploadProfilePicture).not.toHaveBeenCalled();
     expect(userSvc.updateUserMetadata).not.toHaveBeenCalled();
@@ -405,6 +405,8 @@ describe('ProfileController.uploadProfilePicture', () => {
     ['the Personal information page', 'https://app.example/account/personal-information', '/account/personal-information'],
     ['a hub tab', 'https://app.example/profile/identities', '/profile'],
     ['another allowlisted page', 'https://app.example/account/identities', '/profile'],
+    ['another host', 'https://evil.example/account/personal-information?next=//evil.example', '/account/personal-information'],
+    ['a malformed referer', 'http://[::1', '/profile'],
   ])('returns Flow C from %s to the page that hosts the profile form', async (_page, referer, returnTo) => {
     profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
     profileAuthSvc.getManagementToken.mockReturnValue(undefined);
@@ -412,7 +414,7 @@ describe('ProfileController.uploadProfilePicture', () => {
 
     await controller.uploadProfilePicture(buildReq({ headers: { 'content-type': 'image/png', 'content-length': '3', referer } }), res, vi.fn());
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ authorize_url: `/api/profile/auth/start?returnTo=${returnTo}` }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(returnTo)}` }));
   });
 
   it('propagates an object-store upload failure via next(error)', async () => {
@@ -1142,6 +1144,16 @@ describe('ProfileController.setPrimaryEmail', () => {
     });
     expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns Flow C to Personal information when the change started there', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+    const req = buildReq({ params: { emailId: 'user@example.com' }, headers: { referer: 'https://app.example/account/personal-information' } });
+
+    await controller.setPrimaryEmail(req, res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ authorize_url: '/api/profile/auth/start?returnTo=%2Faccount%2Fpersonal-information' }));
   });
 
   // Meeting invites stick to an address, not the primary role (#3983).

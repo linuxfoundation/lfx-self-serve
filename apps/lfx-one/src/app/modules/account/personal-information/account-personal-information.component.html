@@ -15,97 +15,109 @@
   }
 
   <lfx-account-card heading="Personal information" [subtitle]="copy.infoSubtitle" testId="account-personal-info-details">
-    <div class="flex flex-col gap-[16px]">
-      <div class="flex flex-row flex-nowrap items-center gap-[16px]">
-        <lfx-ui-avatar [size]="64" [src]="avatarUrl() || ''" [initials]="avatarInitials()" [decorative]="true" data-testid="account-personal-info-avatar" />
-        <div class="flex flex-col items-start gap-[8px]">
-          <lfx-ui-button
-            variant="secondary"
-            size="small"
-            icon="fa-light fa-camera"
-            [loading]="avatarUploading()"
-            [disabled]="impersonating() || !profile()"
-            (click)="triggerAvatarUpload()"
-            data-testid="account-personal-info-upload-photo">
-            Upload photo
-          </lfx-ui-button>
-          <input
-            #avatarInput
-            type="file"
-            class="hidden"
-            [accept]="avatarAccept"
-            (change)="onAvatarFileSelected($event)"
-            data-testid="account-personal-info-avatar-input" />
-          <span class="text-[12px] leading-[16px] text-ui-neutral-500">{{ copy.photoHint }}</span>
+    @if (profileLoading()) {
+      <div class="flex flex-col gap-[12px]" aria-hidden="true" data-testid="account-personal-info-skeleton">
+        <lfx-ui-skeleton width="60%" />
+        <lfx-ui-skeleton width="100%" height="36px" />
+        <lfx-ui-skeleton width="100%" height="36px" />
+      </div>
+    } @else {
+      <div class="flex flex-col gap-[16px]">
+        <div class="flex flex-row flex-nowrap items-center gap-[16px]">
+          <lfx-ui-avatar [size]="64" [src]="avatarUrl() || ''" [initials]="avatarInitials()" [decorative]="true" data-testid="account-personal-info-avatar" />
+          <div class="flex flex-col items-start gap-[8px]">
+            <lfx-ui-button
+              variant="secondary"
+              size="small"
+              icon="fa-light fa-camera"
+              [loading]="avatarUploading()"
+              [disabled]="impersonating() || !profile()"
+              (click)="triggerAvatarUpload()"
+              data-testid="account-personal-info-upload-photo">
+              Upload photo
+            </lfx-ui-button>
+            <input
+              #avatarInput
+              type="file"
+              class="hidden"
+              [accept]="avatarAccept"
+              (change)="onAvatarFileSelected($event)"
+              data-testid="account-personal-info-avatar-input" />
+            <span class="text-[12px] leading-[16px] text-ui-neutral-500">{{ copy.photoHint }}</span>
+          </div>
         </div>
-      </div>
 
-      <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
-        <lfx-ui-input
-          label="First name"
-          placeholder="Enter your first name"
-          autocomplete="given-name"
-          formControlName="given_name"
-          [error]="lengthError('given_name', 50)"
-          data-testid="account-personal-info-first-name" />
-        <lfx-ui-input
-          label="Last name"
-          placeholder="Enter your last name"
-          autocomplete="family-name"
-          formControlName="family_name"
-          [error]="lengthError('family_name', 50)"
-          data-testid="account-personal-info-last-name" />
-      </div>
+        <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
+          <lfx-ui-input
+            label="First name"
+            placeholder="Enter your first name"
+            autocomplete="given-name"
+            formControlName="given_name"
+            [error]="fieldErrors().given_name ?? ''"
+            data-testid="account-personal-info-first-name" />
+          <lfx-ui-input
+            label="Last name"
+            placeholder="Enter your last name"
+            autocomplete="family-name"
+            formControlName="family_name"
+            [error]="fieldErrors().family_name ?? ''"
+            data-testid="account-personal-info-last-name" />
+        </div>
 
-      <div class="flex flex-col gap-[8px] [&_textarea]:min-h-[120px]">
-        <!-- No native maxlength: it counts UTF-16 units, so the cap is by code point in the component. -->
-        <lfx-ui-textarea label="About me" placeholder="Tell the community a bit about yourself" formControlName="bio" data-testid="account-personal-info-bio" />
-        <span class="self-end text-[12px] leading-[16px] text-ui-neutral-500" aria-live="polite" data-testid="account-personal-info-bio-count"
-          >{{ bioLength() }} / {{ bioMaxLength }}</span
-        >
-      </div>
+        <div class="flex flex-col gap-[8px] [&_textarea]:min-h-[120px]">
+          <!-- No native maxlength: it counts UTF-16 units, so the cap is by code point in the component. -->
+          <lfx-ui-textarea
+            label="About me"
+            placeholder="Tell the community a bit about yourself"
+            formControlName="bio"
+            data-testid="account-personal-info-bio" />
+          <span class="self-end text-[12px] leading-[16px] text-ui-neutral-500" aria-live="polite" data-testid="account-personal-info-bio-count"
+            >{{ bioLength() }} / {{ bioMaxLength }}</span
+          >
+        </div>
 
-      <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
-        <div class="flex min-w-0 flex-col gap-[8px]">
-          <!-- The combobox is named by its aria-label; this line adds the help icon its own label has no room for. -->
-          <span class="label-13 inline-flex items-center gap-[6px] font-medium text-ui-neutral-900">
-            <span aria-hidden="true">Company</span>
-            <!-- Focusable so the explanation reaches keyboard users. -->
-            <span
-              tabindex="0"
-              role="img"
-              aria-label="About the company list"
-              class="inline-flex cursor-help rounded-sm text-ui-neutral-500 hover:text-ui-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-focus"
-              [lfxUiTooltip]="copy.companyHelp"
-              data-testid="account-personal-info-company-help">
-              <i class="fa-light fa-circle-question" aria-hidden="true"></i>
+        <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
+          <div class="flex min-w-0 flex-col gap-[8px]">
+            <!-- The combobox is named by its aria-label; this line adds the help icon its own label has no room for. -->
+            <span class="label-13 inline-flex items-center gap-[6px] font-medium text-ui-neutral-900">
+              <span aria-hidden="true">Company</span>
+              <!-- Focusable so the explanation reaches keyboard users. -->
+              <span
+                tabindex="0"
+                role="img"
+                aria-label="About the company list"
+                class="inline-flex cursor-help rounded-sm text-ui-neutral-500 hover:text-ui-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-focus"
+                [lfxUiTooltip]="copy.companyHelp"
+                data-testid="account-personal-info-company-help">
+                <i class="fa-light fa-circle-question" aria-hidden="true"></i>
+              </span>
             </span>
-          </span>
-          <lfx-ui-combobox
-            ariaLabel="Company"
-            [placeholder]="companyPlaceholder()"
-            [emptyText]="companyEmptyText()"
-            formControlName="organization"
-            (queryChange)="companyQuery.set($event)"
-            data-testid="account-personal-info-company">
-            @for (company of companyOptions(); track company) {
-              <lfx-ui-option [value]="company" [label]="company" />
-            }
-          </lfx-ui-combobox>
+            <lfx-ui-combobox
+              ariaLabel="Company"
+              [placeholder]="companyPlaceholder()"
+              [emptyText]="companyEmptyText()"
+              formControlName="organization"
+              (queryChange)="companyQuery.set($event)"
+              data-testid="account-personal-info-company">
+              @for (company of companyOptions(); track company) {
+                <lfx-ui-option [value]="company" [label]="company" />
+              }
+            </lfx-ui-combobox>
+          </div>
+          <lfx-ui-input
+            label="Job title"
+            placeholder="Enter your job title"
+            autocomplete="organization-title"
+            formControlName="job_title"
+            [error]="fieldErrors().job_title ?? ''"
+            data-testid="account-personal-info-job-title" />
         </div>
-        <lfx-ui-input
-          label="Job title"
-          placeholder="Enter your job title"
-          autocomplete="organization-title"
-          formControlName="job_title"
-          [error]="lengthError('job_title', 100)"
-          data-testid="account-personal-info-job-title" />
-      </div>
 
-      <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
-        <lfx-ui-input label="Username (read-only)" [value]="username()" [disabled]="true" data-testid="account-personal-info-username" />
+        <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
+          <lfx-ui-input label="Username (read-only)" [value]="username()" [disabled]="true" data-testid="account-personal-info-username" />
+        </div>
       </div>
-    </div>
+    }
   </lfx-account-card>
 
   <lfx-account-card heading="Primary email address" [subtitle]="copy.emailSubtitle" testId="account-personal-info-email">
@@ -118,8 +130,8 @@
       <lfx-ui-choicebox-group
         ariaLabel="Primary email address"
         [joined]="true"
-        [disabled]="impersonating() || saving()"
-        [value]="selectedPrimaryEmail()"
+        [disabled]="impersonating() || saving() || emailsFailed()"
+        [value]="shownPrimaryEmail()"
         (valueChange)="onSelectPrimaryEmail($event)"
         data-testid="account-personal-info-email-options">
         @for (option of emailOptions(); track option.email) {
@@ -127,7 +139,7 @@
             @if (option.verified) {
               <lfx-ui-badge tone="success" variant="line" size="sm"><i slot="icon" class="fa-light fa-check" aria-hidden="true"></i>Verified</lfx-ui-badge>
             }
-            @if (option.email === selectedPrimaryEmail()) {
+            @if (option.email === shownPrimaryEmail()) {
               <lfx-ui-badge tone="accent" size="sm">Primary</lfx-ui-badge>
             }
           </lfx-ui-choicebox>
@@ -137,76 +149,92 @@
   </lfx-account-card>
 
   <lfx-account-card heading="Location" testId="account-personal-info-location">
-    <div class="flex flex-col gap-[16px]">
-      <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
-        <lfx-ui-combobox
-          label="Country"
-          placeholder="Select your country"
-          [emptyText]="countryEmptyText()"
-          formControlName="country"
-          (queryChange)="countryQuery.set($event)"
-          data-testid="account-personal-info-country">
-          @for (country of countryOptions; track country) {
-            <lfx-ui-option [value]="country" [label]="country" />
-          }
-        </lfx-ui-combobox>
-        <lfx-ui-input
-          label="State / Province"
-          placeholder="Enter your state or province"
-          autocomplete="address-level1"
-          formControlName="state_province"
-          [error]="lengthError('state_province', 50)"
-          data-testid="account-personal-info-state" />
+    @if (profileLoading()) {
+      <div class="flex flex-col gap-[12px]" aria-hidden="true" data-testid="account-personal-info-skeleton">
+        <lfx-ui-skeleton width="60%" />
+        <lfx-ui-skeleton width="100%" height="36px" />
+        <lfx-ui-skeleton width="100%" height="36px" />
       </div>
-      <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
+    } @else {
+      <div class="flex flex-col gap-[16px]">
+        <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
+          <lfx-ui-combobox
+            label="Country"
+            placeholder="Select your country"
+            [emptyText]="countryEmptyText()"
+            formControlName="country"
+            (queryChange)="countryQuery.set($event)"
+            data-testid="account-personal-info-country">
+            @for (country of countryOptions; track country) {
+              <lfx-ui-option [value]="country" [label]="country" />
+            }
+          </lfx-ui-combobox>
+          <lfx-ui-input
+            label="State / Province"
+            placeholder="Enter your state or province"
+            autocomplete="address-level1"
+            formControlName="state_province"
+            [error]="fieldErrors().state_province ?? ''"
+            data-testid="account-personal-info-state" />
+        </div>
+        <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
+          <lfx-ui-input
+            label="City"
+            placeholder="Enter your city"
+            autocomplete="address-level2"
+            formControlName="city"
+            [error]="fieldErrors().city ?? ''"
+            data-testid="account-personal-info-city" />
+          <lfx-ui-input
+            label="Postal / Zip code"
+            placeholder="Enter your postal or zip code"
+            autocomplete="postal-code"
+            formControlName="postal_code"
+            [error]="fieldErrors().postal_code ?? ''"
+            data-testid="account-personal-info-postal-code" />
+        </div>
         <lfx-ui-input
-          label="City"
-          placeholder="Enter your city"
-          autocomplete="address-level2"
-          formControlName="city"
-          [error]="lengthError('city', 50)"
-          data-testid="account-personal-info-city" />
-        <lfx-ui-input
-          label="Postal / Zip code"
-          placeholder="Enter your postal or zip code"
-          autocomplete="postal-code"
-          formControlName="postal_code"
-          [error]="lengthError('postal_code', 20)"
-          data-testid="account-personal-info-postal-code" />
+          label="Address"
+          placeholder="Enter your address"
+          autocomplete="street-address"
+          formControlName="address"
+          [error]="fieldErrors().address ?? ''"
+          data-testid="account-personal-info-address" />
+        <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
+          <lfx-ui-input
+            label="Phone number"
+            type="tel"
+            inputmode="tel"
+            placeholder="Enter your phone number"
+            autocomplete="tel"
+            formControlName="phone_number"
+            [hint]="copy.phoneHint"
+            [error]="fieldErrors().phone_number ?? ''"
+            data-testid="account-personal-info-phone" />
+        </div>
       </div>
-      <lfx-ui-input
-        label="Address"
-        placeholder="Enter your address"
-        autocomplete="street-address"
-        formControlName="address"
-        [error]="lengthError('address', 200)"
-        data-testid="account-personal-info-address" />
-      <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
-        <lfx-ui-input
-          label="Phone number"
-          type="tel"
-          inputmode="tel"
-          placeholder="Enter your phone number"
-          autocomplete="tel"
-          formControlName="phone_number"
-          [hint]="copy.phoneHint"
-          [error]="lengthError('phone_number', 20)"
-          data-testid="account-personal-info-phone" />
-      </div>
-    </div>
+    }
   </lfx-account-card>
 
   <lfx-account-card heading="T-shirt size" [subtitle]="copy.tshirtSubtitle" testId="account-personal-info-tshirt">
-    <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
-      <lfx-ui-select
-        ariaLabel="T-shirt size"
-        placeholder="Select your t-shirt size"
-        formControlName="t_shirt_size"
-        data-testid="account-personal-info-tshirt-size">
-        @for (size of tshirtSizeOptions; track size.value) {
-          <lfx-ui-option [value]="size.value" [label]="size.label" />
-        }
-      </lfx-ui-select>
-    </div>
+    @if (profileLoading()) {
+      <div class="flex flex-col gap-[12px]" aria-hidden="true" data-testid="account-personal-info-skeleton">
+        <lfx-ui-skeleton width="60%" />
+        <lfx-ui-skeleton width="100%" height="36px" />
+        <lfx-ui-skeleton width="100%" height="36px" />
+      </div>
+    } @else {
+      <div class="grid grid-cols-2 gap-[16px] max-[640px]:grid-cols-1">
+        <lfx-ui-select
+          ariaLabel="T-shirt size"
+          placeholder="Select your t-shirt size"
+          formControlName="t_shirt_size"
+          data-testid="account-personal-info-tshirt-size">
+          @for (size of tshirtSizeOptions; track size.value) {
+            <lfx-ui-option [value]="size.value" [label]="size.label" />
+          }
+        </lfx-ui-select>
+      </div>
+    }
   </lfx-account-card>
 </form>

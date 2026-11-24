@@ -35,7 +35,8 @@ export class AccountProfileService {
           this.loading.set(true);
           this.failed.set(false);
           return this.userService.getCurrentUserProfile().pipe(
-            catchError(() => {
+            catchError((error: unknown) => {
+              console.error('Failed to load the profile for Account & Settings:', error);
               this.failed.set(true);
               return of(null);
             }),

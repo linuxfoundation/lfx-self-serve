@@ -76,15 +76,12 @@ import { ProfileEditDrawerService } from '../../../profile/components/profile-ed
  * endpoints.
  *
  * **Known limitation — Flow C redirect:** The drawer's Flow C redirect (management-token
- * authorization) sends the mentor to `/profile`, not back to the mentorship page, because
- * the PATCH and picture-upload 403 responses (profile.controller.ts:304, 431) hardcode
- * `returnTo=/profile` in their `authorize_url`. The server's `/api/profile/auth/start`
- * already accepts a client-supplied `returnTo`, and `/mentorship/mentor` is already in
- * `allowedProfileReturnPaths` (line 109), so the follow-up is a one-line server change
- * to derive `returnTo` from the referer (matching the sibling endpoints at :971, :1035,
- * :1483) or a client-side rewrite of the returned `authorize_url` param. Neither is in
- * scope here; Flow C only triggers on the first profile edit or after token expiry, so
- * most mentors will already hold the management token from a prior session. See #2619.
+ * authorization) sends the mentor to `/profile`, not back to the mentorship page. The PATCH and
+ * picture-upload 403 responses derive `returnTo` from the referer, but honour only Account & Settings
+ * › Personal information and otherwise return to `/profile`. `/mentorship/mentor` is already in
+ * `allowedProfileReturnPaths`, so the follow-up is to let that helper accept it too. Flow C only
+ * triggers on the first profile edit or after token expiry, so most mentors will already hold the
+ * management token from a prior session. See #2619.
  */
 @Component({
   selector: 'lfx-mentorship-profile-card',

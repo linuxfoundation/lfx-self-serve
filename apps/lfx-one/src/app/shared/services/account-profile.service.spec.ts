@@ -66,13 +66,16 @@ describe('AccountProfileService', () => {
     expect(service.profile()?.profile?.job_title).toBe('Analyst');
   });
 
-  it('flags a failed fetch and keeps the last profile', () => {
+  it('flags and logs a failed fetch, and keeps the last profile', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     service.load();
     getCurrentUserProfile.mockReturnValueOnce(throwError(() => new Error('down')));
     service.load();
 
     expect(service.failed()).toBe(true);
     expect(service.profile()).toEqual(PROFILE);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it('drops a fetch still in flight when it loads again', () => {
