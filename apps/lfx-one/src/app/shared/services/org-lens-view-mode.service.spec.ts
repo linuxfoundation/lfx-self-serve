@@ -18,6 +18,7 @@ describe('OrgLensViewModeService', () => {
   let fullAccess: WritableSignal<ReadonlySet<string>>;
   let writerSet: WritableSignal<Set<string>>;
   let isStaff: WritableSignal<boolean>;
+  let claManagerOrgSet: WritableSignal<Set<string>>;
   let selected: WritableSignal<{ uid: string }>;
 
   beforeEach(() => {
@@ -26,6 +27,7 @@ describe('OrgLensViewModeService', () => {
     fullAccess = signal<ReadonlySet<string>>(new Set());
     writerSet = signal(new Set<string>());
     isStaff = signal(false);
+    claManagerOrgSet = signal(new Set<string>());
     selected = signal({ uid: ACME });
 
     TestBed.configureTestingModule({
@@ -54,6 +56,7 @@ describe('OrgLensViewModeService', () => {
             },
             writerSet,
             isStaff,
+            claManagerOrgSet,
             auditorSet: signal(new Set<string>()),
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet: signal(new Set<string>()),
@@ -130,5 +133,35 @@ describe('OrgLensViewModeService', () => {
     selected.set({ uid: '' });
 
     expect(TestBed.inject(OrgLensViewModeService).viewMode()).toBe('full');
+  });
+
+  describe('hidden pages and CLA Managers', () => {
+    it('hides nothing in the full view', () => {
+      expect(TestBed.inject(OrgLensViewModeService).hiddenPages()).toEqual([]);
+    });
+
+    it('hides every hidden page, EasyCLA included, in the employee view', () => {
+      employeeViewOrgUid.set(ACME);
+      const service = TestBed.inject(OrgLensViewModeService);
+
+      expect(service.managesSelectedCompanyClas()).toBe(false);
+      expect(service.hiddenPages()).toEqual(['memberships', 'people', 'easycla', 'profile', 'groups']);
+    });
+
+    it('keeps EasyCLA for an employee who is also a CLA Manager of the selected company, and hides the rest', () => {
+      employeeViewOrgUid.set(ACME);
+      claManagerOrgSet.set(new Set([ACME]));
+      const service = TestBed.inject(OrgLensViewModeService);
+
+      expect(service.managesSelectedCompanyClas()).toBe(true);
+      expect(service.hiddenPages()).toEqual(['memberships', 'people', 'profile', 'groups']);
+    });
+
+    it('does not carry a CLA scope on another company over to the selected one', () => {
+      employeeViewOrgUid.set(ACME);
+      claManagerOrgSet.set(new Set([OTHER]));
+
+      expect(TestBed.inject(OrgLensViewModeService).hiddenPages()).toContain('easycla');
+    });
   });
 });

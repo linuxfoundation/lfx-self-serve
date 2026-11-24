@@ -14,6 +14,7 @@ import { orgLensFullViewOnlyGuard } from './org-lens-full-view-only.guard';
 describe('orgLensFullViewOnlyGuard', () => {
   let isEmployeeView: WritableSignal<boolean>;
   let loaded: WritableSignal<boolean>;
+  let managesClas: WritableSignal<boolean>;
   let router: Router;
 
   const verdictFor = async (url: string, page?: string): Promise<string | true> => {
@@ -21,13 +22,22 @@ describe('orgLensFullViewOnlyGuard', () => {
     return result === true ? true : router.serializeUrl(result as UrlTree);
   };
 
+  // The EasyCLA route: CLA Managers of the company keep the page in the employee view.
+  const easyClaVerdictFor = async (url: string): Promise<string | true> => {
+    const result = await TestBed.runInInjectionContext(() =>
+      orgLensFullViewOnlyGuard(undefined, { keepForClaManager: true })({} as ActivatedRouteSnapshot, { url } as RouterStateSnapshot)
+    );
+    return result === true ? true : router.serializeUrl(result as UrlTree);
+  };
+
   beforeEach(() => {
     isEmployeeView = signal(false);
     loaded = signal(true);
+    managesClas = signal(false);
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
-        { provide: OrgLensViewModeService, useValue: { isEmployeeView } },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView, managesSelectedCompanyClas: managesClas } },
         { provide: OrgRoleGrantsService, useValue: { loaded } },
       ],
     });
@@ -109,5 +119,50 @@ describe('orgLensFullViewOnlyGuard', () => {
     isEmployeeView.set(true);
 
     expect(await verdictFor('/company/acme-inc/groups')).toBe('/company/acme-inc/overview');
+  });
+
+  describe('EasyCLA for a CLA Manager (keepForClaManager)', () => {
+    it('still redirects an employee who does not manage the company CLAs', async () => {
+      isEmployeeView.set(true);
+
+      expect(await easyClaVerdictFor('/company/acme-inc/easycla')).toBe('/company/acme-inc/overview');
+    });
+
+    it('keeps the page open for an employee who is also the company CLA Manager, signing return included', async () => {
+      isEmployeeView.set(true);
+      managesClas.set(true);
+
+      expect(await easyClaVerdictFor('/company/acme-inc/easycla')).toBe(true);
+      expect(await easyClaVerdictFor('/company/acme-inc/easycla/7c1a9000-0000-4000-8000-000000000001?signed=1')).toBe(true);
+    });
+
+    it('waits for the role grants before deciding, because the CLA scopes arrive with them', async () => {
+      loaded.set(false);
+      isEmployeeView.set(true);
+      const pending = easyClaVerdictFor('/company/acme-inc/easycla');
+
+      managesClas.set(true);
+      loaded.set(true);
+
+      expect(await pending).toBe(true);
+    });
+
+    it('admits when the wait runs out, leaving the decision to the server', async () => {
+      vi.useFakeTimers();
+      try {
+        loaded.set(false);
+        isEmployeeView.set(true);
+        const pending = easyClaVerdictFor('/company/acme-inc/easycla');
+        await vi.advanceTimersByTimeAsync(ORG_CLA_ONLY_GRANTS_WAIT_MS + 1);
+
+        expect(await pending).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('opens the page in the full view', async () => {
+      expect(await easyClaVerdictFor('/company/acme-inc/easycla')).toBe(true);
+    });
   });
 });

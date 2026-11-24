@@ -75,7 +75,7 @@ function orgLensPageRoutes(): Routes {
     {
       path: 'easycla',
       // A corporate CLA belongs to one company, so the roll-up redirects to its own home page (#4415, #4133).
-      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard(undefined, { keepForClaManager: true })],
       data: {
         lens: 'org',
         title: 'EasyCLA',

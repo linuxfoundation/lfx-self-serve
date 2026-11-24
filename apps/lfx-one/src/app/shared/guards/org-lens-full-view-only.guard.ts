@@ -27,8 +27,11 @@ import { OrgRoleGrantsService } from '../services/org-role-grants.service';
  * reason the grants are.
  *
  * @param page the page to redirect to; defaults to Overview.
+ * @param options `keepForClaManager`: a CLA Manager of the selected company keeps the page in the employee view (EasyCLA). The
+ *   server admits them by their `cla-manager` scope, so the guard waits for the role grants (the scopes arrive with them) before
+ *   deciding instead of redirecting on the recorded mode alone.
  */
-export function orgLensFullViewOnlyGuard(page: string = ORG_LENS_EMPLOYEE_VIEW_HOME_PAGE): CanActivateFn {
+export function orgLensFullViewOnlyGuard(page: string = ORG_LENS_EMPLOYEE_VIEW_HOME_PAGE, options: { keepForClaManager?: boolean } = {}): CanActivateFn {
   return async (_route, state): Promise<boolean | UrlTree> => {
     if (!isPlatformBrowser(inject(PLATFORM_ID))) {
       return true;
@@ -46,7 +49,10 @@ export function orgLensFullViewOnlyGuard(page: string = ORG_LENS_EMPLOYEE_VIEW_H
 
     // The mode may already be recorded (the address resolver or a selector row marks it before the grants answer), and a
     // recorded employee view must not wait on, or fail open past, the role-grants wait.
-    if (viewMode.isEmployeeView()) {
+    const blocked = (): boolean => viewMode.isEmployeeView() && !(options.keepForClaManager && viewMode.managesSelectedCompanyClas());
+
+    // A page that exempts CLA Managers cannot decide before the grants (and their scopes) are known.
+    if (!options.keepForClaManager && blocked()) {
       return redirect();
     }
 
@@ -54,11 +60,12 @@ export function orgLensFullViewOnlyGuard(page: string = ORG_LENS_EMPLOYEE_VIEW_H
       const loaded = await firstValueFrom(
         toObservable(roleGrants.loaded, { injector }).pipe(filter(Boolean), timeout({ first: ORG_CLA_ONLY_GRANTS_WAIT_MS, with: () => of(false) }))
       );
-      // The wait ran out: admit (the server refuses the page's data), unless the mode was recorded meanwhile.
+      // The wait ran out: admit (the server refuses the page's data), unless the mode was recorded meanwhile. A page that
+      // exempts CLA Managers admits regardless: their scopes are unknown, and the server decides.
       if (!loaded) {
-        return viewMode.isEmployeeView() ? redirect() : true;
+        return !options.keepForClaManager && blocked() ? redirect() : true;
       }
     }
-    return viewMode.isEmployeeView() ? redirect() : true;
+    return blocked() ? redirect() : true;
   };
 }

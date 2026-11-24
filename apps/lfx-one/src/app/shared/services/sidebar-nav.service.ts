@@ -24,7 +24,6 @@ import {
   ORG_EASYCLA_PATH,
   CF_ORG_DONATIONS_FLAG,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
-  ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
   ORG_SCOPE_QUERY_PARAM,
   ORG_TEAM_MEMBERS_QUERY_PARAM,
@@ -304,7 +303,7 @@ export class SidebarNavService {
     const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
     const withStaffSection = this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
-    return this.orgLensViewMode.isEmployeeView() ? withoutEmployeeViewHiddenPages(withStaffSection, ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES) : withStaffSection;
+    return withoutEmployeeViewHiddenPages(withStaffSection, this.orgLensViewMode.hiddenPages());
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched),

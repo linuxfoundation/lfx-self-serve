@@ -16,6 +16,7 @@ import {
   CF_ORG_DONATIONS_FLAG,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
+  ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -681,6 +682,21 @@ describe('SidebarNavService', () => {
     expect(labels(items)).toContain('Dashboard');
   });
 
+  // An employee who is also the company's CLA Manager keeps EasyCLA (the server admits them by their `cla-manager` scope); the other hidden pages stay hidden.
+  it('keeps the EasyCLA item in the all employee view for a CLA Manager of the selected company', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+    const grants = TestBed.inject(OrgRoleGrantsService);
+    (grants.employeeViewOrgUids as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set(['0014100000MgaAAAAA']));
+    claManagerOrgSet.set(new Set(['0014100000MgaAAAAA']));
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).toContain('EasyCLA');
+    expect(labels(items)).toContain('Dashboard');
+    expect(labels(items)).not.toContain('Company Profile');
+  });
+
   // Crowdfunding Donations is single-company too: its endpoint takes one `orgUid` (#4415, Copilot).
   it('drops Crowdfunding Donations in roll-up mode even with the flag on', () => {
     activeLens.set('org');
@@ -886,7 +902,9 @@ describe('SidebarNavService', () => {
     const MEMBERSHIPS_LINK = '/company/acme-inc/memberships';
 
     const itemsFor = (employeeView: boolean): SidebarMenuItem[] => {
-      TestBed.overrideProvider(OrgLensViewModeService, { useValue: { isEmployeeView: signal(employeeView) } });
+      TestBed.overrideProvider(OrgLensViewModeService, {
+        useValue: { isEmployeeView: signal(employeeView), hiddenPages: signal(employeeView ? ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES : []) },
+      });
       activeLens.set('org');
       orgSegment.set('acme-inc');
       return TestBed.inject(SidebarNavService).sidebarItems();

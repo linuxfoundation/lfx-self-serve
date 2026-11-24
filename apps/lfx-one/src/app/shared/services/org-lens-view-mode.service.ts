@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, Signal } from '@angular/core';
-import { ORG_LENS_EMPLOYEE_VIEW, ORG_LENS_FULL_VIEW } from '@lfx-one/shared/constants';
+import { ORG_LENS_EMPLOYEE_VIEW, ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES, ORG_LENS_FULL_VIEW } from '@lfx-one/shared/constants';
 import type { OrgLensViewMode } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
@@ -38,6 +38,22 @@ export class OrgLensViewModeService {
   public readonly viewMode: Signal<OrgLensViewMode> = computed(() => this.modeFor(this.accountContext.selectedAccount().uid));
 
   public readonly isEmployeeView: Signal<boolean> = computed(() => this.viewMode() === ORG_LENS_EMPLOYEE_VIEW);
+
+  /**
+   * The caller is a CLA Manager of the selected company (their own `cla-manager` scope). EasyCLA stays open for them in the
+   * employee view: the server admits them by that scope, so hiding the page would lock a CLA Manager who also works for the
+   * company out of the one page they manage. Server-side this is `assertOrgLensClaRead`'s scope fallback.
+   */
+  public readonly managesSelectedCompanyClas: Signal<boolean> = computed(() =>
+    this.roleGrants.claManagerOrgSet().has(this.accountContext.selectedAccount().uid ?? '')
+  );
+
+  /** The pages the current mode hides (none in the full view), the one list the nav and the route guards share. */
+  public readonly hiddenPages: Signal<readonly string[]> = computed(() => {
+    if (!this.isEmployeeView()) return [];
+    if (this.managesSelectedCompanyClas()) return ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.filter((page) => page !== 'easycla');
+    return ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES;
+  });
 
   /** The view mode for `uid`, for a caller that is not asking about the selection (a selector row, an address being adopted). */
   public modeFor(uid: string | null | undefined): OrgLensViewMode {
