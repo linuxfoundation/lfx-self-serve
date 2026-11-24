@@ -161,3 +161,5 @@ The flag is OFF by default and a complete no-op when off. Do not turn it on in a
 - **Small counts are allowed, with no minimum-group-size floor.** A count does not reveal a name.
 - **Crowdfunding** initiative, transaction and announcement routes (`/api/crowdfunding/*`): a simple client block is accepted; the data is not sensitive.
 - **Roll-ups** (the all-company roll-up and per-family roll-ups) are not available to employee-view users; they are for admins and staff only.
+
+The review of every personal value an employee-view user could see, and the test that keeps it current, is in [the personal data register](./company-lens-employee-view-personal-data.md).
