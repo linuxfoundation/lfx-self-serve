@@ -111,7 +111,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS: readonly OrgLensEmployeeViewExce
  * story (#5856-#5860) adds its page here and mounts `blockEmployeeView` on that page's API routes. The sidebar reads this
  * list, so a page needs no sidebar change of its own.
  */
-export const ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES: readonly string[] = [];
+export const ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES: readonly string[] = ['memberships', 'people', 'easycla', 'profile', 'groups'];
 
 /** Selector row badge for the company a caller reaches only through the all employee view. */
 export const NAVBAR_ORG_EMPLOYEE_VIEW_ROLE = {

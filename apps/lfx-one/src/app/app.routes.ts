@@ -23,6 +23,7 @@ import { authenticatedMatchGuard } from './shared/guards/authenticated-match.gua
 import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
+import { orgLensFullViewOnlyGuard } from './shared/guards/org-lens-full-view-only.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
 import { foundationParticipatingOrgsEnabledGuard } from './shared/guards/foundation-participating-orgs-enabled.guard';
 import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
@@ -75,7 +76,7 @@ function orgLensPageRoutes(): Routes {
     {
       path: 'easycla',
       // A corporate CLA belongs to one company, so the roll-up redirects to its own home page (#4415, #4133).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       data: {
         lens: 'org',
         title: 'EasyCLA',
@@ -152,11 +153,13 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'memberships',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: { lens: 'org', title: 'Memberships', description: 'Active memberships and tier history.', icon: 'fa-light fa-display' },
       loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
     },
     {
       path: 'memberships/:foundationSlug',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: {
         lens: 'org',
         title: 'Membership Detail',
@@ -213,6 +216,7 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'people',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your company.', icon: 'fa-light fa-users' },
       loadComponent: () => import('./modules/dashboards/org/org-people/org-people.component').then((m) => m.OrgPeopleComponent),
     },
@@ -259,13 +263,14 @@ function orgLensPageRoutes(): Routes {
         description: "Working groups and committees your company's employees participate in.",
         icon: 'fa-light fa-users-rectangle',
       },
+      canActivate: [orgLensFullViewOnlyGuard()],
       loadComponent: () => import('./modules/dashboards/org/org-groups/org-groups.component').then((m) => m.OrgGroupsComponent),
     },
     {
       path: 'profile',
       data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your company.', icon: 'fa-light fa-file' },
       // Single-organization by definition, so the roll-up redirects to its own home page (#4415, #4133).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       loadComponent: loadOrgProfilePage,
     },
   ]);

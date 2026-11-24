@@ -33,7 +33,7 @@ import { isUuid, stripHtml } from '@lfx-one/shared/utils';
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { redactForEmployeeView, stripPersonalFields } from '../helpers/org-lens-employee-view.helper';
 import { resolveOrgLensViewMode } from '../helpers/org-lens-read-access.helper';
-import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { isOrgLensEmployeeViewEnabled } from '../helpers/org-lens-employee-view-flag.helper';
 import { CrowdfundingService } from '../services/crowdfunding.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -78,7 +78,7 @@ const parseInitiativesScope = (query: Request['query'], operation: string): Init
  * no extra lookups) and the answer is always the full view, so nothing changes until the rollout flag is turned on.
  */
 const resolveCrowdfundingViewMode = async (req: Request, orgUid: string, operation: string): Promise<OrgLensViewMode> =>
-  isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView) ? resolveOrgLensViewMode(req, orgUid, operation) : ORG_LENS_FULL_VIEW;
+  isOrgLensEmployeeViewEnabled(req) ? resolveOrgLensViewMode(req, orgUid, operation) : ORG_LENS_FULL_VIEW;
 
 /** Person fields of the Crowdfunding page that travel under keys the shared personal-field list does not carry. */
 const EMPLOYEE_VIEW_CROWDFUNDING_PERSON_FIELDS = ['donorName', 'donorEmail', 'creator'] as const;
