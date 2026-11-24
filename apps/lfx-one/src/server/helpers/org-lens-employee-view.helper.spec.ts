@@ -69,6 +69,14 @@ describe('stripPersonalFields', () => {
     expect(stripPersonalFields(input, { page: 'projects', exceptions })).toEqual({ email: 'maintainer@acme.example' });
     expect(stripPersonalFields(input, { page: 'events', exceptions })).toEqual({});
   });
+
+  it('removes a field the route lists in extraFields even when a page exception names it', () => {
+    const exceptions: OrgLensEmployeeViewException[] = [{ page: 'projects', field: 'name', reason: 'public', approvedBy: 'product owner' }];
+    const input = { name: 'Ada Lovelace', email: 'ada@acme.example', project: 'Kernel' };
+
+    expect(stripPersonalFields(input, { page: 'projects', exceptions })).toEqual({ name: 'Ada Lovelace', project: 'Kernel' });
+    expect(stripPersonalFields(input, { page: 'projects', exceptions, extraFields: ['name'] })).toEqual({ project: 'Kernel' });
+  });
 });
 
 describe('embedded personal data in free text', () => {
