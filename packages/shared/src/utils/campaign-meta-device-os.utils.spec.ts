@@ -13,6 +13,7 @@ import {
   metaDeviceOsError,
   metaDeviceOsForCreate,
   metaDeviceOsFromDraft,
+  metaDeviceOsOptionViews,
   metaDeviceOsSendable,
   metaDeviceOsWithValue,
 } from './campaign-meta-device-os.utils';
@@ -37,6 +38,14 @@ describe('the Implement tab device and OS rules', () => {
     [['iOS_ver_9.0_and_above'], 'Android', true, META_OS_FAMILY_OPTIONS, ['Android', 'iOS_ver_9.0_and_above']],
   ])('ticks into %j %s = %s', (values, value, on, options, expected) => {
     expect(metaDeviceOsWithValue(values, value, on, options)).toEqual(expected);
+  });
+
+  it('draws the offered boxes, then each retained value they do not offer, ticked', () => {
+    expect(metaDeviceOsOptionViews(META_OS_FAMILY_OPTIONS, ['iOS_ver_9.0_and_above', 'Android'])).toEqual([
+      { value: 'iOS', label: 'iOS', on: false },
+      { value: 'Android', label: 'Android', on: true },
+      { value: 'iOS_ver_9.0_and_above', label: 'iOS_ver_9.0_and_above', on: true },
+    ]);
   });
 
   it.each([

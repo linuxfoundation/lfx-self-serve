@@ -32,13 +32,18 @@ describe('MetaDeviceOsOptionsComponent', () => {
     fixture.detectChanges();
   });
 
-  it('shows each group only on its own input', () => {
+  it('shows each group only on its own input, with a restored value the boxes do not offer as a box to untick', () => {
     expect(el('meta-device-os-device-mobile')).not.toBeNull();
     expect(el('meta-device-os-systems')).toBeNull();
 
     fixture.componentRef.setInput('osShown', true);
+    fixture.componentRef.setInput('deviceOs', { devicePlatforms: [], userOs: ['iOS_ver_9.0_and_above'] });
     fixture.detectChanges();
     expect(el('meta-device-os-os-iOS')).not.toBeNull();
+    expect(el('meta-device-os-os-iOS_ver_9.0_and_above')).not.toBeNull();
+
+    call('onOsToggle', 'iOS_ver_9.0_and_above', false);
+    expect(model.userOs).toEqual([]);
   });
 
   it('ticks devices and systems into the model, in the boxes order', () => {

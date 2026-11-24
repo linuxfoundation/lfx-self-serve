@@ -3,8 +3,8 @@
 
 import { Component, computed, input, model } from '@angular/core';
 import { META_DEVICE_PLATFORM_OPTIONS, META_OS_FAMILY_OPTIONS } from '@lfx-one/shared/constants';
-import type { MetaDeviceOsDraft, MetaDeviceOsOption, MetaDeviceOsOptionView } from '@lfx-one/shared/interfaces';
-import { metaDeviceOsWithValue } from '@lfx-one/shared/utils';
+import type { MetaDeviceOsDraft, MetaDeviceOsOptionView } from '@lfx-one/shared/interfaces';
+import { metaDeviceOsOptionViews, metaDeviceOsWithValue } from '@lfx-one/shared/utils';
 import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
 
 /**
@@ -23,8 +23,8 @@ export class MetaDeviceOsOptionsComponent {
 
   public readonly deviceOs = model.required<MetaDeviceOsDraft>();
 
-  protected readonly devices = computed<MetaDeviceOsOptionView[]>(() => this.views(META_DEVICE_PLATFORM_OPTIONS, this.deviceOs().devicePlatforms));
-  protected readonly systems = computed<MetaDeviceOsOptionView[]>(() => this.views(META_OS_FAMILY_OPTIONS, this.deviceOs().userOs));
+  protected readonly devices = computed<MetaDeviceOsOptionView[]>(() => metaDeviceOsOptionViews(META_DEVICE_PLATFORM_OPTIONS, this.deviceOs().devicePlatforms));
+  protected readonly systems = computed<MetaDeviceOsOptionView[]>(() => metaDeviceOsOptionViews(META_OS_FAMILY_OPTIONS, this.deviceOs().userOs));
 
   protected onDeviceToggle(value: string, on: boolean): void {
     this.deviceOs.update((d) => ({ ...d, devicePlatforms: metaDeviceOsWithValue(d.devicePlatforms, value, on, META_DEVICE_PLATFORM_OPTIONS) }));
@@ -32,9 +32,5 @@ export class MetaDeviceOsOptionsComponent {
 
   protected onOsToggle(value: string, on: boolean): void {
     this.deviceOs.update((d) => ({ ...d, userOs: metaDeviceOsWithValue(d.userOs, value, on, META_OS_FAMILY_OPTIONS) }));
-  }
-
-  private views(options: readonly MetaDeviceOsOption[], chosen: readonly string[]): MetaDeviceOsOptionView[] {
-    return options.map((option) => ({ ...option, on: chosen.includes(option.value) }));
   }
 }

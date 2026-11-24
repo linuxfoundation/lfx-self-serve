@@ -7,6 +7,7 @@ import type {
   MetaDeviceOsBlockInput,
   MetaDeviceOsDraft,
   MetaDeviceOsOption,
+  MetaDeviceOsOptionView,
   MetaObjective,
   MetaPlacement,
 } from '../interfaces/campaign.interface';
@@ -36,6 +37,17 @@ export function metaDeviceOsWithValue(values: readonly string[], value: string, 
   else chosen.delete(value);
   const known = order.filter((v) => chosen.has(v));
   return [...known, ...[...chosen].filter((v) => !order.includes(v))];
+}
+
+/**
+ * The checkboxes a group draws: every offered option, ticked when `chosen` holds it, then each retained value the boxes
+ * do not offer (a restored draft's), ticked and labelled as saved. Shown rather than hidden, so a value the rules refuse
+ * can be seen and unticked instead of holding Create with nothing to change.
+ */
+export function metaDeviceOsOptionViews(options: readonly MetaDeviceOsOption[], chosen: readonly string[]): MetaDeviceOsOptionView[] {
+  const offered = options.map((option) => ({ ...option, on: chosen.includes(option.value) }));
+  const retained = chosen.filter((value) => !options.some((o) => o.value === value)).map((value) => ({ value, label: value, on: true }));
+  return [...offered, ...retained];
 }
 
 /** The strings of a saved list, or `null` when the value is not a list of strings. */
